@@ -164,6 +164,18 @@ td.sticky{position:sticky;left:0;background:var(--panel);z-index:1}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin-top:8px;font-size:13px}
 .contact-row{display:flex;flex-wrap:wrap;gap:4px 10px;padding:5px 0;border-top:1px solid var(--line);font-size:13px}
 .contact-row:first-of-type{border-top:0}
+.file-btn{position:relative;overflow:hidden;display:inline-block;cursor:pointer}
+.file-input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;font-size:0}
+.file-list{margin-top:4px;font-size:12px}
+.checks{display:flex;flex-wrap:wrap;gap:6px 14px;max-height:180px;overflow:auto;padding:6px 0}
+.field .checks label{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink);font-weight:500;margin:0;padding:4px 0}
+.field .checks input{width:auto;margin:0}
+.proj-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.add-proj{border:1px dashed var(--line);border-radius:999px;padding:3px 8px;background:var(--panel);font-size:12px}
+.near-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.near-form .search{flex:1;min-width:240px}
+.near-box{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.near-box input,.near-box select{padding:7px 9px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel)}
 .filter-sel{padding:6px 8px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);font-weight:600}
 .pst{font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;background:var(--soft);border:1px solid var(--line);white-space:nowrap}
 .pst.Interest{color:var(--st-int)} .pst.Option{color:var(--st-opt)} .pst.Confirmed{color:var(--st-conf)} .pst.Closed{color:var(--st-off)}
@@ -278,7 +290,8 @@ dialog::backdrop{background:rgba(15,18,26,.45)}
   /* Modales plein écran */
   dialog{position:fixed;inset:0;width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;margin:0}
   dialog form{display:flex;flex-direction:column;height:100%}
-  .modal-body{max-height:none;flex:1}
+  .modal-body{max-height:none;flex:1;align-content:start}
+  .near-form .search{order:-1;flex-basis:100%}
   .modal-foot{position:sticky;bottom:0;background:var(--panel)}
   /* Suivi */
   .suivi{padding:12px}
@@ -596,12 +609,26 @@ async function route(a, b){
   }catch(e){ return {error:'Service de calcul indisponible'}; }
 }
 
-async function geocode(q){
+// Localisation d'une ville : Géoplateforme de l'État pour la France (avec département), sinon OpenStreetMap
+async function geoFrance(q, type='municipality'){
   try{
-    const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q));
-    const j = await r.json(); return j[0] ? {lat:Number(j[0].lat), lng:Number(j[0].lon)} : null;
+    const r = await fetch(`https://data.geopf.fr/geocodage/search?limit=1&type=${type}&q=${encodeURIComponent(q)}`);
+    const f = (await r.json()).features?.[0];
+    if (!f || (f.properties.score||0) < 0.5) return null;
+    const ctx = (f.properties.context||'').split(', ');
+    return {lat:f.geometry.coordinates[1], lng:f.geometry.coordinates[0], city:f.properties.city, postcode:f.properties.postcode,
+      department_code:ctx[0]||null, department_name:ctx[1]||null, region:ctx[ctx.length-1]||null, label:f.properties.label};
   }catch(e){ return null; }
 }
+async function geocode(q, {france=true}={}){
+  if (france){ const g = await geoFrance(q) || await geoFrance(q, 'street'); if (g) return g; }
+  try{
+    const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q));
+    const j = await r.json(); return j[0] ? {lat:Number(j[0].lat), lng:Number(j[0].lon), label:j[0].display_name} : null;
+  }catch(e){ return null; }
+}
+const distKm = (a, b) => { const R=6371, r=x=>x*Math.PI/180, dLat=r(b[0]-a[0]), dLng=r(b[1]-a[1]);
+  const h=Math.sin(dLat/2)**2+Math.cos(r(a[0]))*Math.cos(r(b[0]))*Math.sin(dLng/2)**2; return 2*R*Math.asin(Math.sqrt(h)); };
 
 // ─────────────────────────── Production ───────────────────────────
 function viewProduction(){
@@ -822,7 +849,7 @@ function viewTodo(){
   tasks.sort(taskSort);
   const btn = (k,l) => `<button class="btn small ${f===k?'primary':''}" data-act="todoFilter" data-f="${k}">${l}</button>`;
   return `<div class="view-head"><h1>To Do</h1>${btn('open','À faire')}${btn('mine','Les miennes')}${btn('late','Urgentes (≤ 7 j)')}${btn('all','Toutes')}
-    <span class="spacer"></span><input class="search" placeholder="Rechercher une tâche" data-search="todo" value="${esc(S.search.todo||'')}">
+    <span class="spacer"></span><input class="search" type="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche" placeholder="Rechercher une tâche" data-search="todo" value="${esc(S.search.todo||'')}">
     <button class="btn primary" data-act="newTask">Nouvelle tâche</button></div>${taskTable(tasks)}`;
 }
 
@@ -832,7 +859,9 @@ const LOG_ICON = {Appel:'📞', Mail:'✉️', RDV:'🤝', Note:'📝'};
 function logsOf(pid){ return S.db.prospect_logs.filter(l=>l.prospect_id===pid && !l.hidden).sort((a,b)=>(b.date||'0000').localeCompare(a.date||'0000') || (b.sort||0)-(a.sort||0)); }
 function filesOf(pid){ return S.db.prospect_files.filter(f=>f.prospect_id===pid).sort((a,b)=>(a.created_at||'').localeCompare(b.created_at||'')); }
 function lastExchange(p){ const l = logsOf(p.id).find(x=>x.date); const d = [l?.date, p.last_contact].filter(Boolean).sort().pop(); return d || null; }
-function prospectTitle(p){ return [structName(p.structure_id), projName(p.project_id)].filter(Boolean).join(' — ') || p.name; }
+function projIds(p){ return (p.project_ids && p.project_ids.length) ? p.project_ids : (p.project_id ? [p.project_id] : []); }
+function projNames(p){ return projIds(p).map(projName).filter(Boolean).join(', '); }
+function prospectTitle(p){ return [structName(p.structure_id), projNames(p)].filter(Boolean).join(' — ') || p.name; }
 
 // Mise en forme légère du texte importé de Notion (gras, italique, listes, liens)
 function md(text){
@@ -853,7 +882,7 @@ function md(text){
 function viewProspects(){
   const q = (S.search.prospects||'').toLowerCase();
   const st = S.suiviStatus || '';
-  let rows = S.db.prospects.filter(p => (!S.project || p.project_id===S.project) && (!st || p.status===st));
+  let rows = S.db.prospects.filter(p => (!S.project || projIds(p).includes(S.project)) && (!st || p.status===st));
   if (q) rows = rows.filter(p => (prospectTitle(p)+' '+(p.summary||'')+' '+(byId('structures',p.structure_id)?.city||'')).toLowerCase().includes(q));
   rows = rows.map(p=>({p, last:lastExchange(p)})).sort((a,b)=>(b.last||'').localeCompare(a.last||'') || (b.p.updated_at||'').localeCompare(a.p.updated_at||''));
   const projOpts = S.db.projects.slice().sort((a,b)=>(b.active-a.active)||a.name.localeCompare(b.name));
@@ -861,12 +890,12 @@ function viewProspects(){
     <select class="filter-sel" data-suivi-filter="project" aria-label="Artiste"><option value="">Tous les artistes</option>${projOpts.map(x=>`<option value="${x.id}" ${x.id===S.project?'selected':''}>${esc(x.name)}${x.active?'':' (inactif)'}</option>`).join('')}</select>
     <select class="filter-sel" data-suivi-filter="status" aria-label="Statut"><option value="">Tous les statuts</option>${PROSPECT.map(x=>`<option ${x===st?'selected':''}>${x}</option>`).join('')}</select>
     <span class="spacer"></span>
-    <input class="search" placeholder="Structure, ville, mot du résumé…" data-search="prospects" value="${esc(S.search.prospects||'')}">
+    <input class="search" type="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche" placeholder="Structure, ville, mot du résumé…" data-search="prospects" value="${esc(S.search.prospects||'')}">
     <button class="btn primary" data-act="newProspect">Nouveau suivi</button></div>
     <div class="tbl-wrap"><table><thead><tr><th>Structure</th><th>Projet</th><th>Statut</th><th>Dernier échange</th><th class="num">Journal</th><th class="num">PDF</th><th>Résumé</th></tr></thead><tbody>
     ${rows.slice(0,500).map(({p,last})=>{ const s=byId('structures',p.structure_id);
       return `<tr class="click" data-act="openSuivi" data-id="${p.id}"><td><b>${esc(s?.name||p.name)}</b><br><span class="muted">${esc(s?.city||'')}</span></td>
-      <td>${esc(projName(p.project_id))}</td><td><span class="pst ${esc(p.status||'')}">${esc(p.status||'')}</span></td>
+      <td style="white-space:normal">${esc(projNames(p))}</td><td><span class="pst ${esc(p.status||'')}">${esc(p.status||'')}</span></td>
       <td>${last?fmtDate(last):'<span class="muted">—</span>'}</td><td class="num">${logsOf(p.id).length||''}</td><td class="num">${filesOf(p.id).length||''}</td>
       <td class="muted" style="white-space:normal;min-width:260px">${esc((p.summary||p.content_md||'').replace(/\*\*/g,'').replace(/\n/g,' ').slice(0,160))}</td></tr>`;}).join('') || '<tr><td colspan="7" class="empty">Aucun suivi.</td></tr>'}
     </tbody></table></div>`;
@@ -877,7 +906,8 @@ function suiviCard(p){
   const contacts = linksOfStructure(p.structure_id);
   return `<div class="panel suivi" id="pr-${p.id}">
     <div class="suivi-head">
-      <div class="suivi-sel">${cSel('prospects',p.id,'project_id',p.project_id,optsOf('projects'))}</div>
+      <div class="proj-chips">${projIds(p).map(pid=>`<span class="chip">${esc(projName(pid))}<button type="button" data-act="rmProj" data-id="${p.id}" data-p="${pid}" aria-label="Retirer l'artiste">✕</button></span>`).join('')}
+        <select class="add-proj" data-addproj="${p.id}" aria-label="Ajouter un artiste"><option value="">+ Artiste</option>${optsOf('projects').filter(([v])=>!projIds(p).includes(v)).map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join('')}</select></div>
       <div class="suivi-sel">${cSel('prospects',p.id,'status',p.status,PROSPECT,false)}</div>
       <span class="muted">Dernier échange : ${lastExchange(p)?fmtDate(lastExchange(p)):'—'}</span>
       <span class="spacer"></span>
@@ -892,7 +922,7 @@ function suiviCard(p){
         <div class="suivi-block"><div class="suivi-title">Pièces jointes</div>
           ${files.map(f=>`<div class="file-row">📎 <a href="#" data-act="openFile" data-id="${f.id}">${esc(f.name)}</a>${f.size?` <span class="muted">${Math.round(f.size/1024)} Ko</span>`:''}
             <button class="btn small ghost danger" data-act="delFile" data-id="${f.id}" aria-label="Supprimer le fichier">✕</button></div>`).join('') || '<div class="muted">Aucun fichier.</div>'}
-          <label class="btn small" style="margin-top:6px;display:inline-block">Ajouter un PDF / fichier<input type="file" data-upload="${p.id}" multiple hidden></label></div>
+          <label class="btn small file-btn" style="margin-top:6px">Ajouter un PDF / fichier<input type="file" class="file-input" data-upload="${p.id}" multiple></label></div>
         <div class="suivi-block"><div class="suivi-title">Autres notes <button class="btn small ghost" data-act="editText" data-id="${p.id}" data-f="content_md">Modifier</button></div>
           <div class="md">${md(p.content_md) || '<span class="muted">—</span>'}</div></div>
       </div>
@@ -958,7 +988,7 @@ function viewContacts(){
   if (q) rows = rows.filter(c => [c.display_name,c.email,c.phone,...linksOfContact(c.id).map(s=>s.name)].join(' ').toLowerCase().includes(q));
   rows = rows.slice().sort((a,b)=>a.display_name.localeCompare(b.display_name));
   return `<div class="view-head"><h1>Contacts</h1><span class="sub">${rows.length} personnes</span><span class="spacer"></span>
-    <input class="search" placeholder="Nom, mail, structure…" data-search="contacts" value="${esc(S.search.contacts||'')}">
+    <input class="search" type="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche" placeholder="Nom, mail, structure…" data-search="contacts" value="${esc(S.search.contacts||'')}">
     <button class="btn primary" data-act="newContact">Nouveau contact</button></div>
     <div class="tbl-wrap"><table><thead><tr><th>Nom</th><th>Structures</th><th>Poste</th><th>Mail</th><th>Téléphone</th></tr></thead><tbody>
     ${rows.slice(0,400).map(c=>`<tr class="click" data-act="editContact" data-id="${c.id}"><td><b>${esc(c.display_name)}</b></td>
@@ -970,17 +1000,36 @@ function viewContacts(){
 
 function viewStructures(){
   if (S.structurePage) return structurePage(byId('structures', S.structurePage));
-  const q = (S.search.structures||'').toLowerCase();
+  const norm = x => String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const words = norm(S.search.structures).split(/\s+/).filter(Boolean);
+  const tag = S.structTag || '';
   let rows = S.db.structures;
-  if (q) rows = rows.filter(s => [s.name,s.city,s.region,s.country,...(s.tags||[])].join(' ').toLowerCase().includes(q));
-  rows = rows.slice().sort((a,b)=>a.name.localeCompare(b.name));
-  return `<div class="view-head"><h1>Structures</h1><span class="sub">${rows.length} structures</span><span class="spacer"></span>
-    <input class="search" placeholder="Nom, ville, région, tag…" data-search="structures" value="${esc(S.search.structures||'')}">
+  if (tag) rows = rows.filter(s => (s.tags||[]).includes(tag));
+  if (words.length) rows = rows.filter(s => { const hay = norm([s.name,s.address,s.city,s.postal_code,s.department_code,s.department_name,s.region,s.country,...(s.tags||[])].join(' '));
+    return words.every(w => hay.includes(w)); });
+  const near = S.near;   // {label, lat, lng, km}
+  if (near){
+    rows = rows.map(s => ({s, d: s.lat!=null ? distKm([near.lat,near.lng],[s.lat,s.lng]) : null})).filter(x => x.d!=null && x.d <= near.km)
+      .sort((a,b)=>a.d-b.d).map(x => (x.s._d = x.d, x.s));
+  } else rows = rows.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  const tags = [...new Set(S.db.structures.flatMap(s=>s.tags||[]))].sort((a,b)=>a.localeCompare(b));
+  return `<div class="view-head"><h1>Structures</h1><span class="sub">${rows.length} structures${near?` à moins de ${near.km} km de ${esc(near.label)}`:''}</span><span class="spacer"></span>
     <button class="btn primary" data-act="newStructure">Nouvelle structure</button></div>
-    <div class="tbl-wrap"><table><thead><tr><th>Structure</th><th>Tags</th><th>Ville</th><th>Région</th><th>Pays</th><th class="num">Jauge</th><th>Contacts</th><th>Suivi</th></tr></thead><tbody>
+    <form class="near-form" id="near-form">
+      <input class="search" type="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche" placeholder="Nom, ville, département (69, Rhône…), région, tag…" data-search="structures" value="${esc(S.search.structures||'')}">
+      <select class="filter-sel" data-struct-tag aria-label="Type"><option value="">Tous les types</option>${tags.map(t=>`<option ${t===tag?'selected':''}>${esc(t)}</option>`).join('')}</select>
+      <span class="near-box">
+        <input type="search" autocomplete="off" name="autour" placeholder="Autour de… (ville)" value="${esc(near?.label||'')}" aria-label="Autour de quelle ville">
+        <select name="km" aria-label="Rayon">${[20,50,100,150,200,300].map(k=>`<option value="${k}" ${(near?.km||50)===k?'selected':''}>${k} km</option>`).join('')}</select>
+        <button class="btn small primary">Chercher</button>
+        ${near?'<button type="button" class="btn small" data-act="clearNear">Effacer</button>':''}
+      </span>
+    </form>
+    ${near?'<p class="muted" style="margin:-4px 0 10px;font-size:12px">Seules les structures localisées (avec une ville connue) apparaissent dans la recherche par distance.</p>':''}
+    <div class="tbl-wrap"><table><thead><tr><th>Structure</th><th>Tags</th><th>Ville</th><th>Département · Région</th><th>Pays</th><th class="num">Jauge</th><th>Contacts</th><th>Suivi</th></tr></thead><tbody>
     ${rows.slice(0,400).map(s=>`<tr class="click" data-act="openStructure" data-id="${s.id}"><td><b>${esc(s.name)}</b></td>
       <td style="white-space:normal">${(s.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</td>
-      <td>${esc(s.city||'')}</td><td>${esc(s.region||'')}</td><td>${esc(s.country||'')}</td>
+      <td>${esc(s.city||'')}${s._d!=null && near?` <span class="muted">· ${Math.round(s._d)} km</span>`:''}</td><td>${esc([s.department_code&&s.department_name?s.department_code+' '+s.department_name:'', s.region].filter(Boolean).join(' · '))}</td><td>${esc(s.country||'')}</td>
       <td class="num">${[s.capacity_1,s.capacity_2].filter(Boolean).join(' / ')}</td>
       <td>${linksOfStructure(s.id).length||''}</td><td>${(()=>{const p=S.db.prospects.filter(x=>x.structure_id===s.id); return p.length?p.map(x=>`<span class="pst ${esc(x.status)}">${esc(x.status)}</span>`).join(' '):'';})()}</td></tr>`).join('')}
     </tbody></table>${rows.length>400?`<p class="muted" style="padding:8px">400 premiers résultats affichés — affine la recherche.</p>`:''}</div>`;
@@ -1016,6 +1065,8 @@ function field(f, v){
   else if (f.type==='textarea') input = `<textarea id="${id}" name="${f.k}">${esc(v??'')}</textarea>`;
   else if (f.type==='tags') input = `<input id="${id}" name="${f.k}" value="${esc((v||[]).join(', '))}" placeholder="séparés par des virgules" list="${f.list||''}">`;
   else if (f.type==='links') input = linksPicker(f, v);
+  else if (f.type==='checks') input = `<div class="checks">${f.options.map(([val,lab])=>`<label><input type="checkbox" name="${f.k}" value="${esc(val)}" ${(v||[]).includes(val)?'checked':''}> ${esc(lab)}</label>`).join('')}</div>`;
+  else if (f.type==='files') input = `<label class="btn small file-btn">Choisir des fichiers<input type="file" name="${f.k}" multiple class="file-input" data-filelist="${f.k}"></label><div class="muted file-list" id="fl-${f.k}"></div>`;
   else input = `<input id="${id}" type="${f.type||'text'}" name="${f.k}" value="${esc(v??'')}" ${f.type==='number'?'step="any"':''}>`;
   return `<div class="${cls}"><label for="${id}">${f.label}</label>${input}</div>`;
 }
@@ -1048,6 +1099,8 @@ function openModal({title, fields, values={}, onSave, onDelete, extra=''}){
     const out = {};
     for (const f of fields){
       if (f.type==='links'){ out[f.k] = [...document.querySelectorAll(`[data-links="${f.k}"] [data-lid]`)].map(c=>c.dataset.lid); continue; }
+      if (f.type==='checks'){ out[f.k] = [...ev.target.querySelectorAll(`input[name="${f.k}"]:checked`)].map(c=>c.value); continue; }
+      if (f.type==='files'){ out[f.k] = [...(ev.target.elements[f.k]?.files||[])]; continue; }
       const el = ev.target.elements[f.k]; if (!el) continue;
       let v = f.type==='checkbox' ? el.checked : el.value;
       if (f.type==='number') v = v===''?null:Number(v);
@@ -1126,6 +1179,9 @@ const ACTIONS = {
   newStructure: () => editStructure(null), editStructure: t => editStructure(t.dataset.id),
   newProspect: () => { S.newSuiviStructure=null; editProspect(null); }, editProspect: t => editProspect(t.dataset.id),
   newSuiviFor: t => { S.newSuiviStructure=t.dataset.id; editProspect(null); },
+  rmProj: async t => { const p = byId('prospects', t.dataset.id); const ids = projIds(p).filter(x=>x!==t.dataset.p);
+    await save('prospects', p.id, {project_ids: ids, project_id: ids[0]||null}); },
+  clearNear: () => { S.near = null; render(); },
   suiviStatus: t => { S.suiviStatus=t.dataset.f; render(); },
   openStructure: t => { if ($('#modal').open) $('#modal').close(); S.view='structures'; S.structurePage=t.dataset.id; S.focusProspect=null; render(); window.scrollTo(0,0); },
   closeStructure: () => { S.structurePage=null; render(); },
@@ -1145,7 +1201,7 @@ const ACTIONS = {
     const txt = `Mets à jour le résumé de ce suivi de booking (L'ArtBoristerie). 6 à 8 puces max, dans cet ordre : **Contexte / interlocuteurs**, **Date(s) visée(s) / option(s)**, **Jauge + billetterie**, **Offre financière** (HT/TTC), **Accueil / VHR / technique**, **Statut actuel**, **Prochaine action + date de relance**. Une puce par ligne commençant par « - », libellés en gras. Termine par « Dernière mise à jour : ${today} ». N'invente rien. Réponds uniquement avec le résumé.
 
 Structure : ${structName(p.structure_id)}
-Artiste : ${projName(p.project_id)}
+Artiste(s) : ${projNames(p)}
 Statut : ${p.status||''}
 
 Résumé existant :
@@ -1284,7 +1340,12 @@ function editStructure(id){
     onSave: async v => {
       const ids = v._contacts; delete v._contacts;
       if (!v.name) return false;
-      if (!id || v.address!==s.address || v.city!==s.city){ v.lat=null; v.lng=null; await fillCoords(v, [v.address, v.postal_code, v.city, v.country].filter(Boolean).join(', ')); }
+      if (!id || v.address!==s.address || v.city!==s.city || v.postal_code!==s.postal_code){
+        v.lat=null; v.lng=null;
+        const fr = !v.country || /^france$/i.test(v.country);
+        const g = (v.city||v.postal_code) ? await geocode([v.postal_code, v.city].filter(Boolean).join(' '), {france:fr}) : (v.address ? await geocode(v.address, {france:fr}) : null);
+        if (g){ v.lat=g.lat; v.lng=g.lng; if (g.department_code){ v.department_code=g.department_code; v.department_name=g.department_name; v.region = v.region || g.region; v.city = v.city || g.city; v.postal_code = v.postal_code || g.postcode; } }
+      }
       let row; if (id){ await save('structures', id, v, {rerender:false}); row={id}; } else row = await insert('structures', v);
       if (row) await syncLinks('structure', row.id, ids);
     }
@@ -1292,25 +1353,51 @@ function editStructure(id){
 }
 
 function editProspect(id){
-  const p = id ? byId('prospects', id) : {status:'Mailed', project_id:S.project||null, name:'Suivi', structure_id:S.newSuiviStructure||null};
-  openModal({ title: id ? p.name : 'Nouveau suivi', values: p,
+  const p = id ? byId('prospects', id) : {status:'Mailed', project_ids: S.project?[S.project]:[], name:'Suivi', structure_id:S.newSuiviStructure||null};
+  const activeProjects = S.db.projects.slice().sort((a,b)=>(b.active-a.active)||a.name.localeCompare(b.name)).filter(x=>x.active || projIds(p).includes(x.id)).map(x=>[x.id,x.name]);
+  openModal({ title: id ? prospectTitle(p) : 'Nouveau suivi', values: {...p, project_ids: projIds(p)},
     fields: [
       {k:'structure_id', label:'Structure', type:'select', options:optsOf('structures'), full:true},
+      {k:'project_ids', label:'Artiste(s) concerné(s)', type:'checks', options:activeProjects, full:true},
       {k:'status', label:'Statut', type:'select', options:PROSPECT, blank:false},
       {k:'last_contact', label:'Dernier contact', type:'date'},
-      {k:'project_id', label:'Projet', type:'select', options:optsOf('projects')},
       {k:'summary', label:'Résumé', type:'textarea', full:true},
+      ...(id ? [] : [{k:'_files', label:'Pièces jointes (PDF de mails…)', type:'files', full:true}]),
     ],
     onDelete: id ? () => remove('prospects', id) : null,
     onSave: async v => {
       if (!v.structure_id){ toast('Choisis la structure', true); return false; }
-      v.name = v.name || p.name || 'Suivi';
-      if (id) await save('prospects', id, v, {rerender:false});
-      else { const row = await insert('prospects', {...v, name:'Suivi'}); if (row){ S.view='structures'; S.structurePage=row.structure_id; S.focusProspect=row.id; } }
+      const files = v._files || []; delete v._files;
+      v.project_id = v.project_ids[0] || null;
+      v.name = p.name || 'Suivi';
+      if (id){ await save('prospects', id, v, {rerender:false}); return; }
+      const row = await insert('prospects', v);
+      if (!row) return false;
+      if (files.length) await uploadFiles(row.id, files);
+      S.view='structures'; S.structurePage=row.structure_id; S.focusProspect=row.id;
     }
   });
 }
 
+document.addEventListener('change', async e => {
+  const pid = e.target.dataset?.addproj; if (!pid || !e.target.value) return;
+  const p = byId('prospects', pid); const ids = [...new Set([...projIds(p), e.target.value])];
+  S.focusProspect = pid; await save('prospects', pid, {project_ids: ids, project_id: ids[0]});
+});
+document.addEventListener('submit', async e => {
+  if (e.target.id !== 'near-form') return; e.preventDefault();
+  const q = e.target.elements.autour.value.trim(), km = Number(e.target.elements.km.value);
+  S.search.structures = e.target.elements.recherche.value;
+  if (!q){ S.near = null; return render(); }
+  toast('Recherche de la ville…');
+  const g = await geocode(q);
+  if (!g) return toast(`Ville introuvable : ${q}`, true);
+  S.near = {label:q, lat:g.lat, lng:g.lng, km}; render();
+});
+document.addEventListener('change', e => {
+  if (e.target.matches('[data-struct-tag]')){ S.structTag = e.target.value; render(); return; }
+  if (e.target.form?.id === 'near-form' && e.target.name === 'km' && S.near){ S.near.km = Number(e.target.value); render(); }
+});
 document.addEventListener('change', e => {
   const k = e.target.dataset?.suiviFilter; if (!k) return;
   if (k==='project'){ S.project = e.target.value; localSet('project', S.project); }
@@ -1324,18 +1411,25 @@ document.addEventListener('submit', async e => {
   const row = await insert('prospect_logs', {prospect_id:pid, date:f.date.value||null, kind:f.kind.value, contact_name:f.who.value.trim()||null, body:f.body.value.trim()||null, author:S.user.email});
   if (row){ const p=byId('prospects',pid); if (row.date && (!p.last_contact || row.date>p.last_contact)) await save('prospects', pid, {last_contact:row.date}, {rerender:false}); S.focusProspect=pid; render(); toast('Ajouté au journal'); }
 });
-document.addEventListener('change', async e => {
-  const pid = e.target.dataset?.upload; if (!pid) return;
-  const files = [...e.target.files]; if (!files.length) return;
+async function uploadFiles(pid, files){
   toast(`Envoi de ${files.length} fichier(s)…`);
+  let ok = 0;
   for (const file of files){
-    const safe = file.name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w.\-]+/g,'_');
+    const safe = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^\w.\-]+/g,'_') || 'fichier';
     const path = `${pid}/${Date.now()}_${safe}`;
-    const {error} = await sb.storage.from('suivi').upload(path, file, {contentType: file.type||'application/octet-stream'});
+    const {error} = await sb.storage.from('suivi').upload(path, file, {contentType: file.type||'application/octet-stream', upsert:false});
     if (error){ toast(`${file.name} : ${error.message}`, true); continue; }
-    await insert('prospect_files', {prospect_id:pid, name:file.name, path, size:file.size, mime:file.type||null});
+    if (await insert('prospect_files', {prospect_id:pid, name:file.name, path, size:file.size, mime:file.type||null})) ok++;
   }
-  S.focusProspect=pid; render(); toast('Fichier(s) ajouté(s)');
+  if (ok) toast(`${ok} fichier(s) ajouté(s)`);
+}
+document.addEventListener('change', async e => {
+  const pid = e.target.dataset?.upload;
+  if (e.target.dataset?.filelist){ const el = document.getElementById('fl-'+e.target.dataset.filelist); if (el) el.textContent = [...e.target.files].map(f=>f.name).join(', '); return; }
+  if (!pid) return;
+  const files = [...e.target.files]; if (!files.length) return;
+  await uploadFiles(pid, files);
+  S.focusProspect = pid; render();
 });
 
 // ─────────────────────────── Connexion ───────────────────────────
