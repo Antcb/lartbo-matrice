@@ -1,0 +1,1093 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Matrice Booking — L'ArtBoristerie</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+  // ── Configuration du projet Supabase L'ArtBoristerie ──
+  window.ARTBO_CONFIG = {
+    SUPABASE_URL: 'https://ypvvjoqhzddzbmerypdc.supabase.co',
+    SUPABASE_ANON_KEY: 'sb_publishable_ddWaNvuYwT39_C8WuudceA_ks8IiyGR',
+    TEAM: ['anthony@lartboristerie.com', 'production@lartboristerie.com']
+  };
+</script>
+<style>
+:root{
+  --bg:#ECEEF1; --panel:#FFFFFF; --ink:#1B2130; --muted:#5E6676; --line:#D5D9E0; --soft:#F5F6F8;
+  --accent:#2C47C9; --accent-ink:#FFFFFF;
+  --st-int:#C98A12; --st-opt:#2F64D6; --st-conf:#17865B; --st-off:#A9433A; --st-book:#7A8090;
+  --warn:#C98A12; --danger:#B53A30; --ok:#17865B;
+  --radius:6px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#13161D; --panel:#1B1F28; --ink:#E7EAF0; --muted:#9AA2B2; --line:#2C3240; --soft:#20252F;
+    --accent:#7C93FF; --accent-ink:#0E1220;
+    --st-int:#E3A93A; --st-opt:#6E97F2; --st-conf:#3DBB87; --st-off:#E0766B; --st-book:#8D93A3;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#13161D; --panel:#1B1F28; --ink:#E7EAF0; --muted:#9AA2B2; --line:#2C3240; --soft:#20252F;
+  --accent:#7C93FF; --accent-ink:#0E1220;
+  --st-int:#E3A93A; --st-opt:#6E97F2; --st-conf:#3DBB87; --st-off:#E0766B; --st-book:#8D93A3;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 Archivo,system-ui,sans-serif;font-variation-settings:"wdth" 100}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Barre du haut */
+.top{position:sticky;top:0;z-index:500;background:var(--panel);border-bottom:1px solid var(--line)}
+.top-row{display:flex;align-items:center;gap:16px;padding:10px 20px;flex-wrap:wrap}
+.brand{font-weight:800;font-variation-settings:"wdth" 70;font-size:20px;letter-spacing:-.01em;white-space:nowrap}
+.tabs{display:flex;gap:2px;overflow-x:auto;flex:1;scrollbar-width:none}
+.tab{border:0;background:none;padding:8px 12px;border-radius:var(--radius);cursor:pointer;color:var(--muted);white-space:nowrap;font-weight:600}
+.tab[aria-selected="true"]{background:var(--ink);color:var(--panel)}
+.filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.filters select{padding:6px 8px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel)}
+.who{color:var(--muted);font-size:12px;white-space:nowrap}
+
+main{padding:20px;max-width:1600px;margin:0 auto}
+.view-head{display:flex;align-items:baseline;gap:16px;margin:0 0 14px;flex-wrap:wrap}
+.view-head h1{font-size:26px;margin:0;font-weight:800;font-variation-settings:"wdth" 75;letter-spacing:-.01em}
+.view-head .sub{color:var(--muted)}
+.view-head .spacer{flex:1}
+
+.btn{border:1px solid var(--line);background:var(--panel);padding:7px 12px;border-radius:var(--radius);cursor:pointer;font-weight:600}
+.btn:hover{border-color:var(--ink)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.small{padding:3px 8px;font-size:12px}
+.btn.ghost{border-color:transparent;background:none}
+.btn.danger{color:var(--danger)}
+.search{padding:7px 10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);min-width:220px}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}
+
+/* Statuts */
+.st{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;white-space:nowrap}
+.st::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--c)}
+.st.int{--c:var(--st-int)} .st.opt{--c:var(--st-opt)} .st.conf{--c:var(--st-conf)} .st.off{--c:var(--st-off)} .st.book{--c:var(--st-book)}
+
+/* Booking : liste + carte */
+.booking{display:grid;grid-template-columns:minmax(380px,1fr) 1.15fr;gap:16px;align-items:start}
+.booking .map-wrap{position:sticky;top:76px}
+#map{height:calc(100vh - 230px);min-height:420px;border-radius:var(--radius);border:1px solid var(--line)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;padding:8px 2px;color:var(--muted)}
+.route-box{margin-top:10px;padding:12px}
+.route-box h3{margin:0 0 6px;font-size:14px}
+.legs{margin:8px 0 0;padding:0;list-style:none;max-height:220px;overflow:auto}
+.legs li{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:13px}
+.legs .km{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+.legs .long{color:var(--danger)}
+
+.month{margin:18px 0 6px;font-weight:800;font-variation-settings:"wdth" 70;font-size:15px;color:var(--muted);text-transform:capitalize}
+.month:first-child{margin-top:0}
+.gig{display:grid;grid-template-columns:58px 1fr auto;gap:12px;align-items:center;padding:8px 10px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:6px;cursor:pointer}
+.gig:hover{border-color:var(--ink)}
+.gig.sel{outline:2px solid var(--accent)}
+.gig .day{text-align:center;line-height:1}
+.gig .day b{display:block;font-size:28px;font-weight:800;font-variation-settings:"wdth" 62;font-variant-numeric:tabular-nums}
+.gig .day span{font-size:11px;color:var(--muted);text-transform:capitalize}
+.gig .what{min-width:0}
+.gig .what b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gig .what small{color:var(--muted)}
+.gig .right{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.gig .fee{font-variant-numeric:tabular-nums;font-size:13px}
+.pick{display:flex;gap:4px}
+.pick button{width:24px;height:22px;padding:0;font-size:11px}
+.pick button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+
+/* Tables éditables */
+.tbl-wrap{overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;white-space:nowrap}
+th{position:sticky;top:0;background:var(--soft);font-weight:700;font-size:12px;color:var(--muted);z-index:1}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--soft)}
+td input,td select{border:1px solid transparent;background:transparent;padding:3px 4px;border-radius:4px;width:100%;min-width:90px}
+td input:hover,td select:hover{border-color:var(--line)}
+td input:focus,td select:focus{border-color:var(--accent);background:var(--panel);outline:none}
+td input[type=number]{text-align:right;min-width:80px}
+td input[type=checkbox]{width:auto;min-width:0}
+td.sticky{position:sticky;left:0;background:var(--panel);z-index:1}
+.done-cell input{color:var(--ok);font-weight:600}
+
+/* Fiche production */
+.prod-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:10px}
+.prod-head{display:grid;grid-template-columns:58px 1fr auto auto;gap:14px;align-items:center;padding:10px 12px;cursor:pointer}
+.prod-head .day b{display:block;font-size:26px;font-weight:800;font-variation-settings:"wdth" 62;line-height:1;text-align:center}
+.prod-head .day span{display:block;font-size:11px;color:var(--muted);text-align:center;text-transform:capitalize}
+.progress{display:flex;gap:3px}
+.progress i{width:10px;height:10px;border-radius:2px;background:var(--line)}
+.progress i.ok{background:var(--st-conf)}
+.prod-body{border-top:1px solid var(--line);padding:14px;display:grid;grid-template-columns:1fr 1.4fr;gap:20px}
+.prod-body h4{margin:0 0 8px;font-size:13px;color:var(--muted)}
+.steps{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
+.steps label{font-size:13px}
+.steps input{padding:4px 6px;border:1px solid var(--line);border-radius:4px;background:var(--panel)}
+.override{color:var(--warn);font-weight:700}
+.drive{display:flex;gap:8px;align-items:center;margin-top:12px;font-size:13px}
+.drive .err{color:var(--danger)}
+
+/* Projets */
+.grid-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.pcard{padding:14px;cursor:pointer}
+.pcard:hover{border-color:var(--ink)}
+.pcard h3{margin:0 0 4px;font-size:18px;font-variation-settings:"wdth" 80}
+.pcard .stats{display:flex;gap:14px;color:var(--muted);font-size:12px;margin-top:8px}
+.pcard .stats b{color:var(--ink);font-size:16px;display:block}
+.section-title{margin:24px 0 10px;font-size:15px;font-weight:800;color:var(--muted)}
+
+/* To Do */
+.urg{font-size:12px;font-weight:700;padding:2px 7px;border-radius:999px;white-space:nowrap}
+.urg.late{background:var(--danger);color:#fff}
+.urg.today{background:#7B2FBF;color:#fff}
+.urg.crit{background:color-mix(in srgb,var(--danger) 18%,transparent);color:var(--danger)}
+.urg.high{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn)}
+.urg.med{background:var(--soft);color:var(--muted)}
+.urg.low{color:var(--muted)}
+.task-done td{opacity:.5}
+
+/* Modale */
+dialog{border:0;border-radius:10px;padding:0;width:min(720px,94vw);background:var(--panel);color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.3)}
+dialog::backdrop{background:rgba(15,18,26,.45)}
+.modal-head{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.modal-head h2{margin:0;font-size:18px;flex:1}
+.modal-body{padding:16px 18px;max-height:70vh;overflow:auto;display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+.modal-body .full{grid-column:1/-1}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px;font-weight:600}
+.field input,.field select,.field textarea{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel)}
+.field textarea{min-height:80px;resize:vertical}
+.field.check{display:flex;align-items:center;gap:8px}
+.field.check input{width:auto}
+.modal-foot{display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line)}
+.modal-foot .left{margin-right:auto}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.chip{display:inline-flex;align-items:center;gap:4px;background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:2px 4px 2px 10px;font-size:12px}
+.chip button{border:0;background:none;cursor:pointer;color:var(--muted);padding:0 4px}
+
+/* Connexion */
+.login{max-width:380px;margin:12vh auto;padding:28px}
+.login h1{font-size:30px;font-weight:800;font-variation-settings:"wdth" 70;margin:0 0 6px}
+.login p{color:var(--muted);margin:0 0 18px}
+.login input{width:100%;padding:10px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:10px;background:var(--panel)}
+
+.empty{padding:40px;text-align:center;color:var(--muted)}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:9px 16px;border-radius:var(--radius);z-index:2000;font-weight:600}
+.toast.err{background:var(--danger);color:#fff}
+.muted{color:var(--muted)}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:var(--soft);border:1px solid var(--line);margin:1px}
+
+@media (max-width:1000px){
+  .booking{grid-template-columns:1fr}
+  .booking .map-wrap{position:static}
+  #map{height:380px}
+  .prod-body{grid-template-columns:1fr}
+  .modal-body{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  main{padding:12px 16px}
+  .top-row{padding:8px 16px}
+  .search{min-width:0;width:100%}
+  .filters{width:100%}
+  .filters select{flex:1;min-width:0}
+  .who{width:100%}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<dialog id="modal"></dialog>
+
+<script>
+'use strict';
+const CFG = window.ARTBO_CONFIG;
+const sb = supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
+
+// ─────────────────────────── Constantes métier ───────────────────────────
+const STATUSES = ['Booking','Intérêt Salle','Intérêt Festival','Option Salle','Option Festival','Option Artiste',
+  'Confirmée Salle','Confirmée Festival','Confirmée Artiste','Annulée','Sans Suite'];
+const CONFIRMED_PROD = ['Confirmée Salle','Confirmée Festival'];
+const CONTRACTS = ['Cession','Co-Réalisation','Production','Co-Production','N.C'];
+const TICKETING = ['Payant/Prix Libre','Gratuit'];
+const POSTER = ['Quantité à demander','En attente des quantités souhaitées','En attente de commande',"En attente d'expédition",'Expédiée','Livrée','Non concerné'];
+const PROSPECT = ['Mailed','Interest','Option','Confirmed','Closed'];
+const TASK_STATUS = ['To Do','In Progress','Done','Cancelled'];
+const PRIORITIES = ['D-Day','Critical','High','Medium','Low'];
+const DEPARTMENTS = ['Booking','Production','Communication','Admin','Accounting','Projects'];
+const PAY_KINDS = {acompte:'Acompte', solde:'Solde', artbo:"Commission L'ArtBo", partner:'Commission partenaire', cnm:'Taxe CNM', autre:'Autre'};
+const PROD_STEPS = [
+  ['conf_kit_sent','Conf + FT + kit promo'],
+  ['contract_sent','Contrat envoyé'],
+  ['contract_signed','Contrat signé'],
+  ['contract_cosigned_sent','Contrat co-signé renvoyé'],
+  ['boucle_tech','Boucle technique'],
+];
+const stClass = s => !s ? 'book' : s.startsWith('Intérêt') ? 'int' : s.startsWith('Option') ? 'opt' : s.startsWith('Confirmée') ? 'conf' : (s==='Annulée'||s==='Sans Suite') ? 'off' : 'book';
+const stColor = s => getComputedStyle(document.documentElement).getPropertyValue('--st-' + {int:'int',opt:'opt',conf:'conf',off:'off',book:'book'}[stClass(s)]).trim();
+
+// ─────────────────────────── État ───────────────────────────
+const S = {
+  user:null, view: localGet('view') || 'booking',
+  year: Number(localGet('year')) || new Date().getFullYear(),
+  project: localGet('project') || '',
+  db: {structures:[], contacts:[], contact_structures:[], projects:[], partners:[], shows:[], show_payments:[], prospects:[], tasks:[], settings:[]},
+  openProd: new Set(), routePick: {a:null,b:null}, routeCache: {}, search:{},
+  showCancelled:false, projectPage:null,
+};
+function localGet(k){ try { return localStorage.getItem('artbo.'+k); } catch(e){ return null; } }
+function localSet(k,v){ try { localStorage.setItem('artbo.'+k, v); } catch(e){} }
+
+// ─────────────────────────── Utilitaires ───────────────────────────
+const $ = (sel, root=document) => root.querySelector(sel);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const eur = n => n==null || n==='' || isNaN(n) ? '—' : Number(n).toLocaleString('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0});
+const fmtDate = d => d ? new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'}) : '';
+const byId = (t,id) => S.db[t].find(r => r.id === id);
+const projName = id => byId('projects', id)?.name || '';
+const structName = id => byId('structures', id)?.name || '';
+const daysUntil = d => d ? Math.round((new Date(d+'T00:00:00') - new Date(new Date().toDateString())) / 86400000) : null;
+function toast(msg, err){ const t=document.createElement('div'); t.className='toast'+(err?' err':''); t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(), err?5000:1800); }
+function setting(k){ const s = S.db.settings.find(x=>x.key===k); return s ? s.value : null; }
+
+function showsFiltered({year=true}={}){
+  return S.db.shows.filter(s =>
+    (!S.project || s.project_id === S.project) &&
+    (!year || !s.date || Number(s.date.slice(0,4)) === S.year)
+  ).sort((a,b) => (a.date||'9999').localeCompare(b.date||'9999'));
+}
+function showCoords(s){
+  if (s.lat!=null && s.lng!=null) return [s.lat, s.lng];
+  const st = byId('structures', s.structure_id);
+  if (st && st.lat!=null && st.lng!=null) return [st.lat, st.lng];
+  return null;
+}
+function paymentsOf(showId){ return S.db.show_payments.filter(p=>p.show_id===showId).sort((a,b)=>(a.sort||0)-(b.sort||0)); }
+function payAmount(p){
+  if (p.amount!=null && p.amount!=='') return Number(p.amount);
+  const s = byId('shows', p.show_id); const fee = Number(s?.fee_ht)||0;
+  if (p.kind==='artbo')   return Math.round(fee * (Number(p.pct ?? s.artbo_pct)||0)) / 100;
+  if (p.kind==='partner') return Math.round(fee * (Number(s.artbo_pct)||0) * (Number(p.pct ?? s.partner_pct)||0) / 100) / 100;
+  if (p.kind==='cnm' || p.pct==null || p.pct==='') return null;
+  return Math.round(fee * Number(p.pct)) / 100;
+}
+function netArtbo(s){
+  const pays = paymentsOf(s.id);
+  const a = pays.filter(p=>p.kind==='artbo').reduce((t,p)=>t+(payAmount(p)||0),0);
+  const b = pays.filter(p=>p.kind==='partner').reduce((t,p)=>t+(payAmount(p)||0),0);
+  return a-b;
+}
+function payPct(p){
+  const s = byId('shows', p.show_id);
+  if (p.pct!=null) return p.pct;
+  if (p.kind==='artbo') return s?.artbo_pct;
+  if (p.kind==='partner') return s?.partner_pct;
+  return null;
+}
+
+// ─────────────────────────── Données ───────────────────────────
+async function loadAll(){
+  const tables = Object.keys(S.db);
+  const res = await Promise.all(tables.map(t => fetchAll(t)));
+  tables.forEach((t,i) => S.db[t] = res[i]);
+}
+async function fetchAll(table){
+  let out = [], from = 0, size = 1000;
+  for(;;){
+    const {data, error} = await sb.from(table).select('*').range(from, from+size-1);
+    if (error) { toast(`Chargement ${table} : ${error.message}`, true); return out; }
+    out = out.concat(data); if (data.length < size) return out; from += size;
+  }
+}
+async function save(table, id, patch, {rerender=true}={}){
+  const row = byId(table, id); const before = row ? {...row} : null;
+  if (row) Object.assign(row, patch);
+  const {data, error} = await sb.from(table).update(patch).eq('id', id).select().single();
+  if (error){ if (row) Object.assign(row, before); toast('Enregistrement impossible : '+error.message, true); render(); return; }
+  Object.assign(row, data);
+  if (table==='shows' && patch.status) await refreshShowSide(id);
+  if (rerender) render();
+}
+async function insert(table, values){
+  const {data, error} = await sb.from(table).insert(values).select().single();
+  if (error){ toast('Création impossible : '+error.message, true); return null; }
+  S.db[table].push(data);
+  if (table==='shows') await refreshShowSide(data.id);
+  return data;
+}
+async function remove(table, id){
+  const {error} = await sb.from(table).delete().eq('id', id);
+  if (error){ toast('Suppression impossible : '+error.message, true); return false; }
+  S.db[table] = S.db[table].filter(r => r.id !== id);
+  return true;
+}
+// Après une confirmation, la base crée les lignes financières : on les recharge.
+async function refreshShowSide(showId){
+  const [{data: show}, {data: pays}] = await Promise.all([
+    sb.from('shows').select('*').eq('id', showId).single(),
+    sb.from('show_payments').select('*').eq('show_id', showId)
+  ]);
+  if (show){ const i = S.db.shows.findIndex(s=>s.id===showId); if (i>=0) S.db.shows[i]=show; }
+  if (pays){ S.db.show_payments = S.db.show_payments.filter(p=>p.show_id!==showId).concat(pays); }
+}
+
+// ─────────────────────────── Rendu général ───────────────────────────
+const VIEWS = [
+  ['booking','Booking'], ['production','Production'], ['ticketing','Ticketing'], ['communication','Communication'],
+  ['projects','Projets'], ['todo','To Do'], ['prospects','Prospection'], ['contacts','Contacts'], ['structures','Structures'], ['settings','Réglages']
+];
+
+function render(){
+  const app = $('#app');
+  if (!S.user){ app.innerHTML = loginHTML(); return; }
+  const years = [...new Set(S.db.shows.filter(s=>s.date).map(s=>Number(s.date.slice(0,4))).concat([new Date().getFullYear(), new Date().getFullYear()+1]))].sort();
+  const projects = S.db.projects.slice().sort((a,b)=>(b.active-a.active)||a.name.localeCompare(b.name));
+  app.innerHTML = `
+  <header class="top"><div class="top-row">
+    <div class="brand">L'ArtBoristerie</div>
+    <nav class="tabs" role="tablist">${VIEWS.map(([k,l])=>`<button class="tab" role="tab" data-view="${k}" aria-selected="${S.view===k}">${l}</button>`).join('')}</nav>
+    <div class="filters">
+      <select id="f-year" aria-label="Année">${years.map(y=>`<option ${y===S.year?'selected':''}>${y}</option>`).join('')}</select>
+      <select id="f-project" aria-label="Projet"><option value="">Tous les projets</option>${projects.map(p=>`<option value="${p.id}" ${p.id===S.project?'selected':''}>${esc(p.name)}${p.active?'':' (inactif)'}</option>`).join('')}</select>
+      <span class="who">${esc(S.user.email.split('@')[0])} · <a href="#" data-act="changePw">Mot de passe</a> · <a href="#" id="logout">Déconnexion</a></span>
+    </div>
+  </div></header>
+  <main id="main"></main>`;
+  const main = $('#main');
+  const fn = {booking:viewBooking, production:viewProduction, ticketing:viewTicketing, communication:viewCommunication,
+    projects:viewProjects, todo:viewTodo, prospects:viewProspects, contacts:viewContacts, structures:viewStructures, settings:viewSettings}[S.view];
+  main.innerHTML = fn();
+  if (S.view==='booking') drawMap();
+}
+
+document.addEventListener('click', async e => {
+  const t = e.target.closest('[data-view],[data-act],#logout'); if (!t) return;
+  if (t.id==='logout'){ e.preventDefault(); await sb.auth.signOut(); S.user=null; render(); return; }
+  if (t.dataset.view){ S.view=t.dataset.view; S.projectPage=null; localSet('view',S.view); render(); window.scrollTo(0,0); return; }
+  const act = ACTIONS[t.dataset.act]; if (act){ e.preventDefault(); await act(t, e); }
+});
+document.addEventListener('change', async e => {
+  const t = e.target;
+  if (t.id==='f-year'){ S.year=Number(t.value); localSet('year',S.year); render(); return; }
+  if (t.id==='f-project'){ S.project=t.value; localSet('project',S.project); render(); return; }
+  // Édition directe dans les tableaux : data-t (table) data-id data-f (champ)
+  if (t.dataset.t && t.dataset.id && t.dataset.f){
+    let v = t.type==='checkbox' ? t.checked : t.value;
+    if (t.type==='number') v = v==='' ? null : Number(v);
+    if (v==='') v = null;
+    await save(t.dataset.t, t.dataset.id, {[t.dataset.f]: v}, {rerender: t.dataset.rr!=='0'});
+  }
+});
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.dataset.search){ S.search[t.dataset.search] = t.value; clearTimeout(t._d); t._d = setTimeout(()=>{ const pos=t.selectionStart; render(); const n=document.querySelector(`[data-search="${t.dataset.search}"]`); if(n){ n.focus(); n.setSelectionRange(pos,pos);} }, 200); }
+});
+
+// Cellules éditables
+const cIn = (t,id,f,v,type='text',extra='') => `<input type="${type}" data-t="${t}" data-id="${id}" data-f="${f}" value="${esc(v??'')}" ${extra}>`;
+const cSel = (t,id,f,v,opts,blank=true) => `<select data-t="${t}" data-id="${id}" data-f="${f}">${blank?'<option value=""></option>':''}${opts.map(o=>{ const [val,lab]=Array.isArray(o)?o:[o,o]; return `<option value="${esc(val)}" ${val===v?'selected':''}>${esc(lab)}</option>`;}).join('')}</select>`;
+const cChk = (t,id,f,v) => `<input type="checkbox" data-t="${t}" data-id="${id}" data-f="${f}" ${v?'checked':''}>`;
+
+// ─────────────────────────── Booking + carte ───────────────────────────
+function viewBooking(){
+  let shows = showsFiltered();
+  if (!S.showCancelled) shows = shows.filter(s => stClass(s.status)!=='off');
+  const count = k => shows.filter(s=>stClass(s.status)===k).length;
+  const totalConf = shows.filter(s=>stClass(s.status)==='conf').reduce((a,s)=>a+(Number(s.fee_ht)||0),0);
+  let lastMonth = '', list = '';
+  for (const s of shows){
+    const m = s.date ? new Date(s.date+'T12:00:00').toLocaleDateString('fr-FR',{month:'long',year:'numeric'}) : 'Sans date';
+    if (m!==lastMonth){ list += `<div class="month">${m}</div>`; lastMonth=m; }
+    const d = s.date ? new Date(s.date+'T12:00:00') : null;
+    const pa = S.routePick.a===s.id, pb = S.routePick.b===s.id;
+    list += `<div class="gig ${pa||pb?'sel':''}" data-act="editShow" data-id="${s.id}">
+      <div class="day"><b>${d?String(d.getDate()).padStart(2,'0'):'—'}</b><span>${d?d.toLocaleDateString('fr-FR',{weekday:'short'}):''}</span></div>
+      <div class="what"><b>${esc(s.venue)}</b><small>${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))}${!S.project && s.project_id ? ' — '+esc(projName(s.project_id)) : ''}</small></div>
+      <div class="right"><span class="st ${stClass(s.status)}">${esc(s.status)}</span>
+        <span class="fee">${s.fee_ht?eur(s.fee_ht):''}${s.contract_type?' · '+esc(s.contract_type):''}</span>
+        <span class="pick" title="Choisir comme point de départ (A) ou d'arrivée (B) pour calculer le trajet">
+          <button class="btn small ${pa?'on':''}" data-act="pick" data-p="a" data-id="${s.id}">A</button><button class="btn small ${pb?'on':''}" data-act="pick" data-p="b" data-id="${s.id}">B</button></span>
+      </div></div>`;
+  }
+  return `
+  <div class="view-head"><h1>Booking ${S.year}</h1>
+    <span class="sub"><span class="st int">${count('int')} intérêts</span> &nbsp; <span class="st opt">${count('opt')} options</span> &nbsp; <span class="st conf">${count('conf')} confirmées</span> &nbsp; · ${eur(totalConf)} confirmés</span>
+    <span class="spacer"></span>
+    <label class="muted"><input type="checkbox" data-act="toggleCancelled" ${S.showCancelled?'checked':''}> Afficher annulées / sans suite</label>
+    <button class="btn primary" data-act="newShow">Nouvelle date</button>
+  </div>
+  <div class="booking">
+    <div>${list || `<div class="empty panel">Aucune date en ${S.year}. Ajoute un intérêt avec « Nouvelle date ».</div>`}</div>
+    <div class="map-wrap">
+      <div id="map" role="region" aria-label="Carte des dates"></div>
+      <div class="legend"><span class="st int">Intérêt</span><span class="st opt">Option</span><span class="st conf">Confirmée</span><span class="st book">Booking</span></div>
+      <div class="panel route-box" id="route-box">${routeBoxHTML(shows)}</div>
+    </div>
+  </div>`;
+}
+
+function routeBoxHTML(shows){
+  const a = byId('shows', S.routePick.a), b = byId('shows', S.routePick.b);
+  let pair = '<p class="muted" style="margin:0">Clique sur A puis B sur deux dates pour calculer la route entre elles.</p>';
+  if (a && b){
+    const key = a.id+'|'+b.id, r = S.routeCache[key];
+    pair = `<p style="margin:0"><b>${esc(a.venue)}</b> → <b>${esc(b.venue)}</b><br>
+      ${r ? (r.error ? `<span class="muted">${esc(r.error)}</span>` : `<b>${r.km} km</b> · ${r.time} de route`) : '<span class="muted">Calcul en cours…</span>'}</p>`;
+  }
+  const conf = shows.filter(s=>stClass(s.status)==='conf' && s.date && showCoords(s));
+  let legs = '';
+  for (let i=1;i<conf.length;i++){
+    const k = conf[i-1].id+'|'+conf[i].id, r = S.routeCache[k];
+    const days = daysUntil(conf[i].date) - daysUntil(conf[i-1].date);
+    legs += `<li><span>${fmtDate(conf[i-1].date).slice(0,6)} ${esc(conf[i-1].city||conf[i-1].venue)} → ${fmtDate(conf[i].date).slice(0,6)} ${esc(conf[i].city||conf[i].venue)}</span>
+      <span class="km ${r && !r.error && days<=1 && r.km>600 ? 'long':''}">${r ? (r.error?'—':`${r.km} km · ${r.time}`) : '…'}${days>1?` · J+${days}`:''}</span></li>`;
+  }
+  return `<h3>Trajet</h3>${pair}${legs?`<h3 style="margin-top:12px">Enchaînement des dates confirmées</h3><ul class="legs">${legs}</ul>`:''}`;
+}
+
+let MAP, MAP_LAYER;
+function drawMap(){
+  const el = $('#map'); if (!el) return;
+  if (MAP){ MAP.remove(); MAP=null; }
+  MAP = L.map(el, {scrollWheelZoom:true}).setView([46.6, 2.4], 6);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    attribution:'© OpenStreetMap, © CARTO', maxZoom:18}).addTo(MAP);
+  MAP_LAYER = L.layerGroup().addTo(MAP);
+  let shows = showsFiltered(); if (!S.showCancelled) shows = shows.filter(s=>stClass(s.status)!=='off');
+  const pts = [];
+  for (const s of shows){
+    const c = showCoords(s); if (!c) continue; pts.push(c);
+    L.circleMarker(c, {radius: stClass(s.status)==='conf'?9:7, color:'#fff', weight:2, fillColor: stColor(s.status), fillOpacity:1})
+      .bindPopup(`<b>${esc(s.venue)}</b><br>${fmtDate(s.date)} — ${esc(s.city||'')}<br>${esc(s.status)}${s.fee_ht?'<br>'+eur(s.fee_ht):''}`)
+      .addTo(MAP_LAYER);
+  }
+  const conf = shows.filter(s=>stClass(s.status)==='conf' && s.date && showCoords(s));
+  if (conf.length>1) L.polyline(conf.map(showCoords), {color: stColor('Confirmée'), weight:2, dashArray:'4 6', opacity:.7}).addTo(MAP_LAYER);
+  if (pts.length) MAP.fitBounds(pts, {padding:[30,30], maxZoom:9});
+  // routes
+  const a = byId('shows', S.routePick.a), b = byId('shows', S.routePick.b);
+  const jobs = [];
+  if (a && b) jobs.push([a,b,true]);
+  for (let i=1;i<conf.length;i++) jobs.push([conf[i-1], conf[i], false]);
+  jobs.forEach(([x,y,draw]) => route(x,y).then(r => {
+    if (draw && r && r.geometry && MAP) L.geoJSON(r.geometry, {style:{color:'var(--accent)', weight:4, color: getComputedStyle(document.documentElement).getPropertyValue('--accent')}}).addTo(MAP_LAYER);
+    const box = $('#route-box'); if (box) box.innerHTML = routeBoxHTML(shows);
+  }));
+}
+
+async function route(a, b){
+  const key = a.id+'|'+b.id; if (S.routeCache[key]) return S.routeCache[key];
+  const ca = showCoords(a), cb = showCoords(b);
+  if (!ca || !cb) return (S.routeCache[key] = {error:'Lieu non géolocalisé'});
+  try{
+    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${ca[1]},${ca[0]};${cb[1]},${cb[0]}?overview=simplified&geometries=geojson`);
+    const j = await r.json(); const rt = j.routes && j.routes[0];
+    if (!rt) return (S.routeCache[key] = {error:'Pas d’itinéraire trouvé'});
+    const h = Math.floor(rt.duration/3600), m = Math.round((rt.duration%3600)/60);
+    return (S.routeCache[key] = {km: Math.round(rt.distance/1000), time: `${h}h${String(m).padStart(2,'0')}`, geometry: rt.geometry});
+  }catch(e){ return {error:'Service de calcul indisponible'}; }
+}
+
+async function geocode(q){
+  try{
+    const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q));
+    const j = await r.json(); return j[0] ? {lat:Number(j[0].lat), lng:Number(j[0].lon)} : null;
+  }catch(e){ return null; }
+}
+
+// ─────────────────────────── Production ───────────────────────────
+function viewProduction(){
+  const shows = showsFiltered().filter(s => CONFIRMED_PROD.includes(s.status));
+  if (!shows.length) return `<div class="view-head"><h1>Production ${S.year}</h1></div><div class="empty panel">Aucune date confirmée en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
+  let artbo=0, partner=0, toCollect=0;
+  shows.forEach(s => paymentsOf(s.id).forEach(p => {
+    const a = payAmount(p)||0;
+    if (p.kind==='artbo') artbo+=a; if (p.kind==='partner') partner+=a;
+    if ((p.kind==='acompte'||p.kind==='solde') && !p.paid_at) toCollect+=a;
+  }));
+  return `<div class="view-head"><h1>Production ${S.year}</h1>
+    <span class="sub">${shows.length} dates · Commissions ${eur(artbo)} · dont partenaires ${eur(partner)} · Net L'ArtBo ${eur(artbo-partner)} · Reste à encaisser ${eur(toCollect)}</span>
+    <span class="spacer"></span>
+    <button class="btn" data-act="expandAll">Tout déplier</button></div>
+    ${shows.map(prodCard).join('')}`;
+}
+
+function prodCard(s){
+  const d = s.date ? new Date(s.date+'T12:00:00') : null;
+  const pays = paymentsOf(s.id);
+  const checks = PROD_STEPS.map(([k])=>!!s[k]).concat(pays.filter(p=>p.kind!=='cnm').map(p=>!!p.paid_at));
+  const open = S.openProd.has(s.id);
+  const partners = S.db.partners.map(p=>[p.id,p.name]);
+  return `<div class="prod-card">
+    <div class="prod-head" data-act="toggleProd" data-id="${s.id}" aria-expanded="${open}">
+      <div class="day"><b>${d?String(d.getDate()).padStart(2,'0'):'—'}</b><span>${d?d.toLocaleDateString('fr-FR',{month:'short'}):''}</span></div>
+      <div><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')} ${s.department?'('+esc(s.department)+')':''}${!S.project?' — '+esc(projName(s.project_id)):''}</span><br>
+        <span class="muted">${esc(s.contract_type||'Contrat ?')} · ${eur(s.fee_ht)}</span></div>
+      <div class="progress" title="${checks.filter(Boolean).length}/${checks.length} étapes faites">${checks.map(c=>`<i class="${c?'ok':''}"></i>`).join('')}</div>
+      <span class="st ${stClass(s.status)}">${esc(s.status)}</span>
+    </div>
+    ${open ? `<div class="prod-body">
+      <div>
+        <h4>Suivi admin</h4>
+        <div class="steps">${PROD_STEPS.map(([k,l])=>`<label for="${k}-${s.id}">${l}</label><input id="${k}-${s.id}" type="date" data-t="shows" data-id="${s.id}" data-f="${k}" value="${s[k]||''}">`).join('')}</div>
+        <h4 style="margin-top:16px">Commissions</h4>
+        <div class="steps">
+          <label>Cachet HT</label>${cIn('shows',s.id,'fee_ht',s.fee_ht,'number','step="any"')}
+          <label>% L'ArtBo</label>${cIn('shows',s.id,'artbo_pct',s.artbo_pct,'number','step="any"')}
+          <label>Partenaire</label>${cSel('shows',s.id,'partner_id',s.partner_id,partners)}
+          <label>% partenaire</label>${cIn('shows',s.id,'partner_pct',s.partner_pct,'number','step="any"')}
+        </div>
+        <p class="muted" style="font-size:12px;margin:6px 0 0">Le % partenaire s'applique à la commission L'ArtBo. Net L'ArtBo : <b>${eur(netArtbo(s))}</b></p>
+        <div class="drive">${driveHTML(s)}</div>
+      </div>
+      <div>
+        <h4>Facturation</h4>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Ligne</th><th class="num">%</th><th class="num">Montant</th><th>N° facture</th><th>Envoyée</th><th>Payée</th><th></th></tr></thead>
+          <tbody>${pays.map(p=>{ const a=payAmount(p), ov=p.amount!=null;
+            return `<tr>
+            <td>${cIn('show_payments',p.id,'label',p.label,'text','style="min-width:170px"')}</td>
+            <td class="num">${p.kind==='cnm'||p.kind==='autre'||p.kind==='acompte'||p.kind==='solde' ? cIn('show_payments',p.id,'pct',p.pct,'number','step="any" style="min-width:60px"') : `<span class="muted">${payPct(p)??'—'}</span>`}</td>
+            <td class="num"><input type="number" step="any" data-t="show_payments" data-id="${p.id}" data-f="amount" value="${ov?p.amount:''}" placeholder="${a==null?'à saisir':a}" title="Laisse vide pour le calcul automatique" class="${ov?'override':''}"></td>
+            <td>${cIn('show_payments',p.id,'invoice_number',p.invoice_number)}</td>
+            <td>${cIn('show_payments',p.id,'sent_at',p.sent_at,'date')}</td>
+            <td class="${p.paid_at?'done-cell':''}">${cIn('show_payments',p.id,'paid_at',p.paid_at,'date')}</td>
+            <td><button class="btn small ghost danger" data-act="delPay" data-id="${p.id}" aria-label="Supprimer la ligne">✕</button></td></tr>`;}).join('')}
+          </tbody></table></div>
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="btn small" data-act="addPay" data-kind="acompte" data-id="${s.id}">Ajouter un acompte</button>
+          <button class="btn small" data-act="addPay" data-kind="cnm" data-id="${s.id}">Ajouter la taxe CNM</button>
+          <button class="btn small" data-act="addPay" data-kind="autre" data-id="${s.id}">Autre ligne</button>
+          <button class="btn small" data-act="editShow" data-id="${s.id}">Fiche complète</button>
+        </div>
+        <p class="muted" style="font-size:12px;margin:8px 0 0">Montant vide = calcul automatique sur le cachet HT. Un montant saisi à la main apparaît en orange.</p>
+      </div>
+    </div>` : ''}
+  </div>`;
+}
+
+function driveHTML(s){
+  if (s.drive_folder_id) return `📁 <a href="https://drive.google.com/drive/folders/${esc(s.drive_folder_id)}" target="_blank" rel="noopener">Ouvrir le dossier Drive</a>`;
+  if (s.drive_folder_error) return `<span class="err">Dossier Drive non créé : ${esc(s.drive_folder_error)}</span> <button class="btn small" data-act="retryDrive" data-id="${s.id}">Réessayer</button>`;
+  if (s.drive_folder_requested_at) return `<span class="muted">Dossier Drive en cours de création…</span> <button class="btn small" data-act="reloadShow" data-id="${s.id}">Actualiser</button>`;
+  return `<span class="muted">Pas de dossier Drive.</span> <button class="btn small" data-act="retryDrive" data-id="${s.id}">Créer le dossier</button>`;
+}
+
+// ─────────────────────────── Ticketing ───────────────────────────
+function viewTicketing(){
+  const all = showsFiltered().filter(s => s.status && s.status.startsWith('Confirmée'));
+  const shows = all.filter(s => s.ticketing_enabled);
+  const others = all.filter(s => !s.ticketing_enabled);
+  const rows = shows.map(s => {
+    const avail = (s.capacity||0) - (s.comps||0);
+    const remain = s.capacity!=null ? avail - (s.tickets_sold||0) : null;
+    const rate = s.capacity ? Math.round(((s.tickets_sold||0)/Math.max(avail,1))*100) : null;
+    return `<tr><td>${fmtDate(s.date)}</td><td><b>${esc(s.venue)}</b><br><span class="muted">${esc(s.city||'')}</span></td>
+      <td>${esc(s.contract_type||'')}</td>
+      <td class="num">${cIn('shows',s.id,'capacity',s.capacity,'number')}</td>
+      <td class="num">${cIn('shows',s.id,'comps',s.comps,'number')}</td>
+      <td class="num">${cIn('shows',s.id,'tickets_sold',s.tickets_sold,'number')}</td>
+      <td class="num">${remain??'—'}</td>
+      <td class="num"><b style="color:${rate==null?'inherit':rate>=80?'var(--ok)':rate<40?'var(--danger)':'var(--warn)'}">${rate==null?'—':rate+' %'}</b></td>
+      <td>${cIn('shows',s.id,'ticketing_url',s.ticketing_url,'url','placeholder="Lien billetterie"')}</td>
+      <td title="Concernée par le ticketing">${cChk('shows',s.id,'ticketing_enabled',s.ticketing_enabled)}</td></tr>`;
+  }).join('');
+  return `<div class="view-head"><h1>Ticketing ${S.year}</h1><span class="sub">${shows.length} dates suivies</span></div>
+    ${shows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Lieu</th><th>Contrat</th><th class="num">Jauge</th><th class="num">Invit.</th><th class="num">Vendus</th><th class="num">Restants</th><th class="num">Remplissage</th><th>Billetterie</th><th>Suivi</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : `<div class="empty panel">Aucune date suivie en ticketing. Coche une date ci-dessous pour l'ajouter.</div>`}
+    ${notConcerned(others,'ticketing_enabled','ticketing')}`;
+}
+
+function notConcerned(list, field, label){
+  if (!list.length) return '';
+  return `<div class="section-title">Dates confirmées non concernées par le ${label}</div>
+    <div class="tbl-wrap"><table><tbody>${list.map(s=>`<tr><td>${fmtDate(s.date)}</td><td>${esc(s.venue)}</td><td class="muted">${esc(s.city||'')}</td><td class="muted">${esc(s.contract_type||'')}</td>
+      <td><label>${cChk('shows',s.id,field,false)} Ajouter</label></td></tr>`).join('')}</tbody></table></div>`;
+}
+
+// ─────────────────────────── Communication ───────────────────────────
+function viewCommunication(){
+  const all = showsFiltered().filter(s => s.status && s.status.startsWith('Confirmée'));
+  const shows = all.filter(s => s.communication_enabled);
+  const others = all.filter(s => !s.communication_enabled);
+  const contacts = S.db.contacts.slice().sort((a,b)=>a.display_name.localeCompare(b.display_name)).map(c=>[c.id,c.display_name]);
+  const rows = shows.map(s => `<tr>
+    <td class="sticky">${fmtDate(s.date)}<br><b>${esc(s.venue)}</b></td>
+    <td>${cIn('shows',s.id,'conf_kit_sent',s.conf_kit_sent,'date')}</td>
+    <td>${cIn('shows',s.id,'boucle_com',s.boucle_com,'date')}</td>
+    <td>${cIn('shows',s.id,'poster_request_date',s.poster_request_date,'date')}</td>
+    <td>${cSel('shows',s.id,'poster_status',s.poster_status,POSTER)}</td>
+    <td class="num">${cIn('shows',s.id,'poster_a3',s.poster_a3,'number','style="min-width:55px"')}</td>
+    <td class="num">${cIn('shows',s.id,'poster_a2',s.poster_a2,'number','style="min-width:55px"')}</td>
+    <td class="num">${cIn('shows',s.id,'poster_b1',s.poster_b1,'number','style="min-width:55px"')}</td>
+    <td>${cSel('shows',s.id,'poster_contact_id',s.poster_contact_id,contacts)}</td>
+    <td>${cIn('shows',s.id,'poster_delivery',s.poster_delivery)}</td>
+    <td>${cIn('shows',s.id,'ticketing_url',s.ticketing_url,'url')}</td>
+    <td>${cIn('shows',s.id,'instagram_url',s.instagram_url,'url')}</td>
+    <td>${cIn('shows',s.id,'facebook_url',s.facebook_url,'url')}</td>
+    <td title="Concernée par la communication">${cChk('shows',s.id,'communication_enabled',s.communication_enabled)}</td></tr>`).join('');
+  return `<div class="view-head"><h1>Communication ${S.year}</h1><span class="sub">${shows.length} dates suivies</span></div>
+    ${shows.length ? `<div class="tbl-wrap"><table><thead><tr><th class="sticky">Date</th><th>Conf + FT + kit</th><th>Boucle com</th><th>Demande affiches</th><th>Suivi affiches</th><th class="num">A3</th><th class="num">A2</th><th class="num">B1</th><th>Référent affiches</th><th>Livraison</th><th>Billetterie</th><th>Instagram</th><th>Facebook</th><th>Suivi</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : `<div class="empty panel">Aucune date suivie en communication.</div>`}
+    ${notConcerned(others,'communication_enabled','communication')}`;
+}
+
+// ─────────────────────────── Projets ───────────────────────────
+function viewProjects(){
+  if (S.projectPage) return projectPage(byId('projects', S.projectPage));
+  const card = p => {
+    const shows = S.db.shows.filter(s=>s.project_id===p.id);
+    const yr = shows.filter(s=>s.date && Number(s.date.slice(0,4))===S.year);
+    const tasks = S.db.tasks.filter(t=>t.project_id===p.id && !['Done','Cancelled'].includes(t.status));
+    return `<div class="panel pcard" data-act="openProject" data-id="${p.id}">
+      <h3>${esc(p.name)}</h3><span class="muted">${p.active?'Actif':'Inactif'}</span>
+      <div class="stats"><span><b>${yr.filter(s=>stClass(s.status)==='conf').length}</b>confirmées ${S.year}</span><span><b>${yr.filter(s=>['int','opt'].includes(stClass(s.status))).length}</b>en cours</span><span><b>${tasks.length}</b>tâches</span></div></div>`;
+  };
+  const act = S.db.projects.filter(p=>p.active).sort((a,b)=>a.name.localeCompare(b.name));
+  const ina = S.db.projects.filter(p=>!p.active).sort((a,b)=>a.name.localeCompare(b.name));
+  return `<div class="view-head"><h1>Projets</h1><span class="spacer"></span><button class="btn primary" data-act="newProject">Nouveau projet</button></div>
+    <div class="grid-cards">${act.map(card).join('') || '<div class="empty">Aucun projet actif.</div>'}</div>
+    ${ina.length?`<div class="section-title">Inactifs</div><div class="grid-cards">${ina.map(card).join('')}</div>`:''}`;
+}
+
+function projectPage(p){
+  if (!p) { S.projectPage=null; return viewProjects(); }
+  const shows = S.db.shows.filter(s=>s.project_id===p.id).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const tasks = S.db.tasks.filter(t=>t.project_id===p.id).sort(taskSort);
+  const byYear = {};
+  shows.forEach(s=>{ const y=s.date?s.date.slice(0,4):'Sans date'; (byYear[y]=byYear[y]||[]).push(s); });
+  return `<div class="view-head"><button class="btn ghost" data-act="closeProject">← Projets</button><h1>${esc(p.name)}</h1>
+    <span class="muted">${p.active?'Actif':'Inactif'}</span><span class="spacer"></span>
+    ${p.drive_artist_folder_id?`<a class="btn" href="https://drive.google.com/drive/folders/${esc(p.drive_artist_folder_id)}" target="_blank" rel="noopener">Dossier Drive</a>`:''}
+    <button class="btn" data-act="editProject" data-id="${p.id}">Modifier</button>
+    <button class="btn primary" data-act="newShow" data-project="${p.id}">Nouvelle date</button></div>
+    ${p.notes?`<div class="panel" style="padding:12px;margin-bottom:12px;white-space:pre-wrap">${esc(p.notes)}</div>`:''}
+    <div class="tbl-wrap"><table><thead><tr><th>Année</th><th class="num">Dates</th><th class="num">Confirmées</th><th class="num">Options</th><th class="num">Intérêts</th><th class="num">Cachets confirmés</th></tr></thead><tbody>
+    ${Object.entries(byYear).map(([y,l])=>`<tr><td><b>${y}</b></td><td class="num">${l.length}</td><td class="num">${l.filter(s=>stClass(s.status)==='conf').length}</td><td class="num">${l.filter(s=>stClass(s.status)==='opt').length}</td><td class="num">${l.filter(s=>stClass(s.status)==='int').length}</td><td class="num">${eur(l.filter(s=>stClass(s.status)==='conf').reduce((a,s)=>a+(Number(s.fee_ht)||0),0))}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Aucune date.</td></tr>'}
+    </tbody></table></div>
+    <div class="section-title">Tâches</div>${taskTable(tasks)}
+    <div class="section-title">Dates</div>
+    <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Lieu</th><th>Ville</th><th>Statut</th><th class="num">Cachet</th></tr></thead><tbody>
+      ${shows.map(s=>`<tr class="click" data-act="editShow" data-id="${s.id}"><td>${fmtDate(s.date)}</td><td>${esc(s.venue)}</td><td>${esc(s.city||'')}</td><td><span class="st ${stClass(s.status)}">${esc(s.status)}</span></td><td class="num">${eur(s.fee_ht)}</td></tr>`).join('')}
+    </tbody></table></div>`;
+}
+
+// ─────────────────────────── To Do ───────────────────────────
+function urgency(t){
+  if (['Done','Cancelled'].includes(t.status)) return null;
+  const d = daysUntil(t.deadline);
+  if (d==null) return t.priority ? {cls:{'D-Day':'today',Critical:'crit',High:'high',Medium:'med',Low:'low'}[t.priority]||'med', label:t.priority} : null;
+  if (d<0) return {cls:'late', label:`En retard de ${-d} j`};
+  if (d===0) return {cls:'today', label:"Aujourd'hui"};
+  if (d<=2) return {cls:'crit', label:`J-${d}`};
+  if (d<=7) return {cls:'high', label:`J-${d}`};
+  if (d<=21) return {cls:'med', label:`J-${d}`};
+  return {cls:'low', label:`J-${d}`};
+}
+function taskSort(a,b){
+  const done = t => ['Done','Cancelled'].includes(t.status) ? 1 : 0;
+  return done(a)-done(b) || (a.deadline||'9999').localeCompare(b.deadline||'9999');
+}
+function taskTable(tasks){
+  if (!tasks.length) return `<div class="empty panel">Rien à faire ici. Ajoute une tâche avec « Nouvelle tâche ».</div>`;
+  return `<div class="tbl-wrap"><table><thead><tr><th></th><th>Tâche</th><th>Urgence</th><th>Échéance</th><th>Statut</th><th>Pour</th><th>Projet</th><th>Structure</th><th>Date</th></tr></thead><tbody>
+  ${tasks.map(t=>{ const u=urgency(t), sh=byId('shows',t.show_id);
+    return `<tr class="${['Done','Cancelled'].includes(t.status)?'task-done':''}">
+      <td><input type="checkbox" data-act="toggleTask" data-id="${t.id}" ${t.status==='Done'?'checked':''} aria-label="Marquer comme faite"></td>
+      <td class="click" data-act="editTask" data-id="${t.id}" style="white-space:normal;min-width:220px"><b>${esc(t.title)}</b>${t.tags?.length?' '+t.tags.map(x=>`<span class="tag">${esc(x)}</span>`).join(''):''}</td>
+      <td>${u?`<span class="urg ${u.cls}">${esc(u.label)}</span>`:''}</td>
+      <td>${cIn('tasks',t.id,'deadline',t.deadline,'date')}</td>
+      <td>${cSel('tasks',t.id,'status',t.status,TASK_STATUS,false)}</td>
+      <td>${cSel('tasks',t.id,'assigned_to',t.assigned_to,CFG.TEAM.map(e=>[e,e.split('@')[0]]))}</td>
+      <td>${esc(projName(t.project_id))}</td><td>${esc(structName(t.structure_id))}</td>
+      <td>${sh?esc(fmtDate(sh.date)+' '+sh.venue):''}</td></tr>`;}).join('')}
+  </tbody></table></div>`;
+}
+function viewTodo(){
+  const f = S.todoFilter || 'open';
+  let tasks = S.db.tasks.filter(t => !S.project || t.project_id===S.project);
+  if (f==='open') tasks = tasks.filter(t=>!['Done','Cancelled'].includes(t.status));
+  if (f==='mine') tasks = tasks.filter(t=>!['Done','Cancelled'].includes(t.status) && t.assigned_to===S.user.email);
+  if (f==='late') tasks = tasks.filter(t=>{ const d=daysUntil(t.deadline); return d!=null && d<=7 && !['Done','Cancelled'].includes(t.status); });
+  const q = (S.search.todo||'').toLowerCase();
+  if (q) tasks = tasks.filter(t => (t.title+' '+projName(t.project_id)+' '+structName(t.structure_id)).toLowerCase().includes(q));
+  tasks.sort(taskSort);
+  const btn = (k,l) => `<button class="btn small ${f===k?'primary':''}" data-act="todoFilter" data-f="${k}">${l}</button>`;
+  return `<div class="view-head"><h1>To Do</h1>${btn('open','À faire')}${btn('mine','Les miennes')}${btn('late','Urgentes (≤ 7 j)')}${btn('all','Toutes')}
+    <span class="spacer"></span><input class="search" placeholder="Rechercher une tâche" data-search="todo" value="${esc(S.search.todo||'')}">
+    <button class="btn primary" data-act="newTask">Nouvelle tâche</button></div>${taskTable(tasks)}`;
+}
+
+// ─────────────────────────── Prospection ───────────────────────────
+function viewProspects(){
+  const q = (S.search.prospects||'').toLowerCase();
+  let rows = S.db.prospects.filter(p => !S.project || p.project_id===S.project);
+  if (q) rows = rows.filter(p => (p.name+' '+structName(p.structure_id)).toLowerCase().includes(q));
+  rows.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''));
+  return `<div class="view-head"><h1>Prospection</h1><span class="sub">${rows.length} suivis</span><span class="spacer"></span>
+    <input class="search" placeholder="Rechercher" data-search="prospects" value="${esc(S.search.prospects||'')}">
+    <button class="btn primary" data-act="newProspect">Nouveau suivi</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Suivi</th><th>Statut</th><th>Projet</th><th>Structure</th><th>Dernier contact</th><th>Notes</th></tr></thead><tbody>
+    ${rows.slice(0,500).map(p=>`<tr><td class="click" data-act="editProspect" data-id="${p.id}"><b>${esc(p.name)}</b></td>
+      <td>${cSel('prospects',p.id,'status',p.status,PROSPECT,false)}</td><td>${esc(projName(p.project_id))}</td><td>${esc(structName(p.structure_id))}</td>
+      <td>${cIn('prospects',p.id,'last_contact',p.last_contact,'date')}</td><td class="muted" style="white-space:normal">${esc((p.notes||'').slice(0,120))}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aucun suivi.</td></tr>'}
+    </tbody></table></div>`;
+}
+
+// ─────────────────────────── Contacts & structures ───────────────────────────
+function linksOfContact(id){ return S.db.contact_structures.filter(l=>l.contact_id===id).map(l=>byId('structures',l.structure_id)).filter(Boolean); }
+function linksOfStructure(id){ return S.db.contact_structures.filter(l=>l.structure_id===id).map(l=>byId('contacts',l.contact_id)).filter(Boolean); }
+
+function viewContacts(){
+  const q = (S.search.contacts||'').toLowerCase();
+  let rows = S.db.contacts;
+  if (q) rows = rows.filter(c => [c.display_name,c.email,c.phone,...linksOfContact(c.id).map(s=>s.name)].join(' ').toLowerCase().includes(q));
+  rows = rows.slice().sort((a,b)=>a.display_name.localeCompare(b.display_name));
+  return `<div class="view-head"><h1>Contacts</h1><span class="sub">${rows.length} personnes</span><span class="spacer"></span>
+    <input class="search" placeholder="Nom, mail, structure…" data-search="contacts" value="${esc(S.search.contacts||'')}">
+    <button class="btn primary" data-act="newContact">Nouveau contact</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Nom</th><th>Structures</th><th>Poste</th><th>Mail</th><th>Téléphone</th></tr></thead><tbody>
+    ${rows.slice(0,400).map(c=>`<tr class="click" data-act="editContact" data-id="${c.id}"><td><b>${esc(c.display_name)}</b></td>
+      <td style="white-space:normal">${linksOfContact(c.id).map(s=>`<span class="tag">${esc(s.name)}</span>`).join('')}</td>
+      <td style="white-space:normal">${(c.roles||[]).map(r=>`<span class="tag">${esc(r)}</span>`).join('')}</td>
+      <td>${c.email?`<a href="mailto:${esc(c.email)}" onclick="event.stopPropagation()">${esc(c.email)}</a>`:''}</td><td>${esc(c.phone||'')}</td></tr>`).join('')}
+    </tbody></table>${rows.length>400?`<p class="muted" style="padding:8px">400 premiers résultats affichés — affine la recherche.</p>`:''}</div>`;
+}
+
+function viewStructures(){
+  const q = (S.search.structures||'').toLowerCase();
+  let rows = S.db.structures;
+  if (q) rows = rows.filter(s => [s.name,s.city,s.region,s.country,...(s.tags||[])].join(' ').toLowerCase().includes(q));
+  rows = rows.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  return `<div class="view-head"><h1>Structures</h1><span class="sub">${rows.length} structures</span><span class="spacer"></span>
+    <input class="search" placeholder="Nom, ville, région, tag…" data-search="structures" value="${esc(S.search.structures||'')}">
+    <button class="btn primary" data-act="newStructure">Nouvelle structure</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Structure</th><th>Tags</th><th>Ville</th><th>Région</th><th>Pays</th><th class="num">Jauge</th><th>Contacts</th></tr></thead><tbody>
+    ${rows.slice(0,400).map(s=>`<tr class="click" data-act="editStructure" data-id="${s.id}"><td><b>${esc(s.name)}</b></td>
+      <td style="white-space:normal">${(s.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</td>
+      <td>${esc(s.city||'')}</td><td>${esc(s.region||'')}</td><td>${esc(s.country||'')}</td>
+      <td class="num">${[s.capacity_1,s.capacity_2].filter(Boolean).join(' / ')}</td>
+      <td>${linksOfStructure(s.id).length||''}</td></tr>`).join('')}
+    </tbody></table>${rows.length>400?`<p class="muted" style="padding:8px">400 premiers résultats affichés — affine la recherche.</p>`:''}</div>`;
+}
+
+// ─────────────────────────── Réglages ───────────────────────────
+function viewSettings(){
+  const keys = [['default_acompte_pct','Acompte par défaut (% du cachet)'],['default_solde_pct','Solde par défaut (%)'],['default_artbo_pct',"Commission L'ArtBo si le projet n'en précise pas (%)"],['default_cnm_pct','Taxe CNM (%)']];
+  return `<div class="view-head"><h1>Réglages</h1></div>
+  <div class="grid-cards" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr))">
+    <div class="panel" style="padding:16px"><h3 style="margin-top:0">Pourcentages par défaut</h3>
+      <p class="muted">Appliqués aux nouvelles dates confirmées. Chaque date et chaque projet peuvent les remplacer.</p>
+      <div class="steps">${keys.map(([k,l])=>`<label>${l}</label><input type="number" step="any" data-act-setting="${k}" value="${esc(setting(k)??'')}">`).join('')}</div></div>
+    <div class="panel" style="padding:16px"><h3 style="margin-top:0">Partenaires / co-producteurs</h3><p class="muted">% de la commission L'ArtBo reversé au partenaire. Le partenaire s'applique aux projets où il est choisi.</p>
+      <table><tbody>${S.db.partners.map(p=>`<tr><td>${cIn('partners',p.id,'name',p.name)}</td><td class="num">${cIn('partners',p.id,'default_pct',p.default_pct,'number','step="any"')} %</td></tr>`).join('')}</tbody></table>
+      <button class="btn small" data-act="newPartner" style="margin-top:8px">Ajouter un partenaire</button></div>
+  </div>`;
+}
+document.addEventListener('change', async e => {
+  const k = e.target.dataset.actSetting; if (!k) return;
+  const v = e.target.value===''?null:Number(e.target.value);
+  const {error} = await sb.from('settings').update({value: v}).eq('key', k);
+  if (error) return toast(error.message, true);
+  const s = S.db.settings.find(x=>x.key===k); if (s) s.value=v; toast('Réglage enregistré');
+});
+
+// ─────────────────────────── Formulaires (modale) ───────────────────────────
+function field(f, v){
+  const id = 'fld-'+f.k, cls = 'field'+(f.full?' full':'')+(f.type==='checkbox'?' check':'');
+  if (f.type==='checkbox') return `<div class="${cls}"><input id="${id}" type="checkbox" name="${f.k}" ${v?'checked':''}><label for="${id}">${f.label}</label></div>`;
+  let input;
+  if (f.type==='select') input = `<select id="${id}" name="${f.k}">${f.blank===false?'':'<option value=""></option>'}${f.options.map(o=>{const [val,lab]=Array.isArray(o)?o:[o,o];return `<option value="${esc(val)}" ${String(val)===String(v??'')?'selected':''}>${esc(lab)}</option>`;}).join('')}</select>`;
+  else if (f.type==='textarea') input = `<textarea id="${id}" name="${f.k}">${esc(v??'')}</textarea>`;
+  else if (f.type==='tags') input = `<input id="${id}" name="${f.k}" value="${esc((v||[]).join(', '))}" placeholder="séparés par des virgules" list="${f.list||''}">`;
+  else if (f.type==='links') input = linksPicker(f, v);
+  else input = `<input id="${id}" type="${f.type||'text'}" name="${f.k}" value="${esc(v??'')}" ${f.type==='number'?'step="any"':''}>`;
+  return `<div class="${cls}"><label for="${id}">${f.label}</label>${input}</div>`;
+}
+function linksPicker(f, ids){
+  const src = S.db[f.source];
+  return `<div class="chips" data-links="${f.k}">${(ids||[]).map(id=>{const r=src.find(x=>x.id===id); return r?`<span class="chip" data-lid="${id}">${esc(r[f.labelKey])}<button type="button" data-act="unlink" aria-label="Retirer">✕</button></span>`:'';}).join('')}</div>
+    <input list="dl-${f.k}" placeholder="Taper pour ajouter…" data-linkinput="${f.k}">
+    <datalist id="dl-${f.k}">${src.map(r=>`<option value="${esc(r[f.labelKey])}">`).join('')}</datalist>`;
+}
+document.addEventListener('change', e => {
+  const k = e.target.dataset.linkinput; if (!k) return;
+  const f = MODAL.fields.find(x=>x.k===k); const r = S.db[f.source].find(x=>x[f.labelKey]===e.target.value);
+  if (!r) return; const box = $(`[data-links="${k}"]`);
+  if (!box.querySelector(`[data-lid="${r.id}"]`)) box.insertAdjacentHTML('beforeend', `<span class="chip" data-lid="${r.id}">${esc(r[f.labelKey])}<button type="button" data-act="unlink" aria-label="Retirer">✕</button></span>`);
+  e.target.value='';
+});
+
+let MODAL = null;
+function openModal({title, fields, values={}, onSave, onDelete, extra=''}){
+  MODAL = {fields, onSave, onDelete};
+  const dlg = $('#modal');
+  dlg.innerHTML = `<form method="dialog" id="mform">
+    <div class="modal-head"><h2>${esc(title)}</h2><button type="button" class="btn ghost" data-act="closeModal" aria-label="Fermer">✕</button></div>
+    <div class="modal-body">${fields.map(f=>field(f, values[f.k])).join('')}${extra}</div>
+    <div class="modal-foot">${onDelete?'<button type="button" class="btn danger left" data-act="modalDelete">Supprimer</button>':''}
+      <button type="button" class="btn" data-act="closeModal">Annuler</button><button class="btn primary" type="submit">Enregistrer</button></div></form>`;
+  dlg.showModal();
+  $('#mform').onsubmit = async ev => {
+    ev.preventDefault();
+    const out = {};
+    for (const f of fields){
+      if (f.type==='links'){ out[f.k] = [...document.querySelectorAll(`[data-links="${f.k}"] [data-lid]`)].map(c=>c.dataset.lid); continue; }
+      const el = ev.target.elements[f.k]; if (!el) continue;
+      let v = f.type==='checkbox' ? el.checked : el.value;
+      if (f.type==='number') v = v===''?null:Number(v);
+      else if (f.type==='tags') v = v.split(',').map(x=>x.trim()).filter(Boolean);
+      else if (v==='') v = null;
+      out[f.k] = v;
+    }
+    const ok = await onSave(out);
+    if (ok!==false){ dlg.close(); render(); }
+  };
+}
+
+const optsOf = (t, label='name') => S.db[t].slice().sort((a,b)=>String(a[label]).localeCompare(String(b[label]))).map(r=>[r.id, r[label]]);
+
+function showFields(){
+  return [
+    {k:'venue', label:'Festival / Salle', full:true},
+    {k:'project_id', label:'Projet', type:'select', options:optsOf('projects')},
+    {k:'status', label:'Statut', type:'select', options:STATUSES, blank:false},
+    {k:'date', label:'Date', type:'date'}, {k:'date_end', label:'Fin (si plusieurs jours)', type:'date'},
+    {k:'structure_id', label:'Structure', type:'select', options:optsOf('structures')},
+    {k:'city', label:'Ville'}, {k:'department', label:'Département / pays (ex. 75, CH)'},
+    {k:'contract_type', label:'Type de contrat', type:'select', options:CONTRACTS},
+    {k:'ticketing_type', label:'Billetterie', type:'select', options:TICKETING},
+    {k:'fee_ht', label:'Cachet HT (€)', type:'number'}, {k:'request_date', label:'Date de la demande', type:'date'},
+    {k:'capacity', label:'Jauge', type:'number'},
+    {k:'ticketing_enabled', label:'Concernée par le ticketing', type:'checkbox'},
+    {k:'communication_enabled', label:'Concernée par la communication', type:'checkbox'},
+    {k:'notes', label:'Notes', type:'textarea', full:true},
+  ];
+}
+
+async function fillCoords(row, fallbackQuery){
+  if (row.lat!=null && row.lng!=null) return;
+  if (!fallbackQuery) return;
+  const g = await geocode(fallbackQuery); if (g){ row.lat=g.lat; row.lng=g.lng; }
+}
+
+const ACTIONS = {
+  closeModal: () => $('#modal').close(),
+  modalDelete: async () => { if (confirm('Supprimer définitivement ?')){ await MODAL.onDelete(); $('#modal').close(); render(); } },
+  unlink: t => t.closest('.chip').remove(),
+  toggleCancelled: () => { S.showCancelled=!S.showCancelled; render(); },
+  pick: (t, e) => { e.stopPropagation(); const p=t.dataset.p; S.routePick[p] = S.routePick[p]===t.dataset.id ? null : t.dataset.id; render(); },
+  toggleProd: t => { const id=t.dataset.id; S.openProd.has(id)?S.openProd.delete(id):S.openProd.add(id); render(); },
+  expandAll: () => { const ids = showsFiltered().filter(s=>CONFIRMED_PROD.includes(s.status)).map(s=>s.id); if (ids.every(i=>S.openProd.has(i))) S.openProd.clear(); else ids.forEach(i=>S.openProd.add(i)); render(); },
+  todoFilter: t => { S.todoFilter=t.dataset.f; render(); },
+  openProject: t => { S.projectPage=t.dataset.id; render(); window.scrollTo(0,0); },
+  closeProject: () => { S.projectPage=null; render(); },
+  reloadShow: async t => { await refreshShowSide(t.dataset.id); render(); },
+  retryDrive: async t => {
+    const {error} = await sb.rpc('request_drive_folder', {p_show: t.dataset.id});
+    if (error) return toast(error.message, true);
+    toast('Création du dossier demandée'); setTimeout(async()=>{ await refreshShowSide(t.dataset.id); render(); }, 6000);
+    await refreshShowSide(t.dataset.id); render();
+  },
+  addPay: async t => {
+    const kind = t.dataset.kind, showId = t.dataset.id;
+    const n = paymentsOf(showId).filter(p=>p.kind===kind).length;
+    const sort = Math.max(0,...paymentsOf(showId).map(p=>p.sort||0)) + 1;
+    const sh = byId('shows', showId), pn = kind==='partner' && byId('partners', sh?.partner_id)?.name;
+    await insert('show_payments', {show_id:showId, kind, label: (pn ? 'Commission '+pn : PAY_KINDS[kind]) + (n?` ${n+1}`:''), pct: kind==='cnm'?Number(setting('default_cnm_pct'))||null:null, sort});
+    render();
+  },
+  delPay: async t => { if (confirm('Supprimer cette ligne ?') && await remove('show_payments', t.dataset.id)) render(); },
+  toggleTask: async t => { await save('tasks', t.dataset.id, {status: t.checked?'Done':'To Do', done_at: t.checked?new Date().toISOString():null}); },
+
+  newShow: t => editShow(null, t.dataset.project || S.project),
+  editShow: (t, e) => { if (e.target.closest('.pick')) return; editShow(t.dataset.id); },
+  newProject: () => editProject(null), editProject: t => editProject(t.dataset.id),
+  newTask: () => editTask(null), editTask: t => editTask(t.dataset.id),
+  newContact: () => editContact(null), editContact: t => editContact(t.dataset.id),
+  newStructure: () => editStructure(null), editStructure: t => editStructure(t.dataset.id),
+  newProspect: () => editProspect(null), editProspect: t => editProspect(t.dataset.id),
+  newPartner: async () => { const n = prompt('Nom du partenaire'); if (n && await insert('partners',{name:n})) render(); },
+};
+
+function editShow(id, projectId){
+  const s = id ? byId('shows', id) : {status:'Intérêt Salle', project_id: projectId||null, communication_enabled:true, date:null};
+  openModal({
+    title: id ? s.venue : 'Nouvelle date', fields: showFields(), values: s,
+    extra: id && s.status?.startsWith('Confirmée') ? `<div class="full drive">${driveHTML(s)}</div>` : '',
+    onDelete: id ? () => remove('shows', id) : null,
+    onSave: async v => {
+      if (!v.venue) { toast('Indique le nom du lieu', true); return false; }
+      const st = byId('structures', v.structure_id);
+      if (st){ v.city = v.city || st.city; }
+      const changedPlace = !id || v.city!==s.city || v.structure_id!==s.structure_id;
+      if (changedPlace){ v.lat=null; v.lng=null;
+        if (st && st.lat!=null){ v.lat=st.lat; v.lng=st.lng; }
+        else await fillCoords(v, [v.city, v.department && /^\d/.test(v.department) ? 'France' : ''].filter(Boolean).join(', '));
+      }
+      if (id) await save('shows', id, v, {rerender:false}); else await insert('shows', v);
+      if (CONFIRMED_PROD.includes(v.status) && !CONFIRMED_PROD.includes(s.status)) toast('Date confirmée : lignes de facturation et dossier Drive créés');
+    }
+  });
+}
+
+function editProject(id){
+  const p = id ? byId('projects', id) : {active:true};
+  openModal({ title: id ? p.name : 'Nouveau projet', values: p,
+    fields: [
+      {k:'name', label:'Nom', full:true}, {k:'active', label:'Projet actif', type:'checkbox'},
+      {k:'default_partner_id', label:'Co-producteur par défaut', type:'select', options:optsOf('partners')},
+      {k:'default_artbo_pct', label:"% L'ArtBo (15 ou 20)", type:'number'}, {k:'default_partner_pct', label:'% partenaire sur la commission', type:'number'},
+      {k:'drive_artist_folder_id', label:'ID du dossier artiste dans Drive (trouvé automatiquement sinon)', full:true},
+      {k:'notes', label:'Notes', type:'textarea', full:true},
+    ],
+    onDelete: id ? () => remove('projects', id) : null,
+    onSave: async v => { if (!v.name) return false; if (id) await save('projects', id, v, {rerender:false}); else await insert('projects', v); }
+  });
+}
+
+function editTask(id){
+  const t = id ? byId('tasks', id) : {status:'To Do', assigned_to: S.user.email, project_id: S.project || null};
+  const shows = S.db.shows.filter(s=>s.status!=='Annulée').sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(s=>[s.id, `${fmtDate(s.date)} — ${s.venue}`]);
+  openModal({ title: id ? 'Tâche' : 'Nouvelle tâche', values: t,
+    fields: [
+      {k:'title', label:'Tâche', full:true},
+      {k:'deadline', label:'Échéance', type:'date'}, {k:'status', label:'Statut', type:'select', options:TASK_STATUS, blank:false},
+      {k:'assigned_to', label:'Pour', type:'select', options:CFG.TEAM.map(e=>[e,e.split('@')[0]])},
+      {k:'priority', label:'Priorité (si pas d’échéance)', type:'select', options:PRIORITIES},
+      {k:'project_id', label:'Projet', type:'select', options:optsOf('projects')},
+      {k:'structure_id', label:'Structure', type:'select', options:optsOf('structures')},
+      {k:'show_id', label:'Date', type:'select', options:shows, full:true},
+      {k:'department', label:'Pôle', type:'select', options:DEPARTMENTS}, {k:'tags', label:'Tags (Call, Mail…)', type:'tags'},
+      {k:'notes', label:'Notes', type:'textarea', full:true},
+    ],
+    onDelete: id ? () => remove('tasks', id) : null,
+    onSave: async v => { if (!v.title) return false; if (id) await save('tasks', id, v, {rerender:false}); else await insert('tasks', v); }
+  });
+}
+
+async function syncLinks(kind, id, ids){
+  const col = kind==='contact' ? 'contact_id' : 'structure_id', other = kind==='contact' ? 'structure_id' : 'contact_id';
+  const current = S.db.contact_structures.filter(l=>l[col]===id).map(l=>l[other]);
+  const add = ids.filter(x=>!current.includes(x)), del = current.filter(x=>!ids.includes(x));
+  if (add.length){ const rows = add.map(x=>({[col]:id,[other]:x})); const {error}=await sb.from('contact_structures').insert(rows); if(!error) S.db.contact_structures.push(...rows); else toast(error.message,true); }
+  for (const x of del){ await sb.from('contact_structures').delete().eq(col,id).eq(other,x); S.db.contact_structures = S.db.contact_structures.filter(l=>!(l[col]===id && l[other]===x)); }
+}
+
+function editContact(id){
+  const c = id ? byId('contacts', id) : {};
+  const links = id ? linksOfContact(id).map(s=>s.id) : [];
+  openModal({ title: id ? c.display_name : 'Nouveau contact', values: {...c, _structures: links},
+    fields: [
+      {k:'first_name', label:'Prénom'}, {k:'last_name', label:'Nom'},
+      {k:'_structures', label:'Structures', type:'links', source:'structures', labelKey:'name', full:true},
+      {k:'roles', label:'Poste(s)', type:'tags', full:true},
+      {k:'email', label:'Mail', type:'email'}, {k:'email_2', label:'Mail 2', type:'email'},
+      {k:'phone', label:'Téléphone'}, {k:'phone_2', label:'Téléphone 2'},
+      {k:'notes', label:'Notes', type:'textarea', full:true},
+    ],
+    onDelete: id ? () => remove('contacts', id) : null,
+    onSave: async v => {
+      const ids = v._structures; delete v._structures;
+      v.display_name = [v.first_name, v.last_name].filter(Boolean).join(' ') || c.display_name || v.email;
+      if (!v.display_name){ toast('Indique au moins un nom', true); return false; }
+      let row; if (id){ await save('contacts', id, v, {rerender:false}); row={id}; } else row = await insert('contacts', v);
+      if (row) await syncLinks('contact', row.id, ids);
+    }
+  });
+}
+
+function editStructure(id){
+  const s = id ? byId('structures', id) : {country:'France'};
+  const links = id ? linksOfStructure(id).map(c=>c.id) : [];
+  const shows = id ? S.db.shows.filter(x=>x.structure_id===id).sort((a,b)=>(b.date||'').localeCompare(a.date||'')) : [];
+  openModal({ title: id ? s.name : 'Nouvelle structure', values: {...s, _contacts: links},
+    fields: [
+      {k:'name', label:'Nom', full:true},
+      {k:'_contacts', label:'Contacts', type:'links', source:'contacts', labelKey:'display_name', full:true},
+      {k:'tags', label:'Tags (Festival, SMAC, Salle…)', type:'tags', full:true},
+      {k:'address', label:'Adresse', full:true},
+      {k:'postal_code', label:'Code postal'}, {k:'city', label:'Ville'},
+      {k:'region', label:'Région'}, {k:'country', label:'Pays'},
+      {k:'capacity_1', label:'Jauge 1', type:'number'}, {k:'capacity_2', label:'Jauge 2', type:'number'},
+      {k:'pricing', label:'Tarif', type:'select', options:['Payant','Gratuit','Prix Libre']}, {k:'website', label:'Site web'},
+      {k:'notes', label:'Notes', type:'textarea', full:true},
+    ],
+    extra: shows.length ? `<div class="full"><label class="muted" style="font-size:12px;font-weight:600">Historique des dates</label>${shows.map(x=>`<div>${fmtDate(x.date)} — ${esc(projName(x.project_id))} <span class="st ${stClass(x.status)}">${esc(x.status)}</span></div>`).join('')}</div>` : '',
+    onDelete: id ? () => remove('structures', id) : null,
+    onSave: async v => {
+      const ids = v._contacts; delete v._contacts;
+      if (!v.name) return false;
+      if (!id || v.address!==s.address || v.city!==s.city){ v.lat=null; v.lng=null; await fillCoords(v, [v.address, v.postal_code, v.city, v.country].filter(Boolean).join(', ')); }
+      let row; if (id){ await save('structures', id, v, {rerender:false}); row={id}; } else row = await insert('structures', v);
+      if (row) await syncLinks('structure', row.id, ids);
+    }
+  });
+}
+
+function editProspect(id){
+  const p = id ? byId('prospects', id) : {status:'Mailed', project_id:S.project||null};
+  openModal({ title: id ? p.name : 'Nouveau suivi', values: p,
+    fields: [
+      {k:'name', label:'Intitulé', full:true}, {k:'status', label:'Statut', type:'select', options:PROSPECT, blank:false},
+      {k:'last_contact', label:'Dernier contact', type:'date'},
+      {k:'project_id', label:'Projet', type:'select', options:optsOf('projects')},
+      {k:'structure_id', label:'Structure', type:'select', options:optsOf('structures')},
+      {k:'contact_id', label:'Contact', type:'select', options:optsOf('contacts','display_name'), full:true},
+      {k:'notes', label:'Notes', type:'textarea', full:true},
+    ],
+    onDelete: id ? () => remove('prospects', id) : null,
+    onSave: async v => { if (!v.name) return false; if (id) await save('prospects', id, v, {rerender:false}); else await insert('prospects', v); }
+  });
+}
+
+// ─────────────────────────── Connexion ───────────────────────────
+function loginHTML(){
+  return `<div class="panel login"><h1>L'ArtBoristerie</h1><p>Matrice booking & production.</p>
+    <form id="login-form">
+      <input type="email" id="login-email" placeholder="prenom@lartboristerie.com" required autocomplete="email">
+      <input type="password" id="login-pw" placeholder="Mot de passe" required autocomplete="current-password">
+      <button class="btn primary" style="width:100%">Se connecter</button></form>
+    <p id="login-msg" class="muted" style="margin-top:12px"></p></div>`;
+}
+document.addEventListener('submit', async e => {
+  if (e.target.id!=='login-form') return; e.preventDefault();
+  const email = $('#login-email').value.trim().toLowerCase();
+  if (!CFG.TEAM.includes(email)){ $('#login-msg').textContent = "Cette adresse n'a pas accès à la matrice."; return; }
+  $('#login-msg').textContent = 'Connexion…';
+  const {data, error} = await sb.auth.signInWithPassword({email, password: $('#login-pw').value});
+  if (error){ $('#login-msg').textContent = 'Connexion impossible : mail ou mot de passe incorrect.'; return; }
+  S.user = data.user; $('#app').innerHTML = '<div class="empty">Chargement…</div>'; await loadAll(); render();
+});
+ACTIONS.changePw = async () => {
+  const pw = prompt('Nouveau mot de passe (8 caractères minimum)');
+  if (!pw) return;
+  if (pw.length < 8) return toast('Le mot de passe doit faire au moins 8 caractères', true);
+  const {error} = await sb.auth.updateUser({password: pw});
+  toast(error ? 'Changement impossible : '+error.message : 'Mot de passe changé', !!error);
+};
+
+async function boot(){
+  const {data:{session}} = await sb.auth.getSession();
+  S.user = session?.user || null;
+  if (S.user){ $('#app').innerHTML = '<div class="empty">Chargement…</div>'; await loadAll(); }
+  render();
+  sb.auth.onAuthStateChange(async (ev, session) => {
+    if (ev==='SIGNED_IN' && !S.user){ S.user=session.user; await loadAll(); render(); }
+    if (ev==='SIGNED_OUT'){ S.user=null; render(); }
+  });
+}
+boot();
+</script>
+</body>
+</html>
