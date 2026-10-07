@@ -492,8 +492,8 @@ function drawMap(){
   const el = $('#map'); if (!el) return;
   if (MAP){ MAP.remove(); MAP=null; }
   MAP = L.map(el, {scrollWheelZoom:true}).setView([46.6, 2.4], 6);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    attribution:'© OpenStreetMap, © CARTO', maxZoom:18}).addTo(MAP);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution:'© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>', maxZoom:18}).addTo(MAP);
   MAP_LAYER = L.layerGroup().addTo(MAP);
   let shows = showsFiltered(); if (!S.showCancelled) shows = shows.filter(s=>stClass(s.status)!=='off');
   const pts = [];
