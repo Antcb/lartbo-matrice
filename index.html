@@ -225,13 +225,67 @@ dialog::backdrop{background:rgba(15,18,26,.45)}
   .suivi-grid,.struct-top{grid-template-columns:1fr}
   .modal-body{grid-template-columns:1fr}
 }
-@media (max-width:600px){
-  main{padding:12px 16px}
-  .top-row{padding:8px 16px}
-  .search{min-width:0;width:100%}
-  .filters{width:100%}
-  .filters select{flex:1;min-width:0}
-  .who{width:100%}
+.mobile-only{display:none}
+.section-title.row{display:flex;align-items:center;gap:10px}
+@media (max-width:700px){
+  body{font-size:15px}
+  input,select,textarea{font-size:16px!important}           /* évite le zoom automatique d'iOS */
+  main{padding:12px 12px 40px}
+  .top{position:static}
+  .top-row{padding:8px 12px;gap:8px}
+  .brand{font-size:17px}
+  .tabs{order:3;flex-basis:100%;margin:0 -12px;padding:0 12px}
+  .tab{padding:7px 10px}
+  .filters{width:100%;order:2}
+  .filters select{flex:1;min-width:0;padding:7px 8px}
+  .who{width:100%;font-size:12px}
+  .view-head{gap:8px}
+  .view-head h1{font-size:22px;flex-basis:100%}
+  .view-head .spacer{display:none}
+  .view-head .btn.primary{margin-left:auto}
+  .search{min-width:0;width:100%;order:9}
+  .mobile-only{display:flex}
+  .pane-switch{gap:6px;margin-bottom:10px}
+  .booking.pane-list .map-wrap{display:none}
+  .booking.pane-map .list-wrap{display:none}
+  #map{height:58vh;min-height:320px}
+  .gig{grid-template-columns:44px 1fr;gap:10px}
+  .gig .right{grid-column:1/-1;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
+  .gig .day b{font-size:24px}
+  .prod-head{grid-template-columns:44px 1fr;gap:10px}
+  .prod-head .progress,.prod-head .st{grid-column:2}
+  .prod-body{padding:12px}
+  .steps{grid-template-columns:1fr 1.2fr}
+  /* Tableaux → fiches empilées */
+  .tbl-wrap{overflow:visible;background:none;border:0}
+  table.cards,table.cards tbody,table.cards tr,table.cards td{display:block;width:100%}
+  table.cards thead{display:none}
+  table.cards tr{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:8px;padding:6px 12px}
+  table.cards td{position:relative;border:0;padding:6px 0 6px 38%;white-space:normal;text-align:right;min-height:30px;overflow-wrap:anywhere}
+  table.cards td::before{content:attr(data-label);position:absolute;left:0;top:8px;width:36%;text-align:left;color:var(--muted);font-size:12px;font-weight:600}
+  table.cards td[data-label=""]{padding-left:0;text-align:left}
+  table.cards td[data-label=""]::before{display:none}
+  table.cards td.is-empty{display:none}
+  table.cards td:first-child{padding-left:0;text-align:left}
+  table.cards td:first-child::before{position:static;display:block;width:auto;margin-bottom:2px}
+  table.cards td.muted{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  table.cards td:first-child{font-size:15px}
+  table.cards td input,table.cards td select{width:100%;min-width:0;border-color:var(--line);text-align:right}
+  table.cards td:first-child input{text-align:left}
+  table.cards td input[type=checkbox]{max-width:none}
+  table.cards td.sticky{position:static}
+  table.cards td.empty{padding-left:0;text-align:center}
+  /* Modales plein écran */
+  dialog{position:fixed;inset:0;width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;margin:0}
+  dialog form{display:flex;flex-direction:column;height:100%}
+  .modal-body{max-height:none;flex:1}
+  .modal-foot{position:sticky;bottom:0;background:var(--panel)}
+  /* Suivi */
+  .suivi{padding:12px}
+  .suivi-title{flex-wrap:wrap}
+  .log-form{grid-template-columns:1fr 1fr}
+  .log-form input[name=who]{grid-column:1/-1}
+  .kv{grid-template-columns:90px 1fr}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -398,6 +452,15 @@ function render(){
   const fn = {booking:viewBooking, production:viewProduction, ticketing:viewTicketing, communication:viewCommunication,
     projects:viewProjects, todo:viewTodo, prospects:viewProspects, contacts:viewContacts, structures:viewStructures, settings:viewSettings}[S.view];
   main.innerHTML = fn();
+  main.querySelectorAll('.tbl-wrap table').forEach(tb => {
+    const heads = [...tb.querySelectorAll('thead th')].map(th => th.textContent.trim());
+    if (!heads.length) return;
+    tb.classList.add('cards');
+    tb.querySelectorAll('tbody tr').forEach(tr => [...tr.children].forEach((td, i) => {
+      td.setAttribute('data-label', heads[i] || '');
+      if (!td.textContent.trim() && !td.querySelector('input,select,button,a,img')) td.classList.add('is-empty');
+    }));
+  });
   if (S.view==='booking') drawMap();
   if (S.focusProspect){ const el=document.getElementById('pr-'+S.focusProspect); if (el) el.scrollIntoView({block:'start'}); S.focusProspect=null; }
 }
@@ -455,11 +518,14 @@ function viewBooking(){
   <div class="view-head"><h1>Booking ${S.year}</h1>
     <span class="sub"><span class="st int">${count('int')} intérêts</span> &nbsp; <span class="st opt">${count('opt')} options</span> &nbsp; <span class="st conf">${count('conf')} confirmées</span> &nbsp; · ${eur(totalConf)} confirmés</span>
     <span class="spacer"></span>
-    <label class="muted"><input type="checkbox" data-act="toggleCancelled" ${S.showCancelled?'checked':''}> Afficher annulées / sans suite</label>
+    <label class="muted"><input type="checkbox" data-act="toggleCancelled" ${S.showCancelled?'checked':''}> Annulées / sans suite</label>
     <button class="btn primary" data-act="newShow">Nouvelle date</button>
   </div>
-  <div class="booking">
-    <div>${list || `<div class="empty panel">Aucune date en ${S.year}. Ajoute un intérêt avec « Nouvelle date ».</div>`}</div>
+  <div class="pane-switch mobile-only" role="tablist">
+    <button class="btn small ${S.bookingPane!=='map'?'primary':''}" data-act="bookingPane" data-p="list">Liste</button>
+    <button class="btn small ${S.bookingPane==='map'?'primary':''}" data-act="bookingPane" data-p="map">Carte et trajets</button></div>
+  <div class="booking pane-${S.bookingPane==='map'?'map':'list'}">
+    <div class="list-wrap">${list || `<div class="empty panel">Aucune date en ${S.year}. Ajoute un intérêt avec « Nouvelle date ».</div>`}</div>
     <div class="map-wrap">
       <div id="map" role="region" aria-label="Carte des dates"></div>
       <div class="legend"><span class="st int">Intérêt</span><span class="st opt">Option</span><span class="st conf">Confirmée</span><span class="st book">Booking</span></div>
@@ -470,7 +536,7 @@ function viewBooking(){
 
 function routeBoxHTML(shows){
   const a = byId('shows', S.routePick.a), b = byId('shows', S.routePick.b);
-  let pair = '<p class="muted" style="margin:0">Clique sur A puis B sur deux dates pour calculer la route entre elles.</p>';
+  let pair = '<p class="muted" style="margin:0">Choisis un départ (A) puis une arrivée (B) dans la liste des dates pour calculer la route.</p>';
   if (a && b){
     const key = a.id+'|'+b.id, r = S.routeCache[key];
     pair = `<p style="margin:0"><b>${esc(a.venue)}</b> → <b>${esc(b.venue)}</b><br>
@@ -643,7 +709,7 @@ function viewTicketing(){
 function notConcerned(list, field, label){
   if (!list.length) return '';
   return `<div class="section-title">Dates confirmées non concernées par le ${label}</div>
-    <div class="tbl-wrap"><table><tbody>${list.map(s=>`<tr><td>${fmtDate(s.date)}</td><td>${esc(s.venue)}</td><td class="muted">${esc(s.city||'')}</td><td class="muted">${esc(s.contract_type||'')}</td>
+    <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Lieu</th><th>Ville</th><th>Contrat</th><th></th></tr></thead><tbody>${list.map(s=>`<tr><td>${fmtDate(s.date)}</td><td>${esc(s.venue)}</td><td class="muted">${esc(s.city||'')}</td><td class="muted">${esc(s.contract_type||'')}</td>
       <td><label>${cChk('shows',s.id,field,false)} Ajouter</label></td></tr>`).join('')}</tbody></table></div>`;
 }
 
@@ -875,11 +941,11 @@ function structurePage(st){
   </div>
   <div class="section-title">Suivi</div>
   ${suivis.map(suiviCard).join('') || `<div class="empty panel">Aucun suivi avec cette structure. Crée-le avec « Nouveau suivi ».</div>`}
-  <div class="section-title">Dates</div>
+  <div class="section-title row">Dates <button class="btn small" data-act="newShowFor" data-id="${st.id}">Nouvelle date</button></div>
   <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Projet</th><th>Lieu</th><th>Statut</th><th class="num">Cachet</th></tr></thead><tbody>
     ${shows.map(x=>`<tr class="click" data-act="editShow" data-id="${x.id}"><td>${fmtDate(x.date)}</td><td>${esc(projName(x.project_id))}</td><td>${esc(x.venue)}</td><td><span class="st ${stClass(x.status)}">${esc(x.status)}</span></td><td class="num">${eur(x.fee_ht)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Aucune date.</td></tr>'}
   </tbody></table></div>
-  <div class="section-title">Tâches</div>${taskTable(tasks)}`;
+  <div class="section-title row">Tâches <button class="btn small" data-act="newTaskFor" data-id="${st.id}">Nouvelle tâche</button></div>${taskTable(tasks)}`;
 }
 
 // ─────────────────────────── Contacts & structures ───────────────────────────
@@ -1050,6 +1116,9 @@ const ACTIONS = {
   toggleTask: async t => { await save('tasks', t.dataset.id, {status: t.checked?'Done':'To Do', done_at: t.checked?new Date().toISOString():null}); },
 
   newShow: t => editShow(null, t.dataset.project || S.project),
+  newShowFor: t => { const st = byId('structures', t.dataset.id); editShow(null, S.project, {structure_id: st.id, venue: st.name, city: st.city}); },
+  newTaskFor: t => editTask(null, {structure_id: t.dataset.id}),
+  bookingPane: t => { S.bookingPane = t.dataset.p; render(); },
   editShow: (t, e) => { if (e.target.closest('.pick')) return; editShow(t.dataset.id); },
   newProject: () => editProject(null), editProject: t => editProject(t.dataset.id),
   newTask: () => editTask(null), editTask: t => editTask(t.dataset.id),
@@ -1107,8 +1176,8 @@ ${p.content_md||'(aucune)'}`;
   newPartner: async () => { const n = prompt('Nom du partenaire'); if (n && await insert('partners',{name:n})) render(); },
 };
 
-function editShow(id, projectId){
-  const s = id ? byId('shows', id) : {status:'Intérêt Salle', project_id: projectId||null, communication_enabled:true, date:null};
+function editShow(id, projectId, prefill={}){
+  const s = id ? byId('shows', id) : {status:'Intérêt Salle', project_id: projectId||null, communication_enabled:true, date:null, ...prefill};
   openModal({
     title: id ? s.venue : 'Nouvelle date', fields: showFields(), values: s,
     extra: (id && s.structure_id ? `<div class="full"><a href="#" data-act="openStructure" data-id="${s.structure_id}">Ouvrir la fiche structure et son suivi</a></div>` : '') + (id && s.status?.startsWith('Confirmée') ? `<div class="full drive">${driveHTML(s)}</div>` : ''),
@@ -1143,8 +1212,8 @@ function editProject(id){
   });
 }
 
-function editTask(id){
-  const t = id ? byId('tasks', id) : {status:'To Do', assigned_to: S.user.email, project_id: S.project || null};
+function editTask(id, prefill={}){
+  const t = id ? byId('tasks', id) : {status:'To Do', assigned_to: S.user.email, project_id: S.project || null, ...prefill};
   const shows = S.db.shows.filter(s=>s.status!=='Annulée').sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(s=>[s.id, `${fmtDate(s.date)} — ${s.venue}`]);
   openModal({ title: id ? 'Tâche' : 'Nouvelle tâche', values: t,
     fields: [
