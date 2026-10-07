@@ -164,6 +164,7 @@ td.sticky{position:sticky;left:0;background:var(--panel);z-index:1}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin-top:8px;font-size:13px}
 .contact-row{display:flex;flex-wrap:wrap;gap:4px 10px;padding:5px 0;border-top:1px solid var(--line);font-size:13px}
 .contact-row:first-of-type{border-top:0}
+.filter-sel{padding:6px 8px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);font-weight:600}
 .pst{font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;background:var(--soft);border:1px solid var(--line);white-space:nowrap}
 .pst.Interest{color:var(--st-int)} .pst.Option{color:var(--st-opt)} .pst.Confirmed{color:var(--st-conf)} .pst.Closed{color:var(--st-off)}
 
@@ -789,9 +790,11 @@ function viewProspects(){
   let rows = S.db.prospects.filter(p => (!S.project || p.project_id===S.project) && (!st || p.status===st));
   if (q) rows = rows.filter(p => (prospectTitle(p)+' '+(p.summary||'')+' '+(byId('structures',p.structure_id)?.city||'')).toLowerCase().includes(q));
   rows = rows.map(p=>({p, last:lastExchange(p)})).sort((a,b)=>(b.last||'').localeCompare(a.last||'') || (b.p.updated_at||'').localeCompare(a.p.updated_at||''));
-  const btn = (k,l) => `<button class="btn small ${st===k?'primary':''}" data-act="suiviStatus" data-f="${k}">${l}</button>`;
+  const projOpts = S.db.projects.slice().sort((a,b)=>(b.active-a.active)||a.name.localeCompare(b.name));
   return `<div class="view-head"><h1>Suivi</h1><span class="sub">${rows.length} suivis</span>
-    ${btn('','Tous')}${PROSPECT.map(x=>btn(x,x)).join('')}<span class="spacer"></span>
+    <select class="filter-sel" data-suivi-filter="project" aria-label="Artiste"><option value="">Tous les artistes</option>${projOpts.map(x=>`<option value="${x.id}" ${x.id===S.project?'selected':''}>${esc(x.name)}${x.active?'':' (inactif)'}</option>`).join('')}</select>
+    <select class="filter-sel" data-suivi-filter="status" aria-label="Statut"><option value="">Tous les statuts</option>${PROSPECT.map(x=>`<option ${x===st?'selected':''}>${x}</option>`).join('')}</select>
+    <span class="spacer"></span>
     <input class="search" placeholder="Structure, ville, mot du résumé…" data-search="prospects" value="${esc(S.search.prospects||'')}">
     <button class="btn primary" data-act="newProspect">Nouveau suivi</button></div>
     <div class="tbl-wrap"><table><thead><tr><th>Structure</th><th>Projet</th><th>Statut</th><th>Dernier échange</th><th class="num">Journal</th><th class="num">PDF</th><th>Résumé</th></tr></thead><tbody>
@@ -816,7 +819,9 @@ function suiviCard(p){
     </div>
     <div class="suivi-grid">
       <div>
-        <div class="suivi-block"><div class="suivi-title">Résumé <button class="btn small ghost" data-act="editText" data-id="${p.id}" data-f="summary">Modifier</button></div>
+        <div class="suivi-block"><div class="suivi-title">Résumé <button class="btn small ghost" data-act="editText" data-id="${p.id}" data-f="summary">Modifier</button>
+          <button class="btn small ghost" data-act="aiSummary" data-id="${p.id}" title="Résumé automatique à partir du journal, des notes et des PDF">✨ Mettre à jour avec l'IA</button>
+          <button class="btn small ghost" data-act="copyForAi" data-id="${p.id}" title="Copie le prompt et le suivi pour les coller dans ChatGPT ou Claude">Copier pour ChatGPT</button></div>
           <div class="md">${md(p.summary) || '<span class="muted">Pas encore de résumé.</span>'}</div></div>
         <div class="suivi-block"><div class="suivi-title">Pièces jointes</div>
           ${files.map(f=>`<div class="file-row">📎 <a href="#" data-act="openFile" data-id="${f.id}">${esc(f.name)}</a>${f.size?` <span class="muted">${Math.round(f.size/1024)} Ko</span>`:''}
@@ -1057,6 +1062,34 @@ const ACTIONS = {
   closeStructure: () => { S.structurePage=null; render(); },
   openSuivi: t => { const p=byId('prospects',t.dataset.id); if (!p?.structure_id) return editProspect(t.dataset.id); S.view='structures'; S.structurePage=p.structure_id; S.focusProspect=p.id; render(); },
   delProspect: async t => { if (confirm('Supprimer ce suivi, son journal et ses fichiers ?')){ const fs=filesOf(t.dataset.id).filter(f=>f.mime!=='link').map(f=>f.path); if (fs.length) await sb.storage.from('suivi').remove(fs); if (await remove('prospects', t.dataset.id)){ S.db.prospect_logs=S.db.prospect_logs.filter(l=>l.prospect_id!==t.dataset.id); S.db.prospect_files=S.db.prospect_files.filter(f=>f.prospect_id!==t.dataset.id); render(); } } },
+  aiSummary: async t => {
+    const id = t.dataset.id; t.disabled = true; t.textContent = '✨ Rédaction en cours…';
+    const {data, error} = await sb.functions.invoke('resume-suivi', {body:{prospect_id:id}});
+    let msg = error ? (await error.context?.json?.().catch(()=>null))?.error || error.message : data?.error;
+    if (msg){ t.disabled=false; t.textContent="✨ Mettre à jour avec l'IA"; return toast(msg, true); }
+    byId('prospects', id).summary = data.summary; S.focusProspect = id; render(); toast('Résumé mis à jour');
+  },
+  copyForAi: async t => {
+    const p = byId('prospects', t.dataset.id);
+    const logs = logsOf(p.id).slice().reverse().map(l=>`[${l.date?fmtDate(l.date):'sans date'}] ${l.kind}${l.contact_name?' — '+l.contact_name:''}\n${l.body||''}`).join('\n\n');
+    const today = new Date().toLocaleDateString('fr-FR');
+    const txt = `Mets à jour le résumé de ce suivi de booking (L'ArtBoristerie). 6 à 8 puces max, dans cet ordre : **Contexte / interlocuteurs**, **Date(s) visée(s) / option(s)**, **Jauge + billetterie**, **Offre financière** (HT/TTC), **Accueil / VHR / technique**, **Statut actuel**, **Prochaine action + date de relance**. Une puce par ligne commençant par « - », libellés en gras. Termine par « Dernière mise à jour : ${today} ». N'invente rien. Réponds uniquement avec le résumé.
+
+Structure : ${structName(p.structure_id)}
+Artiste : ${projName(p.project_id)}
+Statut : ${p.status||''}
+
+Résumé existant :
+${p.summary||'(aucun)'}
+
+Journal des échanges :
+${logs||'(vide)'}
+
+Notes libres :
+${p.content_md||'(aucune)'}`;
+    try { await navigator.clipboard.writeText(txt); toast('Copié. Colle-le dans ChatGPT, puis colle la réponse avec « Modifier »'); }
+    catch(e){ openModal({title:'Copier pour ChatGPT', values:{t:txt}, fields:[{k:'t', label:'Sélectionne tout et copie', type:'textarea', full:true}], onSave: async()=>{} }); }
+  },
   delLog: async t => { if (confirm('Supprimer cette entrée du journal ?') && await remove('prospect_logs', t.dataset.id)) render(); },
   editText: t => { const p=byId('prospects',t.dataset.id), f=t.dataset.f;
     openModal({ title: f==='summary'?'Résumé':'Autres notes', values:p, fields:[{k:f, label:f==='summary'?'Résumé (une ligne par point, « - » pour une puce, **gras**)':'Notes', type:'textarea', full:true}],
@@ -1209,6 +1242,12 @@ function editProspect(id){
   });
 }
 
+document.addEventListener('change', e => {
+  const k = e.target.dataset?.suiviFilter; if (!k) return;
+  if (k==='project'){ S.project = e.target.value; localSet('project', S.project); }
+  else S.suiviStatus = e.target.value;
+  render();
+});
 document.addEventListener('submit', async e => {
   const pid = e.target.dataset?.logform; if (!pid) return; e.preventDefault();
   const f = e.target.elements;
