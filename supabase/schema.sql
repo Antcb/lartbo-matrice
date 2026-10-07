@@ -374,3 +374,9 @@ do $$ declare t text; begin
     end if;
   end loop;
 end $$;
+
+revoke execute on function is_team() from anon, public;
+grant execute on function is_team() to authenticated;
+revoke execute on function on_show_confirmed() from anon, authenticated, public;
+revoke execute on function request_drive_folder(uuid) from anon, public;
+grant execute on function request_drive_folder(uuid) to authenticated;

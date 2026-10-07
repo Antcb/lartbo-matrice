@@ -186,14 +186,14 @@ begin
          then 30 end,
     n_date(r.props,'Conf + FT + kit promo'), n_date(r.props,'Contrat envoyé'), n_date(r.props,'Contrat Signé'),
     n_date(r.props,'Contrat Co-Signé Envoyé'), n_date(r.props,'Boucle Technique'), n_date(r.props,'Boucle Communication'),
-    n_date(r.props,'Date de la demande'), n_sel(r.props,'Suivi Affiche'),
+    n_date(r.props,'Date de la demande'), coalesce(n_sel(r.props,'Suivi Affiche'), 'Quantité à demander'),
     coalesce(n_num(r.props,'A3'),0)::int, coalesce(n_num(r.props,'A2'),0)::int, coalesce(n_num(r.props,'B1'),0)::int,
     (select id from contacts where notion_id = (n_rel(r.props,'Référent Affiche'))[1]),
     n_text(r.props,'Livraison affiche'),
     n_num(r.props,'Capacity')::int, n_num(r.props,'break')::int, n_num(r.props,'Tickets Sold')::int,
     n_text(r.props,'Lien Billetterie'), n_text(r.props,'Liens Insta'), n_text(r.props,'Liens Facebook'),
-    n_sel(r.props,'Type de Contrat') in ('Production','Co-Production','Co-Réalisation')
-      and n_sel(r.props,'Status') like 'Confirmée%',
+    coalesce(n_sel(r.props,'Type de Contrat') in ('Production','Co-Production','Co-Réalisation')
+      and n_sel(r.props,'Status') like 'Confirmée%', false),
     coalesce(n_sel(r.props,'Suivi Affiche'),'') <> 'Non concerné'
   from notion_raw r where r.source = 'shows'
   on conflict (notion_id) do update set venue = excluded.venue, project_id = excluded.project_id,
@@ -266,3 +266,9 @@ begin
 end $$;
 
 revoke all on all functions in schema private from public, anon, authenticated;
+
+-- Utilisation (fait le 07/10/2026) :
+--   insert into private.import_secrets values ('notion_token', 'ntn_…');
+--   select private.notion_pull('projects'); … (structures et contacts : relancer jusqu'à « terminé »)
+--   select private.notion_transform();
+--   puis effacer la clé : update private.import_secrets set value = 'effacé';
