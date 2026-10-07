@@ -170,6 +170,7 @@ td.sticky{position:sticky;left:0;background:var(--panel);z-index:1}
 .checks{display:flex;flex-wrap:wrap;gap:6px 14px;max-height:180px;overflow:auto;padding:6px 0}
 .field .checks label{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink);font-weight:500;margin:0;padding:4px 0}
 .field .checks input{width:auto;margin:0}
+.toggle-more{margin:2px 0 10px;color:var(--muted)}
 .task-title{display:flex;align-items:center;gap:4px}
 .task-title .title-input{font-weight:700;min-width:160px}
 .proj-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -806,7 +807,7 @@ function projectPage(p){
     <div class="tbl-wrap"><table><thead><tr><th>Année</th><th class="num">Dates</th><th class="num">Confirmées</th><th class="num">Options</th><th class="num">Intérêts</th><th class="num">Cachets confirmés</th></tr></thead><tbody>
     ${Object.entries(byYear).map(([y,l])=>`<tr><td><b>${y}</b></td><td class="num">${l.length}</td><td class="num">${l.filter(s=>stClass(s.status)==='conf').length}</td><td class="num">${l.filter(s=>stClass(s.status)==='opt').length}</td><td class="num">${l.filter(s=>stClass(s.status)==='int').length}</td><td class="num">${eur(l.filter(s=>stClass(s.status)==='conf').reduce((a,s)=>a+(Number(s.fee_ht)||0),0))}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Aucune date.</td></tr>'}
     </tbody></table></div>
-    <div class="section-title">Tâches</div>${taskTable(tasks)}
+    <div class="section-title">Tâches</div>${taskSection(tasks)}
     <div class="section-title">Dates</div>
     <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Lieu</th><th>Ville</th><th>Statut</th><th class="num">Cachet</th></tr></thead><tbody>
       ${shows.map(s=>`<tr class="click" data-act="editShow" data-id="${s.id}"><td>${fmtDate(s.date)}</td><td>${esc(s.venue)}</td><td>${esc(s.city||'')}</td><td><span class="st ${stClass(s.status)}">${esc(s.status)}</span></td><td class="num">${eur(s.fee_ht)}</td></tr>`).join('')}
@@ -829,8 +830,16 @@ function taskSort(a,b){
   const done = t => ['Done','Cancelled'].includes(t.status) ? 1 : 0;
   return done(a)-done(b) || (a.deadline||'9999').localeCompare(b.deadline||'9999');
 }
-function taskTable(tasks){
-  if (!tasks.length) return `<div class="empty panel">Rien à faire ici. Ajoute une tâche avec « Nouvelle tâche ».</div>`;
+const isDone = t => ['Done','Cancelled'].includes(t.status);
+// Liste de tâches avec les terminées masquées, et un bouton pour les afficher
+function taskSection(all){
+  const done = all.filter(isDone), open = all.filter(t=>!isDone(t));
+  const shown = S.showDoneTasks ? all : open;
+  return taskTable(shown, open.length ? null : (done.length ? 'Tout est fait.' : null))
+    + (done.length ? `<button class="btn small ghost toggle-more" data-act="toggleDoneTasks">${S.showDoneTasks?'Masquer':'Afficher'} les tâches terminées (${done.length})</button>` : '');
+}
+function taskTable(tasks, emptyMsg){
+  if (!tasks.length) return `<div class="empty panel">${emptyMsg || 'Rien à faire ici. Ajoute une tâche avec « Nouvelle tâche ».'}</div>`;
   return `<div class="tbl-wrap"><table><thead><tr><th></th><th>Tâche</th><th>Urgence</th><th>Échéance</th><th>Statut</th><th>Pour</th><th>Projets</th><th>Structure</th><th>Date</th></tr></thead><tbody>
   ${tasks.map(t=>{ const u=urgency(t), sh=byId('shows',t.show_id);
     return `<tr class="${['Done','Cancelled'].includes(t.status)?'task-done':''}">
@@ -855,7 +864,7 @@ function viewTodo(){
   if (q) tasks = tasks.filter(t => (t.title+' '+projNames(t)+' '+structName(t.structure_id)).toLowerCase().includes(q));
   tasks.sort(taskSort);
   const btn = (k,l) => `<button class="btn small ${f===k?'primary':''}" data-act="todoFilter" data-f="${k}">${l}</button>`;
-  return `<div class="view-head"><h1>To Do</h1>${btn('open','À faire')}${btn('mine','Les miennes')}${btn('late','Urgentes (≤ 7 j)')}${btn('all','Toutes')}
+  return `<div class="view-head"><h1>To Do</h1>${btn('open','À faire')}${btn('mine','Les miennes')}${btn('late','Urgentes (≤ 7 j)')}${btn('all','Avec les terminées')}
     <span class="spacer"></span><input class="search" type="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche" placeholder="Rechercher une tâche" data-search="todo" value="${esc(S.search.todo||'')}">
     <button class="btn primary" data-act="newTask">Nouvelle tâche</button></div>${taskTable(tasks)}`;
 }
@@ -894,10 +903,13 @@ function viewProspects(){
   const q = (S.search.prospects||'').toLowerCase();
   const st = S.suiviStatus || '';
   let rows = S.db.prospects.filter(p => (!S.project || projIds(p).includes(S.project)) && (!st || p.status===st));
+  const nClosed = st ? 0 : rows.filter(p=>p.status==='Closed').length;
+  if (!st && !S.showClosed) rows = rows.filter(p=>p.status!=='Closed');
   if (q) rows = rows.filter(p => (prospectTitle(p)+' '+(p.summary||'')+' '+(byId('structures',p.structure_id)?.city||'')).toLowerCase().includes(q));
   rows = rows.map(p=>({p, last:lastExchange(p)})).sort((a,b)=>(b.last||'').localeCompare(a.last||'') || (b.p.updated_at||'').localeCompare(a.p.updated_at||''));
   const projOpts = S.db.projects.slice().sort((a,b)=>(b.active-a.active)||a.name.localeCompare(b.name));
-  return `<div class="view-head"><h1>Suivi</h1><span class="sub">${rows.length} suivis</span>
+  return `<div class="view-head"><h1>Suivi</h1><span class="sub">${rows.length} suivis${nClosed && !S.showClosed ? ` · ${nClosed} clos masqués` : ''}</span>
+    ${nClosed ? `<button class="btn small ghost" data-act="toggleClosed">${S.showClosed?'Masquer':'Afficher'} les clos</button>` : ''}
     <select class="filter-sel" data-suivi-filter="project" aria-label="Artiste"><option value="">Tous les artistes</option>${projOpts.map(x=>`<option value="${x.id}" ${x.id===S.project?'selected':''}>${esc(x.name)}${x.active?'':' (inactif)'}</option>`).join('')}</select>
     <select class="filter-sel" data-suivi-filter="status" aria-label="Statut"><option value="">Tous les statuts</option>${PROSPECT.map(x=>`<option ${x===st?'selected':''}>${x}</option>`).join('')}</select>
     <span class="spacer"></span>
@@ -980,12 +992,15 @@ function structurePage(st){
     </div>
   </div>
   <div class="section-title">Suivi</div>
-  ${suivis.map(suiviCard).join('') || `<div class="empty panel">Aucun suivi avec cette structure. Crée-le avec « Nouveau suivi ».</div>`}
+  ${(() => { const closed = suivis.filter(p=>p.status==='Closed'), open = suivis.filter(p=>p.status!=='Closed');
+     const shown = S.showClosed ? suivis : open;
+     return (shown.map(suiviCard).join('') || `<div class="empty panel">${closed.length ? 'Aucun suivi en cours avec cette structure.' : 'Aucun suivi avec cette structure. Crée-le avec « Nouveau suivi ».'}</div>`)
+       + (closed.length ? `<button class="btn small ghost toggle-more" data-act="toggleClosed">${S.showClosed?'Masquer':'Afficher'} les suivis clos (${closed.length})</button>` : ''); })()}
   <div class="section-title row">Dates <button class="btn small" data-act="newShowFor" data-id="${st.id}">Nouvelle date</button></div>
   <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Projet</th><th>Lieu</th><th>Statut</th><th class="num">Cachet</th></tr></thead><tbody>
     ${shows.map(x=>`<tr class="click" data-act="editShow" data-id="${x.id}"><td>${fmtDate(x.date)}</td><td>${esc(projName(x.project_id))}</td><td>${esc(x.venue)}</td><td><span class="st ${stClass(x.status)}">${esc(x.status)}</span></td><td class="num">${eur(x.fee_ht)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Aucune date.</td></tr>'}
   </tbody></table></div>
-  <div class="section-title row">Tâches <button class="btn small" data-act="newTaskFor" data-id="${st.id}">Nouvelle tâche</button></div>${taskTable(tasks)}`;
+  <div class="section-title row">Tâches <button class="btn small" data-act="newTaskFor" data-id="${st.id}">Nouvelle tâche</button></div>${taskSection(tasks)}`;
 }
 
 // ─────────────────────────── Contacts & structures ───────────────────────────
@@ -1192,6 +1207,8 @@ const ACTIONS = {
   rmProj: async (t, e) => { e.stopPropagation(); const tb = t.dataset.t || 'prospects', r = byId(tb, t.dataset.id); const ids = projIds(r).filter(x=>x!==t.dataset.p);
     if (tb==='prospects') S.focusProspect = r.id;
     await save(tb, r.id, {project_ids: ids, project_id: ids[0]||null}); },
+  toggleDoneTasks: () => { S.showDoneTasks = !S.showDoneTasks; render(); },
+  toggleClosed: () => { S.showClosed = !S.showClosed; render(); },
   clearNear: () => { S.near = null; render(); },
   suiviStatus: t => { S.suiviStatus=t.dataset.f; render(); },
   openStructure: t => { if ($('#modal').open) $('#modal').close(); S.view='structures'; S.structurePage=t.dataset.id; S.focusProspect=null; render(); window.scrollTo(0,0); },
