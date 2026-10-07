@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
 
     const [{ data: st }, { data: pr }, { data: logs }, { data: files }] = await Promise.all([
       user.from('structures').select('name,city,country').eq('id', p.structure_id).maybeSingle(),
-      user.from('projects').select('name').eq('id', p.project_id).maybeSingle(),
+      user.from('projects').select('name').in('id', (p.project_ids && p.project_ids.length) ? p.project_ids : [p.project_id].filter(Boolean)),
       user.from('prospect_logs').select('date,kind,contact_name,body').eq('prospect_id', p.id).eq('hidden', false).order('date', { ascending: true }),
       user.from('prospect_files').select('name,path,mime,size,created_at').eq('prospect_id', p.id).order('created_at', { ascending: false }),
     ]);
@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
     const journal = (logs || []).map((l: any) => `[${l.date || 'sans date'}] ${l.kind}${l.contact_name ? ' — ' + l.contact_name : ''}\n${l.body || ''}`).join('\n\n');
     const text = [
       `Structure : ${st?.name || '?'}${st?.city ? ' (' + st.city + ')' : ''}`,
-      `Artiste / projet : ${pr?.name || '?'}`,
+      `Artiste(s) : ${(pr || []).map((x: any) => x.name).join(', ') || '?'}`,
       `Statut du suivi : ${p.status || '?'}`,
       `\nRésumé existant :\n${p.summary || '(aucun)'}`,
       `\nJournal des échanges :\n${journal || '(vide)'}`,

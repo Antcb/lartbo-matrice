@@ -170,6 +170,8 @@ td.sticky{position:sticky;left:0;background:var(--panel);z-index:1}
 .checks{display:flex;flex-wrap:wrap;gap:6px 14px;max-height:180px;overflow:auto;padding:6px 0}
 .field .checks label{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink);font-weight:500;margin:0;padding:4px 0}
 .field .checks input{width:auto;margin:0}
+.task-title{display:flex;align-items:center;gap:4px}
+.task-title .title-input{font-weight:700;min-width:160px}
 .proj-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .add-proj{border:1px dashed var(--line);border-radius:999px;padding:3px 8px;background:var(--panel);font-size:12px}
 .near-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
@@ -280,6 +282,10 @@ dialog::backdrop{background:rgba(15,18,26,.45)}
   table.cards td.is-empty{display:none}
   table.cards td:first-child{padding-left:0;text-align:left}
   table.cards td:first-child::before{position:static;display:block;width:auto;margin-bottom:2px}
+  table.cards td.full-cell{padding-left:0;text-align:left}
+  table.cards td.full-cell::before{position:static;display:block;width:auto;margin-bottom:4px}
+  table.cards .task-title .title-input{min-width:0;flex:1;text-align:left}
+  table.cards .proj-chips{justify-content:flex-end}
   table.cards td.muted{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
   table.cards td:first-child{font-size:15px}
   table.cards td input,table.cards td select{width:100%;min-width:0;border-color:var(--line);text-align:right}
@@ -773,7 +779,7 @@ function viewProjects(){
   const card = p => {
     const shows = S.db.shows.filter(s=>s.project_id===p.id);
     const yr = shows.filter(s=>s.date && Number(s.date.slice(0,4))===S.year);
-    const tasks = S.db.tasks.filter(t=>t.project_id===p.id && !['Done','Cancelled'].includes(t.status));
+    const tasks = S.db.tasks.filter(t=>projIds(t).includes(p.id) && !['Done','Cancelled'].includes(t.status));
     return `<div class="panel pcard" data-act="openProject" data-id="${p.id}">
       <h3>${esc(p.name)}</h3><span class="muted">${p.active?'Actif':'Inactif'}</span>
       <div class="stats"><span><b>${yr.filter(s=>stClass(s.status)==='conf').length}</b>confirmées ${S.year}</span><span><b>${yr.filter(s=>['int','opt'].includes(stClass(s.status))).length}</b>en cours</span><span><b>${tasks.length}</b>tâches</span></div></div>`;
@@ -788,7 +794,7 @@ function viewProjects(){
 function projectPage(p){
   if (!p) { S.projectPage=null; return viewProjects(); }
   const shows = S.db.shows.filter(s=>s.project_id===p.id).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  const tasks = S.db.tasks.filter(t=>t.project_id===p.id).sort(taskSort);
+  const tasks = S.db.tasks.filter(t=>projIds(t).includes(p.id)).sort(taskSort);
   const byYear = {};
   shows.forEach(s=>{ const y=s.date?s.date.slice(0,4):'Sans date'; (byYear[y]=byYear[y]||[]).push(s); });
   return `<div class="view-head"><button class="btn ghost" data-act="closeProject">← Projets</button><h1>${esc(p.name)}</h1>
@@ -825,27 +831,28 @@ function taskSort(a,b){
 }
 function taskTable(tasks){
   if (!tasks.length) return `<div class="empty panel">Rien à faire ici. Ajoute une tâche avec « Nouvelle tâche ».</div>`;
-  return `<div class="tbl-wrap"><table><thead><tr><th></th><th>Tâche</th><th>Urgence</th><th>Échéance</th><th>Statut</th><th>Pour</th><th>Projet</th><th>Structure</th><th>Date</th></tr></thead><tbody>
+  return `<div class="tbl-wrap"><table><thead><tr><th></th><th>Tâche</th><th>Urgence</th><th>Échéance</th><th>Statut</th><th>Pour</th><th>Projets</th><th>Structure</th><th>Date</th></tr></thead><tbody>
   ${tasks.map(t=>{ const u=urgency(t), sh=byId('shows',t.show_id);
     return `<tr class="${['Done','Cancelled'].includes(t.status)?'task-done':''}">
       <td><input type="checkbox" data-act="toggleTask" data-id="${t.id}" ${t.status==='Done'?'checked':''} aria-label="Marquer comme faite"></td>
-      <td class="click" data-act="editTask" data-id="${t.id}" style="white-space:normal;min-width:220px"><b>${esc(t.title)}</b>${t.tags?.length?' '+t.tags.map(x=>`<span class="tag">${esc(x)}</span>`).join(''):''}</td>
+      <td class="full-cell" style="white-space:normal;min-width:240px"><div class="task-title">${cIn('tasks',t.id,'title',t.title,'text','class="title-input" aria-label="Nom de la tâche"')}
+        <button class="btn small ghost" data-act="editTask" data-id="${t.id}" title="Tous les détails (notes, date, pôle…)">Détails</button></div>${t.tags?.length?t.tags.map(x=>`<span class="tag">${esc(x)}</span>`).join(''):''}</td>
       <td>${u?`<span class="urg ${u.cls}">${esc(u.label)}</span>`:''}</td>
       <td>${cIn('tasks',t.id,'deadline',t.deadline,'date')}</td>
       <td>${cSel('tasks',t.id,'status',t.status,TASK_STATUS,false)}</td>
       <td>${cSel('tasks',t.id,'assigned_to',t.assigned_to,CFG.TEAM.map(e=>[e,e.split('@')[0]]))}</td>
-      <td>${esc(projName(t.project_id))}</td><td>${esc(structName(t.structure_id))}</td>
+      <td style="white-space:normal;min-width:180px">${projChips('tasks', t)}</td><td>${t.structure_id?`<a href="#" data-act="openStructure" data-id="${t.structure_id}">${esc(structName(t.structure_id))}</a>`:''}</td>
       <td>${sh?esc(fmtDate(sh.date)+' '+sh.venue):''}</td></tr>`;}).join('')}
   </tbody></table></div>`;
 }
 function viewTodo(){
   const f = S.todoFilter || 'open';
-  let tasks = S.db.tasks.filter(t => !S.project || t.project_id===S.project);
+  let tasks = S.db.tasks.filter(t => !S.project || projIds(t).includes(S.project));
   if (f==='open') tasks = tasks.filter(t=>!['Done','Cancelled'].includes(t.status));
   if (f==='mine') tasks = tasks.filter(t=>!['Done','Cancelled'].includes(t.status) && t.assigned_to===S.user.email);
   if (f==='late') tasks = tasks.filter(t=>{ const d=daysUntil(t.deadline); return d!=null && d<=7 && !['Done','Cancelled'].includes(t.status); });
   const q = (S.search.todo||'').toLowerCase();
-  if (q) tasks = tasks.filter(t => (t.title+' '+projName(t.project_id)+' '+structName(t.structure_id)).toLowerCase().includes(q));
+  if (q) tasks = tasks.filter(t => (t.title+' '+projNames(t)+' '+structName(t.structure_id)).toLowerCase().includes(q));
   tasks.sort(taskSort);
   const btn = (k,l) => `<button class="btn small ${f===k?'primary':''}" data-act="todoFilter" data-f="${k}">${l}</button>`;
   return `<div class="view-head"><h1>To Do</h1>${btn('open','À faire')}${btn('mine','Les miennes')}${btn('late','Urgentes (≤ 7 j)')}${btn('all','Toutes')}
@@ -860,6 +867,10 @@ function logsOf(pid){ return S.db.prospect_logs.filter(l=>l.prospect_id===pid &&
 function filesOf(pid){ return S.db.prospect_files.filter(f=>f.prospect_id===pid).sort((a,b)=>(a.created_at||'').localeCompare(b.created_at||'')); }
 function lastExchange(p){ const l = logsOf(p.id).find(x=>x.date); const d = [l?.date, p.last_contact].filter(Boolean).sort().pop(); return d || null; }
 function projIds(p){ return (p.project_ids && p.project_ids.length) ? p.project_ids : (p.project_id ? [p.project_id] : []); }
+function projChips(table, row){
+  return `<div class="proj-chips">${projIds(row).map(pid=>`<span class="chip">${esc(projName(pid))}<button type="button" data-act="rmProj" data-t="${table}" data-id="${row.id}" data-p="${pid}" aria-label="Retirer">✕</button></span>`).join('')}
+    <select class="add-proj" data-addproj="${row.id}" data-table="${table}" aria-label="Ajouter un projet"><option value="">+ Projet</option>${S.db.projects.slice().sort((a,b)=>(b.active-a.active)||a.name.localeCompare(b.name)).filter(x=>!projIds(row).includes(x.id)).map(x=>`<option value="${x.id}">${esc(x.name)}${x.active?'':' (inactif)'}</option>`).join('')}</select></div>`;
+}
 function projNames(p){ return projIds(p).map(projName).filter(Boolean).join(', '); }
 function prospectTitle(p){ return [structName(p.structure_id), projNames(p)].filter(Boolean).join(' — ') || p.name; }
 
@@ -906,8 +917,7 @@ function suiviCard(p){
   const contacts = linksOfStructure(p.structure_id);
   return `<div class="panel suivi" id="pr-${p.id}">
     <div class="suivi-head">
-      <div class="proj-chips">${projIds(p).map(pid=>`<span class="chip">${esc(projName(pid))}<button type="button" data-act="rmProj" data-id="${p.id}" data-p="${pid}" aria-label="Retirer l'artiste">✕</button></span>`).join('')}
-        <select class="add-proj" data-addproj="${p.id}" aria-label="Ajouter un artiste"><option value="">+ Artiste</option>${optsOf('projects').filter(([v])=>!projIds(p).includes(v)).map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join('')}</select></div>
+      ${projChips('prospects', p)}
       <div class="suivi-sel">${cSel('prospects',p.id,'status',p.status,PROSPECT,false)}</div>
       <span class="muted">Dernier échange : ${lastExchange(p)?fmtDate(lastExchange(p)):'—'}</span>
       <span class="spacer"></span>
@@ -1179,8 +1189,9 @@ const ACTIONS = {
   newStructure: () => editStructure(null), editStructure: t => editStructure(t.dataset.id),
   newProspect: () => { S.newSuiviStructure=null; editProspect(null); }, editProspect: t => editProspect(t.dataset.id),
   newSuiviFor: t => { S.newSuiviStructure=t.dataset.id; editProspect(null); },
-  rmProj: async t => { const p = byId('prospects', t.dataset.id); const ids = projIds(p).filter(x=>x!==t.dataset.p);
-    await save('prospects', p.id, {project_ids: ids, project_id: ids[0]||null}); },
+  rmProj: async (t, e) => { e.stopPropagation(); const tb = t.dataset.t || 'prospects', r = byId(tb, t.dataset.id); const ids = projIds(r).filter(x=>x!==t.dataset.p);
+    if (tb==='prospects') S.focusProspect = r.id;
+    await save(tb, r.id, {project_ids: ids, project_id: ids[0]||null}); },
   clearNear: () => { S.near = null; render(); },
   suiviStatus: t => { S.suiviStatus=t.dataset.f; render(); },
   openStructure: t => { if ($('#modal').open) $('#modal').close(); S.view='structures'; S.structurePage=t.dataset.id; S.focusProspect=null; render(); window.scrollTo(0,0); },
@@ -1269,22 +1280,23 @@ function editProject(id){
 }
 
 function editTask(id, prefill={}){
-  const t = id ? byId('tasks', id) : {status:'To Do', assigned_to: S.user.email, project_id: S.project || null, ...prefill};
+  const t = id ? byId('tasks', id) : {status:'To Do', assigned_to: S.user.email, project_ids: S.project?[S.project]:[], ...prefill};
+  const projOpts = S.db.projects.slice().sort((a,b)=>(b.active-a.active)||a.name.localeCompare(b.name)).filter(x=>x.active || projIds(t).includes(x.id)).map(x=>[x.id,x.name]);
   const shows = S.db.shows.filter(s=>s.status!=='Annulée').sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(s=>[s.id, `${fmtDate(s.date)} — ${s.venue}`]);
-  openModal({ title: id ? 'Tâche' : 'Nouvelle tâche', values: t,
+  openModal({ title: id ? 'Tâche' : 'Nouvelle tâche', values: {...t, project_ids: projIds(t)},
     fields: [
       {k:'title', label:'Tâche', full:true},
       {k:'deadline', label:'Échéance', type:'date'}, {k:'status', label:'Statut', type:'select', options:TASK_STATUS, blank:false},
       {k:'assigned_to', label:'Pour', type:'select', options:CFG.TEAM.map(e=>[e,e.split('@')[0]])},
       {k:'priority', label:'Priorité (si pas d’échéance)', type:'select', options:PRIORITIES},
-      {k:'project_id', label:'Projet', type:'select', options:optsOf('projects')},
+      {k:'project_ids', label:'Projet(s)', type:'checks', options:projOpts, full:true},
       {k:'structure_id', label:'Structure', type:'select', options:optsOf('structures')},
       {k:'show_id', label:'Date', type:'select', options:shows, full:true},
       {k:'department', label:'Pôle', type:'select', options:DEPARTMENTS}, {k:'tags', label:'Tags (Call, Mail…)', type:'tags'},
       {k:'notes', label:'Notes', type:'textarea', full:true},
     ],
     onDelete: id ? () => remove('tasks', id) : null,
-    onSave: async v => { if (!v.title) return false; if (id) await save('tasks', id, v, {rerender:false}); else await insert('tasks', v); }
+    onSave: async v => { if (!v.title){ toast('Donne un nom à la tâche', true); return false; } v.project_id = v.project_ids[0] || null; if (id) await save('tasks', id, v, {rerender:false}); else await insert('tasks', v); }
   });
 }
 
@@ -1381,8 +1393,9 @@ function editProspect(id){
 
 document.addEventListener('change', async e => {
   const pid = e.target.dataset?.addproj; if (!pid || !e.target.value) return;
-  const p = byId('prospects', pid); const ids = [...new Set([...projIds(p), e.target.value])];
-  S.focusProspect = pid; await save('prospects', pid, {project_ids: ids, project_id: ids[0]});
+  const tb = e.target.dataset.table || 'prospects', r = byId(tb, pid); const ids = [...new Set([...projIds(r), e.target.value])];
+  if (tb==='prospects') S.focusProspect = pid;
+  await save(tb, pid, {project_ids: ids, project_id: ids[0]});
 });
 document.addEventListener('submit', async e => {
   if (e.target.id !== 'near-form') return; e.preventDefault();
