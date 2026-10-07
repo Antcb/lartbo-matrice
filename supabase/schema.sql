@@ -380,3 +380,31 @@ grant execute on function is_team() to authenticated;
 revoke execute on function on_show_confirmed() from anon, authenticated, public;
 revoke execute on function request_drive_folder(uuid) from anon, public;
 grant execute on function request_drive_folder(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------
+-- Suivi détaillé : résumé, journal des échanges, pièces jointes (PDF)
+-- ---------------------------------------------------------------------
+alter table prospects add column if not exists summary text;
+alter table prospects add column if not exists content_md text;
+alter table prospects add column if not exists content_imported_at timestamptz;
+alter table prospects add column if not exists import_error text;
+
+create table if not exists prospect_logs (
+  id uuid primary key default gen_random_uuid(),
+  prospect_id uuid not null references prospects(id) on delete cascade,
+  date date, kind text default 'Appel', contact_name text,
+  contact_id uuid references contacts(id) on delete set null,
+  body text, author text, sort int default 0,
+  hidden boolean not null default false,      -- blocs vides du modèle Notion
+  import_key text unique, created_at timestamptz default now()
+);
+create table if not exists prospect_files (
+  id uuid primary key default gen_random_uuid(),
+  prospect_id uuid not null references prospects(id) on delete cascade,
+  name text not null, path text not null unique, size bigint, mime text,
+  import_key text unique, created_at timestamptz default now()
+);
+alter table prospect_logs enable row level security;
+alter table prospect_files enable row level security;
+-- policies team_all identiques aux autres tables ; stockage privé "suivi" réservé à l'équipe
+insert into storage.buckets (id, name, public, file_size_limit) values ('suivi', 'suivi', false, 52428800) on conflict (id) do nothing;

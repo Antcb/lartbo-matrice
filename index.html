@@ -138,6 +138,35 @@ td.sticky{position:sticky;left:0;background:var(--panel);z-index:1}
 .drive{display:flex;gap:8px;align-items:center;margin-top:12px;font-size:13px}
 .drive .err{color:var(--danger)}
 
+/* Suivi */
+.suivi{margin-bottom:12px;padding:12px 14px;scroll-margin-top:80px}
+.suivi-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.suivi-head .spacer{flex:1}
+.suivi-sel select{border:1px solid var(--line);border-radius:var(--radius);padding:5px 8px;background:var(--panel);font-weight:600}
+.suivi-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.suivi-block{margin-bottom:14px}
+.suivi-title{font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.md{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.md .md-li{position:relative}
+.md .md-li::before{content:"•";position:absolute;margin-left:-11px;color:var(--muted)}
+.md .md-h{font-weight:700;margin-top:6px}
+.md .md-q{border-left:3px solid var(--line);padding-left:8px;color:var(--muted)}
+.md .md-sp{height:6px}
+.log-form{display:grid;grid-template-columns:auto auto 1fr;gap:6px;margin-bottom:10px}
+.log-form textarea{grid-column:1/-1;min-height:64px}
+.log-form input,.log-form select,.log-form textarea{padding:6px 8px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel)}
+.log-form button{grid-column:1/-1;justify-self:start}
+.log{border-top:1px solid var(--line);padding:8px 0}
+.log-head{display:flex;align-items:center;gap:6px;font-size:13px}
+.log-head .btn{margin-left:auto}
+.file-row{display:flex;align-items:center;gap:6px;font-size:13px;padding:2px 0}
+.struct-top{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin-top:8px;font-size:13px}
+.contact-row{display:flex;flex-wrap:wrap;gap:4px 10px;padding:5px 0;border-top:1px solid var(--line);font-size:13px}
+.contact-row:first-of-type{border-top:0}
+.pst{font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;background:var(--soft);border:1px solid var(--line);white-space:nowrap}
+.pst.Interest{color:var(--st-int)} .pst.Option{color:var(--st-opt)} .pst.Confirmed{color:var(--st-conf)} .pst.Closed{color:var(--st-off)}
+
 /* Projets */
 .grid-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
 .pcard{padding:14px;cursor:pointer}
@@ -192,6 +221,7 @@ dialog::backdrop{background:rgba(15,18,26,.45)}
   .booking .map-wrap{position:static}
   #map{height:380px}
   .prod-body{grid-template-columns:1fr}
+  .suivi-grid,.struct-top{grid-template-columns:1fr}
   .modal-body{grid-template-columns:1fr}
 }
 @media (max-width:600px){
@@ -241,9 +271,9 @@ const S = {
   user:null, view: localGet('view') || 'booking',
   year: Number(localGet('year')) || new Date().getFullYear(),
   project: localGet('project') || '',
-  db: {structures:[], contacts:[], contact_structures:[], projects:[], partners:[], shows:[], show_payments:[], prospects:[], tasks:[], settings:[]},
+  db: {structures:[], contacts:[], contact_structures:[], projects:[], partners:[], shows:[], show_payments:[], prospects:[], prospect_logs:[], prospect_files:[], tasks:[], settings:[]},
   openProd: new Set(), routePick: {a:null,b:null}, routeCache: {}, search:{},
-  showCancelled:false, projectPage:null,
+  showCancelled:false, projectPage:null, structurePage:null, focusProspect:null,
 };
 function localGet(k){ try { return localStorage.getItem('artbo.'+k); } catch(e){ return null; } }
 function localSet(k,v){ try { localStorage.setItem('artbo.'+k, v); } catch(e){} }
@@ -344,7 +374,7 @@ async function refreshShowSide(showId){
 // ─────────────────────────── Rendu général ───────────────────────────
 const VIEWS = [
   ['booking','Booking'], ['production','Production'], ['ticketing','Ticketing'], ['communication','Communication'],
-  ['projects','Projets'], ['todo','To Do'], ['prospects','Prospection'], ['contacts','Contacts'], ['structures','Structures'], ['settings','Réglages']
+  ['projects','Projets'], ['todo','To Do'], ['prospects','Suivi'], ['contacts','Contacts'], ['structures','Structures'], ['settings','Réglages']
 ];
 
 function render(){
@@ -368,12 +398,13 @@ function render(){
     projects:viewProjects, todo:viewTodo, prospects:viewProspects, contacts:viewContacts, structures:viewStructures, settings:viewSettings}[S.view];
   main.innerHTML = fn();
   if (S.view==='booking') drawMap();
+  if (S.focusProspect){ const el=document.getElementById('pr-'+S.focusProspect); if (el) el.scrollIntoView({block:'start'}); S.focusProspect=null; }
 }
 
 document.addEventListener('click', async e => {
   const t = e.target.closest('[data-view],[data-act],#logout'); if (!t) return;
   if (t.id==='logout'){ e.preventDefault(); await sb.auth.signOut(); S.user=null; render(); return; }
-  if (t.dataset.view){ S.view=t.dataset.view; S.projectPage=null; localSet('view',S.view); render(); window.scrollTo(0,0); return; }
+  if (t.dataset.view){ S.view=t.dataset.view; S.projectPage=null; S.structurePage=null; localSet('view',S.view); render(); window.scrollTo(0,0); return; }
   const act = ACTIONS[t.dataset.act]; if (act){ e.preventDefault(); await act(t, e); }
 });
 document.addEventListener('change', async e => {
@@ -728,20 +759,122 @@ function viewTodo(){
     <button class="btn primary" data-act="newTask">Nouvelle tâche</button></div>${taskTable(tasks)}`;
 }
 
-// ─────────────────────────── Prospection ───────────────────────────
+// ─────────────────────────── Suivi ───────────────────────────
+const LOG_KINDS = ['Appel','Mail','RDV','Note'];
+const LOG_ICON = {Appel:'📞', Mail:'✉️', RDV:'🤝', Note:'📝'};
+function logsOf(pid){ return S.db.prospect_logs.filter(l=>l.prospect_id===pid && !l.hidden).sort((a,b)=>(b.date||'0000').localeCompare(a.date||'0000') || (b.sort||0)-(a.sort||0)); }
+function filesOf(pid){ return S.db.prospect_files.filter(f=>f.prospect_id===pid).sort((a,b)=>(a.created_at||'').localeCompare(b.created_at||'')); }
+function lastExchange(p){ const l = logsOf(p.id).find(x=>x.date); const d = [l?.date, p.last_contact].filter(Boolean).sort().pop(); return d || null; }
+function prospectTitle(p){ return [structName(p.structure_id), projName(p.project_id)].filter(Boolean).join(' — ') || p.name; }
+
+// Mise en forme légère du texte importé de Notion (gras, italique, listes, liens)
+function md(text){
+  if (!text) return '';
+  return esc(text).split('\n').map(line => {
+    let l = line
+      .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/(^|\s)_(.+?)_(?=\s|$)/g,'$1<i>$2</i>')
+      .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')
+      .replace(/(^|\s)(https?:\/\/[^\s<]+)/g,'$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+    const m = l.match(/^(\s*)(?:-|\d+\.)\s+(.*)$/);
+    if (m) return `<div class="md-li" style="padding-left:${m[1].length*8+14}px">${m[2]}</div>`;
+    if (/^#{1,3}\s/.test(l)) return `<div class="md-h">${l.replace(/^#{1,3}\s/,'')}</div>`;
+    if (/^\s*&gt;\s?/.test(l)) return `<div class="md-q">${l.replace(/^\s*&gt;\s?/,'')}</div>`;
+    return l.trim() ? `<div>${l}</div>` : '<div class="md-sp"></div>';
+  }).join('');
+}
+
 function viewProspects(){
   const q = (S.search.prospects||'').toLowerCase();
-  let rows = S.db.prospects.filter(p => !S.project || p.project_id===S.project);
-  if (q) rows = rows.filter(p => (p.name+' '+structName(p.structure_id)).toLowerCase().includes(q));
-  rows.sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''));
-  return `<div class="view-head"><h1>Prospection</h1><span class="sub">${rows.length} suivis</span><span class="spacer"></span>
-    <input class="search" placeholder="Rechercher" data-search="prospects" value="${esc(S.search.prospects||'')}">
+  const st = S.suiviStatus || '';
+  let rows = S.db.prospects.filter(p => (!S.project || p.project_id===S.project) && (!st || p.status===st));
+  if (q) rows = rows.filter(p => (prospectTitle(p)+' '+(p.summary||'')+' '+(byId('structures',p.structure_id)?.city||'')).toLowerCase().includes(q));
+  rows = rows.map(p=>({p, last:lastExchange(p)})).sort((a,b)=>(b.last||'').localeCompare(a.last||'') || (b.p.updated_at||'').localeCompare(a.p.updated_at||''));
+  const btn = (k,l) => `<button class="btn small ${st===k?'primary':''}" data-act="suiviStatus" data-f="${k}">${l}</button>`;
+  return `<div class="view-head"><h1>Suivi</h1><span class="sub">${rows.length} suivis</span>
+    ${btn('','Tous')}${PROSPECT.map(x=>btn(x,x)).join('')}<span class="spacer"></span>
+    <input class="search" placeholder="Structure, ville, mot du résumé…" data-search="prospects" value="${esc(S.search.prospects||'')}">
     <button class="btn primary" data-act="newProspect">Nouveau suivi</button></div>
-    <div class="tbl-wrap"><table><thead><tr><th>Suivi</th><th>Statut</th><th>Projet</th><th>Structure</th><th>Dernier contact</th><th>Notes</th></tr></thead><tbody>
-    ${rows.slice(0,500).map(p=>`<tr><td class="click" data-act="editProspect" data-id="${p.id}"><b>${esc(p.name)}</b></td>
-      <td>${cSel('prospects',p.id,'status',p.status,PROSPECT,false)}</td><td>${esc(projName(p.project_id))}</td><td>${esc(structName(p.structure_id))}</td>
-      <td>${cIn('prospects',p.id,'last_contact',p.last_contact,'date')}</td><td class="muted" style="white-space:normal">${esc((p.notes||'').slice(0,120))}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aucun suivi.</td></tr>'}
+    <div class="tbl-wrap"><table><thead><tr><th>Structure</th><th>Projet</th><th>Statut</th><th>Dernier échange</th><th class="num">Journal</th><th class="num">PDF</th><th>Résumé</th></tr></thead><tbody>
+    ${rows.slice(0,500).map(({p,last})=>{ const s=byId('structures',p.structure_id);
+      return `<tr class="click" data-act="openSuivi" data-id="${p.id}"><td><b>${esc(s?.name||p.name)}</b><br><span class="muted">${esc(s?.city||'')}</span></td>
+      <td>${esc(projName(p.project_id))}</td><td><span class="pst ${esc(p.status||'')}">${esc(p.status||'')}</span></td>
+      <td>${last?fmtDate(last):'<span class="muted">—</span>'}</td><td class="num">${logsOf(p.id).length||''}</td><td class="num">${filesOf(p.id).length||''}</td>
+      <td class="muted" style="white-space:normal;min-width:260px">${esc((p.summary||p.content_md||'').replace(/\*\*/g,'').replace(/\n/g,' ').slice(0,160))}</td></tr>`;}).join('') || '<tr><td colspan="7" class="empty">Aucun suivi.</td></tr>'}
     </tbody></table></div>`;
+}
+
+function suiviCard(p){
+  const logs = logsOf(p.id), files = filesOf(p.id), today = new Date().toISOString().slice(0,10);
+  const contacts = linksOfStructure(p.structure_id);
+  return `<div class="panel suivi" id="pr-${p.id}">
+    <div class="suivi-head">
+      <div class="suivi-sel">${cSel('prospects',p.id,'project_id',p.project_id,optsOf('projects'))}</div>
+      <div class="suivi-sel">${cSel('prospects',p.id,'status',p.status,PROSPECT,false)}</div>
+      <span class="muted">Dernier échange : ${lastExchange(p)?fmtDate(lastExchange(p)):'—'}</span>
+      <span class="spacer"></span>
+      <button class="btn small ghost danger" data-act="delProspect" data-id="${p.id}">Supprimer</button>
+    </div>
+    <div class="suivi-grid">
+      <div>
+        <div class="suivi-block"><div class="suivi-title">Résumé <button class="btn small ghost" data-act="editText" data-id="${p.id}" data-f="summary">Modifier</button></div>
+          <div class="md">${md(p.summary) || '<span class="muted">Pas encore de résumé.</span>'}</div></div>
+        <div class="suivi-block"><div class="suivi-title">Pièces jointes</div>
+          ${files.map(f=>`<div class="file-row">📎 <a href="#" data-act="openFile" data-id="${f.id}">${esc(f.name)}</a>${f.size?` <span class="muted">${Math.round(f.size/1024)} Ko</span>`:''}
+            <button class="btn small ghost danger" data-act="delFile" data-id="${f.id}" aria-label="Supprimer le fichier">✕</button></div>`).join('') || '<div class="muted">Aucun fichier.</div>'}
+          <label class="btn small" style="margin-top:6px;display:inline-block">Ajouter un PDF / fichier<input type="file" data-upload="${p.id}" multiple hidden></label></div>
+        <div class="suivi-block"><div class="suivi-title">Autres notes <button class="btn small ghost" data-act="editText" data-id="${p.id}" data-f="content_md">Modifier</button></div>
+          <div class="md">${md(p.content_md) || '<span class="muted">—</span>'}</div></div>
+      </div>
+      <div>
+        <div class="suivi-block"><div class="suivi-title">Journal des échanges</div>
+          <form class="log-form" data-logform="${p.id}">
+            <input type="date" name="date" value="${today}" aria-label="Date">
+            <select name="kind" aria-label="Type">${LOG_KINDS.map(k=>`<option>${k}</option>`).join('')}</select>
+            <input name="who" placeholder="Interlocuteur" list="dl-who-${p.id}" aria-label="Interlocuteur">
+            <datalist id="dl-who-${p.id}">${contacts.map(c=>`<option value="${esc(c.display_name)}">`).join('')}</datalist>
+            <textarea name="body" placeholder="Notes de l'échange…" aria-label="Notes"></textarea>
+            <button class="btn small primary">Ajouter au journal</button>
+          </form>
+          ${logs.map(l=>`<div class="log">
+            <div class="log-head">${LOG_ICON[l.kind]||'📝'} <b>${l.date?fmtDate(l.date):'Sans date'}</b>${l.contact_name?' — '+esc(l.contact_name):''}
+              <button class="btn small ghost danger" data-act="delLog" data-id="${l.id}" aria-label="Supprimer l'entrée">✕</button></div>
+            <div class="md">${md(l.body)}</div></div>`).join('') || '<div class="muted" style="margin-top:8px">Aucun échange enregistré.</div>'}
+        </div>
+      </div>
+    </div></div>`;
+}
+
+function structurePage(st){
+  if (!st){ S.structurePage=null; return viewStructures(); }
+  const contacts = linksOfStructure(st.id);
+  const suivis = S.db.prospects.filter(p=>p.structure_id===st.id).sort((a,b)=>(lastExchange(b)||'').localeCompare(lastExchange(a)||''));
+  const shows = S.db.shows.filter(x=>x.structure_id===st.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const tasks = S.db.tasks.filter(t=>t.structure_id===st.id).sort(taskSort);
+  return `<div class="view-head"><button class="btn ghost" data-act="closeStructure">← Structures</button><h1>${esc(st.name)}</h1>
+    <span class="sub">${esc([st.city, st.region, st.country].filter(Boolean).join(' · '))}</span><span class="spacer"></span>
+    <button class="btn" data-act="editStructure" data-id="${st.id}">Modifier la fiche</button>
+    <button class="btn primary" data-act="newSuiviFor" data-id="${st.id}">Nouveau suivi</button></div>
+  <div class="struct-top">
+    <div class="panel" style="padding:12px 14px">
+      ${(st.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join(' ')}
+      <div class="kv">${[['Adresse',[st.address,st.postal_code].filter(Boolean).join(' ')],['Jauge',[st.capacity_1,st.capacity_2].filter(Boolean).join(' / ')],['Tarif',st.pricing],
+        ['Site',st.website?`<a href="${esc(/^https?:/.test(st.website)?st.website:'https://'+st.website)}" target="_blank" rel="noopener">${esc(st.website)}</a>`:'']]
+        .filter(([,v])=>v).map(([k,v])=>`<span class="muted">${k}</span><span>${k==='Site'?v:esc(v)}</span>`).join('')}</div>
+      ${st.notes?`<div class="md" style="margin-top:8px">${md(st.notes)}</div>`:''}
+    </div>
+    <div class="panel" style="padding:12px 14px"><div class="suivi-title">Contacts</div>
+      ${contacts.map(c=>`<div class="contact-row"><a href="#" data-act="editContact" data-id="${c.id}"><b>${esc(c.display_name)}</b></a>
+        <span class="muted">${esc((c.roles||[]).join(', '))}</span>
+        ${c.email?`<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`:''} ${c.phone?`<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>`:''}</div>`).join('') || '<div class="muted">Aucun contact lié.</div>'}
+    </div>
+  </div>
+  <div class="section-title">Suivi</div>
+  ${suivis.map(suiviCard).join('') || `<div class="empty panel">Aucun suivi avec cette structure. Crée-le avec « Nouveau suivi ».</div>`}
+  <div class="section-title">Dates</div>
+  <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Projet</th><th>Lieu</th><th>Statut</th><th class="num">Cachet</th></tr></thead><tbody>
+    ${shows.map(x=>`<tr class="click" data-act="editShow" data-id="${x.id}"><td>${fmtDate(x.date)}</td><td>${esc(projName(x.project_id))}</td><td>${esc(x.venue)}</td><td><span class="st ${stClass(x.status)}">${esc(x.status)}</span></td><td class="num">${eur(x.fee_ht)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Aucune date.</td></tr>'}
+  </tbody></table></div>
+  <div class="section-title">Tâches</div>${taskTable(tasks)}`;
 }
 
 // ─────────────────────────── Contacts & structures ───────────────────────────
@@ -765,6 +898,7 @@ function viewContacts(){
 }
 
 function viewStructures(){
+  if (S.structurePage) return structurePage(byId('structures', S.structurePage));
   const q = (S.search.structures||'').toLowerCase();
   let rows = S.db.structures;
   if (q) rows = rows.filter(s => [s.name,s.city,s.region,s.country,...(s.tags||[])].join(' ').toLowerCase().includes(q));
@@ -772,12 +906,12 @@ function viewStructures(){
   return `<div class="view-head"><h1>Structures</h1><span class="sub">${rows.length} structures</span><span class="spacer"></span>
     <input class="search" placeholder="Nom, ville, région, tag…" data-search="structures" value="${esc(S.search.structures||'')}">
     <button class="btn primary" data-act="newStructure">Nouvelle structure</button></div>
-    <div class="tbl-wrap"><table><thead><tr><th>Structure</th><th>Tags</th><th>Ville</th><th>Région</th><th>Pays</th><th class="num">Jauge</th><th>Contacts</th></tr></thead><tbody>
-    ${rows.slice(0,400).map(s=>`<tr class="click" data-act="editStructure" data-id="${s.id}"><td><b>${esc(s.name)}</b></td>
+    <div class="tbl-wrap"><table><thead><tr><th>Structure</th><th>Tags</th><th>Ville</th><th>Région</th><th>Pays</th><th class="num">Jauge</th><th>Contacts</th><th>Suivi</th></tr></thead><tbody>
+    ${rows.slice(0,400).map(s=>`<tr class="click" data-act="openStructure" data-id="${s.id}"><td><b>${esc(s.name)}</b></td>
       <td style="white-space:normal">${(s.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</td>
       <td>${esc(s.city||'')}</td><td>${esc(s.region||'')}</td><td>${esc(s.country||'')}</td>
       <td class="num">${[s.capacity_1,s.capacity_2].filter(Boolean).join(' / ')}</td>
-      <td>${linksOfStructure(s.id).length||''}</td></tr>`).join('')}
+      <td>${linksOfStructure(s.id).length||''}</td><td>${(()=>{const p=S.db.prospects.filter(x=>x.structure_id===s.id); return p.length?p.map(x=>`<span class="pst ${esc(x.status)}">${esc(x.status)}</span>`).join(' '):'';})()}</td></tr>`).join('')}
     </tbody></table>${rows.length>400?`<p class="muted" style="padding:8px">400 premiers résultats affichés — affine la recherche.</p>`:''}</div>`;
 }
 
@@ -916,7 +1050,27 @@ const ACTIONS = {
   newTask: () => editTask(null), editTask: t => editTask(t.dataset.id),
   newContact: () => editContact(null), editContact: t => editContact(t.dataset.id),
   newStructure: () => editStructure(null), editStructure: t => editStructure(t.dataset.id),
-  newProspect: () => editProspect(null), editProspect: t => editProspect(t.dataset.id),
+  newProspect: () => { S.newSuiviStructure=null; editProspect(null); }, editProspect: t => editProspect(t.dataset.id),
+  newSuiviFor: t => { S.newSuiviStructure=t.dataset.id; editProspect(null); },
+  suiviStatus: t => { S.suiviStatus=t.dataset.f; render(); },
+  openStructure: t => { if ($('#modal').open) $('#modal').close(); S.view='structures'; S.structurePage=t.dataset.id; S.focusProspect=null; render(); window.scrollTo(0,0); },
+  closeStructure: () => { S.structurePage=null; render(); },
+  openSuivi: t => { const p=byId('prospects',t.dataset.id); if (!p?.structure_id) return editProspect(t.dataset.id); S.view='structures'; S.structurePage=p.structure_id; S.focusProspect=p.id; render(); },
+  delProspect: async t => { if (confirm('Supprimer ce suivi, son journal et ses fichiers ?')){ const fs=filesOf(t.dataset.id).filter(f=>f.mime!=='link').map(f=>f.path); if (fs.length) await sb.storage.from('suivi').remove(fs); if (await remove('prospects', t.dataset.id)){ S.db.prospect_logs=S.db.prospect_logs.filter(l=>l.prospect_id!==t.dataset.id); S.db.prospect_files=S.db.prospect_files.filter(f=>f.prospect_id!==t.dataset.id); render(); } } },
+  delLog: async t => { if (confirm('Supprimer cette entrée du journal ?') && await remove('prospect_logs', t.dataset.id)) render(); },
+  editText: t => { const p=byId('prospects',t.dataset.id), f=t.dataset.f;
+    openModal({ title: f==='summary'?'Résumé':'Autres notes', values:p, fields:[{k:f, label:f==='summary'?'Résumé (une ligne par point, « - » pour une puce, **gras**)':'Notes', type:'textarea', full:true}],
+      onSave: async v => { await save('prospects', p.id, v, {rerender:false}); } });
+    setTimeout(()=>{ const ta=$('#fld-'+f); if(ta) ta.style.minHeight='300px'; }, 0); },
+  openFile: async (t) => { const f=byId('prospect_files',t.dataset.id); if (!f) return;
+    if (f.mime==='link') return window.open(f.path,'_blank');
+    const w = window.open('', '_blank');
+    const {data, error} = await sb.storage.from('suivi').createSignedUrl(f.path, 3600);
+    if (error){ if (w) w.close(); return toast('Ouverture impossible : '+error.message, true); }
+    if (w) w.location = data.signedUrl; else location.href = data.signedUrl; },
+  delFile: async t => { const f=byId('prospect_files',t.dataset.id); if (!f || !confirm(`Supprimer « ${f.name} » ?`)) return;
+    if (f.mime!=='link') await sb.storage.from('suivi').remove([f.path]);
+    if (await remove('prospect_files', f.id)) render(); },
   newPartner: async () => { const n = prompt('Nom du partenaire'); if (n && await insert('partners',{name:n})) render(); },
 };
 
@@ -924,7 +1078,7 @@ function editShow(id, projectId){
   const s = id ? byId('shows', id) : {status:'Intérêt Salle', project_id: projectId||null, communication_enabled:true, date:null};
   openModal({
     title: id ? s.venue : 'Nouvelle date', fields: showFields(), values: s,
-    extra: id && s.status?.startsWith('Confirmée') ? `<div class="full drive">${driveHTML(s)}</div>` : '',
+    extra: (id && s.structure_id ? `<div class="full"><a href="#" data-act="openStructure" data-id="${s.structure_id}">Ouvrir la fiche structure et son suivi</a></div>` : '') + (id && s.status?.startsWith('Confirmée') ? `<div class="full drive">${driveHTML(s)}</div>` : ''),
     onDelete: id ? () => remove('shows', id) : null,
     onSave: async v => {
       if (!v.venue) { toast('Indique le nom du lieu', true); return false; }
@@ -1036,20 +1190,45 @@ function editStructure(id){
 }
 
 function editProspect(id){
-  const p = id ? byId('prospects', id) : {status:'Mailed', project_id:S.project||null};
+  const p = id ? byId('prospects', id) : {status:'Mailed', project_id:S.project||null, name:'Suivi', structure_id:S.newSuiviStructure||null};
   openModal({ title: id ? p.name : 'Nouveau suivi', values: p,
     fields: [
-      {k:'name', label:'Intitulé', full:true}, {k:'status', label:'Statut', type:'select', options:PROSPECT, blank:false},
+      {k:'structure_id', label:'Structure', type:'select', options:optsOf('structures'), full:true},
+      {k:'status', label:'Statut', type:'select', options:PROSPECT, blank:false},
       {k:'last_contact', label:'Dernier contact', type:'date'},
       {k:'project_id', label:'Projet', type:'select', options:optsOf('projects')},
-      {k:'structure_id', label:'Structure', type:'select', options:optsOf('structures')},
-      {k:'contact_id', label:'Contact', type:'select', options:optsOf('contacts','display_name'), full:true},
-      {k:'notes', label:'Notes', type:'textarea', full:true},
+      {k:'summary', label:'Résumé', type:'textarea', full:true},
     ],
     onDelete: id ? () => remove('prospects', id) : null,
-    onSave: async v => { if (!v.name) return false; if (id) await save('prospects', id, v, {rerender:false}); else await insert('prospects', v); }
+    onSave: async v => {
+      if (!v.structure_id){ toast('Choisis la structure', true); return false; }
+      v.name = v.name || p.name || 'Suivi';
+      if (id) await save('prospects', id, v, {rerender:false});
+      else { const row = await insert('prospects', {...v, name:'Suivi'}); if (row){ S.view='structures'; S.structurePage=row.structure_id; S.focusProspect=row.id; } }
+    }
   });
 }
+
+document.addEventListener('submit', async e => {
+  const pid = e.target.dataset?.logform; if (!pid) return; e.preventDefault();
+  const f = e.target.elements;
+  if (!f.body.value.trim() && !f.who.value.trim()) return toast("Écris au moins une note ou l'interlocuteur", true);
+  const row = await insert('prospect_logs', {prospect_id:pid, date:f.date.value||null, kind:f.kind.value, contact_name:f.who.value.trim()||null, body:f.body.value.trim()||null, author:S.user.email});
+  if (row){ const p=byId('prospects',pid); if (row.date && (!p.last_contact || row.date>p.last_contact)) await save('prospects', pid, {last_contact:row.date}, {rerender:false}); S.focusProspect=pid; render(); toast('Ajouté au journal'); }
+});
+document.addEventListener('change', async e => {
+  const pid = e.target.dataset?.upload; if (!pid) return;
+  const files = [...e.target.files]; if (!files.length) return;
+  toast(`Envoi de ${files.length} fichier(s)…`);
+  for (const file of files){
+    const safe = file.name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w.\-]+/g,'_');
+    const path = `${pid}/${Date.now()}_${safe}`;
+    const {error} = await sb.storage.from('suivi').upload(path, file, {contentType: file.type||'application/octet-stream'});
+    if (error){ toast(`${file.name} : ${error.message}`, true); continue; }
+    await insert('prospect_files', {prospect_id:pid, name:file.name, path, size:file.size, mime:file.type||null});
+  }
+  S.focusProspect=pid; render(); toast('Fichier(s) ajouté(s)');
+});
 
 // ─────────────────────────── Connexion ───────────────────────────
 function loginHTML(){
