@@ -1,5 +1,5 @@
-// Met à jour le résumé d'un suivi avec Claude, à partir du journal, des notes et des PDF.
-// Appelée depuis l'app (utilisateur connecté) : POST { prospect_id }
+// Met à jour le résumé d'un suivi par IA (Gemini gratuit, ou Claude si une clé Anthropic est configurée),
+// à partir du journal, des notes et des PDF. Appelée depuis l'app (utilisateur connecté) : POST { prospect_id }
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
@@ -38,8 +38,10 @@ Deno.serve(async (req) => {
     const { data: p, error } = await user.from('prospects').select('*').eq('id', prospect_id).single();
     if (error || !p) return json({ error: 'Suivi introuvable ou accès refusé' }, 403);
 
-    const { data: key } = await admin.rpc('import_secret', { k: 'anthropic_key' });
-    if (!key || !String(key).startsWith('sk-')) return json({ error: "La clé d'API Anthropic n'est pas encore configurée." }, 503);
+    const [{ data: gkey }, { data: akey }] = await Promise.all([
+      admin.rpc('import_secret', { k: 'gemini_key' }), admin.rpc('import_secret', { k: 'anthropic_key' }),
+    ]);
+    if (!gkey && !String(akey || '').startsWith('sk-')) return json({ error: "Aucune clé d'IA n'est encore configurée." }, 503);
 
     const [{ data: st }, { data: pr }, { data: logs }, { data: files }] = await Promise.all([
       user.from('structures').select('name,city,country').eq('id', p.structure_id).maybeSingle(),
@@ -60,24 +62,60 @@ Deno.serve(async (req) => {
     ].join('\n');
 
     // Jusqu'à 4 PDF les plus récents (≤ 8 Mo chacun) envoyés tels quels à Claude
-    const content: any[] = [];
+    const pdfs: { name: string; data: string }[] = [];
     for (const f of (files || []).filter((f: any) => f.mime !== 'link' && /pdf/i.test(f.mime || f.name) && (f.size || 0) < 8e6).slice(0, 4)) {
       const { data: blob } = await admin.storage.from('suivi').download(f.path);
       if (!blob) continue;
       const bytes = new Uint8Array(await blob.arrayBuffer());
       let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      content.push({ type: 'document', title: f.name, source: { type: 'base64', media_type: 'application/pdf', data: btoa(bin) } });
+      pdfs.push({ name: f.name, data: btoa(bin) });
     }
-    content.push({ type: 'text', text: PROMPT.replace('{AUJOURDHUI}', today) + '\n\n---\n' + text });
+    const instruction = PROMPT.replace('{AUJOURDHUI}', today) + '\n\n---\n' + text;
 
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': String(key), 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 1500, messages: [{ role: 'user', content }] }),
-    });
-    const out = await r.json();
-    if (!r.ok) return json({ error: 'IA : ' + (out?.error?.message || r.status) }, 502);
-    const summary = (out.content || []).filter((c: any) => c.type === 'text').map((c: any) => c.text).join('\n').trim();
+    let summary = '';
+    if (gkey) {
+      // Gemini (offre gratuite de Google AI Studio) : on choisit le meilleur modèle « Flash » disponible
+      const list = await (await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + gkey)).json();
+      if (list.error) return json({ error: 'Gemini : ' + list.error.message }, 502);
+      const models = (list.models || [])
+        .filter((m: any) => /flash/i.test(m.name) && !/lite|image|tts|audio|live|thinking-exp|embedding/i.test(m.name)
+          && (m.supportedGenerationMethods || []).includes('generateContent'))
+        .map((m: any) => m.name)
+        .sort((a: string, b: string) => {
+          const v = (n: string) => parseFloat((n.match(/(\d+(?:\.\d+)?)/) || ['0'])[0]);
+          const pre = (n: string) => /preview|exp/.test(n) ? 1 : 0;
+          return v(b) - v(a) || pre(a) - pre(b);
+        });
+      if (!models.length) return json({ error: 'Gemini : aucun modèle Flash disponible' }, 502);
+      let lastErr = '';
+      for (const model of models.slice(0, 3)) {
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${gkey}`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [
+            ...pdfs.map((p) => ({ inline_data: { mime_type: 'application/pdf', data: p.data } })),
+            { text: instruction },
+          ] }], generationConfig: { temperature: 0.2, maxOutputTokens: 2000 } }),
+        });
+        const out = await r.json();
+        if (!r.ok) { lastErr = out?.error?.message || String(r.status); continue; }
+        summary = (out.candidates?.[0]?.content?.parts || []).map((p: any) => p.text || '').join('').trim();
+        if (summary) break;
+      }
+      if (!summary) return json({ error: 'Gemini : ' + (lastErr || 'pas de réponse') }, 502);
+    } else {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': String(akey), 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 1500, messages: [{ role: 'user', content: [
+          ...pdfs.map((p) => ({ type: 'document', title: p.name, source: { type: 'base64', media_type: 'application/pdf', data: p.data } })),
+          { type: 'text', text: instruction },
+        ] }] }),
+      });
+      const out = await r.json();
+      if (!r.ok) return json({ error: 'IA : ' + (out?.error?.message || r.status) }, 502);
+      summary = (out.content || []).filter((c: any) => c.type === 'text').map((c: any) => c.text).join('\n').trim();
+    }
+    summary = summary.replace(/^```[a-z]*\n?|```$/g, '').trim();
     if (!summary) return json({ error: "L'IA n'a rien renvoyé" }, 502);
 
     const { error: ue } = await user.from('prospects').update({ summary }).eq('id', p.id);
