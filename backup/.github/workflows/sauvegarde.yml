@@ -1,0 +1,23 @@
+name: Sauvegarde quotidienne
+on:
+  schedule:
+    - cron: "17 2 * * *"   # chaque nuit vers 4 h (heure de Paris)
+  workflow_dispatch: {}      # bouton « Run workflow » pour lancer à la main
+permissions:
+  contents: write
+jobs:
+  sauvegarde:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export de la base et des pièces jointes
+        env:
+          BACKUP_SECRET: ${{ secrets.BACKUP_SECRET }}
+        run: python3 sauvegarde.py
+      - name: Enregistrement
+        run: |
+          git config user.name "Sauvegarde Matrice"
+          git config user.email "actions@github.com"
+          git add -A
+          git commit -m "Sauvegarde du $(date -u +%Y-%m-%d)" || echo "Rien de nouveau"
+          git push
