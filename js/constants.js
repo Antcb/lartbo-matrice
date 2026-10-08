@@ -1,8 +1,23 @@
 /**
- * Listes métier (statuts, contrats, affiches…), onglets et couleurs des statuts.
+ * Listes métier (statuts, contrats, affiches, pôles…), couleurs des statuts, onglets.
+ * ➜ Pour ajouter un statut, une option de liste ou un onglet, c'est ici.
  */
-export const STATUSES = ['Booking','Intérêt Salle','Intérêt Festival','Option Salle','Option Festival','Option Artiste',
-  'Confirmée Salle','Confirmée Festival','Confirmée Artiste','Annulée','Sans Suite'];
+export const STATUSES = ['Intérêt Festival','Option Festival','Confirmée Festival',
+  'Intérêt Salle','Option Salle','Confirmée Salle','Option Artiste','Confirmée Artiste','Annulée','Sans Suite'];
+
+// Code couleur des statuts (carte, pastilles, liste)
+export const STATUS_COLOR = {
+  'Intérêt Festival':'#A9C8EC', 'Option Festival':'#4A86D4', 'Confirmée Festival':'#173E7A',
+  'Intérêt Salle':'#BFE3B9', 'Option Salle':'#5DBB6E', 'Confirmée Salle':'#1D6B3A',
+  'Option Artiste':'#9EA4AD', 'Confirmée Artiste':'#111111',
+  'Annulée':'#C8372D', 'Sans Suite':'#8A5A2E', 'Booking':'#C9CDD4',
+};
+export const stColor = s => STATUS_COLOR[s] || STATUS_COLOR.Booking;
+
+// Famille du statut : int / opt / conf / off
+export const stClass = s => !s ? 'book' : s.startsWith('Intérêt') ? 'int' : s.startsWith('Option') ? 'opt' : s.startsWith('Confirmée') ? 'conf' : (s==='Annulée'||s==='Sans Suite') ? 'off' : 'book';
+
+export const isOff = s => s==='Annulée' || s==='Sans Suite';
 
 export const CONFIRMED_PROD = ['Confirmée Salle','Confirmée Festival'];
 
@@ -18,27 +33,38 @@ export const TASK_STATUS = ['To Do','In Progress','Done','Cancelled'];
 
 export const PRIORITIES = ['D-Day','Critical','High','Medium','Low'];
 
+// Pôles des tâches et leur couleur
 export const DEPARTMENTS = ['Booking','Production','Communication','Admin','Accounting','Projects'];
+export const DEPT_COLOR = {Booking:'#4A86D4', Production:'#1D6B3A', Communication:'#B4539A', Admin:'#7A5AC8', Accounting:'#C98A12', Projects:'#193762'};
+
+// Équipe : adresse → prénom affiché
+export const TEAM_NAMES = {'anthony@lartboristerie.com':'Anthony', 'production@lartboristerie.com':'Chloé'};
 
 export const PAY_KINDS = {acompte:'Acompte', solde:'Solde', artbo:"Commission L'ArtBo", partner:'Commission partenaire', cnm:'Taxe CNM', autre:'Autre'};
 
+// Suivi admin d'une date en production complète
 export const PROD_STEPS = [
   ['conf_kit_sent','Conf + FT + kit promo'],
+  ['precontract_done','Pré-contrat complété'],
   ['contract_sent','Contrat envoyé'],
   ['contract_signed','Contrat signé'],
   ['contract_cosigned_sent','Contrat co-signé renvoyé'],
   ['boucle_tech','Boucle technique'],
 ];
-
-export const stClass = s => !s ? 'book' : s.startsWith('Intérêt') ? 'int' : s.startsWith('Option') ? 'opt' : s.startsWith('Confirmée') ? 'conf' : (s==='Annulée'||s==='Sans Suite') ? 'off' : 'book';
-
-export const stColor = s => getComputedStyle(document.documentElement).getPropertyValue('--st-' + {int:'int',opt:'opt',conf:'conf',off:'off',book:'book'}[stClass(s)]).trim();
+// Projets en « booking seul » : L'ArtBo envoie la conf, puis facture sa commission à l'artiste
+export const BOOKING_STEPS = [
+  ['conf_kit_sent','Conf + FT + kit promo'],
+  ['contract_cosigned_sent','Contrat co-signé (artiste ↔ organisateur)'],
+];
 
 export const VIEWS = [
-  ['booking','Booking'], ['production','Production'], ['ticketing','Ticketing'], ['communication','Communication'],
-  ['projects','Projets'], ['todo','To Do'], ['prospects','Suivi'], ['contacts','Contacts'], ['structures','Structures'], ['settings','Réglages']
+  ['booking','Booking'], ['prospects','Suivi'], ['production','Production'], ['ticketing','Ticketing'], ['communication','Communication'],
+  ['projects','Projets'], ['todo','To Do'], ['structures','Structures'], ['contacts','Contacts'],
 ];
 
 export const LOG_KINDS = ['Appel','Mail','RDV','Note'];
 
-export const LOG_ICON = {Appel:'📞', Mail:'✉️', RDV:'🤝', Note:'📝'};
+export const LOG_ICON = {Appel:'📞', Mail:'✉️', RDV:'🤝', Note:'📝', Lien:'🔗', Fichier:'📎'};
+
+// Délai avant qu'un élément clos / terminé / annulé disparaisse (pour pouvoir annuler)
+export const LINGER_MS = 5000;

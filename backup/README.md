@@ -9,6 +9,7 @@ Dépôt **privé**. Chaque nuit (vers 4 h), GitHub lance `sauvegarde.py`, qui r�
 Revenir à un jour donné : onglet **Commits** → choisir la date → *Browse files*.
 Lancer une sauvegarde tout de suite : onglet **Actions** → *Sauvegarde quotidienne* → *Run workflow*.
 
-`secret.txt` contient la clé qui autorise l'export. Elle ne donne accès qu'à une copie des données déjà présentes ici : ce dépôt doit rester privé. Pour la changer, modifier `backup_secret` dans `private.import_secrets` (Supabase) et ce fichier.
+La clé qui autorise l'export est le secret GitHub `BACKUP_SECRET` (Settings → Secrets and variables → Actions). Pour la changer, modifier `backup_secret` dans `private.import_secrets` (Supabase) et ce secret.
+Tout le fonctionnement tient dans un seul fichier : `.github/workflows/sauvegarde.yml`.
 
 Le modèle de ce dépôt est dans le dossier `backup/` de `lartbo-matrice`.

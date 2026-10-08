@@ -5,13 +5,13 @@ Récupère l'export complet (fonction Supabase « backup-export ») et l'écrit 
   donnees/<table>.json     une ligne par enregistrement (les différences d'un jour à l'autre restent lisibles)
   fichiers/<chemin>        pièces jointes des suivis (seules les nouvelles sont téléchargées)
   derniere-sauvegarde.txt  date et volumes de la dernière sauvegarde
-Le secret est lu dans la variable BACKUP_SECRET, sinon dans le fichier secret.txt.
+Le secret est lu dans la variable BACKUP_SECRET (secret GitHub Actions du dépôt).
 """
 import json, os, pathlib, sys, urllib.request
 
 URL = "https://ypvvjoqhzddzbmerypdc.supabase.co/functions/v1/backup-export"
-root = pathlib.Path(__file__).resolve().parent
-secret = os.environ.get("BACKUP_SECRET") or (root / "secret.txt").read_text().strip()
+root = pathlib.Path.cwd()   # lancé depuis la racine du dépôt de sauvegarde
+secret = os.environ["BACKUP_SECRET"]
 
 req = urllib.request.Request(URL, data=json.dumps({"secret": secret}).encode(),
                              headers={"Content-Type": "application/json"}, method="POST")

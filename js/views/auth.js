@@ -8,7 +8,7 @@ import { S } from '../state.js';
 import { $ } from '../utils.js';
 
 export function loginHTML(){
-  return `<div class="panel login"><h1>L'ArtBoristerie</h1><p>Matrice booking & production.</p>
+  return `<div class="panel login"><img src="assets/logo.png" alt="L'ArtBoristerie Productions" width="220" height="83"><p>Booking et production</p>
     <form id="login-form">
       <input type="email" id="login-email" placeholder="prenom@lartboristerie.com" required autocomplete="email">
       <input type="password" id="login-pw" placeholder="Mot de passe" required autocomplete="current-password">
@@ -23,5 +23,5 @@ document.addEventListener('submit', async e => {
   $('#login-msg').textContent = 'Connexion…';
   const {data, error} = await sb.auth.signInWithPassword({email, password: $('#login-pw').value});
   if (error){ $('#login-msg').textContent = 'Connexion impossible : mail ou mot de passe incorrect.'; return; }
-  S.user = data.user; $('#app').innerHTML = '<div class="empty">Chargement…</div>'; await loadAll(); render();
+  S.user = data.user; $('#app').innerHTML = '<div class="loading"><img src="assets/picto.png" alt="" width="54" height="64"><span>Chargement…</span></div>'; await loadAll(); render();
 });

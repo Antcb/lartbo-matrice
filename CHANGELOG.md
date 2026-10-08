@@ -5,6 +5,24 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.7.0 — 08/10/2026
+- Nouveau nom et logo : L'ArtBoristerie Productions
+- Nouvelle charte : boutons harmonisés, textes lisibles en entier, couleurs de statut (festival en bleus, salle en verts, artiste gris/noir, annulée rouge, sans suite marron)
+- App beaucoup plus rapide (index en mémoire, plus de listes de 8 000 contacts dans les tableaux)
+- Réglages : le solde suit l'acompte (acompte + solde = 100 %)
+- Dates : saisie au clavier avec tout le texte sélectionné ou calendrier, partout
+- Recherche avec suggestions et création (structure, contact, date) dans les tâches, les suivis, les dates, la communication
+- Annulée / sans suite, tâche faite, suivi clos : 5 s avec « Annuler » avant de disparaître
+- Booking : deux colonnes, carte carrée, plus aucun trait, enchaînements réels (au plus un jour off), filtres hors du bandeau
+- Suivi : espace de prospection (planning de l'artiste, carte et distances autour de la date négociée, poser une date ou une tâche), export CSV, nouveau suivi avec création de structure et de contact
+- Structures : titres avec « • », adresse auto-complétée, onglets Accueil / Suivi / Dates / Tâches / Festivals-événements / Coordonnées administratives, glisser-déposer des fichiers
+- To Do : pôle visible et filtrable, « Pour » Anthony / Chloé, pièces jointes
+- Projets : photo carrée recadrable, inactifs repliés, onglets Aperçu (commissions par année) / Dates / Suivis / Tâches / Échanges / Liens / Drive / Administratif / Membres (import CSV Movinmotion), mode Production ou Booking seul
+- Ticketing et Communication : par artiste et par date, seulement les dates concernées, break et taux de remplissage
+- Production : par artiste et par date, recherche, pré-contrat, relances en rouge, mode booking seul, créer ou lier le dossier Drive
+- Notifications : cloche dans l'en-tête, rappels créés chaque matin
+
+
 ## 1.6.0 — 08/10/2026
 - Code réorganisé en fichiers séparés (un fichier par onglet, réglages, calculs, carte…), comme la Matrice Production AccessFac
 - Numéro de version affiché dans l'app (en-tête et onglet Réglages) et rechargement automatique des fichiers à chaque version

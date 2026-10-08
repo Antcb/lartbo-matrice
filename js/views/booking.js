@@ -1,98 +1,143 @@
 /**
- * Onglet Booking : liste des dates, carte, calcul des trajets.
+ * Onglet Booking : liste des dates à gauche ; à droite carte carrée, calcul de trajet A → B
+ * et enchaînements réels (dates d'un même artiste séparées d'un jour off au maximum).
+ * La carte (Leaflet) est créée une seule fois et déplacée d'un affichage à l'autre (attachMap).
  */
-import { stClass, stColor } from '../constants.js';
-import { route } from '../geo.js';
-import { byId, projName, showCoords, showsFiltered } from '../selectors.js';
+import { STATUS_COLOR, STATUSES, isOff, stColor } from '../constants.js';
+import { lingering } from '../data.js';
+import { route, routeCached } from '../geo.js';
+import { byId, projName, showCoords, showsFiltered, visibleShow } from '../selectors.js';
 import { S } from '../state.js';
-import { $, daysUntil, esc, eur, fmtDate } from '../utils.js';
+import { filterBar, stBadge, viewHead } from '../ui/bits.js';
+import { $, daysBetween, esc, eur, fmtDate, fmtShort } from '../utils.js';
 
 export function viewBooking(){
-  let shows = showsFiltered();
-  if (!S.showCancelled) shows = shows.filter(s => stClass(s.status)!=='off');
-  const count = k => shows.filter(s=>stClass(s.status)===k).length;
-  const totalConf = shows.filter(s=>stClass(s.status)==='conf').reduce((a,s)=>a+(Number(s.fee_ht)||0),0);
+  const all = showsFiltered();
+  const shows = all.filter(visibleShow);
+  const nOff = all.filter(s => isOff(s.status)).length;
+  const n = k => shows.filter(s => (s.status||'').startsWith(k)).length;
+  const totalConf = shows.filter(s=>(s.status||'').startsWith('Confirmée')).reduce((a,s)=>a+(Number(s.fee_ht)||0),0);
   let lastMonth = '', list = '';
   for (const s of shows){
     const m = s.date ? new Date(s.date+'T12:00:00').toLocaleDateString('fr-FR',{month:'long',year:'numeric'}) : 'Sans date';
-    if (m!==lastMonth){ list += `<div class="month">${m}</div>`; lastMonth=m; }
-    const d = s.date ? new Date(s.date+'T12:00:00') : null;
-    const pa = S.routePick.a===s.id, pb = S.routePick.b===s.id;
-    list += `<div class="gig ${pa||pb?'sel':''}" data-act="editShow" data-id="${s.id}">
-      <div class="day"><b>${d?String(d.getDate()).padStart(2,'0'):'—'}</b><span>${d?d.toLocaleDateString('fr-FR',{weekday:'short'}):''}</span></div>
-      <div class="what"><b>${esc(s.venue)}</b><small>${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))}${!S.project && s.project_id ? ' — '+esc(projName(s.project_id)) : ''}</small></div>
-      <div class="right"><span class="st ${stClass(s.status)}">${esc(s.status)}</span>
-        <span class="fee">${s.fee_ht?eur(s.fee_ht):''}${s.contract_type?' · '+esc(s.contract_type):''}</span>
-        <span class="pick" title="Choisir comme point de départ (A) ou d'arrivée (B) pour calculer le trajet">
-          <button class="btn small ${pa?'on':''}" data-act="pick" data-p="a" data-id="${s.id}">A</button><button class="btn small ${pb?'on':''}" data-act="pick" data-p="b" data-id="${s.id}">B</button></span>
-      </div></div>`;
+    if (m!==lastMonth){ const cnt = shows.filter(x => (x.date ? new Date(x.date+'T12:00:00').toLocaleDateString('fr-FR',{month:'long',year:'numeric'}) : 'Sans date') === m).length;
+      list += `<h2 class="month">${m} <small>${cnt} date${cnt>1?'s':''}</small></h2>`; lastMonth=m; }
+    list += gigRow(s);
   }
-  return `
-  <div class="view-head"><h1>Booking ${S.year}</h1>
-    <span class="sub"><span class="st int">${count('int')} intérêts</span> &nbsp; <span class="st opt">${count('opt')} options</span> &nbsp; <span class="st conf">${count('conf')} confirmées</span> &nbsp; · ${eur(totalConf)} confirmés</span>
-    <span class="spacer"></span>
-    <label class="muted"><input type="checkbox" data-act="toggleCancelled" ${S.showCancelled?'checked':''}> Annulées / sans suite</label>
-    <button class="btn primary" data-act="newShow">Nouvelle date</button>
-  </div>
-  <div class="pane-switch mobile-only" role="tablist">
-    <button class="btn small ${S.bookingPane!=='map'?'primary':''}" data-act="bookingPane" data-p="list">Liste</button>
-    <button class="btn small ${S.bookingPane==='map'?'primary':''}" data-act="bookingPane" data-p="map">Carte et trajets</button></div>
+  setBookingMap(shows);
+  return viewHead('Booking', {
+      sub: [plural(n('Intérêt'),'intérêt'), plural(n('Option'),'option'), plural(n('Confirmée'),'confirmée'), `${eur(totalConf)} de cachets confirmés`].join(' · '),
+      filters: filterBar(),
+      actions: `${nOff?`<button class="btn" data-act="toggleCancelled" aria-pressed="${S.showCancelled}">${S.showCancelled?'Masquer':'Afficher'} annulées / sans suite (${nOff})</button>`:''}
+        <button class="btn primary" data-act="newShow">Nouvelle date</button>`}) + `
+  <div class="pane-switch" role="tablist">
+    <button class="btn sm ${S.bookingPane!=='map'?'on':''}" data-act="bookingPane" data-p="list">Liste</button>
+    <button class="btn sm ${S.bookingPane==='map'?'on':''}" data-act="bookingPane" data-p="map">Carte et trajets</button></div>
   <div class="booking pane-${S.bookingPane==='map'?'map':'list'}">
     <div class="list-wrap">${list || `<div class="empty panel">Aucune date en ${S.year}. Ajoute un intérêt avec « Nouvelle date ».</div>`}</div>
-    <div class="map-wrap">
-      <div id="map" role="region" aria-label="Carte des dates"></div>
-      <div class="legend"><span class="st int">Intérêt</span><span class="st opt">Option</span><span class="st conf">Confirmée</span><span class="st book">Booking</span></div>
-      <div class="panel route-box" id="route-box">${routeBoxHTML(shows)}</div>
-    </div>
+    <aside class="side">
+      <div class="map-box"><div id="map-slot" role="region" aria-label="Carte des dates"></div></div>
+      <div class="legend">${legend(shows)}</div>
+      <div class="panel pad route-box" id="route-box">${routeBoxHTML(shows)}</div>
+    </aside>
   </div>`;
+}
+
+function gigRow(s){
+  const d = s.date ? new Date(s.date+'T12:00:00') : null;
+  const pa = S.routePick.a===s.id, pb = S.routePick.b===s.id;
+  return `<div class="gig ${pa||pb?'picked':''} ${lingering(s.id)&&isOff(s.status)?'leaving':''}" style="--c:${stColor(s.status)}" data-act="editShow" data-id="${s.id}">
+    <div class="day"><b>${d?String(d.getDate()).padStart(2,'0'):'—'}</b><span>${d?d.toLocaleDateString('fr-FR',{weekday:'short'}):''}</span></div>
+    <div class="what"><b>${esc(s.venue)}</b><small>${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))}${!S.project && s.project_id ? ' · '+esc(projName(s.project_id)) : ''}${s.date_end && s.date_end!==s.date ? ' · jusqu’au '+fmtShort(s.date_end) : ''}</small></div>
+    <div class="right">${stBadge(s.status)}
+      <span class="fee">${[s.fee_ht?eur(s.fee_ht):'', s.contract_type||''].filter(Boolean).join(' · ')}</span>
+      <span class="pick" title="Calcul de trajet : choisis un départ (A) puis une arrivée (B)">
+        <button class="btn sm ${pa?'on':''}" data-act="pick" data-p="a" data-id="${s.id}" aria-pressed="${pa}" aria-label="Départ du trajet">A</button><button class="btn sm ${pb?'on':''}" data-act="pick" data-p="b" data-id="${s.id}" aria-pressed="${pb}" aria-label="Arrivée du trajet">B</button></span>
+    </div></div>`;
+}
+
+const plural = (n, w) => `${n} ${w}${n>1?'s':''}`;
+
+const legend = shows => STATUSES.filter(st => shows.some(s=>s.status===st)).map(stBadge).join('');
+
+/** Enchaînements : dates d'un même artiste qui se suivent (au plus un jour off entre les deux) */
+export function chains(shows){
+  const out = [];
+  const byProj = {};
+  shows.filter(s => s.date && !isOff(s.status) && showCoords(s)).forEach(s => (byProj[s.project_id] ||= []).push(s));
+  for (const list of Object.values(byProj)){
+    list.sort((a,b)=>a.date.localeCompare(b.date));
+    for (let i=1;i<list.length;i++){
+      const a = list[i-1], b = list[i], gap = daysBetween(a.date_end || a.date, b.date);
+      if (gap >= 0 && gap <= 2) out.push({a, b, gap});
+    }
+  }
+  return out.sort((x,y)=>x.a.date.localeCompare(y.a.date));
 }
 
 export function routeBoxHTML(shows){
   const a = byId('shows', S.routePick.a), b = byId('shows', S.routePick.b);
-  let pair = '<p class="muted" style="margin:0">Choisis un départ (A) puis une arrivée (B) dans la liste des dates pour calculer la route.</p>';
-  if (a && b){
-    const key = a.id+'|'+b.id, r = S.routeCache[key];
-    pair = `<p style="margin:0"><b>${esc(a.venue)}</b> → <b>${esc(b.venue)}</b><br>
-      ${r ? (r.error ? `<span class="muted">${esc(r.error)}</span>` : `<b>${r.km} km</b> · ${r.time} de route`) : '<span class="muted">Calcul en cours…</span>'}</p>`;
+  let pair = '<p class="muted" style="margin:0">Clique sur A puis sur B dans deux dates pour calculer la distance et le temps de route.</p>';
+  if (a || b){
+    const r = a && b ? routeCached(a, b) : null;
+    pair = `<p style="margin:0 0 6px"><b>A</b> ${a?esc(a.venue)+' <span class="muted">'+esc(a.city||'')+'</span>':'—'}<br><b>B</b> ${b?esc(b.venue)+' <span class="muted">'+esc(b.city||'')+'</span>':'—'}</p>
+      ${a && b ? `<div class="route-result">${r ? (r.error ? `<span class="muted">${esc(r.error)}</span>` : `<b>${r.km} km</b> · ${r.time} de route`) : '<span class="muted">Calcul en cours…</span>'}</div>` : ''}
+      <button class="btn sm ghost" data-act="clearPick">Effacer</button>`;
   }
-  const conf = shows.filter(s=>stClass(s.status)==='conf' && s.date && showCoords(s));
-  let legs = '';
-  for (let i=1;i<conf.length;i++){
-    const k = conf[i-1].id+'|'+conf[i].id, r = S.routeCache[k];
-    const days = daysUntil(conf[i].date) - daysUntil(conf[i-1].date);
-    legs += `<li><span>${fmtDate(conf[i-1].date).slice(0,6)} ${esc(conf[i-1].city||conf[i-1].venue)} → ${fmtDate(conf[i].date).slice(0,6)} ${esc(conf[i].city||conf[i].venue)}</span>
-      <span class="km ${r && !r.error && days<=1 && r.km>600 ? 'long':''}">${r ? (r.error?'—':`${r.km} km · ${r.time}`) : '…'}${days>1?` · J+${days}`:''}</span></li>`;
-  }
-  return `<h3>Trajet</h3>${pair}${legs?`<h3 style="margin-top:12px">Enchaînement des dates confirmées</h3><ul class="legs">${legs}</ul>`:''}`;
+  const legs = chains(shows).map(({a, b, gap}) => {
+    const r = routeCached(a, b);
+    return `<li><span>${fmtShort(a.date)} ${esc(a.city||a.venue)} → ${fmtShort(b.date)} ${esc(b.city||b.venue)}</span>
+      <span class="km ${r && !r.error && gap<=1 && r.km>600 ? 'long':''}">${r ? (r.error?'—':`${r.km} km · ${r.time}`) : '…'}${gap===2?' · 1 jour off':gap===0?' · même jour':''}</span>
+      ${!S.project?`<span class="proj-line">${esc(projName(a.project_id))}</span>`:''}</li>`;
+  }).join('');
+  return `<h3>Trajet</h3>${pair}
+    <h3 style="margin-top:16px">Enchaînements</h3>
+    ${legs ? `<ul class="legs">${legs}</ul>` : '<p class="muted" style="margin:0">Aucune date qui se suit (au plus un jour off) sur cette période.</p>'}`;
 }
 
-export let MAP, MAP_LAYER;
+/* ---------------------------------------------------------------------------------------
+   Carte partagée (Booking et espace de prospection)
+   setMapData({points, key, fitTo}) : points = [{lat, lng, color, label, big, ring}]
+--------------------------------------------------------------------------------------- */
+let MAP = null, MAP_EL = null, LAYER = null, LAST_KEY = null;
 
-export function drawMap(){
-  const el = $('#map'); if (!el) return;
-  if (MAP){ MAP.remove(); MAP=null; }
-  MAP = L.map(el, {scrollWheelZoom:true}).setView([46.6, 2.4], 6);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution:'© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>', maxZoom:18}).addTo(MAP);
-  MAP_LAYER = L.layerGroup().addTo(MAP);
-  let shows = showsFiltered(); if (!S.showCancelled) shows = shows.filter(s=>stClass(s.status)!=='off');
-  const pts = [];
-  for (const s of shows){
-    const c = showCoords(s); if (!c) continue; pts.push(c);
-    L.circleMarker(c, {radius: stClass(s.status)==='conf'?9:7, color:'#fff', weight:2, fillColor: stColor(s.status), fillOpacity:1})
-      .bindPopup(`<b>${esc(s.venue)}</b><br>${fmtDate(s.date)} — ${esc(s.city||'')}<br>${esc(s.status)}${s.fee_ht?'<br>'+eur(s.fee_ht):''}`)
-      .addTo(MAP_LAYER);
-  }
-  const conf = shows.filter(s=>stClass(s.status)==='conf' && s.date && showCoords(s));
-  if (conf.length>1) L.polyline(conf.map(showCoords), {color: stColor('Confirmée'), weight:2, dashArray:'4 6', opacity:.7}).addTo(MAP_LAYER);
-  if (pts.length) MAP.fitBounds(pts, {padding:[30,30], maxZoom:9});
-  // routes
-  const a = byId('shows', S.routePick.a), b = byId('shows', S.routePick.b);
-  const jobs = [];
-  if (a && b) jobs.push([a,b,true]);
-  for (let i=1;i<conf.length;i++) jobs.push([conf[i-1], conf[i], false]);
-  jobs.forEach(([x,y,draw]) => route(x,y).then(r => {
-    if (draw && r && r.geometry && MAP) L.geoJSON(r.geometry, {style:{weight:4, color: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()}}).addTo(MAP_LAYER);
-    const box = $('#route-box'); if (box) box.innerHTML = routeBoxHTML(shows);
-  }));
+export function setMapData(data){ S.mapData = data; }
+
+function setBookingMap(shows){
+  const pts = shows.map(s => { const c = showCoords(s); return c && {lat:c[0], lng:c[1], color:stColor(s.status), big:(s.status||'').startsWith('Confirmée'),
+    label:`<b>${esc(s.venue)}</b><br>${fmtDate(s.date)} — ${esc(s.city||'')}<br>${esc(s.status)}${s.project_id?' · '+esc(projName(s.project_id)):''}${s.fee_ht?'<br>'+eur(s.fee_ht):''}`}; }).filter(Boolean);
+  setMapData({points: pts, key: `booking|${S.year}|${S.project}|${S.showCancelled}`});
+  // calcul des trajets en arrière-plan, puis mise à jour du cadre « Trajet »
+  const jobs = chains(shows).map(c => [c.a, c.b]);
+  const a = byId('shows', S.routePick.a), b = byId('shows', S.routePick.b); if (a && b) jobs.push([a, b]);
+  const todo = jobs.filter(([x,y]) => !routeCached(x,y));
+  if (todo.length) Promise.all(todo.map(([x,y]) => route(x,y))).then(() => { const box = $('#route-box'); if (box && S.view==='booking') box.innerHTML = routeBoxHTML(shows); });
 }
+
+export function attachMap(){
+  const slot = document.getElementById('map-slot'); if (!slot || !window.L) return;
+  if (!MAP){
+    MAP_EL = document.createElement('div'); MAP_EL.id = 'map-el';
+    slot.appendChild(MAP_EL);
+    MAP = L.map(MAP_EL, {scrollWheelZoom:true, zoomControl:true}).setView([46.6, 2.4], 6);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution:'© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>', maxZoom:18}).addTo(MAP);
+    LAYER = L.layerGroup().addTo(MAP);
+  } else slot.appendChild(MAP_EL);
+  MAP.invalidateSize();
+  const data = S.mapData || {points:[]};
+  LAYER.clearLayers();
+  for (const p of data.points){
+    const light = ['#A9C8EC','#BFE3B9','#C9CDD4','#9EA4AD'].includes(p.color);
+    L.circleMarker([p.lat, p.lng], {radius: p.big?9:7, color: p.ring ? '#C8372D' : (light ? '#5B677D' : '#FFFFFF'), weight: p.ring?3:1.5,
+      fillColor: p.color, fillOpacity:1}).bindPopup(p.label).addTo(LAYER);
+  }
+  if (data.key !== LAST_KEY){
+    LAST_KEY = data.key;
+    const fit = data.fitTo || data.points.map(p => [p.lat, p.lng]);
+    if (fit.length === 1) MAP.setView(fit[0], data.zoom || 8);
+    else if (fit.length) MAP.fitBounds(fit, {padding:[30,30], maxZoom:9});
+    else MAP.setView([46.6, 2.4], 5);
+  }
+}
+export const mapColors = STATUS_COLOR;

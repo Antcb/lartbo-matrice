@@ -1,4 +1,4 @@
-# Matrice Booking — L'ArtBoristerie
+# Matrice — L'ArtBoristerie Productions
 
 Outil de booking et de production qui remplace l'espace Notion : contacts et structures, booking avec carte et trajets, production (suivi admin, facturation, commissions), ticketing, communication, projets, suivi des structures et To Do.
 
@@ -19,9 +19,13 @@ js/
   data.js             lecture / écriture dans Supabase, envoi de fichiers
   selectors.js        lecture des données (noms, filtres, suivis, urgence des tâches)
   calc.js             🧮 calculs : acomptes, solde, commission L'ArtBo, part Pyrprod, net
-  geo.js              localisation des villes, distances, itinéraires
+  reminders.js        règles de relance de la production (mêmes règles que les notifications)
+  geo.js              recherche de villes / adresses, distances, itinéraires
   ui/cells.js         champs modifiables directement dans les tableaux
-  ui/modal.js         fenêtre de formulaire générique
+  ui/bits.js          pastilles de statut, onglets de page, filtres, zone de dépôt de fichiers
+  ui/autocomplete.js  recherche avec suggestions (structures, dates, contacts, adresses) + « Créer »
+  ui/datefield.js     champ date : saisie au clavier ou calendrier
+  ui/modal.js         fenêtres de formulaire (2 niveaux)
   views/              un fichier par onglet
     booking.js  production.js  ticketing.js  communication.js  projects.js
     todo.js  suivi.js  structures.js  contacts.js  settings.js  auth.js
@@ -30,7 +34,9 @@ js/
   events.js           saisies, filtres, pièces jointes
   app.js              en-tête, onglets, démarrage
 tools/bump_version.py nouvelle version + changelog + rechargement des fichiers
+assets/               logo, picto, icônes
 supabase/             structure de la base, import Notion, fonctions serveur
+  migrations/              évolutions de la base, une par version (à lire dans l'ordre)
   functions/import-suivi   import du contenu des suivis Notion
   functions/resume-suivi   résumé de suivi par IA
   functions/backup-export  export utilisé par la sauvegarde quotidienne
@@ -42,7 +48,8 @@ apps-script/          création automatique des dossiers Drive (Code.gs)
 
 | Je veux changer…                                   | Fichier                         |
 |----------------------------------------------------|---------------------------------|
-| Un statut, une liste déroulante, l'ordre des onglets | `js/constants.js`              |
+| Un statut, sa couleur, une liste déroulante, les pôles, l'ordre des onglets | `js/constants.js` |
+| Une règle de relance (10 jours, J-7, J-4 mois…)     | `js/reminders.js` + `supabase/migrations/…_rappels.sql` |
 | Un calcul de commission, d'acompte ou de net        | `js/calc.js`                    |
 | Les pourcentages par défaut                         | dans l'app : onglet Réglages    |
 | L'affichage d'un onglet                             | `js/views/<onglet>.js`          |

@@ -1,48 +1,66 @@
 /**
- * Onglet To Do et tableaux de tâches réutilisés ailleurs.
+ * Onglet To Do et tableaux de tâches réutilisés ailleurs (structure, projet).
+ * Une tâche cochée reste visible 5 s (bouton Annuler) avant de disparaître.
  */
 import { CFG } from '../config.js';
-import { TASK_STATUS } from '../constants.js';
-import { byId, isDone, projIds, projNames, structName, taskSort, urgency } from '../selectors.js';
+import { DEPARTMENTS, DEPT_COLOR, TASK_STATUS, TEAM_NAMES } from '../constants.js';
+import { lingering } from '../data.js';
+import { attachmentsOf, isDone, projIds, projNames, showLabel, byId, structName, taskSort, teamName, urgency } from '../selectors.js';
 import { S } from '../state.js';
-import { cIn, cSel, projChips } from '../ui/cells.js';
-import { daysUntil, esc, fmtDate } from '../utils.js';
+import { deptBadge, viewHead } from '../ui/bits.js';
+import { cAc, cIn, cSel, projChips } from '../ui/cells.js';
+import { daysUntil, esc, matches } from '../utils.js';
 
 export function taskSection(all){
-  const done = all.filter(isDone), open = all.filter(t=>!isDone(t));
-  const shown = S.showDoneTasks ? all : open;
+  const done = all.filter(t => isDone(t) && !lingering(t.id)), open = all.filter(t => !isDone(t) || lingering(t.id));
+  const shown = (S.showDoneTasks ? all : open).slice().sort(taskSort);
   return taskTable(shown, open.length ? null : (done.length ? 'Tout est fait.' : null))
-    + (done.length ? `<button class="btn small ghost toggle-more" data-act="toggleDoneTasks">${S.showDoneTasks?'Masquer':'Afficher'} les tâches terminées (${done.length})</button>` : '');
+    + (done.length ? `<button class="btn toggle-more" data-act="toggleDoneTasks" aria-pressed="${!!S.showDoneTasks}">${S.showDoneTasks?'Masquer':'Afficher'} les tâches terminées (${done.length})</button>` : '');
 }
 
 export function taskTable(tasks, emptyMsg){
   if (!tasks.length) return `<div class="empty panel">${emptyMsg || 'Rien à faire ici. Ajoute une tâche avec « Nouvelle tâche ».'}</div>`;
-  return `<div class="tbl-wrap"><table><thead><tr><th></th><th>Tâche</th><th>Urgence</th><th>Échéance</th><th>Statut</th><th>Pour</th><th>Projets</th><th>Structure</th><th>Date</th></tr></thead><tbody>
-  ${tasks.map(t=>{ const u=urgency(t), sh=byId('shows',t.show_id);
-    return `<tr class="${['Done','Cancelled'].includes(t.status)?'task-done':''}">
+  const team = CFG.TEAM.map(e=>[e, TEAM_NAMES[e]||e]);
+  return `<div class="tbl-wrap"><table><thead><tr><th></th><th>Tâche</th><th>Pôle</th><th>Urgence</th><th>Échéance</th><th>Pour</th><th>Projets</th><th>Structure</th><th>Date concernée</th></tr></thead><tbody>
+  ${tasks.map(t=>{ const u=urgency(t), nf = attachmentsOf('task_id', t.id).length; const leaving = lingering(t.id) && isDone(t);
+    return `<tr class="${isDone(t) && !leaving ? 'task-done' : ''} ${leaving?'leaving':''}">
       <td><input type="checkbox" data-act="toggleTask" data-id="${t.id}" ${t.status==='Done'?'checked':''} aria-label="Marquer comme faite"></td>
-      <td class="full-cell" style="white-space:normal;min-width:240px"><div class="task-title">${cIn('tasks',t.id,'title',t.title,'text','class="title-input" aria-label="Nom de la tâche"')}
-        <button class="btn small ghost" data-act="editTask" data-id="${t.id}" title="Tous les détails (notes, date, pôle…)">Détails</button></div>${t.tags?.length?t.tags.map(x=>`<span class="tag">${esc(x)}</span>`).join(''):''}</td>
+      <td class="full-cell" style="min-width:260px"><div class="task-title">${cIn('tasks',t.id,'title',t.title,'text','aria-label="Nom de la tâche"')}
+        <button class="btn sm ghost" data-act="editTask" data-id="${t.id}" title="Notes, pièces jointes, statut…">Détails${nf?` · ${nf} 📎`:''}</button></div>
+        ${t.notes?`<div class="muted" style="font-size:13px;padding:0 6px;white-space:pre-line">${esc(t.notes.length>160?t.notes.slice(0,160)+'…':t.notes)}</div>`:''}</td>
+      <td><select class="dept-sel" data-t="tasks" data-id="${t.id}" data-f="department" style="--c:${DEPT_COLOR[t.department]||'#8A94A6'}" aria-label="Pôle"><option value="">Pôle ?</option>${DEPARTMENTS.map(d=>`<option ${d===t.department?'selected':''}>${d}</option>`).join('')}</select></td>
       <td>${u?`<span class="urg ${u.cls}">${esc(u.label)}</span>`:''}</td>
       <td>${cIn('tasks',t.id,'deadline',t.deadline,'date')}</td>
-      <td>${cSel('tasks',t.id,'status',t.status,TASK_STATUS,false)}</td>
-      <td>${cSel('tasks',t.id,'assigned_to',t.assigned_to,CFG.TEAM.map(e=>[e,e.split('@')[0]]))}</td>
-      <td style="white-space:normal;min-width:180px">${projChips('tasks', t)}</td><td>${t.structure_id?`<a href="#" data-act="openStructure" data-id="${t.structure_id}">${esc(structName(t.structure_id))}</a>`:''}</td>
-      <td>${sh?esc(fmtDate(sh.date)+' '+sh.venue):''}</td></tr>`;}).join('')}
+      <td>${cSel('tasks',t.id,'assigned_to',t.assigned_to,team)}</td>
+      <td style="min-width:180px">${projChips('tasks', t)}</td>
+      <td style="min-width:200px">${cAc('structures','tasks',t.id,'structure_id',t.structure_id,{placeholder:'Chercher une structure…', create:true})}</td>
+      <td style="min-width:270px">${cAc('shows','tasks',t.id,'show_id',t.show_id,{placeholder:'Chercher une date…'})}</td></tr>`;}).join('')}
   </tbody></table></div>`;
 }
 
 export function viewTodo(){
   const f = S.todoFilter || 'open';
+  const dept = S.todoDept || '';
   let tasks = S.db.tasks.filter(t => !S.project || projIds(t).includes(S.project));
-  if (f==='open') tasks = tasks.filter(t=>!['Done','Cancelled'].includes(t.status));
-  if (f==='mine') tasks = tasks.filter(t=>!['Done','Cancelled'].includes(t.status) && t.assigned_to===S.user.email);
-  if (f==='late') tasks = tasks.filter(t=>{ const d=daysUntil(t.deadline); return d!=null && d<=7 && !['Done','Cancelled'].includes(t.status); });
-  const q = (S.search.todo||'').toLowerCase();
-  if (q) tasks = tasks.filter(t => (t.title+' '+projNames(t)+' '+structName(t.structure_id)).toLowerCase().includes(q));
+  const open = t => !isDone(t) || lingering(t.id);
+  if (f==='open') tasks = tasks.filter(open);
+  if (f==='mine') tasks = tasks.filter(t=>open(t) && t.assigned_to===S.user.email);
+  if (f==='late') tasks = tasks.filter(t=>{ const d=daysUntil(t.deadline); return d!=null && d<=7 && open(t); });
+  const byDept = d => tasks.filter(t => (t.department||'') === d).length;
+  const total = tasks.length;
+  if (dept) tasks = tasks.filter(t => (t.department||'') === (dept==='-' ? '' : dept));
+  const q = S.search.todo || '';
+  if (q) tasks = tasks.filter(t => matches(`${t.title} ${t.notes||''} ${projNames(t)} ${structName(t.structure_id)} ${t.department||''} ${showLabel(byId('shows', t.show_id))}`, q));
   tasks.sort(taskSort);
-  const btn = (k,l) => `<button class="btn small ${f===k?'primary':''}" data-act="todoFilter" data-f="${k}">${l}</button>`;
-  return `<div class="view-head"><h1>To Do</h1>${btn('open','À faire')}${btn('mine','Les miennes')}${btn('late','Urgentes (≤ 7 j)')}${btn('all','Avec les terminées')}
-    <span class="spacer"></span><input class="search" type="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche" placeholder="Rechercher une tâche" data-search="todo" value="${esc(S.search.todo||'')}">
-    <button class="btn primary" data-act="newTask">Nouvelle tâche</button></div>${taskTable(tasks)}`;
+  const btn = (k,l) => `<button class="btn ${f===k?'on':''}" data-act="todoFilter" data-f="${k}" aria-pressed="${f===k}">${l}</button>`;
+  const dbtn = (k,l,n) => `<button class="btn ${dept===k?'on':''}" data-act="todoDept" data-f="${k}" aria-pressed="${dept===k}">${l} <span class="count">${n}</span></button>`;
+  return viewHead('To Do', {sub:`${tasks.length} tâche${tasks.length>1?'s':''}`,
+      filters:`<div class="seg">${btn('open','À faire')}${btn('mine','Les miennes')}${btn('late','Urgentes (≤ 7 j)')}${btn('all','Avec les terminées')}</div>
+        <select id="f-project" class="sel" aria-label="Projet"><option value="">Tous les artistes</option>${S.db.projects.slice().sort((a,b)=>(b.active-a.active)||a.name.localeCompare(b.name)).map(p=>`<option value="${p.id}" ${p.id===S.project?'selected':''}>${esc(p.name)}${p.active?'':' (inactif)'}</option>`).join('')}</select>
+        <input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-taches" placeholder="Rechercher une tâche" data-search="todo" value="${esc(q)}">`,
+      actions:'<button class="btn primary" data-act="newTask">Nouvelle tâche</button>'})
+    + `<div class="dept-filter" role="group" aria-label="Pôle">${dbtn('', 'Tous les pôles', total)}${DEPARTMENTS.map(d=>dbtn(d, d, byDept(d))).join('')}${dbtn('-', 'Sans pôle', byDept(''))}</div>`
+    + taskTable(tasks);
 }
+
+export { teamName, TASK_STATUS };
