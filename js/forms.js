@@ -4,10 +4,10 @@
  */
 import { render } from './app.js';
 import { CFG } from './config.js';
-import { CONFIRMED_PROD, CONTRACTS, DEPARTMENTS, PRIORITIES, PROSPECT, STATUSES, TASK_STATUS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
+import { CONFIRMED_PROD, CONTRACTS, PRIORITIES, PROSPECT, STATUSES, TASK_STATUS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
 import { insert, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode } from './geo.js';
-import { attachmentsOf, byId, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
+import { attachmentsOf, byId, deptNames, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow } from './ui/bits.js';
@@ -23,7 +23,7 @@ export function showFields(s){
   return [
     {k:'structure_id', label:'Structure (salle, festival, organisateur)', type:'ac', kind:'structures', create:true, full:true},
     {k:'venue', label:'Nom du lieu / festival', full:true},
-    {k:'project_id', label:'Artiste', type:'select', options:activeProjects([s.project_id].filter(Boolean))},
+    {k:'project_id', label:'Artiste', type:'project'},
     {k:'status', label:'Statut', type:'select', options:STATUSES.includes(s.status)||!s.status ? STATUSES : [s.status, ...STATUSES], blank:false},
     {k:'date', label:'Date', type:'date'}, {k:'date_end', label:'Fin (si plusieurs jours)', type:'date'},
     {k:'city', label:'Ville', type:'city', fill:''}, {k:'department', label:'Département (ou pays)', placeholder:'ex. 69, CH, BE'},
@@ -43,7 +43,7 @@ export const showPrefillFromStructure = st => st ? {structure_id: st.id, venue: 
 
 export function editShow(id, projectId, prefill={}){
   const s = id ? byId('shows', id) : {status:'Intérêt Salle', contract_type:'Cession', project_id: projectId||S.project||null, communication_enabled:true, date:null, ...prefill};
-  const extra = hiddenFields(s, [['lat',1],['lng',1]])
+  const extra = hiddenFields(s, [['lat',1],['lng',1],['prospect_id']])
     + (id && s.structure_id ? `<div class="full"><button type="button" class="btn sm" data-act="openStructure" data-id="${s.structure_id}">Ouvrir la fiche structure et son suivi</button></div>` : '')
     + (id && s.status?.startsWith('Confirmée') ? `<div class="full drive">${driveHTML(s)}</div>` : '');
   const p = openModal({
@@ -117,7 +117,7 @@ export function editTask(id, prefill={}){
   openModal({ title: id ? 'Tâche' : 'Nouvelle tâche', values: {...t, project_ids: projIds(t)},
     fields: [
       {k:'title', label:'Tâche', full:true},
-      {k:'department', label:'Pôle', type:'select', options:DEPARTMENTS},
+      {k:'department', label:'Pôle', type:'select', options:deptNames().concat(t.department && !deptNames().includes(t.department) ? [t.department] : [])},
       {k:'assigned_to', label:'Pour', type:'select', options:team()},
       {k:'deadline', label:'Échéance', type:'date'}, {k:'status', label:'Statut', type:'select', options:TASK_STATUS, blank:false},
       {k:'project_ids', label:'Projet(s)', type:'checks', options:activeProjects(projIds(t)), full:true},
@@ -253,31 +253,38 @@ export function editProspect(id){
       if (c && !linksOfStructure(v.structure_id).some(x=>x.id===c.id)) await syncLinks('structure', v.structure_id, [...linksOfStructure(v.structure_id).map(x=>x.id), c.id]);
       if (note || c) await insert('prospect_logs', {prospect_id:row.id, date:v.last_contact||today(), kind, contact_name:c?.display_name||null, body:note||null, author:S.user.email});
       if (files.length) await uploadFiles({prospect_id: row.id}, files);
-      S.view='prospects'; S.suiviPage=row.id; S.wsTarget=null;
+      S.view='prospects'; S.suiviPage=row.id; S.wsTarget=undefined; S.wsFor=null;
     }
   });
 }
 
 /** Export CSV des suivis : un projet, un ou plusieurs statuts → une ligne par contact de la structure */
-export function exportSuivis(){
-  openModal({ title:'Exporter les suivis (CSV)', saveLabel:'Télécharger le CSV',
-    values:{project: S.project || '', statuses: PROSPECT.filter(x=>x!=='Closed')},
+export function exportSuivis(projectId){
+  const fixed = projectId ? byId('projects', projectId) : null;
+  openModal({ title: fixed ? `Exporter les suivis — ${fixed.name}` : 'Exporter les suivis (CSV)', saveLabel:'Télécharger le CSV',
+    values:{project: projectId || S.project || '', statuses: PROSPECT.filter(x=>x!=='Closed')},
     fields:[
-      {k:'project', label:'Projet', type:'select', options:projectOptions().map(p=>[p.id, p.name + (p.active?'':' (inactif)')]), full:true},
+      ...(fixed ? [] : [{k:'project', label:'Projet', type:'project', full:true}]),
       {k:'statuses', label:'Statuts', type:'checks', options:PROSPECT.map(x=>[x,x]), full:true},
+      {k:'from', label:'Dernier échange à partir du', type:'date'}, {k:'to', label:'jusqu’au', type:'date'},
     ],
     onSave: async v => {
-      if (!v.project){ toast('Choisis un projet', true); return false; }
+      const pid = projectId || v.project;
+      if (!pid){ toast('Choisis un projet', true); return false; }
       if (!v.statuses.length){ toast('Coche au moins un statut', true); return false; }
-      const list = S.db.prospects.filter(p => projIds(p).includes(v.project) && v.statuses.includes(p.status));
+      const list = S.db.prospects.filter(p => projIds(p).includes(pid) && v.statuses.includes(p.status)).filter(p => {
+        const last = lastExchange(p);
+        if ((v.from || v.to) && !last) return false;
+        return (!v.from || last >= v.from) && (!v.to || last <= v.to);
+      });
       const rows = [['Projet','Structure','Ville','Prénom','Nom','Mail','Statut','Date du dernier échange']];
       for (const p of list){
         const st = byId('structures', p.structure_id), contacts = linksOfStructure(p.structure_id), last = lastExchange(p) || '';
         const lastFr = last ? last.split('-').reverse().join('/') : '';
-        if (!contacts.length) rows.push([projName(v.project), st?.name||p.name, st?.city||'', '', '', '', p.status, lastFr]);
-        for (const c of contacts) rows.push([projName(v.project), st?.name||p.name, st?.city||'', c.first_name||'', c.last_name || (c.first_name?'':c.display_name) || '', c.email||'', p.status, lastFr]);
+        if (!contacts.length) rows.push([projName(pid), st?.name||p.name, st?.city||'', '', '', '', p.status, lastFr]);
+        for (const c of contacts) rows.push([projName(pid), st?.name||p.name, st?.city||'', c.first_name||'', c.last_name || (c.first_name?'':c.display_name) || '', c.email||'', p.status, lastFr]);
       }
-      downloadCSV(`suivis-${projName(v.project).replace(/[^\w]+/g,'-')}-${today()}.csv`, rows);
+      downloadCSV(`suivis-${projName(pid).replace(/[^\w]+/g,'-')}-${today()}.csv`, rows);
       toast(`${rows.length-1} ligne(s) exportée(s)`);
     }
   });
@@ -297,20 +304,22 @@ export function newEvent(structureId){
 /* ------------------------------------------------------------------ Photo de projet */
 export function projectPhoto(id){
   const p = byId('projects', id);
-  let pos = (p.photo_pos || '50% 50%').split(' ').map(x=>parseFloat(x));
+  let pos = (p.photo_pos || '50% 50% 1').split(' ').map(x=>parseFloat(x)); if (!pos[2]) pos[2] = 1;
+  const style = () => `object-position:${pos[0]}% ${pos[1]}%;transform:scale(${pos[2]});transform-origin:${pos[0]}% ${pos[1]}%`;
   let path = p.photo_path;
   const draw = async () => {
     const box = $('#cropper'); if (!box) return;
     const u = path ? await signedUrl(path) : null;
-    box.innerHTML = u ? `<img src="${esc(u)}" alt="" style="object-position:${pos[0]}% ${pos[1]}%">` : '<div class="empty" style="color:#fff">Choisis une image</div>';
+    box.innerHTML = u ? `<img src="${esc(u)}" alt="" style="${style()}">` : '<div class="empty" style="color:#fff">Choisis une image</div>';
   };
   openModal({ title:'Photo du projet', saveLabel:'Enregistrer la photo',
     fields:[{k:'_h', type:'html', full:true, html:`<div class="cropper" id="cropper"></div>
-      <p class="help" style="text-align:center">Fais glisser l’image pour choisir la partie visible dans le carré.</p>
+      <div class="target-row" style="justify-content:center;margin-top:10px"><label for="photo-zoom" class="muted">Zoom</label><input id="photo-zoom" type="range" min="1" max="3" step="0.05" value="${pos[2]}" style="max-width:220px"></div>
+      <p class="help" style="text-align:center">Fais glisser l’image pour choisir la partie visible dans le carré, et zoome si besoin.</p>
       <div class="dropzone" data-photo-drop="1" style="justify-content:center"><label class="btn sm file-btn">Choisir une image<input type="file" accept="image/*" class="file-input" id="photo-file"></label><span class="drop-hint">ou glisse-la ici</span></div>`}],
     onSave: async () => {
       if (!path){ toast('Choisis une image', true); return false; }
-      await save('projects', id, {photo_path: path, photo_pos: `${Math.round(pos[0])}% ${Math.round(pos[1])}%`}, {rerender:false});
+      await save('projects', id, {photo_path: path, photo_pos: `${Math.round(pos[0])}% ${Math.round(pos[1])}% ${pos[2]}`}, {rerender:false});
     }
   });
   draw();
@@ -320,7 +329,7 @@ export function projectPhoto(id){
     toast('Envoi de l’image…');
     const {error} = await sb.storage.from('suivi').upload(newPath, file, {contentType:file.type, upsert:false});
     if (error) return toast(error.message, true);
-    path = newPath; pos = [50, 50]; draw();
+    path = newPath; pos = [50, 50, 1]; const zr = $('#photo-zoom'); if (zr) zr.value = 1; draw();
   };
   $('#photo-file').onchange = e => upload(e.target.files[0]);
   const dz = $('[data-photo-drop]');
@@ -331,9 +340,10 @@ export function projectPhoto(id){
   const box = $('#cropper'); let drag = null;
   box.onpointerdown = e => { drag = {x:e.clientX, y:e.clientY, p:[...pos]}; box.setPointerCapture(e.pointerId); box.style.cursor='grabbing'; };
   box.onpointermove = e => { if (!drag) return; const img = box.querySelector('img'); if (!img) return;
-    const k = 100 / box.clientWidth * 1.4;
-    pos = [Math.min(100, Math.max(0, drag.p[0] - (e.clientX-drag.x)*k)), Math.min(100, Math.max(0, drag.p[1] - (e.clientY-drag.y)*k))];
-    img.style.objectPosition = `${pos[0]}% ${pos[1]}%`; };
+    const k = 100 / box.clientWidth / pos[2];
+    pos = [Math.min(100, Math.max(0, drag.p[0] - (e.clientX-drag.x)*k)), Math.min(100, Math.max(0, drag.p[1] - (e.clientY-drag.y)*k)), pos[2]];
+    img.setAttribute('style', style()); };
+  $('#photo-zoom').oninput = e => { pos[2] = Number(e.target.value); const img = box.querySelector('img'); if (img) img.setAttribute('style', style()); };
   box.onpointerup = () => { drag = null; box.style.cursor=''; };
 }
 

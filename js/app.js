@@ -5,7 +5,7 @@ import './events.js';
 import './views/auth.js';
 import './ui/datefield.js';
 import './ui/autocomplete.js';
-import { ACTIONS } from './actions.js';
+import { ACTIONS, cleanupDraft } from './actions.js';
 import { byId, teamName, unreadNotifs } from './selectors.js';
 import { netArtbo, payAmount, paymentsOf } from './calc.js';
 import { APP_VERSION } from './config.js';
@@ -96,7 +96,7 @@ export function render(){
   if (S.focusProspect){ const el=document.getElementById('pr-'+S.focusProspect); if (el) el.scrollIntoView({block:'start'}); S.focusProspect=null; }
 }
 
-export function go(view){ S.view=view; S.projectPage=null; S.structurePage=null; S.suiviPage=null; S.userOpen=false; S.notifOpen=false; localSet('view',S.view); render(); window.scrollTo(0,0); }
+export function go(view){ cleanupDraft(); S.view=view; S.projectPage=null; S.structurePage=null; S.suiviPage=null; S.userOpen=false; S.notifOpen=false; localSet('view',S.view); render(); window.scrollTo(0,0); }
 
 document.addEventListener('click', async e => {
   const t = e.target.closest('[data-view],[data-act],#logout');

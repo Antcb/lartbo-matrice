@@ -3,7 +3,8 @@
  */
 import { APP_VERSION } from '../config.js';
 import { sb } from '../data.js';
-import { setting } from '../selectors.js';
+import { departments, setting } from '../selectors.js';
+import { fetchAll } from '../data.js';
 import { S, touch } from '../state.js';
 import { viewHead } from '../ui/bits.js';
 import { cIn } from '../ui/cells.js';
@@ -21,7 +22,15 @@ export function viewSettings(){
         <label>Solde</label><span><b>${esc(100 - ac)} %</b> <span class="muted">(100 % − acompte)</span></span>
         <label for="set-artbo">Commission L'ArtBo si le projet n'en précise pas (%)</label><input id="set-artbo" type="number" step="any" data-act-setting="default_artbo_pct" value="${esc(setting('default_artbo_pct')??'')}">
         <label for="set-cnm">Taxe CNM (%)</label><input id="set-cnm" type="number" step="any" data-act-setting="default_cnm_pct" value="${esc(setting('default_cnm_pct')??'')}">
-      </div></div>
+      </div>
+      <p class="help" style="margin:14px 0 8px">Les nouvelles dates confirmées prennent ces pourcentages. Les dates déjà confirmées gardent les leurs, sauf si tu les mets à jour :</p>
+      <button class="btn sm" data-act="applyAcompte">Appliquer ${esc(ac)} % / ${esc(100-ac)} % aux acomptes et soldes pas encore envoyés</button></div>
+    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Pôles des tâches</h3>
+      <p class="help" style="margin:0 0 12px">Renommer un pôle met à jour les tâches qui l’utilisent.</p>
+      ${departments().map((d,i)=>`<div class="link-row" style="grid-template-columns:44px 1fr auto"><input type="color" value="${esc(d.color)}" data-dept="${i}" data-k="color" aria-label="Couleur du pôle ${esc(d.name)}" style="padding:2px;height:32px">
+        <input value="${esc(d.name)}" data-dept="${i}" data-k="name" aria-label="Nom du pôle">
+        <button class="btn icon sm ghost danger" data-act="rmDept" data-i="${i}" aria-label="Supprimer le pôle ${esc(d.name)}">✕</button></div>`).join('')}
+      <button class="btn sm" data-act="addDept" style="margin-top:10px">Ajouter un pôle</button></div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Partenaires / co-producteurs</h3>
       <p class="help" style="margin:0 0 12px">% de la commission L'ArtBo reversé au partenaire, sur les projets où il est choisi.</p>
       <table><tbody>${S.db.partners.map(p=>`<tr><td>${cIn('partners',p.id,'name',p.name)}</td><td class="num">${cIn('partners',p.id,'default_pct',p.default_pct,'number','class="narrow"')} %</td></tr>`).join('')}</tbody></table>
@@ -49,3 +58,32 @@ document.addEventListener('change', async e => {
   }
   if (await setSetting(k, v)) toast('Réglage enregistré');
 });
+
+/** Pôles : liste [{name, color}] enregistrée dans le réglage « departments » */
+export async function saveDepartments(list){ return setSetting('departments', list); }
+
+document.addEventListener('change', async e => {
+  const i = e.target.dataset.dept; if (i === undefined) return;
+  const list = departments().map(d => ({...d})), k = e.target.dataset.k, v = e.target.value.trim();
+  const old = list[i].name;
+  if (k === 'name' && !v) return toast('Le pôle doit avoir un nom', true);
+  list[i][k] = v;
+  if (!await saveDepartments(list)) return;
+  if (k === 'name' && old !== v){
+    await sb.from('tasks').update({department: v}).eq('department', old);
+    S.db.tasks.forEach(t => { if (t.department === old) t.department = v; }); touch('tasks');
+  }
+  toast('Pôles enregistrés'); render();
+});
+
+export async function applyAcompte(){
+  const ac = Number(setting('default_acompte_pct') ?? 0);
+  if (!confirm(`Mettre ${ac} % sur les acomptes et ${100-ac} % sur les soldes pas encore envoyés (sans montant saisi à la main) ?`)) return;
+  // seulement l'acompte et le solde créés à la confirmation (pas les acomptes ajoutés à la main)
+  for (const [kind, pct, sort] of [['acompte', ac, 10], ['solde', 100-ac, 20]]){
+    const {error} = await sb.from('show_payments').update({pct}).eq('kind', kind).eq('sort', sort).is('sent_at', null).is('amount', null);
+    if (error) return toast(error.message, true);
+  }
+  S.db.show_payments = await fetchAll('show_payments'); touch('show_payments');
+  toast('Acomptes et soldes mis à jour'); render();
+}

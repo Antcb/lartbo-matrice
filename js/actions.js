@@ -7,10 +7,27 @@ import { paymentsOf } from './calc.js';
 import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
 import { insert, openStored, refreshShowSide, remove, removeWhere, save, saveLinger, sb } from './data.js';
 import { editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
-import { attachmentsOf, byId, filesOf, logsOf, projIds, projNames, setting, showsFiltered, structName } from './selectors.js';
+import { departments, attachmentsOf, byId, filesOf, logsOf, projIds, projNames, setting, showsFiltered, structName } from './selectors.js';
 import { S, touch } from './state.js';
 import { MODALS, openModal } from './ui/modal.js';
-import { $, fmtDate, toast } from './utils.js';
+import { applyAcompte, saveDepartments } from './views/settings.js';
+import { $, fmtDate, toast, today } from './utils.js';
+
+/** Nouveau suivi : créé tout de suite et ouvert dans l'espace de prospection (pas de fenêtre) */
+async function newSuivi(structureId){
+  await cleanupDraft();
+  const pid = S.project && byId('projects', S.project)?.active ? S.project : null;
+  const row = await insert('prospects', {name:'Suivi', status:'Mailed', last_contact: today(), structure_id: structureId || null, project_ids: pid ? [pid] : [], project_id: pid});
+  if (!row) return;
+  S.draftSuivi = row.id; S.view='prospects'; S.suiviPage=row.id; S.wsTarget=undefined; S.wsFor=null; S.wsProject=null;
+  render(); window.scrollTo(0,0);
+}
+/** Un nouveau suivi laissé vide (sans structure ni échange) est supprimé quand on le quitte */
+export async function cleanupDraft(){
+  const id = S.draftSuivi; if (!id) return; S.draftSuivi = null;
+  const p = byId('prospects', id); if (!p) return;
+  if (!p.structure_id && !logsOf(id).length && !filesOf(id).length && !p.summary && !p.content_md) await remove('prospects', id);
+}
 
 export const ACTIONS = {
   closeModal: t => (t.dataset.level==='2' ? $('#modal2') : $('#modal')).close(),
@@ -90,6 +107,15 @@ export const ACTIONS = {
     const files = attachmentsOf('project_log_id', t.dataset.id); if (files.length){ await sb.storage.from('suivi').remove(files.map(f=>f.path)); await removeWhere('attachments', 'project_log_id', t.dataset.id); }
     if (await remove('project_logs', t.dataset.id)) render(); },
   addMember: async t => { await insert('project_members', {project_id:t.dataset.id, sort:999}); render(); },
+  memberCard: t => { const m = byId('project_members', t.dataset.id); const keys = Object.keys(m.data||{});
+    openModal({ title: [m.first_name, m.last_name].filter(Boolean).join(' ') || 'Membre', values:{...m, ...Object.fromEntries(keys.map((k,i)=>['_d'+i, m.data[k]]))},
+      fields:[{k:'first_name', label:'Prénom'}, {k:'last_name', label:'Nom'}, {k:'role', label:'Poste'}, {k:'email', label:'Mail', type:'email'}, {k:'phone', label:'Téléphone'},
+        {k:'birth_date', label:'Date de naissance', type:'date'}, {k:'address', label:'Adresse', type:'fulladdr', full:true},
+        ...(keys.length ? [{k:'_sep', type:'html', cls:'sep', html:'<h3>Autres informations (import Movinmotion)</h3>'}] : []),
+        ...keys.map((k,i)=>({k:'_d'+i, label:k}))],
+      onDelete: async () => remove('project_members', m.id),
+      onSave: async v => { const data = {}; keys.forEach((k,i) => { if (v['_d'+i]) data[k] = v['_d'+i]; delete v['_d'+i]; }); delete v._sep;
+        await save('project_members', m.id, {...v, data}, {rerender:false}); } }); },
   delMember: async t => { if (confirm('Supprimer ce membre ?') && await remove('project_members', t.dataset.id)) render(); },
 
   // Contacts & structures
@@ -105,17 +131,18 @@ export const ACTIONS = {
     await save('structures', st.id, {admin: {...(st.admin||{}), address: st.address||'', postal_code: st.postal_code||'', city: st.city||'', country: st.country||''}}); },
 
   // Suivis
-  newProspect: () => { S.newSuiviStructure=null; editProspect(null); }, editProspect: t => editProspect(t.dataset.id),
-  newSuiviFor: t => { S.newSuiviStructure=t.dataset.id; editProspect(null); },
-  openSuivi: t => { S.view='prospects'; S.suiviPage=t.dataset.id; S.wsTarget=null; S.wsProject=null; render(); window.scrollTo(0,0); },
-  closeSuivi: () => { S.suiviPage=null; render(); },
+  newProspect: () => newSuivi(null), editProspect: t => editProspect(t.dataset.id),
+  newSuiviFor: t => newSuivi(t.dataset.id),
+  openSuivi: async t => { await cleanupDraft(); S.view='prospects'; S.suiviPage=t.dataset.id; S.wsTarget=undefined; S.wsFor=null; S.wsProject=null; render(); window.scrollTo(0,0); },
+  closeSuivi: async () => { await cleanupDraft(); S.suiviPage=null; render(); },
+  wsSetTarget: t => { S.wsTarget = t.dataset.d; render(); },
   toggleClosed: () => { S.showClosed = !S.showClosed; render(); },
-  exportSuivis: () => exportSuivis(),
+  exportSuivis: t => exportSuivis(t.dataset.project),
   wsProject: t => { S.wsProject = t.dataset.id; render(); },
   wsClear: () => { S.wsTarget = null; render(); },
   wsShow: t => { const p = byId('prospects', t.dataset.id), st = byId('structures', p.structure_id);
     const fest = (st?.tags||[]).some(x=>/festival/i.test(x));
-    editShow(null, S.wsProject && projIds(p).includes(S.wsProject) ? S.wsProject : projIds(p)[0], {...showPrefillFromStructure(st), date:S.wsTarget||null, status: fest?'Option Festival':'Option Salle'}); },
+    editShow(null, S.wsProject && projIds(p).includes(S.wsProject) ? S.wsProject : projIds(p)[0], {...showPrefillFromStructure(st), date:S.wsTarget||null, status: fest?'Option Festival':'Option Salle', prospect_id: p.id}); },
   wsTask: t => { const p = byId('prospects', t.dataset.id); editTask(null, {structure_id:p.structure_id, project_ids:projIds(p)}); },
   rmProj: async (t, e) => { e.stopPropagation(); const tb = t.dataset.t || 'prospects', r = byId(tb, t.dataset.id); const ids = projIds(r).filter(x=>x!==t.dataset.p);
     await save(tb, r.id, {project_ids: ids, project_id: ids[0]||null}); },
@@ -162,6 +189,11 @@ ${p.content_md||'(aucune)'}`;
     if (await remove('prospect_files', f.id)) render(); },
 
   // Réglages
+  applyAcompte: () => applyAcompte(),
+  addDept: async () => { const n = prompt('Nom du nouveau pôle'); if (!n) return; await saveDepartments([...departments(), {name:n.trim(), color:'#5B677D'}]); render(); },
+  rmDept: async t => { const list = departments().slice(); const d = list[Number(t.dataset.i)];
+    if (!confirm(`Supprimer le pôle « ${d.name} » ? Les tâches concernées n’auront plus de pôle.`)) return;
+    list.splice(Number(t.dataset.i), 1); await saveDepartments(list); render(); },
   newPartner: async () => { const n = prompt('Nom du partenaire'); if (n && await insert('partners',{name:n})) render(); },
   changePw: async () => {
     S.userOpen = false;

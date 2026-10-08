@@ -12,22 +12,26 @@ import { curTab, dropZone, fileRow, fold, pstBadge, stBadge, tabsBar, viewHead }
 import { cAc, cIn } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { esc, eur, fmtDate, md, today, url } from '../utils.js';
-import { ADMIN_FIELDS } from './structures.js';
+import { adminForm } from './structures.js';
 import { taskSection } from './todo.js';
 
 export const LINK_KINDS = ['YouTube','Spotify','Linktree','Instagram','Facebook','TikTok','Deezer','Apple Music','Bandcamp','SoundCloud','Site officiel','Presse / EPK'];
 
 const initials = n => String(n||'?').replace(/•.*$/,'').trim().split(/\s+/).map(w=>w[0]).join('').slice(0,3).toUpperCase();
 
+/** Cadrage enregistré « x% y% zoom » → style de l'image */
+export const photoStyle = pos => { const [x='50%', y='50%', z='1'] = String(pos||'50% 50%').split(' ');
+  return `object-position:${x} ${y};transform:scale(${Number(z)||1});transform-origin:${x} ${y}`; };
+
 export const photoHTML = (p, cls='') => p.photo_path
-  ? `<div class="photo ${cls}" data-photo="${esc(p.photo_path)}" data-pos="${esc(p.photo_pos||'50% 50%')}">${signedCached(p.photo_path)?`<img src="${esc(signedCached(p.photo_path))}" alt="" style="object-position:${esc(p.photo_pos||'50% 50%')}">`:''}</div>`
+  ? `<div class="photo ${cls}" data-photo="${esc(p.photo_path)}" data-pos="${esc(p.photo_pos||'50% 50%')}">${signedCached(p.photo_path)?`<img src="${esc(signedCached(p.photo_path))}" alt="" style="${photoStyle(p.photo_pos)}">`:''}</div>`
   : `<div class="photo ${cls}" aria-hidden="true">${esc(initials(p.name))}</div>`;
 
 /** Charge les photos (liens temporaires) après l'affichage */
 export function hydratePhotos(root=document){
   root.querySelectorAll('.photo[data-photo]:not(:has(img))').forEach(async el => {
     const u = await signedUrl(el.dataset.photo); if (!u || !el.isConnected) return;
-    el.innerHTML = `<img src="${esc(u)}" alt="" style="object-position:${esc(el.dataset.pos)}">`;
+    el.innerHTML = `<img src="${esc(u)}" alt="" style="${photoStyle(el.dataset.pos)}">`;
   });
 }
 
@@ -75,15 +79,19 @@ export function projectPage(p){
   ${tabs}${body}`;
 }
 
+/** Exercice comptable : du 01/10 au 30/09 → « 2025-2026 » */
+export const fiscalYear = d => { if (!d) return 'Sans date'; const y = Number(d.slice(0,4)), m = Number(d.slice(5,7)); return m >= 10 ? `${y}-${y+1}` : `${y-1}-${y}`; };
+
 function overview(p, {shows, tasks, suivis}){
   const byYear = {};
-  shows.forEach(s=>{ const y=s.date?s.date.slice(0,4):'Sans date'; (byYear[y]=byYear[y]||[]).push(s); });
+  shows.forEach(s=>{ const y=fiscalYear(s.date); (byYear[y]=byYear[y]||[]).push(s); });
   const next = shows.filter(s => s.date >= today() && stClass(s.status)!=='off').slice(0, 6);
-  return `<div class="tbl-wrap year-tbl"><table><thead><tr><th>Année</th><th class="num">Dates</th><th class="num">Confirmées</th><th class="num">Options</th><th class="num">Intérêts</th><th class="num">Cachets confirmés</th><th class="num">Commissions L'ArtBo (net)</th></tr></thead><tbody>
+  return `<div class="tbl-wrap year-tbl"><table><thead><tr><th>Exercice (01/10 → 30/09)</th><th class="num">Confirmées</th><th class="num">Options</th><th class="num">Intérêts</th><th class="num">Dates</th><th class="num">Cachets confirmés</th><th class="num">Commissions L'ArtBo nettes</th></tr></thead><tbody>
     ${Object.entries(byYear).sort((a,b)=>b[0].localeCompare(a[0])).map(([y,l])=>{ const conf = l.filter(s=>stClass(s.status)==='conf');
-      return `<tr><td><b>${y}</b></td><td class="num">${l.length}</td><td class="num">${conf.length}</td><td class="num">${l.filter(s=>stClass(s.status)==='opt').length}</td><td class="num">${l.filter(s=>stClass(s.status)==='int').length}</td>
+      return `<tr><td><b>${y}</b>${y.includes('-')?`<span class="sub">01/10/${y.slice(0,4)} → 30/09/${y.slice(5)}</span>`:''}</td><td class="num">${conf.length}</td><td class="num">${l.filter(s=>stClass(s.status)==='opt').length}</td><td class="num">${l.filter(s=>stClass(s.status)==='int').length}</td><td class="num">${l.length}</td>
       <td class="num">${eur(conf.reduce((a,s)=>a+(Number(s.fee_ht)||0),0))}</td><td class="num"><b>${eur(l.filter(s=>CONFIRMED_PROD.includes(s.status)).reduce((a,s)=>a+netArtbo(s),0))}</b></td></tr>`;}).join('') || '<tr><td colspan="7" class="empty">Aucune date.</td></tr>'}
   </tbody></table></div>
+  <p class="help">Commissions nettes = commission L'ArtBo moins la part reversée aux partenaires (ex. Pyrprod), sur les dates confirmées salle / festival.</p>
   <div class="struct-hero" style="margin-top:18px">
     <div class="panel pad"><h3 class="block-title">Prochaines dates</h3>${next.map(s=>`<div class="plan-row" data-act="editShow" data-id="${s.id}" style="cursor:pointer"><span class="d">${fmtDate(s.date)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span>${stBadge(s.status)}</div>`).join('') || '<p class="muted" style="margin:0">Aucune date à venir.</p>'}</div>
     <div class="panel pad"><h3 class="block-title">En cours</h3>
@@ -102,7 +110,7 @@ function datesTab(p, {shows}){
 function suivisTab(p, {suivis}){
   const list = suivis.filter(x => S.showClosed || x.status!=='Closed').map(x=>({x, last:lastExchange(x)})).sort((a,b)=>(b.last||'').localeCompare(a.last||''));
   const nClosed = suivis.filter(x=>x.status==='Closed').length;
-  return `${nClosed?`<div class="vh-actions" style="margin-bottom:12px"><button class="btn" data-act="toggleClosed" aria-pressed="${!!S.showClosed}">${S.showClosed?'Masquer':'Afficher'} les suivis clos (${nClosed})</button></div>`:''}
+  return `<div class="vh-actions" style="margin-bottom:12px"><button class="btn" data-act="exportSuivis" data-project="${p.id}">Exporter en CSV</button>${nClosed?`<button class="btn" data-act="toggleClosed" aria-pressed="${!!S.showClosed}">${S.showClosed?'Masquer':'Afficher'} les suivis clos (${nClosed})</button>`:''}</div>
   <div class="tbl-wrap"><table><thead><tr><th>Structure</th><th>Statut</th><th>Dernier échange</th><th>Résumé</th></tr></thead><tbody>
     ${list.map(({x,last})=>`<tr class="click" data-act="openSuivi" data-id="${x.id}"><td><b>${esc(structName(x.structure_id)||x.name)}</b><span class="sub">${esc(byId('structures',x.structure_id)?.city||'')}</span></td><td>${pstBadge(x.status)}</td><td class="nowrap">${last?fmtDate(last):'—'}</td><td class="muted">${esc((x.summary||'').replace(/\*\*/g,'').replace(/\n/g,' ').slice(0,180))}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Aucun suivi.</td></tr>'}
   </tbody></table></div>`;
@@ -150,23 +158,21 @@ function adminTab(p){
   return `<div class="panel pad">
     <div class="field" style="max-width:520px"><label>Structure juridique de l’artiste (association, label, société…)</label>
       ${cAc('structures','projects',p.id,'admin_structure_id',p.admin_structure_id,{placeholder:'Chercher ou créer la structure…', create:true})}</div>
-    ${st ? `<div class="admin-grid" style="margin-top:14px">${ADMIN_FIELDS.map(([k,l,full])=>`<div class="field" style="${full?'grid-column:1/-1':''}"><label for="padm-${k}">${l}</label>
-      ${k==='notes' ? `<textarea id="padm-${k}" data-admin="${k}" data-sid="${st.id}">${esc(a[k]||'')}</textarea>` : `<input id="padm-${k}" data-admin="${k}" data-sid="${st.id}" value="${esc(a[k]||'')}">`}</div>`).join('')}</div>
+    ${st ? `<div style="margin-top:14px">${adminForm(st)}</div>
       <p class="help">Ces informations sont celles de la fiche structure « ${esc(st.name)} » (onglet Coordonnées administratives).</p>`
       : '<p class="help">Choisis ou crée la structure qui porte l’artiste pour renseigner ses coordonnées administratives.</p>'}
   </div>`;
 }
 
 function membersTab(p, {members}){
-  const extraKeys = [...new Set(members.flatMap(m => Object.keys(m.data||{})))];
   return `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="addMember" data-id="${p.id}">Ajouter un membre</button></div>
-  <div class="tbl-wrap"><table><thead><tr><th>Prénom</th><th>Nom</th><th>Rôle</th><th>Mail</th><th>Téléphone</th><th>Adresse</th><th>Naissance</th>${extraKeys.length?'<th>Autres infos (import)</th>':''}<th></th></tr></thead><tbody>
+  <div class="tbl-wrap"><table><thead><tr><th>Prénom</th><th>Nom</th><th>Poste</th><th>Mail</th><th>Téléphone</th><th>Adresse</th><th>Naissance</th><th></th></tr></thead><tbody>
     ${members.map(m=>`<tr><td>${cIn('project_members',m.id,'first_name',m.first_name)}</td><td>${cIn('project_members',m.id,'last_name',m.last_name)}</td>
       <td>${cIn('project_members',m.id,'role',m.role,'text','placeholder="Chant, régie…"')}</td><td>${cIn('project_members',m.id,'email',m.email)}</td><td>${cIn('project_members',m.id,'phone',m.phone)}</td>
-      <td>${cIn('project_members',m.id,'address',m.address)}</td><td>${cIn('project_members',m.id,'birth_date',m.birth_date,'date')}</td>
-      ${extraKeys.length?`<td style="font-size:13px;min-width:220px">${Object.entries(m.data||{}).filter(([,v])=>v).map(([k,v])=>`<div><span class="muted">${esc(k)} :</span> ${esc(v)}</div>`).join('')}</td>`:''}
-      <td><button class="btn icon sm ghost danger" data-act="delMember" data-id="${m.id}" aria-label="Supprimer le membre">✕</button></td></tr>`).join('') || `<tr><td colspan="${8+(extraKeys.length?1:0)}" class="empty">Aucun membre. Ajoute-les un par un ou importe l’export Movinmotion.</td></tr>`}
+      <td style="min-width:240px">${cAc('fulladdr','project_members',m.id,'address',m.address,{text:m.address||'', placeholder:'Adresse'})}</td><td>${cIn('project_members',m.id,'birth_date',m.birth_date,'date')}</td>
+      <td class="nowrap"><button type="button" class="btn sm" data-act="memberCard" data-id="${m.id}">Fiche complète${Object.keys(m.data||{}).length?` (${Object.keys(m.data).length})`:''}</button>
+        <button type="button" class="btn icon sm ghost danger" data-act="delMember" data-id="${m.id}" aria-label="Supprimer le membre">✕</button></td></tr>`).join('') || `<tr><td colspan="8" class="empty">Aucun membre. Ajoute-les un par un ou importe l’export Movinmotion.</td></tr>`}
   </tbody></table></div>
   <div class="dropzone" data-members-drop="${p.id}" style="margin-top:12px"><label class="btn sm file-btn">Importer un export Movinmotion (CSV)<input type="file" class="file-input" accept=".csv,text/csv" data-members-import="${p.id}"></label>
-    <span class="drop-hint">ou glisse le fichier CSV ici — les colonnes reconnues (nom, prénom, mail, téléphone, adresse, naissance, emploi) sont rangées, les autres gardées dans « Autres infos ».</span></div>`;
+    <span class="drop-hint">ou glisse le fichier ici — nom, prénom, mail, téléphone, poste, adresse et naissance sont rangés ; toutes les autres colonnes (sécurité sociale, congés spectacles, IBAN…) vont dans la fiche complète. Un membre déjà présent est mis à jour.</span></div>`;
 }

@@ -1,16 +1,19 @@
 /**
  * Onglet Suivi : liste des suivis (filtres artiste + statut, export CSV) et espace de prospection.
- * Espace de prospection = la fiche du suivi à gauche (résumé, journal, pièces jointes) et, à droite,
- * sans quitter la fiche : le planning de l'artiste, la carte des dates autour de la date visée avec
- * les distances, et les boutons pour poser une date (intérêt / option) ou une tâche.
+ * Espace de prospection = la fiche du suivi à gauche (résumé IA, journal, pièces jointes) et, à droite,
+ * sans quitter la fiche : les dates de ce suivi (modifiables), la date en négociation, la carte avec
+ *  - les dates de l'artiste dans un rayon réglable (0–300 km) autour de la structure, d'aujourd'hui à un an après la date,
+ *  - toutes ses dates dans le monde 5 jours avant / après,
+ * avec distance et temps de route depuis la structure, et le planning de l'artiste.
  */
 import { LOG_ICON, LOG_KINDS, PROSPECT, isOff, stColor } from '../constants.js';
 import { lingering } from '../data.js';
 import { distKm, routeCached, route } from '../geo.js';
 import { byId, filesOf, lastExchange, linksOfStructure, logsOf, projIds, projName, projNames, projectOptions, showCoords, showsOfProject, structName } from '../selectors.js';
 import { S } from '../state.js';
-import { dropZone, fileRow, pstBadge, stBadge, tabsBar, curTab, viewHead } from '../ui/bits.js';
-import { cSel, projChips } from '../ui/cells.js';
+import { dropZone, fileRow, projOptions, pstBadge, stBadge, tabsBar, curTab, viewHead } from '../ui/bits.js';
+import { cAc, cSel, projChips } from '../ui/cells.js';
+import { acInput } from '../ui/autocomplete.js';
 import { dateInput } from '../ui/datefield.js';
 import { $, daysBetween, esc, eur, fmtDate, fmtShort, matches, md, today } from '../utils.js';
 import { setMapData } from './booking.js';
@@ -27,7 +30,7 @@ export function viewProspects(){
   return viewHead('Suivi', {
     sub: `${rows.length} suivi${rows.length>1?'s':''}`,
     filters: `<div class="filters">
-      <select class="sel" data-suivi-filter="project" aria-label="Artiste"><option value="">Tous les artistes</option>${projectOptions().map(x=>`<option value="${x.id}" ${x.id===S.project?'selected':''}>${esc(x.name)}${x.active?'':' (inactif)'}</option>`).join('')}</select>
+      <select class="sel proj-sel" data-all="Tous les artistes" data-suivi-filter="project" aria-label="Artiste">${projOptions(S.project)}</select>
       <select class="sel" data-suivi-filter="status" aria-label="Statut"><option value="">Tous les statuts</option>${PROSPECT.map(x=>`<option value="${x}" ${x===st?'selected':''}>${x}</option>`).join('')}</select>
       <input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-suivi" placeholder="Structure, ville, mot du résumé…" data-search="prospects" value="${esc(q)}"></div>`,
     actions: `${nClosed ? `<button class="btn" data-act="toggleClosed" aria-pressed="${!!S.showClosed}">${S.showClosed?'Masquer':'Afficher'} les suivis clos (${nClosed})</button>` : ''}
@@ -42,19 +45,18 @@ export function viewProspects(){
     </tbody></table></div>`;
 }
 
-/** Fiche de suivi (résumé, journal, fichiers) — utilisée dans l'espace de prospection et la page structure */
+/** Fiche de suivi : résumé (IA) en haut, puis journal des échanges, pièces jointes et notes.
+ *  Utilisée dans l'espace de prospection (page) et dans l'onglet Suivi d'une structure. */
 export function suiviCard(p, {page=false}={}){
   const logs = logsOf(p.id), files = filesOf(p.id);
   const contacts = linksOfStructure(p.structure_id);
-  const left = `
-      <div class="suivi-block"><h3 class="block-title">Résumé <button class="btn sm ghost" data-act="editText" data-id="${p.id}" data-f="summary">Modifier</button>
-        <button class="btn sm ghost" data-act="aiSummary" data-id="${p.id}" title="Résumé automatique à partir du journal, des notes et des PDF">Mettre à jour avec l'IA</button>
+  const summary = `
+      <div class="suivi-block summary-block"><h3 class="block-title">Résumé des échanges
+        <span class="spacer"></span>
+        <button class="btn sm" data-act="aiSummary" data-id="${p.id}" title="Résumé automatique à partir du journal, des notes et des PDF">Mettre à jour avec l'IA</button>
+        <button class="btn sm ghost" data-act="editText" data-id="${p.id}" data-f="summary">Modifier</button>
         <button class="btn sm ghost" data-act="copyForAi" data-id="${p.id}" title="Copie le suivi pour le coller dans ChatGPT">Copier pour ChatGPT</button></h3>
-        <div class="md">${md(p.summary) || '<span class="muted">Pas encore de résumé.</span>'}</div></div>
-      <div class="suivi-block"><h3 class="block-title">Pièces jointes <span class="count">${files.length}</span></h3>
-        ${dropZone({prospect_id:p.id}, files.map(f=>fileRow(f)).join(''))}</div>
-      <div class="suivi-block"><h3 class="block-title">Autres notes <button class="btn sm ghost" data-act="editText" data-id="${p.id}" data-f="content_md">Modifier</button></h3>
-        <div class="md">${md(p.content_md) || '<span class="muted">—</span>'}</div></div>`;
+        <div class="md">${md(p.summary) || '<span class="muted">Pas encore de résumé.</span>'}</div></div>`;
   const journal = `
       <div class="suivi-block"><h3 class="block-title">Journal des échanges <span class="count">${logs.length}</span></h3>
         <form class="log-form" data-logform="${p.id}">
@@ -67,9 +69,14 @@ export function suiviCard(p, {page=false}={}){
         </form>
         ${logs.map(l=>`<div class="log">
           <div class="log-head">${LOG_ICON[l.kind]||'📝'} <b>${l.date?fmtDate(l.date):'Sans date'}</b>${l.contact_name?' · '+esc(l.contact_name):''}
-            <button class="btn icon sm ghost danger" data-act="delLog" data-id="${l.id}" aria-label="Supprimer l'entrée">✕</button></div>
+            <button type="button" class="btn icon sm ghost danger" data-act="delLog" data-id="${l.id}" aria-label="Supprimer l'entrée">✕</button></div>
           <div class="md">${md(l.body)}</div></div>`).join('') || '<div class="muted">Aucun échange enregistré.</div>'}
       </div>`;
+  const side = `
+      <div class="suivi-block"><h3 class="block-title">Pièces jointes <span class="count">${files.length}</span></h3>
+        ${dropZone({prospect_id:p.id}, files.map(f=>fileRow(f)).join(''))}</div>
+      <div class="suivi-block"><h3 class="block-title">Autres notes <button class="btn sm ghost" data-act="editText" data-id="${p.id}" data-f="content_md">Modifier</button></h3>
+        <div class="md">${md(p.content_md) || '<span class="muted">—</span>'}</div></div>`;
   const head = `<div class="suivi-head">
       ${projChips('prospects', p)}
       <span class="sel-wrap">${cSel('prospects',p.id,'status',p.status,PROSPECT,false)}</span>
@@ -78,8 +85,15 @@ export function suiviCard(p, {page=false}={}){
       ${page ? '' : `<button class="btn sm" data-act="openSuivi" data-id="${p.id}">Ouvrir avec planning et carte</button>`}
       <button class="btn sm ghost danger" data-act="delProspect" data-id="${p.id}">Supprimer</button>
     </div>`;
-  if (page) return `<div class="panel suivi ${lingering(p.id)?'leaving':''}" id="pr-${p.id}">${head}${journal}${left}</div>`;
-  return `<div class="panel suivi ${lingering(p.id)?'leaving':''}" id="pr-${p.id}">${head}<div class="suivi-grid"><div>${left}</div><div>${journal}</div></div></div>`;
+  if (page) return `<div class="panel suivi ${lingering(p.id)?'leaving':''}" id="pr-${p.id}">${head}${summary}${journal}${side}</div>`;
+  return `<div class="panel suivi ${lingering(p.id)?'leaving':''}" id="pr-${p.id}">${head}${summary}<div class="suivi-grid"><div>${journal}</div><div>${side}</div></div></div>`;
+}
+
+/** Dates rattachées à un suivi : liées explicitement, ou même structure et même artiste */
+export function showsOfSuivi(p){
+  const ids = projIds(p);
+  return S.db.shows.filter(s => s.prospect_id === p.id || (p.structure_id && s.structure_id === p.structure_id && ids.includes(s.project_id)))
+    .sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999'));
 }
 
 /* ------------------------------------------------------------------ Espace de prospection */
@@ -87,62 +101,99 @@ function suiviPage(p){
   const st = byId('structures', p.structure_id);
   const ids = projIds(p);
   const proj = ids.includes(S.wsProject) ? S.wsProject : ids[0] || null;
-  const target = S.wsTarget || null;
+  const linked = showsOfSuivi(p);
+  // date en négociation : celle tapée, sinon la prochaine date déjà posée pour ce suivi
+  if (S.wsTarget === undefined || S.wsFor !== p.id){
+    S.wsFor = p.id;
+    S.wsTarget = (linked.find(s => s.date >= today() && !isOff(s.status) && (!proj || s.project_id===proj)) || linked.find(s => !isOff(s.status)))?.date || null;
+  }
+  const contacts = linksOfStructure(p.structure_id);
   return `<button class="btn ghost back" data-act="closeSuivi">← Suivi</button>
-  <div class="view-head"><div class="vh-title"><h1>${esc(st?.name || p.name)}</h1>
+  <div class="view-head"><div class="vh-title"><h1>${esc(st?.name || 'Nouveau suivi')}</h1>
     <span class="sub">${esc([st?.city, st?.department_code && '('+st.department_code+')', st?.country && st.country!=='France' ? st.country : ''].filter(Boolean).join(' '))}</span></div>
     <span class="spacer"></span>
     <div class="vh-actions">${st?`<button class="btn" data-act="openStructure" data-id="${st.id}">Fiche structure</button>`:''}
       <button class="btn" data-act="wsTask" data-id="${p.id}">Nouvelle tâche</button>
-      <button class="btn primary" data-act="wsShow" data-id="${p.id}">Poser une date</button></div></div>
+      <button class="btn primary" data-act="wsShow" data-id="${p.id}" ${st?'':'disabled title="Choisis d’abord la structure"'}>Poser une date</button></div></div>
+  <div class="panel pad ws-who">
+    <div class="field"><label>Structure</label>${cAc('structures','prospects',p.id,'structure_id',p.structure_id,{create:true, placeholder:'Chercher ou créer la structure (salle, festival…)'})}</div>
+    <div class="field"><label>Contacts de la structure</label><div class="proj-chips">${contacts.map(c=>`<a href="#" class="chip" data-act="editContact" data-id="${c.id}" style="padding-right:10px">${esc(c.display_name)}</a>`).join('')}
+      ${st?`<button type="button" class="btn sm" data-act="newContactFor" data-id="${st.id}">+ Contact</button>`:'<span class="muted">Choisis la structure</span>'}</div></div>
+  </div>
   <div class="workspace">
     <div>${suiviCard(p, {page:true})}</div>
-    <aside class="side">${sidePanel(p, st, proj, target)}</aside>
+    <aside class="side">${sidePanel(p, st, proj, linked)}</aside>
   </div>`;
 }
 
-function sidePanel(p, st, proj, target){
+const addD = (d, n) => { const x = new Date(d+'T12:00:00'); x.setDate(x.getDate()+n); return x.toISOString().slice(0,10); };
+const addY = (d, n) => `${Number(d.slice(0,4))+n}${d.slice(4)}`;
+
+function sidePanel(p, st, proj, linked){
   const ids = projIds(p);
-  if (!ids.length) return `<div class="panel pad"><p class="muted" style="margin:0">Ajoute l'artiste concerné (+ Projet) pour voir son planning et ses dates autour.</p></div>`;
+  const linkedHTML = `<div class="panel pad"><h3 class="block-title">Dates de ce suivi <span class="count">${linked.length}</span></h3>
+    ${linked.map(s=>`<div class="plan-row ${s.date===S.wsTarget?'target':''}"><span class="d">${s.date?fmtShort(s.date):'—'}<br><span class="muted" style="font-weight:400">${s.date?s.date.slice(0,4):''}</span></span>
+      <span><b>${esc(projName(s.project_id))}</b> <span class="muted">${esc(s.venue)}</span><br>${stBadge(s.status)}</span>
+      <span style="display:flex;gap:4px;flex-direction:column;align-items:flex-end"><button type="button" class="btn sm" data-act="editShow" data-id="${s.id}">Modifier</button>
+        ${s.date && s.date!==S.wsTarget?`<button type="button" class="btn sm ghost" data-act="wsSetTarget" data-d="${s.date}">Centrer</button>`:''}</span></div>`).join('') || '<p class="muted" style="margin:0 0 6px">Aucune date posée pour ce suivi.</p>'}
+    <div class="field" style="margin-top:8px"><label>Rattacher une date existante</label>${acInput('shows', {attrs:`data-link-show="${p.id}"`, placeholder:'Chercher une date (artiste, lieu, date)…'})}</div></div>`;
+  if (!ids.length) return linkedHTML + `<div class="panel pad"><p class="muted" style="margin:0">Ajoute l'artiste concerné (+ Projet) pour voir son planning et ses dates autour.</p></div>`;
+  const target = S.wsTarget;
+  const R = S.wsRadius ?? 200;
   const here = st && st.lat!=null ? [st.lat, st.lng] : null;
-  const shows = showsOfProject(proj).filter(s => s.date && (!isOff(s.status))).sort((a,b)=>a.date.localeCompare(b.date));
-  const from = target ? addD(target, -45) : today();
-  const to = target ? addD(target, 45) : addD(today(), 365);
-  const win = shows.filter(s => s.date >= from && s.date <= to);
-  const busy = target ? shows.filter(s => s.date <= target && (s.date_end||s.date) >= target) : [];
-  // dates autour de la date visée (±10 jours), avec distance depuis cette structure
-  const around = target ? shows.filter(s => Math.abs(daysBetween(target, s.date)) <= 10) : [];
-  const pts = win.map(s => { const c = showCoords(s); return c && {lat:c[0], lng:c[1], color:stColor(s.status), big:(s.status||'').startsWith('Confirmée'),
+  const shows = showsOfProject(proj).filter(s => s.date && !isOff(s.status)).sort((a,b)=>a.date.localeCompare(b.date));
+  const now = today();
+  // ±5 jours autour de la date, partout dans le monde
+  const around = target ? shows.filter(s => Math.abs(daysBetween(target, s.date)) <= 5) : [];
+  // rayon autour de la structure, d'aujourd'hui à un an après la date
+  const until = target ? addY(target, 1) : addY(now, 1);
+  const inRadius = here ? shows.filter(s => s.date >= now && s.date <= until && !around.includes(s) && showCoords(s) && distKm(here, showCoords(s)) <= R) : [];
+  const shown = target ? [...around, ...inRadius] : shows.filter(s => s.date >= now && s.date <= until);
+  const pts = shown.map(s => { const c = showCoords(s); return c && {lat:c[0], lng:c[1], color:stColor(s.status), big:(s.status||'').startsWith('Confirmée'), showId:s.id, from: here,
     label:`<b>${esc(s.venue)}</b><br>${fmtDate(s.date)} — ${esc(s.city||'')}<br>${esc(s.status)}`}; }).filter(Boolean);
   if (here) pts.push({lat:here[0], lng:here[1], color:'#FFFFFF', ring:true, big:true, label:`<b>${esc(st.name)}</b><br>Date en négociation${target?' : '+fmtDate(target):''}`});
-  const near = target && here ? around.filter(s=>showCoords(s)) : pts.slice(0, 0);
-  setMapData({points: pts, key:`ws|${p.id}|${proj}|${target}`, fitTo: here && near.length ? [here, ...near.map(showCoords)] : here ? [here] : null, zoom:7});
-  // distances routières en arrière-plan
-  if (here){ const todo = around.filter(s => showCoords(s) && !routeCached(here, s)); if (todo.length) Promise.all(todo.map(s=>route(here, s))).then(()=>{ const el = $('#ws-near'); if (el && S.suiviPage===p.id) el.innerHTML = nearList(around, here, target); }); }
-  return `
+  setMapData({points: pts, key:`ws|${p.id}|${proj}|${target}|${R}`, circle: here && target ? {center: here, km: R} : null,
+    fitTo: here ? [here, ...pts.map(x=>[x.lat,x.lng])] : null, zoom:7});
+  // distances routières en arrière-plan pour les listes
+  if (here){ const todo = shown.filter(s => showCoords(s) && !routeCached(here, s)).slice(0, 25);
+    if (todo.length) Promise.all(todo.map(s=>route(here, s))).then(()=>{ if (S.suiviPage===p.id){ const el = $('#ws-lists'); if (el) el.innerHTML = lists(around, inRadius, here, target, R, until); } }); }
+  const busy = target ? shows.filter(s => s.date <= target && (s.date_end||s.date) >= target && !(s.structure_id===p.structure_id)) : [];
+  return linkedHTML + `
     ${ids.length>1 ? `<div class="seg" role="tablist">${ids.map(id=>`<button class="btn ${id===proj?'on':''}" data-act="wsProject" data-id="${id}" aria-pressed="${id===proj}">${esc(projName(id))}</button>`).join('')}</div>` : ''}
     <div class="panel pad">
       <div class="target-row"><label class="block-title" style="margin:0">Date en négociation</label>
         ${dateInput(target, 'data-ws-target="1"')}
         ${target?`<button class="btn sm ghost" data-act="wsClear">Effacer</button>`:''}</div>
+      <div class="target-row" style="margin-top:8px"><label class="block-title" style="margin:0" for="ws-radius">Rayon</label>
+        <input id="ws-radius" type="range" min="0" max="300" step="10" value="${R}" data-ws-radius="1" aria-label="Rayon en kilomètres"><b class="num" id="ws-radius-v">${R} km</b></div>
       ${target ? (busy.length ? `<p class="target-msg busy">${esc(projName(proj))} n'est pas libre le ${fmtDate(target)} : ${busy.map(s=>`${esc(s.venue)} (${esc(s.status)})`).join(', ')}</p>`
                                 : `<p class="target-msg free">${esc(projName(proj))} est libre le ${fmtDate(target)}.</p>`)
-               : '<p class="help" style="margin:6px 0 0">Indique la date demandée : le planning, la carte et les distances se centrent dessus.</p>'}
-      ${target ? `<div id="ws-near">${here ? nearList(around, here, target) : '<p class="muted">Cette structure n’a pas de ville localisée : ajoute son adresse dans la fiche structure pour avoir les distances.</p>'}</div>` : ''}
+               : '<p class="help" style="margin:6px 0 0">Indique la date demandée : la carte montre ses dates 5 jours avant / après, et celles dans le rayon jusqu’à un an après.</p>'}
     </div>
     <div class="map-box"><div id="map-slot" role="region" aria-label="Carte des dates de l'artiste"></div></div>
+    ${target ? `<div id="ws-lists">${lists(around, inRadius, here, target, R, until)}</div>` : ''}
     <div class="panel pad"><h3 class="block-title">Planning de ${esc(projName(proj))} <span class="muted" style="font-weight:500">${target?'45 jours autour de la date':'12 prochains mois'}</span></h3>
-      <div class="planning">${win.map(s => `<div class="plan-row ${target && Math.abs(daysBetween(target, s.date))<=2 ? 'target':''}" data-act="editShow" data-id="${s.id}" style="cursor:pointer">
+      <div class="planning">${(target ? shows.filter(s => Math.abs(daysBetween(target, s.date)) <= 45) : shows.filter(s => s.date >= now && s.date <= until)).map(s => `<div class="plan-row ${target && Math.abs(daysBetween(target, s.date))<=2 ? 'target':''}" data-act="editShow" data-id="${s.id}" style="cursor:pointer">
           <span class="d">${fmtShort(s.date)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span>${stBadge(s.status)}</div>`).join('') || '<p class="muted">Aucune date sur cette période.</p>'}</div>
     </div>`;
 }
 
-function nearList(around, here, target){
-  if (!around.length) return '<p class="muted" style="margin:8px 0 0">Aucune autre date à moins de 10 jours.</p>';
-  return `<ul class="near-list" style="list-style:none;margin:8px 0 0;padding:0">${around.map(s => {
-    const c = showCoords(s), r = c && routeCached(here, s), d = daysBetween(target, s.date);
-    return `<li><span>${stBadge(s.status)} <b>${esc(s.venue)}</b> · ${esc(s.city||'')}<br><span class="muted">${fmtShort(s.date)} (${d===0?'même jour':d>0?'J+'+d:'J'+d})</span></span>
-      <span class="num" style="text-align:right">${!c ? '<span class="muted">non localisée</span>' : r && !r.error ? `<b>${r.km} km</b><br><span class="muted">${r.time}</span>` : `${Math.round(distKm(here, c))} km<br><span class="muted">à vol d'oiseau</span>`}</span></li>`; }).join('')}</ul>`;
+function distCell(s, here){
+  const c = showCoords(s); if (!c) return '<span class="muted">non localisée</span>';
+  if (!here) return '';
+  const r = routeCached(here, s);
+  return r && !r.error ? `<b>${r.km} km</b><br><span class="muted">${r.time}</span>` : `${Math.round(distKm(here, c))} km<br><span class="muted">à vol d'oiseau</span>`;
 }
 
-const addD = (d, n) => { const x = new Date(d+'T12:00:00'); x.setDate(x.getDate()+n); return x.toISOString().slice(0,10); };
+function lists(around, inRadius, here, target, R, until){
+  const row = s => { const d = daysBetween(target, s.date);
+    return `<li><span>${stBadge(s.status)} <b>${esc(s.venue)}</b> · ${esc(s.city||'')}<br><span class="muted">${fmtDate(s.date)} (${d===0?'même jour':d>0?'J+'+d:'J'+d})</span></span>
+      <span class="num" style="text-align:right">${distCell(s, here)}</span></li>`; };
+  return `<div class="panel pad near-list"><h3 class="block-title">5 jours avant / après <span class="count">${around.length}</span></h3>
+      ${around.length ? `<ul>${around.map(row).join('')}</ul>` : '<p class="muted" style="margin:0">Aucune date entre le '+fmtDate(addD(target,-5))+' et le '+fmtDate(addD(target,5))+'.</p>'}
+    </div>
+    <div class="panel pad near-list"><h3 class="block-title">Dans un rayon de ${R} km jusqu’au ${fmtDate(until)} <span class="count">${inRadius.length}</span></h3>
+      ${!here ? '<p class="muted" style="margin:0">Cette structure n’a pas de ville localisée : ajoute son adresse dans la fiche structure.</p>'
+        : inRadius.length ? `<ul>${inRadius.map(row).join('')}</ul>` : '<p class="muted" style="margin:0">Aucune date dans ce rayon sur la période.</p>'}
+    </div>`;
+}

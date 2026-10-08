@@ -2,8 +2,8 @@
  * Petits éléments d'interface réutilisés partout : pastilles de statut, de pôle, d'urgence,
  * barre d'onglets d'une page, filtres Année / Projet, zone de dépôt de fichiers.
  */
-import { DEPT_COLOR, stClass, stColor } from '../constants.js';
-import { projName, projectOptions } from '../selectors.js';
+import { stClass, stColor } from '../constants.js';
+import { deptColor, projName, projectOptions } from '../selectors.js';
 import { S } from '../state.js';
 import { esc } from '../utils.js';
 
@@ -11,7 +11,7 @@ export const stBadge = s => `<span class="badge st-badge st-${stClass(s)}" style
 
 export const pstBadge = s => s ? `<span class="badge pst pst-${esc(s)}">${esc({Mailed:'Mail envoyé',Interest:'Intérêt',Option:'Option',Confirmed:'Confirmé',Closed:'Clos'}[s]||s)}</span>` : '';
 
-export const deptBadge = d => d ? `<span class="badge dept" style="--c:${DEPT_COLOR[d]||'#5D6678'}">${esc(d)}</span>` : '';
+export const deptBadge = d => d ? `<span class="badge dept" style="--c:${deptColor(d)}">${esc(d)}</span>` : '';
 
 export const projTag = id => id ? `<span class="badge proj">${esc(projName(id))}</span>` : '';
 
@@ -29,7 +29,7 @@ export function filterBar({year=true, project=true, years=null}={}){
   const ys = years || [...new Set(S.db.shows.filter(s=>s.date).map(s=>Number(s.date.slice(0,4))).concat([new Date().getFullYear(), new Date().getFullYear()+1]))].sort();
   return `<div class="filters">
     ${year?`<select id="f-year" class="sel" aria-label="Année">${ys.map(y=>`<option ${y===S.year?'selected':''}>${y}</option>`).join('')}</select>`:''}
-    ${project?`<select id="f-project" class="sel" aria-label="Projet"><option value="">Tous les artistes</option>${projectOptions().map(p=>`<option value="${p.id}" ${p.id===S.project?'selected':''}>${esc(p.name)}${p.active?'':' (inactif)'}</option>`).join('')}</select>`:''}
+    ${project?`<select id="f-project" class="sel proj-sel" data-all="Tous les artistes" aria-label="Artiste">${projOptions(S.project)}</select>`:''}
   </div>`;
 }
 
@@ -42,7 +42,7 @@ export function dropZone(owner, inner=''){
 
 /** Ligne de fichier */
 export const fileRow = (f, act='openFile', del='delFile') => `<div class="file-row"><span class="file-ico" aria-hidden="true">📎</span><a href="#" data-act="${act}" data-id="${f.id}">${esc(f.name)}</a>${f.size?` <span class="muted">${f.size>1e6?(f.size/1e6).toFixed(1)+' Mo':Math.max(1,Math.round(f.size/1024))+' Ko'}</span>`:''}
-  <button class="btn icon sm ghost danger" data-act="${del}" data-id="${f.id}" aria-label="Supprimer ${esc(f.name)}">✕</button></div>`;
+  <button type="button" class="btn icon sm ghost danger" data-act="${del}" data-id="${f.id}" aria-label="Supprimer ${esc(f.name)}">✕</button></div>`;
 
 /** En-tête de vue standard */
 export const viewHead = (title, {sub='', filters='', actions=''}={}) =>
@@ -53,3 +53,28 @@ export const fold = (key, title, inner, {open=false, count=null}={}) => {
   const isOpen = S.tab['fold:'+key] ?? open;
   return `<section class="fold ${isOpen?'open':''}"><button class="fold-head" data-act="fold" data-key="${key}" aria-expanded="${isOpen}"><span class="caret" aria-hidden="true">▸</span>${title}${count!=null?` <span class="count">${count}</span>`:''}</button>${isOpen?`<div class="fold-body">${inner}</div>`:''}</section>`;
 };
+
+/**
+ * Options d'une liste d'artistes : seulement les projets actifs, plus une ligne « Projets inactifs… »
+ * qui remplace la liste par les inactifs (et « ← Projets actifs » pour revenir).
+ * allLabel : première ligne vide (ex. « Tous les artistes ») ou null pour aucune.
+ */
+export function projOptions(selected, allLabel='Tous les artistes'){
+  const sel = S.db.projects.find(p => p.id === selected);
+  const list = S.db.projects.filter(p => p.active || p.id === selected).sort((a,b)=>a.name.localeCompare(b.name));
+  return (allLabel!=null ? `<option value="">${esc(allLabel)}</option>` : '')
+    + list.map(p=>`<option value="${p.id}" ${p.id===selected?'selected':''}>${esc(p.name)}${p.active?'':' (inactif)'}</option>`).join('')
+    + (S.db.projects.some(p => !p.active) ? `<option value="__inactive">Projets inactifs…</option>` : '');
+}
+function inactiveOptions(allLabel){
+  return (allLabel!=null ? `<option value="">${esc(allLabel)}</option>` : '<option value=""></option>') + '<option value="__active">← Projets actifs</option>'
+    + S.db.projects.filter(p => !p.active).sort((a,b)=>a.name.localeCompare(b.name)).map(p=>`<option value="${p.id}">${esc(p.name)} (inactif)</option>`).join('');
+}
+document.addEventListener('change', e => {
+  const t = e.target; if (!t.classList?.contains('proj-sel') || !['__inactive','__active'].includes(t.value)) return;
+  e.stopImmediatePropagation(); e.stopPropagation();
+  const allLabel = t.dataset.all ?? null;
+  t.innerHTML = t.value === '__inactive' ? inactiveOptions(allLabel) : projOptions('', allLabel);
+  t.value = '';
+  try { t.showPicker(); } catch(_) { t.focus(); }
+}, true);

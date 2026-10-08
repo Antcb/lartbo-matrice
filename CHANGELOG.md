@@ -5,6 +5,21 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.8.0 — 08/10/2026
+- Police Geist et bleu L'ArtBo #283C63
+- Réglages : pôles des tâches modifiables ; bouton pour appliquer le nouvel acompte / solde aux factures pas encore envoyées
+- Listes d'artistes : seulement les actifs, avec « Projets inactifs… » pour ouvrir les autres
+- Adresses avec suggestions partout (coordonnées administratives, membres, livraison des affiches, villes des événements)
+- Recherche de date : toutes les années (tape le lieu, l'artiste, la ville ou la date)
+- Pièces jointes des tâches : suppression réparée
+- Booking : départ / arrivée du trajet depuis la carte, enchaînements repliables, panneau de droite qui défile
+- Ticketing : les données de break de Notion sont revenues (elles étaient dans l'ancienne colonne « Invit. »)
+- Projets : photo avec zoom et recadrage, aperçu par exercice (01/10 → 30/09), commissions nettes, export CSV des suivis du projet
+- Suivi : nouveau suivi ouvert directement dans l'espace de prospection, résumé IA au-dessus du journal (partout), dates du suivi modifiables et rattachables, carte : rayon réglable jusqu'à un an après la date + dates du monde entier à ±5 jours, distance et temps de route au clic
+- Export CSV des suivis : filtre sur la période du dernier échange
+- Membres : import Movinmotion réglé sur le vrai export, fiche complète par membre, réimport = mise à jour
+
+
 ## 1.7.0 — 08/10/2026
 - Nouveau nom et logo : L'ArtBoristerie Productions
 - Nouvelle charte : boutons harmonisés, textes lisibles en entier, couleurs de statut (festival en bleus, salle en verts, artiste gris/noir, annulée rouge, sans suite marron)

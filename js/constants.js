@@ -33,9 +33,8 @@ export const TASK_STATUS = ['To Do','In Progress','Done','Cancelled'];
 
 export const PRIORITIES = ['D-Day','Critical','High','Medium','Low'];
 
-// Pôles des tâches et leur couleur
-export const DEPARTMENTS = ['Booking','Production','Communication','Admin','Accounting','Projects'];
-export const DEPT_COLOR = {Booking:'#4A86D4', Production:'#1D6B3A', Communication:'#B4539A', Admin:'#7A5AC8', Accounting:'#C98A12', Projects:'#193762'};
+// Pôles des tâches par défaut (modifiables dans Réglages → réglage « departments »)
+export const DEFAULT_DEPARTMENTS = [{name:'Booking',color:'#4A86D4'},{name:'Production',color:'#1D6B3A'},{name:'Communication',color:'#B4539A'},{name:'Admin',color:'#7A5AC8'},{name:'Accounting',color:'#C98A12'},{name:'Projects',color:'#283C63'}];
 
 // Équipe : adresse → prénom affiché
 export const TEAM_NAMES = {'anthony@lartboristerie.com':'Anthony', 'production@lartboristerie.com':'Chloé'};

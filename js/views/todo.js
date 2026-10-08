@@ -3,11 +3,11 @@
  * Une tâche cochée reste visible 5 s (bouton Annuler) avant de disparaître.
  */
 import { CFG } from '../config.js';
-import { DEPARTMENTS, DEPT_COLOR, TASK_STATUS, TEAM_NAMES } from '../constants.js';
+import { TASK_STATUS, TEAM_NAMES } from '../constants.js';
 import { lingering } from '../data.js';
-import { attachmentsOf, isDone, projIds, projNames, showLabel, byId, structName, taskSort, teamName, urgency } from '../selectors.js';
+import { deptColor, deptNames, attachmentsOf, isDone, projIds, projNames, showLabel, byId, structName, taskSort, teamName, urgency } from '../selectors.js';
 import { S } from '../state.js';
-import { deptBadge, viewHead } from '../ui/bits.js';
+import { deptBadge, projOptions, viewHead } from '../ui/bits.js';
 import { cAc, cIn, cSel, projChips } from '../ui/cells.js';
 import { daysUntil, esc, matches } from '../utils.js';
 
@@ -28,7 +28,7 @@ export function taskTable(tasks, emptyMsg){
       <td class="full-cell" style="min-width:260px"><div class="task-title">${cIn('tasks',t.id,'title',t.title,'text','aria-label="Nom de la tâche"')}
         <button class="btn sm ghost" data-act="editTask" data-id="${t.id}" title="Notes, pièces jointes, statut…">Détails${nf?` · ${nf} 📎`:''}</button></div>
         ${t.notes?`<div class="muted" style="font-size:13px;padding:0 6px;white-space:pre-line">${esc(t.notes.length>160?t.notes.slice(0,160)+'…':t.notes)}</div>`:''}</td>
-      <td><select class="dept-sel" data-t="tasks" data-id="${t.id}" data-f="department" style="--c:${DEPT_COLOR[t.department]||'#8A94A6'}" aria-label="Pôle"><option value="">Pôle ?</option>${DEPARTMENTS.map(d=>`<option ${d===t.department?'selected':''}>${d}</option>`).join('')}</select></td>
+      <td><select class="dept-sel" data-t="tasks" data-id="${t.id}" data-f="department" style="--c:${deptColor(t.department)}" aria-label="Pôle"><option value="">Pôle ?</option>${deptNames().concat(t.department && !deptNames().includes(t.department) ? [t.department] : []).map(d=>`<option ${d===t.department?'selected':''}>${esc(d)}</option>`).join('')}</select></td>
       <td>${u?`<span class="urg ${u.cls}">${esc(u.label)}</span>`:''}</td>
       <td>${cIn('tasks',t.id,'deadline',t.deadline,'date')}</td>
       <td>${cSel('tasks',t.id,'assigned_to',t.assigned_to,team)}</td>
@@ -56,10 +56,10 @@ export function viewTodo(){
   const dbtn = (k,l,n) => `<button class="btn ${dept===k?'on':''}" data-act="todoDept" data-f="${k}" aria-pressed="${dept===k}">${l} <span class="count">${n}</span></button>`;
   return viewHead('To Do', {sub:`${tasks.length} tâche${tasks.length>1?'s':''}`,
       filters:`<div class="seg">${btn('open','À faire')}${btn('mine','Les miennes')}${btn('late','Urgentes (≤ 7 j)')}${btn('all','Avec les terminées')}</div>
-        <select id="f-project" class="sel" aria-label="Projet"><option value="">Tous les artistes</option>${S.db.projects.slice().sort((a,b)=>(b.active-a.active)||a.name.localeCompare(b.name)).map(p=>`<option value="${p.id}" ${p.id===S.project?'selected':''}>${esc(p.name)}${p.active?'':' (inactif)'}</option>`).join('')}</select>
+        <select id="f-project" class="sel proj-sel" data-all="Tous les artistes" aria-label="Artiste">${projOptions(S.project)}</select>
         <input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-taches" placeholder="Rechercher une tâche" data-search="todo" value="${esc(q)}">`,
       actions:'<button class="btn primary" data-act="newTask">Nouvelle tâche</button>'})
-    + `<div class="dept-filter" role="group" aria-label="Pôle">${dbtn('', 'Tous les pôles', total)}${DEPARTMENTS.map(d=>dbtn(d, d, byDept(d))).join('')}${dbtn('-', 'Sans pôle', byDept(''))}</div>`
+    + `<div class="dept-filter" role="group" aria-label="Pôle">${dbtn('', 'Tous les pôles', total)}${deptNames().map(d=>dbtn(d, d, byDept(d))).join('')}${dbtn('-', 'Sans pôle', byDept(''))}</div>`
     + taskTable(tasks);
 }
 

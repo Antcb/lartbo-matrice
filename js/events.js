@@ -3,7 +3,7 @@
  * recherche par distance, ajout de projets.
  */
 import { render } from './app.js';
-import { insert, save, uploadFiles } from './data.js';
+import { insert, save, sb, uploadFiles } from './data.js';
 import { geocode } from './geo.js';
 import { byId, projIds } from './selectors.js';
 import { S, localSet } from './state.js';
@@ -45,7 +45,7 @@ document.addEventListener('submit', async e => {
   if (!f.body.value.trim() && !f.who.value.trim()) return toast("Écris au moins une note ou l'interlocuteur", true);
   const date = f.date.value || today();
   const row = await insert('prospect_logs', {prospect_id:pid, date, kind:f.kind.value, contact_name:f.who.value.trim()||null, body:f.body.value.trim()||null, author:S.user.email});
-  if (row){ const p=byId('prospects',pid); if (row.date && (!p.last_contact || row.date>p.last_contact)) await save('prospects', pid, {last_contact:row.date}, {rerender:false}); render(); toast('Ajouté au journal'); }
+  if (row){ const p=byId('prospects',pid); if (row.date && (!p.last_contact || row.date>p.last_contact)) await save('prospects', pid, {last_contact:row.date}, {rerender:false}); render(); toast('Ajouté au journal'); autoSummary(pid); }
 });
 
 // Journal des échanges d'un projet
@@ -116,29 +116,52 @@ document.addEventListener('change', e => {
   S.wsTarget = e.target.value || null; render();
 });
 
-// Import des membres d'un projet depuis un export Movinmotion (CSV)
-const MEMBER_COLS = {
-  first_name: /^pr[eé]nom/i, last_name: /^nom( de famille| d'usage| usuel)?$|^nom$/i, email: /mail/i, phone: /t[eé]l[eé]phone|portable|mobile/i,
-  role: /emploi|fonction|poste|r[oô]le|m[eé]tier/i, address: /^adresse/i, birth_date: /naissance/i,
+// Import des membres d'un projet depuis un export Movinmotion (CSV « salaries.csv »)
+const COL = {
+  first_name: /^pr[eé]nom$/i, last_name: /^nom de famille$|^nom$/i, email: /^e?-?mail$/i, phone: /^t[eé]l[eé]phone mobile$|^portable$|^mobile$/i,
+  phone_fix: /^t[eé]l[eé]phone( fixe)?$/i, role: /^poste( principal)?$|^emploi$|^fonction$/i, address: /^adresse$/i, complement: /^compl[eé]ment/i,
+  postal_code: /^code postal$/i, city: /^ville$/i, country: /^pays$/i, birth_date: /^date de naissance$/i,
 };
 async function importMembers(projectId, file){
   const rows = parseCSV(await file.text());
   if (rows.length < 2) return toast('Fichier vide ou illisible', true);
   const head = rows[0].map(h => h.trim());
-  const idx = {}; for (const [k, re] of Object.entries(MEMBER_COLS)){ const i = head.findIndex((h, j) => re.test(h) && !Object.values(idx).includes(j)); if (i>=0) idx[k] = i; }
-  const cityI = head.findIndex(h => /^ville|commune/i.test(h)), cpI = head.findIndex(h => /code postal/i.test(h));
-  let n = 0;
+  const idx = {}; for (const [k, re] of Object.entries(COL)){ const i = head.findIndex(h => re.test(h)); if (i>=0) idx[k] = i; }
+  const used = new Set(Object.values(idx));
+  let added = 0, updated = 0;
   for (const r of rows.slice(1)){
-    const m = {project_id: projectId, data:{}};
-    for (const [k, i] of Object.entries(idx)) m[k] = (r[i]||'').trim() || null;
-    if (m.address && (cpI>=0 || cityI>=0)) m.address = [m.address, [r[cpI], r[cityI]].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-    if (m.birth_date){ const d = m.birth_date.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/); m.birth_date = d ? `${d[3]}-${d[2].padStart(2,'0')}-${d[1].padStart(2,'0')}` : /^\d{4}-\d{2}-\d{2}/.test(m.birth_date) ? m.birth_date.slice(0,10) : null; }
-    head.forEach((h, i) => { if (!Object.values(idx).includes(i) && i!==cityI && i!==cpI && (r[i]||'').trim()) m.data[h] = r[i].trim(); });
+    const g = k => idx[k]!=null ? (r[idx[k]]||'').trim() : '';
+    const m = {project_id: projectId, first_name: g('first_name')||null, last_name: g('last_name')||null, email: g('email')||null,
+      phone: g('phone') || g('phone_fix') || null, role: g('role')||null,
+      address: [g('address'), g('complement'), [g('postal_code'), g('city')].filter(Boolean).join(' '), g('country') && !/^france$/i.test(g('country')) ? g('country') : ''].filter(Boolean).join(', ') || null,
+      birth_date: null, data:{}};
+    const b = g('birth_date').match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/); if (b) m.birth_date = `${b[3]}-${b[2].padStart(2,'0')}-${b[1].padStart(2,'0')}`;
+    head.forEach((h, i) => { if (h && !used.has(i) && (r[i]||'').trim()) m.data[h] = r[i].trim(); });
     if (!m.first_name && !m.last_name && !m.email) continue;
-    if (await insert('project_members', m)) n++;
+    const same = S.db.project_members.find(x => x.project_id===projectId && ((m.email && x.email===m.email) || (x.first_name===m.first_name && x.last_name===m.last_name)));
+    if (same){ await save('project_members', same.id, {...m, data:{...(same.data||{}), ...m.data}}, {rerender:false}); updated++; }
+    else if (await insert('project_members', m)) added++;
   }
-  toast(`${n} membre(s) importé(s)`); render();
+  toast(`${added} membre(s) ajouté(s)${updated?`, ${updated} mis à jour`:''}`); render();
 }
 document.addEventListener('change', e => { const pid = e.target.dataset?.membersImport; if (pid && e.target.files[0]) importMembers(pid, e.target.files[0]); });
 document.addEventListener('drop', e => { const z = e.target.closest?.('[data-members-drop]'); if (!z) return; e.preventDefault(); z.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) importMembers(z.dataset.membersDrop, f); });
 document.addEventListener('dragover', e => { const z = e.target.closest?.('[data-members-drop]'); if (z){ e.preventDefault(); z.classList.add('over'); } });
+
+
+/** Après un ajout au journal : résumé mis à jour par l'IA si une clé est configurée (sinon rien) */
+async function autoSummary(pid){
+  const {data, error} = await sb.functions.invoke('resume-suivi', {body:{prospect_id:pid}});
+  if (error || !data?.summary) return;
+  const p = byId('prospects', pid); if (!p) return;
+  p.summary = data.summary; render(); toast('Résumé mis à jour par l’IA');
+}
+
+// Espace de prospection : rayon (curseur) et rattachement d'une date existante au suivi
+document.addEventListener('input', e => { if (e.target.dataset?.wsRadius){ const v = document.getElementById('ws-radius-v'); if (v) v.textContent = e.target.value + ' km'; } });
+document.addEventListener('change', e => { if (e.target.dataset?.wsRadius){ S.wsRadius = Number(e.target.value); render(); } });
+document.addEventListener('change', async e => {
+  const pid = e.target.dataset?.linkShow; if (!pid || !e.target.value) return;
+  await save('shows', e.target.value, {prospect_id: pid});
+  toast('Date rattachée au suivi');
+});

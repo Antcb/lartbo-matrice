@@ -16,7 +16,7 @@ import { searchPlaces } from '../geo.js';
 
 const LIMIT = 12;
 
-function rank(rows, q, text){
+function rank(rows, q, text, limit=LIMIT){
   const words = norm(q).split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   const out = [];
@@ -24,9 +24,9 @@ function rank(rows, q, text){
     const h = norm(text(r)); if (!words.every(w => h.includes(w))) continue;
     const name = norm(text(r).split(' — ')[0]);
     out.push([name.startsWith(words[0]) ? 0 : name.includes(' '+words[0]) ? 1 : 2, r]);
-    if (out.length > 400) break;
+    if (out.length > 3000) break;
   }
-  return out.sort((a,b)=>a[0]-b[0]).slice(0, LIMIT).map(x=>x[1]);
+  return out.sort((a,b)=>a[0]-b[0]).slice(0, limit).map(x=>x[1]);
 }
 
 export const SOURCES = {
@@ -43,12 +43,14 @@ export const SOURCES = {
   shows: {
     label: id => showLabel(byId('shows', id)),
     search: q => rank(S.db.shows.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')), q,
-        s => `${s.venue} — ${s.city||''} ${fmtDate(s.date)} ${s.date||''} ${byId('projects', s.project_id)?.name||''}`)
-      .map(s => ({id:s.id, label:showLabel(s), hint:byId('projects', s.project_id)?.name||''})),
+        s => `${s.venue} — ${s.city||''} ${fmtDate(s.date)} ${s.date||''} ${(s.date||'').split('-').reverse().join('/')} ${byId('projects', s.project_id)?.name||''} ${s.status||''}`, 60)
+      .map(s => ({id:s.id, label:showLabel(s), hint:[byId('projects', s.project_id)?.name, s.status].filter(Boolean).join(' · ')})),
   },
   // Villes et adresses (France : Géoplateforme ; ailleurs : OpenStreetMap)
   places: { async: true, label: () => '', search: q => searchPlaces(q) },
   cities: { async: true, label: () => '', search: q => searchPlaces(q, {cities:true}) },
+  // adresse complète enregistrée telle quelle (membres, livraison des affiches…)
+  fulladdr: { async: true, label: () => '', search: async q => (await searchPlaces(q)).map(p => ({...p, id: p.label, label: p.label})) },
 };
 
 export function acInput(kind, {value='', text, attrs='', placeholder='Rechercher…', create=false, fill=false}={}){
@@ -119,7 +121,7 @@ async function choose(i){
 /** Adresse choisie : remplit adresse, code postal, ville, département, région, pays, coordonnées */
 function fillPlace(box, p){
   const root = box.closest('form') || document;
-  const set = (k, v) => { const el = root.querySelector(`[name="${box.dataset.fill}${k}"]`); if (el && v != null) { el.value = v; el.dispatchEvent(new Event('input', {bubbles:true})); } };
+  const set = (k, v) => { const el = root.querySelector(`[name="${box.dataset.fill}${k}"]`); if (el && v != null && el.value !== String(v)) { el.value = v; el.dispatchEvent(new Event('input', {bubbles:true})); if (!el.closest('form')) el.dispatchEvent(new Event('change', {bubbles:true})); } };
   if (p.street) set('address', p.street);
   set('postal_code', p.postcode); set('city', p.city); set('region', p.region); set('country', p.country);
   set('department_code', p.department_code); set('department_name', p.department_name);

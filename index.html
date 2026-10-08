@@ -6,11 +6,12 @@
   <title>Matrice — L'ArtBoristerie Productions</title>
   <link rel="icon" type="image/png" href="assets/favicon.png">
   <link rel="apple-touch-icon" href="assets/icon-180.png">
-  <meta name="theme-color" content="#193762">
+  <meta name="theme-color" content="#283C63">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&display=swap">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-  <link rel="stylesheet" href="css/styles.css?v=1.7.0">
+  <link rel="stylesheet" href="css/styles.css?v=1.8.0">
   <!-- Bibliothèques : carte (Leaflet) et base de données (Supabase) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
@@ -27,39 +28,39 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/actions.js": "./js/actions.js?v=1.7.0",
-      "./js/app.js": "./js/app.js?v=1.7.0",
-      "./js/calc.js": "./js/calc.js?v=1.7.0",
-      "./js/config.js": "./js/config.js?v=1.7.0",
-      "./js/constants.js": "./js/constants.js?v=1.7.0",
-      "./js/data.js": "./js/data.js?v=1.7.0",
-      "./js/events.js": "./js/events.js?v=1.7.0",
-      "./js/forms.js": "./js/forms.js?v=1.7.0",
-      "./js/geo.js": "./js/geo.js?v=1.7.0",
-      "./js/reminders.js": "./js/reminders.js?v=1.7.0",
-      "./js/selectors.js": "./js/selectors.js?v=1.7.0",
-      "./js/state.js": "./js/state.js?v=1.7.0",
-      "./js/ui/autocomplete.js": "./js/ui/autocomplete.js?v=1.7.0",
-      "./js/ui/bits.js": "./js/ui/bits.js?v=1.7.0",
-      "./js/ui/cells.js": "./js/ui/cells.js?v=1.7.0",
-      "./js/ui/datefield.js": "./js/ui/datefield.js?v=1.7.0",
-      "./js/ui/modal.js": "./js/ui/modal.js?v=1.7.0",
-      "./js/utils.js": "./js/utils.js?v=1.7.0",
-      "./js/views/auth.js": "./js/views/auth.js?v=1.7.0",
-      "./js/views/booking.js": "./js/views/booking.js?v=1.7.0",
-      "./js/views/communication.js": "./js/views/communication.js?v=1.7.0",
-      "./js/views/contacts.js": "./js/views/contacts.js?v=1.7.0",
-      "./js/views/production.js": "./js/views/production.js?v=1.7.0",
-      "./js/views/projects.js": "./js/views/projects.js?v=1.7.0",
-      "./js/views/settings.js": "./js/views/settings.js?v=1.7.0",
-      "./js/views/structures.js": "./js/views/structures.js?v=1.7.0",
-      "./js/views/suivi.js": "./js/views/suivi.js?v=1.7.0",
-      "./js/views/ticketing.js": "./js/views/ticketing.js?v=1.7.0",
-      "./js/views/todo.js": "./js/views/todo.js?v=1.7.0"
+      "./js/actions.js": "./js/actions.js?v=1.8.0",
+      "./js/app.js": "./js/app.js?v=1.8.0",
+      "./js/calc.js": "./js/calc.js?v=1.8.0",
+      "./js/config.js": "./js/config.js?v=1.8.0",
+      "./js/constants.js": "./js/constants.js?v=1.8.0",
+      "./js/data.js": "./js/data.js?v=1.8.0",
+      "./js/events.js": "./js/events.js?v=1.8.0",
+      "./js/forms.js": "./js/forms.js?v=1.8.0",
+      "./js/geo.js": "./js/geo.js?v=1.8.0",
+      "./js/reminders.js": "./js/reminders.js?v=1.8.0",
+      "./js/selectors.js": "./js/selectors.js?v=1.8.0",
+      "./js/state.js": "./js/state.js?v=1.8.0",
+      "./js/ui/autocomplete.js": "./js/ui/autocomplete.js?v=1.8.0",
+      "./js/ui/bits.js": "./js/ui/bits.js?v=1.8.0",
+      "./js/ui/cells.js": "./js/ui/cells.js?v=1.8.0",
+      "./js/ui/datefield.js": "./js/ui/datefield.js?v=1.8.0",
+      "./js/ui/modal.js": "./js/ui/modal.js?v=1.8.0",
+      "./js/utils.js": "./js/utils.js?v=1.8.0",
+      "./js/views/auth.js": "./js/views/auth.js?v=1.8.0",
+      "./js/views/booking.js": "./js/views/booking.js?v=1.8.0",
+      "./js/views/communication.js": "./js/views/communication.js?v=1.8.0",
+      "./js/views/contacts.js": "./js/views/contacts.js?v=1.8.0",
+      "./js/views/production.js": "./js/views/production.js?v=1.8.0",
+      "./js/views/projects.js": "./js/views/projects.js?v=1.8.0",
+      "./js/views/settings.js": "./js/views/settings.js?v=1.8.0",
+      "./js/views/structures.js": "./js/views/structures.js?v=1.8.0",
+      "./js/views/suivi.js": "./js/views/suivi.js?v=1.8.0",
+      "./js/views/ticketing.js": "./js/views/ticketing.js?v=1.8.0",
+      "./js/views/todo.js": "./js/views/todo.js?v=1.8.0"
     }
   }
   </script>
   <!-- import-map:fin -->
-  <script type="module" src="js/app.js?v=1.7.0"></script>
+  <script type="module" src="js/app.js?v=1.8.0"></script>
 </body>
 </html>

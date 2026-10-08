@@ -8,7 +8,7 @@ import { lingering } from '../data.js';
 import { route, routeCached } from '../geo.js';
 import { byId, projName, showCoords, showsFiltered, visibleShow } from '../selectors.js';
 import { S } from '../state.js';
-import { filterBar, stBadge, viewHead } from '../ui/bits.js';
+import { filterBar, fold, stBadge, viewHead } from '../ui/bits.js';
 import { $, daysBetween, esc, eur, fmtDate, fmtShort } from '../utils.js';
 
 export function viewBooking(){
@@ -90,9 +90,9 @@ export function routeBoxHTML(shows){
       <span class="km ${r && !r.error && gap<=1 && r.km>600 ? 'long':''}">${r ? (r.error?'—':`${r.km} km · ${r.time}`) : '…'}${gap===2?' · 1 jour off':gap===0?' · même jour':''}</span>
       ${!S.project?`<span class="proj-line">${esc(projName(a.project_id))}</span>`:''}</li>`;
   }).join('');
+  const n = chains(shows).length;
   return `<h3>Trajet</h3>${pair}
-    <h3 style="margin-top:16px">Enchaînements</h3>
-    ${legs ? `<ul class="legs">${legs}</ul>` : '<p class="muted" style="margin:0">Aucune date qui se suit (au plus un jour off) sur cette période.</p>'}`;
+    ${fold('chains', 'Enchaînements', legs ? `<ul class="legs">${legs}</ul>` : '<p class="muted" style="margin:0">Aucune date qui se suit (au plus un jour off) sur cette période.</p>', {open:true, count:n})}`;
 }
 
 /* ---------------------------------------------------------------------------------------
@@ -105,8 +105,9 @@ export function setMapData(data){ S.mapData = data; }
 
 function setBookingMap(shows){
   const pts = shows.map(s => { const c = showCoords(s); return c && {lat:c[0], lng:c[1], color:stColor(s.status), big:(s.status||'').startsWith('Confirmée'),
-    label:`<b>${esc(s.venue)}</b><br>${fmtDate(s.date)} — ${esc(s.city||'')}<br>${esc(s.status)}${s.project_id?' · '+esc(projName(s.project_id)):''}${s.fee_ht?'<br>'+eur(s.fee_ht):''}`}; }).filter(Boolean);
-  setMapData({points: pts, key: `booking|${S.year}|${S.project}|${S.showCancelled}`});
+    label:`<b>${esc(s.venue)}</b><br>${fmtDate(s.date)} — ${esc(s.city||'')}<br>${esc(s.status)}${s.project_id?' · '+esc(projName(s.project_id)):''}${s.fee_ht?'<br>'+eur(s.fee_ht):''}
+      <div class="pop-actions"><button type="button" class="btn sm ${S.routePick.a===s.id?'on':''}" data-act="pick" data-p="a" data-id="${s.id}">Départ (A)</button><button type="button" class="btn sm ${S.routePick.b===s.id?'on':''}" data-act="pick" data-p="b" data-id="${s.id}">Arrivée (B)</button></div>`}; }).filter(Boolean);
+  setMapData({points: pts, key: `booking|${S.year}|${S.project}|${S.showCancelled}`, keepView: true});
   // calcul des trajets en arrière-plan, puis mise à jour du cadre « Trajet »
   const jobs = chains(shows).map(c => [c.a, c.b]);
   const a = byId('shows', S.routePick.a), b = byId('shows', S.routePick.b); if (a && b) jobs.push([a, b]);
@@ -127,14 +128,24 @@ export function attachMap(){
   MAP.invalidateSize();
   const data = S.mapData || {points:[]};
   LAYER.clearLayers();
+  if (data.circle) L.circle(data.circle.center, {radius: data.circle.km*1000, color:'#283C63', weight:1, opacity:.5, fillOpacity:.05, interactive:false}).addTo(LAYER);
   for (const p of data.points){
     const light = ['#A9C8EC','#BFE3B9','#C9CDD4','#9EA4AD'].includes(p.color);
-    L.circleMarker([p.lat, p.lng], {radius: p.big?9:7, color: p.ring ? '#C8372D' : (light ? '#5B677D' : '#FFFFFF'), weight: p.ring?3:1.5,
-      fillColor: p.color, fillOpacity:1}).bindPopup(p.label).addTo(LAYER);
+    const m = L.circleMarker([p.lat, p.lng], {radius: p.big?9:7, color: p.ring ? '#C8372D' : (light ? '#5B677D' : '#FFFFFF'), weight: p.ring?3:1.5,
+      fillColor: p.color, fillOpacity:1}).bindPopup(p.label + (p.from ? '<div class="pop-dist">Calcul de la distance…</div>' : '')).addTo(LAYER);
+    // distance et temps de route depuis la structure, calculés à l'ouverture
+    if (p.from) m.on('popupopen', async ev => {
+      const r = await route(p.from, [p.lat, p.lng]);
+      const el = ev.popup.getElement()?.querySelector('.pop-dist');
+      if (el) el.textContent = r.error ? r.error : `${r.km} km · ${r.time} de route depuis la structure`;
+    });
   }
   if (data.key !== LAST_KEY){
     LAST_KEY = data.key;
     const fit = data.fitTo || data.points.map(p => [p.lat, p.lng]);
+    if (data.circle){ const [la, ln] = data.circle.center, km = Math.max(data.circle.km, 20), dl = km/111, dg = km/(111*Math.cos(la*Math.PI/180));
+      const bounds = L.latLngBounds([la-dl, ln-dg], [la+dl, ln+dg]);
+      fit.forEach(c => bounds.extend(c)); MAP.fitBounds(bounds, {padding:[20,20], maxZoom:10}); LAST_KEY = data.key; return; }
     if (fit.length === 1) MAP.setView(fit[0], data.zoom || 8);
     else if (fit.length) MAP.fitBounds(fit, {padding:[30,30], maxZoom:9});
     else MAP.setView([46.6, 2.4], 5);

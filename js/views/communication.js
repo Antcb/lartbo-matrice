@@ -25,7 +25,7 @@ export function viewCommunication(){
         ${row('Suivi', cSel('shows',s.id,'poster_status',s.poster_status,POSTER))}
         ${row('Quantités', `<div class="qtys">${q(s,'poster_a3','A3')}${q(s,'poster_a2','A2')}${q(s,'poster_b1','B1')}</div>`)}
         ${row('Référent', cAc('contacts','shows',s.id,'poster_contact_id',s.poster_contact_id,{placeholder:'Chercher un contact…', create:true}))}
-        ${row('Livraison', cIn('shows',s.id,'poster_delivery',s.poster_delivery,'text','placeholder="Adresse, date…"'))}</td>
+        ${row('Livraison', cAc('fulladdr','shows',s.id,'poster_delivery',s.poster_delivery,{text:s.poster_delivery||'', placeholder:'Adresse de livraison'}))}</td>
       <td class="mini-grid" style="min-width:280px">
         ${row('Billetterie', cUrl('shows',s.id,'ticketing_url',s.ticketing_url))}
         ${row('Instagram', cUrl('shows',s.id,'instagram_url',s.instagram_url))}

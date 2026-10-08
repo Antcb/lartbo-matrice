@@ -1,7 +1,7 @@
 /* =====================================================================
    Matrice — L'ArtBoristerie Productions
-   Charte : Archivo (titres très condensés comme le logo, texte en largeur normale),
-   bleu marine du logo pour les actions, couleurs réservées aux statuts.
+   Charte : police Geist, bleu L'ArtBo #283C63 pour les actions et les titres,
+   couleurs réservées aux statuts.
    Sommaire : 1 jetons · 2 base · 3 en-tête · 4 boutons & champs · 5 pastilles · 6 blocs
    7 tableaux · 8 champs spéciaux (date, recherche, fichiers) · 9 Booking · 10 Production
    11 Ticketing · 12 Suivi · 13 Structures · 14 Projets · 15 To Do · 16 fenêtres · 17 téléphone
@@ -10,23 +10,23 @@
 /* 1 — Jetons ----------------------------------------------------------- */
 :root{
   color-scheme: light;
-  --brand:#193762; --brand-2:#24497F; --brand-ink:#FFFFFF; --brand-tint:#E7ECF4;
+  --brand:#283C63; --brand-2:#3A5488; --brand-ink:#FFFFFF; --brand-tint:#E8ECF3;
   --bg:#EEF1F5; --panel:#FFFFFF; --soft:#F6F8FA; --ink:#16213A; --muted:#5B677D; --faint:#8A94A6; --line:#DCE1E8; --line-2:#E9EDF2;
   --ok:#1D6B3A; --warn:#B7790F; --danger:#B8352B;
   --r-sm:6px; --r:8px; --r-lg:12px;
   --shadow:0 1px 2px rgba(22,33,58,.06), 0 2px 8px rgba(22,33,58,.04);
   --shadow-pop:0 12px 32px rgba(22,33,58,.18);
-  --cond:"wdth" 62; --semi:"wdth" 80;
+  --cond:normal; --semi:normal;
 }
 
 /* 2 — Base ------------------------------------------------------------- */
 *{box-sizing:border-box}
 html,body{margin:0}
-body{background:var(--bg);color:var(--ink);font:14px/1.5 Archivo,system-ui,sans-serif;font-variation-settings:"wdth" 100;-webkit-font-smoothing:antialiased}
+body{background:var(--bg);color:var(--ink);font:14px/1.5 Geist,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit;color:inherit}
 a{color:var(--brand-2);text-underline-offset:2px}
 :focus-visible{outline:2px solid var(--brand-2);outline-offset:2px}
-h1,h2,h3,h4{font-variation-settings:var(--cond);font-weight:800;letter-spacing:.005em;line-height:1.1;margin:0;color:var(--brand)}
+h1,h2,h3,h4{font-weight:700;letter-spacing:-.02em;line-height:1.1;margin:0;color:var(--brand)}
 .muted{color:var(--muted)}
 .spacer{flex:1}
 .num{font-variant-numeric:tabular-nums}
@@ -122,7 +122,7 @@ textarea.inp{height:auto;padding:8px 10px}
 .pad{padding:16px 18px}
 .section-title{display:flex;align-items:center;gap:10px;margin:26px 0 10px;font-size:20px}
 .section-title:first-child{margin-top:0}
-.block-title{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--muted);margin:0 0 8px;font-variation-settings:"wdth" 100}
+.block-title{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--muted);margin:0 0 8px}
 .subtabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:0 0 16px;overflow-x:auto;scrollbar-width:none}
 .subtab{border:0;background:none;padding:10px 12px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap;position:relative}
 .subtab:hover{color:var(--ink)}
@@ -232,7 +232,7 @@ td .ac-input:hover{border-color:var(--line)}
 .legend .badge{font-size:11px;padding:2px 8px}
 .month{display:flex;align-items:baseline;gap:10px;margin:22px 0 8px;font-size:22px;text-transform:capitalize}
 .month:first-child{margin-top:0}
-.month small{font-size:13px;color:var(--muted);font-variation-settings:"wdth" 100;font-weight:500;text-transform:none}
+.month small{font-size:13px;color:var(--muted);font-weight:500;text-transform:none}
 .gig{display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:14px;align-items:center;padding:10px 12px;background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--c);border-radius:var(--r);margin-bottom:6px;cursor:pointer}
 .gig:hover{border-color:var(--brand-2);border-left-color:var(--c)}
 .gig.picked{box-shadow:0 0 0 2px var(--brand-2)}
@@ -253,7 +253,7 @@ td .ac-input:hover{border-color:var(--line)}
 .legs .km{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap;text-align:right}
 .legs .long{color:var(--danger);font-weight:700}
 .legs .proj-line{grid-column:1/-1;color:var(--muted);font-size:12px}
-.leaflet-popup-content{font:13px/1.45 Archivo,sans-serif}
+.leaflet-popup-content{font:13px/1.45 Geist,sans-serif}
 .pane-switch{display:none}
 
 /* 10 — Production ------------------------------------------------------ */
@@ -469,3 +469,16 @@ dialog::backdrop{background:rgba(16,24,42,.5)}
 .seg .btn.on{background:var(--brand-tint)}
 td input[type=number],td .dt{background:var(--soft);border-color:var(--line-2)}
 .dept-sel{font-weight:700;font-size:12px;border-radius:999px!important;padding:3px 8px!important;color:color-mix(in srgb,var(--c) 85%,#000);background:color-mix(in srgb,var(--c) 12%,#fff)!important;border:1px solid color-mix(in srgb,var(--c) 35%,#fff)!important}
+.side{max-height:calc(100vh - 92px);overflow:auto;padding-bottom:8px;scrollbar-width:thin}
+.pop-actions{display:flex;gap:4px;margin-top:8px}
+.pop-actions .btn{height:26px;font-size:12px;padding:0 8px}
+.pop-dist{margin-top:6px;font-weight:600;color:var(--brand)}
+.route-box .fold{margin:16px 0 0}
+.route-box .fold-head{font-size:20px;color:var(--brand);font-weight:700;letter-spacing:-.02em;padding:0}
+.ws-who{display:grid;grid-template-columns:minmax(260px,1fr) minmax(0,1.4fr);gap:12px 20px;margin-bottom:16px}
+.summary-block{background:var(--brand-tint);border-radius:var(--r);padding:12px 14px}
+.summary-block .block-title{color:var(--brand)}
+.near-list ul{list-style:none;margin:0;padding:0}
+input[type=range]{accent-color:var(--brand);flex:1;min-width:120px}
+@media (max-width:760px){ .ws-who{grid-template-columns:1fr} .dt-txt{width:112px} .seg{flex-wrap:wrap} }
+.side>*{flex-shrink:0}

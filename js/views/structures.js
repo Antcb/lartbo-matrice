@@ -7,7 +7,8 @@ import { distKm } from '../geo.js';
 import { byId, eventsOfStructure, lastExchange, linksOfStructure, projName, prospectsOfStructure, showsOfStructure, tasksOfStructure } from '../selectors.js';
 import { S } from '../state.js';
 import { curTab, pstBadge, stBadge, tabsBar, tag, viewHead } from '../ui/bits.js';
-import { cIn } from '../ui/cells.js';
+import { cAc, cIn } from '../ui/cells.js';
+import { acInput } from '../ui/autocomplete.js';
 import { esc, eur, fmtDate, md, norm, url } from '../utils.js';
 import { suiviCard } from './suivi.js';
 import { taskSection } from './todo.js';
@@ -90,19 +91,26 @@ function eventsTab(st, events){
     <td>${cIn('structure_events',e.id,'date_end',e.date_end,'date')}</td>
     <td>${cIn('structure_events',e.id,'period',e.period,'text','placeholder="ex. 2e week-end de juillet"')}</td>
     <td>${cIn('structure_events',e.id,'place',e.place)}</td>
-    <td>${cIn('structure_events',e.id,'city',e.city)}</td>
+    <td style="min-width:160px">${cAc('cities','structure_events',e.id,'city',e.city,{text:e.city||'', placeholder:'Ville'})}</td>
     <td class="num">${cIn('structure_events',e.id,'capacity',e.capacity,'number','class="narrow"')}</td>
     <td>${cIn('structure_events',e.id,'notes',e.notes)}</td>
     <td><button class="btn icon sm ghost danger" data-act="delEvent" data-id="${e.id}" aria-label="Supprimer l'événement">✕</button></td></tr>`).join('') || '<tr><td colspan="9" class="empty">Aucun festival ou événement renseigné pour cette structure.</td></tr>'}
   </tbody></table></div>`;
 }
 
-function adminTab(st){
+/** Champs des coordonnées administratives (enregistrés à la sortie du champ ; adresse avec suggestions) */
+export function adminForm(st){
   const a = st.admin || {};
+  return `<div class="admin-grid">${ADMIN_FIELDS.map(([k,l,full])=>`<div class="field ${full?'full':''}" style="${full?'grid-column:1/-1':''}"><label for="adm-${k}">${l}</label>
+      ${k==='notes' ? `<textarea id="adm-${k}" name="adm_${k}" data-admin="${k}" data-sid="${st.id}">${esc(a[k]||'')}</textarea>`
+        : k==='address' ? acInput('places', {value:a[k]||'', text:a[k]||'', attrs:`name="adm_address" data-admin="address" data-sid="${st.id}"`, fill:'adm_', placeholder:'Taper l’adresse du siège…'})
+        : `<input id="adm-${k}" name="adm_${k}" data-admin="${k}" data-sid="${st.id}" value="${esc(a[k]||'')}">`}</div>`).join('')}</div>`;
+}
+
+function adminTab(st){
   return `<div class="panel pad">
     <p class="help" style="margin:0 0 14px">Informations utilisées pour les contrats. Enregistrées dès que tu quittes le champ.</p>
-    <div class="admin-grid">${ADMIN_FIELDS.map(([k,l,full])=>`<div class="field ${full?'full':''}" style="${full?'grid-column:1/-1':''}"><label for="adm-${k}">${l}</label>
-      ${k==='notes' ? `<textarea id="adm-${k}" data-admin="${k}" data-sid="${st.id}">${esc(a[k]||'')}</textarea>` : `<input id="adm-${k}" data-admin="${k}" data-sid="${st.id}" value="${esc(a[k]||'')}">`}</div>`).join('')}</div>
+    ${adminForm(st)}
     <div class="vh-actions" style="margin-top:12px"><button class="btn sm" data-act="adminFromStructure" data-id="${st.id}">Reprendre l’adresse de la fiche</button></div>
   </div>`;
 }

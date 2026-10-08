@@ -3,7 +3,7 @@
  * Les recherches fréquentes passent par des index en cache (recalculés quand la table change),
  * ce qui garde l'app rapide malgré les milliers de structures et de contacts.
  */
-import { TEAM_NAMES, isOff } from './constants.js';
+import { DEFAULT_DEPARTMENTS, TEAM_NAMES, isOff } from './constants.js';
 import { lingering } from './data.js';
 import { S } from './state.js';
 import { daysUntil, fmtDate } from './utils.js';
@@ -46,7 +46,7 @@ export function showCoords(s){
   return null;
 }
 
-export const showLabel = s => s ? `${s.date ? s.date.split('-').reverse().join('/').replace(/\/20(\d\d)$/,'/$1') : 'sans date'} · ${s.venue||'?'}${s.city && s.city!==s.venue ? ' ('+s.city+')' : ''}` : '';
+export const showLabel = s => s ? `${s.date ? s.date.split('-').reverse().join('/') : 'sans date'} · ${s.venue||'?'}${s.city && s.city!==s.venue ? ' ('+s.city+')' : ''}` : '';
 
 export function urgency(t){
   if (['Done','Cancelled'].includes(t.status)) return null;
@@ -113,3 +113,8 @@ export function projectOptions(onlyActive=false, keep=[]){
 
 /** Nombre de notifications non lues pour l'utilisateur connecté */
 export const unreadNotifs = () => S.db.notifications.filter(n => !(n.read_by||[]).includes(S.user?.email));
+
+/** Pôles des tâches (Réglages) : [{name, color}] */
+export const departments = () => { const d = setting('departments'); return Array.isArray(d) && d.length ? d : DEFAULT_DEPARTMENTS; };
+export const deptNames = () => departments().map(d => d.name);
+export const deptColor = n => departments().find(d => d.name === n)?.color || '#8A94A6';
