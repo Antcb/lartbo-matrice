@@ -25,3 +25,9 @@
 .fiche-msg{text-align:center;padding:40px 20px}
 .fiche-grid.cols3{grid-template-columns:1.3fr 1fr 1fr}
 @media (max-width:640px){ .fiche-grid,.fiche-grid.cols3{grid-template-columns:1fr} .fiche-dl{grid-template-columns:1fr} .fiche-main h1{font-size:24px} }
+.fiche-engage{background:var(--soft);border-left:3px solid var(--brand);padding:10px 12px;border-radius:var(--r-sm);font-size:13px;margin:12px 0 0}
+.choice{border:0;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:6px 18px}
+.choice legend{font-weight:600;font-size:13px;margin-bottom:6px;padding:0;width:100%}
+.choice label{display:flex;gap:6px;align-items:center;font-size:14px}
+.choice.invalid legend{color:var(--danger)}
+.fiche-grid [hidden]{display:none}

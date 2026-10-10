@@ -18,7 +18,9 @@ export const ADMIN_FIELDS = [
   ['legal_name','Raison sociale'], ['legal_form','Forme juridique'], ['siret','SIRET'], ['ape','Code APE / NAF'],
   ['vat','N° TVA intracommunautaire'], ['licence','Licence(s) d’entrepreneur de spectacles'],
   ['address','Adresse du siège',true], ['postal_code','Code postal'], ['city','Ville'], ['country','Pays'],
+  ['vat_subject','Soumise à la TVA (Oui / Non)'],
   ['signatory','Représenté·e par (nom)'], ['signatory_role','Qualité (président·e, directeur·rice…)'],
+  ['signatory_phone','Téléphone du signataire'], ['signatory_email','Mail du signataire'],
   ['email','Mail administratif'], ['phone','Téléphone administratif'], ['billing_email','Mail de facturation'],
   ['notes','Remarques pour les contrats',true],
 ];

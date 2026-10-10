@@ -8,7 +8,8 @@
  * 2. Brouillons Gmail : le site envoie le mail préparé (action "draft").
  * 3. Chaque matin (déclencheur dailyJob) : brouillons des boucles à envoyer
  *    + récap des notifications par mail à Anthony et Chloé.
- * 4. "link_folders" : rattache les dossiers de dates déjà existants ;
+ * 4. "contract" / "contract_pdf" : contrat rempli depuis le modèle Google Docs, puis PDF.
+ * 5. "link_folders" : rattache les dossiers de dates déjà existants ;
  *    "folder_path" : chemin du dossier (pour le Finder).
  *
  * Le lien se fait par ID : le dossier peut ensuite être renommé ou déplacé
@@ -40,6 +41,8 @@ function doPost(e) {
     else if (action === 'draft') out = createDraft_(body);
     else if (action === 'link_folders') out = { ok: true, linked: linkExistingFolders() };
     else if (action === 'folder_path') out = { ok: true, path: folderPath_(body.folder_id) };
+    else if (action === 'contract') out = createContract_(body);
+    else if (action === 'contract_pdf') out = contractPdf_(body.doc_id);
     else if (action === 'ping') out = { ok: true, account: Session.getEffectiveUser().getEmail() };
     else out = { ok: false, error: 'Action inconnue : ' + action };
   } catch (err) {
@@ -130,6 +133,79 @@ function dailyJob() {
 
 function esc_(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function setting_(key) { var r = sb_('GET', 'settings?key=eq.' + key + '&select=value')[0]; return r ? r.value : null; }
+
+// ─────────────── Contrats ───────────────
+
+/**
+ * Copie le modèle dans le dossier de la date (sous-dossier « 01_Legal » s'il existe),
+ * remplace les passages « XXX » (seq, dans l'ordre) puis les balises <<…>> (tags),
+ * et surligne en jaune ce qui reste à compléter.
+ */
+function createContract_(b) {
+  var tpl = DriveApp.getFileById(b.template_id);
+  if (tpl.getMimeType() !== MimeType.GOOGLE_DOCS) {
+    throw new Error('Le modèle de contrat doit être un Google Doc (ouvrir le .docx › Fichier › Enregistrer au format Google Docs), puis coller ce nouveau lien dans Réglages › Contrats.');
+  }
+  var folder = DriveApp.getFolderById(b.folder_id);
+  var legal = null, it = folder.getFolders();
+  while (it.hasNext()) { var f = it.next(); if (/^01[_ ]/.test(f.getName())) { legal = f; break; } }
+  var copy = tpl.makeCopy(b.name, legal || folder);
+  var doc = DocumentApp.openById(copy.getId());
+  var parts = [doc.getBody(), doc.getHeader(), doc.getFooter()].filter(Boolean);
+  (b.seq || []).forEach(function (s) {
+    var i = 0;
+    parts.forEach(function (p) { i = replaceSeq_(p, s.find, s.values, i); });
+  });
+  Object.keys(b.tags || {}).forEach(function (k) {
+    var v = b.tags[k];
+    if (v === null || v === undefined || v === '') return;   // balise vide : laissée visible
+    parts.forEach(function (p) { replaceSeq_(p, '<<' + k + '>>', [String(v)], 0, true); });
+  });
+  parts.forEach(function (p) {
+    highlight_(p, '<<[^>]*>>');
+    highlight_(p, 'X{2,4}');
+  });
+  doc.saveAndClose();
+  return { ok: true, doc_id: copy.getId() };
+}
+
+function escRe_(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+/**
+ * Remplace chaque occurrence du texte par values[i], values[i+1]… (repeat : toujours values[0]).
+ * La recherche repart du début après chaque remplacement : les valeurs ne contiennent jamais le texte cherché.
+ */
+function replaceSeq_(container, find, values, start, repeat) {
+  var i = start || 0, re = escRe_(find), r = container.findText(re), guard = 0;
+  while (r && guard++ < 200) {
+    if (!repeat && i >= values.length) break;
+    var v = repeat ? values[0] : values[i++];
+    if (v && String(v).indexOf(find) >= 0) break;
+    var t = r.getElement().asText(), a = r.getStartOffset(), z = r.getEndOffsetInclusive();
+    if (v) { if (z + 1 >= t.getText().length) t.appendText(v); else t.insertText(z + 1, v); }   // insérer après puis supprimer : garde la mise en forme
+    t.deleteText(a, z);
+    r = container.findText(re);
+  }
+  return i;
+}
+
+function highlight_(container, re) {
+  var r = container.findText(re);
+  while (r) {
+    r.getElement().asText().setBackgroundColor(r.getStartOffset(), r.getEndOffsetInclusive(), '#FFE9A8');
+    r = container.findText(re, r);
+  }
+}
+
+/** PDF du contrat, à côté du Google Doc (même nom) */
+function contractPdf_(docId) {
+  var file = DriveApp.getFileById(docId);
+  var parent = file.getParents().next();
+  var old = parent.getFilesByName(file.getName() + '.pdf');
+  while (old.hasNext()) old.next().setTrashed(true);
+  var pdf = parent.createFile(file.getAs(MimeType.PDF).setName(file.getName() + '.pdf'));
+  return { ok: true, pdf_id: pdf.getId() };
+}
 
 // ─────────────── Drive ───────────────
 

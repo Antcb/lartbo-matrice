@@ -80,6 +80,9 @@ function prodBody(s, booking, steps, pays, late){
         <label>Cachet HT</label>${cIn('shows',s.id,'fee_ht',s.fee_ht,'number')}
         <label>TVA du cachet (%)</label>${cIn('shows',s.id,'vat_rate',s.vat_rate,'number','placeholder="5.5" class="narrow"')}
         <label>Cachet TTC</label><b>${eur(ttc(s.fee_ht, showVat(s)))}</b>
+        ${booking ? '' : `<label>Invitations producteur</label>${cIn('shows',s.id,'invitations',s.invitations,'number','placeholder="10" class="narrow"')}`}
+        ${s.contract_type === 'Co-Réalisation' ? `<label>% résultat net après break au producteur</label>${cIn('shows',s.id,'cr_producer_pct',s.cr_producer_pct,'number','class="narrow"')}
+        <label>Break</label>${cIn('shows',s.id,'cr_break',s.cr_break,'text','placeholder="ex. 450 entrées payantes"')}` : ''}
         <label>% L'ArtBo</label>${cIn('shows',s.id,'artbo_pct',s.artbo_pct,'number')}
         ${booking ? '' : `<label>Partenaire</label>${cSel('shows',s.id,'partner_id',s.partner_id,partners)}
         <label>% partenaire</label>${cIn('shows',s.id,'partner_pct',s.partner_pct,'number')}`}
@@ -120,9 +123,17 @@ function prodBody(s, booking, steps, pays, late){
 function mailsHTML(s, booking){
   const log = s.mail_log || {};
   const btn = (kind, label) => `<button class="btn sm ${log[kind]?'':'primary'}" data-act="prepareMail" data-kind="${kind}" data-id="${s.id}">${label}</button>${log[kind]?`<span class="muted mail-done">préparé le ${fmtDate(log[kind].at.slice(0,10))}</span>`:''}`;
-  const fiche = s.fiche_submitted_at
-    ? `<span class="badge ok-badge">Fiche remplie le ${fmtDate(s.fiche_submitted_at.slice(0,10))}</span> <button class="btn sm" data-act="ficheAnswers" data-id="${s.id}">Voir les réponses</button>`
-    : `<span class="muted">Fiche pas encore remplie par l’organisateur.</span>`;
+  const fiche = s.fiche_validated_at
+    ? `<span class="badge ok-badge">Fiche validée le ${fmtDate(s.fiche_validated_at.slice(0,10))}</span> <button class="btn sm ghost" data-act="validateFiche" data-id="${s.id}">Revoir</button>`
+    : s.fiche_submitted_at
+      ? `<span class="badge warn-badge">Fiche reçue le ${fmtDate(s.fiche_submitted_at.slice(0,10))} : à valider</span> <button class="btn sm primary" data-act="validateFiche" data-id="${s.id}">Vérifier et valider</button>`
+      : `<span class="muted">Fiche pas encore remplie par l’organisateur.</span> <button class="btn sm ghost" data-act="validateFiche" data-id="${s.id}">Remplir à sa place</button>`;
+  const contract = s.contract_doc_id
+    ? `<a class="btn sm" href="https://docs.google.com/document/d/${esc(s.contract_doc_id)}/edit" target="_blank" rel="noopener">Ouvrir le contrat</a>
+       ${s.contract_pdf_id ? `<a class="btn sm" href="https://drive.google.com/file/d/${esc(s.contract_pdf_id)}/view" target="_blank" rel="noopener">Ouvrir le PDF</a>` : ''}
+       <button class="btn sm ${s.contract_pdf_id ? 'ghost' : 'primary'}" data-act="contractPdf" data-id="${s.id}">${s.contract_pdf_id ? 'Refaire le PDF' : 'Exporter en PDF'}</button>
+       <button class="btn sm ghost" data-act="genContract" data-id="${s.id}">Regénérer</button>`
+    : `<button class="btn sm ${s.fiche_validated_at ? 'primary' : ''}" data-act="genContract" data-id="${s.id}">Générer le contrat</button>`;
   return `<div class="prod-mails">
     <h3 class="block-title">Mails et fiche de renseignements</h3>
     <div class="mail-btns">
@@ -131,7 +142,8 @@ function mailsHTML(s, booking){
     </div>
     ${booking ? '' : `<div class="fiche-line">${fiche}
       <button class="btn sm ghost" data-act="copyFiche" data-id="${s.id}">Copier le lien de la fiche</button>
-      <a class="btn sm ghost" href="fiche.html?t=${esc(s.fiche_token||'')}" target="_blank" rel="noopener">Ouvrir la fiche</a></div>`}
+      <a class="btn sm ghost" href="fiche.html?t=${esc(s.fiche_token||'')}" target="_blank" rel="noopener">Ouvrir la fiche</a></div>
+    <div class="fiche-line"><b class="fiche-lbl">Contrat ${s.contract_type === 'Co-Réalisation' ? 'de co-réalisation' : 'de cession'}</b> ${contract}</div>`}
   </div>`;
 }
 

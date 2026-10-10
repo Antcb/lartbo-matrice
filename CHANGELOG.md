@@ -5,6 +5,13 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.11.0 — 10/10/2026
+- Fiche de renseignements alignée sur les formulaires Contrat de Cession / Contrat de Coréalisation (TVA oui/non, signataire, lieu, horaire, durée, billetterie…) avec la mention d’engagement et le % d’acompte
+- Validation par l’équipe : les réponses de l’organisateur restent « à valider » ; écran de comparaison (réponse / valeur retenue), recopie sur la structure et « Pré-contrat complété » seulement après validation
+- Contrat : génération du Google Doc depuis le modèle CC ou CR dans le dossier de la date (01_Legal), balises remplies, montants TTC et en lettres, acompte / solde, date de solde, invitations ; export PDF au nom « Artiste • AAAA-MM-JJ • Ville (CP) • Salle • CC/CR »
+- Production : invitations producteur, % après break et break pour les co-réalisations
+
+
 ## 1.10.0 — 10/10/2026
 - Modèles de mail par artiste (confirmations CC / CC Club / CC Festival / CCR Club, boucles accueil & technique et communication) avec balises remplies automatiquement : Réglages et onglet « Modèles de mail » du projet
 - Production : « Préparer la confirmation » et les boucles — vérification du cachet, de la TVA, du contrat et des acomptes, choix du destinataire, aperçu modifiable, brouillon Gmail (ou copie du mail)

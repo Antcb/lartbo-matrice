@@ -14,7 +14,7 @@ import { applyAcompte, saveDepartments } from './views/settings.js';
 import { hasLogDraft, setLogDraft } from './views/suivi.js';
 import { $, esc, fmtDate, toast, today } from './utils.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
-import { FICHE_SECTIONS } from './fiche-fields.js';
+import { exportContractPdf, generateContract, validateFiche } from './contract.js';
 
 /** Nouveau suivi : créé tout de suite et ouvert dans l'espace de prospection (pas de fenêtre) */
 async function newSuivi(structureId){
@@ -76,7 +76,9 @@ export const ACTIONS = {
   copyFiche: async t => { const s = byId('shows', t.dataset.id);
     const link = (setting('site_url') || location.origin + location.pathname.replace(/[^/]*$/, '')) + 'fiche.html?t=' + s.fiche_token;
     try { await navigator.clipboard.writeText(link); toast('Lien de la fiche copié'); } catch { prompt('Lien de la fiche :', link); } },
-  ficheAnswers: t => ficheAnswers(t.dataset.id),
+  validateFiche: t => validateFiche(t.dataset.id),
+  genContract: t => generateContract(t.dataset.id),
+  contractPdf: t => exportContractPdf(t.dataset.id),
   copySecret: async () => { try { await navigator.clipboard.writeText(setting('drive_webhook_secret')||''); toast('Code secret copié'); } catch { prompt('Code secret :', setting('drive_webhook_secret')||''); } },
   testScript: async () => { try { const out = await callScript('ping', {}); toast(`Script OK (${out.account||'compte Google'})`); } catch (err) { toast(err.message, true); } },
   driveScan: async t => { t.disabled = true; toast('Recherche des dossiers dans le Drive… (jusqu’à 1 min)');
@@ -259,21 +261,3 @@ ACTIONS['change:show_payments.pct'] = async (t, v) => {
   }
   render();
 };
-
-/** Réponses de la fiche de renseignements, modifiables par l'équipe */
-function ficheAnswers(showId){
-  const s = byId('shows', showId); const st = byId('structures', s.structure_id);
-  const fiche = s.fiche || {}, admin = {...(st?.admin||{}), ...(fiche.admin||{})};
-  const fields = FICHE_SECTIONS.flatMap(sec => [{k:'_h_'+sec.title, type:'html', html:`<h3 class="block-title" style="margin-top:8px">${esc(sec.title)}</h3>`, full:true},
-    ...sec.fields.map(f => ({k:f.k, label:f.label, type:f.type==='tel'?'text':f.type, full:f.full}))]);
-  const values = {}; FICHE_SECTIONS.forEach(sec => sec.fields.forEach(f => values[f.k] = f.src==='admin' ? admin[f.k] : fiche[f.k]));
-  return openModal({title:`Fiche de renseignements · ${s.venue}`, wide:true, fields, values,
-    extra: `<p class="help mail-wrap">Remplie le ${fmtDate((s.fiche_submitted_at||'').slice(0,10))}. Les coordonnées de l’organisateur sont aussi enregistrées sur la structure${st?` « ${esc(st.name)} »`:''}.</p>`,
-    onSave: async v => {
-      const adm = {}, fi = {...fiche};
-      FICHE_SECTIONS.forEach(sec => sec.fields.forEach(f => { if (f.src==='admin') adm[f.k] = v[f.k] ?? ''; else fi[f.k] = v[f.k] ?? ''; }));
-      fi.admin = adm;
-      if (st) await save('structures', st.id, {admin: {...(st.admin||{}), ...adm}}, {rerender:false});
-      return !!(await save('shows', s.id, {fiche: fi}, {rerender:false}));
-    }});
-}

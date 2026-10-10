@@ -40,6 +40,12 @@ export function viewSettings(){
       <p class="help" style="margin:0 0 12px">Confirmations et boucles, par artiste. Les modèles « génériques » servent pour les artistes qui n’ont pas le leur. Les balises comme {{date}} ou {{cachet_ht}} sont remplacées par les infos de la date.</p>
       ${templatesList()}
       <button class="btn sm primary" data-act="newTemplate" style="margin-top:10px">Nouveau modèle</button></div>
+    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Contrats</h3>
+      <p class="help" style="margin:0 0 12px">Modèles Google Docs avec les balises &lt;&lt;…&gt;&gt; de la fiche de renseignements. Dépose le .docx dans le Drive, ouvre-le puis « Fichier › Enregistrer au format Google Docs », et colle ici le lien du Google Doc.</p>
+      <div class="steps">
+        <label for="set-tcc">Modèle contrat de cession</label><input id="set-tcc" data-setting-text="contract_template_cc" value="${esc(setting('contract_template_cc')||'')}" placeholder="https://docs.google.com/document/d/…">
+        <label for="set-tcr">Modèle contrat de co-réalisation</label><input id="set-tcr" data-setting-text="contract_template_cr" value="${esc(setting('contract_template_cr')||'')}" placeholder="https://docs.google.com/document/d/…">
+      </div></div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Google : Drive et Gmail</h3>
       <p class="help" style="margin:0 0 12px">Le script Google installé sur le compte production@ crée les dossiers Drive des dates et les brouillons Gmail.</p>
       <div class="steps">
