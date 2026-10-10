@@ -5,6 +5,14 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.12.0 — 10/10/2026
+- Nouvel onglet Salariés : fiche complète (état civil, coordonnées, paie, pièces d’identité, déplacements), pièces reçues, dossier Drive « NOM Prénom » ; les 16 dossiers existants sont déjà rattachés
+- Questionnaire salarié en ligne (rh.html) : le salarié complète sa fiche et envoie RIB, carte vitale, pièce d’identité… depuis son téléphone ; les numéros sensibles déjà connus ne sont jamais réaffichés
+- Pièces rangées dans le Drive par le script Google avec les bons noms : « RIB - NOM Prénom », « BDS-NOM Prénom AAAA-MM-JJ », « NDF-AAAA-MM NOM Prénom »
+- Import de l’export Movinmotion depuis l’onglet Salariés (ou un projet) : crée ou met à jour les fiches salariés et les relie au projet
+- Réglages › Google : vérification des noms des dossiers de dates et des contrats dans un Google Sheet (rien n’est renommé sans validation), puis renommage des lignes cochées
+
+
 ## 1.11.0 — 10/10/2026
 - Fiche de renseignements alignée sur les formulaires Contrat de Cession / Contrat de Coréalisation (TVA oui/non, signataire, lieu, horaire, durée, billetterie…) avec la mention d’engagement et le % d’acompte
 - Validation par l’équipe : les réponses de l’organisateur restent « à valider » ; écran de comparaison (réponse / valeur retenue), recopie sur la structure et « Pré-contrat complété » seulement après validation

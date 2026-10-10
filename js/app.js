@@ -21,13 +21,14 @@ import { viewContacts } from './views/contacts.js';
 import { viewProduction } from './views/production.js';
 import { hydratePhotos, viewProjects } from './views/projects.js';
 import { viewSettings } from './views/settings.js';
+import { viewEmployees } from './views/employees.js';
 import { viewStructures } from './views/structures.js';
 import { viewProspects } from './views/suivi.js';
 import { viewTicketing } from './views/ticketing.js';
 import { viewTodo } from './views/todo.js';
 
 const VIEW_FN = {booking:viewBooking, production:viewProduction, ticketing:viewTicketing, communication:viewCommunication,
-  projects:viewProjects, todo:viewTodo, prospects:viewProspects, contacts:viewContacts, structures:viewStructures, settings:viewSettings};
+  projects:viewProjects, todo:viewTodo, prospects:viewProspects, contacts:viewContacts, structures:viewStructures, settings:viewSettings, employees:viewEmployees};
 
 function header(){
   const unread = unreadNotifs();

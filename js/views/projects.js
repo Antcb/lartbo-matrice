@@ -171,11 +171,11 @@ function membersTab(p, {members}){
     ${members.map(m=>`<tr><td>${cIn('project_members',m.id,'first_name',m.first_name)}</td><td>${cIn('project_members',m.id,'last_name',m.last_name)}</td>
       <td>${cIn('project_members',m.id,'role',m.role,'text','placeholder="Chant, régie…"')}</td><td>${cIn('project_members',m.id,'email',m.email)}</td><td>${cIn('project_members',m.id,'phone',m.phone)}</td>
       <td style="min-width:240px">${cAc('fulladdr','project_members',m.id,'address',m.address,{text:m.address||'', placeholder:'Adresse'})}</td><td>${cIn('project_members',m.id,'birth_date',m.birth_date,'date')}</td>
-      <td class="nowrap"><button type="button" class="btn sm" data-act="memberCard" data-id="${m.id}">Fiche complète${Object.keys(m.data||{}).length?` (${Object.keys(m.data).length})`:''}</button>
+      <td class="nowrap">${m.employee_id ? `<button type="button" class="btn sm" data-act="employeeCard" data-id="${m.employee_id}">Fiche salarié</button>` : `<button type="button" class="btn sm" data-act="memberCard" data-id="${m.id}">Fiche complète${Object.keys(m.data||{}).length?` (${Object.keys(m.data).length})`:''}</button>`}
         <button type="button" class="btn icon sm ghost danger" data-act="delMember" data-id="${m.id}" aria-label="Supprimer le membre">✕</button></td></tr>`).join('') || `<tr><td colspan="8" class="empty">Aucun membre. Ajoute-les un par un ou importe l’export Movinmotion.</td></tr>`}
   </tbody></table></div>
   <div class="dropzone" data-members-drop="${p.id}" style="margin-top:12px"><label class="btn sm file-btn">Importer un export Movinmotion (CSV)<input type="file" class="file-input" accept=".csv,text/csv" data-members-import="${p.id}"></label>
-    <span class="drop-hint">ou glisse le fichier ici — nom, prénom, mail, téléphone, poste, adresse et naissance sont rangés ; toutes les autres colonnes (sécurité sociale, congés spectacles, IBAN…) vont dans la fiche complète. Un membre déjà présent est mis à jour.</span></div>`;
+    <span class="drop-hint">ou glisse le fichier ici — chaque personne est ajoutée (ou mise à jour) dans l’onglet Salariés avec toute sa fiche, et reliée à ce projet.</span></div>`;
 }
 
 function mailsTab(p){

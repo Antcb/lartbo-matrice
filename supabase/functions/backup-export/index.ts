@@ -8,7 +8,7 @@ const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SE
 });
 const TABLES = ['app_users', 'settings', 'partners', 'projects', 'structures', 'contacts', 'contact_structures',
   'shows', 'show_payments', 'prospects', 'prospect_logs', 'prospect_files', 'tasks',
-  'structure_events', 'project_logs', 'project_members', 'attachments', 'notifications', 'mail_templates'];
+  'structure_events', 'project_logs', 'project_members', 'attachments', 'notifications', 'mail_templates', 'employees'];
 // colonne(s) de tri pour lire les grandes tables page par page
 const ORDER: Record<string, string[]> = { app_users: ['email'], settings: ['key'], contact_structures: ['contact_id', 'structure_id'] };
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });

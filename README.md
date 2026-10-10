@@ -22,7 +22,10 @@ js/
   reminders.js        règles de relance de la production (mêmes règles que les notifications)
   mail.js             modèles de mail : choix du modèle, balises, aperçu, brouillon Gmail, éditeur
   fiche.js            page publique de la fiche de renseignements (fiche.html)
-  fiche-fields.js     champs de la fiche (page publique + fiche dans l'app)
+  fiche-fields.js     champs de la fiche (page publique + validation dans l'app)
+  contract.js         validation de la fiche, génération du contrat (Google Doc + PDF), montants en lettres
+  rh-fields.js        champs de la fiche salarié et pièces demandées
+  rh.js               page publique du questionnaire salarié (rh.html)
   geo.js              recherche de villes / adresses, distances, itinéraires
   ui/cells.js         champs modifiables directement dans les tableaux
   ui/bits.js          pastilles de statut, onglets de page, filtres, zone de dépôt de fichiers
@@ -46,6 +49,7 @@ supabase/             structure de la base, import Notion, fonctions serveur
 backup/               modèle du dépôt de sauvegarde privé (lartbo-matrice-backup)
 apps-script/          script Google du compte production@ : dossiers Drive, brouillons Gmail, récap quotidien (Code.gs, voir apps-script/README.md)
 fiche.html            fiche de renseignements à remplir par l'organisateur (lien unique par date)
+rh.html               questionnaire salarié : fiche + pièces (lien unique par salarié)
 ```
 
 ## Où modifier quoi
@@ -65,7 +69,10 @@ fiche.html            fiche de renseignements à remplir par l'organisateur (lie
 | Le nom ou le contenu des dossiers Drive             | `apps-script/Code.gs`           |
 | Le texte des mails (confirmation, boucles)          | dans l'app : Réglages › Modèles de mail |
 | Les balises des mails ({{date}}, {{cachet_ht}}…)    | fonction SQL `mail_vars` (migration v1.10) + `TAGS` dans `js/mail.js` |
-| Les questions de la fiche de renseignements         | `js/fiche-fields.js` (+ liste `allowed` de `fiche_submit` pour l'organisateur) |
+| Les questions de la fiche de renseignements         | `js/fiche-fields.js` (balise `tag` = balise <<…>> du modèle de contrat) |
+| Le texte des contrats                               | les modèles Google Docs (Réglages › Contrats) |
+| Les champs de la fiche salarié / pièces demandées   | `js/rh-fields.js` |
+| Les noms de fichiers dans le Drive                  | `apps-script/Code.gs` (`folderName_`, `contractName_`, `RH_LABELS`) + `js/views/employees.js` (`targetName`) |
 | Le texte demandé à l'IA pour les résumés            | `supabase/functions/resume-suivi/index.ts` |
 
 ## Publier une mise à jour

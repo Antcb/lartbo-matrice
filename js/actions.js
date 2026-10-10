@@ -15,6 +15,7 @@ import { hasLogDraft, setLogDraft } from './views/suivi.js';
 import { $, esc, fmtDate, toast, today } from './utils.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
+import { EMP_ACTIONS, editEmployee } from './views/employees.js';
 
 /** Nouveau suivi : créé tout de suite et ouvert dans l'espace de prospection (pas de fenêtre) */
 async function newSuivi(structureId){
@@ -33,6 +34,8 @@ export async function cleanupDraft(){
 }
 
 export const ACTIONS = {
+  ...EMP_ACTIONS,
+  employeeCard: t => editEmployee(t.dataset.id),
   closeModal: t => (t.dataset.level==='2' ? $('#modal2') : $('#modal')).close(),
   modalDelete: async t => { const lvl = Number(t.dataset.level||1); if (confirm('Supprimer définitivement ?')){ await MODALS[lvl].onDelete(); MODALS[lvl].dlg.close(); render(); } },
   unlink: t => t.closest('.chip').remove(),
@@ -79,6 +82,11 @@ export const ACTIONS = {
   validateFiche: t => validateFiche(t.dataset.id),
   genContract: t => generateContract(t.dataset.id),
   contractPdf: t => exportContractPdf(t.dataset.id),
+  renameAudit: async t => { t.disabled = true; toast('Vérification des noms dans le Drive… (1 à 3 min)');
+    try { const out = await callScript('rename_audit', {}); toast(`${out.count} ligne(s) à vérifier`, false, {label:'Ouvrir le tableau', fn: () => window.open(out.url, '_blank')}); window.open(out.url, '_blank'); }
+    catch (err) { toast(err.message, true); } t.disabled = false; },
+  renameApply: async t => { if (!confirm('Renommer dans le Drive tous les éléments cochés du tableau ?')) return; t.disabled = true;
+    try { const out = await callScript('rename_apply', {}); toast(`${out.renamed} élément(s) renommé(s)`); } catch (err) { toast(err.message, true); } t.disabled = false; },
   copySecret: async () => { try { await navigator.clipboard.writeText(setting('drive_webhook_secret')||''); toast('Code secret copié'); } catch { prompt('Code secret :', setting('drive_webhook_secret')||''); } },
   testScript: async () => { try { const out = await callScript('ping', {}); toast(`Script OK (${out.account||'compte Google'})`); } catch (err) { toast(err.message, true); } },
   driveScan: async t => { t.disabled = true; toast('Recherche des dossiers dans le Drive… (jusqu’à 1 min)');

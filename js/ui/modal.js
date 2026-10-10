@@ -52,17 +52,18 @@ export const MODALS = {};
 export let MODAL = null;
 
 /**
- * openModal({title, fields, values, onSave, onDelete, extra, level, wide, saveLabel})
+ * openModal({title, fields, values, onSave, onDelete, extra, extraTop, level, wide, saveLabel})
+ * extraTop : contenu libre affiché avant les champs, extra : après.
  * onSave(valeurs) : renvoyer false pour garder la fenêtre ouverte.
  */
-export function openModal({title, fields, values={}, onSave, onDelete, extra='', level=1, wide=false, saveLabel='Enregistrer'}){
+export function openModal({title, fields, values={}, onSave, onDelete, extra='', extraTop='', level=1, wide=false, saveLabel='Enregistrer'}){
   const dlg = $(level===2 ? '#modal2' : '#modal');
   MODALS[level] = {fields, onSave, onDelete, dlg};
   if (level===1) MODAL = MODALS[1];
   dlg.className = wide ? 'wide' : '';
   dlg.innerHTML = `<form method="dialog" class="mform" data-level="${level}">
     <div class="modal-head"><h2>${esc(title)}</h2><button type="button" class="btn icon ghost" data-act="closeModal" data-level="${level}" aria-label="Fermer">✕</button></div>
-    <div class="modal-body">${fields.map(f=>field(f, values[f.k])).join('')}${extra}</div>
+    <div class="modal-body">${extraTop}${fields.map(f=>field(f, values[f.k])).join('')}${extra}</div>
     <div class="modal-foot">${onDelete?`<button type="button" class="btn ghost danger left" data-act="modalDelete" data-level="${level}">Supprimer</button>`:''}
       <button type="button" class="btn" data-act="closeModal" data-level="${level}">Annuler</button><button class="btn primary" type="submit">${esc(saveLabel)}</button></div></form>`;
   dlg.showModal();

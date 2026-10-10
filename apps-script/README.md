@@ -30,4 +30,7 @@ Après une modification de `Code.gs` : **Déployer › Gérer les déploiements 
 - `draft` : brouillon Gmail préparé depuis la Matrice (pièces jointes Drive du modèle incluses).
 - `link_folders` : rattache les dossiers `MM_DD • …` (ou anciens `MM-DD • …`) aux dates du même artiste et du même jour.
 - `folder_path` : chemin du dossier, pour « Copier le chemin Finder ».
-- `dailyJob` : brouillons des boucles arrivées à échéance + mail récap des nouvelles notifications à Anthony et Chloé.
+- `contract` / `contract_pdf` : contrat rempli depuis le modèle Google Docs (dans `01_Legal` du dossier de la date), puis PDF.
+- `rh_folders` / `rh_file_docs` : dossier « NOM Prénom » de chaque salarié, et rangement des pièces reçues (RIB, carte vitale, bulletins…).
+- `rename_audit` / `rename_apply` : Google Sheet des renommages proposés (dossiers de dates, contrats), puis renommage des lignes cochées.
+- `dailyJob` : range les pièces des salariés, brouillons des boucles arrivées à échéance + mail récap des nouvelles notifications à Anthony et Chloé.

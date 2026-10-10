@@ -551,3 +551,11 @@ input[type=range]{accent-color:var(--brand);flex:1;min-width:120px}
 .vf-tag{font-size:10px;text-transform:uppercase;letter-spacing:.05em;background:var(--brand-tint);color:var(--brand);border-radius:4px;padding:1px 4px;margin-left:4px}
 @media (max-width:720px){ .vf-table td:first-child,.vf-table td:nth-child(2){width:auto} }
 .vf-table input,.vf-table select,.vf-table textarea{border:1px solid var(--line);border-radius:var(--r-sm);padding:6px 8px;background:#fff;font:inherit}
+/* 19 — Salariés (v1.12) ------------------------------------------------- */
+.emp-table td{vertical-align:middle}
+.emp-table tbody tr:hover{background:var(--soft)}
+.doc-chip{display:inline-block;font-size:11px;border:1px solid var(--line);border-radius:999px;padding:1px 7px;color:var(--faint)}
+.doc-chip.on{background:#E3F1E7;border-color:#BFDCC8;color:var(--ok)}
+.doc-list{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:13px}
+.doc-list li{display:flex;gap:10px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line-2);padding:4px 0}
+.emp-extra{border-bottom:1px solid var(--line-2);padding-bottom:14px;margin-bottom:4px}

@@ -9,7 +9,11 @@
  * 3. Chaque matin (déclencheur dailyJob) : brouillons des boucles à envoyer
  *    + récap des notifications par mail à Anthony et Chloé.
  * 4. "contract" / "contract_pdf" : contrat rempli depuis le modèle Google Docs, puis PDF.
- * 5. "link_folders" : rattache les dossiers de dates déjà existants ;
+ * 5. Salariés : "rh_folders" (dossier « NOM Prénom » de chaque salarié), "rh_file_docs" (range
+ *    les pièces reçues, renommées « RIB - NOM Prénom », « BDS-NOM Prénom AAAA-MM-JJ »…).
+ * 6. "rename_audit" / "rename_apply" : liste dans un Google Sheet les dossiers de dates et contrats
+ *    mal nommés avec le nom proposé, puis renomme seulement les lignes cochées.
+ * 7. "link_folders" : rattache les dossiers de dates déjà existants ;
  *    "folder_path" : chemin du dossier (pour le Finder).
  *
  * Le lien se fait par ID : le dossier peut ensuite être renommé ou déplacé
@@ -43,6 +47,10 @@ function doPost(e) {
     else if (action === 'folder_path') out = { ok: true, path: folderPath_(body.folder_id) };
     else if (action === 'contract') out = createContract_(body);
     else if (action === 'contract_pdf') out = contractPdf_(body.doc_id);
+    else if (action === 'rh_folders') out = rhFolders_();
+    else if (action === 'rh_file_docs') out = { ok: true, filed: rhFileDocs_() };
+    else if (action === 'rename_audit') out = renameAudit();
+    else if (action === 'rename_apply') out = renameApply();
     else if (action === 'ping') out = { ok: true, account: Session.getEffectiveUser().getEmail() };
     else out = { ok: false, error: 'Action inconnue : ' + action };
   } catch (err) {
@@ -95,6 +103,7 @@ function pickTemplate_(show, kind) {
  * - envoie le récap des nouvelles notifications à l'équipe
  */
 function dailyJob() {
+  try { rhFileDocs_(); } catch (err) { Logger.log('Pièces salariés : ' + err); }
   var notifs = sb_('GET', 'notifications?emailed_at=is.null&select=*&order=created_at.asc') || [];
   var KIND = { boucle_accueil: 'boucle_tech', boucle_com: 'boucle_com' };
   var drafted = [];
@@ -205,6 +214,60 @@ function contractPdf_(docId) {
   while (old.hasNext()) old.next().setTrashed(true);
   var pdf = parent.createFile(file.getAs(MimeType.PDF).setName(file.getName() + '.pdf'));
   return { ok: true, pdf_id: pdf.getId() };
+}
+
+// ─────────────── Salariés ───────────────
+
+var RH_LABELS = { rib: 'RIB', carte_vitale: 'Carte vitale', cni: 'CNI', passeport: 'Passeport', photo: 'Photo d\'identité',
+  permis: 'Permis de conduire', carte_grise: 'Carte grise', bds: 'BDS', ndf: 'NDF', autre: 'Document' };
+
+function rhName_(e) { return [String(e.last_name || '').toUpperCase(), e.first_name || ''].join(' ').trim(); }
+function rhNorm_(s) { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+
+function rhRoot_() {
+  var id = setting_('employees_folder_id');
+  if (!id) throw new Error('Dossier Drive des salariés non renseigné (Réglages)');
+  return DriveApp.getFolderById(id);
+}
+
+/** Dossier « NOM Prénom » de chaque salarié : rattaché s'il existe déjà, créé sinon */
+function rhFolders_() {
+  var root = rhRoot_(), byName = {}, it = root.getFolders();
+  while (it.hasNext()) { var f = it.next(); byName[rhNorm_(f.getName())] = f; }
+  var list = sb_('GET', 'employees?drive_folder_id=is.null&select=id,last_name,first_name') || [];
+  var created = 0, linked = 0;
+  list.forEach(function (e) {
+    var name = rhName_(e); if (!name) return;
+    var f = byName[rhNorm_(name)];
+    if (f) linked++; else { f = root.createFolder(name); created++; }
+    sb_('PATCH', 'employees?id=eq.' + e.id, { drive_folder_id: f.getId() });
+  });
+  return { ok: true, created: created, linked: linked };
+}
+
+/** Range dans le Drive les pièces en attente (stockage temporaire « rh »), puis les supprime du stockage */
+function rhFileDocs_() {
+  var p = props_(), filed = 0;
+  var list = sb_('GET', 'employees?select=id,last_name,first_name,drive_folder_id,docs') || [];
+  list.forEach(function (e) {
+    var docs = e.docs || [], changed = false;
+    docs.forEach(function (d) {
+      if (!d.path || d.file_id) return;
+      if (!e.drive_folder_id) { rhFolders_(); e.drive_folder_id = sb_('GET', 'employees?id=eq.' + e.id + '&select=drive_folder_id')[0].drive_folder_id; }
+      var folder = DriveApp.getFolderById(e.drive_folder_id);
+      var url = p.SUPABASE_URL + '/storage/v1/object/rh/' + d.path.split('/').map(encodeURIComponent).join('/');
+      var res = UrlFetchApp.fetch(url, { headers: { apikey: p.SUPABASE_SERVICE_KEY, Authorization: 'Bearer ' + p.SUPABASE_SERVICE_KEY }, muteHttpExceptions: true });
+      if (res.getResponseCode() >= 300) { Logger.log('Pièce introuvable : ' + d.path); return; }
+      var ext = (String(d.name || d.path).match(/\.(\w{1,5})$/) || ['', 'pdf'])[1].toLowerCase();
+      var base = d.target || ((RH_LABELS[d.kind] || 'Document') + ' - ' + rhName_(e)), name = base + '.' + ext, n = 1;
+      while (folder.getFilesByName(name).hasNext()) name = base + ' (' + (++n) + ').' + ext;
+      var file = folder.createFile(res.getBlob().setName(name));
+      UrlFetchApp.fetch(url, { method: 'delete', headers: { apikey: p.SUPABASE_SERVICE_KEY, Authorization: 'Bearer ' + p.SUPABASE_SERVICE_KEY }, muteHttpExceptions: true });
+      d.file_id = file.getId(); d.drive_name = name; d.path = null; changed = true; filed++;
+    });
+    if (changed) sb_('PATCH', 'employees?id=eq.' + e.id, { docs: docs });
+  });
+  return filed;
 }
 
 // ─────────────── Drive ───────────────
@@ -375,4 +438,88 @@ function linkExistingFolders() {
   });
   Logger.log(linked + ' dossiers rattachés');
   return linked;
+}
+
+// ─────────────── Renommage des dossiers et contrats existants ───────────────
+
+var SKIP_ARTIST_FOLDERS = ['pyrprod', 'fiches techniques', 'contrats a traiter', 'drive'];
+
+/** Contrat : « Artiste • AAAA-MM-JJ • Ville (CP) • Salle • CC » (CR pour une co-réalisation) */
+function contractName_(show, artist) {
+  var venue = String(show.venue || '').replace(/\*\*/g, '').replace(/\s*•\s*[A-Z\/]{1,5}\s*$/, '').trim();
+  var cp = (show.structure && show.structure.postal_code) || show.department;
+  return [artist, show.date, (show.city || '').trim() + (cp ? ' (' + cp + ')' : ''), venue, show.contract_type === 'Co-Réalisation' ? 'CR' : 'CC'].join(' • ');
+}
+
+/**
+ * Parcourt <Artiste>/032_Production/<Année>/<dossiers de dates> et propose les bons noms dans un Google Sheet.
+ * Rien n'est renommé : on coche ou décoche la colonne « Appliquer », puis on lance renameApply.
+ */
+function renameAudit() {
+  var p = props_();
+  var shows = sb_('GET', 'shows?select=id,project_id,date,venue,city,department,contract_type,drive_folder_id,structure:structures(postal_code)&date=not.is.null') || [];
+  var projects = sb_('GET', 'projects?select=id,name,drive_artist_folder_id') || [];
+  var rows = [['Appliquer', 'Type', 'Artiste', 'Dossier', 'Nom actuel', 'Nom proposé', 'ID']];
+  var root = DriveApp.getFolderById(p.ARTISTS_ROOT_ID), artists = root.getFolders();
+  while (artists.hasNext()) {
+    var af = artists.next(), aname = af.getName();
+    if (SKIP_ARTIST_FOLDERS.indexOf(rhNorm_(aname)) >= 0) continue;
+    var proj = projects.filter(function (x) { return x.drive_artist_folder_id === af.getId() || rhNorm_(x.name.replace(/\s*•.*$/, '')) === rhNorm_(aname); })[0];
+    var prod = childFolder_(af, p.PRODUCTION_FOLDER || '032_Production', false);
+    if (!prod) continue;
+    var years = prod.getFolders();
+    while (years.hasNext()) {
+      var y = years.next(); if (!/^\d{4}$/.test(y.getName())) continue;
+      var dates = y.getFolders();
+      while (dates.hasNext()) {
+        var df = dates.next(), m = df.getName().match(/^(\d{2})[-_ .](\d{2})/);
+        var show = shows.filter(function (s) { return s.drive_folder_id === df.getId(); })[0]
+          || (m && proj ? shows.filter(function (s) { return s.project_id === proj.id && s.date === y.getName() + '-' + m[1] + '-' + m[2]; })[0] : null);
+        if (!show) { rows.push([false, 'Dossier (date inconnue)', aname, y.getName(), df.getName(), '', df.getId()]); continue; }
+        var want = folderName_(show);
+        if (want !== df.getName()) rows.push([true, 'Dossier de date', aname, y.getName(), df.getName(), want, df.getId()]);
+        auditContracts_(df, show, proj ? proj.name.replace(/\s*•.*$/, '').trim() : aname, rows, aname, y.getName() + '/' + want);
+      }
+    }
+  }
+  var ss = SpreadsheetApp.create('Matrice • Renommages proposés ' + Utilities.formatDate(new Date(), 'Europe/Paris', 'yyyy-MM-dd HH:mm'));
+  var sh = ss.getSheets()[0];
+  sh.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
+  if (rows.length > 1) sh.getRange(2, 1, rows.length - 1, 1).insertCheckboxes();
+  sh.setFrozenRows(1); sh.getRange(1, 1, 1, rows[0].length).setFontWeight('bold'); sh.autoResizeColumns(2, 5);
+  PropertiesService.getScriptProperties().setProperty('RENAME_SHEET_ID', ss.getId());
+  return { ok: true, url: ss.getUrl(), count: rows.length - 1 };
+}
+
+function auditContracts_(folder, show, artist, rows, aname, where) {
+  var stack = [folder];
+  while (stack.length) {
+    var f = stack.pop(), subs = f.getFolders();
+    while (subs.hasNext()) stack.push(subs.next());
+    var files = f.getFiles();
+    while (files.hasNext()) {
+      var file = files.next(), name = file.getName();
+      if (!/contrat|cession|cor[eé]alisation|\bCC\b|\bCR\b/i.test(name) || /avenant|technique|fiche/i.test(name)) continue;
+      var ext = (name.match(/\.(pdf|docx?|odt)$/i) || ['', ''])[1];
+      var signed = /sign/i.test(name) ? ' • Signé' : '';
+      var want = contractName_(show, artist) + signed + (ext ? '.' + ext.toLowerCase() : '');
+      if (want !== name) rows.push([true, 'Contrat', aname, where, name, want, file.getId()]);
+    }
+  }
+}
+
+/** Renomme les lignes cochées du dernier Google Sheet créé par renameAudit */
+function renameApply() {
+  var id = PropertiesService.getScriptProperties().getProperty('RENAME_SHEET_ID');
+  if (!id) throw new Error('Lance d’abord la vérification des noms');
+  var sh = SpreadsheetApp.openById(id).getSheets()[0], data = sh.getDataRange().getValues(), done = 0;
+  for (var i = 1; i < data.length; i++) {
+    var r = data[i];
+    if (r[0] !== true || !r[5] || !r[6]) continue;
+    try {
+      (/^Dossier/.test(r[1]) ? DriveApp.getFolderById(r[6]) : DriveApp.getFileById(r[6])).setName(r[5]);
+      sh.getRange(i + 1, 1).setValue(false); sh.getRange(i + 1, 2).setValue(r[1] + ' ✔ renommé'); done++;
+    } catch (err) { sh.getRange(i + 1, 2).setValue(r[1] + ' ✖ ' + err); }
+  }
+  return { ok: true, renamed: done };
 }

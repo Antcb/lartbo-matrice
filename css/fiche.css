@@ -31,3 +31,5 @@
 .choice label{display:flex;gap:6px;align-items:center;font-size:14px}
 .choice.invalid legend{color:var(--danger)}
 .fiche-grid [hidden]{display:none}
+.doc-ok{color:var(--ok);font-weight:600;font-size:12px}
+.fiche-grid input[type=file]{padding:6px}

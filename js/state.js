@@ -3,7 +3,7 @@
  */
 export const TABLES = ['structures','contacts','contact_structures','projects','partners','shows','show_payments',
   'prospects','prospect_logs','prospect_files','tasks','settings',
-  'structure_events','project_logs','project_members','attachments','notifications','mail_templates'];
+  'structure_events','project_logs','project_members','attachments','notifications','mail_templates','employees'];
 
 export const S = {
   user:null, view: localGet('view') || 'booking',

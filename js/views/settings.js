@@ -52,10 +52,14 @@ export function viewSettings(){
         <label for="set-gas">Adresse du script (Apps Script)</label><input id="set-gas" data-setting-text="drive_webhook_url" value="${esc(setting('drive_webhook_url')||'')}" placeholder="https://script.google.com/macros/s/…/exec">
         <label>Code secret à coller dans le script</label><span class="secret-line"><code>${esc(String(setting('drive_webhook_secret')||'').slice(0,8))}…</code> <button class="btn sm ghost" data-act="copySecret">Copier</button></span>
         <label for="set-mac">Dossier Google Drive sur le Mac</label><input id="set-mac" data-setting-text="drive_mac_root" value="${esc(setting('drive_mac_root')||'')}" placeholder="/Users/…/Library/CloudStorage/GoogleDrive-…/Mon Drive">
+        <label for="set-emp">Dossier Drive des salariés</label><input id="set-emp" data-setting-text="employees_folder_id" value="${esc(setting('employees_folder_id')||'')}" placeholder="ID ou lien du dossier">
         <label for="set-site">Adresse du site (liens des fiches)</label><input id="set-site" data-setting-text="site_url" value="${esc(setting('site_url')||'')}">
       </div>
       <div class="vh-actions" style="margin-top:12px"><button class="btn sm" data-act="testScript">Tester le script</button>
-        <button class="btn sm" data-act="driveScan">Rattacher les dossiers Drive existants</button></div></div>
+        <button class="btn sm" data-act="driveScan">Rattacher les dossiers Drive existants</button></div>
+      <p class="help" style="margin:14px 0 6px">Noms des dossiers de dates (« MM_DD • Ville • Salle (CP) ») et des contrats (« Artiste • AAAA-MM-JJ • Ville (CP) • Salle • CC/CR ») : la vérification crée un Google Sheet avec les renommages proposés, sans rien toucher. Décoche ce qui ne convient pas, puis applique.</p>
+      <div class="vh-actions"><button class="btn sm" data-act="renameAudit">Vérifier les noms</button>
+        <button class="btn sm" data-act="renameApply">Appliquer les renommages cochés</button></div></div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Version</h3>
       <p>Matrice L'ArtBoristerie Productions <b>v${APP_VERSION}</b></p>
       <p class="help">Historique des mises à jour : <a href="CHANGELOG.md" target="_blank" rel="noopener">journal des versions</a>.</p></div>
@@ -71,7 +75,11 @@ async function setSetting(key, value){
 
 document.addEventListener('change', async e => {
   const kt = e.target.dataset.settingText;
-  if (kt){ if (await setSetting(kt, e.target.value.trim())) toast('Réglage enregistré'); return; }
+  if (kt){
+    let v = e.target.value.trim();
+    if (/_id$/.test(kt)) v = (v.match(/[-\w]{25,}/) || [v])[0];   // un lien Drive collé → son identifiant
+    if (await setSetting(kt, v)){ e.target.value = v; toast('Réglage enregistré'); }
+    return; }
   const k = e.target.dataset.actSetting; if (!k) return;
   const v = e.target.value===''?null:Number(e.target.value);
   if (k==='default_acompte_pct'){
