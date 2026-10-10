@@ -40,10 +40,13 @@ export const RH_SECTIONS = [
     {k:'passport_issued', label:'Délivré le', type:'date'},
     {k:'passport_expires', label:'Expire le', type:'date'},
   ]},
-  {title: 'Déplacements', fields: [
+  {title: 'Permis de conduire', fields: [
     {k:'licence', label:'Permis (catégories)', placeholder:'ex. B, A2'},
     {k:'licence_no', label:'N° de permis', secret:true},
     {k:'licence_expires', label:'Permis valable jusqu’au', type:'date'},
+  ]},
+  {title: 'Déplacements et tournée', part:'extra', fields: [
+    {k:'vehicle', label:'Véhicule (marque, modèle, immatriculation)', full:true},
     {k:'sncf_card', label:'N° carte SNCF (Avantage, Grand Voyageur…)'},
     {k:'flying_blue', label:'N° Flying Blue'},
     {k:'diet', label:'Régime alimentaire / allergies', full:true, placeholder:'Pour les repas en tournée'},
@@ -61,10 +64,14 @@ export const RH_TEAM_FIELDS = [
 
 export const RH_FIELDS = RH_SECTIONS.flatMap(s => s.fields);
 
-/** Pièces demandées (nom du fichier rangé dans le Drive : « RIB - NOM Prénom.pdf ») */
+/** Pièces demandées [type, nom, obligatoire, questionnaire] — rangées dans le Drive sous « RIB - NOM Prénom.pdf » */
 export const RH_DOCS = [
-  ['rib', 'RIB', true], ['carte_vitale', 'Carte vitale', true], ['cni', 'CNI', false], ['passeport', 'Passeport', false],
-  ['photo', 'Photo d’identité', false], ['permis', 'Permis de conduire', false], ['carte_grise', 'Carte grise', false],
+  ['rib', 'RIB', true, 'main'], ['carte_vitale', 'Carte vitale', true, 'main'], ['cni', 'CNI', false, 'main'], ['passeport', 'Passeport', false, 'main'],
+  ['photo', 'Photo d’identité', false, 'main'], ['permis', 'Permis de conduire', false, 'main'], ['carte_grise', 'Carte grise', false, 'extra'],
 ];
+
+/** Deux questionnaires : la fiche RH (identité, paie, pièces) et les infos complémentaires (véhicule, cartes de voyage…) */
+export const RH_PARTS = {main: 'Fiche RH', extra: 'Infos complémentaires'};
+export const partOf = sec => sec.part || 'main';
 
 export const fullName = e => [String(e?.last_name || '').toUpperCase(), e?.first_name].filter(Boolean).join(' ');

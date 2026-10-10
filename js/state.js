@@ -11,7 +11,7 @@ export const S = {
   project: localGet('project') || '',
   db: Object.fromEntries(TABLES.map(t => [t, []])),
   rev: Object.fromEntries(TABLES.map(t => [t, 0])),   // compteur de modifications par table (index en cache)
-  openProd: new Set(), routePick: {a:null,b:null}, routeCache: {}, search:{},
+  openProd: new Set(), mapHidden: new Set(JSON.parse(localGet('mapHidden') || '[]')), routePick: {a:null,b:null}, routeCache: {}, search:{},
   showCancelled:false, projectPage:null, structurePage:null, suiviPage:null, focusProspect:null,
   tab: {},                 // onglet ouvert dans chaque page (structure, projet, suivi)
   linger: new Map(),       // id → heure limite : éléments gardés visibles 5 s après clôture

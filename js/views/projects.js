@@ -111,7 +111,7 @@ function datesTab(p, {shows}){
 function suivisTab(p, {suivis}){
   const list = suivis.filter(x => S.showClosed || x.status!=='Closed').map(x=>({x, last:lastExchange(x)})).sort((a,b)=>(b.last||'').localeCompare(a.last||''));
   const nClosed = suivis.filter(x=>x.status==='Closed').length;
-  return `<div class="vh-actions" style="margin-bottom:12px"><button class="btn" data-act="exportSuivis" data-project="${p.id}">Exporter en CSV</button>${nClosed?`<button class="btn" data-act="toggleClosed" aria-pressed="${!!S.showClosed}">${S.showClosed?'Masquer':'Afficher'} les suivis clos (${nClosed})</button>`:''}</div>
+  return `<div class="vh-actions" style="margin-bottom:12px"><button class="btn" data-act="exportSuivis" data-project="${p.id}">Exporter</button>${nClosed?`<button class="btn" data-act="toggleClosed" aria-pressed="${!!S.showClosed}">${S.showClosed?'Masquer':'Afficher'} les suivis clos (${nClosed})</button>`:''}</div>
   <div class="tbl-wrap"><table><thead><tr><th>Structure</th><th>Statut</th><th>Dernier échange</th><th>Résumé</th></tr></thead><tbody>
     ${list.map(({x,last})=>`<tr class="click" data-act="openSuivi" data-id="${x.id}"><td><b>${esc(structName(x.structure_id)||x.name)}</b><span class="sub">${esc(byId('structures',x.structure_id)?.city||'')}</span></td><td>${pstBadge(x.status)}</td><td class="nowrap">${last?fmtDate(last):'—'}</td><td class="muted">${esc((x.summary||'').replace(/\*\*/g,'').replace(/\n/g,' ').slice(0,180))}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Aucun suivi.</td></tr>'}
   </tbody></table></div>`;

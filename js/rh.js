@@ -5,13 +5,15 @@
  * Les numéros sensibles déjà connus ne sont jamais réaffichés (seulement « déjà renseigné »).
  */
 import { CFG } from './config.js';
-import { RH_DOCS, RH_SECTIONS } from './rh-fields.js';
+import { RH_DOCS, RH_PARTS, RH_SECTIONS, partOf } from './rh-fields.js';
 
 const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {auth:{persistSession:false}});
 const root = document.getElementById('fiche');
 const token = new URLSearchParams(location.search).get('t') || '';
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const FILLED = '__rempli__';
+const PART = new URLSearchParams(location.search).get('p') === 'extra' ? 'extra' : 'main';
+const SECTIONS = RH_SECTIONS.filter(s => partOf(s) === PART), DOCS = RH_DOCS.filter(d => d[3] === PART);
 
 async function load(){
   if (!token) return fail('Ce lien est incomplet. Vérifie le lien reçu par mail.');
@@ -36,15 +38,15 @@ function draw(d){
   const info = d.info || {}, have = new Set(d.docs || []);
   const val = f => (['first_name','last_name','email','phone'].includes(f.k) ? d[f.k] : info[f.k]) ?? f.def ?? '';
   root.innerHTML = `
-    <section class="panel pad"><p class="fiche-kicker">Fiche salarié</p><h1>${esc([d.first_name, d.last_name].filter(Boolean).join(' ') || 'Bienvenue')}</h1>
+    <section class="panel pad"><p class="fiche-kicker">${esc(RH_PARTS[PART])}</p><h1>${esc([d.first_name, d.last_name].filter(Boolean).join(' ') || 'Bienvenue')}</h1>
       <p class="help">Ces informations servent à établir tes contrats et bulletins de paie avec L’ArtBoristerie Productions. Elles restent confidentielles.</p>
       ${d.submitted_at ? `<p class="fiche-engage">Fiche déjà envoyée le ${new Date(d.submitted_at).toLocaleDateString('fr-FR')}. Tu peux la compléter ou la corriger.</p>` : ''}</section>
     <form id="rh-form" class="fiche-form" novalidate>
-      ${RH_SECTIONS.map(sec => `<section class="panel pad"><h2>${esc(sec.title)}</h2>${sec.help ? `<p class="help">${esc(sec.help)}</p>` : ''}
+      ${SECTIONS.map(sec => `<section class="panel pad"><h2>${esc(sec.title)}</h2>${sec.help ? `<p class="help">${esc(sec.help)}</p>` : ''}
         <div class="fiche-grid">${sec.fields.map(f => input(f, val(f))).join('')}</div></section>`).join('')}
-      <section class="panel pad"><h2>Pièces justificatives</h2><p class="help">Photo ou PDF. Pour la carte d’identité, recto et verso.</p>
-        <div class="fiche-grid">${RH_DOCS.map(([k, l, req]) => `<div class="field"><label for="d-${k}">${esc(l)}${req && !have.has(k) ? ' <span class="req">*</span>' : ''}${have.has(k) ? ' <span class="doc-ok">✓ déjà reçu</span>' : ''}</label>
-          <input id="d-${k}" type="file" data-doc="${k}" data-label="${esc(l)}" accept="image/*,application/pdf" multiple${req && !have.has(k) ? ' data-req-doc="1"' : ''}></div>`).join('')}</div></section>
+      ${DOCS.length ? `<section class="panel pad"><h2>Pièces justificatives</h2><p class="help">Photo ou PDF${PART === 'main' ? '. Pour la carte d’identité, recto et verso.' : '.'}</p>
+        <div class="fiche-grid">${DOCS.map(([k, l, req]) => `<div class="field"><label for="d-${k}">${esc(l)}${req && !have.has(k) ? ' <span class="req">*</span>' : ''}${have.has(k) ? ' <span class="doc-ok">✓ déjà reçu</span>' : ''}</label>
+          <input id="d-${k}" type="file" data-doc="${k}" data-label="${esc(l)}" accept="image/*,application/pdf" multiple${req && !have.has(k) ? ' data-req-doc="1"' : ''}></div>`).join('')}</div></section>` : ''}
       <div class="fiche-actions"><p class="help"><span class="req">*</span> obligatoire</p><button class="btn primary" type="submit">Envoyer</button></div>
     </form>`;
   const form = document.getElementById('rh-form');
@@ -57,7 +59,7 @@ function draw(d){
     if (missing.length){ missing.forEach(x => x.classList.add('invalid')); (missing[0].querySelector?.('input') || missing[0]).focus(); return note(`Il manque ${missing.length} élément${missing.length > 1 ? 's' : ''} obligatoire${missing.length > 1 ? 's' : ''}.`, true); }
     const v = Object.fromEntries([...new FormData(form)].filter(([, x]) => typeof x === 'string').map(([k, x]) => [k, x.trim()]));
     const main = {}, data = {};
-    RH_SECTIONS.forEach(sec => sec.fields.forEach(f => { if (v[f.k]) (f.col ? main : data)[f.k] = v[f.k]; }));
+    SECTIONS.forEach(sec => sec.fields.forEach(f => { if (v[f.k]) (f.col ? main : data)[f.k] = v[f.k]; }));
     const btn = form.querySelector('button[type=submit]'); btn.disabled = true;
     const docs = [];
     const inputs = [...form.querySelectorAll('[data-doc]')].filter(x => x.files.length);

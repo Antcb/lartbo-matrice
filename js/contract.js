@@ -24,7 +24,7 @@ const addDays = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.get
 /** Ce que l'app sait déjà de la date (proposé quand l'organisateur n'a rien répondu) */
 function knownValues(s){
   const st = byId('structures', s.structure_id);
-  const defs = ficheDefaults({structure: st, venue: venueName(s.venue), city: s.city, cp: st?.postal_code || s.department, capacity: s.capacity ?? st?.capacity_1, ticketing_type: s.ticketing_type});
+  const defs = ficheDefaults({structure: st, venue: venueName(s.venue), city: s.city, cp: st?.postal_code || s.department, capacity: s.capacity ?? st?.capacity_1, ticketing_type: s.ticketing_type, cr_break: s.cr_break});
   return {...defs, ...(st?.admin || {})};
 }
 
@@ -70,6 +70,7 @@ export function validateFiche(showId){
       }
       const patch = {contract_data: data, fiche_validated_at: s.fiche_validated_at || new Date().toISOString()};
       if (!s.precontract_done) patch.precontract_done = today();
+      if (data.cr_break) patch.cr_break = data.cr_break;   // le break validé devient celui de la date
       const ok = await save('shows', s.id, patch, {rerender:false});
       if (ok) toast(s.fiche_validated_at ? 'Fiche enregistrée' : 'Fiche validée : le contrat peut être généré');
       return !!ok;
@@ -96,7 +97,7 @@ export function contractVars(s){
   tags['Prix de Cession Hors Taxe Validé'] = num(ht);
   tags['Minimum Garanti Hors Taxe Validé'] = num(ht);
   tags['% du résultat net après break au PRODUCTEUR'] = s.cr_producer_pct != null ? num(s.cr_producer_pct) : '';
-  tags['Break'] = s.cr_break || '';
+  tags['Break'] = d.cr_break || s.cr_break || '';
   // Passages « XXX » du modèle, remplacés dans l'ordre où ils apparaissent
   const seq = [
     {find: '<<Date du Concert>> (-1)', values: [s.date ? longDate(addDays(s.date, -1)) : '']},
@@ -106,25 +107,36 @@ export function contractVars(s){
   ];
   if (vat !== 5.5) seq.push({find: 'TVA 5,5%', values: [`TVA ${num(vat)}%`]});
   if (s.invitations != null) seq.push({find: 'quota de XXX places', values: [`quota de ${s.invitations} places`]});
+  // Accueil : réglages de l'artiste (fiche projet)
+  const pr = byId('projects', s.project_id) || {};
+  if (pr.road_people) seq.push({find: 'XX repas', values: [`${pr.road_people} repas`]});
+  const rooms = [pr.rooms_single && `${pr.rooms_single} single-room${pr.rooms_single > 1 ? 's' : ''}`, pr.rooms_twin && `${pr.rooms_twin} twin-room${pr.rooms_twin > 1 ? 's' : ''}`].filter(Boolean).join(' et ');
+  if (rooms) seq.push({find: 'X single-rooms', values: [rooms]});
+  if (pr.setup_hours) seq.push({find: 'au moins XX heures', values: [`au moins ${num(pr.setup_hours)} heure${pr.setup_hours > 1 ? 's' : ''}`]});
   const st = byId('structures', s.structure_id);
   const cp = d.venue_postal_code || st?.postal_code || s.department || '';
   const name = [tags["Nom de L'Artiste"], s.date, `${s.city || d.venue_city || ''}${cp ? ` (${cp})` : ''}`, venueName(s.venue), kind.toUpperCase()].filter(Boolean).join(' • ');
   return {kind, tags, seq, name, missing: Object.entries(tags).filter(([k, v]) => v === '' && !(kind === 'cc' && /Minimum|Break|% du/.test(k)) && !(kind === 'cr' && /Prix de Cession|Billetterie/.test(k)) && k !== 'N° Licence Entrepreneur du Spectacle').map(([k]) => k)};
 }
 
-const templateId = kind => { const v = String(setting(kind === 'cr' ? 'contract_template_cr' : 'contract_template_cc') || ''); return (v.match(/[-\w]{25,}/) || [''])[0]; };
+/** Modèle de l'artiste s'il en a un, sinon le modèle général des Réglages */
+const templateId = (kind, s) => {
+  const key = kind === 'cr' ? 'contract_template_cr' : 'contract_template_cc';
+  const v = String(byId('projects', s?.project_id)?.[key] || setting(key) || '');
+  return (v.match(/[-\w]{25,}/) || [''])[0];
+};
 
 export async function generateContract(showId){
   const s = byId('shows', showId);
   const v = contractVars(s);
-  if (!templateId(v.kind)) return toast(`Ajoute le modèle de contrat ${v.kind === 'cr' ? 'de co-réalisation' : 'de cession'} dans Réglages › Contrats`, true);
+  if (!templateId(v.kind, s)) return toast(`Ajoute le modèle de contrat ${v.kind === 'cr' ? 'de co-réalisation' : 'de cession'} dans Réglages › Contrats`, true);
   if (!s.drive_folder_id) return toast('Crée ou lie d’abord le dossier Drive de la date', true);
   if (!s.fiche_validated_at && !confirm('La fiche de renseignements n’est pas validée. Générer quand même le contrat ?')) return;
   if (v.missing.length && !confirm(`Infos manquantes (laissées visibles dans le contrat) :\n• ${v.missing.join('\n• ')}\n\nGénérer quand même ?`)) return;
   if (s.contract_doc_id && !confirm('Un contrat existe déjà pour cette date. En générer un nouveau ? (l’ancien reste dans le Drive)')) return;
   toast('Préparation du contrat…');
   try {
-    const out = await callScript('contract', {template_id: templateId(v.kind), folder_id: s.drive_folder_id, name: v.name, tags: v.tags, seq: v.seq});
+    const out = await callScript('contract', {template_id: templateId(v.kind, s), folder_id: s.drive_folder_id, name: v.name, tags: v.tags, seq: v.seq});
     await save('shows', s.id, {contract_doc_id: out.doc_id, contract_pdf_id: null});
     toast('Contrat prêt : relis-le dans Google Docs', false, {label:'Ouvrir', fn: () => window.open(`https://docs.google.com/document/d/${out.doc_id}/edit`, '_blank')});
   } catch (err) { toast(err.message, true); }

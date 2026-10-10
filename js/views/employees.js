@@ -7,7 +7,7 @@
 import { render } from '../app.js';
 import { insert, remove, save, sb } from '../data.js';
 import { callScript } from '../mail.js';
-import { RH_DOCS, RH_FIELDS, RH_SECTIONS, RH_TEAM_FIELDS, fullName } from '../rh-fields.js';
+import { RH_DOCS, RH_FIELDS, RH_PARTS, RH_SECTIONS, RH_TEAM_FIELDS, fullName } from '../rh-fields.js';
 import { byId, setting } from '../selectors.js';
 import { S } from '../state.js';
 import { viewHead } from '../ui/bits.js';
@@ -58,10 +58,11 @@ export function editEmployee(id){
   const values = {...Object.fromEntries([...RH_FIELDS, ...RH_TEAM_FIELDS].map(f => [f.k, val(e, f)])), active: e.active, id};
   const mm = e.info?.movinmotion || {};
   const extra = id ? `<div class="mail-wrap emp-extra">
-    <h3 class="block-title">Questionnaire en ligne</h3>
-    <p class="help">Le salarié complète sa fiche et envoie ses pièces (RIB, carte vitale…) depuis son téléphone. ${e.form_submitted_at ? `Rempli le ${fmtDate(e.form_submitted_at.slice(0,10))}.` : e.form_sent_at ? `Envoyé le ${fmtDate(e.form_sent_at.slice(0,10))}.` : ''}</p>
-    <div class="vh-actions"><button type="button" class="btn sm primary" data-act="rhSendForm" data-id="${e.id}">Envoyer le questionnaire</button>
-      <button type="button" class="btn sm" data-act="rhCopyLink" data-id="${e.id}">Copier le lien</button></div>
+    <h3 class="block-title">Questionnaires à faire remplir</h3>
+    <p class="help">Un lien propre à ce salarié : il remplit lui-même ses infos et envoie ses pièces depuis son téléphone, tout arrive ici. ${e.form_submitted_at ? `Dernière réponse le ${fmtDate(e.form_submitted_at.slice(0,10))}.` : e.form_sent_at ? `Envoyé le ${fmtDate(e.form_sent_at.slice(0,10))}.` : ''}</p>
+    ${Object.entries(RH_PARTS).map(([k, l]) => `<div class="vh-actions" style="margin-bottom:6px"><b class="fiche-lbl" style="min-width:150px">${esc(l)}</b>
+      <button type="button" class="btn sm primary" data-act="rhSendForm" data-part="${k}" data-id="${e.id}">Préparer le mail</button>
+      <button type="button" class="btn sm" data-act="rhCopyLink" data-part="${k}" data-id="${e.id}">Copier le lien</button></div>`).join('')}
     <h3 class="block-title" style="margin-top:16px">Pièces et documents</h3>
     ${docsHTML(e)}
     <div class="vh-actions" style="margin-top:8px">
@@ -69,7 +70,7 @@ export function editEmployee(id){
       <input id="emp-doc-when" placeholder="Bulletin : 2026-09-12 ou 2026-09-12_25 · NDF : 2026-09" title="Date(s) du bulletin de paie ou mois de la note de frais" style="min-width:260px">
       <label class="btn sm primary file-btn">Ajouter le fichier<input type="file" class="file-input" multiple data-emp-doc="${e.id}"></label>
     </div>
-    <p class="help">Les fichiers sont rangés dans le dossier Drive du salarié avec le bon nom : « RIB - ${esc(fullName(e))} », « BDS-${esc(fullName(e))} 2026-09-12 », « NDF-2026-09 ${esc(fullName(e))} ».</p>
+    <p class="help">Les pièces vont dans le dossier Drive du salarié (« RIB - ${esc(fullName(e))} »…). Les bulletins de paie (« BDS-${esc(fullName(e))} 2026-09-12 ») et notes de frais (« NDF-2026-09 ${esc(fullName(e))} ») vont dans leurs dossiers à part (Réglages › Google).</p>
     <div class="vh-actions">${e.drive_folder_id ? `<a class="btn sm" href="https://drive.google.com/drive/folders/${esc(e.drive_folder_id)}" target="_blank" rel="noopener">Ouvrir le dossier Drive</a>` : `<button type="button" class="btn sm" data-act="rhFolder" data-id="${e.id}">Créer le dossier Drive</button>`}
       ${pending(e) ? `<button type="button" class="btn sm primary" data-act="rhFileDocs">Ranger les pièces dans le Drive</button>` : ''}</div>
     ${Object.keys(mm).length ? `<details style="margin-top:14px"><summary>Données de l’export Movinmotion (${Object.keys(mm).length})</summary><dl class="fiche-dl" style="margin-top:8px">${Object.entries(mm).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></details>` : ''}
@@ -98,23 +99,25 @@ function docsHTML(e){
 
 // ─────────────── Actions ───────────────
 
-const formLink = e => (setting('site_url') || location.origin + location.pathname.replace(/[^/]*$/, '')) + 'rh.html?t=' + e.form_token;
+const formLink = (e, part) => (setting('site_url') || location.origin + location.pathname.replace(/[^/]*$/, '')) + 'rh.html?t=' + e.form_token + (part === 'extra' ? '&p=extra' : '');
 
 export const EMP_ACTIONS = {
   newEmployee: () => editEmployee(null),
   openEmployee: (t, ev) => { if (ev.target.closest('[data-stop]')) return; editEmployee(t.dataset.id); },
   toggleInactiveEmployees: () => { S.showInactiveEmployees = !S.showInactiveEmployees; render(); },
-  rhCopyLink: async t => { const link = formLink(byId('employees', t.dataset.id));
+  rhCopyLink: async t => { const link = formLink(byId('employees', t.dataset.id), t.dataset.part);
     try { await navigator.clipboard.writeText(link); toast('Lien du questionnaire copié'); } catch { prompt('Lien du questionnaire :', link); } },
   rhSendForm: async t => {
     const e = byId('employees', t.dataset.id);
     if (!e.email) return toast('Ajoute d’abord son mail', true);
-    const link = formLink(e);
-    const html = `<p>Bonjour ${esc(e.first_name || '')},</p><p>Pour préparer tes contrats et bulletins de paie avec L’ArtBoristerie Productions, peux-tu compléter ta fiche salarié et nous envoyer tes pièces (RIB, carte vitale, pièce d’identité…) ici :</p><p><a href="${link}">Compléter ma fiche salarié</a></p><p>Ça prend 5 minutes, depuis ton téléphone si tu veux. Merci !</p><p>Chloé</p>`;
-    const subject = 'L’ArtBoristerie Productions • Ta fiche salarié';
+    const extra = t.dataset.part === 'extra', link = formLink(e, t.dataset.part);
+    const html = extra
+      ? `<p>Bonjour ${esc(e.first_name || '')},</p><p>Pour organiser au mieux les déplacements en tournée, peux-tu compléter ces quelques infos (véhicule, carte grise, cartes SNCF / Flying Blue, régime alimentaire) ici :</p><p><a href="${link}">Compléter mes infos complémentaires</a></p><p>Merci !</p><p>Chloé</p>`
+      : `<p>Bonjour ${esc(e.first_name || '')},</p><p>Pour préparer tes contrats et bulletins de paie avec L’ArtBoristerie Productions, peux-tu compléter ta fiche RH et nous envoyer tes pièces (CNI, carte vitale, RIB, permis…) ici :</p><p><a href="${link}">Compléter ma fiche RH</a></p><p>Ça prend 5 minutes, depuis ton téléphone si tu veux. Merci !</p><p>Chloé</p>`;
+    const subject = extra ? 'L’ArtBoristerie Productions • Infos complémentaires' : 'L’ArtBoristerie Productions • Ta fiche RH';
     try {
       if (setting('drive_webhook_url')){ const out = await callScript('draft', {to: e.email, subject, html}); toast('Brouillon créé dans Gmail', false, out.url ? {label:'Ouvrir', fn: () => window.open(out.url, '_blank')} : null); }
-      else { location.href = `mailto:${encodeURIComponent(e.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(`Bonjour ${e.first_name || ''},\n\nPour préparer tes contrats et bulletins de paie, peux-tu compléter ta fiche salarié et nous envoyer tes pièces ici :\n${link}\n\nMerci !`)}`; }
+      else { location.href = `mailto:${encodeURIComponent(e.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(`Bonjour ${e.first_name || ''},\n\n${extra ? 'Peux-tu compléter tes infos complémentaires (véhicule, cartes de voyage…) ici' : 'Pour préparer tes contrats et bulletins de paie, peux-tu compléter ta fiche RH et nous envoyer tes pièces ici'} :\n${link}\n\nMerci !`)}`; }
       await save('employees', e.id, {form_sent_at: new Date().toISOString()}, {rerender:false});
     } catch (err) { toast(err.message, true); }
   },

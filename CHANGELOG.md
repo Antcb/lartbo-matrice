@@ -5,6 +5,16 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.13.0 — 10/10/2026
+- Booking : un clic sur une pastille de statut sous la carte la masque / l’affiche ; enchaînements repliés par défaut ; export des dates (un artiste, année complète ou période, statuts, avec ou sans cachets)
+- Exports en Excel aux couleurs de L’ArtBoristerie (logo, titre, en-têtes) pour les partenaires, ou CSV brut : dates et suivis
+- Co-réalisation : l’organisateur peut proposer le break dans la fiche ; le break validé devient celui de la date
+- Fiche projet : personnes sur la route (repas), chambres single / twin, mise à disposition (heures) reprises dans les contrats et les balises de mail ; modèles de contrat propres à chaque artiste
+- Salariés : deux questionnaires (fiche RH avec CNI, carte vitale, RIB, permis… et infos complémentaires avec carte grise, cartes de voyage) ; bulletins de paie et notes de frais rangés dans leurs propres dossiers
+- Suivis : seules les tâches du pôle Booking de la structure apparaissent ; une tâche créée depuis un suivi est en Booking
+- Projet JACO créé ; dossiers Drive des artistes rattachés (FAV = dossier « FAV »)
+
+
 ## 1.12.0 — 10/10/2026
 - Nouvel onglet Salariés : fiche complète (état civil, coordonnées, paie, pièces d’identité, déplacements), pièces reçues, dossier Drive « NOM Prénom » ; les 16 dossiers existants sont déjà rattachés
 - Questionnaire salarié en ligne (rh.html) : le salarié complète sa fiche et envoie RIB, carte vitale, pièce d’identité… depuis son téléphone ; les numéros sensibles déjà connus ne sont jamais réaffichés

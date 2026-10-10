@@ -38,6 +38,7 @@ export const FICHE_SECTIONS = [
     {k:'show_time', src:'fiche', label:'Heure de passage', req:true, placeholder:'ex. 22h30', tag:'Heure de Passage'},
     {k:'set_length', src:'fiche', label:'Durée du set', req:true, placeholder:'ex. 1h15', tag:'Durée du Set'},
     {k:'capacity', src:'fiche', label:'Jauge public', type:'number', tag:'Jauge Public'},
+    {k:'cr_break', src:'fiche', label:'Break', req:true, only:'cr', full:true, placeholder:'ex. 450 entrées payantes / 6 500 € de recettes', tag:'Break'},
     {k:'ticketing', src:'fiche', label:'Billetterie', type:'choice', options:['Payant (prix libre compris)','Gratuit'], req:true, only:'cc', tag:'Billetterie'},
   ]},
   {title: 'Contacts pour cette date', cols: 3, help: 'Facultatif : les personnes à joindre pour l’accueil, la technique et la communication.', fields:
@@ -65,7 +66,7 @@ export function ficheDefaults(d){
   return {
     legal_name: st.name, country: 'France',
     venue_name: d.venue, venue_address: st.address, venue_postal_code: st.postal_code || d.cp, venue_city: d.city || st.city, venue_country: st.country || 'France',
-    capacity: d.capacity,
+    capacity: d.capacity, cr_break: d.cr_break,
     ticketing: d.ticketing_type === 'Gratuit' ? 'Gratuit' : d.ticketing_type ? 'Payant (prix libre compris)' : '',
   };
 }

@@ -8,13 +8,14 @@ import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
 import { insert, openStored, refreshShowSide, remove, removeWhere, save, saveLinger, sb } from './data.js';
 import { editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, logsOf, projIds, projNames, setting, showsFiltered, structName } from './selectors.js';
-import { S, touch } from './state.js';
+import { S, localSet, touch } from './state.js';
 import { MODALS, openModal } from './ui/modal.js';
 import { applyAcompte, saveDepartments } from './views/settings.js';
 import { hasLogDraft, setLogDraft } from './views/suivi.js';
 import { $, esc, fmtDate, toast, today } from './utils.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
+import { exportShows } from './exports.js';
 import { EMP_ACTIONS, editEmployee } from './views/employees.js';
 
 /** Nouveau suivi : créé tout de suite et ouvert dans l'espace de prospection (pas de fenêtre) */
@@ -60,6 +61,9 @@ export const ACTIONS = {
   pick: (t, e) => { e.stopPropagation(); const p=t.dataset.p; S.routePick[p] = S.routePick[p]===t.dataset.id ? null : t.dataset.id; render(); },
   clearPick: () => { S.routePick = {a:null, b:null}; render(); },
   bookingPane: t => { S.bookingPane = t.dataset.p; render(); },
+  toggleMapStatus: t => { const st = t.dataset.st; S.mapHidden.has(st) ? S.mapHidden.delete(st) : S.mapHidden.add(st); localSet('mapHidden', JSON.stringify([...S.mapHidden])); render(); },
+  showAllMapStatus: () => { S.mapHidden.clear(); localSet('mapHidden', '[]'); render(); },
+  exportShows: () => exportShows(),
 
   // Production
   toggleProd: t => { const id=t.dataset.id; S.openProd.has(id)?S.openProd.delete(id):S.openProd.add(id); render(); },
@@ -175,7 +179,7 @@ export const ACTIONS = {
   wsShow: t => { const p = byId('prospects', t.dataset.id), st = byId('structures', p.structure_id);
     const fest = (st?.tags||[]).some(x=>/festival/i.test(x));
     editShow(null, S.wsProject && projIds(p).includes(S.wsProject) ? S.wsProject : projIds(p)[0], {...showPrefillFromStructure(st), date:S.wsTarget||null, status: fest?'Option Festival':'Option Salle', prospect_id: p.id}); },
-  wsTask: t => { const p = byId('prospects', t.dataset.id); editTask(null, {structure_id:p.structure_id, project_ids:projIds(p)}); },
+  wsTask: t => { const p = byId('prospects', t.dataset.id); editTask(null, {structure_id:p.structure_id, project_ids:projIds(p), department:'Booking'}); },
   rmProj: async (t, e) => { e.stopPropagation(); const tb = t.dataset.t || 'prospects', r = byId(tb, t.dataset.id); const ids = projIds(r).filter(x=>x!==t.dataset.p);
     await save(tb, r.id, {project_ids: ids, project_id: ids[0]||null}); },
   delProspect: async t => { if (!confirm('Supprimer ce suivi, son journal et ses fichiers ?')) return;

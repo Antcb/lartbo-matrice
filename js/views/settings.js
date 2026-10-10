@@ -53,6 +53,8 @@ export function viewSettings(){
         <label>Code secret à coller dans le script</label><span class="secret-line"><code>${esc(String(setting('drive_webhook_secret')||'').slice(0,8))}…</code> <button class="btn sm ghost" data-act="copySecret">Copier</button></span>
         <label for="set-mac">Dossier Google Drive sur le Mac</label><input id="set-mac" data-setting-text="drive_mac_root" value="${esc(setting('drive_mac_root')||'')}" placeholder="/Users/…/Library/CloudStorage/GoogleDrive-…/Mon Drive">
         <label for="set-emp">Dossier Drive des salariés</label><input id="set-emp" data-setting-text="employees_folder_id" value="${esc(setting('employees_folder_id')||'')}" placeholder="ID ou lien du dossier">
+        <label for="set-bds">Dossier Drive des bulletins de paie</label><input id="set-bds" data-setting-text="payslips_folder_id" value="${esc(setting('payslips_folder_id')||'')}" placeholder="Lien du dossier">
+        <label for="set-ndf">Dossier Drive des notes de frais</label><input id="set-ndf" data-setting-text="expenses_folder_id" value="${esc(setting('expenses_folder_id')||'')}" placeholder="Lien du dossier">
         <label for="set-site">Adresse du site (liens des fiches)</label><input id="set-site" data-setting-text="site_url" value="${esc(setting('site_url')||'')}">
       </div>
       <div class="vh-actions" style="margin-top:12px"><button class="btn sm" data-act="testScript">Tester le script</button>

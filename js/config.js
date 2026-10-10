@@ -1,7 +1,7 @@
 /**
  * Réglages : adresse et clé publique Supabase, équipe autorisée, numéro de version.
  */
-export const APP_VERSION = '1.12.0';   // ← incrémenté par tools/bump_version.py (voir CHANGELOG.md)
+export const APP_VERSION = '1.13.0';   // ← incrémenté par tools/bump_version.py (voir CHANGELOG.md)
 
 export const CFG = {
   // Projet Supabase « Lartbo-matrice ». La clé publiable est publique par conception :

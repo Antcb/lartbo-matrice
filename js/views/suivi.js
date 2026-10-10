@@ -34,7 +34,7 @@ export function viewProspects(){
       <select class="sel" data-suivi-filter="status" aria-label="Statut"><option value="">Tous les statuts</option>${PROSPECT.map(x=>`<option value="${x}" ${x===st?'selected':''}>${x}</option>`).join('')}</select>
       <input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-suivi" placeholder="Structure, ville, mot du résumé…" data-search="prospects" value="${esc(q)}"></div>`,
     actions: `${nClosed ? `<button class="btn" data-act="toggleClosed" aria-pressed="${!!S.showClosed}">${S.showClosed?'Masquer':'Afficher'} les suivis clos (${nClosed})</button>` : ''}
-      <button class="btn" data-act="exportSuivis">Exporter en CSV</button>
+      <button class="btn" data-act="exportSuivis">Exporter</button>
       <button class="btn primary" data-act="newProspect">Nouveau suivi</button>`})
   + `<div class="tbl-wrap"><table><thead><tr><th>Structure</th><th>Artiste(s)</th><th>Statut</th><th>Dernier échange</th><th class="num">Journal</th><th class="num">Fichiers</th><th>Résumé</th></tr></thead><tbody>
     ${rows.slice(0,500).map(({p,last})=>{ const s=byId('structures',p.structure_id);
@@ -59,14 +59,14 @@ export function suiviCard(p, {page=false}={}){
         <div class="md">${md(p.summary) || '<span class="muted">Pas encore de résumé.</span>'}</div></div>`;
   const d = logDraft(p.id);
   const tasks = suiviTasks(p);
-  const tasksHTML = `<div class="suivi-block"><h3 class="block-title">Tâches <span class="count">${tasks.filter(t=>!isDone(t)).length}</span><span class="spacer"></span>
+  const tasksHTML = `<div class="suivi-block"><h3 class="block-title">Tâches Booking <span class="count">${tasks.filter(t=>!isDone(t)).length}</span><span class="spacer"></span>
       <button type="button" class="btn sm" data-act="wsTask" data-id="${p.id}">Nouvelle tâche</button></h3>
       ${tasks.length ? `<div class="mini-tasks">${tasks.map(t => { const u = urgency(t); return `<div class="mini-task ${isDone(t)?'done':''} ${lingering(t.id)?'leaving':''}">
         <input type="checkbox" data-act="toggleTask" data-id="${t.id}" ${t.status==='Done'?'checked':''} aria-label="Marquer comme faite">
         ${cIn('tasks',t.id,'title',t.title,'text','aria-label="Nom de la tâche"')}
         ${cIn('tasks',t.id,'deadline',t.deadline,'date')}
         ${u?`<span class="urg ${u.cls}">${esc(u.label)}</span>`:'<span></span>'}
-        <button type="button" class="btn sm ghost" data-act="editTask" data-id="${t.id}">Détails</button></div>`; }).join('')}</div>` : '<p class="muted" style="margin:0">Aucune tâche liée à ce suivi.</p>'}</div>`;
+        <button type="button" class="btn sm ghost" data-act="editTask" data-id="${t.id}">Détails</button></div>`; }).join('')}</div>` : '<p class="muted" style="margin:0">Aucune tâche Booking liée à cette structure.</p>'}</div>`;
   const journal = `
       <div class="suivi-block"><h3 class="block-title">Journal des échanges <span class="count">${logs.length}</span></h3>
         <form class="log-form" data-logform="${p.id}">
@@ -109,7 +109,7 @@ export const hasLogDraft = pid => { const d = logDraft(pid); return !!((d.body||
 export function suiviTasks(p){
   if (!p.structure_id) return [];
   const ids = projIds(p);
-  return tasksOfStructure(p.structure_id).filter(t => (!projIds(t).length || projIds(t).some(x => ids.includes(x))) && (!isDone(t) || lingering(t.id)))
+  return tasksOfStructure(p.structure_id).filter(t => /^booking$/i.test(t.department || '') && (!projIds(t).length || projIds(t).some(x => ids.includes(x))) && (!isDone(t) || lingering(t.id)))
     .slice().sort((a,b)=>(a.deadline||'9999').localeCompare(b.deadline||'9999'));
 }
 

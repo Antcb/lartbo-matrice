@@ -2,6 +2,7 @@
  * Formulaires de création / modification : date, projet, tâche, contact, structure, suivi, événement,
  * créations rapides (structure, contact) depuis un champ de recherche, export CSV des suivis, photo de projet.
  */
+import { FORMAT_FIELD, exportTable } from './exports.js';
 import { render } from './app.js';
 import { CFG } from './config.js';
 import { CONFIRMED_PROD, CONTRACTS, PRIORITIES, PROSPECT, STATUSES, TASK_STATUS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
@@ -96,12 +97,21 @@ export function editProject(id){
       {k:'default_partner_id', label:'Co-producteur par défaut', type:'select', options:S.db.partners.map(x=>[x.id,x.name])},
       {k:'default_partner_pct', label:'% partenaire sur la commission', type:'number'},
       {k:'drive_artist_folder_id', label:'Dossier Drive de l’artiste (lien ou identifiant)', full:true},
+      {k:'_h_acc', type:'html', full:true, html:'<h3 class="block-title" style="margin:6px 0 0">Accueil (repris dans les contrats)</h3>'},
+      {k:'road_people', label:'Personnes sur la route (= repas)', type:'number'},
+      {k:'setup_hours', label:'Mise à disposition du lieu (montage, balances) en heures', type:'number'},
+      {k:'rooms_single', label:'Chambres single', type:'number'},
+      {k:'rooms_twin', label:'Chambres twin', type:'number'},
+      {k:'_h_tpl', type:'html', full:true, html:'<h3 class="block-title" style="margin:6px 0 0">Modèles de contrat propres à l’artiste</h3><p class="help" style="margin:0">Lien d’un Google Doc. Laisse vide pour utiliser le modèle général (Réglages › Contrats).</p>'},
+      {k:'contract_template_cc', label:'Contrat de cession', full:true, placeholder:'https://docs.google.com/document/d/…'},
+      {k:'contract_template_cr', label:'Contrat de co-réalisation', full:true, placeholder:'https://docs.google.com/document/d/…'},
       {k:'notes', label:'Notes', type:'textarea', full:true},
     ],
     onDelete: id ? () => remove('projects', id) : null,
     onSave: async v => {
       if (!v.name) return false;
       if (v.drive_artist_folder_id) v.drive_artist_folder_id = driveId(v.drive_artist_folder_id);
+      ['contract_template_cc','contract_template_cr'].forEach(k => { if (v[k]) v[k] = (String(v[k]).match(/[-\w]{25,}/) || [v[k]])[0]; });
       if (id) await save('projects', id, v, {rerender:false}); else await insert('projects', v);
     }
   });
@@ -261,12 +271,13 @@ export function editProspect(id){
 /** Export CSV des suivis : un projet, un ou plusieurs statuts → une ligne par contact de la structure */
 export function exportSuivis(projectId){
   const fixed = projectId ? byId('projects', projectId) : null;
-  openModal({ title: fixed ? `Exporter les suivis — ${fixed.name}` : 'Exporter les suivis (CSV)', saveLabel:'Télécharger le CSV',
-    values:{project: projectId || S.project || '', statuses: PROSPECT.filter(x=>x!=='Closed')},
+  openModal({ title: fixed ? `Exporter les suivis — ${fixed.name}` : 'Exporter les suivis', saveLabel:'Télécharger',
+    values:{project: projectId || S.project || '', statuses: PROSPECT.filter(x=>x!=='Closed'), format:'xlsx'},
     fields:[
       ...(fixed ? [] : [{k:'project', label:'Projet', type:'project', full:true}]),
       {k:'statuses', label:'Statuts', type:'checks', options:PROSPECT.map(x=>[x,x]), full:true},
       {k:'from', label:'Dernier échange à partir du', type:'date'}, {k:'to', label:'jusqu’au', type:'date'},
+      FORMAT_FIELD,
     ],
     onSave: async v => {
       const pid = projectId || v.project;
@@ -277,15 +288,20 @@ export function exportSuivis(projectId){
         if ((v.from || v.to) && !last) return false;
         return (!v.from || last >= v.from) && (!v.to || last <= v.to);
       });
-      const rows = [['Projet','Structure','Ville','Prénom','Nom','Mail','Statut','Date du dernier échange']];
+      const rows = [];
       for (const p of list){
         const st = byId('structures', p.structure_id), contacts = linksOfStructure(p.structure_id), last = lastExchange(p) || '';
-        const lastFr = last ? last.split('-').reverse().join('/') : '';
-        if (!contacts.length) rows.push([projName(pid), st?.name||p.name, st?.city||'', '', '', '', p.status, lastFr]);
-        for (const c of contacts) rows.push([projName(pid), st?.name||p.name, st?.city||'', c.first_name||'', c.last_name || (c.first_name?'':c.display_name) || '', c.email||'', p.status, lastFr]);
+        const base = {project: projName(pid), structure: st?.name||p.name, city: st?.city||'', status: p.status, last};
+        if (!contacts.length) rows.push(base);
+        for (const c of contacts) rows.push({...base, first: c.first_name||'', lastname: c.last_name || (c.first_name?'':c.display_name) || '', email: c.email||''});
       }
-      downloadCSV(`suivis-${projName(pid).replace(/[^\w]+/g,'-')}-${today()}.csv`, rows);
-      toast(`${rows.length-1} ligne(s) exportée(s)`);
+      const columns = [{header:'Projet', key:'project', width:18}, {header:'Structure', key:'structure', width:28}, {header:'Ville', key:'city', width:18},
+        {header:'Prénom', key:'first', width:14}, {header:'Nom', key:'lastname', width:16}, {header:'Mail', key:'email', width:28},
+        {header:'Statut', key:'status', width:12}, {header:'Dernier échange', key:'last', type:'date', width:14}];
+      const artist = projName(pid).replace(/\s*•.*$/, '');
+      try { await exportTable({name:`suivis-${artist}`, title:`${artist} — Suivis`, subtitle:`${list.length} suivi${list.length>1?'s':''} · ${v.statuses.join(', ')}`, columns, rows, format: v.format}); }
+      catch (err) { toast(err.message, true); return false; }
+      toast(`${rows.length} ligne(s) exportée(s)`);
     }
   });
 }

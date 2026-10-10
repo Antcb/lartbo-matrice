@@ -254,7 +254,10 @@ function rhFileDocs_() {
     docs.forEach(function (d) {
       if (!d.path || d.file_id) return;
       if (!e.drive_folder_id) { rhFolders_(); e.drive_folder_id = sb_('GET', 'employees?id=eq.' + e.id + '&select=drive_folder_id')[0].drive_folder_id; }
-      var folder = DriveApp.getFolderById(e.drive_folder_id);
+      // Bulletins de paie et notes de frais : dans leurs dossiers à part (Réglages › Google)
+      var special = d.kind === 'bds' ? setting_('payslips_folder_id') : d.kind === 'ndf' ? setting_('expenses_folder_id') : null;
+      if ((d.kind === 'bds' || d.kind === 'ndf') && !special) { Logger.log('Dossier des ' + (d.kind === 'bds' ? 'bulletins' : 'notes de frais') + ' non renseigné'); return; }
+      var folder = DriveApp.getFolderById(special || e.drive_folder_id);
       var url = p.SUPABASE_URL + '/storage/v1/object/rh/' + d.path.split('/').map(encodeURIComponent).join('/');
       var res = UrlFetchApp.fetch(url, { headers: { apikey: p.SUPABASE_SERVICE_KEY, Authorization: 'Bearer ' + p.SUPABASE_SERVICE_KEY }, muteHttpExceptions: true });
       if (res.getResponseCode() >= 300) { Logger.log('Pièce introuvable : ' + d.path); return; }

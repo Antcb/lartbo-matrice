@@ -29,6 +29,7 @@ export function viewBooking(){
       sub: [plural(n('Intérêt'),'intérêt'), plural(n('Option'),'option'), plural(n('Confirmée'),'confirmée'), `${eur(totalConf)} de cachets confirmés`].join(' · '),
       filters: filterBar(),
       actions: `${nOff?`<button class="btn" data-act="toggleCancelled" aria-pressed="${S.showCancelled}">${S.showCancelled?'Masquer':'Afficher'} annulées / sans suite (${nOff})</button>`:''}
+        <button class="btn" data-act="exportShows">Exporter</button>
         <button class="btn primary" data-act="newShow">Nouvelle date</button>`}) + `
   <div class="pane-switch" role="tablist">
     <button class="btn sm ${S.bookingPane!=='map'?'on':''}" data-act="bookingPane" data-p="list">Liste</button>
@@ -58,7 +59,11 @@ function gigRow(s){
 
 const plural = (n, w) => `${n} ${w}${n>1?'s':''}`;
 
-const legend = shows => STATUSES.filter(st => shows.some(s=>s.status===st)).map(stBadge).join('');
+/** Pastilles sous la carte : un clic masque / affiche ce statut sur la carte */
+const legend = shows => STATUSES.filter(st => shows.some(s=>s.status===st)).map(st => {
+  const off = S.mapHidden.has(st), n = shows.filter(s => s.status === st).length;
+  return `<button type="button" class="legend-chip ${off ? 'off' : ''}" data-act="toggleMapStatus" data-st="${esc(st)}" aria-pressed="${!off}" title="${off ? 'Afficher' : 'Masquer'} sur la carte">${stBadge(st)}<span class="count">${n}</span></button>`;
+}).join('') + (S.mapHidden.size ? `<button type="button" class="btn sm ghost" data-act="showAllMapStatus">Tout afficher</button>` : '');
 
 /** Enchaînements : dates d'un même artiste qui se suivent (au plus un jour off entre les deux) */
 export function chains(shows){
@@ -92,7 +97,7 @@ export function routeBoxHTML(shows){
   }).join('');
   const n = chains(shows).length;
   return `<h3>Trajet</h3>${pair}
-    ${fold('chains', 'Enchaînements', legs ? `<ul class="legs">${legs}</ul>` : '<p class="muted" style="margin:0">Aucune date qui se suit (au plus un jour off) sur cette période.</p>', {open:true, count:n})}`;
+    ${fold('chains', 'Enchaînements', legs ? `<ul class="legs">${legs}</ul>` : '<p class="muted" style="margin:0">Aucune date qui se suit (au plus un jour off) sur cette période.</p>', {open:false, count:n})}`;
 }
 
 /* ---------------------------------------------------------------------------------------
@@ -112,7 +117,7 @@ function drawLine(){
 export function setMapData(data){ S.mapData = data; }
 
 function setBookingMap(shows){
-  const pts = shows.map(s => { const c = showCoords(s); return c && {lat:c[0], lng:c[1], color:stColor(s.status), big:(s.status||'').startsWith('Confirmée'), showId:s.id, hover:true,
+  const pts = shows.filter(s => !S.mapHidden.has(s.status)).map(s => { const c = showCoords(s); return c && {lat:c[0], lng:c[1], color:stColor(s.status), big:(s.status||'').startsWith('Confirmée'), showId:s.id, hover:true,
     label:`<b>${esc(s.venue)}</b><br>${fmtDate(s.date)} — ${esc(s.city||'')}<br>${esc(s.status)}${s.project_id?' · '+esc(projName(s.project_id)):''}${s.fee_ht?'<br>'+eur(s.fee_ht):''}
       <div class="pop-actions"><button type="button" class="btn sm ${S.routePick.a===s.id?'on':''}" data-act="pick" data-p="a" data-id="${s.id}">Départ (A)</button><button type="button" class="btn sm ${S.routePick.b===s.id?'on':''}" data-act="pick" data-p="b" data-id="${s.id}">Arrivée (B)</button></div>`}; }).filter(Boolean);
   const a0 = byId('shows', S.routePick.a), b0 = byId('shows', S.routePick.b);

@@ -41,7 +41,7 @@ function conditions(d){
       <dt>Contrat</dt><dd>${esc(d.contract_type || 'à préciser')}</dd>
       <dt>${cr ? 'Minimum garanti' : 'Montant de la cession'}</dt><dd><b>${eur(d.fee_ht)} HT</b> · ${eur(d.fee_ttc)} TTC (TVA ${pct(d.vat)})</dd>
       ${cr ? `<dt>% du résultat net après break au producteur</dt><dd>${d.cr_producer_pct != null ? pct(d.cr_producer_pct) : 'à confirmer'}</dd>
-        <dt>Break</dt><dd>${esc(d.cr_break || 'à confirmer')}</dd>` : ''}
+        <dt>Break</dt><dd>${d.cr_break ? `${esc(d.cr_break)} <span class="muted">(proposé, à confirmer plus bas)</span>` : 'à renseigner plus bas'}</dd>` : ''}
       ${pays ? `<dt>Paiement</dt><dd><ul>${pays}</ul></dd>` : ''}
       ${d.capacity ? `<dt>Jauge</dt><dd>${esc(d.capacity)} personnes</dd>` : ''}
     </dl>
