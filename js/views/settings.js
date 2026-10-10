@@ -10,6 +10,7 @@ import { viewHead } from '../ui/bits.js';
 import { cIn } from '../ui/cells.js';
 import { esc, toast } from '../utils.js';
 import { render } from '../app.js';
+import { templatesList } from '../mail.js';
 
 export function viewSettings(){
   const ac = Number(setting('default_acompte_pct') ?? 0);
@@ -35,6 +36,20 @@ export function viewSettings(){
       <p class="help" style="margin:0 0 12px">% de la commission L'ArtBo reversé au partenaire, sur les projets où il est choisi.</p>
       <table><tbody>${S.db.partners.map(p=>`<tr><td>${cIn('partners',p.id,'name',p.name)}</td><td class="num">${cIn('partners',p.id,'default_pct',p.default_pct,'number','class="narrow"')} %</td></tr>`).join('')}</tbody></table>
       <button class="btn sm" data-act="newPartner" style="margin-top:10px">Ajouter un partenaire</button></div>
+    <div class="panel pad" style="grid-column:1/-1"><h3 style="font-size:22px;margin-bottom:6px">Modèles de mail</h3>
+      <p class="help" style="margin:0 0 12px">Confirmations et boucles, par artiste. Les modèles « génériques » servent pour les artistes qui n’ont pas le leur. Les balises comme {{date}} ou {{cachet_ht}} sont remplacées par les infos de la date.</p>
+      ${templatesList()}
+      <button class="btn sm primary" data-act="newTemplate" style="margin-top:10px">Nouveau modèle</button></div>
+    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Google : Drive et Gmail</h3>
+      <p class="help" style="margin:0 0 12px">Le script Google installé sur le compte production@ crée les dossiers Drive des dates et les brouillons Gmail.</p>
+      <div class="steps">
+        <label for="set-gas">Adresse du script (Apps Script)</label><input id="set-gas" data-setting-text="drive_webhook_url" value="${esc(setting('drive_webhook_url')||'')}" placeholder="https://script.google.com/macros/s/…/exec">
+        <label>Code secret à coller dans le script</label><span class="secret-line"><code>${esc(String(setting('drive_webhook_secret')||'').slice(0,8))}…</code> <button class="btn sm ghost" data-act="copySecret">Copier</button></span>
+        <label for="set-mac">Dossier Google Drive sur le Mac</label><input id="set-mac" data-setting-text="drive_mac_root" value="${esc(setting('drive_mac_root')||'')}" placeholder="/Users/…/Library/CloudStorage/GoogleDrive-…/Mon Drive">
+        <label for="set-site">Adresse du site (liens des fiches)</label><input id="set-site" data-setting-text="site_url" value="${esc(setting('site_url')||'')}">
+      </div>
+      <div class="vh-actions" style="margin-top:12px"><button class="btn sm" data-act="testScript">Tester le script</button>
+        <button class="btn sm" data-act="driveScan">Rattacher les dossiers Drive existants</button></div></div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Version</h3>
       <p>Matrice L'ArtBoristerie Productions <b>v${APP_VERSION}</b></p>
       <p class="help">Historique des mises à jour : <a href="CHANGELOG.md" target="_blank" rel="noopener">journal des versions</a>.</p></div>
@@ -49,6 +64,8 @@ async function setSetting(key, value){
 }
 
 document.addEventListener('change', async e => {
+  const kt = e.target.dataset.settingText;
+  if (kt){ if (await setSetting(kt, e.target.value.trim())) toast('Réglage enregistré'); return; }
   const k = e.target.dataset.actSetting; if (!k) return;
   const v = e.target.value===''?null:Number(e.target.value);
   if (k==='default_acompte_pct'){

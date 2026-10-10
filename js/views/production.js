@@ -5,7 +5,7 @@
  */
 import { netArtbo, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
-import { byId, projName, showsFiltered, structName } from '../selectors.js';
+import { byId, projName, setting, showsFiltered, structName } from '../selectors.js';
 import { lateSteps, remindersOf } from '../reminders.js';
 import { S } from '../state.js';
 import { filterBar, stBadge, stSelect, viewHead } from '../ui/bits.js';
@@ -87,6 +87,7 @@ function prodBody(s, booking, steps, pays, late){
       <p class="muted" style="font-size:13px;margin:8px 0 0">${booking ? `Commission : <b>${eur(netArtbo(s))}</b>` : `Le % partenaire s'applique à la commission L'ArtBo. Net L'ArtBo : <b>${eur(netArtbo(s))}</b>`}</p>
       <div class="drive">${driveHTML(s)}</div>
     </div>
+    ${mailsHTML(s, booking)}
     <div class="prod-bill">
       <h3 class="block-title">Facturation</h3>
       <div class="tbl-wrap"><table>
@@ -115,8 +116,28 @@ function prodBody(s, booking, steps, pays, late){
   </div>`;
 }
 
+/** Mails (confirmation, boucles) et fiche de renseignements */
+function mailsHTML(s, booking){
+  const log = s.mail_log || {};
+  const btn = (kind, label) => `<button class="btn sm ${log[kind]?'':'primary'}" data-act="prepareMail" data-kind="${kind}" data-id="${s.id}">${label}</button>${log[kind]?`<span class="muted mail-done">préparé le ${fmtDate(log[kind].at.slice(0,10))}</span>`:''}`;
+  const fiche = s.fiche_submitted_at
+    ? `<span class="badge ok-badge">Fiche remplie le ${fmtDate(s.fiche_submitted_at.slice(0,10))}</span> <button class="btn sm" data-act="ficheAnswers" data-id="${s.id}">Voir les réponses</button>`
+    : `<span class="muted">Fiche pas encore remplie par l’organisateur.</span>`;
+  return `<div class="prod-mails">
+    <h3 class="block-title">Mails et fiche de renseignements</h3>
+    <div class="mail-btns">
+      <span>${btn('confirmation', 'Préparer la confirmation')}</span>
+      ${booking ? '' : `<span>${btn('boucle_tech', 'Boucle accueil & technique')}</span><span>${btn('boucle_com', 'Boucle communication')}</span>`}
+    </div>
+    ${booking ? '' : `<div class="fiche-line">${fiche}
+      <button class="btn sm ghost" data-act="copyFiche" data-id="${s.id}">Copier le lien de la fiche</button>
+      <a class="btn sm ghost" href="fiche.html?t=${esc(s.fiche_token||'')}" target="_blank" rel="noopener">Ouvrir la fiche</a></div>`}
+  </div>`;
+}
+
 export function driveHTML(s){
   if (s.drive_folder_id) return `<a class="btn sm" href="https://drive.google.com/drive/folders/${esc(s.drive_folder_id)}" target="_blank" rel="noopener">Ouvrir le dossier Drive</a>
+    ${setting('drive_webhook_url') ? `<button class="btn sm ghost" data-act="finderPath" data-id="${s.id}">Copier le chemin Finder</button>` : ''}
     <button class="btn sm ghost" data-act="linkDrive" data-id="${s.id}">Changer de dossier</button>`;
   const state = s.drive_folder_error ? `<span class="err">Dossier non créé : ${esc(s.drive_folder_error)}</span>`
     : s.drive_folder_requested_at ? '<span class="muted">Création du dossier en cours…</span>' : '<span class="muted">Pas encore de dossier Drive.</span>';

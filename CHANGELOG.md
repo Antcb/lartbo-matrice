@@ -5,6 +5,13 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.10.0 — 10/10/2026
+- Modèles de mail par artiste (confirmations CC / CC Club / CC Festival / CCR Club, boucles accueil & technique et communication) avec balises remplies automatiquement : Réglages et onglet « Modèles de mail » du projet
+- Production : « Préparer la confirmation » et les boucles — vérification du cachet, de la TVA, du contrat et des acomptes, choix du destinataire, aperçu modifiable, brouillon Gmail (ou copie du mail)
+- Fiche de renseignements en ligne (fiche.html) propre à chaque date : conditions à jour et verrouillées, l’organisateur remplit ses coordonnées (enregistrées sur la structure) ; pré-contrat coché et notification à l’envoi ; réponses consultables et modifiables
+- Script Google : brouillons Gmail, dossiers nommés « MM_DD • Ville • Salle (CP) », rattachement des dossiers existants, chemin Finder, brouillons automatiques des boucles et récap quotidien par mail
+
+
 ## 1.9.0 — 10/10/2026
 - Notes d'échange gardées en brouillon (même en cliquant ailleurs ou en quittant la page) ; un nouveau suivi n'est plus supprimé tant qu'il contient quelque chose
 - Échanges du journal modifiables (sans changer leur date)

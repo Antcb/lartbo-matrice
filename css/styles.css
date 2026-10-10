@@ -508,3 +508,33 @@ input[type=range]{accent-color:var(--brand);flex:1;min-width:120px}
 .mini-task input[type=checkbox]{width:16px;height:16px;accent-color:var(--brand)}
 .prod-body{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .prod-bill{grid-column:1/-1}
+/* 18 — Mails, modèles et fiche (v1.10) --------------------------------- */
+.prod-mails{grid-column:1/-1;border-top:1px solid var(--line-2);padding-top:14px}
+.mail-btns{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+.mail-btns>span{display:inline-flex;gap:8px;align-items:center}
+.mail-done{font-size:12px}
+.fiche-line{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px;font-size:13px}
+.ok-badge{background:#E3F1E7;color:var(--ok);border-radius:999px;padding:3px 10px;font-weight:600;font-size:12px}
+.mail-grid{display:grid;grid-template-columns:110px 1fr;gap:8px 12px;align-items:center;margin:10px 0}
+.mail-grid>label{font-weight:600;font-size:13px;color:var(--muted)}
+.mail-to{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mail-preview{border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;background:#fff;min-height:220px;max-height:52vh;overflow:auto;font-size:14px;line-height:1.45}
+.mail-preview:focus{outline:2px solid var(--brand-2);outline-offset:1px}
+.conf-check{background:var(--soft);border-radius:var(--r);padding:10px 12px;font-size:13px;display:grid;gap:4px;margin-bottom:6px}
+.conf-check.warn{background:#FFF6E0}
+.conf-check .err{color:var(--danger);font-weight:600}
+.check-line{display:flex;gap:8px;align-items:center;font-size:13px;margin-top:8px}
+.tag-bar{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.chip-btn{border:1px solid var(--line);background:var(--soft);border-radius:999px;padding:3px 9px;font:12px/1.4 Geist,system-ui,sans-serif;color:var(--ink);cursor:pointer}
+.chip-btn:hover{background:var(--brand-tint)}
+.tpl-list{display:grid;gap:6px}
+.tpl-row{display:grid;grid-template-columns:minmax(150px,220px) 1fr auto;gap:12px;align-items:center;text-align:left;border:1px solid var(--line-2);background:var(--panel);border-radius:var(--r);padding:9px 12px;cursor:pointer;font:inherit;color:inherit}
+.tpl-row:hover{border-color:var(--brand-2)}
+.tpl-kind{font-size:12px;color:var(--muted)}
+.secret-line{display:flex;gap:8px;align-items:center}
+@media (max-width:720px){
+  .mail-grid{grid-template-columns:1fr}
+  .mail-to{grid-template-columns:1fr}
+  .tpl-row{grid-template-columns:1fr}
+}
+.mail-wrap{grid-column:1/-1;min-width:0}

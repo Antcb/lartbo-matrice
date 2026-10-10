@@ -20,6 +20,9 @@ js/
   selectors.js        lecture des données (noms, filtres, suivis, urgence des tâches)
   calc.js             🧮 calculs : acomptes, solde, commission L'ArtBo, part Pyrprod, net
   reminders.js        règles de relance de la production (mêmes règles que les notifications)
+  mail.js             modèles de mail : choix du modèle, balises, aperçu, brouillon Gmail, éditeur
+  fiche.js            page publique de la fiche de renseignements (fiche.html)
+  fiche-fields.js     champs de la fiche (page publique + fiche dans l'app)
   geo.js              recherche de villes / adresses, distances, itinéraires
   ui/cells.js         champs modifiables directement dans les tableaux
   ui/bits.js          pastilles de statut, onglets de page, filtres, zone de dépôt de fichiers
@@ -41,7 +44,8 @@ supabase/             structure de la base, import Notion, fonctions serveur
   functions/resume-suivi   résumé de suivi par IA
   functions/backup-export  export utilisé par la sauvegarde quotidienne
 backup/               modèle du dépôt de sauvegarde privé (lartbo-matrice-backup)
-apps-script/          création automatique des dossiers Drive (Code.gs)
+apps-script/          script Google du compte production@ : dossiers Drive, brouillons Gmail, récap quotidien (Code.gs, voir apps-script/README.md)
+fiche.html            fiche de renseignements à remplir par l'organisateur (lien unique par date)
 ```
 
 ## Où modifier quoi
@@ -59,6 +63,9 @@ apps-script/          création automatique des dossiers Drive (Code.gs)
 | La carte, les distances, les trajets                | `js/geo.js`, `js/views/booking.js` |
 | Les comptes autorisés                               | `js/config.js` + table `app_users` |
 | Le nom ou le contenu des dossiers Drive             | `apps-script/Code.gs`           |
+| Le texte des mails (confirmation, boucles)          | dans l'app : Réglages › Modèles de mail |
+| Les balises des mails ({{date}}, {{cachet_ht}}…)    | fonction SQL `mail_vars` (migration v1.10) + `TAGS` dans `js/mail.js` |
+| Les questions de la fiche de renseignements         | `js/fiche-fields.js` (+ liste `allowed` de `fiche_submit` pour l'organisateur) |
 | Le texte demandé à l'IA pour les résumés            | `supabase/functions/resume-suivi/index.ts` |
 
 ## Publier une mise à jour

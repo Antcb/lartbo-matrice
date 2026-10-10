@@ -51,13 +51,15 @@ function header(){
   </header>`;
 }
 
+const NOTIF_MAIL = {boucle_accueil:'boucle_tech', boucle_com:'boucle_com'};
+
 function notifPanel(){
   const list = S.db.notifications.slice().sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,60);
   const me = S.user.email;
   return `<div class="menu notif-menu" role="dialog" aria-label="Notifications">
     <div class="menu-head"><b>Notifications</b><span class="spacer"></span>${list.some(n=>!(n.read_by||[]).includes(me))?'<button class="btn sm ghost" data-act="readAllNotifs">Tout marquer comme lu</button>':''}</div>
     ${list.map(n=>`<div class="notif ${(n.read_by||[]).includes(me)?'':'unread'}" data-act="openNotif" data-id="${n.id}">
-      <div class="notif-title">${esc(n.title)}</div>${n.body?`<div class="notif-body">${esc(n.body)}</div>`:''}<div class="notif-date">${fmtDate((n.created_at||'').slice(0,10))}</div></div>`).join('')
+      <div class="notif-title">${esc(n.title)}</div>${n.body?`<div class="notif-body">${esc(n.body)}</div>`:''}<div class="notif-date">${fmtDate((n.created_at||'').slice(0,10))}${NOTIF_MAIL[n.kind] && n.show_id ? ` <button class="btn sm" data-act="prepareMail" data-kind="${NOTIF_MAIL[n.kind]}" data-id="${n.show_id}">Préparer le mail</button>` : ''}</div></div>`).join('')
       || '<div class="empty">Aucune notification.</div>'}</div>`;
 }
 

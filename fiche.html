@@ -3,26 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Matrice — L'ArtBoristerie Productions</title>
+  <title>Fiche de renseignements — L'ArtBoristerie Productions</title>
+  <meta name="robots" content="noindex, nofollow">
   <link rel="icon" type="image/png" href="assets/favicon.png">
-  <link rel="apple-touch-icon" href="assets/icon-180.png">
   <meta name="theme-color" content="#283C63">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&display=swap">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <link rel="stylesheet" href="css/styles.css?v=1.10.0">
-  <!-- Bibliothèques : carte (Leaflet) et base de données (Supabase) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <link rel="stylesheet" href="css/fiche.css?v=1.10.0">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 </head>
-<body>
-  <!-- Toute l'interface est générée par js/app.js et js/views/*.js -->
-  <div id="app"></div>
-  <!-- Fenêtre des formulaires (js/ui/modal.js) -->
-  <dialog id="modal"></dialog>
-  <!-- Création rapide par-dessus un formulaire (ex. nouvelle structure depuis une tâche) -->
-  <dialog id="modal2"></dialog>
+<body class="fiche-page">
+  <!-- Page publique : l'organisateur remplit ses coordonnées pour le contrat (js/fiche.js) -->
+  <header class="fiche-top"><img src="assets/logo.png" alt="L'ArtBoristerie Productions" height="44"></header>
+  <main id="fiche" class="fiche-main"><div class="loading">Chargement de la fiche…</div></main>
 
   <!-- import-map:début (généré par tools/bump_version.py) -->
   <script type="importmap">
@@ -65,6 +60,6 @@
   }
   </script>
   <!-- import-map:fin -->
-  <script type="module" src="js/app.js?v=1.10.0"></script>
+  <script type="module" src="js/fiche.js?v=1.10.0"></script>
 </body>
 </html>

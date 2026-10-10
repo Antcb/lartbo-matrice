@@ -1,9 +1,10 @@
 /**
  * Onglet Projets : cartes des artistes (photo carrée, inactifs repliés) et page projet avec ses onglets :
  * Aperçu (cachets et commissions par année), Dates, Suivis, Tâches, Échanges, Liens, Drive,
- * Administratif (structure juridique de l'artiste), Membres (import CSV Movinmotion possible).
+ * Administratif (structure juridique de l'artiste), Membres (import CSV Movinmotion possible), Modèles de mail.
  */
 import { netArtbo } from '../calc.js';
+import { templatesList } from '../mail.js';
 import { CONFIRMED_PROD, LOG_ICON, stClass } from '../constants.js';
 import { signedCached, signedUrl } from '../data.js';
 import { attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, structName, tasksOfProject } from '../selectors.js';
@@ -63,9 +64,9 @@ export function projectPage(p){
   const tab = curTab('project', 'overview');
   const tabs = tabsBar('project', [['overview','Aperçu'], ['dates','Dates', shows.length], ['suivis','Suivis', suivis.filter(x=>x.status!=='Closed').length],
     ['tasks','Tâches', tasks.filter(t=>!isDone(t)).length], ['logs','Échanges', logs.length], ['links','Liens', (p.links||[]).length],
-    ['drive','Drive'], ['admin','Administratif'], ['members','Membres', members.length]]);
+    ['drive','Drive'], ['mails','Modèles de mail', S.db.mail_templates.filter(t=>t.project_id===p.id).length], ['admin','Administratif'], ['members','Membres', members.length]]);
   const body = {overview, dates:datesTab, suivis:suivisTab, tasks:() => `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newTaskProject" data-id="${p.id}">Nouvelle tâche</button></div>${taskSection(tasks)}`,
-    logs:logsTab, links:linksTab, drive:driveTab, admin:adminTab, members:membersTab}[tab](p, {shows, tasks, suivis, logs, members});
+    logs:logsTab, links:linksTab, drive:driveTab, mails:mailsTab, admin:adminTab, members:membersTab}[tab](p, {shows, tasks, suivis, logs, members});
   return `<button class="btn ghost back" data-act="closeProject">← Projets</button>
   <div class="project-hero">
     <div style="display:flex;flex-direction:column;gap:6px;align-items:center">${photoHTML(p, 'lg')}<button class="btn sm ghost" data-act="projectPhoto" data-id="${p.id}">${p.photo_path?'Changer / recadrer':'Ajouter une photo'}</button></div>
@@ -175,4 +176,10 @@ function membersTab(p, {members}){
   </tbody></table></div>
   <div class="dropzone" data-members-drop="${p.id}" style="margin-top:12px"><label class="btn sm file-btn">Importer un export Movinmotion (CSV)<input type="file" class="file-input" accept=".csv,text/csv" data-members-import="${p.id}"></label>
     <span class="drop-hint">ou glisse le fichier ici — nom, prénom, mail, téléphone, poste, adresse et naissance sont rangés ; toutes les autres colonnes (sécurité sociale, congés spectacles, IBAN…) vont dans la fiche complète. Un membre déjà présent est mis à jour.</span></div>`;
+}
+
+function mailsTab(p){
+  return `<div class="panel pad"><p class="help" style="margin:0 0 12px">Modèles utilisés pour les mails de cet artiste (confirmation, boucles). Sans modèle ici, les modèles génériques des Réglages servent.</p>
+    ${templatesList(p.id)}
+    <div class="vh-actions" style="margin-top:12px"><button class="btn primary" data-act="newTemplate" data-project="${p.id}">Nouveau modèle</button></div></div>`;
 }

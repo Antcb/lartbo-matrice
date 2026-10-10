@@ -8,7 +8,7 @@ const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SE
 });
 const TABLES = ['app_users', 'settings', 'partners', 'projects', 'structures', 'contacts', 'contact_structures',
   'shows', 'show_payments', 'prospects', 'prospect_logs', 'prospect_files', 'tasks',
-  'structure_events', 'project_logs', 'project_members', 'attachments', 'notifications'];
+  'structure_events', 'project_logs', 'project_members', 'attachments', 'notifications', 'mail_templates'];
 // colonne(s) de tri pour lire les grandes tables page par page
 const ORDER: Record<string, string[]> = { app_users: ['email'], settings: ['key'], contact_structures: ['contact_id', 'structure_id'] };
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });
@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
     for (const t of TABLES) tables[t] = await all(t);
 
     const files = [...(tables.prospect_files as any[]), ...(tables.attachments as any[]),
-      ...(tables.projects as any[]).filter((p) => p.photo_path).map((p) => ({path: p.photo_path, size: 0}))].filter((f) => f.path && f.mime !== 'link');
+      ...(tables.projects as any[]).flatMap((p) => [p.photo_path, p.photo_orig].filter(Boolean).map((path) => ({path, size: 0})))].filter((f) => f.path && f.mime !== 'link');
     const out: { path: string; url: string; size: number }[] = [];
     for (let i = 0; i < files.length; i += 100) {
       const chunk = files.slice(i, i + 100);
