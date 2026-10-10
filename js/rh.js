@@ -12,7 +12,7 @@ const root = document.getElementById('fiche');
 const token = new URLSearchParams(location.search).get('t') || '';
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const FILLED = '__rempli__';
-const PART = new URLSearchParams(location.search).get('p') === 'extra' ? 'extra' : 'main';
+const PART = new URLSearchParams(location.search).get('p') === 'main' ? 'main' : 'extra';   // le lien envoyé = infos complémentaires
 const SECTIONS = RH_SECTIONS.filter(s => partOf(s) === PART), DOCS = RH_DOCS.filter(d => d[3] === PART);
 
 async function load(){
@@ -24,11 +24,13 @@ async function load(){
 }
 function fail(msg){ root.innerHTML = `<div class="panel pad fiche-msg">${esc(msg)}</div>`; }
 
-function input(f, v){
+const cond = (c, values) => c ? ` data-if="${c[0]}" data-eq="${esc(c[1])}"${values[c[0]] !== c[1] ? ' hidden' : ''}` : '';
+
+function input(f, v, values){
   const id = 'f-' + f.k, known = v === FILLED;
   const req = f.req && !known ? ' required' : '';
   const lab = `${esc(f.label)}${f.req ? ' <span class="req" aria-hidden="true">*</span>' : ''}`;
-  const wrap = inner => `<div class="field${f.full ? ' full' : ''}">${inner}</div>`;
+  const wrap = inner => `<div class="field${f.full ? ' full' : ''}"${cond(f.if, values)}>${inner}</div>`;
   if (f.type === 'choice') return wrap(`<fieldset class="choice"${req ? ' data-req="1"' : ''}><legend>${lab}</legend>${f.options.map(o => `<label><input type="radio" name="${f.k}" value="${esc(o)}" ${o === v ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</fieldset>`);
   const ph = known ? 'Déjà renseigné — laisse vide pour garder' : (f.placeholder || '');
   return wrap(`<label for="${id}">${lab}</label><input id="${id}" name="${f.k}" type="${f.type || 'text'}" value="${known ? '' : esc(v)}"${ph ? ` placeholder="${esc(ph)}"` : ''}${f.secret ? ' autocomplete="off"' : ''}${req}>`);
@@ -37,25 +39,28 @@ function input(f, v){
 function draw(d){
   const info = d.info || {}, have = new Set(d.docs || []);
   const val = f => (['first_name','last_name','email','phone'].includes(f.k) ? d[f.k] : info[f.k]) ?? f.def ?? '';
+  const values = {}; SECTIONS.forEach(sec => sec.fields.forEach(f => values[f.k] = val(f)));
   root.innerHTML = `
     <section class="panel pad"><p class="fiche-kicker">${esc(RH_PARTS[PART])}</p><h1>${esc([d.first_name, d.last_name].filter(Boolean).join(' ') || 'Bienvenue')}</h1>
-      <p class="help">Ces informations servent à établir tes contrats et bulletins de paie avec L’ArtBoristerie Productions. Elles restent confidentielles.</p>
+      <p class="help">${PART === 'extra' ? 'Quelques informations en plus de ta fiche Movinmotion, utiles pour les déplacements en tournée. Elles restent confidentielles.' : 'Ces informations servent à établir tes contrats et bulletins de paie avec L’ArtBoristerie Productions. Elles restent confidentielles.'}</p>
       ${d.submitted_at ? `<p class="fiche-engage">Fiche déjà envoyée le ${new Date(d.submitted_at).toLocaleDateString('fr-FR')}. Tu peux la compléter ou la corriger.</p>` : ''}</section>
     <form id="rh-form" class="fiche-form" novalidate>
       ${SECTIONS.map(sec => `<section class="panel pad"><h2>${esc(sec.title)}</h2>${sec.help ? `<p class="help">${esc(sec.help)}</p>` : ''}
-        <div class="fiche-grid">${sec.fields.map(f => input(f, val(f))).join('')}</div></section>`).join('')}
+        <div class="fiche-grid">${sec.fields.map(f => input(f, values[f.k], values)).join('')}</div></section>`).join('')}
       ${DOCS.length ? `<section class="panel pad"><h2>Pièces justificatives</h2><p class="help">Photo ou PDF${PART === 'main' ? '. Pour la carte d’identité, recto et verso.' : '.'}</p>
-        <div class="fiche-grid">${DOCS.map(([k, l, req]) => `<div class="field"><label for="d-${k}">${esc(l)}${req && !have.has(k) ? ' <span class="req">*</span>' : ''}${have.has(k) ? ' <span class="doc-ok">✓ déjà reçu</span>' : ''}</label>
-          <input id="d-${k}" type="file" data-doc="${k}" data-label="${esc(l)}" accept="image/*,application/pdf" multiple${req && !have.has(k) ? ' data-req-doc="1"' : ''}></div>`).join('')}</div></section>` : ''}
+        <div class="fiche-grid">${DOCS.map(([k, l, req, , c]) => `<div class="field"${cond(c, values)}><label for="d-${k}">${esc(l)}${(req || c) && !have.has(k) ? ' <span class="req">*</span>' : ''}${have.has(k) ? ' <span class="doc-ok">✓ déjà reçu</span>' : ''}</label>
+          <input id="d-${k}" type="file" data-doc="${k}" data-label="${esc(l)}" accept="image/*,application/pdf" multiple${(req || c) && !have.has(k) ? ' data-req-doc="1"' : ''}></div>`).join('')}</div></section>` : ''}
       <div class="fiche-actions"><p class="help"><span class="req">*</span> obligatoire</p><button class="btn primary" type="submit">Envoyer</button></div>
     </form>`;
   const form = document.getElementById('rh-form');
+  form.addEventListener('change', e => { if (e.target.type === 'radio') form.querySelectorAll(`[data-if="${e.target.name}"]`).forEach(w => { w.hidden = e.target.value !== w.dataset.eq; }); });
   form.addEventListener('submit', async e => {
     e.preventDefault();
     form.querySelectorAll('.invalid').forEach(x => x.classList.remove('invalid'));
-    const missing = [...form.querySelectorAll('[required]')].filter(x => !x.value.trim())
-      .concat([...form.querySelectorAll('fieldset[data-req]')].filter(fs => !fs.querySelector('input:checked')))
-      .concat([...form.querySelectorAll('[data-req-doc]')].filter(x => !x.files.length));
+    const shown = x => !x.closest('[hidden]');
+    const missing = [...form.querySelectorAll('[required]')].filter(x => shown(x) && !x.value.trim())
+      .concat([...form.querySelectorAll('fieldset[data-req]')].filter(fs => shown(fs) && !fs.querySelector('input:checked')))
+      .concat([...form.querySelectorAll('[data-req-doc]')].filter(x => shown(x) && !x.files.length));
     if (missing.length){ missing.forEach(x => x.classList.add('invalid')); (missing[0].querySelector?.('input') || missing[0]).focus(); return note(`Il manque ${missing.length} élément${missing.length > 1 ? 's' : ''} obligatoire${missing.length > 1 ? 's' : ''}.`, true); }
     const v = Object.fromEntries([...new FormData(form)].filter(([, x]) => typeof x === 'string').map(([k, x]) => [k, x.trim()]));
     const main = {}, data = {};

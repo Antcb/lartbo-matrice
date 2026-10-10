@@ -48,6 +48,7 @@ function doPost(e) {
     else if (action === 'contract') out = createContract_(body);
     else if (action === 'contract_pdf') out = contractPdf_(body.doc_id);
     else if (action === 'rh_folders') out = rhFolders_();
+    else if (action === 'rh_sheet') out = rhSheet_(body);
     else if (action === 'rh_file_docs') out = { ok: true, filed: rhFileDocs_() };
     else if (action === 'rename_audit') out = renameAudit();
     else if (action === 'rename_apply') out = renameApply();
@@ -243,6 +244,23 @@ function rhFolders_() {
     sb_('PATCH', 'employees?id=eq.' + e.id, { drive_folder_id: f.getId() });
   });
   return { ok: true, created: created, linked: linked };
+}
+
+/** Fiche RH (Google Sheet) du salarié à partir du modèle « Fiche RH 2026 », balises <<…>> remplies */
+function rhSheet_(b) {
+  var tpl = setting_('rh_sheet_template') || '1T3T1gwquWRLsruEeUA0xDn6yt-HRIwqozs6NU5lMp_o';
+  var e = sb_('GET', 'employees?id=eq.' + b.employee_id + '&select=id,last_name,first_name,drive_folder_id')[0];
+  if (!e.drive_folder_id) { rhFolders_(); e = sb_('GET', 'employees?id=eq.' + b.employee_id + '&select=id,last_name,first_name,drive_folder_id')[0]; }
+  var folder = DriveApp.getFolderById(e.drive_folder_id);
+  var old = folder.getFilesByName(b.name);
+  while (old.hasNext()) old.next().setTrashed(true);
+  var copy = DriveApp.getFileById(tpl).makeCopy(b.name, folder);
+  var ss = SpreadsheetApp.openById(copy.getId());
+  ss.getSheets().forEach(function (sh) {
+    Object.keys(b.values || {}).forEach(function (k) { sh.createTextFinder('<<' + k + '>>').matchCase(false).replaceAllWith(String(b.values[k] || '')); });
+    sh.createTextFinder('<<[^>]*>>').useRegularExpression(true).replaceAllWith('');
+  });
+  return { ok: true, url: ss.getUrl() };
 }
 
 /** Range dans le Drive les pièces en attente (stockage temporaire « rh »), puis les supprime du stockage */

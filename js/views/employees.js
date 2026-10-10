@@ -58,11 +58,11 @@ export function editEmployee(id){
   const values = {...Object.fromEntries([...RH_FIELDS, ...RH_TEAM_FIELDS].map(f => [f.k, val(e, f)])), active: e.active, id};
   const mm = e.info?.movinmotion || {};
   const extra = id ? `<div class="mail-wrap emp-extra">
-    <h3 class="block-title">Questionnaires à faire remplir</h3>
-    <p class="help">Un lien propre à ce salarié : il remplit lui-même ses infos et envoie ses pièces depuis son téléphone, tout arrive ici. ${e.form_submitted_at ? `Dernière réponse le ${fmtDate(e.form_submitted_at.slice(0,10))}.` : e.form_sent_at ? `Envoyé le ${fmtDate(e.form_sent_at.slice(0,10))}.` : ''}</p>
-    ${Object.entries(RH_PARTS).map(([k, l]) => `<div class="vh-actions" style="margin-bottom:6px"><b class="fiche-lbl" style="min-width:150px">${esc(l)}</b>
-      <button type="button" class="btn sm primary" data-act="rhSendForm" data-part="${k}" data-id="${e.id}">Préparer le mail</button>
-      <button type="button" class="btn sm" data-act="rhCopyLink" data-part="${k}" data-id="${e.id}">Copier le lien</button></div>`).join('')}
+    <h3 class="block-title">Infos complémentaires</h3>
+    <p class="help">La fiche se remplit avec l’export Movinmotion. Pour le reste (permis, cartes SNCF / Flying Blue…), envoie-lui son lien : il remplit depuis son téléphone, tout arrive ici et ses pièces sont rangées dans son dossier Drive. ${e.form_submitted_at ? `Répondu le ${fmtDate(e.form_submitted_at.slice(0,10))}.` : e.form_sent_at ? `Envoyé le ${fmtDate(e.form_sent_at.slice(0,10))}.` : ''}</p>
+    <div class="vh-actions"><button type="button" class="btn sm primary" data-act="rhSendForm" data-part="extra" data-id="${e.id}">Préparer le mail</button>
+      <button type="button" class="btn sm" data-act="rhCopyLink" data-part="extra" data-id="${e.id}">Copier le lien</button>
+      <button type="button" class="btn sm ghost" data-act="rhSheet" data-id="${e.id}">Créer la fiche RH (Google Sheet)</button></div>
     <h3 class="block-title" style="margin-top:16px">Pièces et documents</h3>
     ${docsHTML(e)}
     <div class="vh-actions" style="margin-top:8px">
@@ -99,7 +99,7 @@ function docsHTML(e){
 
 // ─────────────── Actions ───────────────
 
-const formLink = (e, part) => (setting('site_url') || location.origin + location.pathname.replace(/[^/]*$/, '')) + 'rh.html?t=' + e.form_token + (part === 'extra' ? '&p=extra' : '');
+const formLink = (e, part) => (setting('site_url') || location.origin + location.pathname.replace(/[^/]*$/, '')) + 'rh.html?t=' + e.form_token + (part === 'main' ? '&p=main' : '');
 
 export const EMP_ACTIONS = {
   newEmployee: () => editEmployee(null),
@@ -112,7 +112,7 @@ export const EMP_ACTIONS = {
     if (!e.email) return toast('Ajoute d’abord son mail', true);
     const extra = t.dataset.part === 'extra', link = formLink(e, t.dataset.part);
     const html = extra
-      ? `<p>Bonjour ${esc(e.first_name || '')},</p><p>Pour organiser au mieux les déplacements en tournée, peux-tu compléter ces quelques infos (véhicule, carte grise, cartes SNCF / Flying Blue, régime alimentaire) ici :</p><p><a href="${link}">Compléter mes infos complémentaires</a></p><p>Merci !</p><p>Chloé</p>`
+      ? `<p>Bonjour ${esc(e.first_name || '')},</p><p>Pour compléter ta fiche et organiser au mieux les déplacements en tournée, peux-tu remplir ces quelques infos (permis de conduire, cartes SNCF / Flying Blue, régime alimentaire) ici :</p><p><a href="${link}">Compléter mes infos complémentaires</a></p><p>Merci !</p><p>Chloé</p>`
       : `<p>Bonjour ${esc(e.first_name || '')},</p><p>Pour préparer tes contrats et bulletins de paie avec L’ArtBoristerie Productions, peux-tu compléter ta fiche RH et nous envoyer tes pièces (CNI, carte vitale, RIB, permis…) ici :</p><p><a href="${link}">Compléter ma fiche RH</a></p><p>Ça prend 5 minutes, depuis ton téléphone si tu veux. Merci !</p><p>Chloé</p>`;
     const subject = extra ? 'L’ArtBoristerie Productions • Infos complémentaires' : 'L’ArtBoristerie Productions • Ta fiche RH';
     try {
@@ -121,6 +121,12 @@ export const EMP_ACTIONS = {
       await save('employees', e.id, {form_sent_at: new Date().toISOString()}, {rerender:false});
     } catch (err) { toast(err.message, true); }
   },
+  rhSheet: async t => {
+    const e = byId('employees', t.dataset.id);
+    const values = {}; [...RH_FIELDS, ...RH_TEAM_FIELDS].forEach(f => { if (f.ph){ let v = val(e, f) ?? ''; if (f.type === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(v)) v = v.split('-').reverse().join('/'); values[f.ph] = v; } });
+    try { toast('Création de la fiche RH…'); const out = await callScript('rh_sheet', {employee_id: e.id, name: 'Fiche RH ' + fullName(e), values});
+      toast('Fiche RH créée dans son dossier Drive', false, {label:'Ouvrir', fn: () => window.open(out.url, '_blank')}); }
+    catch (err) { toast(err.message, true); } },
   rhFolder: async () => { try { const out = await callScript('rh_folders', {}); toast(`${out.created || 0} dossier(s) créé(s), ${out.linked || 0} rattaché(s)`); await reload(); } catch (err) { toast(err.message, true); } },
   rhFileDocs: async t => { if (t) t.disabled = true; toast('Rangement des pièces dans le Drive…');
     try { const out = await callScript('rh_file_docs', {}); toast(`${out.filed} pièce(s) rangée(s) dans le Drive`); await reload(); } catch (err) { toast(err.message, true); }

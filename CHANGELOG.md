@@ -5,6 +5,12 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.13.1 — 10/10/2026
+- Salariés : nouveau fonctionnement — l’export Movinmotion remplit la fiche, le lien envoyé au salarié ne demande que les infos complémentaires (permis 4a/4b, permis B, cartes SNCF, Flying Blue, scan du permis) et range tout
+- Salariés : « Créer la fiche RH » génère le Google Sheet depuis le modèle Fiche RH 2026 dans son dossier
+- Suivi : dates sans suite, annulées ou d’autres artistes repliées
+
+
 ## 1.13.0 — 10/10/2026
 - Booking : un clic sur une pastille de statut sous la carte la masque / l’affiche ; enchaînements repliés par défaut ; export des dates (un artiste, année complète ou période, statuts, avec ou sans cachets)
 - Exports en Excel aux couleurs de L’ArtBoristerie (logo, titre, en-têtes) pour les partenaires, ou CSV brut : dates et suivis

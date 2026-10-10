@@ -11,7 +11,7 @@ import { lingering } from '../data.js';
 import { distKm, routeCached, route } from '../geo.js';
 import { byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, projIds, projName, projNames, projectOptions, showCoords, showsOfProject, structName } from '../selectors.js';
 import { S, localGet, localSet } from '../state.js';
-import { dropZone, fileRow, projPicker, stSelect, pstBadge, stBadge, tabsBar, curTab, viewHead } from '../ui/bits.js';
+import { dropZone, fileRow, fold, projPicker, stSelect, pstBadge, stBadge, tabsBar, curTab, viewHead } from '../ui/bits.js';
 import { cAc, cIn, cSel, projChips } from '../ui/cells.js';
 import { acInput } from '../ui/autocomplete.js';
 import { dateInput } from '../ui/datefield.js';
@@ -155,11 +155,15 @@ const addY = (d, n) => `${Number(d.slice(0,4))+n}${d.slice(4)}`;
 
 function sidePanel(p, st, proj, linked){
   const ids = projIds(p);
-  const linkedHTML = `<div class="panel pad"><h3 class="block-title">Dates de ce suivi <span class="count">${linked.length}</span></h3>
-    ${linked.map(s=>`<div class="plan-row ${s.date===S.wsTarget?'target':''}" data-id="${s.id}"><span class="d">${period(s)}<br><span class="muted" style="font-weight:400">${s.date?s.date.slice(0,4):''}</span></span>
+  // Dates sans suite, annulées ou d'un artiste qui n'est pas dans ce suivi : repliées
+  const active = linked.filter(s => !isOff(s.status) && ids.includes(s.project_id)), others = linked.filter(s => !active.includes(s));
+  const linkedRow = s=>`<div class="plan-row ${s.date===S.wsTarget?'target':''}" data-id="${s.id}"><span class="d">${period(s)}<br><span class="muted" style="font-weight:400">${s.date?s.date.slice(0,4):''}</span></span>
       <span><b>${esc(projName(s.project_id))}</b> <span class="muted">${esc(s.venue)}</span><br>${stSelect(s)} ${s.fee_ht?`<b class="fee-tag">${eur(s.fee_ht)} HT</b>`:''}</span>
       <span style="display:flex;gap:4px;flex-direction:column;align-items:flex-end"><button type="button" class="btn sm" data-act="editShow" data-id="${s.id}">Modifier</button>
-        ${s.date && s.date!==S.wsTarget?`<button type="button" class="btn sm ghost" data-act="wsSetTarget" data-d="${s.date}">Centrer</button>`:''}</span></div>`).join('') || '<p class="muted" style="margin:0 0 6px">Aucune date posée pour ce suivi.</p>'}
+        ${s.date && s.date!==S.wsTarget?`<button type="button" class="btn sm ghost" data-act="wsSetTarget" data-d="${s.date}">Centrer</button>`:''}</span></div>`;
+  const linkedHTML = `<div class="panel pad"><h3 class="block-title">Dates de ce suivi <span class="count">${active.length}</span></h3>
+    ${active.map(linkedRow).join('') || '<p class="muted" style="margin:0 0 6px">Aucune date en cours pour ce suivi.</p>'}
+    ${others.length ? fold('suivi-others', 'Sans suite, annulées ou autres artistes', others.map(linkedRow).join(''), {count: others.length}) : ''}
     <div class="field" style="margin-top:8px"><label>Rattacher une date existante</label>${acInput('shows', {attrs:`data-link-show="${p.id}"`, placeholder:'Chercher une date (artiste, lieu, date)…'})}</div></div>`;
   if (!ids.length) return linkedHTML + `<div class="panel pad"><p class="muted" style="margin:0">Ajoute l'artiste concerné (+ Projet) pour voir son planning et ses dates autour.</p></div>`;
   const target = S.wsTarget;
