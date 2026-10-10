@@ -277,13 +277,13 @@ function rhFileDocs_() {
       if ((d.kind === 'bds' || d.kind === 'ndf') && !special) { Logger.log('Dossier des ' + (d.kind === 'bds' ? 'bulletins' : 'notes de frais') + ' non renseigné'); return; }
       var folder = DriveApp.getFolderById(special || e.drive_folder_id);
       var url = p.SUPABASE_URL + '/storage/v1/object/rh/' + d.path.split('/').map(encodeURIComponent).join('/');
-      var res = UrlFetchApp.fetch(url, { headers: { apikey: p.SUPABASE_SERVICE_KEY, Authorization: 'Bearer ' + p.SUPABASE_SERVICE_KEY }, muteHttpExceptions: true });
+      var res = UrlFetchApp.fetch(url, { headers: authHeaders_({}), muteHttpExceptions: true });
       if (res.getResponseCode() >= 300) { Logger.log('Pièce introuvable : ' + d.path); return; }
       var ext = (String(d.name || d.path).match(/\.(\w{1,5})$/) || ['', 'pdf'])[1].toLowerCase();
       var base = d.target || ((RH_LABELS[d.kind] || 'Document') + ' - ' + rhName_(e)), name = base + '.' + ext, n = 1;
       while (folder.getFilesByName(name).hasNext()) name = base + ' (' + (++n) + ').' + ext;
       var file = folder.createFile(res.getBlob().setName(name));
-      UrlFetchApp.fetch(url, { method: 'delete', headers: { apikey: p.SUPABASE_SERVICE_KEY, Authorization: 'Bearer ' + p.SUPABASE_SERVICE_KEY }, muteHttpExceptions: true });
+      UrlFetchApp.fetch(url, { method: 'delete', headers: authHeaders_({}), muteHttpExceptions: true });
       d.file_id = file.getId(); d.drive_name = name; d.path = null; changed = true; filed++;
     });
     if (changed) sb_('PATCH', 'employees?id=eq.' + e.id, { docs: docs });
@@ -398,16 +398,20 @@ function copyContents_(src, dest) {
   }
 }
 
+/** Clé secrète Supabase : ancienne clé « service_role » (eyJ…) ou nouvelle clé secrète (sb_secret_…) */
+function authHeaders_(extra) {
+  var key = props_().SUPABASE_SERVICE_KEY, h = { apikey: key };
+  if (/^eyJ/.test(key)) h.Authorization = 'Bearer ' + key;
+  Object.keys(extra || {}).forEach(function (k) { h[k] = extra[k]; });
+  return h;
+}
+
 function sb_(method, path, payload) {
   var p = props_();
   var opts = {
     method: method,
     muteHttpExceptions: true,
-    headers: {
-      apikey: p.SUPABASE_SERVICE_KEY,
-      Authorization: 'Bearer ' + p.SUPABASE_SERVICE_KEY,
-      Prefer: 'return=representation'
-    },
+    headers: authHeaders_({ Prefer: 'return=representation' }),
     contentType: 'application/json'
   };
   if (payload) opts.payload = JSON.stringify(payload);
