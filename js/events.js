@@ -8,6 +8,7 @@ import { geocode } from './geo.js';
 import { byId, projIds } from './selectors.js';
 import { S, localSet } from './state.js';
 import { parseCSV, toast, today } from './utils.js';
+import { setLogDraft } from './views/suivi.js';
 
 // + Projet sur un suivi / une tâche
 document.addEventListener('change', async e => {
@@ -45,7 +46,7 @@ document.addEventListener('submit', async e => {
   if (!f.body.value.trim() && !f.who.value.trim()) return toast("Écris au moins une note ou l'interlocuteur", true);
   const date = f.date.value || today();
   const row = await insert('prospect_logs', {prospect_id:pid, date, kind:f.kind.value, contact_name:f.who.value.trim()||null, body:f.body.value.trim()||null, author:S.user.email});
-  if (row){ const p=byId('prospects',pid); if (row.date && (!p.last_contact || row.date>p.last_contact)) await save('prospects', pid, {last_contact:row.date}, {rerender:false}); render(); toast('Ajouté au journal'); autoSummary(pid); }
+  if (row){ setLogDraft(pid, {}); const p=byId('prospects',pid); if (row.date && (!p.last_contact || row.date>p.last_contact)) await save('prospects', pid, {last_contact:row.date}, {rerender:false}); render(); toast('Ajouté au journal'); autoSummary(pid); }
 });
 
 // Journal des échanges d'un projet
@@ -63,7 +64,7 @@ document.addEventListener('submit', async e => {
 // Pièces jointes : bouton « Ajouter un fichier »
 document.addEventListener('change', async e => {
   const t = e.target;
-  if (t.dataset?.filelist){ const el = document.getElementById('fl-'+t.dataset.filelist); if (el) el.textContent = [...t.files].map(f=>f.name).join(', '); return; }
+  if (t.dataset?.filelist){ showPicked(t); return; }
   if (!t.dataset?.uploadOwner) return;
   const files = [...t.files]; if (!files.length) return;
   await uploadFiles(JSON.parse(t.dataset.uploadOwner), files);
@@ -165,3 +166,24 @@ document.addEventListener('change', async e => {
   await save('shows', e.target.value, {prospect_id: pid});
   toast('Date rattachée au suivi');
 });
+
+
+/** Fichiers choisis dans un formulaire (pas encore envoyés) : liste avec ✕ pour en retirer un */
+function showPicked(input){
+  const el = document.getElementById('fl-'+input.dataset.filelist); if (!el) return;
+  el.innerHTML = [...input.files].map((f,i)=>`<div class="file-row"><span class="file-ico" aria-hidden="true">📎</span><span>${f.name.replace(/</g,'&lt;')}</span>
+    <button type="button" class="btn icon sm ghost danger" data-rmpick="${input.dataset.filelist}" data-i="${i}" aria-label="Retirer ${f.name.replace(/"/g,'')}">✕</button></div>`).join('');
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-rmpick]'); if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  const input = document.querySelector(`input[data-filelist="${b.dataset.rmpick}"]`); if (!input) return;
+  const dt = new DataTransfer(); [...input.files].forEach((f,i) => { if (i !== Number(b.dataset.i)) dt.items.add(f); });
+  input.files = dt.files; showPicked(input);
+}, true);
+
+// Brouillon des notes d'échange : enregistré à chaque frappe
+const saveDraft = e => { const f = e.target.closest?.('form[data-logform]'); if (!f) return;
+  const el = f.elements; setLogDraft(f.dataset.logform, {date: el.date?.value || '', kind: el.kind.value, who: el.who.value, body: el.body.value}); };
+document.addEventListener('input', saveDraft);
+document.addEventListener('change', saveDraft);

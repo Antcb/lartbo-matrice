@@ -482,3 +482,29 @@ td input[type=number],td .dt{background:var(--soft);border-color:var(--line-2)}
 input[type=range]{accent-color:var(--brand);flex:1;min-width:120px}
 @media (max-width:760px){ .ws-who{grid-template-columns:1fr} .dt-txt{width:112px} .seg{flex-wrap:wrap} }
 .side>*{flex-shrink:0}
+.pp{display:inline-block}
+.pp-btn{display:inline-flex;align-items:center;gap:6px;cursor:pointer;text-align:left;max-width:100%}
+.pp-btn span{color:var(--faint);font-size:11px}
+.field .pp,.field .pp-btn{display:flex;width:100%;height:36px;justify-content:space-between}
+.pp-toggle{font-weight:600;color:var(--muted);border-top:1px solid var(--line-2);margin-top:4px;border-radius:0}
+.pp-inactive{color:var(--muted);padding-left:22px}
+/* Booking : la carte reste fixe, seul le cadre Trajet / Enchaînements défile */
+.side-booking{overflow:hidden;display:flex;flex-direction:column}
+.side-booking .route-box{flex:1 1 auto;min-height:120px;overflow:auto}
+#ws-lists{display:flex;flex-direction:column;gap:12px}
+.log-actions{grid-column:1/-1;display:flex;align-items:center;gap:10px}
+.draft-note{font-size:12px;color:var(--warn);font-weight:600}
+.st-sel{appearance:none;-webkit-appearance:none;font:inherit;font-size:12px;font-weight:600;border-radius:999px;padding:3px 22px 3px 9px;cursor:pointer;color:var(--ink);
+  background:color-mix(in srgb,var(--c) 16%,#fff) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235B677D'/%3E%3C/svg%3E") no-repeat right 8px center;
+  border:1px solid color-mix(in srgb,var(--c) 45%,#fff);box-shadow:inset 3px 0 0 var(--c)}
+.st-sel:hover{border-color:var(--c)}
+.fee-tag{font-size:12px;font-weight:600;color:var(--brand);white-space:nowrap}
+.mini-tasks{display:flex;flex-direction:column;gap:2px}
+.mini-task{display:grid;grid-template-columns:20px minmax(0,1fr) auto auto auto;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line-2)}
+.mini-task:last-child{border-bottom:0}
+.mini-task .cell-ta{font-weight:600;min-width:0}
+.mini-task.done{opacity:.5}
+.mini-task.leaving{opacity:.45}
+.mini-task input[type=checkbox]{width:16px;height:16px;accent-color:var(--brand)}
+.prod-body{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.prod-bill{grid-column:1/-1}

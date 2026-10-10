@@ -11,11 +11,11 @@ export async function route(a, b){
   if (!ca || !cb) return {error:'Lieu non localisé'};
   const key = ca.join(',')+'|'+cb.join(','); if (S.routeCache[key]) return S.routeCache[key];
   try{
-    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${ca[1]},${ca[0]};${cb[1]},${cb[0]}?overview=false`);
+    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${ca[1]},${ca[0]};${cb[1]},${cb[0]}?overview=full&geometries=geojson`);
     const j = await r.json(); const rt = j.routes && j.routes[0];
     if (!rt) return (S.routeCache[key] = {error:'Pas d’itinéraire trouvé'});
     const h = Math.floor(rt.duration/3600), m = Math.round((rt.duration%3600)/60);
-    return (S.routeCache[key] = {km: Math.round(rt.distance/1000), time: `${h}h${String(m).padStart(2,'0')}`});
+    return (S.routeCache[key] = {km: Math.round(rt.distance/1000), time: `${h}h${String(m).padStart(2,'0')}`, geometry: rt.geometry});
   }catch(e){ return {error:'Service de calcul indisponible'}; }
 }
 export const routeCached = (a, b) => { const ca = Array.isArray(a) ? a : showCoords(a), cb = Array.isArray(b) ? b : showCoords(b); return ca && cb ? S.routeCache[ca.join(',')+'|'+cb.join(',')] : {error:'Lieu non localisé'}; };

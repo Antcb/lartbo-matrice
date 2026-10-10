@@ -2,12 +2,16 @@
  * Petits éléments d'interface réutilisés partout : pastilles de statut, de pôle, d'urgence,
  * barre d'onglets d'une page, filtres Année / Projet, zone de dépôt de fichiers.
  */
-import { stClass, stColor } from '../constants.js';
+import { STATUSES, stClass, stColor } from '../constants.js';
 import { deptColor, projName, projectOptions } from '../selectors.js';
 import { S } from '../state.js';
 import { esc } from '../utils.js';
+import { projPicker } from './projpicker.js';
 
 export const stBadge = s => `<span class="badge st-badge st-${stClass(s)}" style="--c:${stColor(s)}">${esc(s||'—')}</span>`;
+
+/** Statut d'une date modifiable d'un clic (liste déroulante en forme de pastille) */
+export const stSelect = s => `<select class="st-sel" data-t="shows" data-id="${s.id}" data-f="status" style="--c:${stColor(s.status)}" aria-label="Statut de la date">${(STATUSES.includes(s.status) ? STATUSES : [s.status, ...STATUSES]).map(x=>`<option ${x===s.status?'selected':''}>${esc(x)}</option>`).join('')}</select>`;
 
 export const pstBadge = s => s ? `<span class="badge pst pst-${esc(s)}">${esc({Mailed:'Mail envoyé',Interest:'Intérêt',Option:'Option',Confirmed:'Confirmé',Closed:'Clos'}[s]||s)}</span>` : '';
 
@@ -29,7 +33,7 @@ export function filterBar({year=true, project=true, years=null}={}){
   const ys = years || [...new Set(S.db.shows.filter(s=>s.date).map(s=>Number(s.date.slice(0,4))).concat([new Date().getFullYear(), new Date().getFullYear()+1]))].sort();
   return `<div class="filters">
     ${year?`<select id="f-year" class="sel" aria-label="Année">${ys.map(y=>`<option ${y===S.year?'selected':''}>${y}</option>`).join('')}</select>`:''}
-    ${project?`<select id="f-project" class="sel proj-sel" data-all="Tous les artistes" aria-label="Artiste">${projOptions(S.project)}</select>`:''}
+    ${project?projPicker(S.project, {attrs:'id="f-project" aria-label="Artiste"'}):''}
   </div>`;
 }
 
@@ -54,27 +58,4 @@ export const fold = (key, title, inner, {open=false, count=null}={}) => {
   return `<section class="fold ${isOpen?'open':''}"><button class="fold-head" data-act="fold" data-key="${key}" aria-expanded="${isOpen}"><span class="caret" aria-hidden="true">▸</span>${title}${count!=null?` <span class="count">${count}</span>`:''}</button>${isOpen?`<div class="fold-body">${inner}</div>`:''}</section>`;
 };
 
-/**
- * Options d'une liste d'artistes : seulement les projets actifs, plus une ligne « Projets inactifs… »
- * qui remplace la liste par les inactifs (et « ← Projets actifs » pour revenir).
- * allLabel : première ligne vide (ex. « Tous les artistes ») ou null pour aucune.
- */
-export function projOptions(selected, allLabel='Tous les artistes'){
-  const sel = S.db.projects.find(p => p.id === selected);
-  const list = S.db.projects.filter(p => p.active || p.id === selected).sort((a,b)=>a.name.localeCompare(b.name));
-  return (allLabel!=null ? `<option value="">${esc(allLabel)}</option>` : '')
-    + list.map(p=>`<option value="${p.id}" ${p.id===selected?'selected':''}>${esc(p.name)}${p.active?'':' (inactif)'}</option>`).join('')
-    + (S.db.projects.some(p => !p.active) ? `<option value="__inactive">Projets inactifs…</option>` : '');
-}
-function inactiveOptions(allLabel){
-  return (allLabel!=null ? `<option value="">${esc(allLabel)}</option>` : '<option value=""></option>') + '<option value="__active">← Projets actifs</option>'
-    + S.db.projects.filter(p => !p.active).sort((a,b)=>a.name.localeCompare(b.name)).map(p=>`<option value="${p.id}">${esc(p.name)} (inactif)</option>`).join('');
-}
-document.addEventListener('change', e => {
-  const t = e.target; if (!t.classList?.contains('proj-sel') || !['__inactive','__active'].includes(t.value)) return;
-  e.stopImmediatePropagation(); e.stopPropagation();
-  const allLabel = t.dataset.all ?? null;
-  t.innerHTML = t.value === '__inactive' ? inactiveOptions(allLabel) : projOptions('', allLabel);
-  t.value = '';
-  try { t.showPicker(); } catch(_) { t.focus(); }
-}, true);
+export { projPicker };

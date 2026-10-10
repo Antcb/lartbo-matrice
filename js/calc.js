@@ -29,3 +29,8 @@ export function payPct(p){
   if (p.kind==='partner') return s?.partner_pct;
   return null;
 }
+
+/** TVA : 5,5 % sur les cachets (cession, co-réalisation…), 20 % sur les commissions. Modifiable par date / par ligne. */
+export const showVat = s => s?.vat_rate ?? 5.5;
+export const payVat = p => p.vat_rate ?? (['artbo','partner'].includes(p.kind) ? 20 : showVat(byId('shows', p.show_id)));
+export const ttc = (ht, rate) => ht==null ? null : Math.round(ht * (1 + (Number(rate)||0)/100) * 100) / 100;

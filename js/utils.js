@@ -79,3 +79,12 @@ export function md(text){
 }
 
 export const url = u => !u ? '' : /^https?:\/\//i.test(u) ? u : 'https://' + u;
+
+/** Date ou période d'une date : « ven. 12 juil. » ou « 12 → 14 juil. » */
+export const period = s => {
+  if (!s?.date) return 'Sans date';
+  if (!s.date_end || s.date_end === s.date) return fmtShort(s.date);
+  const a = new Date(s.date+'T12:00:00'), b = new Date(s.date_end+'T12:00:00');
+  const sameMonth = a.getMonth()===b.getMonth() && a.getFullYear()===b.getFullYear();
+  return sameMonth ? `${a.getDate()} → ${b.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}` : `${a.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} → ${b.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}`;
+};

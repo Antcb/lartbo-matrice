@@ -3,12 +3,12 @@
  * Chaque date se déplie : suivi admin, commissions, dossier Drive, facturation.
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
-import { netArtbo, payAmount, payPct, paymentsOf } from '../calc.js';
+import { netArtbo, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
 import { byId, projName, showsFiltered, structName } from '../selectors.js';
 import { lateSteps, remindersOf } from '../reminders.js';
 import { S } from '../state.js';
-import { filterBar, stBadge, viewHead } from '../ui/bits.js';
+import { filterBar, stBadge, stSelect, viewHead } from '../ui/bits.js';
 import { cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { esc, eur, fmtDate, matches } from '../utils.js';
@@ -55,9 +55,9 @@ function prodRow(s){
   return `<div class="prod-row ${open?'open':''}" id="prod-${s.id}">
     <div class="prod-head" data-act="toggleProd" data-id="${s.id}" aria-expanded="${open}">
       <div class="day"><b>${d?String(d.getDate()).padStart(2,'0'):'—'}</b><span>${d?d.toLocaleDateString('fr-FR',{month:'short', year:'2-digit'}):''}</span></div>
-      <div class="what"><b>${esc(s.venue)}</b> ${booking?'<span class="badge tag">Booking seul</span>':''}<div class="sub">${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))} · ${esc(s.contract_type||'Contrat ?')} · ${eur(s.fee_ht)}</div></div>
+      <div class="what"><b>${esc(s.venue)}</b> ${booking?'<span class="badge tag">Booking seul</span>':''}<div class="sub">${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))} · ${esc(s.contract_type||'Contrat ?')} · ${eur(s.fee_ht)} HT · ${eur(ttc(s.fee_ht, showVat(s)))} TTC</div></div>
       <div class="progress" title="${checks.filter(c=>c.ok).length}/${checks.length} étapes faites${late.size?` · ${late.size} en retard`:''}">${checks.map(c=>`<i class="${c.ok?'ok':c.late?'late':''}"></i>`).join('')}</div>
-      ${stBadge(s.status)}
+      ${stSelect(s)}
       <span class="chev" aria-hidden="true">▸</span>
     </div>
     ${open ? prodBody(s, booking, steps, pays, late) : ''}
@@ -73,9 +73,13 @@ function prodBody(s, booking, steps, pays, late){
       ${booking ? '<p class="mode-note">Booking seul : L\'ArtBoristerie envoie la conf + FT + kit, puis facture sa commission à l\'artiste une fois le contrat co-signé entre l\'artiste et l\'organisateur.</p>' : ''}
       <div class="steps">${steps.map(([k,l])=>`<label style="${late.has(k)?'color:var(--danger);font-weight:700':''}">${l}</label>${dateInput(s[k], `data-t="shows" data-id="${s.id}" data-f="${k}"`)}`).join('')}</div>
       ${rem.length ? `<div style="margin-top:12px">${rem.map(r=>`<div class="${r.late?'':'muted'}" style="font-size:13px;${r.late?'color:var(--danger);font-weight:600':''}">${r.late?'⚠︎':'•'} ${esc(r.title)} — ${r.late?'depuis le':'le'} ${fmtDate(r.due)}</div>`).join('')}</div>` : ''}
-      <h3 class="block-title" style="margin-top:18px">Commission</h3>
+    </div>
+    <div>
+      <h3 class="block-title">Cachet et commission</h3>
       <div class="steps">
         <label>Cachet HT</label>${cIn('shows',s.id,'fee_ht',s.fee_ht,'number')}
+        <label>TVA du cachet (%)</label>${cIn('shows',s.id,'vat_rate',s.vat_rate,'number','placeholder="5.5" class="narrow"')}
+        <label>Cachet TTC</label><b>${eur(ttc(s.fee_ht, showVat(s)))}</b>
         <label>% L'ArtBo</label>${cIn('shows',s.id,'artbo_pct',s.artbo_pct,'number')}
         ${booking ? '' : `<label>Partenaire</label>${cSel('shows',s.id,'partner_id',s.partner_id,partners)}
         <label>% partenaire</label>${cIn('shows',s.id,'partner_pct',s.partner_pct,'number')}`}
@@ -83,17 +87,20 @@ function prodBody(s, booking, steps, pays, late){
       <p class="muted" style="font-size:13px;margin:8px 0 0">${booking ? `Commission : <b>${eur(netArtbo(s))}</b>` : `Le % partenaire s'applique à la commission L'ArtBo. Net L'ArtBo : <b>${eur(netArtbo(s))}</b>`}</p>
       <div class="drive">${driveHTML(s)}</div>
     </div>
-    <div>
+    <div class="prod-bill">
       <h3 class="block-title">Facturation</h3>
       <div class="tbl-wrap"><table>
-        <thead><tr><th>Ligne</th><th class="num">%</th><th class="num">Montant</th><th>N° facture</th><th>Envoyée</th><th>Payée</th><th></th></tr></thead>
+        <thead><tr><th>Ligne</th><th class="num">%</th><th class="num">Montant HT</th><th class="num">TVA</th><th class="num">TTC</th><th>N° facture</th><th>Envoyée</th><th>Relancée</th><th>Payée</th><th></th></tr></thead>
         <tbody>${pays.map(p=>{ const a=payAmount(p), ov=p.amount!=null;
           return `<tr>
           <td>${cIn('show_payments',p.id,'label',p.label)}</td>
           <td class="num">${['cnm','autre','acompte','solde'].includes(p.kind) ? cIn('show_payments',p.id,'pct',p.pct,'number','class="narrow"') : `<span class="muted">${payPct(p)??'—'}</span>`}</td>
           <td class="num"><input type="number" step="any" data-t="show_payments" data-id="${p.id}" data-f="amount" value="${ov?p.amount:''}" placeholder="${a==null?'à saisir':a}" title="Laisse vide pour le calcul automatique" class="${ov?'override':''}"></td>
+          <td class="num"><input type="number" step="any" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="vat_rate" value="${p.vat_rate??''}" placeholder="${payVat(p)}" aria-label="TVA %"></td>
+          <td class="num nowrap">${eur(ttc(a, payVat(p)))}</td>
           <td>${cIn('show_payments',p.id,'invoice_number',p.invoice_number,'text','style="min-width:90px"')}</td>
           <td class="${late.has(p.kind)&&!p.sent_at?'late-cell':''}">${cIn('show_payments',p.id,'sent_at',p.sent_at,'date')}</td>
+          <td title="Date de la dernière relance">${cIn('show_payments',p.id,'reminded_at',p.reminded_at,'date')}</td>
           <td class="${p.paid_at?'done-cell':''}">${cIn('show_payments',p.id,'paid_at',p.paid_at,'date')}</td>
           <td><button class="btn icon sm ghost danger" data-act="delPay" data-id="${p.id}" aria-label="Supprimer la ligne">✕</button></td></tr>`;}).join('')}
         </tbody></table></div>
@@ -103,7 +110,7 @@ function prodBody(s, booking, steps, pays, late){
         <button class="btn sm" data-act="addPay" data-kind="autre" data-id="${s.id}">Autre ligne</button>
         <button class="btn sm ghost" data-act="editShow" data-id="${s.id}">Fiche complète de la date</button>
       </div>
-      <p class="muted" style="font-size:12px;margin:8px 0 0">Montant vide = calcul automatique sur le cachet HT. Un montant saisi à la main apparaît en orange.</p>
+      <p class="muted" style="font-size:12px;margin:8px 0 0">Montants HT. Vide = calcul automatique sur le cachet HT ; un montant saisi à la main apparaît en orange. TVA par défaut : 5,5 % sur le cachet, 20 % sur les commissions. Le solde suit l’acompte (100 % − acomptes).</p>
     </div>
   </div>`;
 }

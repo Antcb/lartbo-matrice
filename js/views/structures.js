@@ -6,7 +6,7 @@ import { lingering } from '../data.js';
 import { distKm } from '../geo.js';
 import { byId, eventsOfStructure, lastExchange, linksOfStructure, projName, prospectsOfStructure, showsOfStructure, tasksOfStructure } from '../selectors.js';
 import { S } from '../state.js';
-import { curTab, pstBadge, stBadge, tabsBar, tag, viewHead } from '../ui/bits.js';
+import { curTab, fold, pstBadge, stBadge, stSelect, tabsBar, tag, viewHead } from '../ui/bits.js';
 import { cAc, cIn } from '../ui/cells.js';
 import { acInput } from '../ui/autocomplete.js';
 import { esc, eur, fmtDate, md, norm, url } from '../utils.js';
@@ -35,17 +35,17 @@ export function structurePage(st){
   const tabs = tabsBar('structure', [['home','Accueil'], ['suivi','Suivi', openSuivis.length], ['dates','Dates', shows.length], ['tasks','Tâches', tasks.filter(t=>!['Done','Cancelled'].includes(t.status)).length],
     ['events','Festivals / événements', events.length], ['admin','Coordonnées administratives']]);
   let body = '';
-  if (tab==='home') body = homeTab(st, contacts);
+  if (tab==='home') body = homeTab(st, contacts) + `<div class="section-title">Tâches <span class="count">${tasks.filter(t=>!['Done','Cancelled'].includes(t.status)).length}</span><span class="spacer"></span><button class="btn sm" data-act="newTaskFor" data-id="${st.id}">Nouvelle tâche</button></div>${taskSection(tasks)}`;
   else if (tab==='suivi'){
     const closed = suivis.filter(p=>p.status==='Closed' && !lingering(p.id));
     const shown = S.showClosed ? suivis : openSuivis;
-    body = `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newSuiviFor" data-id="${st.id}">Nouveau suivi</button>
-        ${closed.length ? `<button class="btn" data-act="toggleClosed" aria-pressed="${!!S.showClosed}">${S.showClosed?'Masquer':'Afficher'} les suivis clos (${closed.length})</button>` : ''}</div>`
-      + (shown.map(p => suiviCard(p)).join('') || `<div class="empty panel">${closed.length ? 'Aucun suivi en cours avec cette structure.' : 'Aucun suivi avec cette structure.'}</div>`);
+    body = `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newSuiviFor" data-id="${st.id}">Nouveau suivi</button></div>`
+      + (openSuivis.map(p => suiviCard(p)).join('') || `<div class="empty panel">${closed.length ? 'Aucun suivi en cours avec cette structure.' : 'Aucun suivi avec cette structure.'}</div>`)
+      + (closed.length ? fold('closed-suivis', 'Suivis clos', closed.map(p => suiviCard(p)).join(''), {count: closed.length}) : '');
   }
   else if (tab==='dates') body = `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newShowFor" data-id="${st.id}">Nouvelle date</button></div>
     <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Artiste</th><th>Lieu</th><th>Statut</th><th class="num">Cachet</th><th>Contrat</th></tr></thead><tbody>
-    ${shows.map(x=>`<tr class="click" data-act="editShow" data-id="${x.id}"><td class="nowrap">${fmtDate(x.date)}</td><td>${esc(projName(x.project_id))}</td><td>${esc(x.venue)}<span class="sub">${esc(x.city||'')}</span></td><td>${stBadge(x.status)}</td><td class="num">${eur(x.fee_ht)}</td><td>${esc(x.contract_type||'')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aucune date avec cette structure.</td></tr>'}
+    ${shows.map(x=>`<tr class="click" data-act="editShow" data-id="${x.id}"><td class="nowrap">${fmtDate(x.date)}</td><td>${esc(projName(x.project_id))}</td><td>${esc(x.venue)}<span class="sub">${esc(x.city||'')}</span></td><td>${stSelect(x)}</td><td class="num">${eur(x.fee_ht)}</td><td>${esc(x.contract_type||'')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aucune date avec cette structure.</td></tr>'}
     </tbody></table></div>`;
   else if (tab==='tasks') body = `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newTaskFor" data-id="${st.id}">Nouvelle tâche</button></div>${taskSection(tasks)}`;
   else if (tab==='events') body = eventsTab(st, events);

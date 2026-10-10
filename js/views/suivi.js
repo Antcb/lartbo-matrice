@@ -9,13 +9,13 @@
 import { LOG_ICON, LOG_KINDS, PROSPECT, isOff, stColor } from '../constants.js';
 import { lingering } from '../data.js';
 import { distKm, routeCached, route } from '../geo.js';
-import { byId, filesOf, lastExchange, linksOfStructure, logsOf, projIds, projName, projNames, projectOptions, showCoords, showsOfProject, structName } from '../selectors.js';
-import { S } from '../state.js';
-import { dropZone, fileRow, projOptions, pstBadge, stBadge, tabsBar, curTab, viewHead } from '../ui/bits.js';
-import { cAc, cSel, projChips } from '../ui/cells.js';
+import { byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, projIds, projName, projNames, projectOptions, showCoords, showsOfProject, structName } from '../selectors.js';
+import { S, localGet, localSet } from '../state.js';
+import { dropZone, fileRow, projPicker, stSelect, pstBadge, stBadge, tabsBar, curTab, viewHead } from '../ui/bits.js';
+import { cAc, cIn, cSel, projChips } from '../ui/cells.js';
 import { acInput } from '../ui/autocomplete.js';
 import { dateInput } from '../ui/datefield.js';
-import { $, daysBetween, esc, eur, fmtDate, fmtShort, matches, md, today } from '../utils.js';
+import { $, daysBetween, esc, eur, fmtDate, fmtShort, matches, md, period, today } from '../utils.js';
 import { setMapData } from './booking.js';
 
 export function viewProspects(){
@@ -30,7 +30,7 @@ export function viewProspects(){
   return viewHead('Suivi', {
     sub: `${rows.length} suivi${rows.length>1?'s':''}`,
     filters: `<div class="filters">
-      <select class="sel proj-sel" data-all="Tous les artistes" data-suivi-filter="project" aria-label="Artiste">${projOptions(S.project)}</select>
+      ${projPicker(S.project, {attrs:'data-suivi-filter="project" aria-label="Artiste"'})}
       <select class="sel" data-suivi-filter="status" aria-label="Statut"><option value="">Tous les statuts</option>${PROSPECT.map(x=>`<option value="${x}" ${x===st?'selected':''}>${x}</option>`).join('')}</select>
       <input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-suivi" placeholder="Structure, ville, mot du résumé…" data-search="prospects" value="${esc(q)}"></div>`,
     actions: `${nClosed ? `<button class="btn" data-act="toggleClosed" aria-pressed="${!!S.showClosed}">${S.showClosed?'Masquer':'Afficher'} les suivis clos (${nClosed})</button>` : ''}
@@ -57,18 +57,29 @@ export function suiviCard(p, {page=false}={}){
         <button class="btn sm ghost" data-act="editText" data-id="${p.id}" data-f="summary">Modifier</button>
         <button class="btn sm ghost" data-act="copyForAi" data-id="${p.id}" title="Copie le suivi pour le coller dans ChatGPT">Copier pour ChatGPT</button></h3>
         <div class="md">${md(p.summary) || '<span class="muted">Pas encore de résumé.</span>'}</div></div>`;
+  const d = logDraft(p.id);
+  const tasks = suiviTasks(p);
+  const tasksHTML = `<div class="suivi-block"><h3 class="block-title">Tâches <span class="count">${tasks.filter(t=>!isDone(t)).length}</span><span class="spacer"></span>
+      <button type="button" class="btn sm" data-act="wsTask" data-id="${p.id}">Nouvelle tâche</button></h3>
+      ${tasks.length ? `<div class="mini-tasks">${tasks.map(t => { const u = urgency(t); return `<div class="mini-task ${isDone(t)?'done':''} ${lingering(t.id)?'leaving':''}">
+        <input type="checkbox" data-act="toggleTask" data-id="${t.id}" ${t.status==='Done'?'checked':''} aria-label="Marquer comme faite">
+        ${cIn('tasks',t.id,'title',t.title,'text','aria-label="Nom de la tâche"')}
+        ${cIn('tasks',t.id,'deadline',t.deadline,'date')}
+        ${u?`<span class="urg ${u.cls}">${esc(u.label)}</span>`:'<span></span>'}
+        <button type="button" class="btn sm ghost" data-act="editTask" data-id="${t.id}">Détails</button></div>`; }).join('')}</div>` : '<p class="muted" style="margin:0">Aucune tâche liée à ce suivi.</p>'}</div>`;
   const journal = `
       <div class="suivi-block"><h3 class="block-title">Journal des échanges <span class="count">${logs.length}</span></h3>
         <form class="log-form" data-logform="${p.id}">
-          ${dateInput(today(), 'name="date"')}
-          <select name="kind" class="sel" aria-label="Type d'échange">${LOG_KINDS.map(k=>`<option>${k}</option>`).join('')}</select>
-          <input name="who" class="inp" placeholder="Interlocuteur" list="dl-who-${p.id}" aria-label="Interlocuteur" autocomplete="off">
+          ${dateInput(d.date || today(), 'name="date"')}
+          <select name="kind" class="sel" aria-label="Type d'échange">${LOG_KINDS.map(k=>`<option ${k===d.kind?'selected':''}>${k}</option>`).join('')}</select>
+          <input name="who" class="inp" placeholder="Interlocuteur" list="dl-who-${p.id}" aria-label="Interlocuteur" autocomplete="off" value="${esc(d.who||'')}">
           <datalist id="dl-who-${p.id}">${contacts.map(c=>`<option value="${esc(c.display_name)}">`).join('')}</datalist>
-          <textarea name="body" placeholder="Notes de l'échange…" aria-label="Notes"></textarea>
-          <button class="btn primary sm">Ajouter au journal</button>
+          <textarea name="body" placeholder="Notes de l'échange… (gardées en brouillon tant que tu ne les ajoutes pas)" aria-label="Notes">${esc(d.body||'')}</textarea>
+          <div class="log-actions"><button class="btn primary sm">Ajouter au journal</button>${d.body||d.who?'<span class="draft-note">Brouillon enregistré</span><button type="button" class="btn sm ghost" data-act="clearLogDraft" data-id="'+p.id+'">Effacer le brouillon</button>':''}</div>
         </form>
         ${logs.map(l=>`<div class="log">
           <div class="log-head">${LOG_ICON[l.kind]||'📝'} <b>${l.date?fmtDate(l.date):'Sans date'}</b>${l.contact_name?' · '+esc(l.contact_name):''}
+            <span class="spacer"></span><button type="button" class="btn sm ghost" data-act="editLog" data-id="${l.id}">Modifier</button>
             <button type="button" class="btn icon sm ghost danger" data-act="delLog" data-id="${l.id}" aria-label="Supprimer l'entrée">✕</button></div>
           <div class="md">${md(l.body)}</div></div>`).join('') || '<div class="muted">Aucun échange enregistré.</div>'}
       </div>`;
@@ -85,8 +96,21 @@ export function suiviCard(p, {page=false}={}){
       ${page ? '' : `<button class="btn sm" data-act="openSuivi" data-id="${p.id}">Ouvrir avec planning et carte</button>`}
       <button class="btn sm ghost danger" data-act="delProspect" data-id="${p.id}">Supprimer</button>
     </div>`;
-  if (page) return `<div class="panel suivi ${lingering(p.id)?'leaving':''}" id="pr-${p.id}">${head}${summary}${journal}${side}</div>`;
-  return `<div class="panel suivi ${lingering(p.id)?'leaving':''}" id="pr-${p.id}">${head}${summary}<div class="suivi-grid"><div>${journal}</div><div>${side}</div></div></div>`;
+  if (page) return `<div class="panel suivi ${lingering(p.id)?'leaving':''}" id="pr-${p.id}">${head}${summary}${tasksHTML}${journal}${side}</div>`;
+  return `<div class="panel suivi ${lingering(p.id)?'leaving':''}" id="pr-${p.id}">${head}${summary}${tasksHTML}<div class="suivi-grid"><div>${journal}</div><div>${side}</div></div></div>`;
+}
+
+/** Brouillon des notes d'échange d'un suivi (gardé dans le navigateur jusqu'à l'ajout au journal) */
+export function logDraft(pid){ S.logDrafts ||= {}; if (!S.logDrafts[pid]) { try { S.logDrafts[pid] = JSON.parse(localGet('logdraft.'+pid) || '{}'); } catch(e){ S.logDrafts[pid] = {}; } } return S.logDrafts[pid]; }
+export function setLogDraft(pid, d){ S.logDrafts ||= {}; S.logDrafts[pid] = d; localSet('logdraft.'+pid, JSON.stringify(d)); }
+export const hasLogDraft = pid => { const d = logDraft(pid); return !!((d.body||'').trim() || (d.who||'').trim()); };
+
+/** Tâches d'un suivi : même structure (et même artiste si la tâche en a un) ; terminées masquées sauf pendant 5 s */
+export function suiviTasks(p){
+  if (!p.structure_id) return [];
+  const ids = projIds(p);
+  return tasksOfStructure(p.structure_id).filter(t => (!projIds(t).length || projIds(t).some(x => ids.includes(x))) && (!isDone(t) || lingering(t.id)))
+    .slice().sort((a,b)=>(a.deadline||'9999').localeCompare(b.deadline||'9999'));
 }
 
 /** Dates rattachées à un suivi : liées explicitement, ou même structure et même artiste */
@@ -132,8 +156,8 @@ const addY = (d, n) => `${Number(d.slice(0,4))+n}${d.slice(4)}`;
 function sidePanel(p, st, proj, linked){
   const ids = projIds(p);
   const linkedHTML = `<div class="panel pad"><h3 class="block-title">Dates de ce suivi <span class="count">${linked.length}</span></h3>
-    ${linked.map(s=>`<div class="plan-row ${s.date===S.wsTarget?'target':''}"><span class="d">${s.date?fmtShort(s.date):'—'}<br><span class="muted" style="font-weight:400">${s.date?s.date.slice(0,4):''}</span></span>
-      <span><b>${esc(projName(s.project_id))}</b> <span class="muted">${esc(s.venue)}</span><br>${stBadge(s.status)}</span>
+    ${linked.map(s=>`<div class="plan-row ${s.date===S.wsTarget?'target':''}" data-id="${s.id}"><span class="d">${period(s)}<br><span class="muted" style="font-weight:400">${s.date?s.date.slice(0,4):''}</span></span>
+      <span><b>${esc(projName(s.project_id))}</b> <span class="muted">${esc(s.venue)}</span><br>${stSelect(s)} ${s.fee_ht?`<b class="fee-tag">${eur(s.fee_ht)} HT</b>`:''}</span>
       <span style="display:flex;gap:4px;flex-direction:column;align-items:flex-end"><button type="button" class="btn sm" data-act="editShow" data-id="${s.id}">Modifier</button>
         ${s.date && s.date!==S.wsTarget?`<button type="button" class="btn sm ghost" data-act="wsSetTarget" data-d="${s.date}">Centrer</button>`:''}</span></div>`).join('') || '<p class="muted" style="margin:0 0 6px">Aucune date posée pour ce suivi.</p>'}
     <div class="field" style="margin-top:8px"><label>Rattacher une date existante</label>${acInput('shows', {attrs:`data-link-show="${p.id}"`, placeholder:'Chercher une date (artiste, lieu, date)…'})}</div></div>`;
@@ -174,7 +198,7 @@ function sidePanel(p, st, proj, linked){
     ${target ? `<div id="ws-lists">${lists(around, inRadius, here, target, R, until)}</div>` : ''}
     <div class="panel pad"><h3 class="block-title">Planning de ${esc(projName(proj))} <span class="muted" style="font-weight:500">${target?'45 jours autour de la date':'12 prochains mois'}</span></h3>
       <div class="planning">${(target ? shows.filter(s => Math.abs(daysBetween(target, s.date)) <= 45) : shows.filter(s => s.date >= now && s.date <= until)).map(s => `<div class="plan-row ${target && Math.abs(daysBetween(target, s.date))<=2 ? 'target':''}" data-act="editShow" data-id="${s.id}" style="cursor:pointer">
-          <span class="d">${fmtShort(s.date)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span>${stBadge(s.status)}</div>`).join('') || '<p class="muted">Aucune date sur cette période.</p>'}</div>
+          <span class="d">${period(s)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span>${s.fee_ht?` <span class="fee-tag">${eur(s.fee_ht)} HT</span>`:''}</span>${stSelect(s)}</div>`).join('') || '<p class="muted">Aucune date sur cette période.</p>'}</div>
     </div>`;
 }
 
@@ -187,7 +211,7 @@ function distCell(s, here){
 
 function lists(around, inRadius, here, target, R, until){
   const row = s => { const d = daysBetween(target, s.date);
-    return `<li><span>${stBadge(s.status)} <b>${esc(s.venue)}</b> · ${esc(s.city||'')}<br><span class="muted">${fmtDate(s.date)} (${d===0?'même jour':d>0?'J+'+d:'J'+d})</span></span>
+    return `<li><span>${stBadge(s.status)} <b>${esc(s.venue)}</b> · ${esc(s.city||'')}<br><span class="muted">${period(s)} ${s.date.slice(0,4)} (${d===0?'même jour':d>0?'J+'+d:'J'+d})${s.fee_ht?' · '+eur(s.fee_ht)+' HT':''}</span></span>
       <span class="num" style="text-align:right">${distCell(s, here)}</span></li>`; };
   return `<div class="panel pad near-list"><h3 class="block-title">5 jours avant / après <span class="count">${around.length}</span></h3>
       ${around.length ? `<ul>${around.map(row).join('')}</ul>` : '<p class="muted" style="margin:0">Aucune date entre le '+fmtDate(addD(target,-5))+' et le '+fmtDate(addD(target,5))+'.</p>'}

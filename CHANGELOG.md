@@ -5,6 +5,21 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.9.0 — 10/10/2026
+- Notes d'échange gardées en brouillon (même en cliquant ailleurs ou en quittant la page) ; un nouveau suivi n'est plus supprimé tant qu'il contient quelque chose
+- Échanges du journal modifiables (sans changer leur date)
+- Choix de l'artiste : les projets inactifs se déplient dans la même liste
+- Pièces jointes d'une nouvelle tâche : retirer un fichier avant d'enregistrer
+- Photo de projet réellement recadrée en carré à l'enregistrement
+- Booking : tracé du trajet A → B, fiche du point au survol, carte fixe pendant le défilement des enchaînements, point mis en avant au survol d'une date
+- Statut d'une date modifiable d'un clic partout (Booking, Production, Suivi, Structures, Projets)
+- Production : HT et TTC, TVA par date et par ligne (5,5 % cachet, 20 % commissions), date de relance, le solde suit l'acompte (50 / 50 par défaut), facturation en pleine largeur
+- Suivi : cachet HT et période complète des dates, tâches liées au suivi (cocher, changer l'échéance), suivis clos repliés dans les structures
+- Structures : tâches sur l'accueil
+- Communication : dates passées repliées, artistes inactifs masqués
+- To Do : onglet « Terminées » (30 derniers jours)
+
+
 ## 1.8.0 — 08/10/2026
 - Police Geist et bleu L'ArtBo #283C63
 - Réglages : pôles des tâches modifiables ; bouton pour appliquer le nouvel acompte / solde aux factures pas encore envoyées

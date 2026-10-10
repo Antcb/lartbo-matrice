@@ -11,7 +11,7 @@ import { S } from '../state.js';
 import { $, esc } from '../utils.js';
 import { SOURCES, acInput } from './autocomplete.js';
 import { dateInput } from './datefield.js';
-import { projOptions } from './bits.js';
+import { projPicker } from './projpicker.js';
 
 export function field(f, v){
   const id = 'fld-'+f.k, cls = 'field'+(f.full?' full':'')+(f.type==='checkbox'?' check':'')+(f.cls?' '+f.cls:'');
@@ -19,7 +19,7 @@ export function field(f, v){
   if (f.type==='checkbox') return `<div class="${cls}"><input id="${id}" type="checkbox" name="${f.k}" ${v?'checked':''}><label for="${id}">${f.label}</label></div>`;
   let input;
   if (f.type==='select') input = `<select id="${id}" name="${f.k}">${f.blank===false?'':'<option value=""></option>'}${f.options.map(o=>{const [val,lab]=Array.isArray(o)?o:[o,o];return `<option value="${esc(val)}" ${String(val)===String(v??'')?'selected':''}>${esc(lab)}</option>`;}).join('')}</select>`;
-  else if (f.type==='project') input = `<select id="${id}" name="${f.k}" class="proj-sel" data-all="${esc(f.allLabel??'')}">${projOptions(v, f.allLabel??'')}</select>`;
+  else if (f.type==='project') input = projPicker(v, {attrs:`name="${f.k}" id="${id}"`, allLabel: f.allLabel||'', cls:'sel pp-field'});
   else if (f.type==='textarea') input = `<textarea id="${id}" name="${f.k}" ${f.rows?`rows="${f.rows}"`:''}>${esc(v??'')}</textarea>`;
   else if (f.type==='date') input = dateInput(v, `name="${f.k}" id="${id}"`);
   else if (f.type==='ac') input = acInput(f.kind, {value:v, attrs:`name="${f.k}"`, create:f.create, placeholder:f.placeholder||'Taper pour chercher…'});

@@ -44,8 +44,9 @@ export function remindersOf(s){
   if (upcoming && s.contract_signed && !s.contract_cosigned_sent) rule('contract_cosigned_sent', addDays(s.contract_signed, 10), 'Contrat co-signé à renvoyer');
   const ac = first('acompte'), so = first('solde');
   if (s.contract_sent && ac && !ac.sent_at) rule('acompte', s.contract_sent, 'Facture d’acompte à envoyer');
-  if (ac?.sent_at && !ac.paid_at) rule('acompte', addDays(ac.sent_at, 10), 'Paiement de l’acompte à vérifier');
-  if (so?.sent_at && !so.paid_at) rule('solde', addDays(so.sent_at, 10), 'Paiement du solde à vérifier');
+  const last = p => [p.sent_at, p.reminded_at].filter(Boolean).sort().pop();   // 10 j après l'envoi ou la dernière relance
+  if (ac?.sent_at && !ac.paid_at) rule('acompte', addDays(last(ac), 10), ac.reminded_at ? 'Acompte toujours impayé après relance' : 'Paiement de l’acompte à vérifier');
+  if (so?.sent_at && !so.paid_at) rule('solde', addDays(last(so), 10), so.reminded_at ? 'Solde toujours impayé après relance' : 'Paiement du solde à vérifier');
   if (s.date && so && !so.sent_at && s.date >= addDays(now, -30)) rule('solde', soldeReminderDay(s.date), 'Envoyer la facture de solde');
   if (upcoming && s.date && !s.boucle_tech) rule('boucle_tech', addDays(s.date, -122), 'Boucle accueil & technique à envoyer (J-4 mois)');
   if (upcoming && s.contract_cosigned_sent && !s.boucle_com) rule('boucle_com', s.contract_cosigned_sent, 'Boucle communication à envoyer');

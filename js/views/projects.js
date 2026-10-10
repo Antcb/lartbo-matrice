@@ -8,7 +8,7 @@ import { CONFIRMED_PROD, LOG_ICON, stClass } from '../constants.js';
 import { signedCached, signedUrl } from '../data.js';
 import { attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, structName, tasksOfProject } from '../selectors.js';
 import { S } from '../state.js';
-import { curTab, dropZone, fileRow, fold, pstBadge, stBadge, tabsBar, viewHead } from '../ui/bits.js';
+import { curTab, dropZone, fileRow, fold, pstBadge, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cAc, cIn } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { esc, eur, fmtDate, md, today, url } from '../utils.js';
@@ -24,14 +24,14 @@ export const photoStyle = pos => { const [x='50%', y='50%', z='1'] = String(pos|
   return `object-position:${x} ${y};transform:scale(${Number(z)||1});transform-origin:${x} ${y}`; };
 
 export const photoHTML = (p, cls='') => p.photo_path
-  ? `<div class="photo ${cls}" data-photo="${esc(p.photo_path)}" data-pos="${esc(p.photo_pos||'50% 50%')}">${signedCached(p.photo_path)?`<img src="${esc(signedCached(p.photo_path))}" alt="" style="${photoStyle(p.photo_pos)}">`:''}</div>`
+  ? `<div class="photo ${cls}" data-photo="${esc(p.photo_path)}" data-pos="${esc(p.photo_orig ? '' : (p.photo_pos||'50% 50%'))}">${signedCached(p.photo_path)?`<img src="${esc(signedCached(p.photo_path))}" alt="" style="${p.photo_orig ? '' : photoStyle(p.photo_pos)}">`:''}</div>`
   : `<div class="photo ${cls}" aria-hidden="true">${esc(initials(p.name))}</div>`;
 
 /** Charge les photos (liens temporaires) après l'affichage */
 export function hydratePhotos(root=document){
   root.querySelectorAll('.photo[data-photo]:not(:has(img))').forEach(async el => {
     const u = await signedUrl(el.dataset.photo); if (!u || !el.isConnected) return;
-    el.innerHTML = `<img src="${esc(u)}" alt="" style="${photoStyle(el.dataset.pos)}">`;
+    el.innerHTML = `<img src="${esc(u)}" alt="" style="${el.dataset.pos ? photoStyle(el.dataset.pos) : ''}">`;
   });
 }
 
@@ -93,7 +93,7 @@ function overview(p, {shows, tasks, suivis}){
   </tbody></table></div>
   <p class="help">Commissions nettes = commission L'ArtBo moins la part reversée aux partenaires (ex. Pyrprod), sur les dates confirmées salle / festival.</p>
   <div class="struct-hero" style="margin-top:18px">
-    <div class="panel pad"><h3 class="block-title">Prochaines dates</h3>${next.map(s=>`<div class="plan-row" data-act="editShow" data-id="${s.id}" style="cursor:pointer"><span class="d">${fmtDate(s.date)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span>${stBadge(s.status)}</div>`).join('') || '<p class="muted" style="margin:0">Aucune date à venir.</p>'}</div>
+    <div class="panel pad"><h3 class="block-title">Prochaines dates</h3>${next.map(s=>`<div class="plan-row" data-act="editShow" data-id="${s.id}" style="cursor:pointer"><span class="d">${fmtDate(s.date)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span>${stSelect(s)}</div>`).join('') || '<p class="muted" style="margin:0">Aucune date à venir.</p>'}</div>
     <div class="panel pad"><h3 class="block-title">En cours</h3>
       <p style="margin:0 0 6px"><b>${tasks.filter(t=>!isDone(t)).length}</b> tâche(s) à faire · <b>${suivis.filter(x=>x.status!=='Closed').length}</b> suivi(s) ouverts</p>
       ${p.notes?`<div class="md">${md(p.notes)}</div>`:''}</div>
@@ -103,7 +103,7 @@ function overview(p, {shows, tasks, suivis}){
 function datesTab(p, {shows}){
   const list = shows.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   return `<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Lieu</th><th>Structure</th><th>Statut</th><th class="num">Cachet</th><th>Contrat</th></tr></thead><tbody>
-    ${list.map(s=>`<tr class="click" data-act="editShow" data-id="${s.id}"><td class="nowrap">${fmtDate(s.date)}</td><td><b>${esc(s.venue)}</b><span class="sub">${esc(s.city||'')}</span></td><td>${esc(structName(s.structure_id))}</td><td>${stBadge(s.status)}</td><td class="num">${eur(s.fee_ht)}</td><td>${esc(s.contract_type||'')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aucune date.</td></tr>'}
+    ${list.map(s=>`<tr class="click" data-act="editShow" data-id="${s.id}"><td class="nowrap">${fmtDate(s.date)}</td><td><b>${esc(s.venue)}</b><span class="sub">${esc(s.city||'')}</span></td><td>${esc(structName(s.structure_id))}</td><td>${stSelect(s)}</td><td class="num">${eur(s.fee_ht)}</td><td>${esc(s.contract_type||'')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aucune date.</td></tr>'}
   </tbody></table></div>`;
 }
 

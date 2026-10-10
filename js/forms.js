@@ -306,7 +306,7 @@ export function projectPhoto(id){
   const p = byId('projects', id);
   let pos = (p.photo_pos || '50% 50% 1').split(' ').map(x=>parseFloat(x)); if (!pos[2]) pos[2] = 1;
   const style = () => `object-position:${pos[0]}% ${pos[1]}%;transform:scale(${pos[2]});transform-origin:${pos[0]}% ${pos[1]}%`;
-  let path = p.photo_path;
+  let path = p.photo_orig || p.photo_path;   // on recadre toujours depuis l'image d'origine
   const draw = async () => {
     const box = $('#cropper'); if (!box) return;
     const u = path ? await signedUrl(path) : null;
@@ -319,7 +319,13 @@ export function projectPhoto(id){
       <div class="dropzone" data-photo-drop="1" style="justify-content:center"><label class="btn sm file-btn">Choisir une image<input type="file" accept="image/*" class="file-input" id="photo-file"></label><span class="drop-hint">ou glisse-la ici</span></div>`}],
     onSave: async () => {
       if (!path){ toast('Choisis une image', true); return false; }
-      await save('projects', id, {photo_path: path, photo_pos: `${Math.round(pos[0])}% ${Math.round(pos[1])}% ${pos[2]}`}, {rerender:false});
+      // l'image est réellement recadrée en carré (comme l'aperçu) puis enregistrée
+      const blob = await cropSquare(path, pos).catch(e => { toast('Recadrage impossible : ' + e.message, true); return null; });
+      if (!blob) return false;
+      const sq = `project/${id}/photo_${Date.now()}_carre.jpg`;
+      const {error} = await sb.storage.from('suivi').upload(sq, blob, {contentType:'image/jpeg', upsert:false});
+      if (error){ toast(error.message, true); return false; }
+      await save('projects', id, {photo_path: sq, photo_orig: path, photo_pos: `${Math.round(pos[0])}% ${Math.round(pos[1])}% ${pos[2]}`}, {rerender:false});
     }
   });
   draw();
@@ -345,6 +351,19 @@ export function projectPhoto(id){
     img.setAttribute('style', style()); };
   $('#photo-zoom').oninput = e => { pos[2] = Number(e.target.value); const img = box.querySelector('img'); if (img) img.setAttribute('style', style()); };
   box.onpointerup = () => { drag = null; box.style.cursor=''; };
+}
+
+/** Recadre l'image (object-fit: cover + position + zoom, comme l'aperçu) en un carré JPEG de 600 px */
+async function cropSquare(path, [px, py, z]){
+  const u = await signedUrl(path);
+  const blob = await (await fetch(u)).blob();
+  const img = await createImageBitmap(blob);
+  const S = 600, c = Math.max(S / img.width, S / img.height), W = img.width * c, H = img.height * c;
+  const fx = px / 100, fy = py / 100, ox = (S - W) * fx, oy = (S - H) * fy, ax = S * fx, ay = S * fy;
+  const cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, S, S);
+  g.drawImage(img, ax + z * (ox - ax), ay + z * (oy - ay), W * z, H * z);
+  return await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.9));
 }
 
 /** Lier un dossier Drive existant à une date (lien collé) */

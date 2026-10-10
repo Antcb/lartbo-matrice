@@ -11,6 +11,7 @@ import { departments, attachmentsOf, byId, filesOf, logsOf, projIds, projNames, 
 import { S, touch } from './state.js';
 import { MODALS, openModal } from './ui/modal.js';
 import { applyAcompte, saveDepartments } from './views/settings.js';
+import { hasLogDraft, setLogDraft } from './views/suivi.js';
 import { $, fmtDate, toast, today } from './utils.js';
 
 /** Nouveau suivi : créé tout de suite et ouvert dans l'espace de prospection (pas de fenêtre) */
@@ -26,7 +27,7 @@ async function newSuivi(structureId){
 export async function cleanupDraft(){
   const id = S.draftSuivi; if (!id) return; S.draftSuivi = null;
   const p = byId('prospects', id); if (!p) return;
-  if (!p.structure_id && !logsOf(id).length && !filesOf(id).length && !p.summary && !p.content_md) await remove('prospects', id);
+  if (!p.structure_id && !projIds(p).length && !logsOf(id).length && !filesOf(id).length && !p.summary && !p.content_md && !hasLogDraft(id)) await remove('prospects', id);
 }
 
 export const ACTIONS = {
@@ -177,6 +178,12 @@ ${p.content_md||'(aucune)'}`;
     try { await navigator.clipboard.writeText(txt); toast('Copié. Colle-le dans ChatGPT, puis colle la réponse avec « Modifier »'); }
     catch(e){ openModal({title:'Copier pour ChatGPT', values:{t:txt}, fields:[{k:'t', label:'Sélectionne tout et copie', type:'textarea', full:true}], onSave: async()=>{} }); }
   },
+  clearLogDraft: t => { if (confirm('Effacer le brouillon de notes ?')){ setLogDraft(t.dataset.id, {}); render(); } },
+  editLog: t => { const l = byId('prospect_logs', t.dataset.id);
+    openModal({ title: `Échange du ${l.date ? fmtDate(l.date) : '—'}`, values: l,
+      fields:[{k:'kind', label:'Type', type:'select', options:['Appel','Mail','RDV','Note'], blank:false}, {k:'contact_name', label:'Interlocuteur'},
+        {k:'body', label:'Notes', type:'textarea', full:true, rows:10}],
+      onSave: async v => { await save('prospect_logs', l.id, v, {rerender:false}); } }); },
   delLog: async t => { if (confirm('Supprimer cette entrée du journal ?') && await remove('prospect_logs', t.dataset.id)) render(); },
   editText: t => { const p=byId('prospects',t.dataset.id), f=t.dataset.f;
     openModal({ title: f==='summary'?'Résumé':'Autres notes', values:p, fields:[{k:f, label:f==='summary'?'Résumé (une ligne par point, « - » pour une puce, **gras**)':'Notes', type:'textarea', full:true, rows:14}],
@@ -219,3 +226,15 @@ for (const f of ['ticketing_enabled','communication_enabled'])
 ACTIONS['change:shows.status'] = async (t, v) => isOff(v) ? saveLinger('shows', t.dataset.id, {status:v}, `Date passée en « ${v} »`) : save('shows', t.dataset.id, {status:v});
 
 export { go };
+
+// Acompte modifié → le solde se recalcule (100 % − total des acomptes)
+ACTIONS['change:show_payments.pct'] = async (t, v) => {
+  const pay = byId('show_payments', t.dataset.id);
+  await save('show_payments', pay.id, {pct: v}, {rerender:false});
+  if (pay.kind === 'acompte'){
+    const all = paymentsOf(pay.show_id), sum = all.filter(p => p.kind==='acompte').reduce((a,p) => a + (Number(p.pct)||0), 0);
+    const solde = all.find(p => p.kind==='solde' && p.amount==null);
+    if (solde) await save('show_payments', solde.id, {pct: Math.max(0, Math.round((100 - sum)*100)/100)}, {rerender:false});
+  }
+  render();
+};

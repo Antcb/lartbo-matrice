@@ -8,7 +8,7 @@ import { lingering } from '../data.js';
 import { route, routeCached } from '../geo.js';
 import { byId, projName, showCoords, showsFiltered, visibleShow } from '../selectors.js';
 import { S } from '../state.js';
-import { filterBar, fold, stBadge, viewHead } from '../ui/bits.js';
+import { filterBar, fold, stBadge, stSelect, viewHead } from '../ui/bits.js';
 import { $, daysBetween, esc, eur, fmtDate, fmtShort } from '../utils.js';
 
 export function viewBooking(){
@@ -35,7 +35,7 @@ export function viewBooking(){
     <button class="btn sm ${S.bookingPane==='map'?'on':''}" data-act="bookingPane" data-p="map">Carte et trajets</button></div>
   <div class="booking pane-${S.bookingPane==='map'?'map':'list'}">
     <div class="list-wrap">${list || `<div class="empty panel">Aucune date en ${S.year}. Ajoute un intérêt avec « Nouvelle date ».</div>`}</div>
-    <aside class="side">
+    <aside class="side side-booking">
       <div class="map-box"><div id="map-slot" role="region" aria-label="Carte des dates"></div></div>
       <div class="legend">${legend(shows)}</div>
       <div class="panel pad route-box" id="route-box">${routeBoxHTML(shows)}</div>
@@ -49,7 +49,7 @@ function gigRow(s){
   return `<div class="gig ${pa||pb?'picked':''} ${lingering(s.id)&&isOff(s.status)?'leaving':''}" style="--c:${stColor(s.status)}" data-act="editShow" data-id="${s.id}">
     <div class="day"><b>${d?String(d.getDate()).padStart(2,'0'):'—'}</b><span>${d?d.toLocaleDateString('fr-FR',{weekday:'short'}):''}</span></div>
     <div class="what"><b>${esc(s.venue)}</b><small>${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))}${!S.project && s.project_id ? ' · '+esc(projName(s.project_id)) : ''}${s.date_end && s.date_end!==s.date ? ' · jusqu’au '+fmtShort(s.date_end) : ''}</small></div>
-    <div class="right">${stBadge(s.status)}
+    <div class="right">${stSelect(s)}
       <span class="fee">${[s.fee_ht?eur(s.fee_ht):'', s.contract_type||''].filter(Boolean).join(' · ')}</span>
       <span class="pick" title="Calcul de trajet : choisis un départ (A) puis une arrivée (B)">
         <button class="btn sm ${pa?'on':''}" data-act="pick" data-p="a" data-id="${s.id}" aria-pressed="${pa}" aria-label="Départ du trajet">A</button><button class="btn sm ${pb?'on':''}" data-act="pick" data-p="b" data-id="${s.id}" aria-pressed="${pb}" aria-label="Arrivée du trajet">B</button></span>
@@ -99,20 +99,32 @@ export function routeBoxHTML(shows){
    Carte partagée (Booking et espace de prospection)
    setMapData({points, key, fitTo}) : points = [{lat, lng, color, label, big, ring}]
 --------------------------------------------------------------------------------------- */
-let MAP = null, MAP_EL = null, LAYER = null, LAST_KEY = null;
+let MAP = null, MAP_EL = null, LAYER = null, LINE = null, LAST_KEY = null;
+const MARKERS = new Map();
+let HOVERED = null;          // point ouvert par simple survol (se referme quand la souris s'éloigne)   // id de date → point de la carte (pour le grossir au survol de la liste)
+
+function drawLine(){
+  if (LINE){ LINE.remove(); LINE = null; }
+  const g = S.mapData?.line; if (!g || !MAP) return;
+  LINE = L.geoJSON(g, {style:{color:'#283C63', weight:4, opacity:.85}, interactive:false}).addTo(MAP);
+}
 
 export function setMapData(data){ S.mapData = data; }
 
 function setBookingMap(shows){
-  const pts = shows.map(s => { const c = showCoords(s); return c && {lat:c[0], lng:c[1], color:stColor(s.status), big:(s.status||'').startsWith('Confirmée'),
+  const pts = shows.map(s => { const c = showCoords(s); return c && {lat:c[0], lng:c[1], color:stColor(s.status), big:(s.status||'').startsWith('Confirmée'), showId:s.id, hover:true,
     label:`<b>${esc(s.venue)}</b><br>${fmtDate(s.date)} — ${esc(s.city||'')}<br>${esc(s.status)}${s.project_id?' · '+esc(projName(s.project_id)):''}${s.fee_ht?'<br>'+eur(s.fee_ht):''}
       <div class="pop-actions"><button type="button" class="btn sm ${S.routePick.a===s.id?'on':''}" data-act="pick" data-p="a" data-id="${s.id}">Départ (A)</button><button type="button" class="btn sm ${S.routePick.b===s.id?'on':''}" data-act="pick" data-p="b" data-id="${s.id}">Arrivée (B)</button></div>`}; }).filter(Boolean);
-  setMapData({points: pts, key: `booking|${S.year}|${S.project}|${S.showCancelled}`, keepView: true});
+  const a0 = byId('shows', S.routePick.a), b0 = byId('shows', S.routePick.b);
+  const rr = a0 && b0 ? routeCached(a0, b0) : null;
+  setMapData({points: pts, key: `booking|${S.year}|${S.project}|${S.showCancelled}`, keepView: true, line: rr?.geometry || null});
   // calcul des trajets en arrière-plan, puis mise à jour du cadre « Trajet »
   const jobs = chains(shows).map(c => [c.a, c.b]);
   const a = byId('shows', S.routePick.a), b = byId('shows', S.routePick.b); if (a && b) jobs.push([a, b]);
   const todo = jobs.filter(([x,y]) => !routeCached(x,y));
-  if (todo.length) Promise.all(todo.map(([x,y]) => route(x,y))).then(() => { const box = $('#route-box'); if (box && S.view==='booking') box.innerHTML = routeBoxHTML(shows); });
+  if (todo.length) Promise.all(todo.map(([x,y]) => route(x,y))).then(() => { const box = $('#route-box'); if (box && S.view==='booking'){ box.innerHTML = routeBoxHTML(shows);
+    // tracé du trajet A → B
+    if (a && b){ const r = routeCached(a, b); if (r?.geometry && S.mapData){ S.mapData.line = r.geometry; drawLine(); } } } });
 }
 
 export function attachMap(){
@@ -124,15 +136,23 @@ export function attachMap(){
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution:'© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>', maxZoom:18}).addTo(MAP);
     LAYER = L.layerGroup().addTo(MAP);
+    MAP.on('mousemove', ev => { if (HOVERED && HOVERED.isPopupOpen() && MAP.latLngToContainerPoint(HOVERED.getLatLng()).distanceTo(ev.containerPoint) > 160){ HOVERED.closePopup(); HOVERED = null; } });
+    MAP.on('popupclose', () => { HOVERED = null; });
   } else slot.appendChild(MAP_EL);
   MAP.invalidateSize();
   const data = S.mapData || {points:[]};
-  LAYER.clearLayers();
+  LAYER.clearLayers(); MARKERS.clear(); drawLine();
   if (data.circle) L.circle(data.circle.center, {radius: data.circle.km*1000, color:'#283C63', weight:1, opacity:.5, fillOpacity:.05, interactive:false}).addTo(LAYER);
   for (const p of data.points){
     const light = ['#A9C8EC','#BFE3B9','#C9CDD4','#9EA4AD'].includes(p.color);
     const m = L.circleMarker([p.lat, p.lng], {radius: p.big?9:7, color: p.ring ? '#C8372D' : (light ? '#5B677D' : '#FFFFFF'), weight: p.ring?3:1.5,
       fillColor: p.color, fillOpacity:1}).bindPopup(p.label + (p.from ? '<div class="pop-dist">Calcul de la distance…</div>' : '')).addTo(LAYER);
+    if (p.showId) MARKERS.set(p.showId, {m, r: p.big?9:7});
+    // fiche du point après 1 seconde de survol
+    if (p.hover !== false){ let tm = null;
+      m.on('mouseover', () => { tm = setTimeout(() => { HOVERED = m; m.openPopup(); }, 900); });
+      m.on('mouseout', () => clearTimeout(tm));
+      m.on('click', () => { clearTimeout(tm); HOVERED = null; }); }
     // distance et temps de route depuis la structure, calculés à l'ouverture
     if (p.from) m.on('popupopen', async ev => {
       const r = await route(p.from, [p.lat, p.lng]);
@@ -152,3 +172,15 @@ export function attachMap(){
   }
 }
 export const mapColors = STATUS_COLOR;
+
+// Survol d'une date dans la liste → son point grossit sur la carte
+document.addEventListener('mouseover', e => {
+  const g = e.target.closest?.('.gig[data-id], .plan-row[data-id]'); if (!g) return;
+  const k = MARKERS.get(g.dataset.id); if (!k || k.on) return;
+  MARKERS.forEach(x => { if (x.on){ x.m.setRadius(x.r); x.m.setStyle({weight:1.5}); x.on = false; } });
+  k.m.setRadius(15); k.m.setStyle({weight:3}); k.m.bringToFront(); k.on = true;
+});
+document.addEventListener('mouseout', e => {
+  const g = e.target.closest?.('.gig[data-id], .plan-row[data-id]'); if (!g || g.contains(e.relatedTarget)) return;
+  const k = MARKERS.get(g.dataset.id); if (k?.on){ k.m.setRadius(k.r); k.m.setStyle({weight:1.5}); k.on = false; }
+});

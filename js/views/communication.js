@@ -4,15 +4,16 @@
  */
 import { POSTER } from '../constants.js';
 import { lingering } from '../data.js';
-import { projName, showsFiltered } from '../selectors.js';
-import { filterBar, viewHead } from '../ui/bits.js';
+import { byId, projName, showsFiltered } from '../selectors.js';
+import { filterBar, fold, viewHead } from '../ui/bits.js';
 import { cAc, cChk, cIn, cSel, cUrl } from '../ui/cells.js';
-import { esc } from '../utils.js';
+import { esc, today } from '../utils.js';
 import { byArtist, dateCell, notConcerned } from './ticketing.js';
 
 export function viewCommunication(){
   const all = showsFiltered().filter(s => s.status && s.status.startsWith('Confirmée'));
-  const shows = all.filter(s => s.communication_enabled || lingering(s.id));
+  // artistes inactifs masqués
+  const shows = all.filter(s => (s.communication_enabled || lingering(s.id)) && byId('projects', s.project_id)?.active !== false);
   const others = all.filter(s => !s.communication_enabled && !lingering(s.id));
   const q = (s, f, l) => `<label class="qty"><span class="muted">${l}</span>${cIn('shows',s.id,f,s[f],'number','class="narrow" aria-label="Affiches '+l+'"')}</label>`;
   const row = (l, html) => `<div><span class="muted">${l}</span>${html}</div>`;
@@ -33,7 +34,10 @@ export function viewCommunication(){
       <td>${cChk('shows',s.id,'communication_enabled',s.communication_enabled)}</td></tr>`).join('')}
     </tbody></table></div>`;
   return viewHead('Communication', {sub: `${shows.length} date${shows.length>1?'s':''} suivie${shows.length>1?'s':''}`, filters: filterBar()})
-    + (shows.length ? byArtist(shows).map(([pid, list]) => `<section class="group"><div class="group-head"><h2>${esc(projName(pid)||'Sans projet')}</h2><span class="count">${list.length}</span></div>${table(list)}</section>`).join('')
+    + (shows.length ? byArtist(shows).map(([pid, list]) => { const now = today(), up = list.filter(s => (s.date_end||s.date||'9999') >= now), past = list.filter(s => (s.date_end||s.date||'9999') < now);
+        return `<section class="group"><div class="group-head"><h2>${esc(projName(pid)||'Sans projet')}</h2><span class="count">${up.length}</span></div>
+          ${up.length ? table(up) : '<p class="muted" style="margin:0 0 6px">Aucune date à venir.</p>'}
+          ${past.length ? fold('compast-'+pid, 'Dates passées', table(past), {count:past.length}) : ''}</section>`; }).join('')
        : `<div class="empty panel">Aucune date suivie en communication. Ajoute une date depuis la liste ci-dessous.</div>`)
     + notConcerned(others, 'communication_enabled', 'communication');
 }
