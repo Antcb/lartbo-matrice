@@ -116,7 +116,7 @@ export function exportShows(){
         {header:'Jauge', key:'capacity', type:'number', width:9},
         ...(v.price ? [{header:'Cachet HT', key:'fee_ht', type:'eur', width:13}] : []),
       ];
-      const rows = list.map(s => ({...s, venue: String(s.venue || '').replace(/\*\*/g, '').replace(/\s*•\s*[A-Z/]{1,5}\s*$/, ''),
+      const rows = list.map(s => ({...s, venue: String(s.venue || '').replace(/\*\*/g, '').replace(/\s*•\s*[A-Z/]{1,5}(\s*\([^)]*\))?\s*$/, ''),
         day: new Date(s.date + 'T12:00:00').toLocaleDateString('fr-FR', {weekday: 'long'}), structure: structName(s.structure_id),
         date_end: s.date_end && s.date_end !== s.date ? s.date_end : ''}));
       const period = v.mode === 'year' ? `année ${v.year}` : `du ${from.split('-').reverse().join('/')} au ${to.split('-').reverse().join('/')}`;

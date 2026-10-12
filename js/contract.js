@@ -23,7 +23,7 @@ export function deptOf(postal, fallback){
   return /^\d$/.test(d) ? '0' + d : d.toUpperCase();
 }
 const stripCode = name => String(name || '').replace(/\s*•.*$/, '').trim();
-const venueName = v => String(v || '').replace(/\*\*/g, '').replace(/\s*•\s*[A-Z/]{1,5}\s*$/, '').trim();
+const venueName = v => String(v || '').replace(/\*\*/g, '').replace(/\s*•\s*[A-Z/]{1,5}(\s*\([^)]*\))?\s*$/, '').trim();
 const num = n => n == null || n === '' ? '' : Number(n).toLocaleString('fr-FR', {minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2}).replace(/ /g, ' ');
 const longDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long', year:'numeric'}).replace(/^(\D+ )1 /, '$11er ') : '';
 const addDays = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
@@ -123,7 +123,9 @@ export function contractVars(s){
   if (rooms) seq.push({find: 'X single-rooms', values: [rooms]});
   if (pr.setup_hours) seq.push({find: 'au moins XX heures', values: [`au moins ${num(pr.setup_hours)} heure${pr.setup_hours > 1 ? 's' : ''}`]});
   const st = byId('structures', s.structure_id);
-  const dp = deptOf(st?.postal_code || d.venue_postal_code, s.department);
+  // Le département est celui du LIEU de la date (pas l'adresse du siège de la structure, souvent ailleurs)
+  const sameCity = st?.city && s.city && st.city.trim().toLowerCase() === s.city.trim().toLowerCase();
+  const dp = deptOf(d.venue_postal_code, s.department) || deptOf(sameCity ? st.postal_code : '', '');
   const name = [tags["Nom de L'Artiste"], s.date, `${s.city || d.venue_city || ''}${dp ? ` (${dp})` : ''}`, venueName(s.venue), kind.toUpperCase()].filter(Boolean).join(' • ');
   return {kind, tags, seq, name, missing: Object.entries(tags).filter(([k, v]) => v === '' && !(kind === 'cc' && /Minimum|Break|% du/.test(k)) && !(kind === 'cr' && /Prix de Cession|Billetterie/.test(k)) && k !== 'N° Licence Entrepreneur du Spectacle').map(([k]) => k)};
 }

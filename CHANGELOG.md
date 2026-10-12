@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.15.5 — 12/10/2026
+- Noms Drive : département du lieu de la date (plus celui du siège de la structure), versions de contrats V1/V2, pré-contrats et locations ignorés, rattachement des dossiers à la date confirmée
+
+
 ## 1.15.4 — 12/10/2026
 - Exports nommés « 2026-10-12 Tour The Locos 2026 » et « 2026-10-12 Suivis The Locos »
 - Bulletins de paie rangés dans 01_Finance › exercice › E - Sociale › AAAA-MM ; notes de frais dans 01_Finance › exercice › B - Notes de Frais › AAAA-MM › NOM Prénom (dossier type copié, fichier modèle renommé)

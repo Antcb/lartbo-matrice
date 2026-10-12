@@ -353,7 +353,7 @@ function createShowFolder_(showId, force) {
   lock.waitLock(30000);
   try {
     var show = sb_('GET', 'shows?id=eq.' + showId +
-      '&select=id,venue,date,city,department,drive_folder_id,project:projects(id,name,drive_artist_folder_id),structure:structures(postal_code)')[0];
+      '&select=id,venue,date,city,department,drive_folder_id,project:projects(id,name,drive_artist_folder_id),structure:structures(postal_code,city)')[0];
     if (!show) throw new Error('Date introuvable : ' + showId);
 
     // Déjà créé et toujours présent → on ne refait rien
@@ -396,20 +396,27 @@ function createShowFolder_(showId, force) {
  * sinon le département de la date (pays à l'étranger : CH, BE…).
  */
 function dept_(show) {
-  var cp = String((show.structure && show.structure.postal_code) || '').replace(/\s/g, '');
-  if (/^\d{5}$/.test(cp)) {
-    if (/^9[78]/.test(cp)) return cp.slice(0, 3);
-    if (/^20/.test(cp)) return Number(cp) < 20200 ? '2A' : '2B';
-    return cp.slice(0, 2);
-  }
+  // 1. le département de la date (lieu du concert) ; 2. à défaut le CP de la structure, seulement si elle est dans la même ville
+  //    (le siège d'un producteur est souvent ailleurs : 3AG à Clermont, RPO à Grenoble…)
   var d = String(show.department || '').trim();
-  return /^\d$/.test(d) ? '0' + d : d.toUpperCase();
+  if (d) return /^\d$/.test(d) ? '0' + d : (/^\d{5}$/.test(d) ? cpDept_(d) : d.toUpperCase());
+  var st = show.structure || {};
+  var same = st.city && show.city && rhNorm_(st.city) === rhNorm_(show.city);
+  return same ? cpDept_(st.postal_code) : '';
+}
+
+function cpDept_(cp) {
+  cp = String(cp || '').replace(/\s/g, '');
+  if (!/^\d{5}$/.test(cp)) return '';
+  if (/^9[78]/.test(cp)) return cp.slice(0, 3);
+  if (/^20/.test(cp)) return Number(cp) < 20200 ? '2A' : '2B';
+  return cp.slice(0, 2);
 }
 
 /** MM-DD • Ville • Salle (79) — nomenclature L'ArtBo du dossier d'une date. */
 function folderName_(show) {
   var d = show.date.split('-'); // YYYY-MM-DD
-  var venue = String(show.venue || '').replace(/\*\*/g, '').replace(/\s*•\s*[A-Z\/]{1,5}\s*$/, '').trim();
+  var venue = String(show.venue || '').replace(/\*\*/g, '').replace(/\s*•\s*[A-Z\/]{1,5}(\s*\([^)]*\))?\s*$/, '').trim();
   var dp = dept_(show);
   return d[1] + '-' + d[2] + ' • ' + (show.city || '').trim() + ' • ' + venue + (dp ? ' (' + dp + ')' : '');
 }
@@ -484,10 +491,23 @@ function json_(obj) {
  * "MM-DD • …" (ou "MM_DD • …") à la date du même projet et du même jour.
  * Lancé depuis Réglages › Google › « Rattacher les dossiers Drive existants ».
  */
+/**
+ * Plusieurs dates le même jour pour un artiste (une confirmée + des pistes sans suite) : on prend la confirmée,
+ * sinon la seule encore en cours ; les dates « Sans Suite » / « Annulée » ne récupèrent un dossier que si elles sont seules.
+ * Si le choix reste ambigu, on ne rattache rien (mieux vaut rien que la mauvaise date).
+ */
+function pickShow_(list) {
+  if (list.length <= 1) return list[0] || null;
+  var rank = function (s) { var st = String(s.status || ''); return /^Confirm/.test(st) ? 0 : (st === 'Annulée' || st === 'Sans Suite') ? 2 : 1; };
+  var best = Math.min.apply(null, list.map(rank));
+  var top = list.filter(function (s) { return rank(s) === best; });
+  return top.length === 1 && best < 2 ? top[0] : null;
+}
+
 function linkExistingFolders() {
   var p = props_();
   var projects = sb_('GET', 'projects?select=id,name,drive_artist_folder_id');
-  var shows = sb_('GET', 'shows?select=id,project_id,date,drive_folder_id&drive_folder_id=is.null&date=not.is.null');
+  var shows = sb_('GET', 'shows?select=id,project_id,date,status,drive_folder_id&date=not.is.null');
   var linked = 0;
   projects.forEach(function (proj) {
     var artist;
@@ -504,8 +524,9 @@ function linkExistingFolders() {
         var m = f.getName().match(/^(\d{2})[-_](\d{2})/);   // « 10-17 • … » (ou « 10_17 • … »)
         if (!m) continue;
         var date = y.getName() + '-' + m[1] + '-' + m[2];
-        var show = shows.filter(function (s) { return s.project_id === proj.id && s.date === date && !s.drive_folder_id; })[0];
-        if (show) {
+        if (shows.some(function (s) { return s.drive_folder_id === f.getId(); })) continue;   // déjà rattaché
+        var show = pickShow_(shows.filter(function (s) { return s.project_id === proj.id && s.date === date; }));
+        if (show && !show.drive_folder_id) {
           sb_('PATCH', 'shows?id=eq.' + show.id, { drive_folder_id: f.getId() });
           show.drive_folder_id = f.getId();
           linked++;
@@ -523,7 +544,7 @@ var SKIP_ARTIST_FOLDERS = ['pyrprod', 'fiches techniques', 'contrats a traiter',
 
 /** Contrat : « Artiste • AAAA-MM-JJ • Ville (79) • Salle • CC » (CR pour une co-réalisation) */
 function contractName_(show, artist) {
-  var venue = String(show.venue || '').replace(/\*\*/g, '').replace(/\s*•\s*[A-Z\/]{1,5}\s*$/, '').trim();
+  var venue = String(show.venue || '').replace(/\*\*/g, '').replace(/\s*•\s*[A-Z\/]{1,5}(\s*\([^)]*\))?\s*$/, '').trim();
   var dp = dept_(show);
   return [artist, show.date, (show.city || '').trim() + (dp ? ' (' + dp + ')' : ''), venue, show.contract_type === 'Co-Réalisation' ? 'CR' : 'CC'].join(' • ');
 }
@@ -534,7 +555,7 @@ function contractName_(show, artist) {
  */
 function renameAudit() {
   var p = props_();
-  var shows = sb_('GET', 'shows?select=id,project_id,date,venue,city,department,contract_type,drive_folder_id,structure:structures(postal_code)&date=not.is.null') || [];
+  var shows = sb_('GET', 'shows?select=id,project_id,date,status,venue,city,department,contract_type,drive_folder_id,structure:structures(postal_code,city)&date=not.is.null') || [];
   var projects = sb_('GET', 'projects?select=id,name,drive_artist_folder_id') || [];
   var rows = [['Appliquer', 'Type', 'Artiste', 'Dossier', 'Nom actuel', 'Nom proposé', 'ID']];
   var root = DriveApp.getFolderById(p.ARTISTS_ROOT_ID), artists = root.getFolders();
@@ -551,7 +572,7 @@ function renameAudit() {
       while (dates.hasNext()) {
         var df = dates.next(), m = df.getName().match(/^(\d{2})[-_ .](\d{2})/);
         var show = shows.filter(function (s) { return s.drive_folder_id === df.getId(); })[0]
-          || (m && proj ? shows.filter(function (s) { return s.project_id === proj.id && s.date === y.getName() + '-' + m[1] + '-' + m[2]; })[0] : null);
+          || (m && proj ? pickShow_(shows.filter(function (s) { return s.project_id === proj.id && s.date === y.getName() + '-' + m[1] + '-' + m[2]; })) : null);
         if (!show) { rows.push([false, 'Dossier (date inconnue)', aname, y.getName(), df.getName(), '', df.getId()]); continue; }
         var want = folderName_(show);
         if (want !== df.getName()) rows.push([true, 'Dossier de date', aname, y.getName(), df.getName(), want, df.getId()]);
@@ -572,22 +593,35 @@ function renameAudit() {
 }
 
 function auditContracts_(folder, show, artist, rows, aname, where) {
-  var stack = [folder];
+  var stack = [folder], found = [];
   while (stack.length) {
     var f = stack.pop(), subs = f.getFolders();
     while (subs.hasNext()) stack.push(subs.next());
     var files = f.getFiles();
     while (files.hasNext()) {
       var file = files.next(), name = file.getName();
-      // seulement les vrais contrats (le mot « contrat » dans le nom), pas les avenants, contrats techniques ni fiches
-      if (!/contrat/i.test(name) || /avenant|technique|fiche|engagement|rider/i.test(name)) continue;
+      // seulement les vrais contrats de cession / co-réalisation : pas les avenants, contrats techniques, fiches,
+      // pré-contrats, contrats de location, ni les fichiers qui ne sont pas des documents (.numbers, images…)
+      if (!/contrat/i.test(name) || /avenant|technique|fiche|engagement|rider|pr[ée][\s_-]?contrat|location/i.test(name)) continue;
       var ext = (name.match(/\.(pdf|docx?|odt)$/i) || ['', ''])[1];
+      if (!ext) continue;
       // signé par l'organisateur → « • Signed » ; signé par les deux parties → « • Co-signed »
       var signed = /co[\s_-]?sign|contre[\s_-]?sign|cosign/i.test(name) ? ' • Co-signed' : /sign/i.test(name) ? ' • Signed' : '';
-      var want = contractName_(show, artist) + signed + (ext ? '.' + ext.toLowerCase() : '');
-      if (want !== name) rows.push([true, 'Contrat', aname, where, name, want, file.getId()]);
+      var ver = (name.replace(/\.[^.]+$/, '').match(/[\s_-]v(\d+)\b/i) || [])[1];
+      found.push({ file: file, name: name, ext: ext.toLowerCase(), signed: signed, ver: ver ? Number(ver) : 1, created: file.getDateCreated().getTime() });
     }
   }
+  // Plusieurs versions non signées du même contrat : « • V1 », « • V2 »… pour ne pas avoir deux fichiers au même nom
+  var base = contractName_(show, artist);
+  var groups = {};
+  found.forEach(function (c) { var k = c.signed + '|' + c.ext; (groups[k] = groups[k] || []).push(c); });
+  Object.keys(groups).forEach(function (k) {
+    var g = groups[k].sort(function (a, b) { return a.ver - b.ver || a.created - b.created; });
+    g.forEach(function (c, i) {
+      var want = base + c.signed + (g.length > 1 ? ' • V' + (i + 1) : '') + '.' + c.ext;
+      if (want !== c.name) rows.push([true, 'Contrat', aname, where, c.name, want, c.file.getId()]);
+    });
+  });
 }
 
 /** Renomme les lignes cochées du dernier Google Sheet créé par renameAudit */
