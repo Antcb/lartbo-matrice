@@ -66,7 +66,7 @@ export function ficheDefaults(d){
   return {
     legal_name: st.name, country: 'France',
     venue_name: d.venue, venue_address: st.address, venue_postal_code: st.postal_code || d.cp, venue_city: d.city || st.city, venue_country: st.country || 'France',
-    capacity: d.capacity, cr_break: d.cr_break,
+    capacity: d.capacity, cr_break: d.cr_break, show_time: d.show_time, set_length: d.set_length,
     ticketing: d.ticketing_type === 'Gratuit' ? 'Gratuit' : d.ticketing_type ? 'Payant (prix libre compris)' : '',
   };
 }

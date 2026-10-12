@@ -80,6 +80,8 @@ function prodBody(s, booking, steps, pays, late){
         <label>Cachet HT</label>${cIn('shows',s.id,'fee_ht',s.fee_ht,'number')}
         <label>TVA du cachet (%)</label>${cIn('shows',s.id,'vat_rate',s.vat_rate,'number','placeholder="5.5" class="narrow"')}
         <label>Cachet TTC</label><b>${eur(ttc(s.fee_ht, showVat(s)))}</b>
+        <label>Heure de passage</label>${cIn('shows',s.id,'show_time',s.show_time,'text','placeholder="ex. 22h30" class="narrow"')}
+        <label>Durée du set</label>${cIn('shows',s.id,'set_length',s.set_length,'text','placeholder="ex. 1h15" class="narrow"')}
         ${booking ? '' : `<label>Invitations producteur</label>${cIn('shows',s.id,'invitations',s.invitations,'number','placeholder="10" class="narrow"')}`}
         ${s.contract_type === 'Co-Réalisation' ? `<label>% résultat net après break au producteur</label>${cIn('shows',s.id,'cr_producer_pct',s.cr_producer_pct,'number','class="narrow"')}
         <label>Break</label>${cIn('shows',s.id,'cr_break',s.cr_break,'text','placeholder="ex. 450 entrées payantes"')}` : ''}

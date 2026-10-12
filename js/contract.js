@@ -25,7 +25,7 @@ const addDays = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.get
 function knownValues(s){
   const st = byId('structures', s.structure_id);
   const defs = ficheDefaults({structure: st, venue: venueName(s.venue), city: s.city, cp: st?.postal_code || s.department, capacity: s.capacity ?? st?.capacity_1, ticketing_type: s.ticketing_type, cr_break: s.cr_break});
-  return {...defs, ...(st?.admin || {})};
+  return {...defs, ...(st?.admin || {}), ...(s.show_time ? {show_time: s.show_time} : {}), ...(s.set_length ? {set_length: s.set_length} : {})};
 }
 
 // ─────────────── Validation de la fiche ───────────────
@@ -71,6 +71,8 @@ export function validateFiche(showId){
       const patch = {contract_data: data, fiche_validated_at: s.fiche_validated_at || new Date().toISOString()};
       if (!s.precontract_done) patch.precontract_done = today();
       if (data.cr_break) patch.cr_break = data.cr_break;   // le break validé devient celui de la date
+      if (data.show_time) patch.show_time = data.show_time;
+      if (data.set_length) patch.set_length = data.set_length;
       const ok = await save('shows', s.id, patch, {rerender:false});
       if (ok) toast(s.fiche_validated_at ? 'Fiche enregistrée' : 'Fiche validée : le contrat peut être généré');
       return !!ok;

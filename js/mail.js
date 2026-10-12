@@ -24,6 +24,7 @@ export const TAGS = [
   ['ville','Ville'], ['cp','Code postal'], ['lieu','Salle / festival'], ['adresse','Adresse du lieu'], ['jauge','Jauge'],
   ['cachet_ht','Cachet HT'], ['cachet_ttc','Cachet TTC'], ['tva','TVA'], ['type_contrat','Type de contrat'], ['acompte_pct','% d’acompte'],
   ['contact','Prénom du destinataire'], ['structure','Structure'], ['lien_fiche','Lien de la fiche de renseignements'],
+  ['horaire','Heure de passage'], ['duree_set','Durée du set'],
   ['personnes','Personnes sur la route'], ['chambres','Chambres (single / twin)'], ['montage','Mise à disposition (heures)'], ['invitations','Invitations producteur'],
 ];
 
@@ -215,7 +216,7 @@ export async function editTemplate(id, defaults={}){
         <input id="tpl-drive" placeholder="ou coller un lien Drive puis Entrée" style="min-width:260px"></div>
       <div class="help">Jointes au brouillon Gmail (ex. fiche technique, rider, kit promo). Tu pourras en ajouter d’autres au moment d’envoyer.</div></div>
     <div class="field full"><label>Texte du mail</label>${fmtBar}${tagBar}<div class="mail-preview" id="tpl-body" contenteditable="true">${t.html||''}</div>
-    <div class="help">Clique sur une balise pour l’insérer à l’endroit du curseur. Elle sera remplacée par l’info de la date.</div></div>
+    <div class="help">Clique sur une balise pour l’insérer à l’endroit du curseur. Elle sera remplacée par l’info de la date. Raccourcis : ⌘B gras, ⌘I italique, ⌘U souligné, ⌘K lien.</div></div>
     <datalist id="tpl-variants">${variants.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
     ${id ? `<div class="field full"><button type="button" class="btn sm" id="tpl-dup">Dupliquer ce modèle (pour créer une autre variante)</button></div>` : ''}`;
   const drawFiles = () => { const box = document.querySelector('#tpl-files'); if (!box) return;

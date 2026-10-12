@@ -22,6 +22,7 @@ import { viewProduction } from './views/production.js';
 import { hydratePhotos, viewProjects } from './views/projects.js';
 import { viewSettings } from './views/settings.js';
 import { viewEmployees } from './views/employees.js';
+import './ui/shortcuts.js';
 import { viewStructures } from './views/structures.js';
 import { viewProspects } from './views/suivi.js';
 import { viewTicketing } from './views/ticketing.js';

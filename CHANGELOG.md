@@ -5,6 +5,11 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.15.0 — 12/10/2026
+- Modèles de mail : balises {{horaire}} (heure de passage) et {{duree_set}} (durée du set), remplies depuis la date, la fiche validée ou la fiche de l’organisateur ; heure de passage et durée du set modifiables dans Production
+- Raccourcis clavier partout : ⌘B gras, ⌘I italique, ⌘U souligné (mails), ⌘K lien, ⌘Entrée pour enregistrer (journal, formulaires) — Ctrl sur PC
+
+
 ## 1.14.0 — 12/10/2026
 - Modèles de mail : pièces jointes déposées directement (sans passer par le Drive) ou liens Drive, et pièces jointes ajoutées au moment d’envoyer
 - Modèles de mail : variante en nom libre, règle « Proposé en premier pour » (salle, festival, co-réalisation, cession, toutes) et bouton « Dupliquer » pour créer une variante
