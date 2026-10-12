@@ -513,6 +513,9 @@ function renameAudit() {
   if (rows.length > 1) sh.getRange(2, 1, rows.length - 1, 1).insertCheckboxes();
   sh.setFrozenRows(1); sh.getRange(1, 1, 1, rows[0].length).setFontWeight('bold'); sh.autoResizeColumns(2, 5);
   PropertiesService.getScriptProperties().setProperty('RENAME_SHEET_ID', ss.getId());
+  // visible aussi depuis le compte d'Anthony, et lien gardé dans Réglages › Google
+  try { ss.addEditor('anthony@lartboristerie.com'); } catch (err) {}
+  try { sb_('PATCH', 'settings?key=eq.rename_sheet_url', { value: ss.getUrl() }); } catch (err) {}
   return { ok: true, url: ss.getUrl(), count: rows.length - 1 };
 }
 

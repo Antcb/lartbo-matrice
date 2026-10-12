@@ -86,9 +86,15 @@ export const ACTIONS = {
   validateFiche: t => validateFiche(t.dataset.id),
   genContract: t => generateContract(t.dataset.id),
   contractPdf: t => exportContractPdf(t.dataset.id),
-  renameAudit: async t => { t.disabled = true; toast('Vérification des noms dans le Drive… (1 à 3 min)');
-    try { const out = await callScript('rename_audit', {}); toast(`${out.count} ligne(s) à vérifier`, false, {label:'Ouvrir le tableau', fn: () => window.open(out.url, '_blank')}); window.open(out.url, '_blank'); }
-    catch (err) { toast(err.message, true); } t.disabled = false; },
+  renameAudit: async t => { t.disabled = true;
+    // fenêtre ouverte tout de suite (sinon le navigateur bloque l'ouverture après l'attente)
+    const win = window.open('', '_blank'); if (win) win.document.write('<p style="font:16px system-ui;padding:24px">Vérification des noms dans le Drive… (1 à 3 min)</p>');
+    toast('Vérification des noms dans le Drive… (1 à 3 min)');
+    try { const out = await callScript('rename_audit', {});
+      const st = S.db.settings.find(x => x.key === 'rename_sheet_url'); if (st) st.value = out.url; else S.db.settings.push({key:'rename_sheet_url', value: out.url}); touch('settings');
+      if (win) win.location.href = out.url; else window.open(out.url, '_blank');
+      toast(`${out.count} ligne(s) à vérifier dans le tableau`); render(); }
+    catch (err) { if (win) win.close(); toast(err.message, true); } t.disabled = false; },
   renameApply: async t => { if (!confirm('Renommer dans le Drive tous les éléments cochés du tableau ?')) return; t.disabled = true;
     try { const out = await callScript('rename_apply', {}); toast(`${out.renamed} élément(s) renommé(s)`); } catch (err) { toast(err.message, true); } t.disabled = false; },
   copySecret: async () => { try { await navigator.clipboard.writeText(setting('drive_webhook_secret')||''); toast('Code secret copié'); } catch { prompt('Code secret :', setting('drive_webhook_secret')||''); } },

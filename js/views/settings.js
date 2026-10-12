@@ -61,6 +61,7 @@ export function viewSettings(){
         <button class="btn sm" data-act="driveScan">Rattacher les dossiers Drive existants</button></div>
       <p class="help" style="margin:14px 0 6px">Noms des dossiers de dates (« MM_DD • Ville • Salle (CP) ») et des contrats (« Artiste • AAAA-MM-JJ • Ville (CP) • Salle • CC/CR ») : la vérification crée un Google Sheet avec les renommages proposés, sans rien toucher. Décoche ce qui ne convient pas, puis applique.</p>
       <div class="vh-actions"><button class="btn sm" data-act="renameAudit">Vérifier les noms</button>
+        ${setting('rename_sheet_url') ? `<a class="btn sm" href="${esc(setting('rename_sheet_url'))}" target="_blank" rel="noopener">Ouvrir le dernier tableau</a>` : ''}
         <button class="btn sm" data-act="renameApply">Appliquer les renommages cochés</button></div></div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Version</h3>
       <p>Matrice L'ArtBoristerie Productions <b>v${APP_VERSION}</b></p>

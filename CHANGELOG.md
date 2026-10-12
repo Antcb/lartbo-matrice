@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.13.2 — 12/10/2026
+- Vérifier les noms : le tableau s’ouvre sans être bloqué par le navigateur, il est partagé avec anthony@ et un bouton « Ouvrir le dernier tableau » le retrouve dans Réglages
+
+
 ## 1.13.1 — 10/10/2026
 - Salariés : nouveau fonctionnement — l’export Movinmotion remplit la fiche, le lien envoyé au salarié ne demande que les infos complémentaires (permis 4a/4b, permis B, cartes SNCF, Flying Blue, scan du permis) et range tout
 - Salariés : « Créer la fiche RH » génère le Google Sheet depuis le modèle Fiche RH 2026 dans son dossier
