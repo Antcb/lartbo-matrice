@@ -1,0 +1,45 @@
+/**
+ * 📎 Glisser-déposer partout : un fichier lâché à côté d'un bouton « Ajouter un fichier »
+ * (dans le même bloc, champ, fenêtre…) est envoyé à ce bouton, comme si on l'avait choisi.
+ * Les zones qui ont déjà leur propre glisser-déposer (pièces jointes des suivis, photo, import) ne sont pas touchées.
+ */
+const OWN = '[data-drop],[data-drop-form],[data-members-drop],[data-photo-drop]';
+// on remonte jusqu'au premier de ces blocs au plus : le fichier va au bouton le plus proche
+const STOP = 'dialog, .panel, section, form, .suivi-block';
+
+const hasFiles = e => e.dataTransfer?.types?.includes('Files');
+
+function inputFor(target){
+  if (!target?.closest || target.closest(OWN)) return null;
+  for (let el = target; el && el !== document.body; el = el.parentElement){
+    const inp = el.matches?.('input[type=file]') ? el : el.querySelector?.('input[type=file]:not([disabled])');
+    if (inp) return {inp, zone: el};
+    if (el.matches?.(STOP)) break;
+  }
+  return null;
+}
+
+let lit = null;
+const light = z => { if (lit === z) return; lit?.classList.remove('drop-over'); lit = z; z?.classList.add('drop-over'); };
+
+document.addEventListener('dragover', e => {
+  if (!hasFiles(e)) return;
+  const f = inputFor(e.target);
+  light(f?.zone || null);
+  if (f){ e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }
+});
+document.addEventListener('dragleave', e => { if (lit && !lit.contains(e.relatedTarget)) light(null); });
+document.addEventListener('drop', e => {
+  light(null);
+  if (!hasFiles(e)) return;
+  const f = inputFor(e.target); if (!f) return;
+  e.preventDefault();
+  const files = [...e.dataTransfer.files]; if (!files.length) return;
+  const dt = new DataTransfer();
+  (f.inp.multiple ? files : files.slice(0, 1)).forEach(x => dt.items.add(x));
+  f.inp.files = dt.files;
+  f.inp.dispatchEvent(new Event('change', {bubbles: true}));
+});
+// Un fichier lâché ailleurs ne doit pas ouvrir le fichier dans l'onglet
+document.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+document.addEventListener('drop', e => { if (hasFiles(e) && !e.defaultPrevented) e.preventDefault(); });

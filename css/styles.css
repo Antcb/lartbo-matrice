@@ -565,3 +565,4 @@ input[type=range]{accent-color:var(--brand);flex:1;min-width:120px}
 .legend-chip.off .badge{text-decoration:line-through}
 .ml-att{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin-top:8px;font-size:13px}
 .att-chip{display:inline-flex;gap:5px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:2px 10px 2px 6px;background:var(--soft)}
+.drop-over{outline:2px dashed var(--brand-2);outline-offset:4px;border-radius:var(--r);background:var(--brand-tint)}

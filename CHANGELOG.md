@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.15.1 — 12/10/2026
+- Glisser-déposer partout : un fichier lâché près de n’importe quel bouton « Ajouter un fichier » (modèles de mail, préparation d’un mail, fiche salarié, questionnaire…) est pris en compte, avec la zone surlignée pendant le survol
+
+
 ## 1.15.0 — 12/10/2026
 - Modèles de mail : balises {{horaire}} (heure de passage) et {{duree_set}} (durée du set), remplies depuis la date, la fiche validée ou la fiche de l’organisateur ; heure de passage et durée du set modifiables dans Production
 - Raccourcis clavier partout : ⌘B gras, ⌘I italique, ⌘U souligné (mails), ⌘K lien, ⌘Entrée pour enregistrer (journal, formulaires) — Ctrl sur PC
