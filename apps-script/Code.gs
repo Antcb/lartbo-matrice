@@ -3,7 +3,7 @@
  *
  * 1. Dossiers de production : appelé par Supabase quand une date passe en
  *    "Confirmée Salle" ou "Confirmée Festival". Crée :
- *      <Artiste> / 032_Production / <Année> / MM_DD • Ville • Salle (CP)
+ *      <Artiste> / 032_Production / <Année> / MM-DD • Ville • Salle (79)
  *    en copiant le dossier modèle (L'ARTBO TEMPLATES), puis enregistre l'ID sur la date.
  * 2. Brouillons Gmail : le site envoie le mail préparé (action "draft").
  * 3. Chaque matin (déclencheur dailyJob) : brouillons des boucles à envoyer
@@ -305,7 +305,7 @@ function rhFileDocs_() {
 
 // ─────────────── Drive ───────────────
 
-/** Chemin lisible du dossier (« Mon Drive/…/10_17 • Ville • Salle (33000) ») pour le Finder */
+/** Chemin lisible du dossier (« Mon Drive/…/10-17 • Ville • Salle (33) ») pour le Finder */
 function folderPath_(id) {
   var f = DriveApp.getFolderById(id), parts = [];
   for (var i = 0; i < 20 && f; i++) {
@@ -366,12 +366,27 @@ function createShowFolder_(showId, force) {
   }
 }
 
-/** MM_DD • Ville • Salle (CP) — nomenclature L'ArtBo. */
+/**
+ * Département pour les noms : 2 premiers chiffres du code postal (79200 → 79 ; Corse 2A / 2B ; outre-mer 971…),
+ * sinon le département de la date (pays à l'étranger : CH, BE…).
+ */
+function dept_(show) {
+  var cp = String((show.structure && show.structure.postal_code) || '').replace(/\s/g, '');
+  if (/^\d{5}$/.test(cp)) {
+    if (/^9[78]/.test(cp)) return cp.slice(0, 3);
+    if (/^20/.test(cp)) return Number(cp) < 20200 ? '2A' : '2B';
+    return cp.slice(0, 2);
+  }
+  var d = String(show.department || '').trim();
+  return /^\d$/.test(d) ? '0' + d : d.toUpperCase();
+}
+
+/** MM-DD • Ville • Salle (79) — nomenclature L'ArtBo du dossier d'une date. */
 function folderName_(show) {
   var d = show.date.split('-'); // YYYY-MM-DD
   var venue = String(show.venue || '').replace(/\*\*/g, '').replace(/\s*•\s*[A-Z\/]{1,5}\s*$/, '').trim();
-  var cp = (show.structure && show.structure.postal_code) || show.department;
-  return d[1] + '_' + d[2] + ' • ' + (show.city || '').trim() + ' • ' + venue + (cp ? ' (' + cp + ')' : '');
+  var dp = dept_(show);
+  return d[1] + '-' + d[2] + ' • ' + (show.city || '').trim() + ' • ' + venue + (dp ? ' (' + dp + ')' : '');
 }
 
 function artistFolder_(project, p) {
@@ -441,7 +456,7 @@ function json_(obj) {
 
 /**
  * Parcourt <Artiste>/032_Production/<Année>/ et rattache chaque dossier
- * "MM_DD • …" (ou ancien "MM-DD • …") à la date du même projet et du même jour.
+ * "MM-DD • …" (ou "MM_DD • …") à la date du même projet et du même jour.
  * Lancé depuis Réglages › Google › « Rattacher les dossiers Drive existants ».
  */
 function linkExistingFolders() {
@@ -461,7 +476,7 @@ function linkExistingFolders() {
       var folders = y.getFolders();
       while (folders.hasNext()) {
         var f = folders.next();
-        var m = f.getName().match(/^(\d{2})[-_](\d{2})/);   // « 10_17 • … » ou ancien « 10-17 • … »
+        var m = f.getName().match(/^(\d{2})[-_](\d{2})/);   // « 10-17 • … » (ou « 10_17 • … »)
         if (!m) continue;
         var date = y.getName() + '-' + m[1] + '-' + m[2];
         var show = shows.filter(function (s) { return s.project_id === proj.id && s.date === date && !s.drive_folder_id; })[0];
@@ -481,11 +496,11 @@ function linkExistingFolders() {
 
 var SKIP_ARTIST_FOLDERS = ['pyrprod', 'fiches techniques', 'contrats a traiter', 'drive'];
 
-/** Contrat : « Artiste • AAAA-MM-JJ • Ville (CP) • Salle • CC » (CR pour une co-réalisation) */
+/** Contrat : « Artiste • AAAA-MM-JJ • Ville (79) • Salle • CC » (CR pour une co-réalisation) */
 function contractName_(show, artist) {
   var venue = String(show.venue || '').replace(/\*\*/g, '').replace(/\s*•\s*[A-Z\/]{1,5}\s*$/, '').trim();
-  var cp = (show.structure && show.structure.postal_code) || show.department;
-  return [artist, show.date, (show.city || '').trim() + (cp ? ' (' + cp + ')' : ''), venue, show.contract_type === 'Co-Réalisation' ? 'CR' : 'CC'].join(' • ');
+  var dp = dept_(show);
+  return [artist, show.date, (show.city || '').trim() + (dp ? ' (' + dp + ')' : ''), venue, show.contract_type === 'Co-Réalisation' ? 'CR' : 'CC'].join(' • ');
 }
 
 /**
@@ -539,7 +554,8 @@ function auditContracts_(folder, show, artist, rows, aname, where) {
     var files = f.getFiles();
     while (files.hasNext()) {
       var file = files.next(), name = file.getName();
-      if (!/contrat|cession|cor[eé]alisation|\bCC\b|\bCR\b/i.test(name) || /avenant|technique|fiche/i.test(name)) continue;
+      // seulement les vrais contrats (le mot « contrat » dans le nom), pas les avenants, contrats techniques ni fiches
+      if (!/contrat/i.test(name) || /avenant|technique|fiche|engagement|rider/i.test(name)) continue;
       var ext = (name.match(/\.(pdf|docx?|odt)$/i) || ['', ''])[1];
       var signed = /sign/i.test(name) ? ' • Signé' : '';
       var want = contractName_(show, artist) + signed + (ext ? '.' + ext.toLowerCase() : '');

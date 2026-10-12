@@ -15,6 +15,13 @@ import { byId, setting } from './selectors.js';
 import { openModal } from './ui/modal.js';
 import { esc, fmtDate, toast, today } from './utils.js';
 
+/** Département pour les noms de fichiers : 79200 → 79, Corse 2A / 2B, outre-mer 971… ; sinon le département de la date (CH, BE… à l'étranger) */
+export function deptOf(postal, fallback){
+  const cp = String(postal || '').replace(/\s/g, '');
+  if (/^\d{5}$/.test(cp)) return /^9[78]/.test(cp) ? cp.slice(0, 3) : /^20/.test(cp) ? (Number(cp) < 20200 ? '2A' : '2B') : cp.slice(0, 2);
+  const d = String(fallback || '').trim();
+  return /^\d$/.test(d) ? '0' + d : d.toUpperCase();
+}
 const stripCode = name => String(name || '').replace(/\s*•.*$/, '').trim();
 const venueName = v => String(v || '').replace(/\*\*/g, '').replace(/\s*•\s*[A-Z/]{1,5}\s*$/, '').trim();
 const num = n => n == null || n === '' ? '' : Number(n).toLocaleString('fr-FR', {minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2}).replace(/ /g, ' ');
@@ -116,8 +123,8 @@ export function contractVars(s){
   if (rooms) seq.push({find: 'X single-rooms', values: [rooms]});
   if (pr.setup_hours) seq.push({find: 'au moins XX heures', values: [`au moins ${num(pr.setup_hours)} heure${pr.setup_hours > 1 ? 's' : ''}`]});
   const st = byId('structures', s.structure_id);
-  const cp = d.venue_postal_code || st?.postal_code || s.department || '';
-  const name = [tags["Nom de L'Artiste"], s.date, `${s.city || d.venue_city || ''}${cp ? ` (${cp})` : ''}`, venueName(s.venue), kind.toUpperCase()].filter(Boolean).join(' • ');
+  const dp = deptOf(st?.postal_code || d.venue_postal_code, s.department);
+  const name = [tags["Nom de L'Artiste"], s.date, `${s.city || d.venue_city || ''}${dp ? ` (${dp})` : ''}`, venueName(s.venue), kind.toUpperCase()].filter(Boolean).join(' • ');
   return {kind, tags, seq, name, missing: Object.entries(tags).filter(([k, v]) => v === '' && !(kind === 'cc' && /Minimum|Break|% du/.test(k)) && !(kind === 'cr' && /Prix de Cession|Billetterie/.test(k)) && k !== 'N° Licence Entrepreneur du Spectacle').map(([k]) => k)};
 }
 

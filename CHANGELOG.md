@@ -5,6 +5,11 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.15.2 — 12/10/2026
+- Nomenclatures corrigées : dossier de date « MM-DD • Ville • Salle (79) » et contrat « Artiste • AAAA-MM-JJ • Ville (79) • Salle • CC/CR », avec les 2 premiers chiffres du code postal (2A/2B en Corse, 971… outre-mer, pays à l’étranger)
+- Vérification des noms : seuls les fichiers contenant « contrat » sont considérés comme des contrats (hors avenants, contrats techniques, fiches)
+
+
 ## 1.15.1 — 12/10/2026
 - Glisser-déposer partout : un fichier lâché près de n’importe quel bouton « Ajouter un fichier » (modèles de mail, préparation d’un mail, fiche salarié, questionnaire…) est pris en compte, avec la zone surlignée pendant le survol
 

@@ -59,7 +59,7 @@ export function viewSettings(){
       </div>
       <div class="vh-actions" style="margin-top:12px"><button class="btn sm" data-act="testScript">Tester le script</button>
         <button class="btn sm" data-act="driveScan">Rattacher les dossiers Drive existants</button></div>
-      <p class="help" style="margin:14px 0 6px">Noms des dossiers de dates (« MM_DD • Ville • Salle (CP) ») et des contrats (« Artiste • AAAA-MM-JJ • Ville (CP) • Salle • CC/CR ») : la vérification crée un Google Sheet avec les renommages proposés, sans rien toucher. Décoche ce qui ne convient pas, puis applique.</p>
+      <p class="help" style="margin:14px 0 6px">Noms des dossiers de dates (« MM-DD • Ville • Salle (79) ») et des contrats (« Artiste • AAAA-MM-JJ • Ville (79) • Salle • CC/CR ») : la vérification crée un Google Sheet avec les renommages proposés, sans rien toucher. Décoche ce qui ne convient pas, puis applique.</p>
       <div class="vh-actions"><button class="btn sm" data-act="renameAudit">Vérifier les noms</button>
         ${setting('rename_sheet_url') ? `<a class="btn sm" href="${esc(setting('rename_sheet_url'))}" target="_blank" rel="noopener">Ouvrir le dernier tableau</a>` : ''}
         <button class="btn sm" data-act="renameApply">Appliquer les renommages cochés</button></div></div>

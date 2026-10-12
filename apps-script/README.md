@@ -26,9 +26,9 @@ Après une modification de `Code.gs` : **Déployer › Gérer les déploiements 
 
 ## Ce que fait le script
 
-- `create_folder` (automatique quand une date passe en Confirmée) : `<Artiste>/032_Production/<Année>/MM_DD • Ville • Salle (CP)`, copie du dossier modèle.
+- `create_folder` (automatique quand une date passe en Confirmée) : `<Artiste>/032_Production/<Année>/MM-DD • Ville • Salle (79)` (79 = 2 premiers chiffres du code postal), copie du dossier modèle.
 - `draft` : brouillon Gmail préparé depuis la Matrice (pièces jointes Drive du modèle incluses).
-- `link_folders` : rattache les dossiers `MM_DD • …` (ou anciens `MM-DD • …`) aux dates du même artiste et du même jour.
+- `link_folders` : rattache les dossiers `MM-DD • …` (ou `MM_DD • …`) aux dates du même artiste et du même jour.
 - `folder_path` : chemin du dossier, pour « Copier le chemin Finder ».
 - `contract` / `contract_pdf` : contrat rempli depuis le modèle Google Docs (dans `01_Legal` du dossier de la date), puis PDF.
 - `rh_folders` / `rh_file_docs` : dossier « NOM Prénom » de chaque salarié, et rangement des pièces reçues (RIB, carte vitale, bulletins…).
