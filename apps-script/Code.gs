@@ -66,8 +66,20 @@ function doPost(e) {
 function createDraft_(body) {
   var opts = { htmlBody: body.html || '', name: 'L\'ArtBoristerie Productions' };
   if (body.cc) opts.cc = body.cc;
-  var files = (body.attachments || []).map(function (id) {
-    try { return DriveApp.getFileById(id).getBlob(); } catch (e) { return null; }
+  // Pièces jointes : fichiers Drive ({id} ou identifiant) ou fichiers déposés dans la Matrice ({path} du stockage « suivi »)
+  var p = props_();
+  var files = (body.attachments || []).map(function (a) {
+    try {
+      if (typeof a === 'string') return DriveApp.getFileById(a).getBlob();
+      if (a.id) return DriveApp.getFileById(a.id).getBlob();
+      if (a.path) {
+        var res = UrlFetchApp.fetch(p.SUPABASE_URL + '/storage/v1/object/suivi/' + a.path.split('/').map(encodeURIComponent).join('/'),
+          { headers: authHeaders_({}), muteHttpExceptions: true });
+        if (res.getResponseCode() >= 300) return null;
+        return res.getBlob().setName(a.name || a.path.split('/').pop());
+      }
+    } catch (e) { Logger.log('Pièce jointe : ' + e); }
+    return null;
   }).filter(Boolean);
   if (files.length) opts.attachments = files;
   var draft = GmailApp.createDraft(body.to || '', body.subject || '', plain_(body.html || ''), opts);
@@ -118,7 +130,7 @@ function dailyJob() {
       if (!tpl) return;
       var vars = sb_('POST', 'rpc/mail_vars', { p_show: show.id, p_contact: show.conf_contact_id });
       var out = createDraft_({ to: vars.contact_email || '', cc: tpl.cc, subject: fill_(tpl.subject, vars, false),
-        html: fill_(tpl.html, vars, true), attachments: (tpl.attachments || []).map(function (a) { return a.id; }) });
+        html: fill_(tpl.html, vars, true), attachments: tpl.attachments || [] });
       var log = show.mail_log || {};
       log[kind] = { at: new Date().toISOString(), to: vars.contact_email || '', draft: true, auto: true };
       sb_('PATCH', 'shows?id=eq.' + show.id, { mail_log: log });

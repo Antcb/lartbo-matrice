@@ -13,7 +13,10 @@ import { openModal } from './ui/modal.js';
 import { esc, fmtDate, toast } from './utils.js';
 
 export const MAIL_KINDS = { confirmation: 'Confirmation', boucle_tech: 'Boucle accueil & technique', boucle_com: 'Boucle communication', autre: 'Autre' };
-export const VARIANTS = { cc: 'CC', cc_club: 'CC Club', cc_festival: 'CC Festival', ccr_club: 'CCR Club' };
+/** Quand un modèle est proposé en premier (la variante, elle, n'est qu'un nom libre : CC Club, CC Festival…) */
+export const APPLIES = { all: 'Toutes les dates', salle: 'Dates en salle (Confirmée Salle)', festival: 'Festivals (Confirmée Festival)', cr: 'Co-réalisations', cession: 'Cessions' };
+const applies = (rule, s) => ({ all: true, salle: /Salle/.test(s.status || ''), festival: /Festival/.test(s.status || ''),
+  cr: s.contract_type === 'Co-Réalisation', cession: s.contract_type === 'Cession' })[rule || 'all'] ?? true;
 /** Étape de suivi remplie quand le mail est noté « envoyé » */
 export const SENT_FIELD = { confirmation: 'conf_kit_sent', boucle_tech: 'boucle_tech', boucle_com: 'boucle_com' };
 export const TAGS = [
@@ -24,18 +27,14 @@ export const TAGS = [
   ['personnes','Personnes sur la route'], ['chambres','Chambres (single / twin)'], ['montage','Mise à disposition (heures)'], ['invitations','Invitations producteur'],
 ];
 
-/** Variante attendue pour une date : CCR Club (co-réalisation), CC Festival, CC Club */
-export function wantedVariant(s){
-  if (s.contract_type === 'Co-Réalisation') return 'ccr_club';
-  if (s.status === 'Confirmée Festival') return 'cc_festival';
-  return 'cc_club';
-}
-
-/** Modèles possibles pour une date, le plus adapté en premier */
+/**
+ * Modèles possibles pour une date, le plus adapté en premier :
+ * celui de l'artiste avant le générique, puis celui dont la règle correspond (co-réalisation, festival, salle…)
+ * avant « toutes les dates ». Les autres restent proposés dans la liste.
+ */
 export function templatesFor(s, kind){
   const all = S.db.mail_templates.filter(t => t.kind === kind && (t.project_id === s.project_id || !t.project_id));
-  const want = kind === 'confirmation' ? wantedVariant(s) : null;
-  const score = t => (t.project_id === s.project_id ? 10 : 0) + (want && t.variant === want ? 5 : 0) + (t.variant === 'cc' ? 1 : 0);
+  const score = t => (t.project_id === s.project_id ? 10 : 0) + (!applies(t.applies_to, s) ? -20 : (t.applies_to && t.applies_to !== 'all' ? 5 : 0));
   return all.sort((a,b) => score(b) - score(a) || (a.name||'').localeCompare(b.name||''));
 }
 
@@ -100,6 +99,8 @@ export async function prepareMail(showId, kind){
       <label for="ml-subj">Objet</label><input id="ml-subj">
     </div>
     <div class="mail-preview" id="ml-body" contenteditable="true" aria-label="Texte du mail (modifiable)"></div>
+    <div class="ml-att"><b class="fiche-lbl">Pièces jointes</b> <span id="ml-files"></span>
+      <label class="btn sm file-btn">Ajouter un fichier<input type="file" class="file-input" multiple id="ml-up"></label></div>
     <p class="help">Le texte est modifiable ici avant de créer le brouillon. Les zones jaunes sont à compléter.${scriptUrl()?'':' Le script Google n’est pas encore installé : « Copier le mail » puis colle-le dans un nouveau mail Gmail.'}</p>
     <label class="check-line"><input type="checkbox" id="ml-sent"> Noter « envoyé » aujourd’hui (${esc(SENT_FIELD[kind] ? stepLabel(kind) : '')})</label>
     <div class="vh-actions" style="margin-top:10px">
@@ -114,7 +115,8 @@ export async function prepareMail(showId, kind){
       if (!m.to) { toast('Indique le destinataire', true); return false; }
       try {
         const tpl = byId('mail_templates', $('#ml-tpl').value);
-        const out = await callScript('draft', {to: m.to, cc: m.cc, subject: m.subject, html: m.html, attachments: (tpl?.attachments||[]).map(a=>a.id)});
+        const out = await callScript('draft', {to: m.to, cc: m.cc, subject: m.subject, html: m.html,
+          attachments: files.filter(f => f.on).map(f => f.path ? {path: f.path, name: f.name} : {id: f.id})});
         await logMail(s, kind, m.to, true);
         toast('Brouillon créé dans Gmail', false, out.url ? {label:'Ouvrir', fn: () => window.open(out.url, '_blank')} : null);
         return true;
@@ -122,8 +124,12 @@ export async function prepareMail(showId, kind){
     }});
   const $ = sel => document.querySelector('#modal ' + sel);
   const current = () => ({to: $('#ml-to').value.trim(), cc: $('#ml-cc').value.trim(), subject: $('#ml-subj').value.trim(), html: $('#ml-body').innerHTML});
+  // Pièces jointes : celles du modèle (cochées) + celles ajoutées pour ce mail
+  let files = [];
+  const drawFiles = () => { $('#ml-files').innerHTML = files.map((f, i) => `<label class="att-chip"><input type="checkbox" data-att="${i}" ${f.on ? 'checked' : ''}> ${f.path ? '📎' : '🔗'} ${esc(f.name || 'Fichier Drive')}</label>`).join('') || '<span class="muted">aucune</span>'; };
   const draw = () => {
     const t = byId('mail_templates', $('#ml-tpl').value);
+    files = [...(t.attachments || []).map(a => ({...a, on: true})), ...files.filter(f => f.mine)]; drawFiles();
     $('#ml-cc').value = t.cc || '';
     $('#ml-subj').value = fill(t.subject, vars, false);
     $('#ml-body').innerHTML = fill(t.html, vars, true);
@@ -139,9 +145,19 @@ export async function prepareMail(showId, kind){
     if (contactId && contactId !== s.conf_contact_id) save('shows', s.id, {conf_contact_id: contactId}, {rerender:false});
   };
   ['#ml-to','#ml-cc','#ml-subj'].forEach(k => $(k).oninput = gmailLink);
+  $('#ml-files').addEventListener('change', e => { const i = e.target.dataset.att; if (i != null) files[i].on = e.target.checked; });
+  $('#ml-up').addEventListener('change', async e => {
+    for (const f of e.target.files){
+      const path = `mails/${s.id}/${Date.now()}_${f.name.replace(/[^\w.\-]+/g, '_')}`;
+      const {error} = await sb.storage.from('suivi').upload(path, f, {contentType: f.type || 'application/octet-stream'});
+      if (error){ toast('Envoi impossible : ' + error.message, true); continue; }
+      files.push({path, name: f.name, on: true, mine: true});
+    }
+    e.target.value = ''; drawFiles();
+  });
   $('#ml-copy').onclick = async () => {
     const m = current();
-    if (await copyRich(m.html, plain(m.html))) toast('Mail copié : colle-le dans Gmail (objet et destinataires sont dans « Ouvrir Gmail »)');
+    if (await copyRich(m.html, plain(m.html))) toast(files.some(f => f.on) ? 'Mail copié. Pense à joindre les pièces jointes à la main dans Gmail' : 'Mail copié : colle-le dans Gmail (objet et destinataires sont dans « Ouvrir Gmail »)');
     else toast('Copie impossible avec ce navigateur', true);
     await logMail(s, kind, m.to, false);
   };
@@ -183,38 +199,69 @@ export function templatesList(projectId){
     .sort((a,b)=>(projLabel(a.project_id)).localeCompare(projLabel(b.project_id)) || (a.kind||'').localeCompare(b.kind||'') || (a.name||'').localeCompare(b.name||''));
   if (!rows.length) return '<div class="empty">Aucun modèle pour l’instant.</div>';
   return `<div class="tpl-list">${rows.map(t=>`<button type="button" class="tpl-row" data-act="editTemplate" data-id="${t.id}">
-    <span class="tpl-kind">${esc(MAIL_KINDS[t.kind]||t.kind)}${t.variant?` · ${esc(VARIANTS[t.variant]||t.variant)}`:''}</span>
-    <b>${esc(t.name||'Sans nom')}</b><span class="muted">${esc(projLabel(t.project_id))}</span></button>`).join('')}</div>`;
+    <span class="tpl-kind">${esc(MAIL_KINDS[t.kind]||t.kind)}${t.variant?` · ${esc(t.variant)}`:''}</span>
+    <b>${esc(t.name||'Sans nom')}</b><span class="muted">${esc(projLabel(t.project_id))}${t.applies_to && t.applies_to !== 'all' ? ` · ${esc(APPLIES[t.applies_to])}` : ''}${(t.attachments||[]).length ? ` · 📎 ${(t.attachments||[]).length}` : ''}</span></button>`).join('')}</div>`;
 }
 const projLabel = id => id ? (byId('projects', id)?.name || '?') : 'Tous les artistes (générique)';
 
 export async function editTemplate(id, defaults={}){
-  const t = id ? byId('mail_templates', id) : {kind:'confirmation', variant:'cc', subject:'', html:'', ...defaults};
+  const t = id ? byId('mail_templates', id) : {kind:'confirmation', applies_to:'all', subject:'', html:'', attachments:[], ...defaults};
   const tagBar = `<div class="tag-bar" role="toolbar" aria-label="Insérer une balise">${TAGS.map(([k,l])=>`<button type="button" class="chip-btn" data-tag="${k}" title="${esc(l)}">{{${k}}}</button>`).join('')}</div>`;
   const fmtBar = `<div class="tag-bar"><button type="button" class="chip-btn" data-cmd="bold"><b>G</b></button><button type="button" class="chip-btn" data-cmd="italic"><i>I</i></button><button type="button" class="chip-btn" data-cmd="underline"><u>S</u></button><button type="button" class="chip-btn" data-cmd="createLink">Lien</button><button type="button" class="chip-btn" data-cmd="removeFormat">Sans mise en forme</button></div>`;
-  const att = (t.attachments||[]).map(a=>a.url||a.id).join('\n');
-  const extra = `<div class="field full"><label>Texte du mail</label>${fmtBar}${tagBar}<div class="mail-preview" id="tpl-body" contenteditable="true">${t.html||''}</div>
-    <div class="help">Clique sur une balise pour l’insérer à l’endroit du curseur. Elle sera remplacée par l’info de la date.</div></div>`;
-  let lastRange = null;
-  const p = openModal({title: id ? 'Modèle de mail' : 'Nouveau modèle de mail', wide: true, values: {...t, attachments: att},
+  let files = (t.attachments || []).slice();   // [{path, name}] fichier déposé · [{id, url, name}] fichier Drive
+  const variants = [...new Set(['CC', 'CC Club', 'CC Festival', 'CCR Club', ...S.db.mail_templates.map(x => x.variant).filter(Boolean)])];
+  const extra = `<div class="field full"><label>Pièces jointes</label><div id="tpl-files"></div>
+      <div class="vh-actions" style="margin-top:6px"><label class="btn sm file-btn">Ajouter un fichier<input type="file" class="file-input" multiple id="tpl-up"></label>
+        <input id="tpl-drive" placeholder="ou coller un lien Drive puis Entrée" style="min-width:260px"></div>
+      <div class="help">Jointes au brouillon Gmail (ex. fiche technique, rider, kit promo). Tu pourras en ajouter d’autres au moment d’envoyer.</div></div>
+    <div class="field full"><label>Texte du mail</label>${fmtBar}${tagBar}<div class="mail-preview" id="tpl-body" contenteditable="true">${t.html||''}</div>
+    <div class="help">Clique sur une balise pour l’insérer à l’endroit du curseur. Elle sera remplacée par l’info de la date.</div></div>
+    <datalist id="tpl-variants">${variants.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
+    ${id ? `<div class="field full"><button type="button" class="btn sm" id="tpl-dup">Dupliquer ce modèle (pour créer une autre variante)</button></div>` : ''}`;
+  const drawFiles = () => { const box = document.querySelector('#tpl-files'); if (!box) return;
+    box.innerHTML = files.length ? `<ul class="doc-list">${files.map((f, i) => `<li><span>${f.path ? '📎' : '🔗'} ${esc(f.name || f.url || f.id)}</span><button type="button" class="btn icon sm ghost danger" data-rmf="${i}" aria-label="Retirer">✕</button></li>`).join('')}</ul>` : '<p class="muted" style="margin:0">Aucune pièce jointe.</p>'; };  let lastRange = null;
+  const p = openModal({title: id ? 'Modèle de mail' : 'Nouveau modèle de mail', wide: true, values: {...t, applies_to: t.applies_to || 'all'},
     fields: [
       {k:'name', label:'Nom du modèle'},
       {k:'project_id', label:'Artiste', type:'project', allLabel:'Tous les artistes (générique)'},
-      {k:'kind', label:'Type', type:'select', blank:false, options:Object.entries(MAIL_KINDS)},
-      {k:'variant', label:'Variante (confirmation)', type:'select', options:Object.entries(VARIANTS), help:'CCR Club pour une co-réalisation, CC Festival pour une date festival, CC Club sinon.'},
+      {k:'kind', label:'Type de mail', type:'select', blank:false, options:Object.entries(MAIL_KINDS)},
+      {k:'variant', label:'Variante (nom libre)', placeholder:'ex. CC Club, CC Festival, CCR Club…', help:'Juste un nom pour t’y retrouver, affiché dans la liste des modèles.'},
+      {k:'applies_to', label:'Proposé en premier pour', type:'select', blank:false, options:Object.entries(APPLIES), full:true,
+        help:'Au moment de préparer le mail, ce modèle est choisi automatiquement pour ces dates. Les autres modèles restent disponibles dans la liste.'},
       {k:'subject', label:'Objet', full:true},
       {k:'cc', label:'En copie', full:true, placeholder:'Nom <adresse@…>, …'},
-      {k:'attachments', label:'Pièces jointes Drive (un lien par ligne)', type:'textarea', full:true, help:'Ex. la fiche technique : le fichier est joint au brouillon Gmail.'},
     ], extra,
     onSave: async v => {
-      const row = {name:v.name, project_id:v.project_id||null, kind:v.kind, variant:v.variant||null, subject:v.subject||'', cc:v.cc||null,
-        html: document.querySelector('#tpl-body').innerHTML, updated_at: new Date().toISOString(),
-        attachments: String(v.attachments||'').split(/\s+/).filter(Boolean).map(u=>({url:u, id:(u.match(/[-\w]{25,}/)||[u])[0]}))};
+      const row = {name:v.name, project_id:v.project_id||null, kind:v.kind, variant:v.variant||null, applies_to:v.applies_to||'all', subject:v.subject||'', cc:v.cc||null,
+        html: document.querySelector('#tpl-body').innerHTML, updated_at: new Date().toISOString(), attachments: files};
       if (id) return !!(await save('mail_templates', id, row));
       return !!(await insert('mail_templates', row));
     },
     onDelete: id ? () => remove('mail_templates', id) : null});
   const body = document.querySelector('#tpl-body');
+  document.querySelector('#modal [name=variant]')?.setAttribute('list', 'tpl-variants');
+  drawFiles();
+  document.querySelector('#tpl-files').addEventListener('click', e => { const b = e.target.closest('[data-rmf]'); if (b){ files.splice(Number(b.dataset.rmf), 1); drawFiles(); } });
+  document.querySelector('#tpl-up').addEventListener('change', async e => {
+    for (const f of e.target.files){
+      const path = `modeles/${id || 'nouveau'}/${Date.now()}_${f.name.replace(/[^\w.\-]+/g, '_')}`;
+      const {error} = await sb.storage.from('suivi').upload(path, f, {contentType: f.type || 'application/octet-stream'});
+      if (error){ toast('Envoi impossible : ' + error.message, true); continue; }
+      files.push({path, name: f.name, size: f.size});
+    }
+    e.target.value = ''; drawFiles();
+  });
+  document.querySelector('#tpl-drive').addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return; e.preventDefault();
+    const u = e.target.value.trim(), fid = (u.match(/[-\w]{25,}/) || [''])[0];
+    if (!fid) return toast('Lien Drive non reconnu', true);
+    files.push({id: fid, url: u, name: 'Fichier Drive ' + fid.slice(0, 6) + '…'}); e.target.value = ''; drawFiles();
+  });
+  document.querySelector('#tpl-dup')?.addEventListener('click', async () => {
+    const {id: _i, created_at, updated_at, ...rest} = t;
+    const copy = await insert('mail_templates', {...rest, html: body.innerHTML, name: (t.name || 'Modèle') + ' (copie)'});
+    if (copy){ document.querySelector('#modal').close(); toast('Copie créée : change son nom, sa variante et son texte'); editTemplate(copy.id); }
+  });
   const keep = () => { const sel = getSelection(); if (sel.rangeCount && body.contains(sel.anchorNode)) lastRange = sel.getRangeAt(0).cloneRange(); };
   body.addEventListener('keyup', keep); body.addEventListener('mouseup', keep); body.addEventListener('input', keep);
   document.querySelectorAll('#modal [data-tag]').forEach(b => b.onmousedown = e => {

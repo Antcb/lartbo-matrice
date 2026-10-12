@@ -5,6 +5,11 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.14.0 — 12/10/2026
+- Modèles de mail : pièces jointes déposées directement (sans passer par le Drive) ou liens Drive, et pièces jointes ajoutées au moment d’envoyer
+- Modèles de mail : variante en nom libre, règle « Proposé en premier pour » (salle, festival, co-réalisation, cession, toutes) et bouton « Dupliquer » pour créer une variante
+
+
 ## 1.13.2 — 12/10/2026
 - Vérifier les noms : le tableau s’ouvre sans être bloqué par le navigateur, il est partagé avec anthony@ et un bouton « Ouvrir le dernier tableau » le retrouve dans Réglages
 
