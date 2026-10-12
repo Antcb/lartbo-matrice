@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.15.6 — 12/10/2026
+- Tableau de renommage rangé dans « - Temp » ; nouvel exercice comptable copié depuis le modèle
+
+
 ## 1.15.5 — 12/10/2026
 - Noms Drive : département du lieu de la date (plus celui du siège de la structure), versions de contrats V1/V2, pré-contrats et locations ignorés, rattachement des dossiers à la date confirmée
 

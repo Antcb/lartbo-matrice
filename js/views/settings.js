@@ -55,6 +55,7 @@ export function viewSettings(){
         <label for="set-emp">Dossier Drive des salariés</label><input id="set-emp" data-setting-text="employees_folder_id" value="${esc(setting('employees_folder_id')||'')}" placeholder="ID ou lien du dossier">
         <label for="set-fin">Dossier « 01_Finance » (bulletins de paie, notes de frais)</label><input id="set-fin" data-setting-text="finance_folder_id" value="${esc(setting('finance_folder_id')||'')}" placeholder="Lien du dossier">
         <label for="set-ndft">Dossier type d’une note de frais (« NOM Prénom »)</label><input id="set-ndft" data-setting-text="ndf_template_folder_id" value="${esc(setting('ndf_template_folder_id')||'')}" placeholder="Lien du dossier">
+        <label for="set-temp">Dossier « - Temp » (tableaux de renommage…)</label><input id="set-temp" data-setting-text="temp_folder_id" value="${esc(setting('temp_folder_id')||'')}" placeholder="Lien du dossier">
         <label for="set-site">Adresse du site (liens des fiches)</label><input id="set-site" data-setting-text="site_url" value="${esc(setting('site_url')||'')}">
       </div>
       <div class="vh-actions" style="margin-top:12px"><button class="btn sm" data-act="testScript">Tester le script</button>

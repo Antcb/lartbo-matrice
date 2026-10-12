@@ -286,7 +286,13 @@ function financeFolder_(d, e) {
   var ym = String(d.when || d.at || '').slice(0, 7);
   if (!/^\d{4}-\d{2}$/.test(ym)) throw new Error('date du document inconnue');
   var y = Number(ym.slice(0, 4)), start = Number(ym.slice(5, 7)) >= 10 ? y : y - 1;
-  var year = childFolder_(root, start + ':' + (start + 1), false) || childFolder_(root, start + '/' + (start + 1), false) || root.createFolder(start + ':' + (start + 1));
+  var year = childFolder_(root, start + ':' + (start + 1), false) || childFolder_(root, start + '/' + (start + 1), false);
+  if (!year) {
+    // nouvel exercice (octobre → septembre) : copie de « Template 20XX:20XX » s'il existe
+    year = root.createFolder(start + ':' + (start + 1));
+    var tpl = childFolder_(root, 'Template 20XX:20XX', false) || childFolder_(root, 'Template 20XX/20XX', false);
+    if (tpl) copyContents_(tpl, year);
+  }
   if (d.kind === 'bds') return childFolder_(childFolder_(year, 'E - Sociale', true), ym, true);
   var month = childFolder_(childFolder_(year, 'B - Notes de Frais', true), ym, true);
   var name = rhName_(e), mine = childFolder_(month, name, false);
@@ -586,6 +592,8 @@ function renameAudit() {
   if (rows.length > 1) sh.getRange(2, 1, rows.length - 1, 1).insertCheckboxes();
   sh.setFrozenRows(1); sh.getRange(1, 1, 1, rows[0].length).setFontWeight('bold'); sh.autoResizeColumns(2, 5);
   PropertiesService.getScriptProperties().setProperty('RENAME_SHEET_ID', ss.getId());
+  // rangé directement dans « - Temp » (Réglages › Google › Dossier temporaire)
+  try { DriveApp.getFileById(ss.getId()).moveTo(DriveApp.getFolderById(setting_('temp_folder_id') || '1icxpOARizOC3mr8pA3e3ICrE0TFEKyTz')); } catch (err) {}
   // visible aussi depuis le compte d'Anthony, et lien gardé dans Réglages › Google
   try { ss.addEditor('anthony@lartboristerie.com'); } catch (err) {}
   try { sb_('PATCH', 'settings?key=eq.rename_sheet_url', { value: ss.getUrl() }); } catch (err) {}
