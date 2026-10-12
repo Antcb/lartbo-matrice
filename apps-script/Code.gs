@@ -581,7 +581,7 @@ function renameAudit() {
           || (m && proj ? pickShow_(shows.filter(function (s) { return s.project_id === proj.id && s.date === y.getName() + '-' + m[1] + '-' + m[2]; })) : null);
         if (!show) { rows.push([false, 'Dossier (date inconnue)', aname, y.getName(), df.getName(), '', df.getId()]); continue; }
         var want = folderName_(show);
-        if (want !== df.getName()) rows.push([true, 'Dossier de date', aname, y.getName(), df.getName(), want, df.getId()]);
+        if (!sameName_(want, df.getName())) rows.push([true, 'Dossier de date', aname, y.getName(), df.getName(), want, df.getId()]);
         auditContracts_(df, show, proj ? proj.name.replace(/\s*•.*$/, '').trim() : aname, rows, aname, y.getName() + '/' + want);
       }
     }
@@ -598,6 +598,12 @@ function renameAudit() {
   try { ss.addEditor('anthony@lartboristerie.com'); } catch (err) {}
   try { sb_('PATCH', 'settings?key=eq.rename_sheet_url', { value: ss.getUrl() }); } catch (err) {}
   return { ok: true, url: ss.getUrl(), count: rows.length - 1 };
+}
+
+/** Même nom à l'apostrophe, la casse, les espaces ou les accents près : on ne propose pas de renommer pour si peu */
+function sameName_(a, b) {
+  var n = function (x) { return rhNorm_(String(x).replace(/[’‘`´]/g, "'").replace(/\s*•\s*/g, ' • ')); };
+  return n(a) === n(b);
 }
 
 function auditContracts_(folder, show, artist, rows, aname, where) {
@@ -627,7 +633,7 @@ function auditContracts_(folder, show, artist, rows, aname, where) {
     var g = groups[k].sort(function (a, b) { return a.ver - b.ver || a.created - b.created; });
     g.forEach(function (c, i) {
       var want = base + c.signed + (g.length > 1 ? ' • V' + (i + 1) : '') + '.' + c.ext;
-      if (want !== c.name) rows.push([true, 'Contrat', aname, where, c.name, want, c.file.getId()]);
+      if (!sameName_(want, c.name)) rows.push([true, 'Contrat', aname, where, c.name, want, c.file.getId()]);
     });
   });
 }
