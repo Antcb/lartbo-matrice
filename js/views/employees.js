@@ -70,7 +70,7 @@ export function editEmployee(id){
       <input id="emp-doc-when" placeholder="Bulletin : 2026-09-12 ou 2026-09-12_25 · NDF : 2026-09" title="Date(s) du bulletin de paie ou mois de la note de frais" style="min-width:260px">
       <label class="btn sm primary file-btn">Ajouter le fichier<input type="file" class="file-input" multiple data-emp-doc="${e.id}"></label>
     </div>
-    <p class="help">Les pièces vont dans le dossier Drive du salarié (« RIB - ${esc(fullName(e))} »…). Les bulletins de paie (« BDS-${esc(fullName(e))} 2026-09-12 ») et notes de frais (« NDF-2026-09 ${esc(fullName(e))} ») vont dans leurs dossiers à part (Réglages › Google).</p>
+    <p class="help">Les pièces vont dans le dossier Drive du salarié (« RIB - ${esc(fullName(e))} »…). Les bulletins de paie (« BDS-${esc(fullName(e))} 2026-09-12 ») vont dans 01_Finance › exercice › E - Sociale › mois, et les notes de frais (« NDF-2026-09 ${esc(fullName(e))} ») dans 01_Finance › exercice › B - Notes de Frais › mois › ${esc(fullName(e))}.</p>
     <div class="vh-actions">${e.drive_folder_id ? `<a class="btn sm" href="https://drive.google.com/drive/folders/${esc(e.drive_folder_id)}" target="_blank" rel="noopener">Ouvrir le dossier Drive</a>` : `<button type="button" class="btn sm" data-act="rhFolder" data-id="${e.id}">Créer le dossier Drive</button>`}
       ${pending(e) ? `<button type="button" class="btn sm primary" data-act="rhFileDocs">Ranger les pièces dans le Drive</button>` : ''}</div>
     ${Object.keys(mm).length ? `<details style="margin-top:14px"><summary>Données de l’export Movinmotion (${Object.keys(mm).length})</summary><dl class="fiche-dl" style="margin-top:8px">${Object.entries(mm).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></details>` : ''}
@@ -156,7 +156,7 @@ document.addEventListener('change', async ev => {
     const {error} = await sb.storage.from('rh').upload(path, file, {contentType: file.type || 'application/octet-stream'});
     if (error) return toast('Envoi impossible : ' + error.message, true);
     const target = targetName(e, kind, when) + (ev.target.files.length > 1 && !['bds','ndf'].includes(kind) ? ` (${i})` : '');
-    docs.push({kind, label: kind, path, name: file.name, target, at: new Date().toISOString()});
+    docs.push({kind, label: kind, path, name: file.name, target, when: when || null, at: new Date().toISOString()});
   }
   await save('employees', id, {docs}, {rerender:false});
   toast(`${i} fichier(s) ajouté(s)${setting('drive_webhook_url') ? ' : rangement dans le Drive…' : ''}`);

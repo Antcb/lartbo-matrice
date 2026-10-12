@@ -299,7 +299,7 @@ export function exportSuivis(projectId){
         {header:'Prénom', key:'first', width:14}, {header:'Nom', key:'lastname', width:16}, {header:'Mail', key:'email', width:28},
         {header:'Statut', key:'status', width:12}, {header:'Dernier échange', key:'last', type:'date', width:14}];
       const artist = projName(pid).replace(/\s*•.*$/, '');
-      try { await exportTable({name:`suivis-${artist}`, title:`${artist} — Suivis`, subtitle:`${list.length} suivi${list.length>1?'s':''} · ${v.statuses.join(', ')}`, columns, rows, format: v.format}); }
+      try { await exportTable({name:`Suivis ${artist}`, title:`${artist} — Suivis`, subtitle:`${list.length} suivi${list.length>1?'s':''} · ${v.statuses.join(', ')}`, columns, rows, format: v.format}); }
       catch (err) { toast(err.message, true); return false; }
       toast(`${rows.length} ligne(s) exportée(s)`);
     }

@@ -275,6 +275,30 @@ function rhSheet_(b) {
   return { ok: true, url: ss.getUrl() };
 }
 
+/**
+ * Dossier compta d'un bulletin de paie ou d'une note de frais :
+ *   01_Finance - L'ArtBoristerie / 2025:2026 (exercice du 1er octobre au 30 septembre) /
+ *     E - Sociale / AAAA-MM                      (bulletin de paie, mois du travail)
+ *     B - Notes de Frais / AAAA-MM / NOM Prénom  (note de frais, dossier type copié depuis le modèle « NOM Prénom »)
+ */
+function financeFolder_(d, e) {
+  var root = DriveApp.getFolderById(setting_('finance_folder_id') || '1EoWoCI8NdJ0TKUjpF8N35_gSKAYJsK_3');
+  var ym = String(d.when || d.at || '').slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(ym)) throw new Error('date du document inconnue');
+  var y = Number(ym.slice(0, 4)), start = Number(ym.slice(5, 7)) >= 10 ? y : y - 1;
+  var year = childFolder_(root, start + ':' + (start + 1), false) || childFolder_(root, start + '/' + (start + 1), false) || root.createFolder(start + ':' + (start + 1));
+  if (d.kind === 'bds') return childFolder_(childFolder_(year, 'E - Sociale', true), ym, true);
+  var month = childFolder_(childFolder_(year, 'B - Notes de Frais', true), ym, true);
+  var name = rhName_(e), mine = childFolder_(month, name, false);
+  if (mine) return mine;
+  mine = month.createFolder(name);
+  copyContents_(DriveApp.getFolderById(setting_('ndf_template_folder_id') || '1IXC0mGW8C4NQNphzPHXhTfg5JcCICnHA'), mine);
+  // le modèle « NDF-YYYY-MM NOM Prénom.xlsx » prend le bon nom
+  var files = mine.getFiles();
+  while (files.hasNext()) { var f = files.next(); f.setName(f.getName().replace('YYYY-MM', ym).replace('NOM Prénom', name)); }
+  return mine;
+}
+
 /** Range dans le Drive les pièces en attente (stockage temporaire « rh »), puis les supprime du stockage */
 function rhFileDocs_() {
   var p = props_(), filed = 0;
@@ -285,9 +309,10 @@ function rhFileDocs_() {
       if (!d.path || d.file_id) return;
       if (!e.drive_folder_id) { rhFolders_(); e.drive_folder_id = sb_('GET', 'employees?id=eq.' + e.id + '&select=drive_folder_id')[0].drive_folder_id; }
       // Bulletins de paie et notes de frais : dans leurs dossiers à part (Réglages › Google)
-      var special = d.kind === 'bds' ? setting_('payslips_folder_id') : d.kind === 'ndf' ? setting_('expenses_folder_id') : null;
-      if ((d.kind === 'bds' || d.kind === 'ndf') && !special) { Logger.log('Dossier des ' + (d.kind === 'bds' ? 'bulletins' : 'notes de frais') + ' non renseigné'); return; }
-      var folder = DriveApp.getFolderById(special || e.drive_folder_id);
+      // Bulletins de paie et notes de frais : dans la compta (01_Finance), pas dans le dossier du salarié
+      var folder;
+      try { folder = (d.kind === 'bds' || d.kind === 'ndf') ? financeFolder_(d, e) : DriveApp.getFolderById(e.drive_folder_id); }
+      catch (err) { Logger.log('Rangement impossible (' + d.kind + ') : ' + err); return; }
       var url = p.SUPABASE_URL + '/storage/v1/object/rh/' + d.path.split('/').map(encodeURIComponent).join('/');
       var res = UrlFetchApp.fetch(url, { headers: authHeaders_({}), muteHttpExceptions: true });
       if (res.getResponseCode() >= 300) { Logger.log('Pièce introuvable : ' + d.path); return; }

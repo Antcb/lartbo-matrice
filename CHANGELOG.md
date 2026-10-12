@@ -5,6 +5,11 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.15.4 — 12/10/2026
+- Exports nommés « 2026-10-12 Tour The Locos 2026 » et « 2026-10-12 Suivis The Locos »
+- Bulletins de paie rangés dans 01_Finance › exercice › E - Sociale › AAAA-MM ; notes de frais dans 01_Finance › exercice › B - Notes de Frais › AAAA-MM › NOM Prénom (dossier type copié, fichier modèle renommé)
+
+
 ## 1.15.3 — 12/10/2026
 - Renommage des contrats : « • Signed » quand l’organisateur a signé, « • Co-signed » quand les deux parties ont signé ; nomenclatures récapitulées dans le README
 

@@ -109,8 +109,11 @@ La clé Supabase présente dans `js/config.js` est publique par conception : l'a
 | Contrat signé par les deux parties | + ` • Co-signed` | `… • CC • Co-signed.pdf` |
 | Dossier salarié | `NOM Prénom` | `BOUILLER Antoine` |
 | Pièces salarié | `Type - NOM Prénom` | `RIB - BOUILLER Antoine.pdf` |
-| Bulletin de paie | `BDS-NOM Prénom AAAA-MM-JJ` (`_JJ` si plusieurs jours) | `BDS-BOUILLER Antoine 2026-09-12_25` |
-| Note de frais | `NDF-AAAA-MM NOM Prénom` | `NDF-2026-09 BOUILLER Antoine` |
+| Bulletin de paie | `BDS-NOM Prénom AAAA-MM-JJ` (`_JJ` si plusieurs jours), rangé dans `01_Finance - L'ArtBoristerie / AAAA:AAAA / E - Sociale / AAAA-MM` | `BDS-BOUILLER Antoine 2026-09-12_25` |
+| Note de frais | `NDF-AAAA-MM NOM Prénom`, rangée dans `01_Finance - L'ArtBoristerie / AAAA:AAAA / B - Notes de Frais / AAAA-MM / NOM Prénom` (dossier type copié) | `NDF-2026-09 BOUILLER Antoine` |
+| Fiche RH | `Fiche RH NOM Prénom` | `Fiche RH BOUILLER Antoine` |
+| Export des dates | `AAAA-MM-JJ Tour Artiste Période` | `2026-10-12 Tour The Locos 2026.xlsx` |
+| Export des suivis | `AAAA-MM-JJ Suivis Artiste` | `2026-10-12 Suivis The Locos.xlsx` |
 | Facture acompte / solde | `F-AB-AAAA-MM-NN Client Acompte` / `… Solde` | (pas encore automatisé) |
 
 Dépt = 2 premiers chiffres du code postal de la structure (3 pour l’outre-mer, 2A/2B en Corse) ; sinon le département de la date (ex. `CH` à l’étranger).

@@ -24,14 +24,15 @@ async function logoBase64(){
   const blob = await (await fetch('assets/logo.png')).blob();
   return new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(blob); });
 }
-const safe = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w]+/g, '-').replace(/^-|-$/g, '');
+// Nom de fichier lisible : « 2026-10-12 Tour The Locos 2026 » (seuls les caractères interdits sont retirés)
+const safe = s => String(s || '').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
 
 /**
  * columns : [{header, key, width, type: 'text'|'date'|'eur'|'number'}] ; rows : objets {key: valeur}
  * format : 'xlsx' (avec logo) ou 'csv'
  */
 export async function exportTable({name, title, subtitle = '', columns, rows, format = 'xlsx'}){
-  const file = `${safe(name)}-${today()}`;
+  const file = safe(`${today()} ${name}`);
   if (format === 'csv'){
     const fmt = (c, v) => v == null ? '' : c.type === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v.split('-').reverse().join('/') : v;
     downloadCSV(file + '.csv', [columns.map(c => c.header), ...rows.map(r => columns.map(c => fmt(c, r[c.key])))]);
@@ -119,7 +120,7 @@ export function exportShows(){
         day: new Date(s.date + 'T12:00:00').toLocaleDateString('fr-FR', {weekday: 'long'}), structure: structName(s.structure_id),
         date_end: s.date_end && s.date_end !== s.date ? s.date_end : ''}));
       const period = v.mode === 'year' ? `année ${v.year}` : `du ${from.split('-').reverse().join('/')} au ${to.split('-').reverse().join('/')}`;
-      try { await exportTable({name: `dates-${artist}-${v.mode === 'year' ? v.year : from + '_' + to}`, title: `${artist} — Dates`,
+      try { await exportTable({name: `Tour ${artist} ${v.mode === 'year' ? v.year : `${from} au ${to}`}`, title: `${artist} — Dates`,
         subtitle: `${list.length} date${list.length > 1 ? 's' : ''} · ${period}`, columns, rows, format: v.format}); }
       catch (err){ toast(err.message, true); return false; }
       toast(`${list.length} date(s) exportée(s)`);
