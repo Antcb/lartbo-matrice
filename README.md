@@ -96,3 +96,22 @@ Chaque nuit, le dépôt privé `Antcb/lartbo-matrice-backup` récupère toute la
 ## Sécurité
 
 La clé Supabase présente dans `js/config.js` est publique par conception : l'accès aux données est limité par les règles RLS (`supabase/schema.sql`) aux deux comptes de l'équipe. Les clés secrètes (service, Notion, IA, sauvegarde) restent côté serveur, dans le schéma privé de Supabase.
+
+## Nomenclatures (validées par Anthony)
+
+| Élément | Règle | Exemple |
+|---|---|---|
+| Dossier artiste | Nom de l’artiste | `The Locos` |
+| Dossier d’une date | `MM-DD • Ville • Salle (Dépt)` | `10-03 • Parthenay • Qui Sème Le Son (79)` |
+| Contrat de cession | `Artiste • AAAA-MM-JJ • Ville (Dépt) • Salle • CC` | `The Locos • 2026-10-03 • Parthenay (79) • Qui Sème Le Son • CC` |
+| Contrat de co-réalisation | même règle avec `CR` | `… • CR` |
+| Contrat signé par l’organisateur | + ` • Signed` | `… • CC • Signed.pdf` |
+| Contrat signé par les deux parties | + ` • Co-signed` | `… • CC • Co-signed.pdf` |
+| Dossier salarié | `NOM Prénom` | `BOUILLER Antoine` |
+| Pièces salarié | `Type - NOM Prénom` | `RIB - BOUILLER Antoine.pdf` |
+| Bulletin de paie | `BDS-NOM Prénom AAAA-MM-JJ` (`_JJ` si plusieurs jours) | `BDS-BOUILLER Antoine 2026-09-12_25` |
+| Note de frais | `NDF-AAAA-MM NOM Prénom` | `NDF-2026-09 BOUILLER Antoine` |
+| Facture acompte / solde | `F-AB-AAAA-MM-NN Client Acompte` / `… Solde` | (pas encore automatisé) |
+
+Dépt = 2 premiers chiffres du code postal de la structure (3 pour l’outre-mer, 2A/2B en Corse) ; sinon le département de la date (ex. `CH` à l’étranger).
+Code : `apps-script/Code.gs` (`folderName_`, `contractName_`, `dept_`) et `js/contract.js` (`deptOf`).

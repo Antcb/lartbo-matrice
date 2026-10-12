@@ -557,7 +557,8 @@ function auditContracts_(folder, show, artist, rows, aname, where) {
       // seulement les vrais contrats (le mot « contrat » dans le nom), pas les avenants, contrats techniques ni fiches
       if (!/contrat/i.test(name) || /avenant|technique|fiche|engagement|rider/i.test(name)) continue;
       var ext = (name.match(/\.(pdf|docx?|odt)$/i) || ['', ''])[1];
-      var signed = /sign/i.test(name) ? ' • Signé' : '';
+      // signé par l'organisateur → « • Signed » ; signé par les deux parties → « • Co-signed »
+      var signed = /co[\s_-]?sign|contre[\s_-]?sign|cosign/i.test(name) ? ' • Co-signed' : /sign/i.test(name) ? ' • Signed' : '';
       var want = contractName_(show, artist) + signed + (ext ? '.' + ext.toLowerCase() : '');
       if (want !== name) rows.push([true, 'Contrat', aname, where, name, want, file.getId()]);
     }

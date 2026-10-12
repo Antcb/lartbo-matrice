@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.15.3 — 12/10/2026
+- Renommage des contrats : « • Signed » quand l’organisateur a signé, « • Co-signed » quand les deux parties ont signé ; nomenclatures récapitulées dans le README
+
+
 ## 1.15.2 — 12/10/2026
 - Nomenclatures corrigées : dossier de date « MM-DD • Ville • Salle (79) » et contrat « Artiste • AAAA-MM-JJ • Ville (79) • Salle • CC/CR », avec les 2 premiers chiffres du code postal (2A/2B en Corse, 971… outre-mer, pays à l’étranger)
 - Vérification des noms : seuls les fichiers contenant « contrat » sont considérés comme des contrats (hors avenants, contrats techniques, fiches)
