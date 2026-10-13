@@ -125,6 +125,8 @@ Deno.serve(async (req) => {
     await sb.from("contacts").update({ brevo_at: new Date().toISOString(), brevo_error: err, ...(r.ok ? { brevo_created: true } : {}) }).eq("id", c.id);
     return json({ ok: !err, error: err });
   } catch (e) {
-    return json({ ok: false, error: String(e) }, 500);
+    const msg = String(e);
+    if (/unrecognised IP/i.test(msg)) return json({ ok: false, error: "Brevo bloque la connexion (adresse IP non autorisée). Dans Brevo : Paramètres › Sécurité › IP autorisées, désactive le blocage des adresses IP inconnues, puis réessaie." });
+    return json({ ok: false, error: msg.replace(/^Error: /, "") });
   }
 });
