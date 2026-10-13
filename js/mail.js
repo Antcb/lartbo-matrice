@@ -278,28 +278,6 @@ export async function editTemplate(id, defaults={}){
     }
     e.target.value = ''; drawFiles();
   });
-  // Pièces jointes d'un mail reçu dans Gmail : jointes au brouillon directement, sans les enregistrer sur l'ordinateur
-  const gmBtn = $('#ml-gm');
-  if (gmBtn){
-    const box = $('#ml-gm-box'), list = $('#ml-gm-list'), q = $('#ml-gm-q');
-    const search = async () => {
-      list.innerHTML = '<p class="muted">Recherche dans Gmail…</p>';
-      try {
-        const out = await callScript('gmail_attachments', {query: q.value.trim()});
-        list.innerHTML = (out.attachments || []).map((a, i) => `<label class="gm-row"><input type="checkbox" data-gm="${i}" ${files.some(f => f.gmail === a.msg && f.idx === a.idx) ? 'checked' : ''}>
-          <span><b>📎 ${esc(a.name)}</b> <span class="muted">${a.size > 1e6 ? (a.size/1e6).toFixed(1)+' Mo' : Math.max(1, Math.round(a.size/1024))+' Ko'}</span><br>
-          <span class="muted">${esc(a.subject || '(sans objet)')} · ${esc((a.from || '').replace(/<.*>/, '').trim())} · ${fmtDate(a.date.slice(0, 10))}</span></span></label>`).join('')
-          || '<p class="muted">Aucune pièce jointe trouvée. Essaie un autre mot (nom de la salle, de l’organisateur…).</p>';
-        list.onchange = e => { const i = e.target.dataset.gm; if (i == null) return; const a = out.attachments[i];
-          files = files.filter(f => !(f.gmail === a.msg && f.idx === a.idx));
-          if (e.target.checked) files.push({gmail: a.msg, idx: a.idx, name: a.name, on: true, mine: true});
-          drawFiles(); };
-      } catch (err) { list.innerHTML = `<p class="err">${esc(err.message)}</p>`; }
-    };
-    gmBtn.onclick = () => { box.hidden = !box.hidden; if (!box.hidden){ q.value = q.value || $('#ml-to').value.trim(); search(); q.focus(); } };
-    $('#ml-gm-go').onclick = search;
-    q.onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); search(); } };
-  }
   document.querySelector('#tpl-drive').addEventListener('keydown', e => {
     if (e.key !== 'Enter') return; e.preventDefault();
     const u = e.target.value.trim(), fid = (u.match(/[-\w]{25,}/) || [''])[0];
