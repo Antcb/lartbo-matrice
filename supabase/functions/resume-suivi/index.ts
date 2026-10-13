@@ -6,7 +6,7 @@ const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
 const cors = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-region',
 };
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 
@@ -23,6 +23,9 @@ Rédige le résumé en français, 6 à 8 puces maximum, dans cet ordre, en omett
 - **Prochaine action + date de relance :**
 Termine par la ligne « Dernière mise à jour : {AUJOURDHUI} ».
 Format : une puce par ligne commençant par « - », libellés en **gras** comme ci-dessus. N'invente rien : si une information manque, ne la suppose pas. Réponds uniquement avec le résumé, sans introduction.`;
+
+/** Région où tourne la fonction (ex. eu-west-3 = Paris) */
+const region = () => Deno.env.get('SB_REGION') || Deno.env.get('DENO_REGION') || '';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -74,6 +77,9 @@ Deno.serve(async (req) => {
 
     let summary = '';
     if (gkey) {
+      // Google applique ses règles « payantes » (pas d'entraînement, pas de relecture humaine) aux demandes venant d'Europe :
+      // on n'envoie rien à Gemini si la fonction ne tourne pas dans une région européenne
+      if (region() && !/^eu-/.test(region())) return json({ error: `Résumé non envoyé : la fonction ne tourne pas en Europe (${region() || 'région inconnue'}).` }, 503);
       // Gemini (offre gratuite de Google AI Studio) : on choisit le meilleur modèle « Flash » disponible
       const list = await (await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + gkey)).json();
       if (list.error) return json({ error: 'Gemini : ' + list.error.message }, 502);

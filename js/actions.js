@@ -205,7 +205,7 @@ export const ACTIONS = {
     if (await remove('prospects', t.dataset.id)){ S.db.prospect_logs=S.db.prospect_logs.filter(l=>l.prospect_id!==t.dataset.id); S.db.prospect_files=S.db.prospect_files.filter(f=>f.prospect_id!==t.dataset.id); touch('prospect_logs'); touch('prospect_files'); if (S.suiviPage===t.dataset.id) S.suiviPage=null; render(); } },
   aiSummary: async t => {
     const id = t.dataset.id; t.disabled = true; t.textContent = 'Rédaction en cours…';
-    const {data, error} = await sb.functions.invoke('resume-suivi', {body:{prospect_id:id}});
+    const {data, error} = await sb.functions.invoke('resume-suivi', {body:{prospect_id:id}, headers:{'x-region':'eu-west-3'}});   // toujours à Paris (règles européennes de Google)
     let msg = error ? (await error.context?.json?.().catch(()=>null))?.error || error.message : data?.error;
     if (msg && /Aucune clé/.test(msg)) msg = "Pas encore de clé IA : colle la clé Google AI Studio dans Réglages › IA.";
     if (msg){ t.disabled=false; t.textContent="Mettre à jour avec l'IA"; return toast(msg, true); }

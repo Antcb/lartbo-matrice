@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.16.4 — 13/10/2026
+- IA : demandes envoyées depuis Paris (règles européennes de Google)
+
+
 ## 1.16.3 — 13/10/2026
 - Réglages › IA : clé Google AI Studio (Gemini) pour les résumés de suivi
 
