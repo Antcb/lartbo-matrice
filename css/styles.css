@@ -593,3 +593,5 @@ button.add-proj{cursor:pointer}
 .gm-list{max-height:260px;overflow:auto;margin-top:8px;display:flex;flex-direction:column;gap:4px}
 .gm-row{display:flex;gap:8px;align-items:flex-start;padding:6px;border-radius:var(--r);cursor:pointer;font-size:14px}
 .gm-row:hover{background:var(--panel)}
+.mail-wrap{position:relative}
+.mail-wrap.drop-over::after{content:"Lâche ici pour joindre au mail";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;color:var(--brand);background:color-mix(in srgb,var(--brand-tint) 85%,transparent);border:2px dashed var(--brand);border-radius:var(--r-lg);pointer-events:none;z-index:5}

@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.17.2 — 13/10/2026
+- Glisser une pièce jointe depuis Mail dans la fenêtre du mail ; retour arrière au glissement du doigt
+
+
 ## 1.17.1 — 13/10/2026
 - Correctif fenêtre des modèles de mail
 

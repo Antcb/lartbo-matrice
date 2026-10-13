@@ -12,6 +12,7 @@ import { $, esc } from '../utils.js';
 import { SOURCES, acInput } from './autocomplete.js';
 import { dateInput } from './datefield.js';
 import { projPicker } from './projpicker.js';
+import { trackModal } from './history.js';
 
 export function field(f, v){
   const id = 'fld-'+f.k, cls = 'field'+(f.full?' full':'')+(f.type==='checkbox'?' check':'')+(f.cls?' '+f.cls:'');
@@ -66,7 +67,9 @@ export function openModal({title, fields, values={}, onSave, onDelete, extra='',
     <div class="modal-body">${extraTop}${fields.map(f=>field(f, values[f.k])).join('')}${extra}</div>
     <div class="modal-foot">${onDelete?`<button type="button" class="btn ghost danger left" data-act="modalDelete" data-level="${level}">Supprimer</button>`:''}
       <button type="button" class="btn" data-act="closeModal" data-level="${level}">Annuler</button><button class="btn primary" type="submit">${esc(saveLabel)}</button></div></form>`;
+  const wasOpen = dlg.open;
   dlg.showModal();
+  if (!wasOpen) trackModal(dlg);
   autosizeAll(dlg);
   const first = dlg.querySelector('.modal-body input:not([type=hidden]):not(.dt-val), .modal-body textarea, .modal-body select');
   if (first && !values.id) setTimeout(() => first.focus(), 30);

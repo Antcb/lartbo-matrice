@@ -7,7 +7,12 @@ const OWN = '[data-drop],[data-drop-form],[data-members-drop],[data-photo-drop]'
 // on remonte jusqu'au premier de ces blocs au plus : le fichier va au bouton le plus proche
 const STOP = 'dialog, .panel, section, form, .suivi-block';
 
-const hasFiles = e => e.dataTransfer?.types?.includes('Files');
+// Une pièce jointe glissée depuis Mail (Mac) n'annonce pas toujours « Files » pendant le glisser :
+// dans la fenêtre de préparation d'un mail, on accepte tout ce qui est lâché et on regarde au moment du dépôt
+const MAILBOX = '.mail-wrap';
+const hasFiles = e => e.dataTransfer?.types?.includes('Files') || !!e.target?.closest?.(MAILBOX) && [...(e.dataTransfer?.types || [])].some(t => !/^text\/(plain|html)$/.test(t));
+const droppedFiles = e => { const f = [...(e.dataTransfer?.files || [])]; if (f.length) return f;
+  return [...(e.dataTransfer?.items || [])].filter(i => i.kind === 'file').map(i => i.getAsFile()).filter(Boolean); };
 
 function inputFor(target){
   if (!target?.closest || target.closest(OWN)) return null;
@@ -34,7 +39,8 @@ document.addEventListener('drop', e => {
   if (!hasFiles(e)) return;
   const f = inputFor(e.target); if (!f) return;
   e.preventDefault();
-  const files = [...e.dataTransfer.files]; if (!files.length) return;
+  const files = droppedFiles(e);
+  if (!files.length){ if (e.target.closest?.(MAILBOX)) import('../utils.js').then(u => u.toast('Rien à joindre : glisse la pièce jointe elle-même (son icône) depuis Mail', true)); return; }
   const dt = new DataTransfer();
   (f.inp.multiple ? files : files.slice(0, 1)).forEach(x => dt.items.add(x));
   f.inp.files = dt.files;
