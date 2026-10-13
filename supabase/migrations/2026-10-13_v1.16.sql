@@ -56,3 +56,21 @@ create trigger brevo_contact_structures after insert on public.contact_structure
   for each row execute function public.brevo_contact_trg();
 -- contact créé dans Brevo par la Matrice (seuls ceux-là peuvent être complétés ensuite ; les autres ne sont jamais modifiés)
 alter table public.contacts add column if not exists brevo_created boolean;
+
+-- IA des résumés de suivi : la clé Google AI Studio (Gemini) se colle dans Réglages › IA, stockée hors de portée du navigateur
+create or replace function public.set_ai_key(k text) returns text
+language plpgsql security definer set search_path = public, private as $$
+declare v text := trim(coalesce(k, ''));
+begin
+  if not is_team() then raise exception 'Accès refusé'; end if;
+  if v = '' then delete from private.import_secrets where key = 'gemini_key'; return 'removed'; end if;
+  if v !~ '^AIza[\w-]{30,}$' then raise exception 'Ce n’est pas une clé Google AI Studio (elle commence par « AIza »)'; end if;
+  insert into private.import_secrets(key, value) values ('gemini_key', v) on conflict (key) do update set value = excluded.value;
+  return 'ok';
+end $$;
+create or replace function public.ai_key_status() returns text
+language sql stable security definer set search_path = public, private as $$
+  select case when not is_team() then null when exists(select 1 from private.import_secrets where key='gemini_key') then 'gemini' else '' end
+$$;
+revoke execute on function public.set_ai_key(text) from anon;
+revoke execute on function public.ai_key_status() from anon;

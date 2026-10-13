@@ -71,6 +71,12 @@ export function viewSettings(){
         <label for="set-brevo-list">Liste Brevo (n°, ou plusieurs séparés par des virgules)</label><input id="set-brevo-list" data-setting-text="brevo_list_id" value="${esc(setting('brevo_list_id')||'')}" placeholder="ex. 3">
       </div>
       <div class="vh-actions" style="margin-top:12px"><button class="btn sm" data-act="brevoSyncAll" ${setting('brevo_api_key') ? '' : 'disabled title="Colle d’abord la clé API"'}>Envoyer tous les contacts existants à Brevo</button></div></div>
+    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">IA (résumés de suivi)</h3>
+      <p class="help" style="margin:0 0 12px">Le bouton « Mettre à jour avec l’IA » d’un suivi utilise Gemini, l’IA gratuite de Google. Va sur <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> avec le compte production@, clique sur « Create API key » (« Créer une clé API »), copie la clé (elle commence par « AIza ») et colle-la ici.</p>
+      <div class="steps">
+        <label for="set-ai">Clé Google AI Studio</label><span class="secret-line"><input id="set-ai" type="password" autocomplete="off" data-1p-ignore data-ai-key="1" placeholder="AIza…" style="flex:1">
+          <span class="muted" id="ai-state">…</span></span>
+      </div></div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Version</h3>
       <p>Matrice L'ArtBoristerie Productions <b>v${APP_VERSION}</b></p>
       <p class="help">Historique des mises à jour : <a href="CHANGELOG.md" target="_blank" rel="noopener">journal des versions</a>.</p></div>
@@ -84,7 +90,22 @@ async function setSetting(key, value){
   return true;
 }
 
+/** État de la clé IA (jamais renvoyée au navigateur : seulement « configurée » ou non) */
+export async function refreshAiState(){
+  const el = document.getElementById('ai-state'); if (!el) return;
+  const {data} = await sb.rpc('ai_key_status');
+  el.textContent = data ? '✓ clé enregistrée' : 'pas encore de clé';
+}
+
 document.addEventListener('change', async e => {
+  if (e.target.dataset.aiKey){
+    const v = e.target.value.trim();
+    const m = v.match(/AIza[\w-]{30,}/);
+    if (v && !m) return toast('Ce n’est pas une clé Google AI Studio : elle commence par « AIza »', true);
+    const {error} = await sb.rpc('set_ai_key', {k: m ? m[0] : ''});
+    if (error) return toast(error.message, true);
+    e.target.value = ''; toast(m ? 'Clé IA enregistrée' : 'Clé IA retirée'); refreshAiState(); return;
+  }
   const kt = e.target.dataset.settingText;
   if (kt){
     let v = e.target.value.trim();

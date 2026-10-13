@@ -207,6 +207,7 @@ export const ACTIONS = {
     const id = t.dataset.id; t.disabled = true; t.textContent = 'Rédaction en cours…';
     const {data, error} = await sb.functions.invoke('resume-suivi', {body:{prospect_id:id}});
     let msg = error ? (await error.context?.json?.().catch(()=>null))?.error || error.message : data?.error;
+    if (msg && /Aucune clé/.test(msg)) msg = "Pas encore de clé IA : colle la clé Google AI Studio dans Réglages › IA.";
     if (msg){ t.disabled=false; t.textContent="Mettre à jour avec l'IA"; return toast(msg, true); }
     byId('prospects', id).summary = data.summary; render(); toast('Résumé mis à jour');
   },

@@ -20,7 +20,7 @@ import { viewCommunication } from './views/communication.js';
 import { viewContacts } from './views/contacts.js';
 import { viewProduction } from './views/production.js';
 import { hydratePhotos, viewProjects } from './views/projects.js';
-import { viewSettings } from './views/settings.js';
+import { refreshAiState, viewSettings } from './views/settings.js';
 import { viewEmployees } from './views/employees.js';
 import './ui/shortcuts.js';
 import './ui/dropfiles.js';
@@ -97,6 +97,7 @@ export function render(){
   autosizeAll(main);
   attachMap();
   hydratePhotos(main);
+  if (S.view === 'settings') refreshAiState();
   if (fk){ let el = main.querySelector(fk.sel); if (el){ if (fk.dt) el = el.parentElement.querySelector('.dt-txt'); el.focus({preventScroll:true}); if (fk.pos!=null) try{ el.setSelectionRange(fk.pos, fk.pos); }catch(e){} } }
   if (S.focusProspect){ const el=document.getElementById('pr-'+S.focusProspect); if (el) el.scrollIntoView({block:'start'}); S.focusProspect=null; }
 }
