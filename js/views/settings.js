@@ -72,9 +72,9 @@ export function viewSettings(){
       </div>
       <div class="vh-actions" style="margin-top:12px"><button class="btn sm" data-act="brevoSyncAll" ${setting('brevo_api_key') ? '' : 'disabled title="Colle d’abord la clé API"'}>Envoyer tous les contacts existants à Brevo</button></div></div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">IA (résumés de suivi)</h3>
-      <p class="help" style="margin:0 0 12px">Le bouton « Mettre à jour avec l’IA » d’un suivi utilise Gemini, l’IA gratuite de Google. Va sur <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> avec le compte production@, clique sur « Create API key » (« Créer une clé API »), copie la clé (elle commence par « AIza ») et colle-la ici. Les demandes partent toujours des serveurs de Paris : Google applique alors ses règles européennes (pas d’entraînement de son IA sur vos données, pas de relecture humaine).</p>
+      <p class="help" style="margin:0 0 12px">Le bouton « Mettre à jour avec l’IA » d’un suivi utilise Gemini, l’IA gratuite de Google. Va sur <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> avec le compte production@, clique sur « Create API key » (« Créer une clé API »), copie la clé (elle commence par « AIza » ou « AQ. ») et colle-la ici. Les demandes partent toujours des serveurs de Paris : Google applique alors ses règles européennes (pas d’entraînement de son IA sur vos données, pas de relecture humaine).</p>
       <div class="steps">
-        <label for="set-ai">Clé Google AI Studio</label><span class="secret-line"><input id="set-ai" type="password" autocomplete="off" data-1p-ignore data-ai-key="1" placeholder="AIza…" style="flex:1">
+        <label for="set-ai">Clé Google AI Studio</label><span class="secret-line"><input id="set-ai" type="password" autocomplete="off" data-1p-ignore data-ai-key="1" placeholder="AIza… ou AQ.…" style="flex:1">
           <span class="muted" id="ai-state">…</span></span>
       </div></div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Version</h3>
@@ -100,8 +100,8 @@ export async function refreshAiState(){
 document.addEventListener('change', async e => {
   if (e.target.dataset.aiKey){
     const v = e.target.value.trim();
-    const m = v.match(/AIza[\w-]{30,}/);
-    if (v && !m) return toast('Ce n’est pas une clé Google AI Studio : elle commence par « AIza »', true);
+    const m = v.match(/(AIza|AQ\.)[\w.-]{30,}/);
+    if (v && !m) return toast('Ce n’est pas une clé Google AI Studio : elle commence par « AIza » ou « AQ. »', true);
     const {error} = await sb.rpc('set_ai_key', {k: m ? m[0] : ''});
     if (error) return toast(error.message, true);
     e.target.value = ''; toast(m ? 'Clé IA enregistrée' : 'Clé IA retirée'); refreshAiState(); return;

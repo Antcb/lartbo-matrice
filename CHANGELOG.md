@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.16.5 — 13/10/2026
+- IA : clés Google au nouveau format AQ.
+
+
 ## 1.16.4 — 13/10/2026
 - IA : demandes envoyées depuis Paris (règles européennes de Google)
 

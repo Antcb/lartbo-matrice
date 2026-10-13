@@ -64,7 +64,7 @@ declare v text := trim(coalesce(k, ''));
 begin
   if not is_team() then raise exception 'Accès refusé'; end if;
   if v = '' then delete from private.import_secrets where key = 'gemini_key'; return 'removed'; end if;
-  if v !~ '^AIza[\w-]{30,}$' then raise exception 'Ce n’est pas une clé Google AI Studio (elle commence par « AIza »)'; end if;
+  if v !~ '^(AIza|AQ\.)[\w.-]{30,}$' then raise exception 'Ce n’est pas une clé Google AI Studio (elle commence par « AIza » ou « AQ. »)'; end if;
   insert into private.import_secrets(key, value) values ('gemini_key', v) on conflict (key) do update set value = excluded.value;
   return 'ok';
 end $$;
