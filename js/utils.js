@@ -21,11 +21,15 @@ export const daysUntil = d => d ? Math.round((new Date(d+'T00:00:00') - new Date
 
 export const daysBetween = (a, b) => Math.round((new Date(b+'T00:00:00') - new Date(a+'T00:00:00')) / 86400000);
 
-/** Texte comparable : minuscules, sans accents */
-export const norm = x => String(x||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+/** Texte comparable : minuscules, sans accents ; apostrophes (' ’ ‘ ` ´) et tirets comptent comme un espace */
+const APOS = /['‘’ʼ`´]/g;
+const plain = x => String(x||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+export const norm = x => plain(x).replace(APOS, ' ').replace(/-/g, ' ');
+/** Texte où chercher : « Lev’Roots » se trouve en tapant lev’roots, lev'roots, lev roots ou levroots */
+export const hayOf = x => { const p = plain(x); return p.replace(APOS, ' ').replace(/-/g, ' ') + ' ' + p.replace(APOS, '').replace(/-/g, ''); };
 
 /** Tous les mots de la recherche sont présents dans le texte */
-export const matches = (hay, q) => { const words = norm(q).split(/\s+/).filter(Boolean); if (!words.length) return true; const h = norm(hay); return words.every(w => h.includes(w)); };
+export const matches = (hay, q) => { const words = norm(q).split(/\s+/).filter(Boolean); if (!words.length) return true; const h = hayOf(hay); return words.every(w => h.includes(w)); };
 
 /** Message en bas de l'écran ; action facultative {label, fn} (ex. Annuler) */
 export function toast(msg, err, action){

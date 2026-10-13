@@ -11,7 +11,7 @@ import { paymentsOf, payAmount, showVat } from './calc.js';
 import { save } from './data.js';
 import { FICHE_SECTIONS, ficheDefaults, ficheKind, fieldOn } from './fiche-fields.js';
 import { callScript } from './mail.js';
-import { byId, setting } from './selectors.js';
+import { byId, eventsOfStructure, setting } from './selectors.js';
 import { openModal } from './ui/modal.js';
 import { esc, fmtDate, toast, today } from './utils.js';
 
@@ -31,7 +31,7 @@ const addDays = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.get
 /** Ce que l'app sait déjà de la date (proposé quand l'organisateur n'a rien répondu) */
 function knownValues(s){
   const st = byId('structures', s.structure_id);
-  const defs = ficheDefaults({structure: st, venue: venueName(s.venue), city: s.city, cp: st?.postal_code || s.department, capacity: s.capacity ?? st?.capacity_1, ticketing_type: s.ticketing_type, cr_break: s.cr_break});
+  const defs = ficheDefaults({structure: st, venue: venueName(s.venue), city: s.city, cp: st?.postal_code || s.department, capacity: s.capacity ?? eventsOfStructure(st?.id).find(e => e.capacity)?.capacity ?? (st?.capacity_1 || null), ticketing_type: s.ticketing_type, cr_break: s.cr_break});
   return {...defs, ...(st?.admin || {}), ...(s.show_time ? {show_time: s.show_time} : {}), ...(s.set_length ? {set_length: s.set_length} : {})};
 }
 

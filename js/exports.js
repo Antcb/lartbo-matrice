@@ -91,7 +91,7 @@ export function exportShows(){
   const years = [...new Set(S.db.shows.map(s => (s.date || '').slice(0, 4)).filter(Boolean))].sort().reverse();
   if (!years.includes(String(y))) years.unshift(String(y));
   openModal({title: 'Exporter les dates', saveLabel: 'Télécharger',
-    values: {project: S.project || '', mode: 'year', year: String(S.year || y), statuses: STATUSES.filter(st => !isOff(st)), price: true, format: 'xlsx'},
+    values: {project: S.project || '', mode: 'year', year: String(S.year || y), statuses: STATUSES.filter(st => !isOff(st)), price: false, structure: false, format: 'xlsx'},
     fields: [
       {k:'project', label:'Artiste', type:'project', full:true},
       {k:'mode', label:'Période', type:'select', blank:false, options:[['year','Une année complète'], ['range','Des dates précises']]},
@@ -99,6 +99,7 @@ export function exportShows(){
       {k:'from', label:'Du', type:'date'}, {k:'to', label:'Au', type:'date'},
       {k:'statuses', label:'Statuts', type:'checks', options: STATUSES.map(x => [x, x]), full:true},
       {k:'price', label:'Inclure les cachets', type:'checkbox'},
+      {k:'structure', label:'Inclure la structure', type:'checkbox'},
       FORMAT_FIELD,
     ],
     onSave: async v => {
@@ -109,16 +110,16 @@ export function exportShows(){
       const list = S.db.shows.filter(s => s.project_id === v.project && v.statuses.includes(s.status) && s.date && s.date >= from && s.date <= to)
         .sort((a, b) => a.date.localeCompare(b.date));
       const artist = projName(v.project).replace(/\s*•.*$/, '');
+      // Jour, date, lieu, département / pays, statut ; cachet et structure si cochés
       const columns = [
-        {header:'Date', key:'date', type:'date', width:12}, {header:'Jour', key:'day', width:10}, {header:'Jusqu’au', key:'date_end', type:'date', width:12},
-        {header:'Salle / festival', key:'venue', width:30}, {header:'Ville', key:'city', width:20}, {header:'Dépt / pays', key:'department', width:11},
-        {header:'Structure', key:'structure', width:26}, {header:'Statut', key:'status', width:18}, {header:'Contrat', key:'contract_type', width:15},
-        {header:'Jauge', key:'capacity', type:'number', width:9},
+        {header:'Jour', key:'day', width:11}, {header:'Date', key:'date', type:'date', width:12},
+        {header:'Salle / festival / événement', key:'venue', width:36}, {header:'Dépt / pays', key:'department', width:11},
+        {header:'Statut', key:'status', width:20},
+        ...(v.structure ? [{header:'Structure', key:'structure', width:28}] : []),
         ...(v.price ? [{header:'Cachet HT', key:'fee_ht', type:'eur', width:13}] : []),
       ];
       const rows = list.map(s => ({...s, venue: String(s.venue || '').replace(/\*\*/g, '').replace(/\s*•\s*[A-Z/]{1,5}(\s*\([^)]*\))?\s*$/, ''),
-        day: new Date(s.date + 'T12:00:00').toLocaleDateString('fr-FR', {weekday: 'long'}), structure: structName(s.structure_id),
-        date_end: s.date_end && s.date_end !== s.date ? s.date_end : ''}));
+        day: new Date(s.date + 'T12:00:00').toLocaleDateString('fr-FR', {weekday: 'long'}).replace(/^./, c => c.toUpperCase()), structure: structName(s.structure_id)}));
       const period = v.mode === 'year' ? `année ${v.year}` : `du ${from.split('-').reverse().join('/')} au ${to.split('-').reverse().join('/')}`;
       try { await exportTable({name: `Tour ${artist} ${v.mode === 'year' ? v.year : `${from} au ${to}`}`, title: `${artist} — Dates`,
         subtitle: `${list.length} date${list.length > 1 ? 's' : ''} · ${period}`, columns, rows, format: v.format}); }

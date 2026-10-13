@@ -11,7 +11,7 @@
  */
 import { byId, showLabel, structName } from '../selectors.js';
 import { S } from '../state.js';
-import { esc, fmtDate, norm } from '../utils.js';
+import { esc, fmtDate, hayOf, norm } from '../utils.js';
 import { searchPlaces } from '../geo.js';
 
 const LIMIT = 12;
@@ -21,7 +21,7 @@ function rank(rows, q, text, limit=LIMIT){
   if (!words.length) return [];
   const out = [];
   for (const r of rows){
-    const h = norm(text(r)); if (!words.every(w => h.includes(w))) continue;
+    const h = hayOf(text(r)); if (!words.every(w => h.includes(w))) continue;
     const name = norm(text(r).split(' — ')[0]);
     out.push([name.startsWith(words[0]) ? 0 : name.includes(' '+words[0]) ? 1 : 2, r]);
     if (out.length > 3000) break;

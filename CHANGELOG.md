@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.16.0 — 13/10/2026
+- Structures : festivals/salles avec dates, jauge, tarif et prix moyen (résumé sur l'accueil), dates annulées repliées, toujours ouvertes sur l'Accueil ; Brevo ; recherche avec apostrophes ; / automatiques dans les dates ; choix de l'artiste au clavier ; pièces jointes dans le fil du suivi ; export booking simplifié ; lien vers la structure depuis Production
+
+
 ## 1.15.6 — 12/10/2026
 - Tableau de renommage rangé dans « - Temp » ; nouvel exercice comptable copié depuis le modèle
 

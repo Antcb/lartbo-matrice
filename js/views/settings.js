@@ -64,6 +64,13 @@ export function viewSettings(){
       <div class="vh-actions"><button class="btn sm" data-act="renameAudit">Vérifier les noms</button>
         ${setting('rename_sheet_url') ? `<a class="btn sm" href="${esc(setting('rename_sheet_url'))}" target="_blank" rel="noopener">Ouvrir le dernier tableau</a>` : ''}
         <button class="btn sm" data-act="renameApply">Appliquer les renommages cochés</button></div></div>
+    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Brevo</h3>
+      <p class="help" style="margin:0 0 12px">Chaque contact créé ou modifié dans la Matrice (mail, prénom, nom, structure) est ajouté automatiquement dans Brevo. Dans Brevo : ton nom en haut à droite › « SMTP et API » › onglet « Clés API » › « Générer une nouvelle clé API », puis colle-la ici. La liste est facultative : son numéro est dans Contacts › Listes (colonne ID).</p>
+      <div class="steps">
+        <label for="set-brevo">Clé API Brevo</label><input id="set-brevo" type="password" autocomplete="off" data-1p-ignore data-setting-text="brevo_api_key" value="${esc(setting('brevo_api_key')||'')}" placeholder="xkeysib-…">
+        <label for="set-brevo-list">Liste Brevo (n°, ou plusieurs séparés par des virgules)</label><input id="set-brevo-list" data-setting-text="brevo_list_id" value="${esc(setting('brevo_list_id')||'')}" placeholder="ex. 3">
+      </div>
+      <div class="vh-actions" style="margin-top:12px"><button class="btn sm" data-act="brevoSyncAll" ${setting('brevo_api_key') ? '' : 'disabled title="Colle d’abord la clé API"'}>Envoyer tous les contacts existants à Brevo</button></div></div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Version</h3>
       <p>Matrice L'ArtBoristerie Productions <b>v${APP_VERSION}</b></p>
       <p class="help">Historique des mises à jour : <a href="CHANGELOG.md" target="_blank" rel="noopener">journal des versions</a>.</p></div>

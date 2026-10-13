@@ -7,9 +7,10 @@ import { distKm } from '../geo.js';
 import { byId, eventsOfStructure, lastExchange, linksOfStructure, projName, prospectsOfStructure, showsOfStructure, tasksOfStructure } from '../selectors.js';
 import { S } from '../state.js';
 import { curTab, fold, pstBadge, stBadge, stSelect, tabsBar, tag, viewHead } from '../ui/bits.js';
-import { cAc, cIn } from '../ui/cells.js';
+import { cAc, cIn, cSel } from '../ui/cells.js';
+import { EVENT_KINDS, PRICING, isOff } from '../constants.js';
 import { acInput } from '../ui/autocomplete.js';
-import { esc, eur, fmtDate, md, norm, url } from '../utils.js';
+import { esc, eur, fmtDate, hayOf, md, norm, period, url } from '../utils.js';
 import { suiviCard } from './suivi.js';
 import { taskSection } from './todo.js';
 
@@ -34,10 +35,10 @@ export function structurePage(st){
   const events = eventsOfStructure(st.id);
   const openSuivis = suivis.filter(p=>p.status!=='Closed' || lingering(p.id));
   const tab = curTab('structure', 'home');
-  const tabs = tabsBar('structure', [['home','Accueil'], ['suivi','Suivi', openSuivis.length], ['dates','Dates', shows.length], ['tasks','Tâches', tasks.filter(t=>!['Done','Cancelled'].includes(t.status)).length],
-    ['events','Festivals / événements', events.length], ['admin','Coordonnées administratives']]);
+  const tabs = tabsBar('structure', [['home','Accueil'], ['suivi','Suivi', openSuivis.length], ['dates','Dates', shows.filter(x=>!isOff(x.status)).length], ['tasks','Tâches', tasks.filter(t=>!['Done','Cancelled'].includes(t.status)).length],
+    ['events','Festivals / salles', events.length], ['admin','Coordonnées administratives']]);
   let body = '';
-  if (tab==='home') body = homeTab(st, contacts) + `<div class="section-title">Tâches <span class="count">${tasks.filter(t=>!['Done','Cancelled'].includes(t.status)).length}</span><span class="spacer"></span><button class="btn sm" data-act="newTaskFor" data-id="${st.id}">Nouvelle tâche</button></div>${taskSection(tasks)}`;
+  if (tab==='home') body = homeTab(st, contacts, events) + `<div class="section-title">Tâches <span class="count">${tasks.filter(t=>!['Done','Cancelled'].includes(t.status)).length}</span><span class="spacer"></span><button class="btn sm" data-act="newTaskFor" data-id="${st.id}">Nouvelle tâche</button></div>${taskSection(tasks)}`;
   else if (tab==='suivi'){
     const closed = suivis.filter(p=>p.status==='Closed' && !lingering(p.id));
     const shown = S.showClosed ? suivis : openSuivis;
@@ -45,10 +46,15 @@ export function structurePage(st){
       + (openSuivis.map(p => suiviCard(p)).join('') || `<div class="empty panel">${closed.length ? 'Aucun suivi en cours avec cette structure.' : 'Aucun suivi avec cette structure.'}</div>`)
       + (closed.length ? fold('closed-suivis', 'Suivis clos', closed.map(p => suiviCard(p)).join(''), {count: closed.length}) : '');
   }
-  else if (tab==='dates') body = `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newShowFor" data-id="${st.id}">Nouvelle date</button></div>
-    <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Artiste</th><th>Lieu</th><th>Statut</th><th class="num">Cachet</th><th>Contrat</th></tr></thead><tbody>
-    ${shows.map(x=>`<tr class="click" data-act="editShow" data-id="${x.id}"><td class="nowrap">${fmtDate(x.date)}</td><td>${esc(projName(x.project_id))}</td><td>${esc(x.venue)}<span class="sub">${esc(x.city||'')}</span></td><td>${stSelect(x)}</td><td class="num">${eur(x.fee_ht)}</td><td>${esc(x.contract_type||'')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aucune date avec cette structure.</td></tr>'}
-    </tbody></table></div>`;
+  else if (tab==='dates'){
+    // Sans suite / annulées : repliées (elles n'ont pas eu lieu), dépliables si besoin
+    const live = shows.filter(x => !isOff(x.status)), off = shows.filter(x => isOff(x.status));
+    const table = list => `<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Artiste</th><th>Lieu</th><th>Statut</th><th class="num">Cachet</th><th>Contrat</th></tr></thead><tbody>
+      ${list.map(x=>`<tr class="click" data-act="editShow" data-id="${x.id}"><td class="nowrap">${fmtDate(x.date)}</td><td>${esc(projName(x.project_id))}</td><td>${esc(x.venue)}<span class="sub">${esc(x.city||'')}</span></td><td>${stSelect(x)}</td><td class="num">${eur(x.fee_ht)}</td><td>${esc(x.contract_type||'')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aucune date en cours avec cette structure.</td></tr>'}
+      </tbody></table></div>`;
+    body = `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newShowFor" data-id="${st.id}">Nouvelle date</button></div>
+      ${table(live)}${off.length ? fold('struct-off-dates', 'Sans suite et annulées', table(off), {count: off.length}) : ''}`;
+  }
   else if (tab==='tasks') body = `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newTaskFor" data-id="${st.id}">Nouvelle tâche</button></div>${taskSection(tasks)}`;
   else if (tab==='events') body = eventsTab(st, events);
   else if (tab==='admin') body = adminTab(st);
@@ -61,11 +67,23 @@ export function structurePage(st){
   ${tabs}${body}`;
 }
 
-function homeTab(st, contacts){
+/** Dates d'un festival / événement : « 10 → 12 juil. 2027 », sinon la période habituelle (rien pour une salle à l'année) */
+const evDates = e => e.date_start ? period({date: e.date_start, date_end: e.date_end}) + ' ' + e.date_start.slice(0, 4) : (e.period || '');
+
+/** Résumé des festivals / salles / événements de la structure (sous l'adresse, page d'accueil) */
+function eventsSummary(st, events){
+  if (!events.length) return `<div class="ev-sum"><small>Festivals / salles / événements</small><span class="muted">Aucun renseigné.</span>
+    <button class="btn sm ghost" data-act="newEvent" data-id="${st.id}">+ Ajouter</button></div>`;
+  return `<div class="ev-sum"><small>Festivals / salles / événements</small>${events.map(e => `<div class="ev-line">
+      <b>${esc(e.name || st.name)}</b>${e.kind ? ` <span class="badge tag">${esc(e.kind)}</span>` : ''}
+      <span>${[evDates(e) && `<span class="ev-dates">${esc(evDates(e))}</span>`, e.city && esc(e.city),
+        e.capacity && `${esc(String(e.capacity))} pers.`, e.pricing && esc(e.pricing + (e.price_avg ? ` · ${eur(e.price_avg)} en moyenne` : '')),
+        !e.pricing && e.price_avg && `${eur(e.price_avg)} en moyenne`].filter(Boolean).join(' · ')}</span></div>`).join('')}</div>`;
+}
+
+function homeTab(st, contacts, events){
   const facts = [
     ['Adresse', [st.address, [st.postal_code, st.city].filter(Boolean).join(' '), st.country && st.country!=='France' ? st.country : ''].filter(Boolean).join(', ')],
-    ['Jauge', [st.capacity_1, st.capacity_2].filter(Boolean).join(' / ')],
-    ['Tarif', st.pricing],
     ['Département', st.department_code ? `${st.department_code} ${st.department_name||''}` : ''],
     ['Région', st.region],
   ].filter(([,v])=>v);
@@ -74,8 +92,9 @@ function homeTab(st, contacts){
       ${(st.tags||[]).length ? `<div class="proj-chips">${st.tags.map(tag).join('')}</div>` : ''}
       <div class="facts">${facts.map(([k,v])=>`<span><small>${k}</small>${esc(v)}</span>`).join('')}
         ${st.website?`<span><small>Site</small><a href="${esc(url(st.website))}" target="_blank" rel="noopener">${esc(st.website.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,''))}</a></span>`:''}</div>
+      ${eventsSummary(st, events)}
       ${st.notes?`<div class="md" style="margin-top:14px">${md(st.notes)}</div>`:''}
-      ${!facts.length && !st.notes ? '<p class="muted" style="margin:0">Fiche vide. « Modifier la fiche » pour ajouter l’adresse, la jauge, le site…</p>' : ''}
+      ${!facts.length && !st.notes ? '<p class="muted" style="margin:0">« Modifier la fiche » pour ajouter l’adresse, le site…</p>' : ''}
     </div>
     <div class="panel pad"><h3 class="block-title">Contacts <span class="count">${contacts.length}</span><span class="spacer"></span><button class="btn sm" data-act="newContactFor" data-id="${st.id}">Ajouter un contact</button></h3>
       ${contacts.map(c=>`<div class="contact-row"><a href="#" data-act="editContact" data-id="${c.id}"><b>${esc(c.display_name)}</b></a>
@@ -85,9 +104,10 @@ function homeTab(st, contacts){
 }
 
 function eventsTab(st, events){
-  return `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newEvent" data-id="${st.id}">Ajouter un festival / événement</button></div>
-  <div class="tbl-wrap"><table><thead><tr><th>Festival / événement</th><th>Début</th><th>Fin</th><th>Période habituelle</th><th>Lieu</th><th>Ville</th><th class="num">Jauge</th><th>Notes</th><th></th></tr></thead><tbody>
+  return `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newEvent" data-id="${st.id}">Ajouter un festival, une salle ou un événement</button></div>
+  <div class="tbl-wrap"><table><thead><tr><th>Type</th><th>Nom</th><th>Début</th><th>Fin</th><th>Période habituelle</th><th>Lieu</th><th>Ville</th><th class="num">Jauge</th><th>Payant / gratuit</th><th class="num">Prix moyen (€)</th><th>Notes</th><th></th></tr></thead><tbody>
   ${events.map(e=>`<tr>
+    <td>${cSel('structure_events',e.id,'kind',e.kind,EVENT_KINDS)}</td>
     <td>${cIn('structure_events',e.id,'name',e.name,'text','style="font-weight:700"')}</td>
     <td>${cIn('structure_events',e.id,'date_start',e.date_start,'date')}</td>
     <td>${cIn('structure_events',e.id,'date_end',e.date_end,'date')}</td>
@@ -95,8 +115,10 @@ function eventsTab(st, events){
     <td>${cIn('structure_events',e.id,'place',e.place)}</td>
     <td style="min-width:160px">${cAc('cities','structure_events',e.id,'city',e.city,{text:e.city||'', placeholder:'Ville'})}</td>
     <td class="num">${cIn('structure_events',e.id,'capacity',e.capacity,'number','class="narrow"')}</td>
+    <td>${cSel('structure_events',e.id,'pricing',e.pricing,PRICING)}</td>
+    <td class="num">${cIn('structure_events',e.id,'price_avg',e.price_avg,'number','class="narrow"')}</td>
     <td>${cIn('structure_events',e.id,'notes',e.notes)}</td>
-    <td><button class="btn icon sm ghost danger" data-act="delEvent" data-id="${e.id}" aria-label="Supprimer l'événement">✕</button></td></tr>`).join('') || '<tr><td colspan="9" class="empty">Aucun festival ou événement renseigné pour cette structure.</td></tr>'}
+    <td><button class="btn icon sm ghost danger" data-act="delEvent" data-id="${e.id}" aria-label="Supprimer">✕</button></td></tr>`).join('') || '<tr><td colspan="12" class="empty">Aucun festival, salle ou événement renseigné pour cette structure.</td></tr>'}
   </tbody></table></div>`;
 }
 
@@ -123,7 +145,7 @@ export function viewStructures(){
   const tg = S.structTag || '';
   let rows = S.db.structures;
   if (tg) rows = rows.filter(s => (s.tags||[]).includes(tg));
-  if (words.length) rows = rows.filter(s => { const hay = norm([s.name,s.address,s.city,s.postal_code,s.department_code,s.department_name,s.region,s.country,...(s.tags||[])].join(' '));
+  if (words.length) rows = rows.filter(s => { const hay = hayOf([s.name,...eventsOfStructure(s.id).map(e=>e.name),s.address,s.city,s.postal_code,s.department_code,s.department_name,s.region,s.country,...(s.tags||[])].join(' '));
     return words.every(w => hay.includes(w)); });
   const near = S.near;   // {label, lat, lng, km}
   const dist = new Map();
@@ -150,7 +172,7 @@ export function viewStructures(){
       <td class="struct-name"><b>${esc(s.name)}</b>${(s.tags||[]).length?`<div class="proj-chips" style="margin-top:4px">${s.tags.map(tag).join('')}</div>`:''}</td>
       <td>${esc(s.city||'')}${near?` <span class="muted">· ${Math.round(dist.get(s.id))} km</span>`:''}${s.country && s.country!=='France'?`<span class="sub">${esc(s.country)}</span>`:''}</td>
       <td>${esc(s.department_code ? `${s.department_code} ${s.department_name||''}` : '')}<span class="sub">${esc(s.region||'')}</span></td>
-      <td class="num">${[s.capacity_1,s.capacity_2].filter(Boolean).join(' / ')}</td>
+      <td class="num">${[...new Set(eventsOfStructure(s.id).map(e=>e.capacity).filter(Boolean))].join(' / ')}</td>
       <td class="num">${linksOfStructure(s.id).length||''}</td><td>${ps.map(x=>pstBadge(x.status)).join(' ')}</td></tr>`; }).join('') || '<tr><td colspan="6" class="empty">Aucune structure ne correspond. Crée-la avec « Nouvelle structure ».</td></tr>'}
     </tbody></table>${rows.length>300?`<p class="muted" style="padding:10px 12px;margin:0">300 premiers résultats affichés — affine la recherche.</p>`:''}</div>`;
 }

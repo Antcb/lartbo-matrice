@@ -45,10 +45,33 @@ document.addEventListener('keydown', e => {
   if (!e.target.classList?.contains('dt-txt')) return;
   if (e.key === 'Enter'){ e.preventDefault(); commit(e.target); e.target.blur(); }
 });
+// Les / se mettent tout seuls : 22011996 → 22/01/1996 (seulement quand on tape des chiffres à la suite, en fin de champ)
+document.addEventListener('input', e => {
+  const t = e.target; if (!t.classList?.contains('dt-txt')) return;
+  if (!/^insert/.test(e.inputType || '') || t.selectionStart !== t.value.length) return;
+  const v = t.value;
+  if (!/^\d{0,2}(\/\d{0,2}(\/\d{0,4})?)?$/.test(v) && !/^\d{3,8}$/.test(v)) return;   // « 8/10 » tapé à la main : on ne touche à rien
+  const d = v.replace(/\D/g, '').slice(0, 8);
+  const out = d.slice(0, 2) + (d.length >= 2 ? '/' + d.slice(2, 4) : '') + (d.length >= 4 ? '/' + d.slice(4) : '');
+  if (out !== v) t.value = out;
+});
+
+/** Date de début liée à une date de fin (même formulaire ou même ligne) */
+const START_OF = {date_end: ['date', 'date_start'], to: ['from'], end: ['start'], date_to: ['date_from']};
+function startFor(val){
+  const key = val.name || val.dataset.f; const starts = START_OF[key]; if (!starts) return '';
+  const scope = val.closest('form, tr, .panel, dialog') || document;
+  for (const k of starts){ const el = scope.querySelector(`.dt-val[name="${k}"], .dt-val[data-f="${k}"]`); if (el?.value) return el.value; }
+  return '';
+}
+
 document.addEventListener('click', e => {
   const b = e.target.closest('.dt-cal'); if (!b) return;
   e.preventDefault(); e.stopPropagation();
   const val = b.parentElement.querySelector('.dt-val');
+  // date de fin : le calendrier s'ouvre au mois de la date de début (la fin ne peut pas être avant)
+  const start = startFor(val);
+  if (start) val.min = start; else val.removeAttribute('min');
   try { val.showPicker(); } catch(_) { val.focus(); }
 });
 // Choix dans le calendrier → met à jour le texte

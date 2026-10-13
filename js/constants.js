@@ -67,3 +67,7 @@ export const LOG_ICON = {Appel:'📞', Mail:'✉️', RDV:'🤝', Note:'📝', L
 
 // Délai avant qu'un élément clos / terminé / annulé disparaisse (pour pouvoir annuler)
 export const LINGER_MS = 5000;
+
+// Festivals / salles / événements d'une structure
+export const EVENT_KINDS = ['Festival', 'Salle', 'Événement'];
+export const PRICING = ['Payant', 'Gratuit', 'Prix libre'];

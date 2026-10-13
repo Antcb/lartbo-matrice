@@ -5,15 +5,15 @@
 import { FORMAT_FIELD, exportTable } from './exports.js';
 import { render } from './app.js';
 import { CFG } from './config.js';
-import { CONFIRMED_PROD, CONTRACTS, PRIORITIES, PROSPECT, STATUSES, TASK_STATUS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
+import { CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PROSPECT, STATUSES, TASK_STATUS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
 import { insert, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode } from './geo.js';
-import { attachmentsOf, byId, deptNames, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
+import { attachmentsOf, byId, deptNames, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow } from './ui/bits.js';
 import { hiddenFields, openModal } from './ui/modal.js';
-import { $, downloadCSV, esc, toast, today } from './utils.js';
+import { $, downloadCSV, esc, fmtDate, toast, today } from './utils.js';
 import { driveHTML } from './views/production.js';
 
 const team = () => CFG.TEAM.map(e=>[e, TEAM_NAMES[e]||e]);
@@ -154,7 +154,9 @@ export function editTask(id, prefill={}){
 export function editContact(id, prefill={}){
   const c = id ? byId('contacts', id) : {...prefill};
   const links = id ? linksOfContact(id).map(s=>s.id) : (prefill._structures || []);
-  return openModal({ title: id ? c.display_name : 'Nouveau contact', values: {...c, _structures: links},
+  const brevo = !id || !setting('brevo_api_key') ? '' : c.brevo_error ? `<p class="help full" style="color:var(--danger)">Brevo : ${esc(c.brevo_error)}</p>`
+    : c.brevo_at ? `<p class="help full">Dans Brevo (mis à jour le ${fmtDate(c.brevo_at.slice(0,10))}).</p>` : '';
+  return openModal({ title: id ? c.display_name : 'Nouveau contact', values: {...c, _structures: links}, extra: brevo,
     fields: [
       {k:'first_name', label:'Prénom'}, {k:'last_name', label:'Nom'},
       {k:'_structures', label:'Structures', type:'links', source:'structures', create:true, full:true},
@@ -200,20 +202,47 @@ export function editStructure(id){
   const links = id ? linksOfStructure(id).map(c=>c.id) : [];
   openModal({ title: id ? s.name : 'Nouvelle structure', values: {...s, _contacts: links}, extra: structHidden(s),
     fields: [...structFields(),
-      {k:'capacity_1', label:'Jauge 1', type:'number'}, {k:'capacity_2', label:'Jauge 2', type:'number'},
-      {k:'pricing', label:'Tarif', type:'select', options:['Payant','Gratuit','Prix Libre']}, {k:'website', label:'Site web'},
+      {k:'website', label:'Site web'},
       {k:'_contacts', label:'Contacts', type:'links', source:'contacts', create:true, full:true},
       {k:'notes', label:'Notes', type:'textarea', full:true},
+      // à la création : le festival / la salle / l'événement de la structure, avec ses dates, sa jauge et son tarif
+      ...(id ? [] : [{k:'_h_ev', type:'html', full:true, html:'<h3 class="block-title" style="margin:6px 0 0">Festival, salle ou événement</h3><p class="help" style="margin:0">Facultatif. D’autres pourront être ajoutés dans l’onglet « Festivals / événements » de la fiche.</p>'},
+        ...eventFields('_ev_')]),
     ],
     onDelete: id ? () => remove('structures', id) : null,
     onSave: async v => {
       const ids = v._contacts; delete v._contacts;
       if (!v.name){ toast('Indique le nom de la structure', true); return false; }
+      const ev = takeEvent(v, '_ev_');
       await locate(v, s);
       let row; if (id){ await save('structures', id, v, {rerender:false}); row={id}; } else row = await insert('structures', v);
       if (row) await syncLinks('structure', row.id, ids);
+      if (row && !id && ev) await insert('structure_events', {...ev, name: ev.name || v.name, city: ev.city || v.city || null, structure_id: row.id});
     }
   });
+}
+
+/** Champs d'un festival / d'une salle / d'un événement (prefix : '_ev_' dans la fiche structure) */
+function eventFields(pre=''){
+  return [
+    {k:pre+'kind', label:'Type', type:'select', options:EVENT_KINDS},
+    {k:pre+'name', label:'Nom du festival, de la salle ou de l’événement', placeholder: pre ? 'Vide = nom de la structure' : ''},
+    {k:pre+'date_start', label:'Début', type:'date'}, {k:pre+'date_end', label:'Fin', type:'date'},
+    {k:pre+'period', label:'Période habituelle', placeholder:'ex. 2e week-end de juillet'},
+    {k:pre+'city', label:'Ville', type:'city', fill:pre},
+    {k:pre+'capacity', label:'Jauge', type:'number'},
+    {k:pre+'pricing', label:'Payant ou gratuit', type:'select', options:PRICING},
+    {k:pre+'price_avg', label:'Prix moyen du billet (€)', type:'number'},
+    {k:pre+'place', label:'Lieu (si différent)'},
+    ...(pre ? [] : [{k:'notes', label:'Notes', type:'textarea', full:true}]),
+  ];
+}
+
+/** Sort les champs « _ev_… » des valeurs du formulaire ; renvoie l'événement s'il y a quelque chose dedans */
+function takeEvent(v, pre){
+  const ev = {}; let any = false;
+  for (const k of Object.keys(v)) if (k.startsWith(pre)){ const f = k.slice(pre.length); ev[f] = v[k]; delete v[k]; if (ev[f] != null && ev[f] !== '') any = true; }
+  return any ? ev : null;
 }
 
 /** Création rapide d'une structure depuis un champ de recherche (fenêtre par-dessus le formulaire) */
@@ -309,11 +338,10 @@ export function exportSuivis(projectId){
 /* ------------------------------------------------------------------ Événements d'une structure */
 export function newEvent(structureId){
   const st = byId('structures', structureId);
-  openModal({ title:'Nouveau festival / événement', values:{city: st?.city},
-    fields:[{k:'name', label:'Nom du festival / de l’événement', full:true}, {k:'date_start', label:'Début', type:'date'}, {k:'date_end', label:'Fin', type:'date'},
-      {k:'period', label:'Période habituelle', placeholder:'ex. 2e week-end de juillet'}, {k:'capacity', label:'Jauge', type:'number'},
-      {k:'place', label:'Lieu'}, {k:'city', label:'Ville', type:'city'}, {k:'notes', label:'Notes', type:'textarea', full:true}],
-    onSave: async v => { if (!v.name) return false; await insert('structure_events', {...v, structure_id: structureId}); }
+  const isFest = (st?.tags || []).some(t => /festival/i.test(t));
+  openModal({ title:'Nouveau festival, salle ou événement', values:{city: st?.city, kind: isFest ? 'Festival' : 'Salle', name: eventsOfStructure(structureId).length ? '' : st?.name},
+    fields: eventFields(),
+    onSave: async v => { if (!v.name){ toast('Indique le nom', true); return false; } await insert('structure_events', {...v, structure_id: structureId}); }
   });
 }
 

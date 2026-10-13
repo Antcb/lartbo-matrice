@@ -8,6 +8,7 @@ import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
 import { insert, openStored, refreshShowSide, remove, removeWhere, save, saveLinger, sb } from './data.js';
 import { editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, logsOf, projIds, projNames, setting, showsFiltered, structName } from './selectors.js';
+import { CFG } from './config.js';
 import { S, localSet, touch } from './state.js';
 import { MODALS, openModal } from './ui/modal.js';
 import { applyAcompte, saveDepartments } from './views/settings.js';
@@ -97,6 +98,17 @@ export const ACTIONS = {
     catch (err) { if (win) win.close(); toast(err.message, true); } t.disabled = false; },
   renameApply: async t => { if (!confirm('Renommer dans le Drive tous les éléments cochés du tableau ?')) return; t.disabled = true;
     try { const out = await callScript('rename_apply', {}); toast(`${out.renamed} élément(s) renommé(s)`); } catch (err) { toast(err.message, true); } t.disabled = false; },
+  brevoSyncAll: async () => {
+    const n = S.db.contacts.filter(c => /@/.test(c.email || '')).length;
+    if (!confirm(`Envoyer les ${n} contacts qui ont un mail dans Brevo ? Ceux qui y sont déjà sont mis à jour, rien n’est supprimé.`)) return;
+    toast('Envoi à Brevo…');
+    try {
+      const r = await fetch(`${CFG.SUPABASE_URL}/functions/v1/brevo-sync`, {method:'POST', headers:{'Content-Type':'application/json', 'x-hook-secret': setting('brevo_hook_secret') || ''}, body: JSON.stringify({all:true})});
+      const out = await r.json();
+      if (!out.ok) throw new Error(out.error || 'Erreur Brevo');
+      toast(`${out.count} contacts envoyés : Brevo les importe (quelques minutes)`);
+    } catch (err) { toast(err.message, true); }
+  },
   copySecret: async () => { try { await navigator.clipboard.writeText(setting('drive_webhook_secret')||''); toast('Code secret copié'); } catch { prompt('Code secret :', setting('drive_webhook_secret')||''); } },
   testScript: async () => { try { const out = await callScript('ping', {}); toast(`Script OK (${out.account||'compte Google'})`); } catch (err) { toast(err.message, true); } },
   driveScan: async t => { t.disabled = true; toast('Recherche des dossiers dans le Drive… (jusqu’à 1 min)');
@@ -164,7 +176,7 @@ export const ACTIONS = {
   newContact: () => editContact(null), editContact: t => editContact(t.dataset.id),
   newContactFor: t => editContact(null, {_structures:[t.dataset.id]}),
   newStructure: () => editStructure(null), editStructure: t => editStructure(t.dataset.id),
-  openStructure: t => { if ($('#modal').open) $('#modal').close(); S.view='structures'; S.structurePage=t.dataset.id; S.tab.structure = S.tab.structure && S.structurePage===t.dataset.id ? S.tab.structure : 'home'; S.focusProspect=null; render(); window.scrollTo(0,0); },
+  openStructure: t => { if ($('#modal').open) $('#modal').close(); S.view='structures'; S.structurePage=t.dataset.id; S.tab.structure = 'home'; /* toujours sur l'Accueil */ S.focusProspect=null; render(); window.scrollTo(0,0); },
   closeStructure: () => { S.structurePage=null; render(); },
   clearNear: () => { S.near = null; render(); },
   newEvent: t => newEvent(t.dataset.id),

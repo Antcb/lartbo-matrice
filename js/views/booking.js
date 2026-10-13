@@ -143,7 +143,12 @@ export function attachMap(){
     LAYER = L.layerGroup().addTo(MAP);
     MAP.on('mousemove', ev => { if (HOVERED && HOVERED.isPopupOpen() && MAP.latLngToContainerPoint(HOVERED.getLatLng()).distanceTo(ev.containerPoint) > 160){ HOVERED.closePopup(); HOVERED = null; } });
     MAP.on('popupclose', () => { HOVERED = null; });
+    // dans un suivi, la molette fait défiler la colonne ; un clic sur la carte active le zoom à la molette
+    MAP.on('click', () => { if (MAP._wheelLocked) MAP.scrollWheelZoom.enable(); });
+    MAP_EL.addEventListener('mouseleave', () => { if (MAP._wheelLocked) MAP.scrollWheelZoom.disable(); });
   } else slot.appendChild(MAP_EL);
+  MAP._wheelLocked = !!slot.closest('.workspace');
+  if (MAP._wheelLocked) MAP.scrollWheelZoom.disable(); else MAP.scrollWheelZoom.enable();
   MAP.invalidateSize();
   const data = S.mapData || {points:[]};
   LAYER.clearLayers(); MARKERS.clear(); drawLine();
