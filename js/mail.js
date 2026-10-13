@@ -21,7 +21,7 @@ const applies = (rule, s) => ({ all: true, salle: /Salle/.test(s.status || ''), 
 export const SENT_FIELD = { confirmation: 'conf_kit_sent', boucle_tech: 'boucle_tech', boucle_com: 'boucle_com' };
 export const TAGS = [
   ['artiste','Artiste'], ['date','Date courte (Sam 17 octobre 2026)'], ['date_longue','Date longue (Samedi 17 octobre 2026)'],
-  ['ville','Ville'], ['cp','Code postal'], ['lieu','Salle / festival'], ['adresse','Adresse du lieu'], ['jauge','Jauge'],
+  ['ville','Ville'], ['cp','Département (2 chiffres, ou pays)'], ['code_postal','Code postal complet (infos administratives)'], ['lieu','Salle / festival'], ['adresse','Adresse du lieu'], ['jauge','Jauge'],
   ['cachet_ht','Cachet HT'], ['cachet_ttc','Cachet TTC'], ['tva','TVA'], ['type_contrat','Type de contrat'], ['acompte_pct','% d’acompte'],
   ['contact','Prénom du destinataire'], ['structure','Structure'], ['lien_fiche','Lien de la fiche de renseignements'],
   ['horaire','Heure de passage'], ['duree_set','Durée du set'],
@@ -101,7 +101,11 @@ export async function prepareMail(showId, kind){
     </div>
     <div class="mail-preview" id="ml-body" contenteditable="true" aria-label="Texte du mail (modifiable)"></div>
     <div class="ml-att"><b class="fiche-lbl">Pièces jointes</b> <span id="ml-files"></span>
-      <label class="btn sm file-btn">Ajouter un fichier<input type="file" class="file-input" multiple id="ml-up"></label></div>
+      <label class="btn sm file-btn">Ajouter un fichier<input type="file" class="file-input" multiple id="ml-up"></label>
+      ${scriptUrl() ? '<button type="button" class="btn sm" id="ml-gm">Depuis un mail Gmail…</button>' : ''}</div>
+    <div class="gm-pick" id="ml-gm-box" hidden>
+      <div class="gm-search"><input id="ml-gm-q" type="search" placeholder="Rechercher dans Gmail (mail de l’organisateur, objet, nom du fichier…)" autocomplete="off" data-1p-ignore><button type="button" class="btn sm" id="ml-gm-go">Chercher</button></div>
+      <div id="ml-gm-list" class="gm-list"></div></div>
     <p class="help">Le texte est modifiable ici avant de créer le brouillon. Les zones jaunes sont à compléter.${scriptUrl()?'':' Le script Google n’est pas encore installé : « Copier le mail » puis colle-le dans un nouveau mail Gmail.'}</p>
     <label class="check-line"><input type="checkbox" id="ml-sent"> Noter « envoyé » aujourd’hui (${esc(SENT_FIELD[kind] ? stepLabel(kind) : '')})</label>
     <div class="vh-actions" style="margin-top:10px">
@@ -117,7 +121,7 @@ export async function prepareMail(showId, kind){
       try {
         const tpl = byId('mail_templates', $('#ml-tpl').value);
         const out = await callScript('draft', {to: m.to, cc: m.cc, subject: m.subject, html: m.html,
-          attachments: files.filter(f => f.on).map(f => f.path ? {path: f.path, name: f.name} : {id: f.id})});
+          attachments: files.filter(f => f.on).map(f => f.gmail ? {gmail: f.gmail, idx: f.idx, name: f.name} : f.path ? {path: f.path, name: f.name} : {id: f.id})});
         await logMail(s, kind, m.to, true);
         toast('Brouillon créé dans Gmail', false, out.url ? {label:'Ouvrir', fn: () => window.open(out.url, '_blank')} : null);
         return true;
@@ -127,7 +131,7 @@ export async function prepareMail(showId, kind){
   const current = () => ({to: $('#ml-to').value.trim(), cc: $('#ml-cc').value.trim(), subject: $('#ml-subj').value.trim(), html: $('#ml-body').innerHTML});
   // Pièces jointes : celles du modèle (cochées) + celles ajoutées pour ce mail
   let files = [];
-  const drawFiles = () => { $('#ml-files').innerHTML = files.map((f, i) => `<label class="att-chip"><input type="checkbox" data-att="${i}" ${f.on ? 'checked' : ''}> ${f.path ? '📎' : '🔗'} ${esc(f.name || 'Fichier Drive')}</label>`).join('') || '<span class="muted">aucune</span>'; };
+  const drawFiles = () => { $('#ml-files').innerHTML = files.map((f, i) => `<label class="att-chip"><input type="checkbox" data-att="${i}" ${f.on ? 'checked' : ''}> ${f.gmail ? '✉️' : f.path ? '📎' : '🔗'} ${esc(f.name || 'Fichier Drive')}</label>`).join('') || '<span class="muted">aucune</span>'; };
   const draw = () => {
     const t = byId('mail_templates', $('#ml-tpl').value);
     files = [...(t.attachments || []).map(a => ({...a, on: true})), ...files.filter(f => f.mine)]; drawFiles();
@@ -156,6 +160,28 @@ export async function prepareMail(showId, kind){
     }
     e.target.value = ''; drawFiles();
   });
+  // Pièces jointes d'un mail reçu dans Gmail : jointes au brouillon directement, sans les enregistrer sur l'ordinateur
+  const gmBtn = $('#ml-gm');
+  if (gmBtn){
+    const box = $('#ml-gm-box'), list = $('#ml-gm-list'), q = $('#ml-gm-q');
+    const search = async () => {
+      list.innerHTML = '<p class="muted">Recherche dans Gmail…</p>';
+      try {
+        const out = await callScript('gmail_attachments', {query: q.value.trim()});
+        list.innerHTML = (out.attachments || []).map((a, i) => `<label class="gm-row"><input type="checkbox" data-gm="${i}" ${files.some(f => f.gmail === a.msg && f.idx === a.idx) ? 'checked' : ''}>
+          <span><b>📎 ${esc(a.name)}</b> <span class="muted">${a.size > 1e6 ? (a.size/1e6).toFixed(1)+' Mo' : Math.max(1, Math.round(a.size/1024))+' Ko'}</span><br>
+          <span class="muted">${esc(a.subject || '(sans objet)')} · ${esc((a.from || '').replace(/<.*>/, '').trim())} · ${fmtDate(a.date.slice(0, 10))}</span></span></label>`).join('')
+          || '<p class="muted">Aucune pièce jointe trouvée. Essaie un autre mot (nom de la salle, de l’organisateur…).</p>';
+        list.onchange = e => { const i = e.target.dataset.gm; if (i == null) return; const a = out.attachments[i];
+          files = files.filter(f => !(f.gmail === a.msg && f.idx === a.idx));
+          if (e.target.checked) files.push({gmail: a.msg, idx: a.idx, name: a.name, on: true, mine: true});
+          drawFiles(); };
+      } catch (err) { list.innerHTML = `<p class="err">${esc(err.message)}</p>`; }
+    };
+    gmBtn.onclick = () => { box.hidden = !box.hidden; if (!box.hidden){ q.value = q.value || $('#ml-to').value.trim(); search(); q.focus(); } };
+    $('#ml-gm-go').onclick = search;
+    q.onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); search(); } };
+  }
   $('#ml-copy').onclick = async () => {
     const m = current();
     if (await copyRich(m.html, plain(m.html))) toast(files.some(f => f.on) ? 'Mail copié. Pense à joindre les pièces jointes à la main dans Gmail' : 'Mail copié : colle-le dans Gmail (objet et destinataires sont dans « Ouvrir Gmail »)');
@@ -252,6 +278,28 @@ export async function editTemplate(id, defaults={}){
     }
     e.target.value = ''; drawFiles();
   });
+  // Pièces jointes d'un mail reçu dans Gmail : jointes au brouillon directement, sans les enregistrer sur l'ordinateur
+  const gmBtn = $('#ml-gm');
+  if (gmBtn){
+    const box = $('#ml-gm-box'), list = $('#ml-gm-list'), q = $('#ml-gm-q');
+    const search = async () => {
+      list.innerHTML = '<p class="muted">Recherche dans Gmail…</p>';
+      try {
+        const out = await callScript('gmail_attachments', {query: q.value.trim()});
+        list.innerHTML = (out.attachments || []).map((a, i) => `<label class="gm-row"><input type="checkbox" data-gm="${i}" ${files.some(f => f.gmail === a.msg && f.idx === a.idx) ? 'checked' : ''}>
+          <span><b>📎 ${esc(a.name)}</b> <span class="muted">${a.size > 1e6 ? (a.size/1e6).toFixed(1)+' Mo' : Math.max(1, Math.round(a.size/1024))+' Ko'}</span><br>
+          <span class="muted">${esc(a.subject || '(sans objet)')} · ${esc((a.from || '').replace(/<.*>/, '').trim())} · ${fmtDate(a.date.slice(0, 10))}</span></span></label>`).join('')
+          || '<p class="muted">Aucune pièce jointe trouvée. Essaie un autre mot (nom de la salle, de l’organisateur…).</p>';
+        list.onchange = e => { const i = e.target.dataset.gm; if (i == null) return; const a = out.attachments[i];
+          files = files.filter(f => !(f.gmail === a.msg && f.idx === a.idx));
+          if (e.target.checked) files.push({gmail: a.msg, idx: a.idx, name: a.name, on: true, mine: true});
+          drawFiles(); };
+      } catch (err) { list.innerHTML = `<p class="err">${esc(err.message)}</p>`; }
+    };
+    gmBtn.onclick = () => { box.hidden = !box.hidden; if (!box.hidden){ q.value = q.value || $('#ml-to').value.trim(); search(); q.focus(); } };
+    $('#ml-gm-go').onclick = search;
+    q.onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); search(); } };
+  }
   document.querySelector('#tpl-drive').addEventListener('keydown', e => {
     if (e.key !== 'Enter') return; e.preventDefault();
     const u = e.target.value.trim(), fid = (u.match(/[-\w]{25,}/) || [''])[0];

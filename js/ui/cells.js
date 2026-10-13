@@ -8,6 +8,7 @@ import { projIds, projName, projectOptions } from '../selectors.js';
 import { esc } from '../utils.js';
 import { acInput } from './autocomplete.js';
 import { dateInput } from './datefield.js';
+import './projmenu.js';
 
 const dataAttrs = (t,id,f) => `data-t="${t}" data-id="${id}" data-f="${f}"`;
 
@@ -33,5 +34,5 @@ export function cUrl(t, id, f, v, placeholder='Coller le lien'){
 export function projChips(table, row){
   const ids = projIds(row);
   return `<div class="proj-chips">${ids.map(pid=>`<span class="chip">${esc(projName(pid))}<button type="button" data-act="rmProj" data-t="${table}" data-id="${row.id}" data-p="${pid}" aria-label="Retirer ${esc(projName(pid))}">✕</button></span>`).join('')}
-    <select class="add-proj" data-addproj="${row.id}" data-table="${table}" aria-label="Ajouter un projet"><option value="">+ Projet</option>${projectOptions(true).filter(x=>!ids.includes(x.id)).map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div>`;
+    <button type="button" class="add-proj" data-projmenu="1" data-t="${table}" data-id="${row.id}" aria-haspopup="listbox">${ids.length ? 'Artistes' : '+ Artistes'} ▾</button></div>`;
 }

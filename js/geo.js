@@ -50,8 +50,13 @@ export async function geocode(q, {france=true}={}){
  * Renvoie [{id, label, hint, lat, lng, street, postcode, city, department_code, department_name, region, country}]
  * id = ce qui est enregistré dans le champ (la ville pour les villes, la rue pour les adresses).
  */
+const PLACE_CACHE = new Map();
+const withTimeout = (p, ms, fallback) => Promise.race([p, new Promise(ok => setTimeout(() => ok(fallback), ms))]);
+
 export async function searchPlaces(q, {cities=false}={}){
-  if (q.length < 3) return [];
+  if (q.length < 2 || (!cities && q.length < 3)) return [];
+  const ck = (cities ? 'c:' : 'a:') + q.toLowerCase();
+  if (PLACE_CACHE.has(ck)) return PLACE_CACHE.get(ck);
   const fr = fetch(`https://data.geopf.fr/geocodage/search?autocomplete=1&limit=6${cities?'&type=municipality':''}&q=${encodeURIComponent(q)}`)
     .then(r => r.json()).then(j => (j.features||[]).map(fromGeopf)).catch(() => []);
   const world = fetch(`https://photon.komoot.io/api/?limit=6&lang=fr&q=${encodeURIComponent(q)}${cities?'&layer=city':''}`)
@@ -62,12 +67,16 @@ export async function searchPlaces(q, {cities=false}={}){
         region:p.state||null, country:p.country||null, country_code:p.countrycode||null,
         label:[p.name, p.street && p.name!==p.street ? p.street : null, p.postcode, p.city && p.city!==p.name ? p.city : null, p.country].filter(Boolean).join(', ')};
     })).catch(() => []);
-  const [a, b] = await Promise.all([fr, world]);
-  return a.concat(b.slice(0, a.length >= 4 ? 2 : 5)).map(p => ({...p,
+  // La France répond vite : on n'attend l'étranger (plus lent) que s'il n'y a rien en France, sinon 300 ms au plus
+  const a = await withTimeout(fr, 2500, []);
+  const b = await withTimeout(world, a.length ? 300 : 3000, []);
+  const out = a.concat(b.slice(0, a.length >= 4 ? 2 : 5)).map(p => ({...p,
     id: cities ? p.city : (p.street || ''),
     hint: cities ? [p.department_code ? `${p.department_code} ${p.department_name||''}` : '', p.country !== 'France' ? p.country : ''].filter(Boolean).join(' · ')
                  : [p.postcode, p.city, p.country !== 'France' ? p.country : ''].filter(Boolean).join(' '),
     label: cities ? p.city : p.label}));
+  if (out.length) PLACE_CACHE.set(ck, out);
+  return out;
 }
 
 export const distKm = (a, b) => { const R=6371, r=x=>x*Math.PI/180, dLat=r(b[0]-a[0]), dLng=r(b[1]-a[1]);

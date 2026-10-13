@@ -57,8 +57,8 @@ export const BOOKING_STEPS = [
 ];
 
 export const VIEWS = [
-  ['booking','Booking'], ['prospects','Suivi'], ['production','Production'], ['ticketing','Ticketing'], ['communication','Communication'],
-  ['projects','Projets'], ['todo','To Do'], ['structures','Structures'], ['contacts','Contacts'], ['employees','Salariés'],
+  ['todo','To Do'], ['booking','Booking'], ['prospects','Suivi'], ['production','Production'], ['ticketing','Ticketing'], ['communication','Communication'],
+  ['structures','Structures'], ['contacts','Contacts'], ['projects','Projets'], ['employees','Salariés'],
 ];
 
 export const LOG_KINDS = ['Appel','Mail','RDV','Note'];

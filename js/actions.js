@@ -136,6 +136,7 @@ export const ACTIONS = {
     else { S.linger.delete(t.dataset.id); await save('tasks', t.dataset.id, {status:'To Do', done_at:null}); }
   },
   todoFilter: t => { S.todoFilter=t.dataset.f; render(); },
+  todoWho: t => { S.todoWho=t.dataset.f; localSet('todoWho', S.todoWho); render(); },
   todoDept: t => { S.todoDept=t.dataset.f; render(); },
   toggleDoneTasks: () => { S.showDoneTasks = !S.showDoneTasks; render(); },
   newTask: () => editTask(null), editTask: t => editTask(t.dataset.id),

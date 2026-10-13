@@ -121,8 +121,13 @@ export function editProject(id){
 export const driveId = s => { const m = String(s).match(/folders\/([\w-]{10,})/) || String(s).match(/[?&]id=([\w-]{10,})/); return m ? m[1] : String(s).trim(); };
 
 /* ------------------------------------------------------------------ Tâches */
+/** Tâche Booking : à réaliser sous 10 jours par défaut */
+const BOOKING_DAYS = 10;
+const inDays = n => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+
 export function editTask(id, prefill={}){
   const t = id ? byId('tasks', id) : {status:'To Do', assigned_to: S.user.email, project_ids: S.project?[S.project]:[], ...prefill};
+  if (!id && !t.deadline && /^booking$/i.test(t.department || '')) t.deadline = inDays(BOOKING_DAYS);
   const files = id ? attachmentsOf('task_id', id) : [];
   openModal({ title: id ? 'Tâche' : 'Nouvelle tâche', values: {...t, project_ids: projIds(t)},
     fields: [
@@ -148,6 +153,16 @@ export function editTask(id, prefill={}){
       if (row && up.length) await uploadFiles({task_id: row.id}, up);
     }
   });
+  // Nouvelle tâche passée en pôle Booking : échéance à J+10 si elle n'en a pas
+  if (!id){
+    const f = $('#modal form').elements;
+    f.department?.addEventListener('change', () => {
+      if (/^booking$/i.test(f.department.value) && !f.deadline.value){
+        f.deadline.value = inDays(BOOKING_DAYS);
+        const txt = f.deadline.closest('.dt')?.querySelector('.dt-txt'); if (txt) txt.value = inDays(BOOKING_DAYS).split('-').reverse().join('/');
+      }
+    });
+  }
 }
 
 /* ------------------------------------------------------------------ Contacts */
@@ -197,28 +212,37 @@ async function locate(v, before={}){
   if (g){ v.lat=g.lat; v.lng=g.lng; if (g.department_code){ v.department_code=g.department_code; v.department_name=g.department_name; v.region = v.region || g.region; v.city = v.city || g.city; v.postal_code = v.postal_code || g.postcode; } }
 }
 
+/** Champs de la fiche structure (les mêmes partout : onglet Structures, nouveau suivi, nouvelle date, tâche…) */
+const structFormFields = (isNew, nested=false) => [...structFields(),
+  {k:'website', label:'Site web'},
+  // fenêtre par-dessus un autre formulaire : on choisit des contacts existants (les créer ouvrirait une 3e fenêtre)
+  {k:'_contacts', label:'Contacts', type:'links', source:'contacts', create:!nested, full:true},
+  {k:'notes', label:'Notes', type:'textarea', full:true},
+  // à la création : le festival / la salle / l'événement de la structure, avec ses dates, sa jauge et son tarif
+  ...(isNew ? [{k:'_h_ev', type:'html', full:true, html:'<h3 class="block-title" style="margin:6px 0 0">Festival, salle ou événement</h3><p class="help" style="margin:0">Facultatif. D’autres pourront être ajoutés dans l’onglet « Festivals / salles » de la fiche.</p>'},
+    ...eventFields('_ev_')] : []),
+];
+
+/** Enregistre la fiche structure (+ contacts liés, + festival / salle à la création) ; renvoie la ligne */
+async function saveStructure(id, s, v){
+  const ids = v._contacts || []; delete v._contacts;
+  if (!v.name){ toast('Indique le nom de la structure', true); return false; }
+  const ev = takeEvent(v, '_ev_');
+  await locate(v, s);
+  let row; if (id){ await save('structures', id, v, {rerender:false}); row = {id, ...v}; } else row = await insert('structures', v);
+  if (!row) return false;
+  await syncLinks('structure', row.id, ids);
+  if (!id && ev) await insert('structure_events', {...ev, name: ev.name || v.name, city: ev.city || v.city || null, structure_id: row.id});
+  return row;
+}
+
 export function editStructure(id){
   const s = id ? byId('structures', id) : {country:'France'};
   const links = id ? linksOfStructure(id).map(c=>c.id) : [];
   openModal({ title: id ? s.name : 'Nouvelle structure', values: {...s, _contacts: links}, extra: structHidden(s),
-    fields: [...structFields(),
-      {k:'website', label:'Site web'},
-      {k:'_contacts', label:'Contacts', type:'links', source:'contacts', create:true, full:true},
-      {k:'notes', label:'Notes', type:'textarea', full:true},
-      // à la création : le festival / la salle / l'événement de la structure, avec ses dates, sa jauge et son tarif
-      ...(id ? [] : [{k:'_h_ev', type:'html', full:true, html:'<h3 class="block-title" style="margin:6px 0 0">Festival, salle ou événement</h3><p class="help" style="margin:0">Facultatif. D’autres pourront être ajoutés dans l’onglet « Festivals / événements » de la fiche.</p>'},
-        ...eventFields('_ev_')]),
-    ],
+    fields: structFormFields(!id),
     onDelete: id ? () => remove('structures', id) : null,
-    onSave: async v => {
-      const ids = v._contacts; delete v._contacts;
-      if (!v.name){ toast('Indique le nom de la structure', true); return false; }
-      const ev = takeEvent(v, '_ev_');
-      await locate(v, s);
-      let row; if (id){ await save('structures', id, v, {rerender:false}); row={id}; } else row = await insert('structures', v);
-      if (row) await syncLinks('structure', row.id, ids);
-      if (row && !id && ev) await insert('structure_events', {...ev, name: ev.name || v.name, city: ev.city || v.city || null, structure_id: row.id});
-    }
+    onSave: async v => { const row = await saveStructure(id, s, v); if (!row) return false; }
   });
 }
 
@@ -247,8 +271,9 @@ function takeEvent(v, pre){
 
 /** Création rapide d'une structure depuis un champ de recherche (fenêtre par-dessus le formulaire) */
 CREATORS.structures = async name => {
-  const row = await openModal({ level:2, title:'Nouvelle structure', values:{name, country:'France'}, extra: structHidden({}), fields: structFields(), saveLabel:'Créer la structure',
-    onSave: async v => { if (!v.name){ toast('Indique le nom', true); return false; } await locate(v); return await insert('structures', v); } });
+  // mêmes cases que « Nouvelle structure » dans l'onglet Structures
+  const row = await openModal({ level:2, wide:true, title:'Nouvelle structure', values:{name, country:'France', _contacts:[]}, extra: structHidden({}), fields: structFormFields(true, true), saveLabel:'Créer la structure',
+    onSave: v => saveStructure(null, {}, v) });
   if (!row) return null;
   toast(`Structure « ${row.name} » créée`);
   return {id: row.id, label: row.name};

@@ -74,3 +74,6 @@ language sql stable security definer set search_path = public, private as $$
 $$;
 revoke execute on function public.set_ai_key(text) from anon;
 revoke execute on function public.ai_key_status() from anon;
+
+-- v1.17 : {{cp}} = département du lieu (2 chiffres, 3 en outre-mer, 2A/2B, ou pays) ; {{code_postal}} = code postal complet
+-- (fonction mail_vars modifiée en place : voir le dépôt, requête du 13/10/2026)

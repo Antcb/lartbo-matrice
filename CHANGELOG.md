@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.17.0 — 13/10/2026
+- Bandeau réordonné ; tâches Booking à J+10 ; filtre Pour qui dans To Do ; artistes d'un suivi en cases à cocher ; pincement pour zoomer la carte ; {{cp}} = 2 chiffres ; pièces jointes Gmail dans les brouillons ; abréviations retirées ; même fiche structure partout ; recherche de ville plus rapide
+
+
 ## 1.16.5 — 13/10/2026
 - IA : clés Google au nouveau format AQ.
 

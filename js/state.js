@@ -6,7 +6,7 @@ export const TABLES = ['structures','contacts','contact_structures','projects','
   'structure_events','project_logs','project_members','attachments','notifications','mail_templates','employees'];
 
 export const S = {
-  user:null, view: localGet('view') || 'booking',
+  user:null, view: localGet('view') || 'todo', todoWho: localGet('todoWho') || '',
   year: Number(localGet('year')) || new Date().getFullYear(),
   project: localGet('project') || '',
   db: Object.fromEntries(TABLES.map(t => [t, []])),

@@ -143,12 +143,13 @@ export function attachMap(){
     LAYER = L.layerGroup().addTo(MAP);
     MAP.on('mousemove', ev => { if (HOVERED && HOVERED.isPopupOpen() && MAP.latLngToContainerPoint(HOVERED.getLatLng()).distanceTo(ev.containerPoint) > 160){ HOVERED.closePopup(); HOVERED = null; } });
     MAP.on('popupclose', () => { HOVERED = null; });
-    // dans un suivi, la molette fait défiler la colonne ; un clic sur la carte active le zoom à la molette
-    MAP.on('click', () => { if (MAP._wheelLocked) MAP.scrollWheelZoom.enable(); });
-    MAP_EL.addEventListener('mouseleave', () => { if (MAP._wheelLocked) MAP.scrollWheelZoom.disable(); });
   } else slot.appendChild(MAP_EL);
-  MAP._wheelLocked = !!slot.closest('.workspace');
-  if (MAP._wheelLocked) MAP.scrollWheelZoom.disable(); else MAP.scrollWheelZoom.enable();
+  // Dans un suivi : la molette (deux doigts qui glissent) fait défiler la colonne, le pincement (deux doigts qui s'écartent) zoome la carte.
+  // Sur Mac, le pincement du trackpad arrive comme une molette avec Ctrl : on ne laisse passer à la carte que celui-là.
+  if (slot.closest('.workspace') && !slot._wheelGuard){
+    slot._wheelGuard = true;
+    slot.addEventListener('wheel', e => { if (!e.ctrlKey) e.stopPropagation(); }, {capture: true});
+  }
   MAP.invalidateSize();
   const data = S.mapData || {points:[]};
   LAYER.clearLayers(); MARKERS.clear(); drawLine();

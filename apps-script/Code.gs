@@ -43,6 +43,7 @@ function doPost(e) {
     var action = body.action || 'create_folder';
     if (action === 'create_folder') out = createShowFolder_(body.show_id, !!body.force);
     else if (action === 'draft') out = createDraft_(body);
+    else if (action === 'gmail_attachments') out = gmailAttachments_(body.query);
     else if (action === 'link_folders') out = { ok: true, linked: linkExistingFolders() };
     else if (action === 'folder_path') out = { ok: true, path: folderPath_(body.folder_id) };
     else if (action === 'contract') out = createContract_(body);
@@ -72,6 +73,8 @@ function createDraft_(body) {
     try {
       if (typeof a === 'string') return DriveApp.getFileById(a).getBlob();
       if (a.id) return DriveApp.getFileById(a.id).getBlob();
+      // pièce jointe d'un mail reçu dans Gmail (sans passer par l'ordinateur)
+      if (a.gmail) return GmailApp.getMessageById(a.gmail).getAttachments({ includeInlineImages: false })[a.idx || 0].copyBlob();
       if (a.path) {
         var res = UrlFetchApp.fetch(p.SUPABASE_URL + '/storage/v1/object/suivi/' + a.path.split('/').map(encodeURIComponent).join('/'),
           { headers: authHeaders_({}), muteHttpExceptions: true });
@@ -85,6 +88,21 @@ function createDraft_(body) {
   var draft = GmailApp.createDraft(body.to || '', body.subject || '', plain_(body.html || ''), opts);
   var msgId = draft.getMessage().getId();
   return { ok: true, draft_id: draft.getId(), url: 'https://mail.google.com/mail/u/0/#drafts?compose=' + msgId };
+}
+
+/** Pièces jointes des mails Gmail (production@) qui correspondent à la recherche, du plus récent au plus ancien */
+function gmailAttachments_(query) {
+  var q = String(query || '').trim();
+  var threads = GmailApp.search((q ? q + ' ' : '') + 'has:attachment', 0, 15), out = [];
+  threads.forEach(function (t) {
+    t.getMessages().forEach(function (m) {
+      m.getAttachments({ includeInlineImages: false }).forEach(function (a, i) {
+        out.push({ msg: m.getId(), idx: i, name: a.getName(), size: a.getSize(), subject: m.getSubject(), from: m.getFrom(), date: m.getDate().toISOString() });
+      });
+    });
+  });
+  out.sort(function (a, b) { return b.date < a.date ? -1 : 1; });
+  return { ok: true, attachments: out.slice(0, 60) };
 }
 
 function plain_(html) {

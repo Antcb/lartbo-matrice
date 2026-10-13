@@ -48,10 +48,24 @@ export const SOURCES = {
   },
   // Villes et adresses (France : Géoplateforme ; ailleurs : OpenStreetMap)
   places: { async: true, label: () => '', search: q => searchPlaces(q) },
-  cities: { async: true, label: () => '', search: q => searchPlaces(q, {cities:true}) },
+  cities: { async: true, label: () => '', search: q => searchPlaces(q, {cities:true}), local: q => knownCities(q) },
   // adresse complète enregistrée telle quelle (membres, livraison des affiches…)
   fulladdr: { async: true, label: () => '', search: async q => (await searchPlaces(q)).map(p => ({...p, id: p.label, label: p.label})) },
 };
+
+/** Villes déjà connues (fiches structures localisées) : proposées tout de suite, avant la réponse de la Géoplateforme */
+let CITY_IDX = null, CITY_N = -1;
+function knownCities(q){
+  if (CITY_N !== S.db.structures.length){
+    const m = new Map();
+    for (const s of S.db.structures) if (s.city && s.lat != null && s.department_code){ const k = norm(s.city) + '|' + s.department_code; if (!m.has(k)) m.set(k, s); }
+    CITY_IDX = [...m.values()]; CITY_N = S.db.structures.length;
+  }
+  const n = norm(q); if (n.length < 2) return [];
+  return CITY_IDX.filter(s => norm(s.city).startsWith(n)).slice(0, 5).map(s => ({id: s.city, label: s.city, city: s.city, postcode: s.postal_code || null,
+    lat: s.lat, lng: s.lng, department_code: s.department_code, department_name: s.department_name, region: s.region, country: s.country || 'France',
+    hint: `${s.department_code} ${s.department_name || ''}`.trim()}));
+}
 
 export function acInput(kind, {value='', text, attrs='', placeholder='Rechercher…', create=false, fill=false}={}){
   const label = text ?? (value ? SOURCES[kind].label(value) : '');
@@ -96,7 +110,14 @@ async function update(input){
   if (!q){ OPEN.items = []; OPEN.loading = false; draw(); return; }
   const token = OPEN.token = Symbol();
   let items;
-  if (src.async){ OPEN.loading = true; draw(); items = await src.search(q); if (!OPEN || OPEN.token !== token) return; OPEN.loading = false; }
+  if (src.async){
+    const local = src.local ? src.local(q) : [];
+    OPEN.items = local; OPEN.loading = !local.length; draw();
+    items = await src.search(q); if (!OPEN || OPEN.token !== token) return; OPEN.loading = false;
+    // villes connues d'abord, puis les autres (sans doublon)
+    const seen = new Set(local.map(x => norm(x.city) + '|' + x.department_code));
+    items = local.concat(items.filter(x => !seen.has(norm(x.city || '') + '|' + (x.department_code || '')))).slice(0, 10);
+  }
   else items = src.search(q);
   if (box.dataset.create) items = items.concat([{create:true, label:`+ Créer « ${q} »`, q}]);
   OPEN.items = items; OPEN.idx = 0; draw();
@@ -129,7 +150,7 @@ function fillPlace(box, p){
   set('lat', p.lat); set('lng', p.lng);
 }
 
-document.addEventListener('input', e => { if (e.target.classList?.contains('ac-input')){ clearTimeout(e.target._t); const t = e.target; const async = SOURCES[t.closest('.ac').dataset.ac].async; t._t = setTimeout(() => update(t), async ? 280 : 60); } });
+document.addEventListener('input', e => { if (e.target.classList?.contains('ac-input')){ clearTimeout(e.target._t); const t = e.target; const async = SOURCES[t.closest('.ac').dataset.ac].async; t._t = setTimeout(() => update(t), async ? 160 : 60); } });
 document.addEventListener('focusin', e => { if (e.target.classList?.contains('ac-input')){ e.target.select(); if (e.target.value) update(e.target); } });
 document.addEventListener('keydown', e => {
   if (!e.target.classList?.contains('ac-input')) return;

@@ -45,6 +45,9 @@ export function viewTodo(){
   const open = t => !isDone(t) || lingering(t.id);
   if (f==='open') tasks = tasks.filter(open);
   if (f==='mine') tasks = tasks.filter(t=>open(t) && t.assigned_to===S.user.email);
+  // Pour qui : tout le monde, moi, ou une autre personne de l'équipe
+  const who = S.todoWho || '';
+  if (who) tasks = tasks.filter(t => t.assigned_to === (who === 'me' ? S.user.email : who));
   if (f==='late') tasks = tasks.filter(t=>{ const d=daysUntil(t.deadline); return d!=null && d<=7 && open(t); });
   if (f==='done'){ const since = new Date(Date.now() - 30*864e5).toISOString(); tasks = tasks.filter(t => t.status==='Done' && (t.done_at||t.updated_at||'') >= since); }
   const byDept = d => tasks.filter(t => (t.department||'') === d).length;
@@ -54,9 +57,11 @@ export function viewTodo(){
   if (q) tasks = tasks.filter(t => matches(`${t.title} ${t.notes||''} ${projNames(t)} ${structName(t.structure_id)} ${t.department||''} ${showLabel(byId('shows', t.show_id))}`, q));
   if (f==='done') tasks.sort((a,b)=>(b.done_at||b.updated_at||'').localeCompare(a.done_at||a.updated_at||'')); else tasks.sort(taskSort);
   const btn = (k,l) => `<button class="btn ${f===k?'on':''}" data-act="todoFilter" data-f="${k}" aria-pressed="${f===k}">${l}</button>`;
+  const wbtn = (k,l) => `<button class="btn ${who===k?'on':''}" data-act="todoWho" data-f="${esc(k)}" aria-pressed="${who===k}">${esc(l)}</button>`;
   const dbtn = (k,l,n) => `<button class="btn ${dept===k?'on':''}" data-act="todoDept" data-f="${k}" aria-pressed="${dept===k}">${l} <span class="count">${n}</span></button>`;
   return viewHead('To Do', {sub:`${tasks.length} tâche${tasks.length>1?'s':''}`,
-      filters:`<div class="seg">${btn('open','À faire')}${btn('mine','Les miennes')}${btn('late','Urgentes (≤ 7 j)')}${btn('done','Terminées (30 derniers jours)')}</div>
+      filters:`<div class="seg">${btn('open','À faire')}${btn('late','Urgentes (≤ 7 j)')}${btn('done','Terminées (30 derniers jours)')}</div>
+        <div class="seg" role="group" aria-label="Pour qui">${wbtn('', 'Toutes')}${wbtn('me', 'Les miennes')}${CFG.TEAM.filter(e => e !== S.user.email).map(e => wbtn(e, `De ${TEAM_NAMES[e] || e}`)).join('')}</div>
         ${projPicker(S.project, {attrs:'id="f-project" aria-label="Artiste"'})}
         <input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-taches" placeholder="Rechercher une tâche" data-search="todo" value="${esc(q)}">`,
       actions:'<button class="btn primary" data-act="newTask">Nouvelle tâche</button>'})
