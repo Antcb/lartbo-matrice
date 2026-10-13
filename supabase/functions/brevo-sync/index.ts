@@ -1,5 +1,6 @@
 /**
- * Brevo : ajoute / met à jour un contact de la Matrice dans Brevo (mail, prénom, nom, structure).
+ * Brevo : ajoute dans Brevo les contacts de la Matrice qui n'y sont pas encore (mail, prénom, nom, structure).
+ * Un mail déjà présent dans Brevo n'est JAMAIS modifié : ni ses champs, ni ses listes, ni son désabonnement.
  * Appelée par un déclencheur de la base à chaque création ou modification d'un contact
  * (et quand on le rattache à une structure), ou par Réglages › Brevo pour tout envoyer d'un coup.
  * Réglages lus dans la table settings : brevo_api_key, brevo_list_id (une ou plusieurs listes, séparées par des virgules),
@@ -34,6 +35,19 @@ async function attrNames(key: string) {
   }
   ATTRS = { first: pick(["PRENOM", "FIRSTNAME", "FNAME"]), last: pick(["NOM", "LASTNAME", "LNAME"]), struct };
   return ATTRS;
+}
+
+/** Tous les mails déjà présents dans Brevo (abonnés ou désabonnés) */
+async function brevoEmails(key: string) {
+  const out = new Set<string>();
+  for (let offset = 0; ; offset += 1000) {
+    const r = await fetch(`${API}/contacts?limit=1000&offset=${offset}`, { headers: { "api-key": key, accept: "application/json" } });
+    if (!r.ok) throw new Error(`Brevo ${r.status} : ${await r.text()}`);
+    const j = await r.json();
+    for (const c of j.contacts || []) if (c.email) out.add(String(c.email).trim().toLowerCase());
+    if (!j.contacts || j.contacts.length < 1000) break;
+  }
+  return out;
 }
 
 type Contact = { id: string; email: string | null; first_name: string | null; last_name: string | null; display_name: string | null };
@@ -76,23 +90,39 @@ Deno.serve(async (req) => {
         all.push(...((data || []) as Contact[]));
         if (!data || data.length < 1000) break;
       }
-      const list = all.filter((c) => /@/.test(c.email || ""));
+      // seulement les mails absents de Brevo : les contacts existants (et les désabonnés) ne sont pas touchés
+      const known = await brevoEmails(key);
+      const seen = new Set<string>();
+      const list = all.filter((c) => { const e = (c.email || "").trim().toLowerCase(); if (!/@/.test(e) || known.has(e) || seen.has(e)) return false; seen.add(e); return true; });
+      if (!list.length) return json({ ok: true, count: 0 });
       const st = await structuresOf(list.map((c) => c.id));
       const r = await fetch(`${API}/contacts/import`, { method: "POST", headers: { "api-key": key, "content-type": "application/json" },
         body: JSON.stringify({ jsonBody: list.map((c) => ({ email: c.email!.trim().toLowerCase(), attributes: attributes(c, st.get(c.id) || [], a) })),
-          ...(listIds.length ? { listIds } : {}), updateExistingContacts: true, emptyContactsAttributes: false }) });
+          ...(listIds.length ? { listIds } : {}), updateExistingContacts: false, emptyContactsAttributes: false }) });
       if (!r.ok) return json({ ok: false, error: `Brevo ${r.status} : ${await r.text()}` });
       return json({ ok: true, count: list.length });
     }
 
-    // Un contact
-    const { data: c } = await sb.from("contacts").select("id,email,first_name,last_name,display_name").eq("id", body.contact_id).single();
+    // Un contact : petite attente pour que les structures rattachées juste après la création soient là
+    await new Promise((ok) => setTimeout(ok, 3000));
+    const { data: c } = await sb.from("contacts").select("id,email,first_name,last_name,display_name,brevo_created").eq("id", body.contact_id).single();
     if (!c || !/@/.test(c.email || "")) return json({ ok: true, skipped: "pas de mail" });
+    const email = c.email!.trim().toLowerCase();
+    // déjà dans Brevo (abonné ou désabonné) : on n'y touche pas
+    const g = await fetch(`${API}/contacts/${encodeURIComponent(email)}`, { headers: { "api-key": key, accept: "application/json" } });
     const st = await structuresOf([c.id]);
+    if (g.ok) {
+      // créé par la Matrice (ex. la structure rattachée juste après) : on complète seulement prénom / nom / structure
+      if (c.brevo_created) await fetch(`${API}/contacts/${encodeURIComponent(email)}`, { method: "PUT", headers: { "api-key": key, "content-type": "application/json" },
+        body: JSON.stringify({ attributes: attributes(c as Contact, st.get(c.id) || [], a) }) });
+      await sb.from("contacts").update({ brevo_at: new Date().toISOString(), brevo_error: null }).eq("id", c.id);
+      return json({ ok: true, skipped: c.brevo_created ? "complété" : "déjà dans Brevo" });
+    }
     const r = await fetch(`${API}/contacts`, { method: "POST", headers: { "api-key": key, "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ email: c.email!.trim().toLowerCase(), attributes: attributes(c as Contact, st.get(c.id) || [], a), updateEnabled: true, ...(listIds.length ? { listIds } : {}) }) });
-    const err = r.ok ? null : `Brevo ${r.status} : ${(await r.text()).slice(0, 300)}`;
-    await sb.from("contacts").update({ brevo_at: new Date().toISOString(), brevo_error: err }).eq("id", c.id);
+      body: JSON.stringify({ email, attributes: attributes(c as Contact, st.get(c.id) || [], a), ...(listIds.length ? { listIds } : {}) }) });
+    const txt = r.ok ? "" : await r.text();
+    const err = r.ok || /duplicate/i.test(txt) ? null : `Brevo ${r.status} : ${txt.slice(0, 300)}`;
+    await sb.from("contacts").update({ brevo_at: new Date().toISOString(), brevo_error: err, ...(r.ok ? { brevo_created: true } : {}) }).eq("id", c.id);
     return json({ ok: !err, error: err });
   } catch (e) {
     return json({ ok: false, error: String(e) }, 500);

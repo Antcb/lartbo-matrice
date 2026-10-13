@@ -100,13 +100,13 @@ export const ACTIONS = {
     try { const out = await callScript('rename_apply', {}); toast(`${out.renamed} élément(s) renommé(s)`); } catch (err) { toast(err.message, true); } t.disabled = false; },
   brevoSyncAll: async () => {
     const n = S.db.contacts.filter(c => /@/.test(c.email || '')).length;
-    if (!confirm(`Envoyer les ${n} contacts qui ont un mail dans Brevo ? Ceux qui y sont déjà sont mis à jour, rien n’est supprimé.`)) return;
+    if (!confirm(`Envoyer dans Brevo les contacts de la Matrice (${n} avec un mail) ? Seuls ceux qui ne sont pas encore dans Brevo sont ajoutés : les autres (et les désabonnés) ne sont pas touchés.`)) return;
     toast('Envoi à Brevo…');
     try {
       const r = await fetch(`${CFG.SUPABASE_URL}/functions/v1/brevo-sync`, {method:'POST', headers:{'Content-Type':'application/json', 'x-hook-secret': setting('brevo_hook_secret') || ''}, body: JSON.stringify({all:true})});
       const out = await r.json();
       if (!out.ok) throw new Error(out.error || 'Erreur Brevo');
-      toast(`${out.count} contacts envoyés : Brevo les importe (quelques minutes)`);
+      toast(out.count ? `${out.count} nouveaux contacts envoyés : Brevo les importe (quelques minutes)` : 'Tous les contacts sont déjà dans Brevo');
     } catch (err) { toast(err.message, true); }
   },
   copySecret: async () => { try { await navigator.clipboard.writeText(setting('drive_webhook_secret')||''); toast('Code secret copié'); } catch { prompt('Code secret :', setting('drive_webhook_secret')||''); } },

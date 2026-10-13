@@ -54,3 +54,5 @@ create trigger brevo_contacts after insert or update of email, first_name, last_
 drop trigger if exists brevo_contact_structures on public.contact_structures;
 create trigger brevo_contact_structures after insert on public.contact_structures
   for each row execute function public.brevo_contact_trg();
+-- contact créé dans Brevo par la Matrice (seuls ceux-là peuvent être complétés ensuite ; les autres ne sont jamais modifiés)
+alter table public.contacts add column if not exists brevo_created boolean;
