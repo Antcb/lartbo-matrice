@@ -88,7 +88,9 @@ document.addEventListener('change', async e => {
   const kt = e.target.dataset.settingText;
   if (kt){
     let v = e.target.value.trim();
-    if (/_id$/.test(kt)) v = (v.match(/[-\w]{25,}/) || [v])[0];   // un lien Drive collé → son identifiant
+    if (/_id$/.test(kt) && kt !== 'brevo_list_id') v = (v.match(/[-\w]{25,}/) || [v])[0];   // un lien Drive collé → son identifiant
+    if (kt === 'brevo_list_id') v = (v.match(/\d+/g) || []).join(', ');   // « #2 » → 2
+    if (kt === 'brevo_api_key' && v){ const k = v.match(/xkeysib-[\w-]+/); if (!k){ toast('Ce n’est pas une clé API Brevo : elle commence par « xkeysib- » (Brevo › SMTP et API › Clés API)', true); e.target.value = setting('brevo_api_key') || ''; return; } v = k[0]; }
     if (await setSetting(kt, v)){ e.target.value = v; toast('Réglage enregistré'); }
     return; }
   const k = e.target.dataset.actSetting; if (!k) return;
