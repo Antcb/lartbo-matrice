@@ -12,7 +12,9 @@ import { S } from './state.js';
 import { openModal } from './ui/modal.js';
 import { esc, fmtDate, toast } from './utils.js';
 
-export const MAIL_KINDS = { confirmation: 'Confirmation', boucle_tech: 'Boucle accueil & technique', boucle_com: 'Boucle communication', autre: 'Autre' };
+export const MAIL_KINDS = { confirmation: 'Confirmation', boucle_tech: 'Boucle accueil & technique', boucle_com: 'Boucle communication', prospection: 'Prospection', relance: 'Relance de prospection', autre: 'Autre' };
+/** Mails envoyés depuis une structure (pas depuis une date) : balises de la structure */
+export const STRUCT_KINDS = ['prospection', 'relance'];
 /** Quand un modèle est proposé en premier (la variante, elle, n'est qu'un nom libre : CC Club, CC Festival…) */
 export const APPLIES = { all: 'Toutes les dates', salle: 'Dates en salle (Confirmée Salle)', festival: 'Festivals (Confirmée Festival)', cr: 'Co-réalisations', cession: 'Cessions' };
 const applies = (rule, s) => ({ all: true, salle: /Salle/.test(s.status || ''), festival: /Festival/.test(s.status || ''),
@@ -26,6 +28,12 @@ export const TAGS = [
   ['contact','Prénom du destinataire'], ['structure','Structure'], ['lien_fiche','Lien de la fiche de renseignements'],
   ['horaire','Heure de passage'], ['duree_set','Durée du set'],
   ['personnes','Personnes sur la route'], ['chambres','Chambres (single / twin)'], ['montage','Mise à disposition (heures)'], ['invitations','Invitations producteur'],
+];
+/** Balises des mails de prospection / relance (infos de la structure) */
+export const PROSPECT_TAGS = [
+  ['contact','Prénom du destinataire'], ['structure','Structure'], ['artiste','Artiste(s) choisi(s)'], ['ville','Ville'], ['cp','Département'],
+  ['festival','Nom du festival / de la salle'], ['dates_festival','Dates du festival'], ['jauge','Jauge'],
+  ['date_proposee','Date proposée'], ['annee','Année (de la date proposée, sinon l’an prochain)'],
 ];
 
 /**
@@ -233,7 +241,9 @@ const projLabel = id => id ? (byId('projects', id)?.name || '?') : 'Tous les art
 
 export async function editTemplate(id, defaults={}){
   const t = id ? byId('mail_templates', id) : {kind:'confirmation', applies_to:'all', subject:'', html:'', attachments:[], ...defaults};
-  const tagBar = `<div class="tag-bar" role="toolbar" aria-label="Insérer une balise">${TAGS.map(([k,l])=>`<button type="button" class="chip-btn" data-tag="${k}" title="${esc(l)}">{{${k}}}</button>`).join('')}</div>`;
+  // balises des dates (confirmation, boucles…) ou de la structure (prospection, relance), selon le type de mail
+  const tagBar = `<div class="tag-bar" role="toolbar" aria-label="Insérer une balise" data-tagset="show" ${STRUCT_KINDS.includes(t.kind)?'hidden':''}>${TAGS.map(([k,l])=>`<button type="button" class="chip-btn" data-tag="${k}" title="${esc(l)}">{{${k}}}</button>`).join('')}</div>
+    <div class="tag-bar" role="toolbar" aria-label="Insérer une balise" data-tagset="struct" ${STRUCT_KINDS.includes(t.kind)?'':'hidden'}>${PROSPECT_TAGS.map(([k,l])=>`<button type="button" class="chip-btn" data-tag="${k}" title="${esc(l)}">{{${k}}}</button>`).join('')}</div>`;
   const fmtBar = `<div class="tag-bar"><button type="button" class="chip-btn" data-cmd="bold"><b>G</b></button><button type="button" class="chip-btn" data-cmd="italic"><i>I</i></button><button type="button" class="chip-btn" data-cmd="underline"><u>S</u></button><button type="button" class="chip-btn" data-cmd="createLink">Lien</button><button type="button" class="chip-btn" data-cmd="removeFormat">Sans mise en forme</button></div>`;
   let files = (t.attachments || []).slice();   // [{path, name}] fichier déposé · [{id, url, name}] fichier Drive
   const variants = [...new Set(['CC', 'CC Club', 'CC Festival', 'CCR Club', ...S.db.mail_templates.map(x => x.variant).filter(Boolean)])];
@@ -267,6 +277,8 @@ export async function editTemplate(id, defaults={}){
     onDelete: id ? () => remove('mail_templates', id) : null});
   const body = document.querySelector('#tpl-body');
   document.querySelector('#modal [name=variant]')?.setAttribute('list', 'tpl-variants');
+  document.querySelector('#modal [name=kind]')?.addEventListener('change', e => { const st = STRUCT_KINDS.includes(e.target.value);
+    document.querySelectorAll('#modal [data-tagset]').forEach(b => b.hidden = (b.dataset.tagset === 'struct') !== st); });
   drawFiles();
   document.querySelector('#tpl-files').addEventListener('click', e => { const b = e.target.closest('[data-rmf]'); if (b){ files.splice(Number(b.dataset.rmf), 1); drawFiles(); } });
   document.querySelector('#tpl-up').addEventListener('change', async e => {

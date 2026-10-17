@@ -12,6 +12,7 @@ import { EVENT_KINDS, PRICING, isOff } from '../constants.js';
 import { acInput } from '../ui/autocomplete.js';
 import { esc, eur, fmtDate, hayOf, md, norm, period, url } from '../utils.js';
 import { suiviCard } from './suivi.js';
+import { lastProspectMail } from '../prospection.js';
 import { taskSection } from './todo.js';
 
 // Coordonnées administratives (champ admin de la structure) : [clé, libellé, pleine largeur ?]
@@ -60,10 +61,12 @@ export function structurePage(st){
   else if (tab==='admin') body = adminTab(st);
   return `<button class="btn ghost back" data-act="closeStructure">← Structures</button>
   ${viewHead(esc(st.name), {sub: esc([st.city, st.department_code && '('+st.department_code+')', st.region, st.country && st.country!=='France' ? st.country : ''].filter(Boolean).join(' · ')),
-    actions:`<button class="btn" data-act="editStructure" data-id="${st.id}">Modifier la fiche</button>
+    actions:`<button class="btn primary" data-act="prospection" data-id="${st.id}" title="Mail de prospection depuis un modèle : brouillon ou envoi, suivi et relance créés automatiquement">Prospection</button>
+      ${(m => m ? `<button class="btn" data-act="relance" data-id="${m.id}" title="Relance en réponse au mail « ${esc(m.mail_subject || '')} »">Relance${m.relances ? ` (${m.relances + 1}e)` : ''}</button>` : '')(lastProspectMail(st.id))}
+      <button class="btn" data-act="editStructure" data-id="${st.id}">Modifier la fiche</button>
       <button class="btn" data-act="newShowFor" data-id="${st.id}">Nouvelle date</button>
       <button class="btn" data-act="newTaskFor" data-id="${st.id}">Nouvelle tâche</button>
-      <button class="btn primary" data-act="newSuiviFor" data-id="${st.id}">Nouveau suivi</button>`})}
+      <button class="btn" data-act="newSuiviFor" data-id="${st.id}">Nouveau suivi</button>`})}
   ${tabs}${body}`;
 }
 

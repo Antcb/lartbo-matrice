@@ -64,6 +64,22 @@ export function viewSettings(){
       <div class="vh-actions"><button class="btn sm" data-act="renameAudit">Vérifier les noms</button>
         ${setting('rename_sheet_url') ? `<a class="btn sm" href="${esc(setting('rename_sheet_url'))}" target="_blank" rel="noopener">Ouvrir le dernier tableau</a>` : ''}
         <button class="btn sm" data-act="renameApply">Appliquer les renommages cochés</button></div></div>
+    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Prospection</h3>
+      <p class="help" style="margin:0 0 10px">Les mails de prospection et les relances partent du Gmail de <b>${esc(setting('prospect_from') || 'anthony@lartboristerie.com')}</b> grâce à un petit script installé sur ce compte (une seule fois) :</p>
+      <ol class="help" style="margin:0 0 12px;padding-left:18px">
+        <li><button class="btn sm" data-act="copyProspectScript">Copier le code du script</button></li>
+        <li>Va sur <a href="https://script.google.com/home/projects/create" target="_blank" rel="noopener">script.google.com</a> connecté avec ce compte : un nouveau projet s’ouvre. Efface tout, colle le code, enregistre (⌘S) et nomme-le « Matrice Prospection ».</li>
+        <li>À gauche, « Services » › + › <b>Gmail API</b> › Ajouter (pour les relances dans le même fil).</li>
+        <li>Déployer › Nouveau déploiement › roue dentée › <b>Application Web</b> · Exécuter en tant que : <b>moi</b> · Accès : <b>Tout le monde</b> › Déployer, puis autorise l’accès.</li>
+        <li>Copie l’adresse « Application Web » (…/exec) et colle-la ici :</li>
+      </ol>
+      <div class="steps">
+        <label for="set-pscript">Adresse du script de prospection</label><input id="set-pscript" data-setting-text="prospect_script_url" value="${esc(setting('prospect_script_url')||'')}" placeholder="https://script.google.com/macros/s/…/exec">
+      </div>
+      <div class="vh-actions" style="margin-top:10px"><button class="btn sm" data-act="testProspectScript">Tester</button></div>
+      <h4 class="block-title" style="margin:16px 0 6px">Signature ajoutée sous les mails de prospection</h4>
+      <div class="mail-preview" id="set-sig" contenteditable="true">${setting('prospect_signature') || ''}</div>
+      <div class="vh-actions" style="margin-top:8px"><button class="btn sm" data-act="saveSignature">Enregistrer la signature</button></div></div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Brevo</h3>
       <p class="help" style="margin:0 0 12px">Chaque nouveau contact de la Matrice qui a un mail est ajouté automatiquement dans Brevo (mail, prénom, nom, structure). Un mail déjà présent dans Brevo n’est jamais modifié : ni ses infos, ni ses listes, et un désabonné reste désabonné. Dans Brevo : ton nom en haut à droite › « SMTP et API » › onglet « Clés API » › « Générer une nouvelle clé API », puis colle-la ici. La liste est facultative : son numéro est dans Contacts › Listes (colonne ID).</p>
       <div class="steps">

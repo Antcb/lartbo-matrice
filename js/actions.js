@@ -17,6 +17,7 @@ import { $, esc, fmtDate, toast, today } from './utils.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
 import { exportShows } from './exports.js';
+import { callProspect, openProspection } from './prospection.js';
 import { EMP_ACTIONS, editEmployee } from './views/employees.js';
 
 /** Nouveau suivi : créé tout de suite et ouvert dans l'espace de prospection (pas de fenêtre) */
@@ -98,6 +99,20 @@ export const ACTIONS = {
     catch (err) { if (win) win.close(); toast(err.message, true); } t.disabled = false; },
   renameApply: async t => { if (!confirm('Renommer dans le Drive tous les éléments cochés du tableau ?')) return; t.disabled = true;
     try { const out = await callScript('rename_apply', {}); toast(`${out.renamed} élément(s) renommé(s)`); } catch (err) { toast(err.message, true); } t.disabled = false; },
+  prospection: t => openProspection(t.dataset.id),
+  relance: t => openProspection(null, {prospectId: t.dataset.id}),
+  copyProspectScript: async () => {
+    try {
+      const code = (await (await fetch('apps-script/Prospection.gs?v=' + Date.now())).text()).replace('__SECRET__', setting('drive_webhook_secret') || '');
+      await navigator.clipboard.writeText(code); toast('Code du script copié : colle-le dans le nouveau projet Apps Script');
+    } catch (err) { toast('Copie impossible : ' + err.message, true); }
+  },
+  testProspectScript: async () => { try { const out = await callProspect('ping', {}); toast(`Script de prospection OK (${out.account || 'compte Google'})`); } catch (err) { toast(err.message, true); } },
+  saveSignature: async () => { const el = $('#set-sig'); if (!el) return;
+    const {error} = await sb.from('settings').upsert({key: 'prospect_signature', value: el.innerHTML});
+    if (error) return toast(error.message, true);
+    const r = S.db.settings.find(x => x.key === 'prospect_signature'); if (r) r.value = el.innerHTML; else S.db.settings.push({key: 'prospect_signature', value: el.innerHTML});
+    toast('Signature enregistrée'); },
   brevoSyncAll: async () => {
     const n = S.db.contacts.filter(c => /@/.test(c.email || '')).length;
     if (!confirm(`Envoyer dans Brevo les contacts de la Matrice (${n} avec un mail) ? Seuls ceux qui ne sont pas encore dans Brevo sont ajoutés : les autres (et les désabonnés) ne sont pas touchés.`)) return;
