@@ -12,6 +12,8 @@ import { filterBar, stBadge, stSelect, viewHead } from '../ui/bits.js';
 import { cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { esc, eur, fmtDate, matches } from '../utils.js';
+import { payerLabel } from '../budget.js';
+import { projectBudgetHTML, showBudgetHTML } from './budget.js';
 
 export function viewProduction(){
   const q = S.search.production || '';
@@ -41,6 +43,7 @@ export function viewProduction(){
       <div class="stat"><b style="${late?'color:var(--danger)':''}">${late}</b><span>Relance${late>1?'s':''} en retard</span></div>
     </div>
     ${shows.length ? order.map(pid => `<section class="group"><div class="group-head"><h2>${esc(projName(pid)||'Sans projet')}</h2><span class="count">${groups[pid].length}</span></div>
+      ${pid ? projectBudgetHTML(pid) : ''}
       <div class="prod-list">${groups[pid].map(prodRow).join('')}</div></section>`).join('') : '<div class="empty panel">Aucune date ne correspond à la recherche.</div>'}`;
 }
 
@@ -76,6 +79,7 @@ function prodBody(s, booking, steps, pays, late){
     </div>
     <div>
       <h3 class="block-title">Cachet et commission</h3>
+      <label class="chk booking-only"><input type="checkbox" data-act="toggleBookingOnly" data-id="${s.id}" ${booking?'checked':''}><span>Booking uniquement sur cette date <span class="muted">(seulement la facture de commission, pas de budget)</span></span></label>
       <div class="steps">
         <label>Cachet HT</label>${cIn('shows',s.id,'fee_ht',s.fee_ht,'number')}
         <label>TVA du cachet (%)</label>${cIn('shows',s.id,'vat_rate',s.vat_rate,'number','placeholder="5.5" class="narrow"')}
@@ -92,11 +96,12 @@ function prodBody(s, booking, steps, pays, late){
       <p class="muted" style="font-size:13px;margin:8px 0 0">${booking ? `Commission : <b>${eur(netArtbo(s))}</b>` : `Le % partenaire s'applique à la commission L'ArtBo. Net L'ArtBo : <b>${eur(netArtbo(s))}</b>`}</p>
       <div class="drive">${driveHTML(s)}</div>
     </div>
+    ${booking ? '' : showBudgetHTML(s)}
     ${mailsHTML(s, booking)}
     <div class="prod-bill">
       <h3 class="block-title">Facturation</h3>
       <div class="tbl-wrap"><table>
-        <thead><tr><th>Ligne</th><th class="num">%</th><th class="num">Montant HT</th><th class="num">TVA</th><th class="num">TTC</th><th>N° facture</th><th>Envoyée</th><th>Relancée</th><th>Payée</th><th></th></tr></thead>
+        <thead><tr><th>Ligne</th><th class="num">%</th><th class="num">Montant HT</th><th class="num">TVA</th><th class="num">TTC</th><th>Arrive sur</th><th>N° facture</th><th>Envoyée</th><th>Relancée</th><th>Payée</th><th>Pennylane</th><th></th></tr></thead>
         <tbody>${pays.map(p=>{ const a=payAmount(p), ov=p.amount!=null;
           return `<tr>
           <td>${cIn('show_payments',p.id,'label',p.label)}</td>
@@ -104,22 +109,42 @@ function prodBody(s, booking, steps, pays, late){
           <td class="num"><input type="number" step="any" data-t="show_payments" data-id="${p.id}" data-f="amount" value="${ov?p.amount:''}" placeholder="${a==null?'à saisir':a}" title="Laisse vide pour le calcul automatique" class="${ov?'override':''}"></td>
           <td class="num"><input type="number" step="any" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="vat_rate" value="${p.vat_rate??''}" placeholder="${payVat(p)}" aria-label="TVA %"></td>
           <td class="num nowrap">${eur(ttc(a, payVat(p)))}</td>
+          <td>${payeeCell(s, p, booking)}</td>
           <td>${cIn('show_payments',p.id,'invoice_number',p.invoice_number,'text','style="min-width:90px"')}</td>
           <td class="${late.has(p.kind)&&!p.sent_at?'late-cell':''}">${cIn('show_payments',p.id,'sent_at',p.sent_at,'date')}</td>
           <td title="Date de la dernière relance">${cIn('show_payments',p.id,'reminded_at',p.reminded_at,'date')}</td>
           <td class="${p.paid_at?'done-cell':''}">${cIn('show_payments',p.id,'paid_at',p.paid_at,'date')}</td>
+          <td>${pennylaneCell(p)}</td>
           <td><button class="btn icon sm ghost danger" data-act="delPay" data-id="${p.id}" aria-label="Supprimer la ligne">✕</button></td></tr>`;}).join('')}
         </tbody></table></div>
       <div class="vh-actions" style="margin-top:10px">
         ${booking ? '' : `<button class="btn sm" data-act="addPay" data-kind="acompte" data-id="${s.id}">Ajouter un acompte</button>
         <button class="btn sm" data-act="addPay" data-kind="cnm" data-id="${s.id}">Ajouter la taxe CNM</button>`}
         <button class="btn sm" data-act="addPay" data-kind="autre" data-id="${s.id}">Autre ligne</button>
+        <button class="btn sm" data-act="pennylaneQuote" data-id="${s.id}" title="Crée le devis dans Pennylane (non envoyé)">${s.pennylane_quote_id ? 'Devis Pennylane créé ✓' : 'Devis dans Pennylane'}</button>
+        ${s.pennylane_quote_url ? `<a class="btn sm ghost" href="${esc(s.pennylane_quote_url)}" target="_blank" rel="noopener">Voir le devis ↗</a>` : ''}
         <button class="btn sm ghost" data-act="editShow" data-id="${s.id}">Fiche complète de la date</button>
         ${s.structure_id ? `<button class="btn sm ghost" data-act="openStructure" data-id="${s.structure_id}">Fiche de la structure</button>` : ''}
       </div>
       <p class="muted" style="font-size:12px;margin:8px 0 0">Montants HT. Vide = calcul automatique sur le cachet HT ; un montant saisi à la main apparaît en orange. TVA par défaut : 5,5 % sur le cachet, 20 % sur les commissions. Le solde suit l’acompte (100 % − acomptes).</p>
     </div>
   </div>`;
+}
+
+/** Où arrive l'argent d'une ligne de facturation */
+function payeeCell(s, p, booking){
+  const proj = byId('projects', s.project_id);
+  if (p.kind === 'artbo') return `<span class="muted nowrap">${booking ? "L'ArtBo" : esc(payerLabel('compte', proj)) + ' → L’ArtBo'}</span>`;
+  if (p.kind === 'partner') return `<span class="muted nowrap">L'ArtBo → partenaire</span>`;
+  if (!['acompte','solde','autre'].includes(p.kind) || booking) return '';
+  return cSel('show_payments', p.id, 'payee', p.payee || (proj?.account_name ? 'compte' : 'artbo'), ['compte','artbo','artiste','autre'].map(c => [c, payerLabel(c, proj)]), false);
+}
+
+/** Brouillon de facture Pennylane d'une ligne */
+function pennylaneCell(p){
+  if (!['acompte','solde','artbo','autre'].includes(p.kind)) return '';
+  if (p.pennylane_id) return p.pennylane_url ? `<a class="btn sm ghost" href="${esc(p.pennylane_url)}" target="_blank" rel="noopener">Brouillon ↗</a>` : '<span class="ok-badge">Brouillon créé</span>';
+  return `<button class="btn sm" data-act="pennylaneInvoice" data-id="${p.id}" title="Crée la facture en brouillon dans Pennylane">Créer</button>`;
 }
 
 /** Mails (confirmation, boucles) et fiche de renseignements */

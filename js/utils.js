@@ -7,6 +7,8 @@ export const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+/** Montant au centime (budgets) */
+export const eur2 = n => n==null || n==='' || isNaN(n) ? '—' : Number(n).toLocaleString('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2});
 export const eur = n => n==null || n==='' || isNaN(n) ? '—' : Number(n).toLocaleString('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0});
 
 export const fmtDate = d => d ? new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'}) : '';

@@ -1,0 +1,99 @@
+/**
+ * 💶 Budget d'une date et compte dédié d'un artiste.
+ *
+ * Une date en production : le cachet HT arrive sur le compte dédié (ex. « Compte The Locos L'ArtBo »),
+ * on en retire la commission L'ArtBo et les dépenses (HT ; salaires : coût total), le reste revient à l'artiste
+ * (ligne « Solde artiste », versée à Pipi pour The Locos).
+ * Chaque ligne a un montant prévu (saisi ou calculé) et un montant réel (lu sur la pièce) ; elle est « payée » quand paid_at est rempli.
+ * Une date cochée « booking uniquement » (prod_mode = booking) n'a pas de budget : seulement la facture de commission.
+ */
+import { payAmount, paymentsOf } from './calc.js';
+import { CONFIRMED_PROD } from './constants.js';
+import { byId, setting, showsOfProject } from './selectors.js';
+import { S } from './state.js';
+
+const num = v => v==null || v==='' ? null : Number(v);
+const r2 = n => Math.round(n * 100) / 100;
+
+export const isProdShow = s => !!s && s.prod_mode !== 'booking';
+export const isFree = s => /gratuit/i.test(s?.ticketing_type || '');
+export const payslipCost = () => num(setting('movinmotion_payslip_cost')) ?? 20.3;
+export const cnmPct = () => num(setting('default_cnm_pct')) ?? 3.5;
+
+export const linesOf = showId => S.db.budget_lines.filter(l => l.show_id === showId).sort((a,b) => (a.sort||0)-(b.sort||0) || (a.created_at||'').localeCompare(b.created_at||''));
+export const offLinesOf = projectId => S.db.budget_lines.filter(l => !l.show_id && l.project_id === projectId).sort((a,b) => (a.doc_date||'').localeCompare(b.doc_date||'') || (a.created_at||'').localeCompare(b.created_at||''));
+
+export const commissionOf = s => paymentsOf(s.id).find(p => p.kind === 'artbo');
+export const commissionAmount = s => { const p = commissionOf(s); return p ? payAmount(p) || 0 : r2((Number(s.fee_ht)||0) * (Number(s.artbo_pct ?? 15)||0) / 100); };
+
+const staffQty = showId => linesOf(showId).filter(l => l.category === 'Staff').reduce((t,l) => t + (Number(l.qty)||0), 0);
+
+/** Montant prévu HT d'une ligne (saisi, ou calculé pour les lignes automatiques) */
+export function lineForecast(l){
+  if (l.forecast != null) return Number(l.forecast);
+  if (l.category === 'Staff' && l.qty != null && l.unit_cost != null) return r2(Number(l.qty) * Number(l.unit_cost));
+  const s = byId('shows', l.show_id);
+  if (l.auto === 'movinmotion' && s) return r2(payslipCost() * staffQty(s.id));
+  if (l.auto === 'cnm' && s) return isFree(s) ? r2((Number(s.fee_ht)||0) * cnmPct() / 100) : 0;
+  if (l.auto === 'solde_artiste' && s) return Math.max(0, r2(availableForArtist(s)));
+  return null;
+}
+/** Montant retenu : le réel s'il est connu, sinon le prévu */
+export const lineValue = l => l.amount != null ? Number(l.amount) : (lineForecast(l) || 0);
+export const lineStatus = l => l.paid_at ? 'paid' : (l.doc_number || l.file_path || l.amount != null) ? 'doc' : 'planned';
+
+/** Cachet − commission − dépenses (hors solde artiste) = ce qui peut revenir à l'artiste */
+export function availableForArtist(s){
+  const out = linesOf(s.id).filter(l => l.auto !== 'solde_artiste').reduce((t,l) => t + lineValue(l), 0);
+  return (Number(s.fee_ht)||0) - commissionAmount(s) - out;
+}
+
+export function showBudget(s){
+  const lines = linesOf(s.id);
+  const fee = Number(s.fee_ht)||0, com = commissionAmount(s);
+  const expenses = lines.filter(l => l.auto !== 'solde_artiste').reduce((t,l) => t + lineValue(l), 0);
+  const solde = lines.filter(l => l.auto === 'solde_artiste' || l.category === 'Solde artiste').reduce((t,l) => t + lineValue(l), 0);
+  const forecastExp = lines.filter(l => l.auto !== 'solde_artiste').reduce((t,l) => t + (lineForecast(l) ?? (Number(l.amount)||0)), 0);
+  const docs = lines.filter(l => lineValue(l) !== 0);
+  return {fee, com, expenses: r2(expenses), forecastExp: r2(forecastExp), available: r2(fee - com - expenses), solde: r2(solde),
+    result: r2(fee - com - expenses - solde), lines,
+    docsIn: docs.filter(l => l.doc_number || l.file_path).length, docsAll: docs.length, paid: docs.filter(l => l.paid_at).length};
+}
+
+/** Dates d'un projet qui passent par le compte dédié (production, confirmées), toutes années */
+export const prodShowsOf = projectId => showsOfProject(projectId).filter(s => CONFIRMED_PROD.includes(s.status) && isProdShow(s)).sort((a,b) => (a.date||'').localeCompare(b.date||''));
+
+const payee = p => p.payee || 'compte';
+
+/**
+ * Compte dédié : solde réel (ce qui est arrivé − ce qui est parti) et prévu en fin de tournée.
+ * Entrées : acomptes / soldes encaissés (HT). Sorties : commission L'ArtBo virée, lignes payées par le compte.
+ */
+export function accountOf(projectId){
+  const p = byId('projects', projectId);
+  const a = {opening: Number(p?.account_opening)||0, inDone:0, inTodo:0, outDone:0, outTodo:0, artboAdvance:0, byCat:{}};
+  for (const s of prodShowsOf(projectId)){
+    for (const pay of paymentsOf(s.id)){
+      const v = payAmount(pay) || 0;
+      if (['acompte','solde','autre'].includes(pay.kind) && payee(pay) === 'compte') pay.paid_at ? a.inDone += v : a.inTodo += v;
+      if (pay.kind === 'artbo') pay.paid_at ? a.outDone += v : a.outTodo += v;
+    }
+    a.byCat['Commission'] = (a.byCat['Commission']||0) + commissionAmount(s);
+  }
+  const lines = S.db.budget_lines.filter(l => l.project_id === projectId && (!l.show_id || isProdShow(byId('shows', l.show_id)) && CONFIRMED_PROD.includes(byId('shows', l.show_id)?.status)));
+  for (const l of lines){
+    const v = lineValue(l);
+    a.byCat[l.category || 'Autres'] = (a.byCat[l.category || 'Autres']||0) + v;
+    if ((l.payer || 'compte') === 'compte') l.paid_at ? a.outDone += v : a.outTodo += v;
+    if (l.payer === 'artbo') a.artboAdvance += v;
+  }
+  Object.keys(a).forEach(k => typeof a[k] === 'number' && (a[k] = r2(a[k])));
+  a.real = r2(a.opening + a.inDone - a.outDone);
+  a.end = r2(a.real + a.inTodo - a.outTodo);
+  return a;
+}
+
+/** Libellés des payeurs pour un projet */
+export function payerLabel(code, project){
+  return ({compte: project?.account_name || 'Compte dédié', artbo: "L'ArtBo", artiste: project?.artist_payee || 'Artiste', organisateur: 'Organisateur', autre: 'Autre'})[code || 'compte'] || code;
+}

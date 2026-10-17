@@ -3,7 +3,7 @@
  * (dans le même bloc, champ, fenêtre…) est envoyé à ce bouton, comme si on l'avait choisi.
  * Les zones qui ont déjà leur propre glisser-déposer (pièces jointes des suivis, photo, import) ne sont pas touchées.
  */
-const OWN = '[data-drop],[data-drop-form],[data-members-drop],[data-photo-drop]';
+const OWN = '[data-budget-drop],[data-budget-line],[data-drop],[data-drop-form],[data-members-drop],[data-photo-drop]';
 // on remonte jusqu'au premier de ces blocs au plus : le fichier va au bouton le plus proche
 const STOP = 'dialog, .panel, section, form, .suivi-block';
 

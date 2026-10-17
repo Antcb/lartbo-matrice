@@ -598,3 +598,18 @@ button.add-proj{cursor:pointer}
 .test-banner{background:#FFE9A8;color:#5B4300;text-align:center;font-size:13px;font-weight:600;padding:6px 12px}
 .test-banner a{color:inherit}
 .test-note{background:#FFE9A8;color:#5B4300;border-radius:var(--r);padding:8px 10px;font-size:13px;font-weight:600}
+/* Budget d'une date (v1.19) */
+.prod-budget{grid-column:1/-1}
+.budget-stats{gap:22px}
+.budget-stats .stat b{font-size:22px}
+.budget-table td{vertical-align:middle}
+.budget-table input[type=number]{width:96px}
+.budget-table input.narrow{width:54px}
+.budget-table tr.is-paid td{background:#F4FAF6}
+.budget-table tr.budget-over td{background:var(--brand-tint);outline:2px dashed var(--brand-2);outline-offset:-2px}
+.budget-drop.budget-over{border-color:var(--brand-2);background:var(--brand-tint)}
+.booking-only{display:flex;gap:8px;align-items:flex-start;margin:0 0 12px;font-size:14px}
+.proj-budget-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
+.proj-budget{padding:14px 16px;margin:0 0 14px}
+.total-row td{border-top:2px solid var(--line)}
+.budget-table .badge,.budget-table .ok-badge,.budget-table .warn-badge{white-space:nowrap}

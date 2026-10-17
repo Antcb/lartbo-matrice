@@ -19,6 +19,7 @@ import { exportContractPdf, generateContract, validateFiche } from './contract.j
 import { exportShows } from './exports.js';
 import { callProspect, openProspection } from './prospection.js';
 import { EMP_ACTIONS, editEmployee } from './views/employees.js';
+import { BUDGET_ACTIONS } from './budget-actions.js';
 
 /** Nouveau suivi : créé tout de suite et ouvert dans l'espace de prospection (pas de fenêtre) */
 async function newSuivi(structureId){
@@ -38,6 +39,7 @@ export async function cleanupDraft(){
 
 export const ACTIONS = {
   ...EMP_ACTIONS,
+  ...BUDGET_ACTIONS,
   employeeCard: t => editEmployee(t.dataset.id),
   closeModal: t => (t.dataset.level==='2' ? $('#modal2') : $('#modal')).close(),
   modalDelete: async t => { const lvl = Number(t.dataset.level||1); if (confirm('Supprimer définitivement ?')){ await MODALS[lvl].onDelete(); MODALS[lvl].dlg.close(); render(); } },

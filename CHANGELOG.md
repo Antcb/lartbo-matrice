@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.19.0 — 17/10/2026
+- Budget par date (prévu / réel, pièces lues par l'IA, qui paie), compte dédié de l'artiste en temps réel, case « booking uniquement » par date, devis et factures en brouillon dans Pennylane, import du budget Excel The Locos
+
+
 ## 1.18.1 — 17/10/2026
 - Espace de test (?test) : copie séparée de la Matrice pour faire tester le site
 

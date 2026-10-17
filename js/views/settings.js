@@ -23,6 +23,7 @@ export function viewSettings(){
         <label>Solde</label><span><b>${esc(100 - ac)} %</b> <span class="muted">(100 % − acompte)</span></span>
         <label for="set-artbo">Commission L'ArtBo si le projet n'en précise pas (%)</label><input id="set-artbo" type="number" step="any" data-act-setting="default_artbo_pct" value="${esc(setting('default_artbo_pct')??'')}">
         <label for="set-cnm">Taxe CNM (%)</label><input id="set-cnm" type="number" step="any" data-act-setting="default_cnm_pct" value="${esc(setting('default_cnm_pct')??'')}">
+        <label for="set-mvm">Coût Movinmotion par bulletin (€)</label><input id="set-mvm" type="number" step="any" data-act-setting="movinmotion_payslip_cost" value="${esc(setting('movinmotion_payslip_cost')??'')}">
       </div>
       <p class="help" style="margin:14px 0 8px">Les nouvelles dates confirmées prennent ces pourcentages. Les dates déjà confirmées gardent les leurs, sauf si tu les mets à jour :</p>
       <button class="btn sm" data-act="applyAcompte">Appliquer ${esc(ac)} % / ${esc(100-ac)} % aux acomptes et soldes pas encore envoyés</button></div>
@@ -93,6 +94,12 @@ export function viewSettings(){
         <label for="set-ai">Clé Google AI Studio</label><span class="secret-line"><input id="set-ai" type="password" autocomplete="off" data-1p-ignore data-ai-key="1" placeholder="AIza… ou AQ.…" style="flex:1">
           <span class="muted" id="ai-state">…</span></span>
       </div></div>
+    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Pennylane</h3>
+      <p class="help" style="margin:0 0 12px">La Matrice crée dans Pennylane les devis (cession, co-réalisation, co-production…) et les factures d’acompte, de solde et de commission <b>en brouillon</b> : rien n’est envoyé, tu vérifies et tu finalises dans Pennylane. Dans Pennylane : Paramètres › Connectivité › Développeurs › « Générer un jeton API », droits <b>lecture et écriture</b> sur Clients, Factures clients et Devis. Copie le jeton et colle-le ici : il est gardé sur le serveur, jamais affiché dans le site.</p>
+      <div class="steps">
+        <label for="set-pl">Jeton API Pennylane</label><span class="secret-line"><input id="set-pl" type="password" autocomplete="off" data-1p-ignore data-pl-key="1" placeholder="Coller le jeton" style="flex:1">
+          <span class="muted" id="pl-state">…</span> <button class="btn sm" data-act="testPennylane">Tester</button></span>
+      </div></div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Version</h3>
       <p>Matrice L'ArtBoristerie Productions <b>v${APP_VERSION}</b></p>
       <p class="help">Historique des mises à jour : <a href="CHANGELOG.md" target="_blank" rel="noopener">journal des versions</a>.</p></div>
@@ -111,6 +118,9 @@ export async function refreshAiState(){
   const el = document.getElementById('ai-state'); if (!el) return;
   const {data} = await sb.rpc('ai_key_status');
   el.textContent = data ? '✓ clé enregistrée' : 'pas encore de clé';
+  const pl = document.getElementById('pl-state'); if (!pl) return;
+  const {data: ok} = await sb.rpc('pennylane_status');
+  pl.textContent = ok ? '✓ jeton enregistré' : 'pas encore de jeton';
 }
 
 document.addEventListener('change', async e => {
@@ -121,6 +131,12 @@ document.addEventListener('change', async e => {
     const {error} = await sb.rpc('set_ai_key', {k: m ? m[0] : ''});
     if (error) return toast(error.message, true);
     e.target.value = ''; toast(m ? 'Clé IA enregistrée' : 'Clé IA retirée'); refreshAiState(); return;
+  }
+  if (e.target.dataset.plKey){
+    const v = e.target.value.trim().replace(/^Bearer\s+/i, '');
+    const {error} = await sb.rpc('set_pennylane_key', {k: v});
+    if (error) return toast(error.message, true);
+    e.target.value = ''; toast(v ? 'Jeton Pennylane enregistré' : 'Jeton Pennylane retiré'); refreshAiState(); return;
   }
   const kt = e.target.dataset.settingText;
   if (kt){

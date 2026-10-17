@@ -39,6 +39,11 @@ export const DEFAULT_DEPARTMENTS = [{name:'Booking',color:'#4A86D4'},{name:'Prod
 // Équipe : adresse → prénom affiché
 export const TEAM_NAMES = {'anthony@lartboristerie.com':'Anthony', 'production@lartboristerie.com':'Chloé'};
 
+// Budget d'une date : catégories de dépenses (l'Excel : Technical, VHR, Promoting, Hospitality, Taxes, Others, Staff, Movinmotion, Fees)
+export const BUDGET_CATS = ['Technique','VHR','Promo','Accueil','Taxes','Autres','Staff','Movinmotion','Solde artiste'];
+// Qui paie / qui reçoit l'argent
+export const PAYERS = ['compte','artbo','artiste','organisateur','autre'];
+
 export const PAY_KINDS = {acompte:'Acompte', solde:'Solde', artbo:"Commission L'ArtBo", partner:'Commission partenaire', cnm:'Taxe CNM', autre:'Autre'};
 
 // Suivi admin d'une date en production complète
