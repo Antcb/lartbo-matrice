@@ -4,6 +4,7 @@
  */
 import { render } from './app.js';
 import { CFG } from './config.js';
+import { TEAM_NAMES } from './constants.js';
 import { LINGER_MS } from './constants.js';
 import { byId } from './selectors.js';
 import { S, TABLES, touch } from './state.js';
@@ -14,6 +15,8 @@ export const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_AN
 export async function loadAll(){
   const res = await Promise.all(TABLES.map(t => fetchAll(t)));
   TABLES.forEach((t,i) => { S.db[t] = res[i]; touch(t); });
+  // espace de test : l'équipe = les comptes de la table app_users du projet de test
+  if (!CFG.TEAM){ const {data} = await sb.from('app_users').select('*'); CFG.TEAM = (data || []).map(u => u.email); (data || []).forEach(u => { if (u.display_name) TEAM_NAMES[u.email] = u.display_name; }); }
 }
 
 export async function fetchAll(table){

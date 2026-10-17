@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.18.1 — 17/10/2026
+- Espace de test (?test) : copie séparée de la Matrice pour faire tester le site
+
+
 ## 1.18.0 — 17/10/2026
 - Prospection depuis une structure (modèles, brouillon ou envoi depuis anthony@, suivi + journal + date en Intérêt + tâche de relance) et relance en réponse dans le même fil Gmail
 

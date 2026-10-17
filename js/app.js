@@ -8,7 +8,7 @@ import './ui/autocomplete.js';
 import { ACTIONS, cleanupDraft } from './actions.js';
 import { byId, teamName, unreadNotifs } from './selectors.js';
 import { netArtbo, payAmount, paymentsOf } from './calc.js';
-import { APP_VERSION } from './config.js';
+import { APP_VERSION, ENV } from './config.js';
 import { VIEWS } from './constants.js';
 import { loadAll, save, sb } from './data.js';
 import { S, localSet } from './state.js';
@@ -36,7 +36,7 @@ const VIEW_FN = {booking:viewBooking, production:viewProduction, ticketing:viewT
 
 function header(){
   const unread = unreadNotifs();
-  return `<header class="top"><div class="top-row">
+  return `${ENV === 'test' ? '<div class="test-banner">Espace de test : rien de ce que tu fais ici ne touche la vraie Matrice. <a href="?prod">Revenir à la vraie Matrice</a></div>' : ''}<header class="top"><div class="top-row">
     <a class="brand" href="#" data-view="todo" aria-label="L'ArtBoristerie Productions — accueil">
       <img class="brand-logo" src="assets/logo.png" alt="L'ArtBoristerie Productions" width="104" height="39"><img class="brand-picto" src="assets/picto.png" alt="L'ArtBoristerie Productions" width="27" height="32"></a>
     <nav class="tabs" role="tablist">${VIEWS.map(([k,l])=>`<button class="tab" role="tab" data-view="${k}" aria-selected="${S.view===k}">${l}</button>`).join('')}</nav>
