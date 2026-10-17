@@ -11,6 +11,13 @@ import { deptBadge, projPicker, viewHead } from '../ui/bits.js';
 import { cAc, cIn, cSel, projChips } from '../ui/cells.js';
 import { daysUntil, esc, fmtDate, matches } from '../utils.js';
 
+/** Tâche rattachée à un suivi : lien vers le suivi ; relance téléphone : « Pas de réponse : clore le suivi » */
+export function taskSuiviBtns(t){
+  const p = t.prospect_id ? byId('prospects', t.prospect_id) : null; if (!p) return '';
+  return `<button class="btn sm ghost" data-act="openSuivi" data-id="${p.id}" title="Ouvrir le suivi${p.status==='Closed'?' (clos)':''}">Suivi ↗</button>`
+    + (t.auto_kind === 'relance_tel' && !isDone(t) && p.status !== 'Closed' ? `<button class="btn sm ghost danger" data-act="noAnswerClose" data-id="${t.id}">Pas de réponse : clore le suivi</button>` : '');
+}
+
 export function taskSection(all){
   const done = all.filter(t => isDone(t) && !lingering(t.id)), open = all.filter(t => !isDone(t) || lingering(t.id));
   const shown = (S.showDoneTasks ? all : open).slice().sort(taskSort);
@@ -26,7 +33,7 @@ export function taskTable(tasks, emptyMsg){
     return `<tr class="${isDone(t) && !leaving ? 'task-done' : ''} ${leaving?'leaving':''}">
       <td><input type="checkbox" data-act="toggleTask" data-id="${t.id}" ${t.status==='Done'?'checked':''} aria-label="Marquer comme faite"></td>
       <td class="full-cell" style="min-width:260px"><div class="task-title">${cIn('tasks',t.id,'title',t.title,'text','aria-label="Nom de la tâche"')}
-        <button class="btn sm ghost" data-act="editTask" data-id="${t.id}" title="Notes, pièces jointes, statut…">Détails${nf?` · ${nf} 📎`:''}</button></div>
+        <button class="btn sm ghost" data-act="editTask" data-id="${t.id}" title="Notes, pièces jointes, statut…">Détails${nf?` · ${nf} 📎`:''}</button>${taskSuiviBtns(t)}</div>
         ${t.notes?`<div class="muted" style="font-size:13px;padding:0 6px;white-space:pre-line">${esc(t.notes.length>160?t.notes.slice(0,160)+'…':t.notes)}</div>`:''}</td>
       <td><select class="dept-sel" data-t="tasks" data-id="${t.id}" data-f="department" style="--c:${deptColor(t.department)}" aria-label="Pôle"><option value="">Pôle ?</option>${deptNames().concat(t.department && !deptNames().includes(t.department) ? [t.department] : []).map(d=>`<option ${d===t.department?'selected':''}>${esc(d)}</option>`).join('')}</select></td>
       <td>${t.status==='Done' && t.done_at ? `<span class="muted nowrap">Faite le ${fmtDate(t.done_at.slice(0,10))}</span>` : u?`<span class="urg ${u.cls}">${esc(u.label)}</span>`:''}</td>

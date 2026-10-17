@@ -8,13 +8,14 @@ import { CFG } from './config.js';
 import { CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PROSPECT, STATUSES, TASK_STATUS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
 import { insert, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode } from './geo.js';
-import { attachmentsOf, byId, deptNames, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
+import { attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow } from './ui/bits.js';
 import { hiddenFields, openModal } from './ui/modal.js';
 import { $, downloadCSV, esc, fmtDate, toast, today } from './utils.js';
 import { driveHTML } from './views/production.js';
+import { closeNoAnswer } from './prospection.js';
 
 const team = () => CFG.TEAM.map(e=>[e, TEAM_NAMES[e]||e]);
 const activeProjects = keep => projectOptions(true, keep).map(x=>[x.id, x.name]);
@@ -125,6 +126,14 @@ export const driveId = s => { const m = String(s).match(/folders\/([\w-]{10,})/)
 const BOOKING_DAYS = 10;
 const inDays = n => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
+/** Suivis proposés pour une tâche : ceux de sa structure d'abord, puis les autres suivis ouverts */
+function suiviOptions(t){
+  const open = S.db.prospects.filter(p => p.status !== 'Closed' || p.id === t.prospect_id);
+  const mine = open.filter(p => t.structure_id && p.structure_id === t.structure_id), rest = open.filter(p => !mine.includes(p));
+  const lab = p => prospectTitle(p) + (p.status === 'Closed' ? ' (clos)' : '');
+  return [...mine, ...rest.sort((a,b) => lab(a).localeCompare(lab(b)))].map(p => [p.id, lab(p)]);
+}
+
 export function editTask(id, prefill={}){
   const t = id ? byId('tasks', id) : {status:'To Do', assigned_to: S.user.email, project_ids: S.project?[S.project]:[], ...prefill};
   if (!id && !t.deadline && /^booking$/i.test(t.department || '')) t.deadline = inDays(BOOKING_DAYS);
@@ -138,14 +147,19 @@ export function editTask(id, prefill={}){
       {k:'project_ids', label:'Projet(s)', type:'checks', options:activeProjects(projIds(t)), full:true},
       {k:'structure_id', label:'Structure', type:'ac', kind:'structures', create:true},
       {k:'show_id', label:'Date concernée', type:'ac', kind:'shows', placeholder:'Artiste, lieu, ville ou date…'},
+      {k:'prospect_id', label:'Suivi (facultatif)', type:'select', options:suiviOptions(t)},
       {k:'priority', label:'Priorité (si pas d’échéance)', type:'select', options:PRIORITIES}, {k:'tags', label:'Tags (Call, Mail…)', type:'tags'},
       {k:'notes', label:'Notes', type:'textarea', full:true, rows:5},
       ...(files.length ? [{k:'_existing', type:'html', label:'Pièces jointes', full:true, html: files.map(f=>fileRow(f, 'openAttachment', 'delAttachment')).join('')}] : []),
       {k:'_files', label: files.length ? 'Ajouter des pièces jointes' : 'Pièces jointes', type:'files', full:true},
     ],
-    onDelete: id ? async () => { await removeWhere('attachments', 'task_id', id); return remove('tasks', id); } : null,
+    onDelete: id ? async () => {
+      const closeIt = t.auto_kind === 'relance_tel' && t.prospect_id && !isDone(t) && confirm('Relance téléphone supprimée : pas de réponse, on clôt le suivi ? (Annuler = supprimer seulement la tâche)');
+      if (closeIt) await closeNoAnswer(id, {deleted:true});
+      await removeWhere('attachments', 'task_id', id); return remove('tasks', id); } : null,
     onSave: async v => {
       if (!v.title){ toast('Donne un nom à la tâche', true); return false; }
+      v.prospect_id = v.prospect_id || null;
       const up = v._files || []; delete v._files; delete v._existing;
       v.project_id = v.project_ids[0] || null;
       let row = {id};

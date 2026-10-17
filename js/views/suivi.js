@@ -17,6 +17,7 @@ import { acInput } from '../ui/autocomplete.js';
 import { dateInput } from '../ui/datefield.js';
 import { $, daysBetween, esc, eur, fmtDate, fmtShort, matches, md, period, today } from '../utils.js';
 import { setMapData } from './booking.js';
+import { relanceHistory } from '../prospection.js';
 
 export function viewProspects(){
   if (S.suiviPage){ const p = byId('prospects', S.suiviPage); if (p) return suiviPage(p); S.suiviPage = null; }
@@ -63,14 +64,14 @@ export function suiviCard(p, {page=false}={}){
                   ...files.map(f => ({file:f, at:(f.created_at || '').slice(0, 10) || '0000', ts:f.created_at || ''}))]
     .sort((a, b) => b.at.localeCompare(a.at) || b.ts.localeCompare(a.ts));
   const tasks = suiviTasks(p);
-  const tasksHTML = `<div class="suivi-block"><h3 class="block-title">Tâches Booking <span class="count">${tasks.filter(t=>!isDone(t)).length}</span><span class="spacer"></span>
+  const tasksHTML = `<div class="suivi-block"><h3 class="block-title">Tâches <span class="count">${tasks.filter(t=>!isDone(t)).length}</span><span class="spacer"></span>
       <button type="button" class="btn sm" data-act="wsTask" data-id="${p.id}">Nouvelle tâche</button></h3>
       ${tasks.length ? `<div class="mini-tasks">${tasks.map(t => { const u = urgency(t); return `<div class="mini-task ${isDone(t)?'done':''} ${lingering(t.id)?'leaving':''}">
         <input type="checkbox" data-act="toggleTask" data-id="${t.id}" ${t.status==='Done'?'checked':''} aria-label="Marquer comme faite">
         ${cIn('tasks',t.id,'title',t.title,'text','aria-label="Nom de la tâche"')}
         ${cIn('tasks',t.id,'deadline',t.deadline,'date')}
         ${u?`<span class="urg ${u.cls}">${esc(u.label)}</span>`:'<span></span>'}
-        <button type="button" class="btn sm ghost" data-act="editTask" data-id="${t.id}">Détails</button></div>`; }).join('')}</div>` : '<p class="muted" style="margin:0">Aucune tâche Booking liée à cette structure.</p>'}</div>`;
+        <button type="button" class="btn sm ghost" data-act="editTask" data-id="${t.id}">Détails</button>${t.auto_kind==='relance_tel' && !isDone(t) && p.status!=='Closed' ? `<button type="button" class="btn sm ghost danger" data-act="noAnswerClose" data-id="${t.id}">Pas de réponse : clore</button>` : ''}</div>`; }).join('')}</div>` : '<p class="muted" style="margin:0">Aucune tâche liée à ce suivi.</p>'}</div>`;
   const journal = `
       <div class="suivi-block"><h3 class="block-title">Journal des échanges <span class="count">${logs.length}</span>${files.length?` <span class="muted" style="font-weight:500;font-size:13px">· ${files.length} pièce${files.length>1?'s':''} jointe${files.length>1?'s':''}</span>`:''}</h3>
         <form class="log-form" data-logform="${p.id}">
@@ -98,7 +99,7 @@ export function suiviCard(p, {page=false}={}){
       <span class="sel-wrap">${cSel('prospects',p.id,'status',p.status,PROSPECT,false)}</span>
       <span class="muted">Dernier échange : ${lastExchange(p)?fmtDate(lastExchange(p)):'—'}</span>
       <span class="spacer"></span>
-      ${p.mail_thread_id ? `<span class="muted mail-state">✉️ ${p.mail_sent_at ? `Prospection envoyée le ${fmtDate(p.mail_sent_at.slice(0,10))}` : 'Prospection en brouillon'}${p.relances ? ` · ${p.relances} relance${p.relances>1?'s':''}` : ''}</span>
+      ${p.mail_thread_id ? `<span class="muted mail-state">✉️ ${p.mail_sent_at ? `Prospection envoyée le ${fmtDate(p.mail_sent_at.slice(0,10))}` : 'Prospection en brouillon'}${p.relances ? ` · ${p.relances} relance${p.relances>1?'s':''}${(h => h.length ? ' (' + h.map(fmtDate).join(', ') + ')' : '')(relanceHistory(p).relances)}` : ''}</span>
         <button class="btn sm" data-act="relance" data-id="${p.id}">Relance</button>` : ''}
       ${page ? '' : `<button class="btn sm" data-act="openSuivi" data-id="${p.id}">Ouvrir avec planning et carte</button>`}
       <button class="btn sm ghost danger" data-act="delProspect" data-id="${p.id}">Supprimer</button>
@@ -114,9 +115,10 @@ export const hasLogDraft = pid => { const d = logDraft(pid); return !!((d.body||
 
 /** Tâches d'un suivi : même structure (et même artiste si la tâche en a un) ; terminées masquées sauf pendant 5 s */
 export function suiviTasks(p){
-  if (!p.structure_id) return [];
   const ids = projIds(p);
-  return tasksOfStructure(p.structure_id).filter(t => /^booking$/i.test(t.department || '') && (!projIds(t).length || projIds(t).some(x => ids.includes(x))) && (!isDone(t) || lingering(t.id)))
+  const linked = S.db.tasks.filter(t => t.prospect_id === p.id);
+  const byStruct = p.structure_id ? tasksOfStructure(p.structure_id).filter(t => !t.prospect_id && /^booking$/i.test(t.department || '') && (!projIds(t).length || projIds(t).some(x => ids.includes(x)))) : [];
+  return [...linked, ...byStruct].filter(t => !isDone(t) || lingering(t.id))
     .slice().sort((a,b)=>(a.deadline||'9999').localeCompare(b.deadline||'9999'));
 }
 

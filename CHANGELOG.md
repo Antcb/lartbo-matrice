@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.20.0 — 17/10/2026
+- Tâches rattachées à un suivi (lien depuis To Do), relances : après 3 relances par mail la tâche devient une relance téléphone ; pas de réponse = suivi clos ; dates des relances notées dans le journal
+
+
 ## 1.19.0 — 17/10/2026
 - Budget par date (prévu / réel, pièces lues par l'IA, qui paie), compte dédié de l'artiste en temps réel, case « booking uniquement » par date, devis et factures en brouillon dans Pennylane, import du budget Excel The Locos
 

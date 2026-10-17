@@ -9,13 +9,14 @@ import { render } from './app.js';
 import { insert, save, sb, signedUrl } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
 import { PROSPECT_TAGS, fill } from './mail.js';
-import { byId, eventsOfStructure, linksOfStructure, logsOf, projIds, projName, prospectsOfStructure, setting } from './selectors.js';
+import { byId, eventsOfStructure, linksOfStructure, logsOf, projIds, projName, prospectsOfStructure, setting, structName } from './selectors.js';
 import { S } from './state.js';
 import { dateInput } from './ui/datefield.js';
 import { openModal } from './ui/modal.js';
 import { esc, fmtDate, toast, today } from './utils.js';
 
 const RELANCE_DAYS = 10;
+const MAIL_RELANCES = 3;   // après 3 relances par mail sans réponse : relance par téléphone
 const DRAFT_MARK = ' _(brouillon, pas encore envoyé)_';
 const inDays = n => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const longDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long', year:'numeric'}) : '';
@@ -83,11 +84,11 @@ export async function openProspection(structureId, {prospectId=null}={}){
     <div class="ml-att"><b class="fiche-lbl">Pièces jointes</b> <span id="pr-files"></span>
       <label class="btn sm file-btn">Ajouter un fichier<input type="file" class="file-input" multiple id="pr-up"></label></div>
     <p class="help">Envoyé depuis <b>${esc(from)}</b>. « Enregistrer en brouillon » le met dans les brouillons Gmail ; « Envoyer maintenant » l’envoie tout de suite.
-      Dans les deux cas : ${relance ? 'le journal du suivi est complété et une nouvelle tâche de relance est créée à J+10.' : 'un suivi est créé (Mailed) avec le mail dans le journal, la date proposée en « Intérêt », et une tâche Booking de relance à J+10.'}</p>
+      Dans les deux cas : ${relance ? `le journal du suivi est complété (avec les dates des relances précédentes) et ${(p.relances || 0) + 1 >= MAIL_RELANCES ? 'comme c’est la ' + MAIL_RELANCES + 'e relance par mail, la tâche suivante est une relance par téléphone.' : 'une nouvelle tâche de relance est créée à J+10.'}` : 'un suivi est créé (Mailed) avec le mail dans le journal, la date proposée en « Intérêt », et une tâche Booking de relance à J+10.'}</p>
     <div class="vh-actions"><button type="button" class="btn primary" id="pr-send">Envoyer maintenant</button></div></div>`;
 
   let sendNow = false, dirty = false, files = [];
-  const done = openModal({title: `${relance ? 'Relance' : 'Prospection'} · ${st.name}`, fields: [], extra, wide: true, saveLabel: 'Enregistrer en brouillon',
+  const done = openModal({title: `${relance ? `Relance n°${(p.relances || 0) + 1}` : 'Prospection'} · ${st.name}`, fields: [], extra, wide: true, saveLabel: 'Enregistrer en brouillon',
     onSave: async () => {
       const m = current();
       if (!m.to) { toast('Indique le destinataire', true); sendNow = false; return false; }
@@ -170,27 +171,63 @@ async function recordProspection(st, {to, subject, html, send, out, pids, contac
     for (const pid of pids) await insert('shows', {...showPrefillFromStructure(st), venue: ev?.name || st.name, project_id: pid, date, status,
       prospect_id: p.id, contract_type: 'Cession', communication_enabled: true, request_date: now});
   }
-  await relanceTask(st, pids, subject, send);
+  await relanceTask(st, pids, subject, send, byId('prospects', p.id), 0);
   render();
 }
 
-/** Après une relance : journal, compteur, tâche de relance suivante */
+/** Dates de la prospection et des relances d'un suivi (journal) */
+export function relanceHistory(p){
+  const logs = logsOf(p.id).filter(l => l.date && /^\*\*Relance n°\d+/.test(l.body || '')).map(l => l.date).sort();
+  return {sent: p.mail_sent_at ? p.mail_sent_at.slice(0, 10) : null, relances: logs};
+}
+const historyText = (p, extra=[]) => { const h = relanceHistory(p); const r = [...h.relances, ...extra];
+  return [h.sent && `prospection le ${fmtDate(h.sent)}`, r.length && `relance${r.length > 1 ? 's' : ''} le ${r.map(fmtDate).join(', ')}`].filter(Boolean).join(' · '); };
+
+/** Après une relance : journal (avec l'historique des relances), compteur, tâche suivante (mail, ou téléphone après 3 relances) */
 async function recordRelance(p, st, {to, html, send, out, contact}){
   const now = today(), n = (p.relances || 0) + 1;
+  const before = historyText(p);
   const log = await insert('prospect_logs', {prospect_id: p.id, date: send ? now : null, kind: 'Mail', contact_name: contact?.display_name || to, contact_id: contact?.id || null,
-    author: S.user.email, body: `**Relance n°${n}${send ? '' : DRAFT_MARK}** (en réponse à « ${p.mail_subject || ''} »)\n\n${plain(html)}`});
+    author: S.user.email, body: `**Relance n°${n}${send ? '' : DRAFT_MARK}** (en réponse à « ${p.mail_subject || ''} »)${before ? `\n_Avant : ${before}_` : ''}\n\n${plain(html)}`});
   await save('prospects', p.id, {relances: n, mail_log_id: log?.id || null, ...(send ? {last_contact: now} : {})}, {rerender: false});
-  await relanceTask(st, projIds(p), p.mail_subject, send);
+  await relanceTask(st, projIds(p), p.mail_subject, send, byId('prospects', p.id), n);
   render();
 }
 
-/** Tâche Booking « Relance — structure » à J+10 (les relances encore ouvertes de cette structure sont cochées) */
-async function relanceTask(st, pids, subject, sent){
-  for (const t of S.db.tasks.filter(t => t.structure_id === st.id && /^Relance — /.test(t.title || '') && !['Done', 'Cancelled'].includes(t.status)))
+/** Clôt les tâches de relance encore ouvertes du suivi (ou, pour les anciennes, de la structure) */
+async function closeOpenRelances(st, p){
+  for (const t of S.db.tasks.filter(t => !['Done', 'Cancelled'].includes(t.status) && (p && t.prospect_id === p.id && t.auto_kind || !t.prospect_id && t.structure_id === st.id && /^Relance — /.test(t.title || ''))))
     await save('tasks', t.id, {status: 'Done', done_at: new Date().toISOString()}, {rerender: false});
-  await insert('tasks', {title: `Relance — ${st.name}`, department: 'Booking', status: 'To Do', assigned_to: S.user.email, deadline: inDays(RELANCE_DAYS),
-    structure_id: st.id, project_ids: pids, project_id: pids[0] || null,
-    notes: `Mail « ${subject || ''} » ${sent ? 'envoyé le ' + fmtDate(today()) : 'préparé en brouillon le ' + fmtDate(today())}. Bouton « Relance » sur la fiche de la structure pour répondre dans le même fil.`});
+}
+
+/** Tâche de relance suivante, rattachée au suivi : par mail à J+10, puis par téléphone après 3 relances par mail */
+async function relanceTask(st, pids, subject, sent, p, n){
+  await closeOpenRelances(st, p);
+  const base = {department: 'Booking', status: 'To Do', assigned_to: S.user.email, deadline: inDays(RELANCE_DAYS),
+    structure_id: st.id, project_ids: pids, project_id: pids[0] || null, prospect_id: p?.id || null};
+  if (p && n >= MAIL_RELANCES){
+    const phones = linksOfStructure(st.id).filter(c => c.phone).map(c => `${c.display_name} : ${c.phone}`);
+    const hist = historyText(p);
+    await insert('tasks', {...base, title: `Relance téléphone — ${st.name}`, auto_kind: 'relance_tel', tags: ['Call'],
+      notes: `${n} relances par mail sans réponse (${hist}).\nAppelle${phones.length ? ' : ' + phones.join(' · ') : ''}.\nPas de réponse : bouton « Pas de réponse : clore le suivi » (ou supprime la tâche), le suivi est clos et noté dans le journal.`});
+    await insert('prospect_logs', {prospect_id: p.id, date: today(), kind: 'Note', author: S.user.email,
+      body: `**${n} relances par mail sans réponse** (${hist}) : la prochaine relance se fait par téléphone.`});
+    return;
+  }
+  await insert('tasks', {...base, title: `Relance — ${st.name}`, auto_kind: 'relance_mail',
+    notes: `${n ? `Relance n°${n}` : 'Mail'} « ${subject || ''} » ${sent ? 'envoyé le ' + fmtDate(today()) : 'préparé en brouillon le ' + fmtDate(today())}. Relance n°${n + 1} sur ${MAIL_RELANCES} par mail : bouton « Relance » sur le suivi ou la fiche de la structure.`});
+}
+
+/** Relance téléphone sans réponse : la tâche est fermée, le suivi est clos et le journal le note */
+export async function closeNoAnswer(taskId, {deleted=false}={}){
+  const t = byId('tasks', taskId), p = t?.prospect_id ? byId('prospects', t.prospect_id) : null;
+  if (!p) return;
+  await insert('prospect_logs', {prospect_id: p.id, date: today(), kind: 'Appel', author: S.user.email,
+    body: `**Appel sans réponse : suivi clos.**\nHistorique : ${historyText(p)} · appel le ${fmtDate(today())}.`});
+  await save('prospects', p.id, {status: 'Closed', last_contact: today()}, {rerender: false});
+  if (!deleted) await save('tasks', t.id, {status: 'Done', done_at: new Date().toISOString()}, {rerender: false});
+  toast(`Suivi ${structName(p.structure_id) || ''} clos (appel sans réponse)`);
+  render();
 }
 
 /**
