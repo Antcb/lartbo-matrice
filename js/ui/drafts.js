@@ -27,18 +27,25 @@ function snapshot(form){
 }
 function apply(form, d){
   if (!d) return;
-  Object.entries(d.f || {}).forEach(([name, v]) => {
-    const els = name.startsWith('#') ? [form.querySelector('#' + CSS.escape(name.slice(1)))].filter(Boolean) : [...form.querySelectorAll(`[name="${CSS.escape(name)}"]`)];
-    if (v && typeof v === 'object' && v.c){ els.filter(e => e.type === 'checkbox' || e.type === 'radio').forEach((e, i) => { e.checked = v.c[i] != null; }); return; }
-    els.forEach(e => {
-      if (e.value === v) return;
-      e.value = v;
-      // champ date : la partie affichée suit la valeur
-      if (e.classList.contains('dt-val')){ const t = e.parentElement?.querySelector('.dt-txt'); if (t && v){ const [y, m, j] = v.split('-'); t.value = `${j}/${m}/${y}`; } }
-      if (e.tagName === 'TEXTAREA') e.dispatchEvent(new Event('input', {bubbles: true}));
-    });
-  });
-  Object.entries(d.h || {}).forEach(([id, html]) => { const el = form.querySelector('#' + CSS.escape(id)); if (el && el.innerHTML !== html){ el.innerHTML = html; el.dispatchEvent(new Event('input', {bubbles: true})); } });
+  const fire = (e, type) => e.dispatchEvent(new Event(type, {bubbles: true}));
+  const entries = Object.entries(d.f || {}).map(([name, v]) => [v,
+    name.startsWith('#') ? [form.querySelector('#' + CSS.escape(name.slice(1)))].filter(Boolean) : [...form.querySelectorAll(`[name="${CSS.escape(name)}"]`)]]);
+  const isBox = ([v]) => v && typeof v === 'object' && v.c;
+  // 1. cases et boutons (artistes…), 2. menus (expéditeur, modèle…) : ils préviennent la fenêtre pour qu'elle se remette à jour
+  entries.filter(isBox).forEach(([v, els]) => els.filter(e => e.type === 'checkbox' || e.type === 'radio')
+    .forEach((e, i) => { const c = v.c[i] != null; if (e.checked !== c){ e.checked = c; fire(e, 'change'); } }));
+  entries.filter(x => !isBox(x)).forEach(([v, els]) => els.filter(e => e.tagName === 'SELECT')
+    .forEach(e => { if (e.value !== v){ e.value = v; fire(e, 'change'); } }));
+  // 3. les champs texte ensuite (ce qu'on avait écrit l'emporte sur ce que le modèle a rempli)
+  entries.filter(x => !isBox(x)).forEach(([v, els]) => els.filter(e => e.tagName !== 'SELECT').forEach(e => {
+    if (e.value === v) return;
+    e.value = v;
+    // champ date : la partie affichée suit la valeur
+    if (e.classList.contains('dt-val')){ const t = e.parentElement?.querySelector('.dt-txt'); if (t && v){ const [y, m, j] = v.split('-'); t.value = `${j}/${m}/${y}`; } }
+    if (e.tagName === 'TEXTAREA') fire(e, 'input');
+  }));
+  // 4. le texte mis en forme en dernier
+  Object.entries(d.h || {}).forEach(([id, html]) => { const el = form.querySelector('#' + CSS.escape(id)); if (el && el.innerHTML !== html){ el.innerHTML = html; fire(el, 'input'); } });
 }
 const changedFrom = (a, b) => JSON.stringify(a) !== JSON.stringify(b);
 

@@ -85,11 +85,13 @@ const scrollKey = (el, all) => { const host = el.parentElement?.closest('[id]');
 function saveScroll(root){
   const all = root ? [...root.querySelectorAll(SCROLLERS)] : [];
   const pos = new Map(all.filter(el => el.scrollLeft || el.scrollTop).map(el => [scrollKey(el, all), [el.scrollLeft, el.scrollTop]]));
-  return {pos, x: window.scrollX, y: window.scrollY, page: pageSig()};
+  return {pos, x: window.scrollX, y: window.scrollY, page: LAST_PAGE};   // la page réellement affichée, pas l'état déjà changé
 }
+let LAST_PAGE = null;
 const pageSig = () => [S.view, S.projectPage, S.structurePage, S.suiviPage, JSON.stringify(S.tab || {})].join('|');
 function restoreScroll(root, saved){
-  if (saved.page !== pageSig()) return;   // autre page : on repart du haut
+  const now = pageSig(), same = saved.page === now; LAST_PAGE = now;
+  if (!same) return;   // autre page : on repart du haut
   if (saved.pos.size){ const all = [...root.querySelectorAll(SCROLLERS)];
     all.forEach(el => { const p = saved.pos.get(scrollKey(el, all)); if (p){ el.scrollLeft = p[0]; el.scrollTop = p[1]; } }); }
   if (window.scrollX !== saved.x || window.scrollY !== saved.y) window.scrollTo(saved.x, saved.y);

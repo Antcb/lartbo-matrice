@@ -20,8 +20,9 @@ export function taskSuiviBtns(t, {structure=true}={}){
   const stId = t.structure_id || p?.structure_id || byId('shows', t.show_id)?.structure_id;
   if (!p && stId){
     const pids = projIds(t);
-    p = prospectsOfStructure(stId).filter(x => x.status !== 'Closed')
-      .sort((a, b) => (pids.some(id => projIds(b).includes(id)) - pids.some(id => projIds(a).includes(id))) || (b.last_contact || '').localeCompare(a.last_contact || ''))[0] || null;
+    // seulement un suivi des artistes de la tâche (sinon aucun bouton plutôt qu'un mauvais suivi)
+    p = prospectsOfStructure(stId).filter(x => x.status !== 'Closed' && (!pids.length || pids.some(id => projIds(x).includes(id))))
+      .sort((a, b) => (b.last_contact || '').localeCompare(a.last_contact || ''))[0] || null;
   }
   return (structure && stId && !(S.view === "structures" && S.structurePage === stId) ? `<button class="btn sm ghost" data-act="openStructure" data-id="${stId}" title="Ouvrir la fiche de ${esc(structName(stId))}">Structure ↗</button>` : '')
     + (p ? `<button class="btn sm ghost" data-act="openSuivi" data-id="${p.id}" title="Ouvrir le suivi${p.status==='Closed'?' (clos)':''}">Suivi ↗</button>` : '')

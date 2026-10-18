@@ -19,7 +19,8 @@ export const isProdShow = s => !!s && s.prod_mode !== 'booking';
 export const isFree = s => /gratuit/i.test(s?.ticketing_type || '');
 /** Date à l'étranger : département remplacé par un code pays (CH, BE…) ou structure hors de France */
 export const isAbroad = s => { const d = String(s?.department || '').trim().toUpperCase(), c = byId('structures', s?.structure_id)?.country;
-  return (/^[A-Z]{2,}$/.test(d) && !/^2[AB]$/.test(d)) || (!!c && !/^france$/i.test(c)); };
+  if (d) return /^[A-Z]{2,}$/.test(d) && !/^2[AB]$/.test(d);   // le département du concert fait foi
+  return !!c && !/^france$/i.test(c); };
 /** Taxe CNM due : entrée gratuite, en France */
 export const cnmDue = s => isFree(s) && !isAbroad(s);
 export const payslipCost = () => num(setting('movinmotion_payslip_cost')) ?? 20.3;

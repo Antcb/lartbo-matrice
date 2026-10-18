@@ -51,7 +51,7 @@ function concertVars(show){
   const d = new Date(show.date + 'T12:00:00'); d.setDate(d.getDate() - 2);
   const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const [y, m, j] = show.date.split('-');
-  return {date_concert: longDate(show.date), date_concert_court: `${j}/${m}/${y.slice(2)}`, ville_concert: show.city || structById(show.structure_id)?.city || '', cp_concert: show.department || '',
+  return {artiste: proj ? projName(proj.id) : undefined, date_concert: longDate(show.date), date_concert_court: `${j}/${m}/${y.slice(2)}`, ville_concert: show.city || structById(show.structure_id)?.city || '', cp_concert: show.department || '',
     lieu_concert: String(show.venue || '').replace(/\*\*/g, '').trim(), date_reponse: longDate(iso), lien_projet: pro?.url || '',
     lien_evenement: show.ticketing_url || show.facebook_url || show.instagram_url || ''};
 }
@@ -70,7 +70,7 @@ export function prospectVars(st, {pids=[], contact=null, date=null, show=null}={
     ville: st.city || ev?.city || '', cp: st.department_code || (st.country && st.country !== 'France' ? st.country : ''),
     festival: ev?.name || st.name, dates_festival: evDates, jauge: ev?.capacity ? String(ev.capacity) : '',
     date_proposee: longDate(date), annee: date ? date.slice(0, 4) : String(new Date().getFullYear() + 1),
-    ...concertVars(show),
+    ...Object.fromEntries(Object.entries(concertVars(show)).filter(([, v]) => v !== undefined)),   // invitation : l'artiste du concert choisi
   };
 }
 

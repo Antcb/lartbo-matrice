@@ -40,9 +40,9 @@ export const BILL_KINDS = ['acompte', 'solde'];
 const r2 = n => Math.round(n * 100) / 100;
 /** % du cachet d'une ligne : saisi, ou déduit du montant HT saisi */
 export function billPct(p){
-  if (p.pct != null && p.pct !== '') return Number(p.pct);
   const fee = Number(byId('shows', p.show_id)?.fee_ht) || 0;
-  return p.amount != null && fee ? Number(p.amount) / fee * 100 : null;
+  if (p.amount != null && p.amount !== '' && fee) return Number(p.amount) / fee * 100;   // montant saisi : il fait foi
+  return p.pct != null && p.pct !== '' ? Number(p.pct) : null;
 }
 /** Total des factures d'une date face au cachet */
 export function billingOf(s){
