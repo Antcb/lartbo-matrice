@@ -13,7 +13,8 @@ import { cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { esc, eur2, fmtDate, matches } from '../utils.js';
 import { payerLabel } from '../budget.js';
-import { projectBudgetHTML, showBudgetHTML } from './budget.js';
+import { productionBudgetHTML, projectBudgetHTML, showBudgetHTML } from './budget.js';
+import { isProductionShow } from '../production-budget.js';
 
 export function viewProduction(){
   const q = S.search.production || '';
@@ -96,7 +97,7 @@ function prodBody(s, booking, steps, pays, late){
       <p class="muted" style="font-size:13px;margin:8px 0 0">${booking ? `Commission : <b>${eur2(netArtbo(s))}</b>` : `Le % partenaire s'applique à la commission L'ArtBo. Net L'ArtBo : <b>${eur2(netArtbo(s))}</b>`}</p>
       <div class="drive">${driveHTML(s)}</div>
     </div>
-    ${booking ? '' : showBudgetHTML(s)}
+    ${booking ? '' : isProductionShow(s) ? productionBudgetHTML(s) : showBudgetHTML(s)}
     ${mailsHTML(s, booking)}
     <div class="prod-bill">
       <h3 class="block-title">Facturation</h3>

@@ -73,16 +73,17 @@ export function viewTodo(){
   const q = S.search.todo || '';
   if (q) tasks = tasks.filter(t => matches(`${t.title} ${t.notes||''} ${projNames(t)} ${structName(t.structure_id)} ${t.department||''} ${showLabel(byId('shows', t.show_id))}`, q));
   if (f==='done') tasks.sort((a,b)=>(b.done_at||b.updated_at||'').localeCompare(a.done_at||a.updated_at||'')); else tasks.sort(taskSort);
-  const btn = (k,l) => `<button class="btn ${f===k?'on':''}" data-act="todoFilter" data-f="${k}" aria-pressed="${f===k}">${l}</button>`;
-  const wbtn = (k,l) => `<button class="btn ${who===k?'on':''}" data-act="todoWho" data-f="${esc(k)}" aria-pressed="${who===k}">${esc(l)}</button>`;
-  const dbtn = (k,l,n) => `<button class="btn ${dept===k?'on':''}" data-act="todoDept" data-f="${k}" aria-pressed="${dept===k}">${l} <span class="count">${n}</span></button>`;
+  // filtres en menus déroulants (une seule ligne, lisible sur téléphone)
+  const opt = (k, l, cur) => `<option value="${esc(k)}" ${cur===k?'selected':''}>${esc(l)}</option>`;
+  const who_ = [['', 'Toute l’équipe'], ['me', 'Moi'], ...CFG.TEAM.filter(e => e !== S.user.email).map(e => [e, TEAM_NAMES[e] || e])];
+  const depts = [['', `Tous les pôles (${total})`], ...deptNames().map(d => [d, `${d} (${byDept(d)})`]), ['-', `Sans pôle (${byDept('')})`]];
   return viewHead('To Do', {sub:`${tasks.length} tâche${tasks.length>1?'s':''}`,
-      filters:`<div class="seg">${btn('open','À faire')}${btn('late','Urgentes (≤ 7 j)')}${btn('done','Terminées (30 derniers jours)')}</div>
-        <div class="seg" role="group" aria-label="Pour qui">${wbtn('', 'Toutes')}${wbtn('me', 'Les miennes')}${CFG.TEAM.filter(e => e !== S.user.email).map(e => wbtn(e, `De ${TEAM_NAMES[e] || e}`)).join('')}</div>
+      filters:`<label class="fsel"><span>Afficher</span><select data-todo-sel="f" aria-label="Afficher">${opt('open','À faire',f)}${opt('late','Urgentes (≤ 7 j)',f)}${opt('done','Terminées (30 j)',f)}</select></label>
+        <label class="fsel"><span>Pour</span><select data-todo-sel="who" aria-label="Pour qui">${who_.map(([k,l]) => opt(k,l,who)).join('')}</select></label>
+        <label class="fsel"><span>Pôle</span><select data-todo-sel="dept" aria-label="Pôle">${depts.map(([k,l]) => opt(k,l,dept)).join('')}</select></label>
         ${projPicker(S.project, {attrs:'id="f-project" aria-label="Artiste"'})}
         <input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-taches" placeholder="Rechercher une tâche" data-search="todo" value="${esc(q)}">`,
       actions:'<button class="btn primary" data-act="newTask">Nouvelle tâche</button>'})
-    + `<div class="dept-filter" role="group" aria-label="Pôle">${dbtn('', 'Tous les pôles', total)}${deptNames().map(d=>dbtn(d, d, byDept(d))).join('')}${dbtn('-', 'Sans pôle', byDept(''))}</div>`
     + taskTable(tasks);
 }
 

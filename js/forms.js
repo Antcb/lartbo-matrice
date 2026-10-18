@@ -113,9 +113,24 @@ export function editProject(id){
       if (!v.name) return false;
       if (v.drive_artist_folder_id) v.drive_artist_folder_id = driveId(v.drive_artist_folder_id);
       ['contract_template_cc','contract_template_cr'].forEach(k => { if (v[k]) v[k] = (String(v[k]).match(/[-\w]{25,}/) || [v[k]])[0]; });
-      if (id) await save('projects', id, v, {rerender:false}); else await insert('projects', v);
+      if (id) { await save('projects', id, v, {rerender:false}); return; }
+      const row = await insert('projects', v);
+      // nouvel artiste : son dossier Drive est créé à partir du modèle (LARTBOTRICE › 01_Modèles Drive)
+      if (row && !row.drive_artist_folder_id) createArtistFolder(row.id);
     }
   });
+}
+
+/** Dossier Drive d'un artiste (créé depuis le modèle s'il n'existe pas encore) */
+export async function createArtistFolder(projectId){
+  const {callScript} = await import('./mail.js');
+  toast('Création du dossier Drive de l’artiste…');
+  try {
+    const out = await callScript('artist_folder', {project_id: projectId});
+    const p = byId('projects', projectId); if (p) p.drive_artist_folder_id = out.folder_id;
+    touch('projects'); render();
+    toast(out.created ? 'Dossier Drive de l’artiste créé' : 'Dossier Drive de l’artiste retrouvé et relié', false, out.url ? {label: 'Ouvrir', fn: () => window.open(out.url, '_blank')} : null);
+  } catch (err) { toast('Dossier Drive : ' + err.message, true); }
 }
 
 /** Identifiant d'un dossier Drive à partir d'un lien collé */

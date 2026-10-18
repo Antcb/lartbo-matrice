@@ -10,6 +10,7 @@ import { byId, projIds } from './selectors.js';
 import { S, localSet } from './state.js';
 import { parseCSV, toast, today } from './utils.js';
 import { setLogDraft } from './views/suivi.js';
+import { clearDraft } from './ui/drafts.js';
 
 // + Projet sur un suivi / une tâche
 document.addEventListener('change', async e => {
@@ -38,6 +39,9 @@ document.addEventListener('change', e => {
   if (k==='project'){ S.project = t.value; localSet('project', S.project); render(); }
   else if (k==='status'){ S.suiviStatus = t.value; render(); }
   else if (t.dataset?.todoDept !== undefined){ S.todoDept = t.value; render(); }
+  else if (t.dataset?.todoSel === 'f'){ S.todoFilter = t.value; render(); }
+  else if (t.dataset?.todoSel === 'who'){ S.todoWho = t.value; localSet('todoWho', S.todoWho); render(); }
+  else if (t.dataset?.todoSel === 'dept'){ S.todoDept = t.value; render(); }
 });
 
 // Journal des échanges d'un suivi
@@ -47,7 +51,7 @@ document.addEventListener('submit', async e => {
   if (!f.body.value.trim() && !f.who.value.trim()) return toast("Écris au moins une note ou l'interlocuteur", true);
   const date = f.date.value || today();
   const row = await insert('prospect_logs', {prospect_id:pid, date, kind:f.kind.value, contact_name:f.who.value.trim()||null, body:f.body.value.trim()||null, author:S.user.email});
-  if (row){ setLogDraft(pid, {}); const p=byId('prospects',pid); if (row.date && (!p.last_contact || row.date>p.last_contact)) await save('prospects', pid, {last_contact:row.date}, {rerender:false}); render(); toast('Ajouté au journal'); autoSummary(pid); }
+  if (row){ setLogDraft(pid, {}); const p=byId('prospects',pid); if (row.date && (!p.last_contact || row.date>p.last_contact)) await save('prospects', pid, {last_contact:row.date}, {rerender:false}); render(); toast('Ajouté au journal'); }
 });
 
 // Journal des échanges d'un projet
@@ -58,7 +62,9 @@ document.addEventListener('submit', async e => {
   const files = [...(f.files?.files || [])];
   if (!body && !link && !files.length) return toast('Écris une note, colle un lien ou ajoute un fichier', true);
   const row = await insert('project_logs', {project_id:pid, date:f.date.value || today(), kind:f.kind.value, body:body||null, url:link||null, author:S.user.email});
-  if (row && files.length) await uploadFiles({project_id:pid, project_log_id:row.id}, files);
+  if (!row) return;
+  if (files.length) await uploadFiles({project_id:pid, project_log_id:row.id}, files);
+  clearDraft('projlog.' + pid); e.target.reset();
   render(); toast('Ajouté aux échanges');
 });
 
@@ -125,13 +131,6 @@ document.addEventListener('drop', e => { const z = e.target.closest?.('[data-mem
 document.addEventListener('dragover', e => { const z = e.target.closest?.('[data-members-drop]'); if (z){ e.preventDefault(); z.classList.add('over'); } });
 
 
-/** Après un ajout au journal : résumé mis à jour par l'IA si une clé est configurée (sinon rien) */
-async function autoSummary(pid){
-  const {data, error} = await sb.functions.invoke('resume-suivi', {body:{prospect_id:pid}});
-  if (error || !data?.summary) return;
-  const p = byId('prospects', pid); if (!p) return;
-  p.summary = data.summary; render(); toast('Résumé mis à jour par l’IA');
-}
 
 // Espace de prospection : rayon (curseur) et rattachement d'une date existante au suivi
 document.addEventListener('input', e => { if (e.target.dataset?.wsRadius){ const v = document.getElementById('ws-radius-v'); if (v) v.textContent = e.target.value + ' km'; } });

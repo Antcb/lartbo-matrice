@@ -15,9 +15,9 @@ import { dropZone, fileRow, fold, projPicker, stSelect, pstBadge, stBadge, tabsB
 import { cAc, cIn, cSel, projChips } from '../ui/cells.js';
 import { acInput } from '../ui/autocomplete.js';
 import { dateInput } from '../ui/datefield.js';
-import { $, daysBetween, esc, eur, fmtDate, fmtShort, matches, md, period, today } from '../utils.js';
+import { $, daysBetween, esc, eur, fmtDate, fmtShort, matches, md, period, safeHtml, today } from '../utils.js';
 import { setMapData } from './booking.js';
-import { relanceHistory } from '../prospection.js';
+import { isDraftLog, relanceHistory } from '../prospection.js';
 
 export function viewProspects(){
   if (S.suiviPage){ const p = byId('prospects', S.suiviPage); if (p) return suiviPage(p); S.suiviPage = null; }
@@ -87,9 +87,9 @@ export function suiviCard(p, {page=false}={}){
           <div class="log-head">📎 ${x.at !== '0000' ? `<b>${fmtDate(x.at)}</b> · ` : ''}Pièce jointe<span class="spacer"></span></div>${fileRow(x.file)}</div>`
           : `<div class="log">
           <div class="log-head">${LOG_ICON[x.log.kind]||'📝'} <b>${x.log.date?fmtDate(x.log.date):'Sans date'}</b>${x.log.contact_name?' · '+esc(x.log.contact_name):''}
-            <span class="spacer"></span><button type="button" class="btn sm ghost" data-act="editLog" data-id="${x.log.id}">Modifier</button>
+            <span class="spacer"></span>${isDraftLog(x.log) ? `<button type="button" class="btn sm" data-act="markLogSent" data-id="${x.log.id}" title="Le mail est parti depuis Gmail : le noter envoyé aujourd’hui">Marquer envoyé</button>` : ''}<button type="button" class="btn sm ghost" data-act="editLog" data-id="${x.log.id}">Modifier</button>
             <button type="button" class="btn icon sm ghost danger" data-act="delLog" data-id="${x.log.id}" aria-label="Supprimer l'entrée">✕</button></div>
-          <div class="md">${md(x.log.body)}</div></div>`).join('') || '<div class="muted">Aucun échange enregistré.</div>'}
+          ${logBody(x.log)}</div>`).join('') || '<div class="muted">Aucun échange enregistré.</div>'}
       </div>`;
   const side = `
       <div class="suivi-block"><h3 class="block-title">Autres notes <button class="btn sm ghost" data-act="editText" data-id="${p.id}" data-f="content_md">Modifier</button></h3>
@@ -99,7 +99,7 @@ export function suiviCard(p, {page=false}={}){
       <span class="sel-wrap">${cSel('prospects',p.id,'status',p.status,PROSPECT,false)}</span>
       <span class="muted">Dernier échange : ${lastExchange(p)?fmtDate(lastExchange(p)):'—'}</span>
       <span class="spacer"></span>
-      ${p.mail_thread_id ? `<span class="muted mail-state">✉️ ${p.mail_sent_at ? `Prospection envoyée le ${fmtDate(p.mail_sent_at.slice(0,10))}` : 'Prospection en brouillon'}${p.relances ? ` · ${p.relances} relance${p.relances>1?'s':''}${(h => h.length ? ' (' + h.map(fmtDate).join(', ') + ')' : '')(relanceHistory(p).relances)}` : ''}</span>
+      ${p.mail_thread_id ? `<span class="muted mail-state">✉️ ${p.mail_sent_at ? `Prospection envoyée le ${fmtDate(p.mail_sent_at.slice(0,10))}` : `Prospection en brouillon${p.mail_log_id && byId('prospect_logs', p.mail_log_id) ? ` <button class="btn sm" data-act="markLogSent" data-id="${p.mail_log_id}">Marquer envoyé</button>` : ''}`}${p.relances ? ` · ${p.relances} relance${p.relances>1?'s':''}${(h => h.length ? ' (' + h.map(fmtDate).join(', ') + ')' : '')(relanceHistory(p).relances)}` : ''}</span>
         <button class="btn sm" data-act="relance" data-id="${p.id}">Relance</button>` : ''}
       ${page ? '' : `<button class="btn sm" data-act="openSuivi" data-id="${p.id}">Ouvrir avec planning et carte</button>`}
       <button class="btn sm ghost danger" data-act="delProspect" data-id="${p.id}">Supprimer</button>
@@ -109,6 +109,13 @@ export function suiviCard(p, {page=false}={}){
 }
 
 /** Brouillon des notes d'échange d'un suivi (gardé dans le navigateur jusqu'à l'ajout au journal) */
+/** Texte d'une entrée du journal ; un mail envoyé depuis la Matrice garde sa mise en forme */
+function logBody(l){
+  if (!l.body_html) return `<div class="md">${md(l.body)}</div>`;
+  const head = String(l.body || '').split('\n\n')[0];
+  return `<div class="md">${md(head)}</div><div class="log-mail">${safeHtml(l.body_html)}</div>`;
+}
+
 export function logDraft(pid){ S.logDrafts ||= {}; if (!S.logDrafts[pid]) { try { S.logDrafts[pid] = JSON.parse(localGet('logdraft.'+pid) || '{}'); } catch(e){ S.logDrafts[pid] = {}; } } return S.logDrafts[pid]; }
 export function setLogDraft(pid, d){ S.logDrafts ||= {}; S.logDrafts[pid] = d; localSet('logdraft.'+pid, JSON.stringify(d)); }
 export const hasLogDraft = pid => { const d = logDraft(pid); return !!((d.body||'').trim() || (d.who||'').trim()); };

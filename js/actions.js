@@ -6,18 +6,20 @@ import { go, render } from './app.js';
 import { BILL_KINDS, billPct, paymentsOf, payVat } from './calc.js';
 import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
 import { insert, openStored, refreshShowSide, remove, removeWhere, save, saveLinger, sb } from './data.js';
-import { editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
+import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, logsOf, projIds, projNames, setting, showsFiltered, structName } from './selectors.js';
 import { CFG } from './config.js';
 import { S, localSet, touch } from './state.js';
 import { MODALS, openModal } from './ui/modal.js';
+import { modalSaved } from './ui/drafts.js';
 import { applyAcompte, saveDepartments } from './views/settings.js';
 import { hasLogDraft, setLogDraft } from './views/suivi.js';
-import { $, esc, fmtDate, toast, today } from './utils.js';
+import { $, esc, fmtDate, safeHtml, toast, today } from './utils.js';
+import { rtStyle, rtToolbar } from './ui/richtext.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
 import { exportShows } from './exports.js';
-import { callProspect, closeNoAnswer, openProspection } from './prospection.js';
+import { callProspect, closeNoAnswer, markLogSent, openProspection } from './prospection.js';
 import { EMP_ACTIONS, editEmployee } from './views/employees.js';
 import { BUDGET_ACTIONS } from './budget-actions.js';
 
@@ -42,7 +44,7 @@ export const ACTIONS = {
   ...BUDGET_ACTIONS,
   employeeCard: t => editEmployee(t.dataset.id),
   closeModal: t => (t.dataset.level==='2' ? $('#modal2') : $('#modal')).close(),
-  modalDelete: async t => { const lvl = Number(t.dataset.level||1); if (confirm('Supprimer définitivement ?')){ await MODALS[lvl].onDelete(); MODALS[lvl].dlg.close(); render(); } },
+  modalDelete: async t => { const lvl = Number(t.dataset.level||1); if (confirm('Supprimer définitivement ?')){ await MODALS[lvl].onDelete(); modalSaved(MODALS[lvl].dlg); MODALS[lvl].dlg.close(); render(); } },
   unlink: t => t.closest('.chip').remove(),
   subtab: t => { S.tab[t.dataset.key] = t.dataset.tab; render(); },
   fold: t => { const k = 'fold:'+t.dataset.key; S.tab[k] = t.getAttribute('aria-expanded')!=='true'; render(); },
@@ -83,7 +85,7 @@ export const ACTIONS = {
   // Mails et fiche de renseignements
   prepareMail: (t, e) => { e?.stopPropagation(); S.notifOpen = false; prepareMail(t.dataset.id, t.dataset.kind); },
   editTemplate: t => editTemplate(t.dataset.id),
-  newTemplate: t => editTemplate(null, {...(t.dataset.project ? {project_id: t.dataset.project} : {}), ...(t.dataset.kind ? {kind: t.dataset.kind} : {})}),
+  newTemplate: t => editTemplate(null, {...(t.dataset.project ? {project_id: t.dataset.project, project_ids: [t.dataset.project]} : {}), ...(t.dataset.kind ? {kind: t.dataset.kind} : {})}),
   copyFiche: async t => { const s = byId('shows', t.dataset.id);
     const link = (setting('site_url') || location.origin + location.pathname.replace(/[^/]*$/, '')) + 'fiche.html?t=' + s.fiche_token;
     try { await navigator.clipboard.writeText(link); toast('Lien de la fiche copié'); } catch { prompt('Lien de la fiche :', link); } },
@@ -254,10 +256,24 @@ ${p.content_md||'(aucune)'}`;
   },
   clearLogDraft: t => { if (confirm('Effacer le brouillon de notes ?')){ setLogDraft(t.dataset.id, {}); render(); } },
   editLog: t => { const l = byId('prospect_logs', t.dataset.id);
+    // un mail envoyé depuis la Matrice se modifie avec sa mise en forme
+    const mail = !!l.body_html, head = String(l.body || '').split('\n\n')[0];
+    openModal({ title: `Échange du ${l.date ? fmtDate(l.date) : '—'}`, values: mail ? {...l, body: head} : l,
+      fields:[{k:'date', label:'Date', type:'date'}, {k:'kind', label:'Type', type:'select', options:['Appel','Mail','RDV','Note'], blank:false}, {k:'contact_name', label:'Interlocuteur', full:true},
+        {k:'body', label: mail ? 'En-tête (objet, artistes…)' : 'Notes', type:'textarea', full:true, rows: mail ? 3 : 10}],
+      extra: mail ? `<div class="field full"><label>Mail</label>${rtToolbar('log-html')}<div class="mail-preview" id="log-html" contenteditable="true" style="${rtStyle()}">${safeHtml(l.body_html)}</div></div>` : '',
+      onSave: async v => {
+        if (mail){ const html = document.querySelector('#modal #log-html').innerHTML, div = document.createElement('div'); div.innerHTML = html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p)>/gi, '\n');
+          v.body_html = html; v.body = (v.body || '') + '\n\n' + div.textContent.replace(/\n{3,}/g, '\n\n').trim(); }
+        await save('prospect_logs', l.id, v, {rerender:false}); } }); },
+  // brouillon de prospection / relance envoyé depuis Gmail : noté « envoyé » à la main
+  markLogSent: async t => { await markLogSent(t.dataset.id); },
+  createArtistFolder: t => createArtistFolder(t.dataset.id),
+  editProjLog: t => { const l = byId('project_logs', t.dataset.id);
     openModal({ title: `Échange du ${l.date ? fmtDate(l.date) : '—'}`, values: l,
-      fields:[{k:'kind', label:'Type', type:'select', options:['Appel','Mail','RDV','Note'], blank:false}, {k:'contact_name', label:'Interlocuteur'},
-        {k:'body', label:'Notes', type:'textarea', full:true, rows:10}],
-      onSave: async v => { await save('prospect_logs', l.id, v, {rerender:false}); } }); },
+      fields:[{k:'date', label:'Date', type:'date'}, {k:'kind', label:'Type', type:'select', options:['Note','Mail','Appel','Lien','Fichier'], blank:false},
+        {k:'url', label:'Lien envoyé', full:true}, {k:'body', label:'Notes', type:'textarea', full:true, rows:10}],
+      onSave: async v => { await save('project_logs', l.id, v, {rerender:false}); } }); },
   delLog: async t => { if (confirm('Supprimer cette entrée du journal ?') && await remove('prospect_logs', t.dataset.id)) render(); },
   editText: t => { const p=byId('prospects',t.dataset.id), f=t.dataset.f;
     openModal({ title: f==='summary'?'Résumé':'Autres notes', values:p, fields:[{k:f, label:f==='summary'?'Résumé (une ligne par point, « - » pour une puce, **gras**)':'Notes', type:'textarea', full:true, rows:14}],

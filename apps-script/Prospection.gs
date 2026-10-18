@@ -49,23 +49,54 @@ function plain_(html) {
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-/** Nouveau mail de prospection : brouillon, ou envoi direct (send: true) */
-function mail_(b) {
-  var opts = { htmlBody: b.html || '', name: b.from_name || "L'ArtBoristerie Productions" };
-  if (b.cc) opts.cc = b.cc;
-  var att = blobs_(b.attachments); if (att.length) opts.attachments = att;
-  var draft = GmailApp.createDraft(b.to || '', b.subject || '', plain_(b.html), opts);
-  if (b.send) {
-    var msg = draft.send();
-    return { ok: true, sent: true, thread_id: msg.getThread().getId(), sent_at: msg.getDate().toISOString() };
+/** Encodage MIME (Gmail API) : tout le texte en UTF-8, pour garder les accents et les émojis */
+function b64_(bytes) { return Utilities.base64Encode(bytes).replace(/(.{76})/g, '$1\r\n'); }
+function enc_(s) { return '=?UTF-8?B?' + Utilities.base64Encode(String(s || ''), Utilities.Charset.UTF_8) + '?='; }
+function utf8_(s) { return Utilities.newBlob('').setDataFromString(String(s || ''), 'UTF-8').getBytes(); }
+
+/**
+ * Brouillon Gmail construit à la main (MIME UTF-8) puis envoyé si demandé.
+ * GmailApp.createDraft abîme les émojis : on passe par l'API Gmail (service « Gmail API » du script).
+ * o : { to, cc, subject, html, attachments: [blobs], threadId, inReplyTo, references, fromName, send }
+ */
+function mimeDraft_(o) {
+  if (typeof Gmail === 'undefined') throw new Error('Active « Gmail API » dans le script Google (Services › + › Gmail API), puis redéploie');
+  var me = Session.getEffectiveUser().getEmail();
+  var mixed = 'mix' + Date.now(), alt = 'alt' + Date.now();
+  var L = [];
+  if (o.fromName) L.push('From: ' + enc_(o.fromName) + ' <' + me + '>');
+  L.push('To: ' + (o.to || ''));
+  if (o.cc) L.push('Cc: ' + o.cc);
+  L.push('Subject: ' + enc_(o.subject || ''));
+  if (o.inReplyTo) L.push('In-Reply-To: ' + o.inReplyTo, 'References: ' + (o.references || o.inReplyTo));
+  L.push('MIME-Version: 1.0', 'Content-Type: multipart/mixed; boundary="' + mixed + '"', '',
+    '--' + mixed, 'Content-Type: multipart/alternative; boundary="' + alt + '"', '',
+    '--' + alt, 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', b64_(utf8_(plain_(o.html))),
+    '--' + alt, 'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', b64_(utf8_(o.html || '')),
+    '--' + alt + '--');
+  (o.attachments || []).forEach(function (f) {
+    L.push('--' + mixed, 'Content-Type: ' + (f.getContentType() || 'application/octet-stream') + '; name="' + enc_(f.getName()) + '"',
+      'Content-Disposition: attachment; filename="' + enc_(f.getName()) + '"', 'Content-Transfer-Encoding: base64', '', b64_(f.getBytes()));
+  });
+  L.push('--' + mixed + '--');
+  var message = { raw: Utilities.base64EncodeWebSafe(Utilities.newBlob(L.join('\r\n')).getBytes()) };
+  if (o.threadId) message.threadId = o.threadId;
+  var draft = Gmail.Users.Drafts.create({ message: message }, 'me');
+  if (o.send) {
+    var sent = Gmail.Users.Drafts.send({ id: draft.id }, 'me');
+    return { sent: true, thread_id: sent.threadId, message_id: sent.id, sent_at: new Date().toISOString() };
   }
-  var m = draft.getMessage();
-  return { ok: true, sent: false, thread_id: m.getThread().getId(), url: 'https://mail.google.com/mail/u/0/#drafts?compose=' + m.getId() };
+  return { sent: false, draft_id: draft.id, thread_id: draft.message.threadId, message_id: draft.message.id,
+    url: 'https://mail.google.com/mail/u/0/#drafts?compose=' + draft.message.id };
 }
 
-/** Encodage MIME (Gmail API) */
-function b64_(bytes) { return Utilities.base64Encode(bytes).replace(/(.{76})/g, '$1\r\n'); }
-function enc_(s) { return '=?UTF-8?B?' + Utilities.base64Encode(s, Utilities.Charset.UTF_8) + '?='; }
+/** Nouveau mail de prospection : brouillon, ou envoi direct (send: true) */
+function mail_(b) {
+  var out = mimeDraft_({ to: b.to, cc: b.cc, subject: b.subject, html: b.html, attachments: blobs_(b.attachments),
+    fromName: b.from_name || "L'ArtBoristerie Productions", send: !!b.send });
+  out.ok = true;
+  return out;
+}
 
 /** Relance : réponse dans le fil du mail de prospection (l'historique reste en dessous), brouillon ou envoi direct */
 function reply_(b) {
@@ -79,33 +110,16 @@ function reply_(b) {
   var to = b.to || (fromMe ? last.getTo() : last.getFrom());
   var subject = thread.getFirstMessageSubject();
   if (!/^re\s*:/i.test(subject)) subject = 'Re: ' + subject;
-  var msgId = last.getHeader('Message-ID'), refs = (last.getHeader('References') || '') + ' ' + msgId;
+  var msgId = last.getHeader('Message-ID'), refs = ((last.getHeader('References') || '') + ' ' + msgId).trim();
   // le texte de la relance, puis l'historique cité (comme Gmail)
   var quoted = '<br><div class="gmail_quote"><div>Le ' + Utilities.formatDate(last.getDate(), 'Europe/Paris', "dd/MM/yyyy 'à' HH:mm") + ', '
     + last.getFrom().replace(/</g, '&lt;').replace(/>/g, '&gt;') + ' a écrit :</div><blockquote style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">'
     + last.getBody() + '</blockquote></div>';
-  var html = (b.html || '') + quoted;
-  var boundary = 'artbo' + Date.now();
-  var lines = [
-    'To: ' + to, b.cc ? 'Cc: ' + b.cc : null, 'Subject: ' + enc_(subject),
-    'In-Reply-To: ' + msgId, 'References: ' + refs.trim(), 'MIME-Version: 1.0',
-    'Content-Type: multipart/mixed; boundary="' + boundary + '"', '',
-    '--' + boundary, 'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '',
-    b64_(Utilities.newBlob(html).getBytes())
-  ].filter(function (x) { return x !== null; });
-  blobs_(b.attachments).forEach(function (f) {
-    lines.push('--' + boundary, 'Content-Type: ' + (f.getContentType() || 'application/octet-stream') + '; name="' + enc_(f.getName()) + '"',
-      'Content-Disposition: attachment; filename="' + enc_(f.getName()) + '"', 'Content-Transfer-Encoding: base64', '', b64_(f.getBytes()));
-  });
-  lines.push('--' + boundary + '--');
-  var raw = Utilities.base64EncodeWebSafe(Utilities.newBlob(lines.join('\r\n')).getBytes());
-  if (typeof Gmail === 'undefined') throw new Error('Active « Gmail API » dans le script de prospection (Services › + › Gmail API)');
-  var draft = Gmail.Users.Drafts.create({ message: { raw: raw, threadId: b.thread_id } }, 'me');
-  if (b.send) {
-    var sent = Gmail.Users.Drafts.send({ id: draft.id }, 'me');
-    return { ok: true, sent: true, thread_id: sent.threadId, sent_at: new Date().toISOString(), to: to };
-  }
-  return { ok: true, sent: false, thread_id: b.thread_id, to: to, url: 'https://mail.google.com/mail/u/0/#drafts' };
+  var out = mimeDraft_({ to: to, cc: b.cc, subject: subject, html: (b.html || '') + quoted, attachments: blobs_(b.attachments),
+    threadId: b.thread_id, inReplyTo: msgId, references: refs, fromName: b.from_name || "L'ArtBoristerie Productions", send: !!b.send });
+  out.ok = true; out.to = to; out.thread_id = out.thread_id || b.thread_id;
+  if (!out.sent) out.url = 'https://mail.google.com/mail/u/0/#drafts';
+  return out;
 }
 
 /** Le brouillon est-il parti ? L'organisateur a-t-il répondu ? */

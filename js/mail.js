@@ -7,9 +7,10 @@
  * (réglage drive_webhook_url) ; sans lui, on copie le mail pour le coller dans Gmail.
  */
 import { insert, remove, save, sb } from './data.js';
-import { byId, linksOfStructure, setting } from './selectors.js';
+import { byId, linksOfStructure, projectOptions, setting } from './selectors.js';
 import { S } from './state.js';
 import { openModal } from './ui/modal.js';
+import { rtStyle, rtToolbar, wrapMail } from './ui/richtext.js';
 import { esc, fmtDate, toast } from './utils.js';
 
 export const MAIL_KINDS = { confirmation: 'Confirmation', boucle_tech: 'Boucle accueil & technique', boucle_com: 'Boucle communication', prospection: 'Prospection', relance: 'Relance de prospection', autre: 'Autre' };
@@ -44,9 +45,13 @@ export const PROSPECT_TAGS = [
  * celui de l'artiste avant le générique, puis celui dont la règle correspond (co-réalisation, festival, salle…)
  * avant « toutes les dates ». Les autres restent proposés dans la liste.
  */
+/** Artistes d'un modèle (aucun = tous les artistes) */
+export const tplProjects = t => (t?.project_ids?.length ? t.project_ids : (t?.project_id ? [t.project_id] : []));
+export const tplLabel = t => { const ids = tplProjects(t); return ids.length ? ids.map(id => byId('projects', id)?.name || '?').join(', ') : 'Tous les artistes (générique)'; };
+
 export function templatesFor(s, kind){
-  const all = S.db.mail_templates.filter(t => t.kind === kind && (t.project_id === s.project_id || !t.project_id));
-  const score = t => (t.project_id === s.project_id ? 10 : 0) + (!applies(t.applies_to, s) ? -20 : (t.applies_to && t.applies_to !== 'all' ? 5 : 0));
+  const all = S.db.mail_templates.filter(t => t.kind === kind && (!tplProjects(t).length || tplProjects(t).includes(s.project_id)));
+  const score = t => (tplProjects(t).includes(s.project_id) ? 10 : 0) + (!applies(t.applies_to, s) ? -20 : (t.applies_to && t.applies_to !== 'all' ? 5 : 0));
   return all.sort((a,b) => score(b) - score(a) || (a.name||'').localeCompare(b.name||''));
 }
 
@@ -99,18 +104,19 @@ export async function prepareMail(showId, kind){
   let contactId = s.conf_contact_id && contacts.some(c=>c.id===s.conf_contact_id) ? s.conf_contact_id : (contacts.find(c=>c.email)?.id || '');
   let vars = await mailVars(showId, contactId);
   const log = s.mail_log?.[kind];
-  const checks = kind === 'confirmation' ? confChecks(s) : '';
+  const booking = isBookingOnly(s);
+  const checks = kind === 'confirmation' ? confChecks(s, booking) : '';
   const extra = `<div class="mail-wrap">
     ${log ? `<p class="mode-note">Déjà préparé le ${fmtDate(log.at.slice(0,10))}${log.to?` pour ${esc(log.to)}`:''}${log.draft?' (brouillon Gmail)':''}.</p>` : ''}
     ${checks}
     <div class="mail-grid">
-      <label for="ml-tpl">Modèle</label><select id="ml-tpl">${tpls.map(t=>`<option value="${t.id}">${esc(t.name||MAIL_KINDS[t.kind])}${t.project_id?'':' · générique'}</option>`).join('')}</select>
+      <label for="ml-tpl">Modèle</label><select id="ml-tpl">${tpls.map(t=>`<option value="${t.id}">${esc(t.name||MAIL_KINDS[t.kind])}${tplProjects(t).length?'':' · générique'}</option>`).join('')}</select>
       <label for="ml-contact">Destinataire</label><span class="mail-to"><select id="ml-contact"><option value="">— autre adresse —</option>${contacts.map(c=>`<option value="${c.id}" ${c.id===contactId?'selected':''}>${esc(c.display_name)}${c.email?` · ${esc(c.email)}`:' (pas de mail)'}</option>`).join('')}</select>
         <input id="ml-to" type="email" placeholder="adresse@exemple.fr" value="${esc(vars.contact_email||'')}"></span>
       <label for="ml-cc">Copie</label><input id="ml-cc">
       <label for="ml-subj">Objet</label><input id="ml-subj">
     </div>
-    <div class="mail-preview" id="ml-body" contenteditable="true" aria-label="Texte du mail (modifiable)"></div>
+    ${rtToolbar('ml-body')}<div class="mail-preview" id="ml-body" contenteditable="true" style="${rtStyle()}" aria-label="Texte du mail (modifiable)"></div>
     <div class="ml-att"><b class="fiche-lbl">Pièces jointes</b> <span id="ml-files"></span>
       <label class="btn sm file-btn">Ajouter un fichier<input type="file" class="file-input" multiple id="ml-up"></label>
       ${scriptUrl() ? '<button type="button" class="btn sm" id="ml-gm">Depuis un mail Gmail…</button>' : ''}</div>
@@ -123,7 +129,7 @@ export async function prepareMail(showId, kind){
       <button type="button" class="btn" id="ml-copy">Copier le mail</button>
       <a class="btn" id="ml-gmail" target="_blank" rel="noopener">Ouvrir Gmail</a>
     </div></div>`;
-  const dlgP = openModal({title: `${MAIL_KINDS[kind]} · ${s.venue}`, fields: [], extra, wide: true,
+  const dlgP = openModal({title: `${MAIL_KINDS[kind]} · ${s.venue}`, fields: [], extra, mail: true,
     saveLabel: scriptUrl() ? 'Créer le brouillon Gmail' : 'Fermer',
     onSave: async () => {
       if (!scriptUrl()) return true;
@@ -139,7 +145,7 @@ export async function prepareMail(showId, kind){
       } catch (err) { toast(err.message, true); return false; }
     }});
   const $ = sel => document.querySelector('#modal ' + sel);
-  const current = () => ({to: $('#ml-to').value.trim(), cc: $('#ml-cc').value.trim(), subject: $('#ml-subj').value.trim(), html: $('#ml-body').innerHTML});
+  const current = () => ({to: $('#ml-to').value.trim(), cc: $('#ml-cc').value.trim(), subject: $('#ml-subj').value.trim(), html: wrapMail($('#ml-body').innerHTML)});
   // Pièces jointes : celles du modèle (cochées) + celles ajoutées pour ce mail
   let files = [];
   const drawFiles = () => { $('#ml-files').innerHTML = files.map((f, i) => `<label class="att-chip"><input type="checkbox" data-att="${i}" ${f.on ? 'checked' : ''}> ${f.gmail ? '✉️' : f.path ? '📎' : '🔗'} ${esc(f.name || 'Fichier Drive')}</label>`).join('') || '<span class="muted">aucune</span>'; };
@@ -148,7 +154,8 @@ export async function prepareMail(showId, kind){
     files = [...(t.attachments || []).map(a => ({...a, on: true})), ...files.filter(f => f.mine)]; drawFiles();
     $('#ml-cc').value = t.cc || '';
     $('#ml-subj').value = fill(t.subject, vars, false);
-    $('#ml-body').innerHTML = fill(t.html, vars, true);
+    // date en booking uniquement : pas de fiche de renseignements (les parties s'arrangent entre elles après le mail)
+    $('#ml-body').innerHTML = fill(booking ? withoutFiche(t.html) : t.html, vars, true);
     gmailLink();
   };
   const gmailLink = () => { const m = current();
@@ -213,7 +220,19 @@ async function logMail(s, kind, to, draft){
 }
 
 /** À vérifier avant la confirmation : cachet, TVA, contrat, acomptes */
-function confChecks(s){
+/** Date en booking uniquement (date cochée, ou artiste « booking seul ») */
+export const isBookingOnly = s => s?.prod_mode === 'booking' || byId('projects', s?.project_id)?.mode === 'booking';
+/** Retire du mail les paragraphes qui renvoient à la fiche de renseignements ({{lien_fiche}}) */
+export function withoutFiche(html){
+  const TAG = /\{\{lien_fiche\}\}/, div = document.createElement('div'); div.innerHTML = String(html || '');
+  const has = n => TAG.test(n.innerHTML) || TAG.test(n.getAttribute?.('href') || '');
+  // le plus petit bloc (paragraphe, ligne de texte) qui contient la balise part en entier
+  const blocks = [...div.querySelectorAll('div,p,li,tr,h1,h2,h3,h4,blockquote')].filter(has);
+  blocks.filter(b => !blocks.some(o => o !== b && b.contains(o))).forEach(b => b.remove());
+  return div.innerHTML.replace(/<a[^>]*\{\{lien_fiche\}\}[^>]*>.*?<\/a>/gi, '').replace(/\{\{lien_fiche\}\}/g, '');
+}
+
+function confChecks(s, booking=false){
   const pays = S.db.show_payments.filter(p => p.show_id === s.id && ['acompte','solde'].includes(p.kind)).sort((a,b)=>(a.sort||0)-(b.sort||0));
   const miss = [];
   if (s.fee_ht == null) miss.push('le cachet HT');
@@ -226,7 +245,7 @@ function confChecks(s){
     <div>${esc(s.contract_type||'Contrat ?')} · ${s.fee_ht!=null?`${Number(s.fee_ht).toLocaleString('fr-FR')} € HT · TVA ${String(vat).replace('.',',')} %`:'cachet ?'}
       · ${pays.map(p=>`${esc(p.label||p.kind)} ${p.pct!=null?esc(String(p.pct).replace('.',','))+' %':''}`).join(' · ') || 'aucun acompte'}</div>
     ${miss.length ? `<div class="err">Manque : ${miss.join(', ')}. Complète la date avant d’envoyer (le mail reprend ces infos).</div>` : ''}
-    <div class="muted">La fiche de renseignements affiche toujours les conditions à jour : tu peux encore les corriger après l’envoi, tant que le contrat n’est pas parti.</div>
+    <div class="muted">${booking ? 'Booking uniquement : le lien de la fiche de renseignements est retiré du mail, l’organisateur et l’artiste s’arrangent entre eux pour le contrat.' : 'La fiche de renseignements affiche toujours les conditions à jour : tu peux encore les corriger après l’envoi, tant que le contrat n’est pas parti.'}</div>
   </div>`;
 }
 
@@ -241,15 +260,15 @@ document.addEventListener('toggle', e => {
 
 /** Modèles rangés par type de mail, dans des groupes dépliables (repliés par défaut) */
 export function templatesList(projectId){
-  const rows = S.db.mail_templates.filter(t => projectId === undefined || t.project_id === projectId);
+  const rows = S.db.mail_templates.filter(t => projectId === undefined || tplProjects(t).includes(projectId));
   if (!rows.length) return '<div class="empty">Aucun modèle pour l’instant.</div>';
   const kinds = [...Object.keys(MAIL_KINDS), ...new Set(rows.map(t => t.kind).filter(k => !MAIL_KINDS[k]))];
   const row = t => `<button type="button" class="tpl-row" data-act="editTemplate" data-id="${t.id}">
-    <span class="tpl-kind">${esc(projLabel(t.project_id))}${t.variant?` · ${esc(t.variant)}`:''}</span>
+    <span class="tpl-kind">${esc(tplLabel(t))}${t.variant?` · ${esc(t.variant)}`:''}</span>
     <b>${esc(t.name||'Sans nom')}</b><span class="muted">${t.applies_to && t.applies_to !== 'all' ? esc(APPLIES[t.applies_to]) : ''}${(t.attachments||[]).length ? ` · 📎 ${(t.attachments||[]).length}` : ''}</span></button>`;
   return `<div class="tpl-groups">${kinds.map(k => {
     const list = rows.filter(t => (t.kind || 'autre') === k)
-      .sort((a,b) => (a.project_id ? 1 : 0) - (b.project_id ? 1 : 0) || projLabel(a.project_id).localeCompare(projLabel(b.project_id)) || (a.name||'').localeCompare(b.name||''));
+      .sort((a,b) => (tplProjects(a).length ? 1 : 0) - (tplProjects(b).length ? 1 : 0) || tplLabel(a).localeCompare(tplLabel(b)) || (a.name||'').localeCompare(b.name||''));
     if (!list.length) return '';
     return `<details class="tpl-group" data-kind="${esc(k)}" ${openGroups.has(k) ? 'open' : ''}>
       <summary><span>${esc(MAIL_KINDS[k] || k)}</span><span class="badge">${list.length}</span></summary>
@@ -258,30 +277,31 @@ export function templatesList(projectId){
     </details>`;
   }).join('')}</div>`;
 }
-const projLabel = id => id ? (byId('projects', id)?.name || '?') : 'Tous les artistes (générique)';
 
 export async function editTemplate(id, defaults={}){
   const t = id ? byId('mail_templates', id) : {kind:'confirmation', applies_to:'all', subject:'', html:'', attachments:[], ...defaults};
   // balises des dates (confirmation, boucles…) ou de la structure (prospection, relance), selon le type de mail
   const tagBar = `<div class="tag-bar" role="toolbar" aria-label="Insérer une balise" data-tagset="show" ${STRUCT_KINDS.includes(t.kind)?'hidden':''}>${TAGS.map(([k,l])=>`<button type="button" class="chip-btn" data-tag="${k}" title="${esc(l)}">{{${k}}}</button>`).join('')}</div>
     <div class="tag-bar" role="toolbar" aria-label="Insérer une balise" data-tagset="struct" ${STRUCT_KINDS.includes(t.kind)?'':'hidden'}>${PROSPECT_TAGS.map(([k,l])=>`<button type="button" class="chip-btn" data-tag="${k}" title="${esc(l)}">{{${k}}}</button>`).join('')}</div>`;
-  const fmtBar = `<div class="tag-bar"><button type="button" class="chip-btn" data-cmd="bold"><b>G</b></button><button type="button" class="chip-btn" data-cmd="italic"><i>I</i></button><button type="button" class="chip-btn" data-cmd="underline"><u>S</u></button><button type="button" class="chip-btn" data-cmd="createLink">Lien</button><button type="button" class="chip-btn" data-cmd="removeFormat">Sans mise en forme</button></div>`;
+  const fmtBar = rtToolbar('tpl-body');
   let files = (t.attachments || []).slice();   // [{path, name}] fichier déposé · [{id, url, name}] fichier Drive
   const variants = [...new Set(['CC', 'CC Club', 'CC Festival', 'CCR Club', ...S.db.mail_templates.map(x => x.variant).filter(Boolean)])];
   const extra = `<div class="field full"><label>Pièces jointes</label><div id="tpl-files"></div>
       <div class="vh-actions" style="margin-top:6px"><label class="btn sm file-btn">Ajouter un fichier<input type="file" class="file-input" multiple id="tpl-up"></label>
         <input id="tpl-drive" placeholder="ou coller un lien Drive puis Entrée" style="min-width:260px"></div>
       <div class="help">Jointes au brouillon Gmail (ex. fiche technique, rider, kit promo). Tu pourras en ajouter d’autres au moment d’envoyer.</div></div>
-    <div class="field full"><label>Texte du mail</label>${fmtBar}${tagBar}<div class="mail-preview" id="tpl-body" contenteditable="true">${t.html||''}</div>
-    <div class="help">Clique sur une balise pour l’insérer à l’endroit du curseur. Elle sera remplacée par l’info de la date. Raccourcis : ⌘B gras, ⌘I italique, ⌘U souligné, ⌘K lien.</div></div>
+    <div class="field full"><label>Texte du mail</label>${fmtBar}${tagBar}<div class="mail-preview" id="tpl-body" contenteditable="true" style="${rtStyle()}">${t.html||''}</div>
+    <div class="help">Clique sur une balise pour l’insérer à l’endroit du curseur. Elle sera remplacée par l’info de la date. Police, taille et couleur : sélectionne le texte puis choisis dans la barre. Raccourcis : ⌘B gras, ⌘I italique, ⌘U souligné, ⌘K lien.</div></div>
     <datalist id="tpl-variants">${variants.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
     ${id ? `<div class="field full"><button type="button" class="btn sm" id="tpl-dup">Dupliquer ce modèle (pour créer une autre variante)</button></div>` : ''}`;
   const drawFiles = () => { const box = document.querySelector('#tpl-files'); if (!box) return;
     box.innerHTML = files.length ? `<ul class="doc-list">${files.map((f, i) => `<li><span>${f.path ? '📎' : '🔗'} ${esc(f.name || f.url || f.id)}</span><button type="button" class="btn icon sm ghost danger" data-rmf="${i}" aria-label="Retirer">✕</button></li>`).join('')}</ul>` : '<p class="muted" style="margin:0">Aucune pièce jointe.</p>'; };  let lastRange = null;
-  const p = openModal({title: id ? 'Modèle de mail' : 'Nouveau modèle de mail', wide: true, values: {...t, applies_to: t.applies_to || 'all'},
+  const pids = tplProjects(t);
+  const p = openModal({title: id ? 'Modèle de mail' : 'Nouveau modèle de mail', wide: true, values: {...t, project_ids: pids, applies_to: t.applies_to || 'all'},
     fields: [
       {k:'name', label:'Nom du modèle'},
-      {k:'project_id', label:'Artiste', type:'project', allLabel:'Tous les artistes (générique)'},
+      {k:'project_ids', label:'Artiste(s) — aucun coché = tous les artistes', type:'checks', full:true,
+        options: projectOptions(true, pids).map(x => [x.id, x.name])},
       {k:'kind', label:'Type de mail', type:'select', blank:false, options:Object.entries(MAIL_KINDS)},
       {k:'variant', label:'Variante (nom libre)', placeholder:'ex. CC Club, CC Festival, CCR Club…', help:'Juste un nom pour t’y retrouver, affiché dans la liste des modèles.'},
       {k:'applies_to', label:'Proposé en premier pour', type:'select', blank:false, options:Object.entries(APPLIES), full:true,
@@ -290,7 +310,8 @@ export async function editTemplate(id, defaults={}){
       {k:'cc', label:'En copie', full:true, placeholder:'Nom <adresse@…>, …'},
     ], extra,
     onSave: async v => {
-      const row = {name:v.name, project_id:v.project_id||null, kind:v.kind, variant:v.variant||null, applies_to:v.applies_to||'all', subject:v.subject||'', cc:v.cc||null,
+      const ids = v.project_ids || [];
+      const row = {name:v.name, project_ids: ids, project_id: ids[0] || null, kind:v.kind, variant:v.variant||null, applies_to:v.applies_to||'all', subject:v.subject||'', cc:v.cc||null,
         html: document.querySelector('#tpl-body').innerHTML, updated_at: new Date().toISOString(), attachments: files};
       if (id) return !!(await save('mail_templates', id, row));
       return !!(await insert('mail_templates', row));
@@ -328,11 +349,6 @@ export async function editTemplate(id, defaults={}){
     e.preventDefault(); body.focus();
     if (lastRange){ const sel = getSelection(); sel.removeAllRanges(); sel.addRange(lastRange); }
     document.execCommand('insertText', false, `{{${b.dataset.tag}}}`); keep();
-  });
-  document.querySelectorAll('#modal [data-cmd]').forEach(b => b.onmousedown = e => {
-    e.preventDefault(); body.focus();
-    if (lastRange){ const sel = getSelection(); sel.removeAllRanges(); sel.addRange(lastRange); }
-    const c = b.dataset.cmd; document.execCommand(c, false, c === 'createLink' ? prompt('Adresse du lien (https://…)') || '' : null); keep();
   });
   return p;
 }

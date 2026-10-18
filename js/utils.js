@@ -109,3 +109,14 @@ export function firstName(c){
   const names = parts.map(p => one(p, !!src && hasLast && parts.length === 1)).filter(Boolean);
   return names.length > 1 ? names.slice(0, -1).join(', ') + ' et ' + names.at(-1) : names[0] || '';
 }
+
+/** HTML d'un mail affiché dans la page : sans script, sans gestionnaire d'évènement, liens ouverts à part */
+export function safeHtml(html){
+  const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+  doc.querySelectorAll('script,style,iframe,object,embed,link,meta,form').forEach(n => n.remove());
+  doc.querySelectorAll('*').forEach(n => [...n.attributes].forEach(a => {
+    if (/^on/i.test(a.name) || (/^(href|src)$/i.test(a.name) && /^\s*javascript:/i.test(a.value))) n.removeAttribute(a.name);
+  }));
+  doc.querySelectorAll('a[href]').forEach(a => { a.target = '_blank'; a.rel = 'noopener'; });
+  return doc.body.innerHTML;
+}

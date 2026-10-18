@@ -35,6 +35,7 @@ export async function save(table, id, patch, {rerender=true}={}){
   const {data, error} = await sb.from(table).update(patch).eq('id', id).select().single();
   if (error){ if (row) Object.assign(row, before); touch(table); toast('Enregistrement impossible : '+error.message, true); render(); return null; }
   Object.assign(row, data); touch(table);
+  summaryAfter(table, row);
   if (table==='shows' && (patch.status || patch.project_id)) await refreshShowSide(id);
   if (table==='shows' && ('ticketing_type' in patch || 'department' in patch || 'structure_id' in patch)) await (await import('./budget-actions.js')).syncCnmLine(id);
   if (rerender) render();
@@ -60,15 +61,37 @@ export async function insert(table, values){
   const {data, error} = await sb.from(table).insert(values).select().single();
   if (error){ toast('Création impossible : '+error.message, true); return null; }
   S.db[table].push(data); touch(table);
+  summaryAfter(table, data);
   if (table==='shows') await refreshShowSide(data.id);
   return data;
 }
 
 export async function remove(table, id){
+  const before = byId(table, id);
   const {error} = await sb.from(table).delete().eq('id', id);
   if (error){ toast('Suppression impossible : '+error.message, true); return false; }
   S.db[table] = S.db[table].filter(r => r.id !== id); touch(table);
+  summaryAfter(table, before);
   return true;
+}
+
+/**
+ * Résumé IA d'un suivi : refait automatiquement après chaque échange ou pièce jointe ajouté, modifié ou supprimé
+ * (une seule demande quelques secondes après la dernière modification). Sans clé IA : rien.
+ */
+const SUMMARY_WAIT = new Map();
+function summaryAfter(table, row){
+  if (!row || !['prospect_logs', 'prospect_files'].includes(table) || !row.prospect_id) return;
+  const pid = row.prospect_id;
+  clearTimeout(SUMMARY_WAIT.get(pid));
+  SUMMARY_WAIT.set(pid, setTimeout(() => { SUMMARY_WAIT.delete(pid); refreshSummary(pid); }, 2500));
+}
+export async function refreshSummary(pid, {silent = true} = {}){
+  const {data, error} = await sb.functions.invoke('resume-suivi', {body: {prospect_id: pid}, headers: {'x-region': 'eu-west-3'}});   // toujours à Paris
+  if (error || !data?.summary){ if (!silent) toast('Résumé impossible : ' + (data?.error || error?.message || 'réponse vide'), true); return null; }
+  const p = byId('prospects', pid); if (!p) return null;
+  p.summary = data.summary; touch('prospects'); render(); if (silent) toast('Résumé mis à jour par l’IA');
+  return data.summary;
 }
 
 /** Supprime les lignes liées (tables sans cascade) */
