@@ -88,7 +88,7 @@ function saveScroll(root){
   return {pos, x: window.scrollX, y: window.scrollY, page: LAST_PAGE};   // la page réellement affichée, pas l'état déjà changé
 }
 let LAST_PAGE = null;
-const pageSig = () => [S.view, S.projectPage, S.structurePage, S.suiviPage, JSON.stringify(S.tab || {})].join('|');
+const pageSig = () => [S.view, S.projectPage, S.structurePage, S.suiviPage, JSON.stringify(Object.entries(S.tab || {}).filter(([k]) => !k.startsWith('fold:')))]   // déplier une section reste sur la même page.join('|');
 function restoreScroll(root, saved){
   const now = pageSig(), same = saved.page === now; LAST_PAGE = now;
   if (!same) return;   // autre page : on repart du haut

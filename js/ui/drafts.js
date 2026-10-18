@@ -36,7 +36,9 @@ function apply(form, d){
     .forEach((e, i) => { const c = v.c[i] != null; if (e.checked !== c){ e.checked = c; fire(e, 'change'); } }));
   entries.filter(x => !isBox(x)).forEach(([v, els]) => els.filter(e => e.tagName === 'SELECT')
     .forEach(e => { if (e.value !== v){ e.value = v; fire(e, 'change'); } }));
-  // 3. les champs texte ensuite (ce qu'on avait écrit l'emporte sur ce que le modèle a rempli)
+  // 3. les champs texte et 4. le texte mis en forme, ensuite (ce qu'on avait écrit l'emporte sur ce que le modèle a rempli) ;
+  // refait un peu plus tard si une mise à jour lancée par un menu (adresse, balises…) arrive après coup, tant qu'on n'a rien tapé
+  const texts = () => {
   entries.filter(x => !isBox(x)).forEach(([v, els]) => els.filter(e => e.tagName !== 'SELECT').forEach(e => {
     if (e.value === v) return;
     e.value = v;
@@ -44,8 +46,16 @@ function apply(form, d){
     if (e.classList.contains('dt-val')){ const t = e.parentElement?.querySelector('.dt-txt'); if (t && v){ const [y, m, j] = v.split('-'); t.value = `${j}/${m}/${y}`; } }
     if (e.tagName === 'TEXTAREA') fire(e, 'input');
   }));
-  // 4. le texte mis en forme en dernier
   Object.entries(d.h || {}).forEach(([id, html]) => { const el = form.querySelector('#' + CSS.escape(id)); if (el && el.innerHTML !== html){ el.innerHTML = html; fire(el, 'input'); } });
+  };
+  const gen = form._draftGen = (form._draftGen || 0) + 1;   // une restauration plus récente (ex. « repartir de zéro ») annule celle-ci
+  texts();
+  let typed = false; const mark = e => { if (e.isTrusted) typed = true; };
+  form.addEventListener('input', mark); form.addEventListener('change', mark);
+  [400, 1200, 2500].forEach((ms, i, all) => setTimeout(() => {
+    if (!typed && form.isConnected && form._draftGen === gen) texts();
+    if (i === all.length - 1){ form.removeEventListener('input', mark); form.removeEventListener('change', mark); }
+  }, ms));
 }
 const changedFrom = (a, b) => JSON.stringify(a) !== JSON.stringify(b);
 

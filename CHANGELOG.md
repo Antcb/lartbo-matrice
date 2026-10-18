@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.25.2 — 18/10/2026
+- Brouillons de mail rouverts : l'adresse, l'objet et le texte écrits restent ; déplier une section garde la position des tableaux ; invitation : le concert ne compte que pour un modèle d'invitation
+
+
 ## 1.25.1 — 18/10/2026
 - Corrections de la 3e relecture Greptile : limite des acomptes avec solde envoyé, montant saisi prioritaire, taxe CNM selon le département du concert, défilement, suivi de la To do, artiste de l'invitation, brouillons, modèles partagés gardés à la suppression d'un artiste, script Drive plus sûr
 
