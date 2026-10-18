@@ -108,7 +108,7 @@ export function editProject(id){
       {k:'contract_template_cr', label:'Contrat de co-réalisation', full:true, placeholder:'https://docs.google.com/document/d/…'},
       {k:'notes', label:'Notes', type:'textarea', full:true},
     ],
-    onDelete: id ? () => remove('projects', id) : null,
+    onDelete: id ? () => deleteProject(id) : null,
     onSave: async v => {
       if (!v.name) return false;
       if (v.drive_artist_folder_id) v.drive_artist_folder_id = driveId(v.drive_artist_folder_id);
@@ -475,3 +475,12 @@ export async function linkDrive(showId){
 }
 
 export { touch, render };
+
+/** Supprimer un artiste : ses modèles de mail partagés avec d'autres artistes restent (réattribués), seuls les siens partent */
+async function deleteProject(id){
+  for (const t of (S.db.mail_templates || []).filter(t => (t.project_ids || []).includes(id) && t.project_ids.length > 1)){
+    const ids = t.project_ids.filter(x => x !== id);
+    await save('mail_templates', t.id, {project_ids: ids, project_id: ids[0]}, {rerender: false});
+  }
+  return remove('projects', id);
+}

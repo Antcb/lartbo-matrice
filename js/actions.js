@@ -319,7 +319,7 @@ export { go };
 
 // Facturation : % ↔ HT liés, solde = 100 % − les autres lignes, jamais plus de 100 % du cachet
 const r2 = n => Math.round(n * 100) / 100;
-const othersPct = (pay, withSolde) => paymentsOf(pay.show_id).filter(p => BILL_KINDS.includes(p.kind) && p.id !== pay.id && (withSolde || p.kind !== 'solde'))
+const othersPct = (pay, withSolde) => paymentsOf(pay.show_id).filter(p => BILL_KINDS.includes(p.kind) && p.id !== pay.id && (withSolde || p.kind !== 'solde' || p.sent_at || p.paid_at))
   .reduce((t, p) => t + (billPct(p) || 0), 0);
 /** Remet le solde à « ce qui reste » (s'il n'est pas encore envoyé) */
 export async function rebalanceSolde(showId){

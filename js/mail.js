@@ -221,7 +221,7 @@ async function logMail(s, kind, to, draft){
 
 /** À vérifier avant la confirmation : cachet, TVA, contrat, acomptes */
 /** Date en booking uniquement (date cochée, ou artiste « booking seul ») */
-export const isBookingOnly = s => s?.prod_mode === 'booking' || byId('projects', s?.project_id)?.mode === 'booking';
+export const isBookingOnly = s => (s?.prod_mode || byId('projects', s?.project_id)?.mode) === 'booking';   // le mode de la date prime sur celui de l'artiste
 /** Retire du mail les paragraphes qui renvoient à la fiche de renseignements ({{lien_fiche}}) */
 export function withoutFiche(html){
   const TAG = /\{\{lien_fiche\}\}/, div = document.createElement('div'); div.innerHTML = String(html || '');

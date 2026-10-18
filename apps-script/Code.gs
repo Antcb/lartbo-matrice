@@ -542,7 +542,8 @@ function createArtistFolder_(projectId) {
   var root = DriveApp.getFolderById(p.ARTISTS_ROOT_ID);
   var folder = root.createFolder(project.name.replace(/\s*•.*$/, '').trim());
   var tpl = setting_('artist_template_folder_id') || '1zkLE9As6YpsFbYHtpkpDBmNt2ooW-K7s';
-  copyContents_(DriveApp.getFolderById(tpl), folder);
+  try { copyContents_(DriveApp.getFolderById(tpl), folder); }
+  catch (e) { folder.setTrashed(true); throw e; }   // pas de dossier à moitié rempli
   sb_('PATCH', 'projects?id=eq.' + project.id, { drive_artist_folder_id: folder.getId() });
   return { ok: true, folder_id: folder.getId(), created: true, url: folder.getUrl() };
 }
@@ -882,9 +883,11 @@ function saveUrls_(folderId, files) {
   var folder = DriveApp.getFolderById(folderId), saved = [];
   (files || []).forEach(function (f) {
     var blob = UrlFetchApp.fetch(f.url, { followRedirects: true }).getBlob().setName(f.name);
-    var old = folder.getFilesByName(f.name);
-    while (old.hasNext()) old.next().setTrashed(true);
-    saved.push(folder.createFile(blob).getId());
+    var olds = [], it = folder.getFilesByName(f.name);
+    while (it.hasNext()) olds.push(it.next());
+    var created = folder.createFile(blob);          // le nouveau d'abord, l'ancien ensuite
+    olds.forEach(function (o) { o.setTrashed(true); });
+    saved.push(created.getId());
   });
   return { ok: true, saved: saved.length };
 }
