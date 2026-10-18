@@ -38,7 +38,7 @@ export function viewSettings(){
       <table><tbody>${S.db.partners.map(p=>`<tr><td>${cIn('partners',p.id,'name',p.name)}</td><td class="num">${cIn('partners',p.id,'default_pct',p.default_pct,'number','class="narrow"')} %</td></tr>`).join('')}</tbody></table>
       <button class="btn sm" data-act="newPartner" style="margin-top:10px">Ajouter un partenaire</button></div>
     <div class="panel pad" style="grid-column:1/-1"><h3 style="font-size:22px;margin-bottom:6px">Modèles de mail</h3>
-      <p class="help" style="margin:0 0 12px">Confirmations et boucles, par artiste. Les modèles « génériques » servent pour les artistes qui n’ont pas le leur. Les balises comme {{date}} ou {{cachet_ht}} sont remplacées par les infos de la date.</p>
+      <p class="help" style="margin:0 0 12px">Rangés par type de mail : clique sur un groupe pour le déplier. Les modèles « génériques » servent pour les artistes qui n’ont pas le leur. Les balises comme {{date}} ou {{structure}} sont remplacées par les infos de la date ou de la structure ; une balise inconnue (ex. {{date_concert}}) reste surlignée en jaune pour être complétée à la main.</p>
       ${templatesList()}
       <button class="btn sm primary" data-act="newTemplate" style="margin-top:10px">Nouveau modèle</button></div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Contrats</h3>

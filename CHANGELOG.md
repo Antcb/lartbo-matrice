@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.23.0 — 18/10/2026
+- Modèles de prospection (Nova Noir, Rosters 2027, Invitation, MaMA, Réponse Tryo) ; modèles de mail rangés par type dans des groupes dépliables
+
+
 ## 1.22.0 — 18/10/2026
 - Relecture Greptile corrigée (formulaire salariés, réglages, sauvegarde complète, budget, relances, adresses tapées) ; pièces rangées dans le Drive de la date avec détection des doublons
 
