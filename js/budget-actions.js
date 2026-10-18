@@ -81,14 +81,14 @@ export const BUDGET_ACTIONS = {
     const s = byId('shows', t.dataset.id);
     if (s.pennylane_quote_id && !confirm('Un devis a déjà été créé dans Pennylane pour cette date. En créer un nouveau ?')) return;
     t.disabled = true; toast('Création du devis dans Pennylane…');
-    try { const out = await pennylane('quote', {show_id: s.id}); await save('shows', s.id, {pennylane_quote_id: String(out.id), pennylane_quote_url: out.url || null}); toast(`Devis ${out.number || ''} créé dans Pennylane`); }
+    try { const out = await pennylane('quote', {show_id: s.id}); await save('shows', s.id, {pennylane_quote_id: String(out.id), pennylane_quote_url: out.url || null}); toast(`Devis ${out.number || ''} créé dans Pennylane${out.headers === false ? ' (complète « Projet » et « Date de réalisation » dans Pennylane)' : ''}`); }
     catch (err) { toast(err.message, true); }
     t.disabled = false;
   },
   pennylaneInvoice: async t => {
     const p = byId('show_payments', t.dataset.id);
     t.disabled = true; toast('Création de la facture en brouillon dans Pennylane…');
-    try { const out = await pennylane('invoice', {payment_id: p.id}); await save('show_payments', p.id, {pennylane_id: String(out.id), pennylane_url: out.url || null}); toast('Facture créée en brouillon dans Pennylane'); }
+    try { const out = await pennylane('invoice', {payment_id: p.id}); await save('show_payments', p.id, {pennylane_id: String(out.id), pennylane_url: out.url || null}); toast(`Facture créée en brouillon dans Pennylane${out.headers === false ? ' (complète « Projet » et « Date de réalisation »)' : ''}`); }
     catch (err) { toast(err.message, true); }
     t.disabled = false;
   },

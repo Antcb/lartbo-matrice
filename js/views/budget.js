@@ -25,7 +25,7 @@ function lineRow(l, project){
       <input type="number" step="any" data-t="budget_lines" data-id="${l.id}" data-f="forecast" value="${l.forecast??''}" placeholder="${fc==null?'à saisir':fc}" class="${l.forecast!=null?'override':''}" title="${auto||staff?'Vide = calcul automatique':'Montant prévu HT'}"></td>
     <td class="num"><input type="number" step="any" data-t="budget_lines" data-id="${l.id}" data-f="amount" value="${l.amount??''}" placeholder="—" title="${staff?'Coût total (bulletin)':'Montant réel HT (pièce)'}"></td>
     <td class="nowrap">${l.file_path ? `<button class="btn icon sm" data-act="openBudgetFile" data-id="${l.id}" title="${esc(l.file_name||'Pièce')}" aria-label="Ouvrir la pièce">📎</button>` : ''}${cIn('budget_lines', l.id, 'doc_number', l.doc_number, 'text', 'placeholder="N° pièce" style="min-width:80px"')}</td>
-    <td class="${l.paid_at?'done-cell':''}">${cIn('budget_lines', l.id, 'paid_at', l.paid_at, 'date')}</td>
+    <td class="${l.paid_at?'done-cell':''}">${cIn('budget_lines', l.id, 'paid_at', l.paid_at, 'date')}${(l.payer || 'compte') !== 'compte' && l.paid_at ? `<div class="reimb ${l.reimbursed_at?'done-cell':''}" title="Remboursé par ${esc(payerLabel('compte', project))}"><span class="muted">Remboursé par le compte le</span>${cIn('budget_lines', l.id, 'reimbursed_at', l.reimbursed_at, 'date')}</div>` : ''}</td>
     <td>${badge(l)}</td>
     <td><button class="btn icon sm ghost danger" data-act="delBudgetLine" data-id="${l.id}" aria-label="Supprimer la ligne">✕</button></td>
   </tr>`;
@@ -64,7 +64,7 @@ export function showBudgetHTML(s){
       <button class="btn sm ghost" data-act="copyBudget" data-id="${s.id}">Copier les lignes d'une autre date</button>
     </div>
     ${dropZone(`data-budget-drop='${JSON.stringify({show_id:s.id})}'`, 'Glisse ici une facture, un bulletin ou une note de frais (ou sur une ligne précise) : l’IA la lit, met la ligne à jour et la marque payée.')}
-    <p class="muted" style="font-size:12px;margin:8px 0 0">Montants HT ; salaires : coût total. Le prévu vide se calcule seul (bulletins × coût, Movinmotion ${eur2(payslipCost())} par bulletin, CNM si gratuit, solde artiste = reste du cachet). Une ligne compte dans le solde du compte quand « Payé par » est le compte dédié.</p>
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Montants HT ; salaires : coût total. Le prévu vide se calcule seul (bulletins × coût, Movinmotion ${eur2(payslipCost())} par bulletin, CNM si gratuit, solde artiste = reste du cachet). Une ligne compte dans le solde du compte quand « Payé par » est le compte dédié, ou quand une avance (L’ArtBo, une personne) est remboursée par le compte.</p>
   </div>`;
 }
 
@@ -93,7 +93,7 @@ export function projectBudgetHTML(projectId){
       <div class="stat"><b>${eur2(a.inTodo)}</b><span>Cachets encore à recevoir (HT)</span></div>
       <div class="stat"><b>${eur2(a.outTodo)}</b><span>Encore à payer par le compte</span></div>
       <div class="stat"><b>${eur2(a.end)}</b><span>Solde prévu en fin de tournée</span></div>
-      ${a.artboAdvance ? `<div class="stat"><b>${eur2(a.artboAdvance)}</b><span>Avancé par L'ArtBo</span></div>` : ''}
+      ${a.artboAdvance ? `<div class="stat"><b style="color:var(--warn)">${eur2(a.artboAdvance)}</b><span>Avancé par L'ArtBo, pas encore remboursé par le compte</span></div>` : ''}
     </div>
     <div class="steps" style="max-width:640px;margin-bottom:12px">
       <label>Nom du compte dédié</label>${cIn('projects', p.id, 'account_name', p.account_name, 'text', 'placeholder="ex. Compte The Locos L’ArtBo (vide = pas de compte dédié)"')}

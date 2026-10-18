@@ -40,7 +40,7 @@ export function lineForecast(l){
 }
 /** Montant retenu : le réel s'il est connu, sinon le prévu */
 export const lineValue = l => l.amount != null ? Number(l.amount) : (lineForecast(l) || 0);
-export const lineStatus = l => l.paid_at ? 'paid' : (l.doc_number || l.file_path || l.amount != null) ? 'doc' : 'planned';
+export const lineStatus = l => l.paid_at || l.reimbursed_at ? 'paid' : (l.doc_number || l.file_path || l.amount != null) ? 'doc' : 'planned';
 
 /** Cachet − commission − dépenses (hors solde artiste) = ce qui peut revenir à l'artiste */
 export function availableForArtist(s){
@@ -84,8 +84,10 @@ export function accountOf(projectId){
   for (const l of lines){
     const v = lineValue(l);
     a.byCat[l.category || 'Autres'] = (a.byCat[l.category || 'Autres']||0) + v;
+    // payé par le compte, ou avancé par L'ArtBo / une personne puis remboursé par le compte
     if ((l.payer || 'compte') === 'compte') l.paid_at ? a.outDone += v : a.outTodo += v;
-    if (l.payer === 'artbo') a.artboAdvance += v;
+    else if (l.reimbursed_at) a.outDone += v;
+    else if (l.payer === 'artbo' && l.paid_at) a.artboAdvance += v;
   }
   Object.keys(a).forEach(k => typeof a[k] === 'number' && (a[k] = r2(a[k])));
   a.real = r2(a.opening + a.inDone - a.outDone);
