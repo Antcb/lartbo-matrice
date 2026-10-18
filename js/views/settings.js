@@ -78,9 +78,13 @@ export function viewSettings(){
         <label for="set-pscript">Adresse du script de prospection</label><input id="set-pscript" data-setting-text="prospect_script_url" value="${esc(setting('prospect_script_url')||'')}" placeholder="https://script.google.com/macros/s/…/exec">
       </div>
       <div class="vh-actions" style="margin-top:10px"><button class="btn sm" data-act="testProspectScript">Tester</button></div>
-      <h4 class="block-title" style="margin:16px 0 6px">Signature ajoutée sous les mails de prospection</h4>
+      <p class="help" style="margin:10px 0 0">Chloé peut aussi prospecter depuis <b>production@</b> : choisis « Envoyé par : Production » dans la fenêtre de prospection. Ces mails passent par le script Google principal (Réglages › Google) : il faut y avoir ajouté le service <b>Gmail API</b> (Services › + › Gmail API) pour les relances.</p>
+      <h4 class="block-title" style="margin:16px 0 6px">Signature d’Anthony (mails envoyés par anthony@)</h4>
       <div class="mail-preview" id="set-sig" contenteditable="true">${setting('prospect_signature') || ''}</div>
-      <div class="vh-actions" style="margin-top:8px"><button class="btn sm" data-act="saveSignature">Enregistrer la signature</button></div></div>
+      <div class="vh-actions" style="margin-top:8px"><button class="btn sm" data-act="saveSignature">Enregistrer la signature</button></div>
+      <h4 class="block-title" style="margin:16px 0 6px">Signature de Chloé (mails envoyés par production@)</h4>
+      <div class="mail-preview" id="set-sig-prod" contenteditable="true">${setting('prospect_signature_production') || ''}</div>
+      <div class="vh-actions" style="margin-top:8px"><button class="btn sm" data-act="saveSignature" data-key="prospect_signature_production" data-el="set-sig-prod">Enregistrer la signature</button></div></div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Brevo</h3>
       <p class="help" style="margin:0 0 12px">Chaque nouveau contact de la Matrice qui a un mail est ajouté automatiquement dans Brevo (mail, prénom, nom, structure). Un mail déjà présent dans Brevo n’est jamais modifié : ni ses infos, ni ses listes, et un désabonné reste désabonné. Dans Brevo : ton nom en haut à droite › « SMTP et API » › onglet « Clés API » › « Générer une nouvelle clé API », puis colle-la ici. La liste est facultative : son numéro est dans Contacts › Listes (colonne ID).</p>
       <div class="steps">

@@ -17,6 +17,11 @@ const r2 = n => Math.round(n * 100) / 100;
 
 export const isProdShow = s => !!s && s.prod_mode !== 'booking';
 export const isFree = s => /gratuit/i.test(s?.ticketing_type || '');
+/** Date à l'étranger : département remplacé par un code pays (CH, BE…) ou structure hors de France */
+export const isAbroad = s => { const d = String(s?.department || '').trim().toUpperCase(), c = byId('structures', s?.structure_id)?.country;
+  return (/^[A-Z]{2,}$/.test(d) && !/^2[AB]$/.test(d)) || (!!c && !/^france$/i.test(c)); };
+/** Taxe CNM due : entrée gratuite, en France */
+export const cnmDue = s => isFree(s) && !isAbroad(s);
 export const payslipCost = () => num(setting('movinmotion_payslip_cost')) ?? 20.3;
 export const cnmPct = () => num(setting('default_cnm_pct')) ?? 3.5;
 
@@ -37,7 +42,7 @@ export function lineForecast(l){
   if (l.category === 'Staff' && l.qty != null && l.unit_cost != null) return r2(Number(l.qty) * Number(l.unit_cost));
   const s = byId('shows', l.show_id);
   if (l.auto === 'movinmotion' && s) return r2(payslipCost() * staffQty(s.id));
-  if (l.auto === 'cnm' && s) return isFree(s) ? r2((Number(s.fee_ht)||0) * cnmPct() / 100) : 0;
+  if (l.auto === 'cnm' && s) return cnmDue(s) ? r2((Number(s.fee_ht)||0) * cnmPct() / 100) : 0;
   if (l.auto === 'solde_artiste' && s){   // ce qui reste du cachet, moins les autres soldes déjà notés
     const others = linesOf(s.id).filter(x => isSolde(x) && x.id !== l.id).reduce((t,x) => t + (x.amount != null ? Number(x.amount) : Number(x.forecast)||0), 0);
     return Math.max(0, r2(availableForArtist(s) - others));

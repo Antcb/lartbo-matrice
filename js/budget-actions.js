@@ -3,7 +3,7 @@
  * pièces lues par l'IA (glisser-déposer) et brouillons Pennylane (devis, factures).
  */
 import { render } from './app.js';
-import { lineForecast, linesOf, prodShowsOf } from './budget.js';
+import { cnmDue, lineForecast, linesOf, prodShowsOf } from './budget.js';
 import { paymentsOf, payAmount } from './calc.js';
 import { insert, openStored, remove, save, sb } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
@@ -28,7 +28,7 @@ async function prefill(s){
   const rows = [
     ...staff.map(x => ({...x, category:'Staff', label: x.label || 'Cachet'})),
     {category:'Movinmotion', label:'Commission bulletins de paie', supplier:'Movinmotion', auto:'movinmotion'},
-    {category:'Taxes', label:'Taxe CNM (entrée gratuite)', supplier:'CNM', auto:'cnm'},
+    ...(cnmDue(s) ? [{category:'Taxes', label:'Taxe CNM (entrée gratuite)', supplier:'CNM', auto:'cnm'}] : []),   // seulement si la date est concernée
     {category:'Solde artiste', label:'Solde artiste', supplier: p?.artist_payee || null, auto:'solde_artiste', payer:'compte'},
   ];
   let sort = nextSort(s.id);
@@ -36,6 +36,15 @@ async function prefill(s){
   if (error) return toast('Préremplissage impossible : ' + error.message, true);
   S.db.budget_lines.push(...data); touch('budget_lines');
   toast(prev ? `Budget prérempli (salariés repris du ${fmtDate(prev.date)})` : 'Budget prérempli');
+}
+
+/** Taxe CNM : la ligne n'existe que si la date est concernée (entrée gratuite, en France). Appelé quand la billetterie change. */
+export async function syncCnmLine(showId){
+  const s = byId('shows', showId); if (!s || !linesOf(s.id).length) return;
+  const cnm = linesOf(s.id).filter(l => l.auto === 'cnm');
+  if (cnmDue(s) && !cnm.length)
+    await insert('budget_lines', {project_id:s.project_id, show_id:s.id, category:'Taxes', label:'Taxe CNM (entrée gratuite)', supplier:'CNM', auto:'cnm', payer:'compte', sort: nextSort(s.id)});
+  if (!cnmDue(s)) for (const l of cnm) if (l.amount == null && l.forecast == null && !l.file_path && !l.doc_number && !l.paid_at) await remove('budget_lines', l.id);
 }
 
 export const BUDGET_ACTIONS = {
@@ -76,7 +85,8 @@ export const BUDGET_ACTIONS = {
       values:{from: opts[0][0], what:'all'},
       onSave: async v => {
         const src = linesOf(v.from).filter(l => v.what === 'all' || l.category === 'Staff')
-          .filter(l => !l.auto || !linesOf(s.id).some(x => x.auto === l.auto));
+          .filter(l => !l.auto || !linesOf(s.id).some(x => x.auto === l.auto))
+          .filter(l => l.auto !== 'cnm' || cnmDue(s));
         let sort = nextSort(s.id);
         const rows = src.map(l => ({project_id:s.project_id, show_id:s.id, category:l.category, label:l.label, supplier:l.supplier, auto:l.auto, qty:l.qty, unit_cost:l.unit_cost,
           forecast: l.auto || l.category === 'Staff' ? l.forecast : (l.forecast ?? l.amount), payer:l.payer, payer_name:l.payer_name, employee_id:l.employee_id, sort: sort++}));

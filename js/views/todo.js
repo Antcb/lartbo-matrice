@@ -5,17 +5,27 @@
 import { CFG } from '../config.js';
 import { TASK_STATUS, TEAM_NAMES } from '../constants.js';
 import { lingering } from '../data.js';
-import { deptColor, deptNames, attachmentsOf, isDone, projIds, projNames, showLabel, byId, structName, taskSort, teamName, urgency } from '../selectors.js';
+import { deptColor, deptNames, attachmentsOf, isDone, projIds, projNames, prospectsOfStructure, showLabel, byId, structName, taskSort, teamName, urgency } from '../selectors.js';
 import { S } from '../state.js';
 import { deptBadge, projPicker, viewHead } from '../ui/bits.js';
 import { cAc, cIn, cSel, projChips } from '../ui/cells.js';
 import { daysUntil, esc, fmtDate, matches } from '../utils.js';
 
-/** Tâche rattachée à un suivi : lien vers le suivi ; relance téléphone : « Pas de réponse : clore le suivi » */
-export function taskSuiviBtns(t){
-  const p = t.prospect_id ? byId('prospects', t.prospect_id) : null; if (!p) return '';
-  return `<button class="btn sm ghost" data-act="openSuivi" data-id="${p.id}" title="Ouvrir le suivi${p.status==='Closed'?' (clos)':''}">Suivi ↗</button>`
-    + (t.auto_kind === 'relance_tel' && !isDone(t) && p.status !== 'Closed' ? `<button class="btn sm ghost danger" data-act="noAnswerClose" data-id="${t.id}">Pas de réponse : clore le suivi</button>` : '');
+/**
+ * Accès direct depuis une tâche : sa structure, son suivi (celui de la tâche, sinon le suivi ouvert le plus récent
+ * de la structure pour les mêmes artistes) ; relance téléphone : « Pas de réponse : clore le suivi »
+ */
+export function taskSuiviBtns(t, {structure=true}={}){
+  let p = t.prospect_id ? byId('prospects', t.prospect_id) : null;
+  const stId = t.structure_id || p?.structure_id || byId('shows', t.show_id)?.structure_id;
+  if (!p && stId){
+    const pids = projIds(t);
+    p = prospectsOfStructure(stId).filter(x => x.status !== 'Closed')
+      .sort((a, b) => (pids.some(id => projIds(b).includes(id)) - pids.some(id => projIds(a).includes(id))) || (b.last_contact || '').localeCompare(a.last_contact || ''))[0] || null;
+  }
+  return (structure && stId && !(S.view === "structures" && S.structurePage === stId) ? `<button class="btn sm ghost" data-act="openStructure" data-id="${stId}" title="Ouvrir la fiche de ${esc(structName(stId))}">Structure ↗</button>` : '')
+    + (p ? `<button class="btn sm ghost" data-act="openSuivi" data-id="${p.id}" title="Ouvrir le suivi${p.status==='Closed'?' (clos)':''}">Suivi ↗</button>` : '')
+    + (p && t.prospect_id === p.id && t.auto_kind === 'relance_tel' && !isDone(t) && p.status !== 'Closed' ? `<button class="btn sm ghost danger" data-act="noAnswerClose" data-id="${t.id}">Pas de réponse : clore le suivi</button>` : '');
 }
 
 export function taskSection(all){

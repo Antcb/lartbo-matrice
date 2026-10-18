@@ -16,6 +16,10 @@
  * 7. "link_folders" : rattache les dossiers de dates déjà existants ;
  *    "folder_path" : chemin du dossier (pour le Finder).
  * 8. "file_piece" : range une pièce du budget dans 02_Finance du dossier de la date (doublons signalés).
+ * 9. "prospect_mail" / "prospect_reply" / "prospect_status" : prospection envoyée depuis production@ (Chloé).
+ *    Nécessite le service « Gmail API » (Services › + › Gmail API) pour les relances dans le même fil.
+ * 10. "move_items" : déplace des fichiers / dossiers (rangement du dossier LARTBOTRICE) sans changer leur ID.
+ * 11. "save_urls" : enregistre dans un dossier Drive des fichiers publics (copie du code depuis GitHub), en remplaçant l'ancienne version.
  *
  * Le lien se fait par ID : le dossier peut ensuite être renommé ou déplacé
  * librement sans rien casser.
@@ -55,6 +59,11 @@ function doPost(e) {
     else if (action === 'rename_audit') out = renameAudit();
     else if (action === 'rename_apply') out = renameApply();
     else if (action === 'file_piece') out = filePiece_(body);
+    else if (action === 'prospect_mail') out = pMail_(body);
+    else if (action === 'prospect_reply') out = pReply_(body);
+    else if (action === 'prospect_status') out = pStatus_(body.thread_id);
+    else if (action === 'move_items') out = moveItems_(body.items);
+    else if (action === 'save_urls') out = saveUrls_(body.folder_id, body.files);
     else if (action === 'ping') out = { ok: true, account: Session.getEffectiveUser().getEmail() };
     else out = { ok: false, error: 'Action inconnue : ' + action };
   } catch (err) {
@@ -725,4 +734,118 @@ function renameApply() {
     } catch (err) { sh.getRange(i + 1, 2).setValue(r[1] + ' ✖ ' + err); }
   }
   return { ok: true, renamed: done };
+}
+
+// ─────────────── Prospection depuis production@ (même fonctionnement que le script Prospection d'anthony@) ───────────────
+
+/** Pièces jointes : fichiers Drive {id} ou fichiers de la Matrice {url (lien temporaire), name} */
+function pBlobs_(list) {
+  return (list || []).map(function (f) {
+    try {
+      if (f.id) return DriveApp.getFileById(f.id).getBlob();
+      if (f.url) return UrlFetchApp.fetch(f.url).getBlob().setName(f.name || 'piece-jointe');
+    } catch (err) { Logger.log('Pièce jointe : ' + err); }
+    return null;
+  }).filter(Boolean);
+}
+
+/** Nouveau mail de prospection : brouillon, ou envoi direct (send: true) */
+function pMail_(b) {
+  var opts = { htmlBody: b.html || '', name: b.from_name || "L'ArtBoristerie Productions" };
+  if (b.cc) opts.cc = b.cc;
+  var att = pBlobs_(b.attachments); if (att.length) opts.attachments = att;
+  var draft = GmailApp.createDraft(b.to || '', b.subject || '', plain_(b.html), opts);
+  if (b.send) {
+    var msg = draft.send();
+    return { ok: true, sent: true, thread_id: msg.getThread().getId(), sent_at: msg.getDate().toISOString() };
+  }
+  var m = draft.getMessage();
+  return { ok: true, sent: false, thread_id: m.getThread().getId(), url: 'https://mail.google.com/mail/u/0/#drafts?compose=' + m.getId() };
+}
+
+/** Encodage MIME (Gmail API) */
+function pB64_(bytes) { return Utilities.base64Encode(bytes).replace(/(.{76})/g, '$1\r\n'); }
+function pEnc_(s) { return '=?UTF-8?B?' + Utilities.base64Encode(s, Utilities.Charset.UTF_8) + '?='; }
+
+/** Relance : réponse dans le fil du mail de prospection (l'historique reste en dessous), brouillon ou envoi direct */
+function pReply_(b) {
+  var thread = GmailApp.getThreadById(b.thread_id);
+  if (!thread) throw new Error('Mail de prospection introuvable dans Gmail (supprimé ?)');
+  var me = Session.getEffectiveUser().getEmail().toLowerCase();
+  var msgs = thread.getMessages().filter(function (m) { return !m.isDraft(); });
+  if (!msgs.length) throw new Error('Le mail de prospection n’a pas encore été envoyé (il est toujours en brouillon)');
+  var last = msgs[msgs.length - 1];
+  var fromMe = last.getFrom().toLowerCase().indexOf(me) >= 0;
+  var to = b.to || (fromMe ? last.getTo() : last.getFrom());
+  var subject = thread.getFirstMessageSubject();
+  if (!/^re\s*:/i.test(subject)) subject = 'Re: ' + subject;
+  var msgId = last.getHeader('Message-ID'), refs = (last.getHeader('References') || '') + ' ' + msgId;
+  // le texte de la relance, puis l'historique cité (comme Gmail)
+  var quoted = '<br><div class="gmail_quote"><div>Le ' + Utilities.formatDate(last.getDate(), 'Europe/Paris', "dd/MM/yyyy 'à' HH:mm") + ', '
+    + last.getFrom().replace(/</g, '&lt;').replace(/>/g, '&gt;') + ' a écrit :</div><blockquote style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">'
+    + last.getBody() + '</blockquote></div>';
+  var html = (b.html || '') + quoted;
+  var boundary = 'artbo' + Date.now();
+  var lines = [
+    'To: ' + to, b.cc ? 'Cc: ' + b.cc : null, 'Subject: ' + pEnc_(subject),
+    'In-Reply-To: ' + msgId, 'References: ' + refs.trim(), 'MIME-Version: 1.0',
+    'Content-Type: multipart/mixed; boundary="' + boundary + '"', '',
+    '--' + boundary, 'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '',
+    pB64_(Utilities.newBlob(html).getBytes())
+  ].filter(function (x) { return x !== null; });
+  pBlobs_(b.attachments).forEach(function (f) {
+    lines.push('--' + boundary, 'Content-Type: ' + (f.getContentType() || 'application/octet-stream') + '; name="' + pEnc_(f.getName()) + '"',
+      'Content-Disposition: attachment; filename="' + pEnc_(f.getName()) + '"', 'Content-Transfer-Encoding: base64', '', pB64_(f.getBytes()));
+  });
+  lines.push('--' + boundary + '--');
+  var raw = Utilities.base64EncodeWebSafe(Utilities.newBlob(lines.join('\r\n')).getBytes());
+  if (typeof Gmail === 'undefined') throw new Error('Active « Gmail API » dans le script Google de production@ (Services › + › Gmail API), puis redéploie');
+  var draft = Gmail.Users.Drafts.create({ message: { raw: raw, threadId: b.thread_id } }, 'me');
+  if (b.send) {
+    var sent = Gmail.Users.Drafts.send({ id: draft.id }, 'me');
+    return { ok: true, sent: true, thread_id: sent.threadId, sent_at: new Date().toISOString(), to: to };
+  }
+  return { ok: true, sent: false, thread_id: b.thread_id, to: to, url: 'https://mail.google.com/mail/u/0/#drafts' };
+}
+
+/** Le brouillon est-il parti ? L'organisateur a-t-il répondu ? */
+function pStatus_(threadId) {
+  var thread = GmailApp.getThreadById(threadId);
+  if (!thread) return { ok: true, missing: true };
+  var me = Session.getEffectiveUser().getEmail().toLowerCase();
+  var sent = [], reply = null;
+  thread.getMessages().forEach(function (m) {
+    if (m.isDraft()) return;
+    var mine = m.getFrom().toLowerCase().indexOf(me) >= 0;
+    if (mine) sent.push(m.getDate().toISOString());
+    else reply = m.getDate().toISOString();
+  });
+  return { ok: true, sent: sent, reply_at: reply };
+}
+
+/** Déplace des fichiers ou dossiers : [{ id, to, name? }] ; l'ID ne change pas, donc les liens de la Matrice restent bons */
+function moveItems_(items) {
+  var done = [], errors = [];
+  (items || []).forEach(function (it) {
+    try {
+      var dest = DriveApp.getFolderById(it.to), item;
+      try { item = DriveApp.getFolderById(it.id); } catch (e) { item = DriveApp.getFileById(it.id); }
+      item.moveTo(dest);
+      if (it.name) item.setName(it.name);
+      done.push(it.id);
+    } catch (err) { errors.push(it.id + ' : ' + err); }
+  });
+  return { ok: true, moved: done.length, errors: errors };
+}
+
+/** Copie des fichiers publics (code sur GitHub) dans un dossier : [{ url, name }] ; l'ancienne version du même nom part à la corbeille */
+function saveUrls_(folderId, files) {
+  var folder = DriveApp.getFolderById(folderId), saved = [];
+  (files || []).forEach(function (f) {
+    var blob = UrlFetchApp.fetch(f.url, { followRedirects: true }).getBlob().setName(f.name);
+    var old = folder.getFilesByName(f.name);
+    while (old.hasNext()) old.next().setTrashed(true);
+    saved.push(folder.createFile(blob).getId());
+  });
+  return { ok: true, saved: saved.length };
 }
