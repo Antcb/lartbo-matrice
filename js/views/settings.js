@@ -107,9 +107,9 @@ export function viewSettings(){
 }
 
 async function setSetting(key, value){
-  const {error} = await sb.from('settings').update({value}).eq('key', key);
+  const {error} = await sb.from('settings').upsert({key, value}, {onConflict: 'key'});
   if (error) { toast(error.message, true); return false; }
-  const s = S.db.settings.find(x=>x.key===key); if (s) s.value = value; touch('settings');
+  const s = S.db.settings.find(x=>x.key===key); if (s) s.value = value; else S.db.settings.push({key, value}); touch('settings');
   return true;
 }
 

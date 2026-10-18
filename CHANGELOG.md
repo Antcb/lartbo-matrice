@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.22.0 — 18/10/2026
+- Relecture Greptile corrigée (formulaire salariés, réglages, sauvegarde complète, budget, relances, adresses tapées) ; pièces rangées dans le Drive de la date avec détection des doublons
+
+
 ## 1.21.1 — 18/10/2026
 - Synchroniser Pennylane (factures payées → « Payée »), dépenses déduites du compte The Locos, solde Martigny reçu
 

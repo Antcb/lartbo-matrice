@@ -53,7 +53,9 @@ Deno.serve(async (req) => {
     const ctx = { users: {} as Record<string, string> };
 
     const { data: todo, error } = await sb.from('prospects')
-      .select('id,notion_id').not('notion_id', 'is', null).is('content_imported_at', null).limit(limit);
+      .select('id,notion_id').not('notion_id', 'is', null).is('content_imported_at', null)
+      // une fiche en erreur n'est pas marquée importée : elle est retentée avec { retry: true }
+      .is(body.retry ? 'content_imported_at' : 'import_error', null).limit(limit);
     if (error) throw error;
 
     const done: string[] = [];
@@ -96,12 +98,12 @@ Deno.serve(async (req) => {
         done.push(p.id);
       } catch (err) {
         await sb.from('prospects').update({
-          import_error: String((err as any)?.message || err).slice(0, 500), content_imported_at: new Date().toISOString(),
+          import_error: String((err as any)?.message || err).slice(0, 500),
         }).eq('id', p.id);
       }
     }
     const { count } = await sb.from('prospects').select('id', { count: 'exact', head: true })
-      .not('notion_id', 'is', null).is('content_imported_at', null);
+      .not('notion_id', 'is', null).is('content_imported_at', null).is('import_error', null);
     return Response.json({ traites: (todo || []).length, ok: done.length, restants: count });
   } catch (err) {
     return Response.json({ error: String((err as any)?.message || err) }, { status: 500 });

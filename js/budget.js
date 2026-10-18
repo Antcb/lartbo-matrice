@@ -26,6 +26,9 @@ export const offLinesOf = projectId => S.db.budget_lines.filter(l => !l.show_id 
 export const commissionOf = s => paymentsOf(s.id).find(p => p.kind === 'artbo');
 export const commissionAmount = s => { const p = commissionOf(s); return p ? payAmount(p) || 0 : r2((Number(s.fee_ht)||0) * (Number(s.artbo_pct ?? 15)||0) / 100); };
 
+/** Ligne de solde artiste (automatique ou ajoutée à la main / par une pièce) : comptée une seule fois, dans le solde */
+export const isSolde = l => l.auto === 'solde_artiste' || l.category === 'Solde artiste';
+
 const staffQty = showId => linesOf(showId).filter(l => l.category === 'Staff').reduce((t,l) => t + (Number(l.qty)||0), 0);
 
 /** Montant prévu HT d'une ligne (saisi, ou calculé pour les lignes automatiques) */
@@ -35,7 +38,10 @@ export function lineForecast(l){
   const s = byId('shows', l.show_id);
   if (l.auto === 'movinmotion' && s) return r2(payslipCost() * staffQty(s.id));
   if (l.auto === 'cnm' && s) return isFree(s) ? r2((Number(s.fee_ht)||0) * cnmPct() / 100) : 0;
-  if (l.auto === 'solde_artiste' && s) return Math.max(0, r2(availableForArtist(s)));
+  if (l.auto === 'solde_artiste' && s){   // ce qui reste du cachet, moins les autres soldes déjà notés
+    const others = linesOf(s.id).filter(x => isSolde(x) && x.id !== l.id).reduce((t,x) => t + (x.amount != null ? Number(x.amount) : Number(x.forecast)||0), 0);
+    return Math.max(0, r2(availableForArtist(s) - others));
+  }
   return null;
 }
 /** Montant retenu : le réel s'il est connu, sinon le prévu */
@@ -44,16 +50,16 @@ export const lineStatus = l => l.paid_at || l.reimbursed_at ? 'paid' : (l.doc_nu
 
 /** Cachet − commission − dépenses (hors solde artiste) = ce qui peut revenir à l'artiste */
 export function availableForArtist(s){
-  const out = linesOf(s.id).filter(l => l.auto !== 'solde_artiste').reduce((t,l) => t + lineValue(l), 0);
+  const out = linesOf(s.id).filter(l => !isSolde(l)).reduce((t,l) => t + lineValue(l), 0);
   return (Number(s.fee_ht)||0) - commissionAmount(s) - out;
 }
 
 export function showBudget(s){
   const lines = linesOf(s.id);
   const fee = Number(s.fee_ht)||0, com = commissionAmount(s);
-  const expenses = lines.filter(l => l.auto !== 'solde_artiste').reduce((t,l) => t + lineValue(l), 0);
-  const solde = lines.filter(l => l.auto === 'solde_artiste' || l.category === 'Solde artiste').reduce((t,l) => t + lineValue(l), 0);
-  const forecastExp = lines.filter(l => l.auto !== 'solde_artiste').reduce((t,l) => t + (lineForecast(l) ?? (Number(l.amount)||0)), 0);
+  const expenses = lines.filter(l => !isSolde(l)).reduce((t,l) => t + lineValue(l), 0);
+  const solde = lines.filter(isSolde).reduce((t,l) => t + lineValue(l), 0);
+  const forecastExp = lines.filter(l => !isSolde(l)).reduce((t,l) => t + (lineForecast(l) ?? (Number(l.amount)||0)), 0);
   const docs = lines.filter(l => lineValue(l) !== 0);
   return {fee, com, expenses: r2(expenses), forecastExp: r2(forecastExp), available: r2(fee - com - expenses), solde: r2(solde),
     result: r2(fee - com - expenses - solde), lines,
@@ -67,7 +73,8 @@ const payee = p => p.payee || 'compte';
 
 /**
  * Compte dédié : solde réel (ce qui est arrivé − ce qui est parti) et prévu en fin de tournée.
- * Entrées : acomptes / soldes encaissés (HT). Sorties : commission L'ArtBo virée, lignes payées par le compte.
+ * Entrées : acomptes / soldes encaissés (HT). Sorties : commission L'ArtBo virée, lignes payées par le compte,
+ * avances (L'ArtBo, une personne) une fois remboursées ou déduites du compte. Payé par l'organisateur ou l'artiste : hors compte.
  */
 export function accountOf(projectId){
   const p = byId('projects', projectId);
@@ -85,9 +92,13 @@ export function accountOf(projectId){
     const v = lineValue(l);
     a.byCat[l.category || 'Autres'] = (a.byCat[l.category || 'Autres']||0) + v;
     // payé par le compte, ou avancé par L'ArtBo / une personne puis remboursé par le compte
-    if ((l.payer || 'compte') === 'compte') l.paid_at ? a.outDone += v : a.outTodo += v;
-    else if (l.reimbursed_at) a.outDone += v;
-    else if (l.payer === 'artbo' && l.paid_at) a.artboAdvance += v;
+    const payer = l.payer || 'compte';
+    if (payer === 'compte') l.paid_at ? a.outDone += v : a.outTodo += v;
+    else if (payer === 'artbo' || payer === 'autre'){
+      // avance de L'ArtBo ou d'une personne : sort du compte quand elle est remboursée / déduite, sinon reste à payer
+      if (l.reimbursed_at) a.outDone += v;
+      else { a.outTodo += v; if (payer === 'artbo' && l.paid_at) a.artboAdvance += v; }
+    }
   }
   Object.keys(a).forEach(k => typeof a[k] === 'number' && (a[k] = r2(a[k])));
   a.real = r2(a.opening + a.inDone - a.outDone);

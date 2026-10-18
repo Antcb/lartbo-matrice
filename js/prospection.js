@@ -189,9 +189,19 @@ async function recordRelance(p, st, {to, html, send, out, contact}){
   const before = historyText(p);
   const log = await insert('prospect_logs', {prospect_id: p.id, date: send ? now : null, kind: 'Mail', contact_name: contact?.display_name || to, contact_id: contact?.id || null,
     author: S.user.email, body: `**Relance n°${n}${send ? '' : DRAFT_MARK}** (en réponse à « ${p.mail_subject || ''} »)${before ? `\n_Avant : ${before}_` : ''}\n\n${plain(html)}`});
-  await save('prospects', p.id, {relances: n, mail_log_id: log?.id || null, ...(send ? {last_contact: now} : {})}, {rerender: false});
-  await relanceTask(st, projIds(p), p.mail_subject, send, byId('prospects', p.id), n);
+  // une relance ne compte (et ne fait avancer la tâche) qu'une fois partie : en brouillon, on attend l'envoi depuis Gmail
+  await save('prospects', p.id, {mail_log_id: log?.id || null, ...(send ? {relances: n, last_contact: now} : {})}, {rerender: false});
+  if (send) await relanceTask(st, projIds(p), p.mail_subject, true, byId('prospects', p.id), n);
+  else toast('Relance en brouillon dans Gmail : elle sera comptée quand elle sera envoyée');
   render();
+}
+
+/** Brouillon de relance parti depuis Gmail : on la compte et on passe à la tâche suivante */
+async function relanceSent(p){
+  const st = byId('structures', p.structure_id); if (!st) return;
+  const n = (p.relances || 0) + 1;
+  await save('prospects', p.id, {relances: n}, {rerender: false});
+  await relanceTask(st, projIds(p), p.mail_subject, true, byId('prospects', p.id), n);
 }
 
 /** Clôt les tâches de relance encore ouvertes du suivi (ou, pour les anciennes, de la structure) */
@@ -249,7 +259,10 @@ export async function checkProspect(p, force=false){
     if (log && !log.date){
       // un envoi postérieur à la préparation du brouillon (sinon il est toujours en brouillon)
       const after = log.created_at ? sent.find(d => d.slice(0, 19) >= log.created_at.slice(0, 19)) : null;
-      if (after) await save('prospect_logs', log.id, {date: after.slice(0, 10), body: String(log.body || '').replace(DRAFT_MARK, '')}, {rerender: false});
+      if (after){
+        await save('prospect_logs', log.id, {date: after.slice(0, 10), body: String(log.body || '').replace(DRAFT_MARK, '')}, {rerender: false});
+        if (/^\*\*Relance n°/.test(log.body || '')) await relanceSent(byId('prospects', p.id));
+      }
       if (after) patch.last_contact = [p.last_contact, after.slice(0, 10)].filter(Boolean).sort().pop();
     }
     if (Object.keys(patch).length){ await save('prospects', p.id, patch, {rerender: false}); render(); }
