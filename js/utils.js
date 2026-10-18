@@ -94,3 +94,18 @@ export const period = s => {
   const sameMonth = a.getMonth()===b.getMonth() && a.getFullYear()===b.getFullYear();
   return sameMonth ? `${a.getDate()} → ${b.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}` : `${a.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} → ${b.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}`;
 };
+
+/**
+ * Prénom pour les balises {{contact}} : « Louise Bourbonnais » → Louise, « Flore / Nicolas » → Flore et Nicolas,
+ * pas d'adresse mail ni de nom de structure. Les prénoms composés saisis avec un nom (Jean Michel + Proust) restent entiers.
+ */
+const ORG_WORDS = /^(association|asso|service|p[oô]le|ch[aâ]teau|le|la|les|l['’]|festival|mairie|ville|comit[ée]|ing[ée]nieur|r[ée]gie|r[ée]gisseur|bureau|office|communaut[ée]|salle|th[ée][aâ]tre|centre|direction|[ée]quipe|team|booking|info|infos|contact|programmation|accueil|production|admin|administration|mjc|smac|scène|scene|club|bar|cie|compagnie|soci[ée]t[ée]|sarl|sas)$/i;
+export function firstName(c){
+  if (!c) return '';
+  const one = (s, keepWhole) => { const w = String(s || '').replace(/["“”].*?["“”]/g, ' ').trim().split(/\s+/).filter(Boolean);
+    if (!w.length || w[0].includes('@') || ORG_WORDS.test(w[0])) return ''; return keepWhole ? w.join(' ') : w[0]; };
+  const src = (c.first_name || '').replace(/\(.*?\)/g, ' ').trim(), hasLast = !!(c.last_name || '').trim();
+  const parts = (src || (c.display_name || '').replace(/\(.*?\)/g, ' ')).split(/\s*(?:\/|;|&|\+|\bet\b|\bou\b)\s*/i).filter(Boolean);
+  const names = parts.map(p => one(p, !!src && hasLast && parts.length === 1)).filter(Boolean);
+  return names.length > 1 ? names.slice(0, -1).join(', ') + ' et ' + names.at(-1) : names[0] || '';
+}

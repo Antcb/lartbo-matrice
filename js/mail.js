@@ -34,6 +34,9 @@ export const PROSPECT_TAGS = [
   ['contact','Prénom du destinataire'], ['structure','Structure'], ['artiste','Artiste(s) choisi(s)'], ['ville','Ville'], ['cp','Département'],
   ['festival','Nom du festival / de la salle'], ['dates_festival','Dates du festival'], ['jauge','Jauge'],
   ['date_proposee','Date proposée'], ['annee','Année (de la date proposée, sinon l’an prochain)'],
+  ['date_concert','Invitation : date du concert choisi'], ['date_concert_court','Invitation : date du concert (JJ/MM/AA)'], ['ville_concert','Invitation : ville du concert'], ['cp_concert','Invitation : département du concert'],
+  ['lieu_concert','Invitation : salle / festival du concert'], ['date_reponse','Invitation : réponse attendue avant (2 jours avant le concert)'],
+  ['lien_projet','Lien de la page pro de l’artiste (fiche artiste › liens)'], ['lien_evenement','Lien de l’événement (billetterie, Facebook…)'],
 ];
 
 /**

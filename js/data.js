@@ -36,6 +36,7 @@ export async function save(table, id, patch, {rerender=true}={}){
   if (error){ if (row) Object.assign(row, before); touch(table); toast('Enregistrement impossible : '+error.message, true); render(); return null; }
   Object.assign(row, data); touch(table);
   if (table==='shows' && (patch.status || patch.project_id)) await refreshShowSide(id);
+  if (table==='shows' && ('ticketing_type' in patch || 'department' in patch || 'structure_id' in patch)) await (await import('./budget-actions.js')).syncCnmLine(id);
   if (rerender) render();
   return before;
 }

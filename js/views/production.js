@@ -3,7 +3,7 @@
  * Chaque date se déplie : suivi admin, commissions, dossier Drive, facturation.
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
-import { netArtbo, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
+import { BILL_KINDS, billPct, billingOf, netArtbo, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
 import { byId, projName, setting, showsFiltered, structName } from '../selectors.js';
 import { lateSteps, remindersOf } from '../reminders.js';
@@ -11,7 +11,7 @@ import { S } from '../state.js';
 import { filterBar, stBadge, stSelect, viewHead } from '../ui/bits.js';
 import { cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
-import { esc, eur, fmtDate, matches } from '../utils.js';
+import { esc, eur2, fmtDate, matches } from '../utils.js';
 import { payerLabel } from '../budget.js';
 import { projectBudgetHTML, showBudgetHTML } from './budget.js';
 
@@ -36,10 +36,10 @@ export function viewProduction(){
   if (!all.length) return head + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
   return head + `
     <div class="stat-row">
-      <div class="stat"><b>${eur(artbo)}</b><span>Commissions L'ArtBo</span></div>
-      <div class="stat"><b>${eur(partner)}</b><span>dont partenaires</span></div>
-      <div class="stat"><b>${eur(artbo-partner)}</b><span>Net L'ArtBo</span></div>
-      <div class="stat"><b>${eur(toCollect)}</b><span>Reste à encaisser (acomptes, soldes)</span></div>
+      <div class="stat"><b>${eur2(artbo)}</b><span>Commissions L'ArtBo</span></div>
+      <div class="stat"><b>${eur2(partner)}</b><span>dont partenaires</span></div>
+      <div class="stat"><b>${eur2(artbo-partner)}</b><span>Net L'ArtBo</span></div>
+      <div class="stat"><b>${eur2(toCollect)}</b><span>Reste à encaisser (acomptes, soldes)</span></div>
       <div class="stat"><b style="${late?'color:var(--danger)':''}">${late}</b><span>Relance${late>1?'s':''} en retard</span></div>
     </div>
     ${shows.length ? order.map(pid => `<section class="group"><div class="group-head"><h2>${esc(projName(pid)||'Sans projet')}</h2><span class="count">${groups[pid].length}</span></div>
@@ -58,7 +58,7 @@ function prodRow(s){
   return `<div class="prod-row ${open?'open':''}" id="prod-${s.id}">
     <div class="prod-head" data-act="toggleProd" data-id="${s.id}" aria-expanded="${open}">
       <div class="day"><b>${d?String(d.getDate()).padStart(2,'0'):'—'}</b><span>${d?d.toLocaleDateString('fr-FR',{month:'short', year:'2-digit'}):''}</span></div>
-      <div class="what"><b>${esc(s.venue)}</b> ${booking?'<span class="badge tag">Booking seul</span>':''}${s.structure_id?` <a href="#" class="struct-link" data-act="openStructure" data-id="${s.structure_id}" title="Ouvrir la fiche de la structure">${esc(structName(s.structure_id))} ↗</a>`:''}<div class="sub">${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))} · ${esc(s.contract_type||'Contrat ?')} · ${eur(s.fee_ht)} HT · ${eur(ttc(s.fee_ht, showVat(s)))} TTC</div></div>
+      <div class="what"><b>${esc(s.venue)}</b> ${booking?'<span class="badge tag">Booking seul</span>':''}${s.structure_id?` <a href="#" class="struct-link" data-act="openStructure" data-id="${s.structure_id}" title="Ouvrir la fiche de la structure">${esc(structName(s.structure_id))} ↗</a>`:''}<div class="sub">${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))} · ${esc(s.contract_type||'Contrat ?')} · ${eur2(s.fee_ht)} HT · ${eur2(ttc(s.fee_ht, showVat(s)))} TTC${billWarn(s, booking)}</div></div>
       <div class="progress" title="${checks.filter(c=>c.ok).length}/${checks.length} étapes faites${late.size?` · ${late.size} en retard`:''}">${checks.map(c=>`<i class="${c.ok?'ok':c.late?'late':''}"></i>`).join('')}</div>
       ${stSelect(s)}
       <span class="chev" aria-hidden="true">▸</span>
@@ -83,7 +83,7 @@ function prodBody(s, booking, steps, pays, late){
       <div class="steps">
         <label>Cachet HT</label>${cIn('shows',s.id,'fee_ht',s.fee_ht,'number')}
         <label>TVA du cachet (%)</label>${cIn('shows',s.id,'vat_rate',s.vat_rate,'number','placeholder="5.5" class="narrow"')}
-        <label>Cachet TTC</label><b>${eur(ttc(s.fee_ht, showVat(s)))}</b>
+        <label>Cachet TTC</label><b>${eur2(ttc(s.fee_ht, showVat(s)))}</b>
         <label>Heure de passage</label>${cIn('shows',s.id,'show_time',s.show_time,'text','placeholder="ex. 22h30" class="narrow"')}
         <label>Durée du set</label>${cIn('shows',s.id,'set_length',s.set_length,'text','placeholder="ex. 1h15" class="narrow"')}
         ${booking ? '' : `<label>Invitations producteur</label>${cIn('shows',s.id,'invitations',s.invitations,'number','placeholder="10" class="narrow"')}`}
@@ -93,7 +93,7 @@ function prodBody(s, booking, steps, pays, late){
         ${booking ? '' : `<label>Partenaire</label>${cSel('shows',s.id,'partner_id',s.partner_id,partners)}
         <label>% partenaire</label>${cIn('shows',s.id,'partner_pct',s.partner_pct,'number')}`}
       </div>
-      <p class="muted" style="font-size:13px;margin:8px 0 0">${booking ? `Commission : <b>${eur(netArtbo(s))}</b>` : `Le % partenaire s'applique à la commission L'ArtBo. Net L'ArtBo : <b>${eur(netArtbo(s))}</b>`}</p>
+      <p class="muted" style="font-size:13px;margin:8px 0 0">${booking ? `Commission : <b>${eur2(netArtbo(s))}</b>` : `Le % partenaire s'applique à la commission L'ArtBo. Net L'ArtBo : <b>${eur2(netArtbo(s))}</b>`}</p>
       <div class="drive">${driveHTML(s)}</div>
     </div>
     ${booking ? '' : showBudgetHTML(s)}
@@ -105,10 +105,11 @@ function prodBody(s, booking, steps, pays, late){
         <tbody>${pays.map(p=>{ const a=payAmount(p), ov=p.amount!=null;
           return `<tr>
           <td>${cIn('show_payments',p.id,'label',p.label)}</td>
-          <td class="num">${['cnm','autre','acompte','solde'].includes(p.kind) ? cIn('show_payments',p.id,'pct',p.pct,'number','class="narrow"') : `<span class="muted">${payPct(p)??'—'}</span>`}</td>
+          <td class="num">${BILL_KINDS.includes(p.kind) ? `<input type="number" step="any" inputmode="decimal" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="pct" value="${pctVal(billPct(p))}" aria-label="% du cachet">`
+            : ['cnm','autre'].includes(p.kind) ? cIn('show_payments',p.id,'pct',p.pct,'number','class="narrow"') : `<span class="muted">${payPct(p)??'—'}</span>`}</td>
           <td class="num"><input type="number" step="any" data-t="show_payments" data-id="${p.id}" data-f="amount" value="${ov?p.amount:''}" placeholder="${a==null?'à saisir':a}" title="Laisse vide pour le calcul automatique" class="${ov?'override':''}"></td>
           <td class="num"><input type="number" step="any" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="vat_rate" value="${p.vat_rate??''}" placeholder="${payVat(p)}" aria-label="TVA %"></td>
-          <td class="num nowrap">${eur(ttc(a, payVat(p)))}</td>
+          <td class="num nowrap">${BILL_KINDS.includes(p.kind) && s.fee_ht ? `<input type="number" step="any" inputmode="decimal" data-t="show_payments" data-id="${p.id}" data-f="amount_ttc" value="${a==null?'':ttc(a, payVat(p))}" aria-label="Montant TTC" title="Saisis le TTC : le HT et le % se calculent">` : eur2(ttc(a, payVat(p)))}</td>
           <td>${payeeCell(s, p, booking)}</td>
           <td>${cIn('show_payments',p.id,'invoice_number',p.invoice_number,'text','style="min-width:90px"')}</td>
           <td class="${late.has(p.kind)&&!p.sent_at?'late-cell':''}">${cIn('show_payments',p.id,'sent_at',p.sent_at,'date')}</td>
@@ -116,7 +117,7 @@ function prodBody(s, booking, steps, pays, late){
           <td class="${p.paid_at?'done-cell':''}">${cIn('show_payments',p.id,'paid_at',p.paid_at,'date')}</td>
           <td>${pennylaneCell(p)}</td>
           <td><button class="btn icon sm ghost danger" data-act="delPay" data-id="${p.id}" aria-label="Supprimer la ligne">✕</button></td></tr>`;}).join('')}
-        </tbody></table></div>
+        </tbody>${booking ? '' : billFoot(s)}</table></div>
       <div class="vh-actions" style="margin-top:10px">
         ${booking ? '' : `<button class="btn sm" data-act="addPay" data-kind="acompte" data-id="${s.id}">Ajouter un acompte</button>
         <button class="btn sm" data-act="addPay" data-kind="cnm" data-id="${s.id}">Ajouter la taxe CNM</button>`}
@@ -126,9 +127,28 @@ function prodBody(s, booking, steps, pays, late){
         <button class="btn sm ghost" data-act="editShow" data-id="${s.id}">Fiche complète de la date</button>
         ${s.structure_id ? `<button class="btn sm ghost" data-act="openStructure" data-id="${s.structure_id}">Fiche de la structure</button>` : ''}
       </div>
-      <p class="muted" style="font-size:12px;margin:8px 0 0">Montants HT. Vide = calcul automatique sur le cachet HT ; un montant saisi à la main apparaît en orange. TVA par défaut : 5,5 % sur le cachet, 20 % sur les commissions. Le solde suit l’acompte (100 % − acomptes).</p>
+      <p class="muted" style="font-size:12px;margin:8px 0 0">Montants HT. Vide = calcul automatique sur le cachet HT ; un montant saisi à la main apparaît en orange. TVA par défaut : 5,5 % sur le cachet, 20 % sur les commissions. Saisis le %, le HT ou le TTC : les deux autres se calculent. Le solde prend ce qui reste (100 % − acomptes) tant qu’il n’est pas envoyé ; acomptes + solde ne dépassent jamais 100 % du cachet (commissions et autres lignes à part).</p>
     </div>
   </div>`;
+}
+
+const pctVal = v => v == null ? '' : Math.round(v * 100) / 100;
+
+/** Total des factures (acomptes + solde) face au cachet */
+function billFoot(s){
+  const b = billingOf(s), ok = Math.abs(b.gap) < 0.01;
+  return `<tfoot><tr class="bill-total ${ok ? 'ok' : 'warn'}">
+    <td><b>Total factures</b><div class="muted" style="font-size:11px">acomptes + solde</div></td>
+    <td class="num"><b>${pctVal(b.pct)} %</b></td><td class="num nowrap"><b>${eur2(b.ht)}</b></td><td></td><td class="num nowrap"><b>${eur2(b.ttc)}</b></td>
+    <td colspan="7">${ok ? `<span class="ok-badge">✓ = cachet (${eur2(b.fee)} HT · ${eur2(b.feeTtc)} TTC)</span>`
+      : `<span class="warn-badge">${b.gap > 0 ? `Il manque ${eur2(b.gap)} HT` : `${eur2(-b.gap)} HT de trop`} par rapport au cachet (${eur2(b.fee)} HT)</span>`}
+      <span class="muted nowrap"> · envoyées ${eur2(b.sentHt)} HT · payées ${eur2(b.paidHt)} HT${b.otherHt ? ` · autres lignes ${eur2(b.otherHt)} HT` : ''}</span></td></tr></tfoot>`;
+}
+/** Alerte dans l'en-tête de la date quand les factures ne tombent pas juste */
+function billWarn(s, booking){
+  if (booking || !s.fee_ht) return '';
+  const b = billingOf(s);
+  return b.lines.length && Math.abs(b.gap) >= 0.01 ? ` <span class="warn-badge" title="Acomptes + solde ≠ cachet">factures ${pctVal(b.pct)} %</span>` : '';
 }
 
 /** Où arrive l'argent d'une ligne de facturation */

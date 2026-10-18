@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.24.0 — 18/10/2026
+- Facturation : % ↔ HT ↔ TTC liés, solde automatique, 100 % max, total des factures face au cachet, montants au centime ; taxe CNM seulement si la date est concernée ; défilement gardé dans les tableaux ; To do : accès direct structure et suivi ; {{contact}} = prénom seul ; prospection depuis production@ avec la signature de Chloé ; invitation remplie depuis une date confirmée
+
+
 ## 1.23.0 — 18/10/2026
 - Modèles de prospection (Nova Noir, Rosters 2027, Invitation, MaMA, Réponse Tryo) ; modèles de mail rangés par type dans des groupes dépliables
 

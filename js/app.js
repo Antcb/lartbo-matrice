@@ -78,10 +78,27 @@ function focusKey(a){
   return null;
 }
 
+/** Zones qui défilent (tableaux larges, listes) : position gardée d'un affichage à l'autre */
+const SCROLLERS = '.tbl-wrap,.subtabs,.planning,.side,.route-box,.checks';
+const scrollKey = (el, all) => { const host = el.parentElement?.closest('[id]'); return (host?.id || '') + ':' + all.filter(x => (x.parentElement?.closest('[id]')?.id || '') === (host?.id || '')).indexOf(el); };
+function saveScroll(root){
+  const all = root ? [...root.querySelectorAll(SCROLLERS)] : [];
+  const pos = new Map(all.filter(el => el.scrollLeft || el.scrollTop).map(el => [scrollKey(el, all), [el.scrollLeft, el.scrollTop]]));
+  return {pos, x: window.scrollX, y: window.scrollY, page: pageSig()};
+}
+const pageSig = () => [S.view, S.projectPage, S.structurePage, S.suiviPage, JSON.stringify(S.tab || {})].join('|');
+function restoreScroll(root, saved){
+  if (saved.page !== pageSig()) return;   // autre page : on repart du haut
+  if (saved.pos.size){ const all = [...root.querySelectorAll(SCROLLERS)];
+    all.forEach(el => { const p = saved.pos.get(scrollKey(el, all)); if (p){ el.scrollLeft = p[0]; el.scrollTop = p[1]; } }); }
+  if (window.scrollX !== saved.x || window.scrollY !== saved.y) window.scrollTo(saved.x, saved.y);
+}
+
 export function render(){
   const app = $('#app');
   if (!S.user){ app.innerHTML = loginHTML(); return; }
   const fk = focusKey(document.activeElement);
+  const scroll = saveScroll($('#main'));
   if (!(S.view in VIEW_FN)) S.view = 'booking';
   app.innerHTML = header() + `<main id="main" class="view-${S.view}"></main>`;
   const main = $('#main');
@@ -102,6 +119,7 @@ export function render(){
   if (S.view === 'settings') refreshAiState();
   trackPage(render);
   checkVisibleProspects();
+  restoreScroll(main, scroll);
   if (fk){ let el = main.querySelector(fk.sel); if (el){ if (fk.dt) el = el.parentElement.querySelector('.dt-txt'); el.focus({preventScroll:true}); if (fk.pos!=null) try{ el.setSelectionRange(fk.pos, fk.pos); }catch(e){} } }
   if (S.focusProspect){ const el=document.getElementById('pr-'+S.focusProspect); if (el) el.scrollIntoView({block:'start'}); S.focusProspect=null; }
 }

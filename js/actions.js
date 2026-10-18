@@ -3,7 +3,7 @@
  * et les « crochets » d'enregistrement direct (clé 'change:table.champ').
  */
 import { go, render } from './app.js';
-import { paymentsOf } from './calc.js';
+import { BILL_KINDS, billPct, paymentsOf, payVat } from './calc.js';
 import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
 import { insert, openStored, refreshShowSide, remove, removeWhere, save, saveLinger, sb } from './data.js';
 import { editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
@@ -110,10 +110,10 @@ export const ACTIONS = {
     } catch (err) { toast('Copie impossible : ' + err.message, true); }
   },
   testProspectScript: async () => { try { const out = await callProspect('ping', {}); toast(`Script de prospection OK (${out.account || 'compte Google'})`); } catch (err) { toast(err.message, true); } },
-  saveSignature: async () => { const el = $('#set-sig'); if (!el) return;
-    const {error} = await sb.from('settings').upsert({key: 'prospect_signature', value: el.innerHTML});
+  saveSignature: async t => { const key = t.dataset.key || 'prospect_signature', el = $('#' + (t.dataset.el || 'set-sig')); if (!el) return;
+    const {error} = await sb.from('settings').upsert({key, value: el.innerHTML});
     if (error) return toast(error.message, true);
-    const r = S.db.settings.find(x => x.key === 'prospect_signature'); if (r) r.value = el.innerHTML; else S.db.settings.push({key: 'prospect_signature', value: el.innerHTML});
+    const r = S.db.settings.find(x => x.key === key); if (r) r.value = el.innerHTML; else S.db.settings.push({key, value: el.innerHTML});
     toast('Signature enregistrée'); },
   brevoSyncAll: async () => {
     const n = S.db.contacts.filter(c => /@/.test(c.email || '')).length;
@@ -144,7 +144,8 @@ export const ACTIONS = {
     await insert('show_payments', {show_id:showId, kind, label: PAY_KINDS[kind] + (n?` ${n+1}`:''), pct: kind==='cnm'?Number(setting('default_cnm_pct'))||null:null, sort});
     render();
   },
-  delPay: async t => { if (confirm('Supprimer cette ligne de facturation ?') && await remove('show_payments', t.dataset.id)) render(); },
+  delPay: async t => { const p = byId('show_payments', t.dataset.id);
+    if (confirm('Supprimer cette ligne de facturation ?') && await remove('show_payments', t.dataset.id)){ if (p && p.kind !== 'solde') await rebalanceSolde(p.show_id); render(); } },
 
   // Tâches
   toggleTask: async t => {
@@ -300,14 +301,49 @@ ACTIONS['change:shows.status'] = async (t, v) => isOff(v) ? saveLinger('shows', 
 
 export { go };
 
-// Acompte modifié → le solde se recalcule (100 % − total des acomptes)
+// Facturation : % ↔ HT liés, solde = 100 % − les autres lignes, jamais plus de 100 % du cachet
+const r2 = n => Math.round(n * 100) / 100;
+const othersPct = (pay, withSolde) => paymentsOf(pay.show_id).filter(p => BILL_KINDS.includes(p.kind) && p.id !== pay.id && (withSolde || p.kind !== 'solde'))
+  .reduce((t, p) => t + (billPct(p) || 0), 0);
+/** Remet le solde à « ce qui reste » (s'il n'est pas encore envoyé) */
+export async function rebalanceSolde(showId){
+  const all = paymentsOf(showId), solde = all.find(p => p.kind === 'solde');
+  if (!solde || solde.sent_at || solde.paid_at) return;
+  const pct = Math.max(0, r2(100 - othersPct(solde, false)));
+  if (Number(solde.pct) !== pct || solde.amount != null) await save('show_payments', solde.id, {pct, amount: null}, {rerender:false});
+}
+async function setBill(pay, pct){
+  if (!BILL_KINDS.includes(pay.kind)) return false;
+  const max = r2(100 - othersPct(pay, pay.kind === 'solde'));
+  if (pct > max + 0.001){ toast(`Les factures ne peuvent pas dépasser 100 % du cachet : ${String(max).replace('.', ',')} % au plus pour cette ligne`, true); return true; }
+  return false;
+}
 ACTIONS['change:show_payments.pct'] = async (t, v) => {
   const pay = byId('show_payments', t.dataset.id);
-  await save('show_payments', pay.id, {pct: v}, {rerender:false});
-  if (pay.kind === 'acompte'){
-    const all = paymentsOf(pay.show_id), sum = all.filter(p => p.kind==='acompte').reduce((a,p) => a + (Number(p.pct)||0), 0);
-    const solde = all.find(p => p.kind==='solde' && p.amount==null);
-    if (solde) await save('show_payments', solde.id, {pct: Math.max(0, Math.round((100 - sum)*100)/100)}, {rerender:false});
-  }
+  if (v != null && await setBill(pay, v)){ render(); return; }
+  await save('show_payments', pay.id, {pct: v, amount: null}, {rerender:false});   // le HT suit le %
+  if (pay.kind !== 'solde') await rebalanceSolde(pay.show_id);
+  render();
+};
+ACTIONS['change:show_payments.amount'] = async (t, v) => {
+  const pay = byId('show_payments', t.dataset.id), fee = Number(byId('shows', pay.show_id)?.fee_ht) || 0;
+  if (!BILL_KINDS.includes(pay.kind) || !fee){ await save('show_payments', pay.id, {amount: v}); return; }
+  if (v == null){ await save('show_payments', pay.id, {amount: null}, {rerender:false}); if (pay.kind !== 'solde') await rebalanceSolde(pay.show_id); render(); return; }
+  const pct = v / fee * 100;                                                        // le % suit le HT
+  if (await setBill(pay, r2(pct))){ render(); return; }
+  await save('show_payments', pay.id, {amount: v, pct: Math.round(pct * 10000) / 10000}, {rerender:false});
+  if (pay.kind !== 'solde') await rebalanceSolde(pay.show_id);
+  render();
+};
+// TTC saisi → HT (selon la TVA de la ligne)
+ACTIONS['change:show_payments.amount_ttc'] = async (t, v) => {
+  const pay = byId('show_payments', t.dataset.id);
+  return ACTIONS['change:show_payments.amount']({dataset: {id: pay.id}}, v == null ? null : r2(v / (1 + payVat(pay) / 100)));
+};
+// Cachet modifié : les factures pas encore envoyées suivent leur %
+ACTIONS['change:shows.fee_ht'] = async (t, v) => {
+  await save('shows', t.dataset.id, {fee_ht: v}, {rerender:false});
+  for (const p of paymentsOf(t.dataset.id).filter(p => BILL_KINDS.includes(p.kind) && p.amount != null && p.pct != null && !p.sent_at && !p.paid_at))
+    await save('show_payments', p.id, {amount: null}, {rerender:false});
   render();
 };
