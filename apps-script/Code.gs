@@ -403,12 +403,13 @@ function filePiece_(b) {
   });
   if (dup && !b.decision) return { ok: true, duplicate: { id: dup.getId(), name: dup.getName(), url: dup.getUrl(), same: digest_(dup.getBlob().getBytes()) === hash } };
   if (dup && b.decision === 'skip') return { ok: true, skipped: true, file_id: dup.getId(), url: dup.getUrl(), name: dup.getName() };
-  if (dup && b.decision === 'replace') dup.setTrashed(true);
   if (dup && b.decision === 'keep_both') {
     var base = name.replace(/(\.\w{1,5})$/, ''), ext = (name.match(/\.\w{1,5}$/) || [''])[0], n = 1;
     while (folder.getFilesByName(name).hasNext()) name = base + ' (' + (++n) + ')' + ext;
   }
   var file = folder.createFile(blob.setName(name));
+  // l'ancien fichier part à la corbeille seulement une fois le nouveau bien enregistré
+  if (dup && b.decision === 'replace') dup.setTrashed(true);
   return { ok: true, file_id: file.getId(), url: file.getUrl(), name: name, replaced: dup && b.decision === 'replace' ? dup.getName() : null };
 }
 
