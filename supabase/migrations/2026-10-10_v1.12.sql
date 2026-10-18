@@ -79,7 +79,7 @@ end $$;
 
 create or replace function public.rh_submit(p_token text, p_main jsonb, p_info jsonb, p_docs jsonb) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare e employees%rowtype; clean jsonb := '{}'; k text; d jsonb; docs jsonb;
+declare e employees%rowtype; clean jsonb := '{}'; k text; d jsonb; v_docs jsonb;
 begin
   select * into e from employees where form_token = p_token and active;
   if not found then raise exception 'Lien invalide'; end if;
@@ -87,10 +87,10 @@ begin
   for k in select jsonb_object_keys(coalesce(p_info, '{}')) loop
     if coalesce(p_info->>k, '') <> '' and p_info->>k <> '__rempli__' then clean := clean || jsonb_build_object(k, left(p_info->>k, 500)); end if;
   end loop;
-  docs := e.docs;
+  v_docs := coalesce(e.docs, '[]');
   for d in select * from jsonb_array_elements(coalesce(p_docs, '[]')) loop
     if (d->>'path') like p_token || '/%' then
-      docs := docs || jsonb_build_array(jsonb_build_object('kind', d->>'kind', 'label', d->>'label', 'path', d->>'path', 'name', d->>'name', 'at', now()));
+      v_docs := v_docs || jsonb_build_array(jsonb_build_object('kind', d->>'kind', 'label', d->>'label', 'path', d->>'path', 'name', d->>'name', 'at', now()));
     end if;
   end loop;
   update employees set
@@ -98,7 +98,7 @@ begin
     last_name = coalesce(nullif(p_main->>'last_name', ''), last_name),
     email = coalesce(nullif(p_main->>'email', ''), email),
     phone = coalesce(nullif(p_main->>'phone', ''), phone),
-    info = info || clean, docs = docs, form_submitted_at = now(), updated_at = now()
+    info = info || clean, docs = v_docs, form_submitted_at = now(), updated_at = now()
   where id = e.id;
   insert into notifications (kind, title, body, dedupe_key)
     values ('rh', 'Fiche salarié remplie — ' || concat_ws(' ', upper(coalesce(nullif(p_main->>'last_name',''), e.last_name)), coalesce(nullif(p_main->>'first_name',''), e.first_name)),

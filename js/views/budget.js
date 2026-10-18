@@ -24,8 +24,8 @@ function lineRow(l, project){
     <td class="num">${staff ? `<span class="nowrap">${cIn('budget_lines', l.id, 'qty', l.qty, 'number', 'class="narrow" title="Nombre de bulletins" placeholder="nb"')} × ${cIn('budget_lines', l.id, 'unit_cost', l.unit_cost, 'number', 'class="narrow" title="Coût employeur d’un bulletin" placeholder="coût"')}</span>` : ''}
       <input type="number" step="any" data-t="budget_lines" data-id="${l.id}" data-f="forecast" value="${l.forecast??''}" placeholder="${fc==null?'à saisir':fc}" class="${l.forecast!=null?'override':''}" title="${auto||staff?'Vide = calcul automatique':'Montant prévu HT'}"></td>
     <td class="num"><input type="number" step="any" data-t="budget_lines" data-id="${l.id}" data-f="amount" value="${l.amount??''}" placeholder="—" title="${staff?'Coût total (bulletin)':'Montant réel HT (pièce)'}"></td>
-    <td class="nowrap">${l.file_path ? `<button class="btn icon sm" data-act="openBudgetFile" data-id="${l.id}" title="${esc(l.file_name||'Pièce')}" aria-label="Ouvrir la pièce">📎</button>` : ''}${cIn('budget_lines', l.id, 'doc_number', l.doc_number, 'text', 'placeholder="N° pièce" style="min-width:80px"')}</td>
-    <td class="${l.paid_at?'done-cell':''}">${cIn('budget_lines', l.id, 'paid_at', l.paid_at, 'date')}${(l.payer || 'compte') !== 'compte' && l.paid_at ? `<div class="reimb ${l.reimbursed_at?'done-cell':''}" title="Remboursé par ${esc(payerLabel('compte', project))}"><span class="muted">Remboursé par le compte le</span>${cIn('budget_lines', l.id, 'reimbursed_at', l.reimbursed_at, 'date')}</div>` : ''}</td>
+    <td class="nowrap">${l.file_path ? `<button class="btn icon sm" data-act="openBudgetFile" data-id="${l.id}" title="${esc(l.file_name||'Pièce')}" aria-label="Ouvrir la pièce">📎</button>` : ''}${l.drive_file_id ? `<a class="btn icon sm" href="https://drive.google.com/file/d/${esc(l.drive_file_id)}/view" target="_blank" rel="noopener" title="Rangée dans le Drive de la date" aria-label="Ouvrir dans le Drive">▲</a>` : ''}${cIn('budget_lines', l.id, 'doc_number', l.doc_number, 'text', 'placeholder="N° pièce" style="min-width:80px"')}</td>
+    <td class="${l.paid_at?'done-cell':''}">${cIn('budget_lines', l.id, 'paid_at', l.paid_at, 'date')}${(l.payer || 'compte') !== 'compte' && l.paid_at ? `<div class="reimb ${l.reimbursed_at?'done-cell':''}" title="Déduit de ${esc(payerLabel('compte', project))}"><span class="muted">Déduit du compte le</span>${cIn('budget_lines', l.id, 'reimbursed_at', l.reimbursed_at, 'date')}</div>` : ''}</td>
     <td>${badge(l)}</td>
     <td><button class="btn icon sm ghost danger" data-act="delBudgetLine" data-id="${l.id}" aria-label="Supprimer la ligne">✕</button></td>
   </tr>`;
@@ -63,7 +63,7 @@ export function showBudgetHTML(s){
       ${b.lines.length ? '' : `<button class="btn sm primary" data-act="prefillBudget" data-id="${s.id}">Préremplir le budget</button>`}
       <button class="btn sm ghost" data-act="copyBudget" data-id="${s.id}">Copier les lignes d'une autre date</button>
     </div>
-    ${dropZone(`data-budget-drop='${JSON.stringify({show_id:s.id})}'`, 'Glisse ici une facture, un bulletin ou une note de frais (ou sur une ligne précise) : l’IA la lit, met la ligne à jour et la marque payée.')}
+    ${dropZone(`data-budget-drop='${JSON.stringify({show_id:s.id})}'`, 'Glisse ici une facture, un bulletin ou une note de frais (ou sur une ligne précise) : l’IA la lit, met la ligne à jour, la marque payée et la range dans le Drive de la date (02_Finance).')}
     <p class="muted" style="font-size:12px;margin:8px 0 0">Montants HT ; salaires : coût total. Le prévu vide se calcule seul (bulletins × coût, Movinmotion ${eur2(payslipCost())} par bulletin, CNM si gratuit, solde artiste = reste du cachet). Une ligne compte dans le solde du compte quand « Payé par » est le compte dédié, ou quand une avance (L’ArtBo, une personne) est remboursée par le compte.</p>
   </div>`;
 }

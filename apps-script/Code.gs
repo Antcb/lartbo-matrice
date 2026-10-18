@@ -15,6 +15,7 @@
  *    mal nommés avec le nom proposé, puis renomme seulement les lignes cochées.
  * 7. "link_folders" : rattache les dossiers de dates déjà existants ;
  *    "folder_path" : chemin du dossier (pour le Finder).
+ * 8. "file_piece" : range une pièce du budget dans 02_Finance du dossier de la date (doublons signalés).
  *
  * Le lien se fait par ID : le dossier peut ensuite être renommé ou déplacé
  * librement sans rien casser.
@@ -53,6 +54,7 @@ function doPost(e) {
     else if (action === 'rh_file_docs') out = { ok: true, filed: rhFileDocs_() };
     else if (action === 'rename_audit') out = renameAudit();
     else if (action === 'rename_apply') out = renameApply();
+    else if (action === 'file_piece') out = filePiece_(body);
     else if (action === 'ping') out = { ok: true, account: Session.getEffectiveUser().getEmail() };
     else out = { ok: false, error: 'Action inconnue : ' + action };
   } catch (err) {
@@ -120,12 +122,20 @@ function fill_(text, vars, html) {
   });
 }
 
-/** Meilleur modèle : celui de l'artiste, sinon le générique */
+/** Le modèle s'applique-t-il à cette date ? (mêmes règles que la Matrice : salle, festival, co-réalisation, cession) */
+function applies_(rule, s) {
+  var r = { all: true, salle: /Salle/.test(s.status || ''), festival: /Festival/.test(s.status || ''),
+    cr: s.contract_type === 'Co-Réalisation', cession: s.contract_type === 'Cession' }[rule || 'all'];
+  return r === undefined ? true : r;
+}
+
+/** Meilleur modèle, comme le choix proposé dans la Matrice : celui de l'artiste avant le générique, celui dont la règle correspond avant « toutes les dates » */
 function pickTemplate_(show, kind) {
-  var list = sb_('GET', 'mail_templates?kind=eq.' + kind + '&select=*');
-  var mine = list.filter(function (t) { return t.project_id === show.project_id; });
-  var generic = list.filter(function (t) { return !t.project_id; });
-  return mine[0] || generic[0] || null;
+  var list = (sb_('GET', 'mail_templates?kind=eq.' + kind + '&select=*') || [])
+    .filter(function (t) { return !t.project_id || t.project_id === show.project_id; });
+  var score = function (t) { return (t.project_id === show.project_id ? 10 : 0) + (!applies_(t.applies_to, show) ? -20 : (t.applies_to && t.applies_to !== 'all' ? 5 : 0)); };
+  list.sort(function (a, b) { return score(b) - score(a) || String(a.name || '').localeCompare(String(b.name || '')); });
+  return list[0] || null;
 }
 
 /**
@@ -142,7 +152,7 @@ function dailyJob() {
     var kind = KIND[n.kind];
     if (!kind || !n.show_id) return;
     try {
-      var show = sb_('GET', 'shows?id=eq.' + n.show_id + '&select=id,project_id,venue,mail_log,conf_contact_id')[0];
+      var show = sb_('GET', 'shows?id=eq.' + n.show_id + '&select=id,project_id,venue,status,contract_type,mail_log,conf_contact_id')[0];
       if (!show || (show.mail_log && show.mail_log[kind])) return;
       var tpl = pickTemplate_(show, kind);
       if (!tpl) return;
@@ -328,7 +338,7 @@ function rhFileDocs_() {
   var p = props_(), filed = 0;
   var list = sb_('GET', 'employees?select=id,last_name,first_name,drive_folder_id,docs') || [];
   list.forEach(function (e) {
-    var docs = e.docs || [], changed = false;
+    var docs = e.docs || [];
     docs.forEach(function (d) {
       if (!d.path || d.file_id) return;
       if (!e.drive_folder_id) { rhFolders_(); e.drive_folder_id = sb_('GET', 'employees?id=eq.' + e.id + '&select=drive_folder_id')[0].drive_folder_id; }
@@ -344,12 +354,57 @@ function rhFileDocs_() {
       var base = d.target || ((RH_LABELS[d.kind] || 'Document') + ' - ' + rhName_(e)), name = base + '.' + ext, n = 1;
       while (folder.getFilesByName(name).hasNext()) name = base + ' (' + (++n) + ').' + ext;
       var file = folder.createFile(res.getBlob().setName(name));
+      // on enregistre d'abord le lien vers la copie Drive ; la pièce d'origine n'est supprimée qu'ensuite
+      var oldPath = d.path;
+      d.file_id = file.getId(); d.drive_name = name; d.path = null;
+      try { sb_('PATCH', 'employees?id=eq.' + e.id, { docs: docs }); }
+      catch (err) {
+        file.setTrashed(true); d.file_id = null; d.drive_name = null; d.path = oldPath;
+        Logger.log('Pièce non rangée (enregistrement impossible, réessai au prochain passage) : ' + err); return;
+      }
       UrlFetchApp.fetch(url, { method: 'delete', headers: authHeaders_({}), muteHttpExceptions: true });
-      d.file_id = file.getId(); d.drive_name = name; d.path = null; changed = true; filed++;
+      filed++;
     });
-    if (changed) sb_('PATCH', 'employees?id=eq.' + e.id, { docs: docs });
   });
   return filed;
+}
+
+// ─────────────── Pièces du budget → dossier Drive de la date ───────────────
+
+/**
+ * Range une pièce (facture, bulletin, note de frais) dans « 02_Finance » du dossier de la date.
+ * Si le même fichier y est déjà (même contenu ou même nom), rien n'est ajouté : on renvoie le doublon
+ * et la Matrice demande quoi faire (decision : replace = remplacer l'ancien, skip = garder l'ancien, keep_both).
+ */
+function filePiece_(b) {
+  if (!b.folder_id) throw new Error('La date n’a pas encore de dossier Drive');
+  var root = DriveApp.getFolderById(b.folder_id);
+  var folder = childFolder_(root, '02_Finance', false) || childFolder_(root, 'Finance', false) || childFolder_(root, '02_Finance', true);
+  var blob = UrlFetchApp.fetch(b.url).getBlob();
+  var name = String(b.name || blob.getName() || 'piece.pdf').replace(/[\\/:*?"<>|]+/g, '-');
+  var bytes = blob.getBytes(), hash = digest_(bytes), dup = null;
+  // doublon : même contenu (dans 02_Finance ou à la racine du dossier de la date), ou même nom
+  [folder, root].forEach(function (f) {
+    var it = f.getFiles();
+    while (!dup && it.hasNext()) {
+      var x = it.next();
+      if (x.isTrashed()) continue;
+      if (x.getName() === name || (x.getSize() === bytes.length && digest_(x.getBlob().getBytes()) === hash)) dup = x;
+    }
+  });
+  if (dup && !b.decision) return { ok: true, duplicate: { id: dup.getId(), name: dup.getName(), url: dup.getUrl(), same: digest_(dup.getBlob().getBytes()) === hash } };
+  if (dup && b.decision === 'skip') return { ok: true, skipped: true, file_id: dup.getId(), url: dup.getUrl(), name: dup.getName() };
+  if (dup && b.decision === 'replace') dup.setTrashed(true);
+  if (dup && b.decision === 'keep_both') {
+    var base = name.replace(/(\.\w{1,5})$/, ''), ext = (name.match(/\.\w{1,5}$/) || [''])[0], n = 1;
+    while (folder.getFilesByName(name).hasNext()) name = base + ' (' + (++n) + ')' + ext;
+  }
+  var file = folder.createFile(blob.setName(name));
+  return { ok: true, file_id: file.getId(), url: file.getUrl(), name: name, replaced: dup && b.decision === 'replace' ? dup.getName() : null };
+}
+
+function digest_(bytes) {
+  return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, bytes));
 }
 
 // ─────────────── Drive ───────────────

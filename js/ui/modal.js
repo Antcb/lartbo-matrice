@@ -9,7 +9,7 @@
 import { render } from '../app.js';
 import { S } from '../state.js';
 import { $, esc } from '../utils.js';
-import { SOURCES, acInput } from './autocomplete.js';
+import { SOURCES, acInput, commitTypedText } from './autocomplete.js';
 import { dateInput } from './datefield.js';
 import { projPicker } from './projpicker.js';
 import { trackModal } from './history.js';
@@ -78,6 +78,7 @@ export function openModal({title, fields, values={}, onSave, onDelete, extra='',
       ev.preventDefault();
       // un champ date en cours de saisie doit être validé avant lecture
       if (document.activeElement?.classList.contains('dt-txt')) document.activeElement.blur();
+      commitTypedText(ev.target);
       const out = readForm(ev.target, fields);
       const btn = ev.target.querySelector('button[type=submit]'); btn.disabled = true;
       const ok = await onSave(out);

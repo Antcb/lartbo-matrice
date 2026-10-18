@@ -6,10 +6,11 @@ import { render } from './app.js';
 import { lineForecast, linesOf, prodShowsOf } from './budget.js';
 import { paymentsOf, payAmount } from './calc.js';
 import { insert, openStored, remove, save, sb } from './data.js';
-import { byId, membersOfProject } from './selectors.js';
+import { byId, membersOfProject, setting } from './selectors.js';
+import { callScript } from './mail.js';
 import { S, touch } from './state.js';
 import { openModal } from './ui/modal.js';
-import { fmtDate, norm, toast, today } from './utils.js';
+import { esc, fmtDate, norm, toast, today } from './utils.js';
 
 const nextSort = showId => Math.max(0, ...linesOf(showId).map(l => l.sort || 0)) + 1;
 const safeName = n => n.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w.\-]+/g, '_') || 'piece';
@@ -41,7 +42,17 @@ export const BUDGET_ACTIONS = {
   toggleBookingOnly: async t => {
     const s = byId('shows', t.dataset.id), on = t.checked;
     if (on && linesOf(s.id).length && !confirm('Cette date a déjà un budget. Il sera masqué (pas supprimé) et la date sortira du solde du compte. Continuer ?')){ t.checked = false; return; }
-    await save('shows', s.id, {prod_mode: on ? 'booking' : 'production'});
+    await save('shows', s.id, {prod_mode: on ? 'booking' : 'production'}, {rerender: false});
+    // passage en production : l'acompte et le solde doivent exister pour que le cachet arrive sur le compte (factures déjà faites gardées)
+    if (!on){
+      const pays = paymentsOf(s.id), sort = Math.max(0, ...pays.map(p => p.sort || 0));
+      const ac = Number(setting('default_acompte_pct') ?? 20);
+      const add = [];
+      if (!pays.some(p => p.kind === 'acompte')) add.push({show_id: s.id, kind: 'acompte', label: 'Acompte', pct: ac, sort: sort + 1, payee: 'compte'});
+      if (!pays.some(p => p.kind === 'solde')) add.push({show_id: s.id, kind: 'solde', label: 'Solde', pct: Math.max(0, 100 - pays.filter(p => p.kind === 'acompte').reduce((t, p) => t + (Number(p.pct) || 0), add.length ? ac : 0)), sort: sort + 2, payee: 'compte'});
+      for (const row of add) await insert('show_payments', row);
+    }
+    render();
     toast(on ? 'Date en booking uniquement : seulement la facture de commission' : 'Date en production : budget et compte dédié');
   },
   toggleProjBudget: t => { S.openBudget ||= new Set(); const id = t.dataset.id; S.openBudget.has(id) ? S.openBudget.delete(id) : S.openBudget.add(id); render(); },
@@ -76,6 +87,19 @@ export const BUDGET_ACTIONS = {
       }});
   },
   openBudgetFile: t => { const l = byId('budget_lines', t.dataset.id); if (l?.file_path) openStored(l.file_path); },
+  syncPennylane: async t => {
+    t.disabled = true; toast('Lecture des factures payées dans Pennylane…');
+    try {
+      const out = await pennylane('sync', {});
+      const {refreshShowSide} = await import('./data.js');
+      for (const sid of new Set(out.updated.map(u => S.db.show_payments.find(p => p.id === u.id)?.show_id).filter(Boolean))) await refreshShowSide(sid);
+      render();
+      const lines = [out.updated.length ? `${out.updated.length} facture(s) marquée(s) payée(s) :\n- ` + out.updated.map(u => u.label).join('\n- ') : 'Rien de nouveau : la Matrice est à jour.',
+        out.pennylaneLate.length ? `\nPayées dans la Matrice mais pas encore dans Pennylane (à mettre à jour dans Pennylane) :\n- ` + out.pennylaneLate.join('\n- ') : ''];
+      alert(lines.join('\n'));
+    } catch (err) { toast(err.message, true); }
+    t.disabled = false;
+  },
   testPennylane: async () => { try { const out = await pennylane('status', {}); toast(`Pennylane OK : ${out.company || 'compte connecté'}`); } catch (err) { toast(err.message, true); } },
   pennylaneQuote: async t => {
     const s = byId('shows', t.dataset.id);
@@ -119,9 +143,41 @@ export async function readPieces(ctx, files){
     const {data, error} = await sb.functions.invoke('lire-piece', {body:{path, show_id: show?.id || line?.show_id || null, project_id}});
     if (error || data?.error){ let msg = data?.error || error?.message; try { msg = (await error.context.json()).error || msg; } catch {} toast(`Pièce enregistrée, mais l’IA n’a pas pu la lire : ${msg}. Complète la ligne à la main.`, true); }
     else doc = data.doc;
-    await applyPiece({doc: doc || {}, path, name: file.name, show_id: show?.id || line?.show_id || null, project_id, line});
+    const ref = await applyPiece({doc: doc || {}, path, name: file.name, show_id: show?.id || line?.show_id || null, project_id, line});
+    const sid = show?.id || line?.show_id;
+    if (ref && sid) await fileToDrive(ref, byId('shows', sid), path, file.name);
   }
   render();
+}
+
+/**
+ * Range la pièce dans le dossier Drive de la date (02_Finance). Si elle y est déjà, on demande :
+ * remplacer l'ancienne, garder l'ancienne, ou garder les deux.
+ */
+async function fileToDrive(ref, show, path, name){
+  if (!setting('drive_webhook_url')) return;
+  if (!show?.drive_folder_id) return toast('Pièce gardée dans la Matrice : la date n’a pas encore de dossier Drive', true);
+  const {data: signed} = await sb.storage.from('suivi').createSignedUrl(path, 900);
+  if (!signed?.signedUrl) return;
+  const base = {folder_id: show.drive_folder_id, url: signed.signedUrl, name};
+  try {
+    let out = await callScript('file_piece', base);
+    if (out.duplicate){
+      const decision = await askDuplicate(out.duplicate, name);
+      if (!decision) return toast('Pièce gardée dans la Matrice, pas ajoutée au Drive');
+      out = await callScript('file_piece', {...base, decision});
+    }
+    await save(ref.table, ref.id, {drive_file_id: out.file_id}, {rerender: false});
+    toast(out.skipped ? `Déjà dans le Drive : « ${out.name} » gardé` : out.replaced ? `Rangée dans le Drive (02_Finance), l’ancienne « ${out.replaced} » est à la corbeille` : `Rangée dans le Drive : 02_Finance › ${out.name}`);
+  } catch (err) { toast('Rangement Drive impossible : ' + err.message, true); }
+}
+
+function askDuplicate(dup, name){
+  return openModal({title: 'Pièce déjà dans le dossier Drive', saveLabel: 'Valider',
+    extraTop: `<p class="help full">${dup.same ? 'Le même fichier' : 'Un fichier du même nom'} est déjà dans le dossier de la date : <a href="${dup.url}" target="_blank" rel="noopener">${esc(dup.name)} ↗</a><br>Nouvelle pièce : <b>${esc(name)}</b></p>`,
+    fields: [{k: 'decision', label: 'Que faire ?', type: 'select', blank: false, full: true, options: [
+      ['skip', 'Garder l’ancien (ne pas ajouter le nouveau)'], ['replace', 'Remplacer l’ancien par le nouveau (l’ancien va à la corbeille)'], ['keep_both', 'Garder les deux']]}],
+    values: {decision: dup.same ? 'skip' : 'replace'}, onSave: v => v.decision});
 }
 
 const isOurs = n => /artboristerie/i.test(n || '');
@@ -139,7 +195,8 @@ async function applyPiece({doc, path, name, show_id, project_id, line}){
     if (pay){
       await save('show_payments', pay.id, {invoice_number: d.numero || pay.invoice_number, paid_at: pay.paid_at || date, file_path: path, file_name: name,
         ...(ht != null && Math.abs((payAmount(pay)||0) - ht) >= 1 ? {amount: ht} : {})}, {rerender:false});
-      return toast(`${pay.label || 'Encaissement'} : facture ${d.numero || ''} rattachée et marquée reçue`);
+      toast(`${pay.label || 'Encaissement'} : facture ${d.numero || ''} rattachée et marquée reçue`);
+      return {table: 'show_payments', id: pay.id};
     }
   }
   const s = show_id ? byId('shows', show_id) : null;
@@ -158,12 +215,14 @@ async function applyPiece({doc, path, name, show_id, project_id, line}){
   }
   if (target){
     await save('budget_lines', target.id, {...patch, supplier: target.supplier || (bulletin ? d.personne : d.emetteur) || null}, {rerender:false});
-    return toast(`Ligne « ${target.label || target.category} » mise à jour : ${d.numero || name} (payée le ${fmtDate(date)})`);
+    toast(`Ligne « ${target.label || target.category} » mise à jour : ${d.numero || name} (payée le ${fmtDate(date)})`);
+    return {table: 'budget_lines', id: target.id};
   }
   const row = await insert('budget_lines', {project_id, show_id: s?.id || null, category: bulletin ? 'Staff' : (d.categorie || 'Autres'),
     label: d.libelle || (bulletin ? 'Cachet' : name), supplier: (bulletin ? d.personne : d.emetteur) || null, payer: 'compte',
     qty: bulletin ? 1 : null, sort: s ? nextSort(s.id) : 0, ...patch});
   if (row) toast(`Nouvelle ligne ajoutée : ${row.label} (${row.category})`);
+  return row ? {table: 'budget_lines', id: row.id} : null;
 }
 
 // Glisser-déposer / choix d'une pièce sur le budget (zone ou ligne précise)

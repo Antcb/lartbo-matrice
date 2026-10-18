@@ -5,7 +5,7 @@
 //   Ligne : produit « Production de Spectacles • Cession / Coréalisation » (TVA 5,5 %), quantité = part du cachet (0,5 pour 50 %)
 //   Commission : produit « Commission • Booking » (TVA 20 %), facturée à la structure administrative de l'artiste.
 // Le jeton API est gardé côté serveur (Réglages › Pennylane). Appels depuis l'app (utilisateur connecté) :
-//   { action: 'status' } · { action: 'quote', show_id } · { action: 'invoice', payment_id }
+//   { action: 'status' } · { action: 'quote', show_id } · { action: 'invoice', payment_id } · { action: 'sync' }
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
@@ -117,6 +117,35 @@ Deno.serve(async (req) => {
     if (body.action === 'status') {
       const me = await pl('GET', '/me');
       return json({ ok: true, company: me?.company?.name || me?.user?.email || null });
+    }
+
+    // Factures payées dans Pennylane → cochées « Payée » dans la Matrice (acomptes, soldes, autres lignes)
+    if (body.action === 'sync') {
+      const inv: Record<string, any> = {};
+      let cursor = '';
+      for (let i = 0; i < 30; i++) {
+        const page = await pl('GET', '/customer_invoices?limit=100&sort=-id' + (cursor ? '&cursor=' + cursor : ''));
+        for (const x of page.items || []) if (x.invoice_number && !x.draft) inv[norm(x.invoice_number)] = x;
+        if (!page.has_more) break; cursor = page.next_cursor;
+      }
+      const { data: pays } = await admin.from('show_payments').select('id, show_id, kind, label, invoice_number, paid_at, shows(date, city, venue)')
+        .in('kind', ['acompte', 'solde', 'autre']).not('invoice_number', 'is', null);
+      const updated: any[] = [], pennylaneLate: any[] = [];
+      for (const p of pays || []) {
+        const x = inv[norm(p.invoice_number)]; if (!x) continue;
+        const where = `${frDate((p as any).shows?.date)} ${(p as any).shows?.city || ''}`.trim();
+        const isPaid = x.paid === true && x.status !== 'cancelled';
+        if (isPaid && !p.paid_at) {
+          let date = '';
+          try { const t = await pl('GET', `/customer_invoices/${x.id}/matched_transactions`); date = (t.items || []).map((y: any) => y.date).filter(Boolean).sort().pop() || ''; } catch (_) { /* */ }
+          date = date ? String(date).slice(0, 10) : today();
+          await admin.from('show_payments').update({ paid_at: date }).eq('id', p.id);
+          updated.push({ id: p.id, paid_at: date, label: `${p.label || p.kind} ${p.invoice_number} · ${where}` });
+        } else if (!isPaid && p.paid_at && x.status !== 'cancelled') {
+          pennylaneLate.push(`${p.invoice_number} · ${where} (payée le ${frDate(p.paid_at)} dans la Matrice)`);
+        }
+      }
+      return json({ ok: true, updated, pennylaneLate });
     }
 
     if (body.action === 'quote') {

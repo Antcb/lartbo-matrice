@@ -77,6 +77,15 @@ export function acInput(kind, {value='', text, attrs='', placeholder='Rechercher
 // Fonctions de création appelées par « + Créer … » (définies par forms.js)
 export const CREATORS = {};
 
+/** Ville / adresse : le texte tapé (sans suggestion choisie) est repris tout de suite, avant l'enregistrement d'un formulaire */
+export function commitTypedText(root){
+  root.querySelectorAll('.ac').forEach(box => {
+    if (!SOURCES[box.dataset.ac]?.async) return;
+    const input = box.querySelector('.ac-input'), val = box.querySelector('.ac-val');
+    if (input && val && val.value !== input.value.trim()) val.value = input.value.trim();
+  });
+}
+
 let OPEN = null;   // {box, input, items, idx, list}
 
 function close(){ if (OPEN){ OPEN.list.remove(); OPEN.input.setAttribute('aria-expanded','false'); OPEN = null; } }
