@@ -4,7 +4,7 @@
  * Administratif (structure juridique de l'artiste), Membres (import CSV Movinmotion possible), Modèles de mail.
  */
 import { netArtbo } from '../calc.js';
-import { templatesList } from '../mail.js';
+import { templatesList, tplProjects } from '../mail.js';
 import { CONFIRMED_PROD, LOG_ICON, stClass } from '../constants.js';
 import { signedCached, signedUrl } from '../data.js';
 import { attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, structName, tasksOfProject } from '../selectors.js';
@@ -64,7 +64,7 @@ export function projectPage(p){
   const tab = curTab('project', 'overview');
   const tabs = tabsBar('project', [['overview','Aperçu'], ['dates','Dates', shows.length], ['suivis','Suivis', suivis.filter(x=>x.status!=='Closed').length],
     ['tasks','Tâches', tasks.filter(t=>!isDone(t)).length], ['logs','Échanges', logs.length], ['links','Liens', (p.links||[]).length],
-    ['drive','Drive'], ['mails','Modèles de mail', S.db.mail_templates.filter(t=>t.project_id===p.id).length], ['admin','Administratif'], ['members','Membres', members.length]]);
+    ['drive','Drive'], ['mails','Modèles de mail', S.db.mail_templates.filter(t=>tplProjects(t).includes(p.id)).length], ['admin','Administratif'], ['members','Membres', members.length]]);
   const body = {overview, dates:datesTab, suivis:suivisTab, tasks:() => `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newTaskProject" data-id="${p.id}">Nouvelle tâche</button></div>${taskSection(tasks)}`,
     logs:logsTab, links:linksTab, drive:driveTab, mails:mailsTab, admin:adminTab, members:membersTab}[tab](p, {shows, tasks, suivis, logs, members});
   return `<button class="btn ghost back" data-act="closeProject">← Projets</button>
@@ -119,7 +119,7 @@ function suivisTab(p, {suivis}){
 
 function logsTab(p, {logs}){
   return `<div class="panel pad" style="margin-bottom:14px">
-    <form class="log-form" data-projlog="${p.id}" style="grid-template-columns:auto auto 1fr">
+    <form class="log-form" data-projlog="${p.id}" data-draft="projlog.${p.id}" style="grid-template-columns:auto auto 1fr">
       ${dateInput(today(), 'name="date"')}
       <select name="kind" class="sel" aria-label="Type">${['Note','Mail','Appel','Lien','Fichier'].map(k=>`<option>${k}</option>`).join('')}</select>
       <input name="url" class="inp" placeholder="Lien envoyé (facultatif)" aria-label="Lien">
@@ -128,6 +128,7 @@ function logsTab(p, {logs}){
       <button class="btn primary sm">Ajouter aux échanges</button>
     </form></div>
   ${logs.map(l=>`<div class="panel pad" style="margin-bottom:8px"><div class="log-head">${LOG_ICON[l.kind]||'📝'} <b>${l.date?fmtDate(l.date):'Sans date'}</b> · ${esc(l.kind||'')}
+      <span class="spacer"></span><button class="btn sm ghost" data-act="editProjLog" data-id="${l.id}">Modifier</button>
       <button class="btn icon sm ghost danger" data-act="delProjLog" data-id="${l.id}" aria-label="Supprimer l'échange">✕</button></div>
     ${l.body?`<div class="md">${md(l.body)}</div>`:''}${l.url?`<div><a href="${esc(url(l.url))}" target="_blank" rel="noopener">${esc(l.url)}</a></div>`:''}
     ${attachmentsOf('project_log_id', l.id).map(f=>fileRow(f, 'openAttachment', 'delAttachment')).join('')}</div>`).join('') || '<div class="empty panel">Aucun échange noté pour ce projet.</div>'}`;
@@ -147,8 +148,9 @@ function linkList(p, field, kinds, placeholder){
 const linksTab = p => linkList(p, 'links', LINK_KINDS, 'https://…');
 
 function driveTab(p){
-  return `${p.drive_artist_folder_id ? `<div class="panel pad" style="margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>Dossier de l’artiste</b>
-      <a class="btn sm primary" href="https://drive.google.com/drive/folders/${esc(p.drive_artist_folder_id)}" target="_blank" rel="noopener">Ouvrir dans Drive</a></div>` : ''}
+  return `<div class="panel pad" style="margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>Dossier de l’artiste</b>
+      ${p.drive_artist_folder_id ? `<a class="btn sm primary" href="https://drive.google.com/drive/folders/${esc(p.drive_artist_folder_id)}" target="_blank" rel="noopener">Ouvrir dans Drive</a>`
+        : `<span class="muted">pas encore de dossier Drive</span><button class="btn sm primary" data-act="createArtistFolder" data-id="${p.id}">Créer le dossier Drive (modèle artiste)</button>`}</div>
     ${linkList(p, 'drive_links', ['Production','Communication','Technique','Contrats','Photos','Presse','Vidéos'], 'Lien du dossier Drive')}
     <p class="help">Colle le lien de chaque dossier (clic droit dans Drive → Partager → Copier le lien). Les liens s’ouvrent dans le navigateur ; avec Google Drive pour ordinateur, le même dossier est aussi dans le Finder sous « Google Drive ».</p>`;
 }

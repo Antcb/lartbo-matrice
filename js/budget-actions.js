@@ -3,6 +3,7 @@
  * pièces lues par l'IA (glisser-déposer) et brouillons Pennylane (devis, factures).
  */
 import { render } from './app.js';
+import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
 import { cnmDue, lineForecast, linesOf, prodShowsOf } from './budget.js';
 import { paymentsOf, payAmount } from './calc.js';
 import { insert, openStored, remove, save, sb } from './data.js';
@@ -47,7 +48,32 @@ export async function syncCnmLine(showId){
   if (!cnmDue(s)) for (const l of cnm) if (l.amount == null && l.forecast == null && !l.file_path && !l.doc_number && !l.paid_at) await remove('budget_lines', l.id);
 }
 
+/** Budget de production : paramètres et tarifs enregistrés sur la date (shows.production) */
+async function saveProd(showId, change){
+  const s = byId('shows', showId); if (!s) return;
+  const p = prodOf(s); change(p);
+  await save('shows', showId, {production: p});
+}
+document.addEventListener('change', async e => {
+  const el = e.target.closest?.('[data-prod-path]'); if (!el) return;
+  e.stopPropagation();
+  const path = el.dataset.prodPath.split('.'), raw = el.value.trim();
+  const v = /label/.test(path.at(-1)) ? raw : (raw === '' ? null : Number(raw.replace(',', '.')));
+  await saveProd(el.dataset.prodShow, p => { let o = p; path.slice(0, -1).forEach(k => { o = o[k]; }); o[path.at(-1)] = v; });
+}, true);
+
 export const BUDGET_ACTIONS = {
+  prodAddTicket: t => saveProd(t.dataset.id, p => { p.tickets.push({label: '', qty: 0, price: 0, dl_prod: 0, dl_net: 0}); }),
+  prodDelTicket: t => { if (confirm('Retirer ce tarif ?')) saveProd(t.dataset.id, p => { p.tickets.splice(Number(t.dataset.i), 1); }); },
+  prefillProduction: async t => {
+    const s = byId('shows', t.dataset.id); let sort = nextSort(s.id);
+    const rows = PROD_LINES.map(([category, label]) => ({project_id: s.project_id, show_id: s.id, category, label, payer: 'artbo', sort: sort++}));
+    const {data, error} = await sb.from('budget_lines').insert(rows).select();
+    if (error) return toast('Préremplissage impossible : ' + error.message, true);
+    S.db.budget_lines.push(...data); touch('budget_lines');
+    if (!s.production) await saveProd(s.id, () => {});
+    render(); toast('Budget de production prérempli : indique les quantités et prix unitaires');
+  },
   toggleBookingOnly: async t => {
     const s = byId('shows', t.dataset.id), on = t.checked;
     if (on && linesOf(s.id).length && !confirm('Cette date a déjà un budget. Il sera masqué (pas supprimé) et la date sortira du solde du compte. Continuer ?')){ t.checked = false; return; }
@@ -70,7 +96,7 @@ export const BUDGET_ACTIONS = {
     const s = t.dataset.show ? byId('shows', t.dataset.show) : null;
     const project_id = s ? s.project_id : t.dataset.project;
     const cat = t.dataset.cat || (s ? 'Technique' : 'Promo');
-    await insert('budget_lines', {project_id, show_id: s?.id || null, category: cat, label: cat === 'Staff' ? 'Cachet' : null, payer:'compte', sort: s ? nextSort(s.id) : 0, doc_date: s ? null : today()});
+    await insert('budget_lines', {project_id, show_id: s?.id || null, category: cat, label: cat === 'Staff' ? 'Cachet' : null, payer: isProductionShow(s) ? 'artbo' : 'compte', sort: s ? nextSort(s.id) : 0, doc_date: s ? null : today()});
     render();
   },
   delBudgetLine: async t => { if (confirm('Supprimer cette ligne du budget ?') && await remove('budget_lines', t.dataset.id)) render(); },

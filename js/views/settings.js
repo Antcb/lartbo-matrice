@@ -11,6 +11,7 @@ import { cIn } from '../ui/cells.js';
 import { esc, toast } from '../utils.js';
 import { render } from '../app.js';
 import { templatesList } from '../mail.js';
+import { FONTS, SIZES, mailFont, rtStyle, rtToolbar } from '../ui/richtext.js';
 
 export function viewSettings(){
   const ac = Number(setting('default_acompte_pct') ?? 0);
@@ -39,6 +40,10 @@ export function viewSettings(){
       <button class="btn sm" data-act="newPartner" style="margin-top:10px">Ajouter un partenaire</button></div>
     <div class="panel pad" style="grid-column:1/-1"><h3 style="font-size:22px;margin-bottom:6px">Modèles de mail</h3>
       <p class="help" style="margin:0 0 12px">Rangés par type de mail : clique sur un groupe pour le déplier. Les modèles « génériques » servent pour les artistes qui n’ont pas le leur. Les balises comme {{date}} ou {{structure}} sont remplacées par les infos de la date ou de la structure ; une balise inconnue (ex. {{date_concert}}) reste surlignée en jaune pour être complétée à la main.</p>
+      <div class="steps" style="margin-bottom:12px">
+        <label for="set-mfont">Police par défaut des mails</label><select id="set-mfont" data-setting-text="mail_font">${FONTS.map(([v, l]) => `<option value="${esc(v)}" ${v === mailFont().family ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
+        <label for="set-msize">Taille par défaut</label><select id="set-msize" data-setting-text="mail_font_size">${SIZES.map(n => `<option value="${n}" ${n === mailFont().size ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      </div>
       ${templatesList()}
       <button class="btn sm primary" data-act="newTemplate" style="margin-top:10px">Nouveau modèle</button></div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Contrats</h3>
@@ -80,10 +85,10 @@ export function viewSettings(){
       <div class="vh-actions" style="margin-top:10px"><button class="btn sm" data-act="testProspectScript">Tester</button></div>
       <p class="help" style="margin:10px 0 0">Chloé peut aussi prospecter depuis <b>production@</b> : choisis « Envoyé par : Production » dans la fenêtre de prospection. Ces mails passent par le script Google principal (Réglages › Google) : il faut y avoir ajouté le service <b>Gmail API</b> (Services › + › Gmail API) pour les relances.</p>
       <h4 class="block-title" style="margin:16px 0 6px">Signature d’Anthony (mails envoyés par anthony@)</h4>
-      <div class="mail-preview" id="set-sig" contenteditable="true">${setting('prospect_signature') || ''}</div>
+      ${rtToolbar('set-sig')}<div class="mail-preview" id="set-sig" contenteditable="true" style="${rtStyle()}">${setting('prospect_signature') || ''}</div>
       <div class="vh-actions" style="margin-top:8px"><button class="btn sm" data-act="saveSignature">Enregistrer la signature</button></div>
       <h4 class="block-title" style="margin:16px 0 6px">Signature de Chloé (mails envoyés par production@)</h4>
-      <div class="mail-preview" id="set-sig-prod" contenteditable="true">${setting('prospect_signature_production') || ''}</div>
+      ${rtToolbar('set-sig-prod')}<div class="mail-preview" id="set-sig-prod" contenteditable="true" style="${rtStyle()}">${setting('prospect_signature_production') || ''}</div>
       <div class="vh-actions" style="margin-top:8px"><button class="btn sm" data-act="saveSignature" data-key="prospect_signature_production" data-el="set-sig-prod">Enregistrer la signature</button></div></div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Brevo</h3>
       <p class="help" style="margin:0 0 12px">Chaque nouveau contact de la Matrice qui a un mail est ajouté automatiquement dans Brevo (mail, prénom, nom, structure). Un mail déjà présent dans Brevo n’est jamais modifié : ni ses infos, ni ses listes, et un désabonné reste désabonné. Dans Brevo : ton nom en haut à droite › « SMTP et API » › onglet « Clés API » › « Générer une nouvelle clé API », puis colle-la ici. La liste est facultative : son numéro est dans Contacts › Listes (colonne ID).</p>
@@ -148,7 +153,7 @@ document.addEventListener('change', async e => {
     if (/_id$/.test(kt) && kt !== 'brevo_list_id') v = (v.match(/[-\w]{25,}/) || [v])[0];   // un lien Drive collé → son identifiant
     if (kt === 'brevo_list_id') v = (v.match(/\d+/g) || []).join(', ');   // « #2 » → 2
     if (kt === 'brevo_api_key' && v){ const k = v.match(/xkeysib-[\w-]+/); if (!k){ toast('Ce n’est pas une clé API Brevo : elle commence par « xkeysib- » (Brevo › SMTP et API › Clés API)', true); e.target.value = setting('brevo_api_key') || ''; return; } v = k[0]; }
-    if (await setSetting(kt, v)){ e.target.value = v; toast('Réglage enregistré'); }
+    if (await setSetting(kt, v)){ e.target.value = v; toast('Réglage enregistré'); if (/^mail_font/.test(kt)) render(); }
     return; }
   const k = e.target.dataset.actSetting; if (!k) return;
   const v = e.target.value===''?null:Number(e.target.value);

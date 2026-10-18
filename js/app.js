@@ -25,6 +25,7 @@ import { trackPage } from './ui/history.js';
 import { checkVisibleProspects } from './prospection.js';
 import { viewEmployees } from './views/employees.js';
 import './ui/shortcuts.js';
+import { restorePageDrafts } from './ui/drafts.js';
 import './ui/dropfiles.js';
 import { viewStructures } from './views/structures.js';
 import { viewProspects } from './views/suivi.js';
@@ -119,6 +120,7 @@ export function render(){
   if (S.view === 'settings') refreshAiState();
   trackPage(render);
   checkVisibleProspects();
+  restorePageDrafts(main);
   restoreScroll(main, scroll);
   if (fk){ let el = main.querySelector(fk.sel); if (el){ if (fk.dt) el = el.parentElement.querySelector('.dt-txt'); el.focus({preventScroll:true}); if (fk.pos!=null) try{ el.setSelectionRange(fk.pos, fk.pos); }catch(e){} } }
   if (S.focusProspect){ const el=document.getElementById('pr-'+S.focusProspect); if (el) el.scrollIntoView({block:'start'}); S.focusProspect=null; }

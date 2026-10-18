@@ -35,7 +35,10 @@ document.addEventListener('keydown', e => {
   if (!['b', 'i', 'u', 'k'].includes(k)) return;
   e.preventDefault();
   if (rich){
-    if (k === 'k'){ const u = askUrl(); if (u) document.execCommand('createLink', false, u); }
+    if (k === 'k'){
+      const bar = t.id && document.querySelector(`.rt-bar[data-rt-for="${CSS.escape(t.id)}"]`);
+      if (bar){ bar.querySelector('[data-rt="link"]').click(); return; }
+      const u = askUrl(); if (u) document.execCommand('createLink', false, u); }
     else document.execCommand({b: 'bold', i: 'italic', u: 'underline'}[k]);
     t.dispatchEvent(new Event('input', {bubbles: true}));
     return;

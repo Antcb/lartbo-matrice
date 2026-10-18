@@ -8,12 +8,13 @@
 import { render } from './app.js';
 import { insert, save, sb, signedUrl } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
-import { PROSPECT_TAGS, callScript, fill } from './mail.js';
+import { PROSPECT_TAGS, callScript, fill, tplLabel, tplProjects } from './mail.js';
 import { byId, eventsOfStructure, linksOfStructure, logsOf, projIds, projName, prospectsOfStructure, setting, structName } from './selectors.js';
 import { S } from './state.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { dateInput } from './ui/datefield.js';
 import { openModal } from './ui/modal.js';
+import { rtStyle, rtToolbar, wrapMail } from './ui/richtext.js';
 import { esc, firstName, fmtDate, toast, today } from './utils.js';
 
 const RELANCE_DAYS = 10;
@@ -90,15 +91,17 @@ export async function openProspection(structureId, {prospectId=null}={}){
   const active = S.db.projects.filter(x => x.active).sort((a, b) => a.name.localeCompare(b.name));
   let pids = relance ? projIds(p) : (S.project && byId('projects', S.project)?.active ? [S.project] : []);
   let contact = relance ? contacts.find(c => c.email && p.mail_to && p.mail_to.toLowerCase().includes(c.email.toLowerCase())) : contacts.find(c => c.email);
-  const tplsFor = () => S.db.mail_templates.filter(t => t.kind === kind && (!t.project_id || pids.includes(t.project_id)))
-    .sort((a, b) => (b.project_id ? 1 : 0) - (a.project_id ? 1 : 0) || (pids.indexOf(a.project_id) - pids.indexOf(b.project_id)) || (a.name || '').localeCompare(b.name || ''));
+  // tous les modèles du type : ceux des artistes cochés d'abord, puis les génériques, puis les autres (choisir un modèle coche ses artistes)
+  const rank = t => { const ids = tplProjects(t); return ids.some(id => pids.includes(id)) ? 0 : !ids.length ? 1 : 2; };
+  const tplsFor = () => S.db.mail_templates.filter(t => t.kind === kind)
+    .sort((a, b) => rank(a) - rank(b) || (a.name || '').localeCompare(b.name || ''));
   let sender = relance ? (p.mail_account || 'anthony') : defaultSender();
   const fromAddr = () => sender === 'production' ? PROD_MAIL : (setting('prospect_from') || 'anthony@lartboristerie.com');
 
   const extra = `<div class="mail-wrap">
     ${relance ? `<p class="mode-note">Réponse dans le fil « ${esc(p.mail_subject || '')} » envoyé à ${esc(p.mail_to || '')}${p.mail_sent_at ? ` le ${fmtDate(p.mail_sent_at.slice(0, 10))}` : ''} : l’historique reste en dessous du mail.</p>` : ''}
     <div class="mail-grid">
-      <label>Artiste(s)</label><div class="checks pr-arts">${active.map(a => `<label><input type="checkbox" data-pr-art="${a.id}" ${pids.includes(a.id) ? 'checked' : ''}> ${esc(a.name)}</label>`).join('')}</div>
+      <label>Artiste(s)</label><div class="checks pills pr-arts">${active.map(a => `<label><input type="checkbox" data-pr-art="${a.id}" ${pids.includes(a.id) ? 'checked' : ''}> ${esc(a.name)}</label>`).join('')}</div>
       <label for="pr-from">Envoyé par</label><select id="pr-from" ${relance ? 'disabled title="La relance part de la boîte qui a envoyé la prospection"' : ''}>${Object.entries(SENDERS).map(([k, l]) => `<option value="${k}" ${k === sender ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
       <label for="pr-tpl">Modèle</label><select id="pr-tpl"></select>
       <label for="pr-show" class="pr-concert" hidden>Concert</label><span class="pr-concert" hidden><select id="pr-show"></select><small class="muted">remplit la date, la ville, le lieu, la date limite de réponse et les liens</small></span>
@@ -108,22 +111,23 @@ export async function openProspection(structureId, {prospectId=null}={}){
       ${relance ? '' : `<label for="pr-subj">Objet</label><input id="pr-subj">
       <label>Date proposée</label><span class="pr-date">${dateInput('', 'id="pr-date"')}<small class="muted">facultatif : crée la date en « Intérêt » pour chaque artiste</small></span>`}
     </div>
-    <div class="mail-preview" id="pr-body" contenteditable="true" aria-label="Texte du mail (modifiable)"></div>
+    ${rtToolbar('pr-body')}<div class="mail-preview" id="pr-body" contenteditable="true" style="${rtStyle()}" aria-label="Texte du mail (modifiable)"></div>
     <div class="ml-att"><b class="fiche-lbl">Pièces jointes</b> <span id="pr-files"></span>
       <label class="btn sm file-btn">Ajouter un fichier<input type="file" class="file-input" multiple id="pr-up"></label></div>
     <p class="help">Envoyé depuis <b id="pr-from-addr">${esc(fromAddr())}</b>. « Enregistrer en brouillon » le met dans les brouillons Gmail ; « Envoyer maintenant » l’envoie tout de suite.
       Dans les deux cas : ${relance ? `le journal du suivi est complété (avec les dates des relances précédentes) et ${(p.relances || 0) + 1 >= MAIL_RELANCES ? 'comme c’est la ' + MAIL_RELANCES + 'e relance par mail, la tâche suivante est une relance par téléphone.' : 'une nouvelle tâche de relance est créée à J+10.'}` : 'un suivi est créé (Mailed) avec le mail dans le journal, la date proposée en « Intérêt », et une tâche Booking de relance à J+10.'}</p>
-    <div class="vh-actions"><button type="button" class="btn primary" id="pr-send">Envoyer maintenant</button></div></div>`;
+    </div>`;
 
-  let sendNow = false, dirty = false, files = [];
-  const done = openModal({title: `${relance ? `Relance n°${(p.relances || 0) + 1}` : 'Prospection'} · ${st.name}`, fields: [], extra, wide: true, saveLabel: 'Enregistrer en brouillon',
+  let wantDraft = false, dirty = false, files = [];
+  const done = openModal({title: `${relance ? `Relance n°${(p.relances || 0) + 1}` : 'Prospection'} · ${st.name}`, fields: [], extra, mail: true, saveLabel: 'Envoyer maintenant', footExtra: '<button type="button" class="btn" id="pr-draft">Enregistrer en brouillon</button>',
     onSave: async () => {
       const m = current();
-      if (!m.to) { toast('Indique le destinataire', true); sendNow = false; return false; }
-      if (!pids.length) { toast('Coche au moins un artiste', true); sendNow = false; return false; }
-      if (!relance && !m.subject) { toast('Indique l’objet du mail', true); sendNow = false; return false; }
-      if (sendNow && !confirm(`Envoyer le mail à ${m.to} maintenant ?`)) { sendNow = false; return false; }
-      const send = sendNow; sendNow = false;
+      // bouton principal « Envoyer maintenant », ou « Enregistrer en brouillon »
+      const send = !wantDraft; wantDraft = false;
+      if (!m.to) { toast('Indique le destinataire', true); return false; }
+      if (!pids.length) { toast('Coche au moins un artiste', true); return false; }
+      if (!relance && !m.subject) { toast('Indique l’objet du mail', true); return false; }
+      if (send && !confirm(`Envoyer le mail à ${m.to} maintenant ?`)) return false;
       try {
         const attachments = await Promise.all(files.filter(f => f.on).map(async f => f.id ? {id: f.id} : {url: await signedUrl(f.path), name: f.name}));
         const out = relance
@@ -136,11 +140,13 @@ export async function openProspection(structureId, {prospectId=null}={}){
       } catch (err) { toast(err.message, true); return false; }
     }});
   const $ = sel => document.querySelector('#modal ' + sel);
-  const current = () => ({to: $('#pr-to').value.trim(), cc: $('#pr-cc').value.trim(), subject: $('#pr-subj')?.value.trim() || '', html: $('#pr-body').innerHTML, date: $('#pr-date')?.value || null});
+  const current = () => ({to: $('#pr-to').value.trim(), cc: $('#pr-cc').value.trim(), subject: $('#pr-subj')?.value.trim() || '', html: wrapMail($('#pr-body').innerHTML), date: $('#pr-date')?.value || null});
   const drawFiles = () => { $('#pr-files').innerHTML = files.map((f, i) => `<label class="att-chip"><input type="checkbox" data-att="${i}" ${f.on ? 'checked' : ''}> ${f.path ? '📎' : '🔗'} ${esc(f.name || 'Fichier Drive')}</label>`).join('') || '<span class="muted">aucune</span>'; };
   const drawTpls = () => {
     const list = tplsFor(), cur = $('#pr-tpl').value;
-    $('#pr-tpl').innerHTML = list.map(t => `<option value="${t.id}">${esc(t.name || 'Modèle')}${t.project_id ? '' : ' · générique'}</option>`).join('') || '<option value="">Aucun modèle : Réglages › Modèles de mail</option>';
+    const grp = {0: 'Artistes cochés', 1: 'Tous les artistes', 2: 'Autres artistes'};
+    $('#pr-tpl').innerHTML = [0, 1, 2].map(r => { const g = list.filter(t => rank(t) === r); return g.length ? `<optgroup label="${grp[r]}">${g.map(t => `<option value="${t.id}">${esc(t.name || 'Modèle')}${tplProjects(t).length && r !== 0 ? ' · ' + esc(tplLabel(t)) : ''}</option>`).join('')}</optgroup>` : ''; }).join('')
+      || '<option value="">Aucun modèle : Réglages › Modèles de mail</option>';
     if (list.some(t => t.id === cur)) $('#pr-tpl').value = cur;
   };
   // remplit l'objet et le texte depuis le modèle (sauf si le texte a déjà été retouché à la main)
@@ -161,13 +167,24 @@ export async function openProspection(structureId, {prospectId=null}={}){
     if (force || !dirty) $('#pr-body').innerHTML = (t ? fill(t.html, vars, true) : '') + signatureOf(sender);
     if (force){ dirty = false; files = [...(t?.attachments || []).map(a => ({...a, on: true})), ...files.filter(f => f.mine)]; drawFiles(); if (t?.cc) $('#pr-cc').value = t.cc; }
   };
-  drawTpls(); draw(true);
-  $('#pr-tpl').onchange = () => { if (dirty && !confirm('Remplacer le texte retouché par ce modèle ?')) return; draw(true); };
+  drawTpls(); if (!pids.length) syncArtists(); $('#pr-tpl').dataset.prev = $('#pr-tpl').value; draw(true);
+  // modèle choisi → ses artistes sont cochés (un modèle « tous les artistes » garde la sélection)
+  function syncArtists(){
+    const ids = tplProjects(byId('mail_templates', $('#pr-tpl').value)); if (!ids.length || relance) return;
+    pids = ids.filter(id => active.some(a => a.id === id));
+    document.querySelectorAll('#modal [data-pr-art]').forEach(c => { c.checked = pids.includes(c.dataset.prArt); });
+  }
+  $('#pr-tpl').onchange = () => { const prev = $('#pr-tpl').dataset.prev;
+    if (dirty && !confirm('Remplacer le texte retouché par ce modèle ?')){ $('#pr-tpl').value = prev; return; }
+    syncArtists(); const cur = $('#pr-tpl').value; drawTpls(); $('#pr-tpl').value = cur; $('#pr-tpl').dataset.prev = cur; draw(true); };
   $('#pr-body').addEventListener('input', () => { dirty = true; });
   document.querySelector('#modal .pr-arts').addEventListener('change', e => {
     const id = e.target.dataset.prArt; if (!id) return;
     pids = e.target.checked ? [...pids, id] : pids.filter(x => x !== id);
     const before = $('#pr-tpl').value; drawTpls();
+    // le modèle choisi reste choisi ; s'il ne concerne plus aucun artiste coché, on passe au premier modèle adapté
+    if (rank(byId('mail_templates', before)) === 2 && pids.length) $('#pr-tpl').selectedIndex = 0;
+    $('#pr-tpl').dataset.prev = $('#pr-tpl').value;
     if ($('#pr-tpl').value !== before && !dirty) draw(true); else draw();
   });
   $('#pr-contact').onchange = e => { contact = byId('contacts', e.target.value) || null; if (contact?.email) $('#pr-to').value = contact.email; draw(); };
@@ -186,7 +203,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
     }
     e.target.value = ''; drawFiles();
   });
-  $('#pr-send').onclick = () => { sendNow = true; document.querySelector('#modal form').requestSubmit(); };
+  document.querySelector('#modal #pr-draft').onclick = () => { wantDraft = true; document.querySelector('#modal form').requestSubmit(); };
   return done;
 }
 
@@ -203,7 +220,7 @@ async function recordProspection(st, {to, subject, html, send, out, pids, contac
     if (!p) return;
   }
   const log = await insert('prospect_logs', {prospect_id: p.id, date: send ? now : null, kind: 'Mail', contact_name: contact?.display_name || to, contact_id: contact?.id || null,
-    author: S.user.email, body: `**Prospection${send ? '' : DRAFT_MARK}** · ${andList(pids.map(projName))}${account === 'production' ? ' · depuis production@' : ''}\n**Objet :** ${subject}\n\n${plain(html)}`});
+    author: S.user.email, body: `**Prospection${send ? '' : DRAFT_MARK}** · ${andList(pids.map(projName))}${account === 'production' ? ' · depuis production@' : ''}\n**Objet :** ${subject}\n\n${plain(html)}`, body_html: html});
   await save('prospects', p.id, {mail_account: account === 'production' ? 'production' : null, mail_thread_id: out.thread_id, mail_to: to, mail_subject: subject, mail_sent_at: send ? (out.sent_at || new Date().toISOString()) : null,
     mail_log_id: log?.id || null, relances: 0, ...(send ? {last_contact: now} : {})}, {rerender: false});
   // date proposée → une date en « Intérêt » par artiste
@@ -230,7 +247,7 @@ async function recordRelance(p, st, {to, html, send, out, contact}){
   const now = today(), n = (p.relances || 0) + 1;
   const before = historyText(p);
   const log = await insert('prospect_logs', {prospect_id: p.id, date: send ? now : null, kind: 'Mail', contact_name: contact?.display_name || to, contact_id: contact?.id || null,
-    author: S.user.email, body: `**Relance n°${n}${send ? '' : DRAFT_MARK}** (en réponse à « ${p.mail_subject || ''} »)${before ? `\n_Avant : ${before}_` : ''}\n\n${plain(html)}`});
+    author: S.user.email, body: `**Relance n°${n}${send ? '' : DRAFT_MARK}** (en réponse à « ${p.mail_subject || ''} »)${before ? `\n_Avant : ${before}_` : ''}\n\n${plain(html)}`, body_html: html});
   // une relance ne compte (et ne fait avancer la tâche) qu'une fois partie : en brouillon, on attend l'envoi depuis Gmail
   await save('prospects', p.id, {mail_log_id: log?.id || null, ...(send ? {relances: n, last_contact: now} : {})}, {rerender: false});
   if (send) await relanceTask(st, projIds(p), p.mail_subject, true, byId('prospects', p.id), n);
@@ -245,6 +262,24 @@ async function relanceSent(p, sentOn){
   await save('prospects', p.id, {relances: n}, {rerender: false});
   await relanceTask(st, projIds(p), p.mail_subject, true, byId('prospects', p.id), n, sentOn);
 }
+
+/**
+ * Mail parti depuis Gmail mais pas encore vu par la Matrice : « Marquer envoyé » (journal, suivi, relance comptée).
+ * date : jour d'envoi (aujourd'hui par défaut).
+ */
+export async function markLogSent(logId, date = today()){
+  const log = byId('prospect_logs', logId); if (!log) return;
+  const p = byId('prospects', log.prospect_id);
+  await save('prospect_logs', log.id, {date, body: String(log.body || '').replace(DRAFT_MARK, '')}, {rerender: false});
+  if (p){
+    const patch = {last_contact: [p.last_contact, date].filter(Boolean).sort().pop()};
+    if (/^\*\*Prospection/.test(log.body || '') && !p.mail_sent_at) patch.mail_sent_at = new Date(date + 'T12:00:00').toISOString();
+    await save('prospects', p.id, patch, {rerender: false});
+    if (/^\*\*Relance n°/.test(log.body || '')) await relanceSent(byId('prospects', p.id), date);
+  }
+  toast('Noté « envoyé » le ' + fmtDate(date)); render();
+}
+export const isDraftLog = l => String(l?.body || '').includes(DRAFT_MARK);
 
 /** Clôt les tâches de relance encore ouvertes du suivi (ou, pour les anciennes, de la structure) */
 async function closeOpenRelances(st, p){

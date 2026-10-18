@@ -13,6 +13,7 @@ import { SOURCES, acInput, commitTypedText } from './autocomplete.js';
 import { dateInput } from './datefield.js';
 import { projPicker } from './projpicker.js';
 import { trackModal } from './history.js';
+import { modalSaved, watchModal } from './drafts.js';
 
 export function field(f, v){
   const id = 'fld-'+f.k, cls = 'field'+(f.full?' full':'')+(f.type==='checkbox'?' check':'')+(f.cls?' '+f.cls:'');
@@ -28,7 +29,7 @@ export function field(f, v){
   else if (f.type==='place' || f.type==='city') input = acInput(f.type==='city'?'cities':'places', {value:v, text:v||'', attrs:`name="${f.k}"`, fill:f.fill??'', placeholder:f.placeholder||(f.type==='city'?'Taper une ville…':'Taper une adresse ou une ville…')});
   else if (f.type==='tags') input = `<input id="${id}" name="${f.k}" value="${esc((v||[]).join(', '))}" placeholder="séparés par des virgules">`;
   else if (f.type==='links') input = linksPicker(f, v);
-  else if (f.type==='checks') input = `<div class="checks">${f.options.map(([val,lab])=>`<label><input type="checkbox" name="${f.k}" value="${esc(val)}" ${(v||[]).includes(val)?'checked':''}> ${esc(lab)}</label>`).join('')}</div>`;
+  else if (f.type==='checks') input = `<div class="checks pills">${f.options.map(([val,lab])=>`<label><input type="checkbox" name="${f.k}" value="${esc(val)}" ${(v||[]).includes(val)?'checked':''}> ${esc(lab)}</label>`).join('')}</div>`;
   else if (f.type==='files') input = `<div class="dropzone" data-drop-form="${f.k}"><label class="btn sm file-btn">Ajouter un fichier<input type="file" name="${f.k}" multiple class="file-input" data-filelist="${f.k}"></label><span class="drop-hint">ou glisse les fichiers ici</span><div class="muted file-list" id="fl-${f.k}"></div></div>`;
   else input = `<input id="${id}" type="${f.type||'text'}" name="${f.k}" value="${esc(v??'')}" ${f.type==='number'?'step="any" inputmode="decimal"':''} ${f.placeholder?`placeholder="${esc(f.placeholder)}"`:''}>`;
   return `<div class="${cls}"><label for="${id}">${f.label}</label>${input}${f.help?`<div class="help">${f.help}</div>`:''}</div>`;
@@ -57,19 +58,22 @@ export let MODAL = null;
  * extraTop : contenu libre affiché avant les champs, extra : après.
  * onSave(valeurs) : renvoyer false pour garder la fenêtre ouverte.
  */
-export function openModal({title, fields, values={}, onSave, onDelete, extra='', extraTop='', level=1, wide=false, saveLabel='Enregistrer'}){
+export function openModal({title, fields, values={}, onSave, onDelete, extra='', extraTop='', level=1, wide=false, mail=false, footExtra='', saveLabel='Enregistrer'}){
   const dlg = $(level===2 ? '#modal2' : '#modal');
   MODALS[level] = {fields, onSave, onDelete, dlg};
   if (level===1) MODAL = MODALS[1];
-  dlg.className = wide ? 'wide' : '';
+  // mail : fenêtre haute, seul le texte du mail défile (champs en haut, boutons toujours visibles en bas)
+  dlg.className = [wide || mail ? 'wide' : '', mail ? 'mail' : ''].filter(Boolean).join(' ');
   dlg.innerHTML = `<form method="dialog" class="mform" data-level="${level}">
     <div class="modal-head"><h2>${esc(title)}</h2><button type="button" class="btn icon ghost" data-act="closeModal" data-level="${level}" aria-label="Fermer">✕</button></div>
     <div class="modal-body">${extraTop}${fields.map(f=>field(f, values[f.k])).join('')}${extra}</div>
     <div class="modal-foot">${onDelete?`<button type="button" class="btn ghost danger left" data-act="modalDelete" data-level="${level}">Supprimer</button>`:''}
-      <button type="button" class="btn" data-act="closeModal" data-level="${level}">Annuler</button><button class="btn primary" type="submit">${esc(saveLabel)}</button></div></form>`;
+      <button type="button" class="btn" data-act="closeModal" data-level="${level}">Annuler</button>${footExtra}<button class="btn primary" type="submit">${esc(saveLabel)}</button></div></form>`;
   const wasOpen = dlg.open;
   dlg.showModal();
   if (!wasOpen) trackModal(dlg);
+  // brouillon de la fenêtre : la saisie non enregistrée est gardée et revient à la réouverture
+  watchModal(dlg, 'modal.' + level + '.' + title + '.' + (values.id || 'new'));
   autosizeAll(dlg);
   const first = dlg.querySelector('.modal-body input:not([type=hidden]):not(.dt-val), .modal-body textarea, .modal-body select');
   if (first && !values.id) setTimeout(() => first.focus(), 30);
@@ -83,7 +87,7 @@ export function openModal({title, fields, values={}, onSave, onDelete, extra='',
       const btn = ev.target.querySelector('button[type=submit]'); btn.disabled = true;
       const ok = await onSave(out);
       btn.disabled = false;
-      if (ok!==false){ dlg.close(); if (level===1) render(); resolve(ok); }
+      if (ok!==false){ modalSaved(dlg); dlg.close(); if (level===1) render(); resolve(ok); }
     };
     dlg.addEventListener('close', () => resolve(null), {once:true});
   });

@@ -39,7 +39,7 @@ const staffQty = showId => linesOf(showId).filter(l => l.category === 'Staff').r
 /** Montant prévu HT d'une ligne (saisi, ou calculé pour les lignes automatiques) */
 export function lineForecast(l){
   if (l.forecast != null) return Number(l.forecast);
-  if (l.category === 'Staff' && l.qty != null && l.unit_cost != null) return r2(Number(l.qty) * Number(l.unit_cost));
+  if (!l.auto && l.qty != null && l.unit_cost != null) return r2(Number(l.qty) * Number(l.unit_cost));   // quantité × prix unitaire (salariés, salle, promoteur…)
   const s = byId('shows', l.show_id);
   if (l.auto === 'movinmotion' && s) return r2(payslipCost() * staffQty(s.id));
   if (l.auto === 'cnm' && s) return cnmDue(s) ? r2((Number(s.fee_ht)||0) * cnmPct() / 100) : 0;
@@ -84,7 +84,9 @@ const payee = p => p.payee || 'compte';
 export function accountOf(projectId){
   const p = byId('projects', projectId);
   const a = {opening: Number(p?.account_opening)||0, inDone:0, inTodo:0, outDone:0, outTodo:0, artboAdvance:0, byCat:{}};
-  for (const s of prodShowsOf(projectId)){
+  // une date que L'ArtBo produit (contrat Production / Co-Production) a son propre budget : hors compte dédié de l'artiste
+  const isOwnProd = s => /^(Production|Co-Production)$/.test(s?.contract_type || '');
+  for (const s of prodShowsOf(projectId).filter(x => !isOwnProd(x))){
     for (const pay of paymentsOf(s.id)){
       const v = payAmount(pay) || 0;
       if (['acompte','solde','autre'].includes(pay.kind) && payee(pay) === 'compte') pay.paid_at ? a.inDone += v : a.inTodo += v;
@@ -92,7 +94,7 @@ export function accountOf(projectId){
     }
     a.byCat['Commission'] = (a.byCat['Commission']||0) + commissionAmount(s);
   }
-  const lines = S.db.budget_lines.filter(l => l.project_id === projectId && (!l.show_id || isProdShow(byId('shows', l.show_id)) && CONFIRMED_PROD.includes(byId('shows', l.show_id)?.status)));
+  const lines = S.db.budget_lines.filter(l => l.project_id === projectId && (!l.show_id || isProdShow(byId('shows', l.show_id)) && CONFIRMED_PROD.includes(byId('shows', l.show_id)?.status) && !isOwnProd(byId('shows', l.show_id))));
   for (const l of lines){
     const v = lineValue(l);
     a.byCat[l.category || 'Autres'] = (a.byCat[l.category || 'Autres']||0) + v;

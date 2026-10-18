@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.25.0 — 18/10/2026
+- Mise en forme des mails (police, taille, couleur, lien), Helvetica Neue 14 par défaut ; modèles pour plusieurs artistes, artistes cochés selon le modèle ; émojis gardés dans Gmail ; brouillons jamais perdus et échanges modifiables partout ; mail mis en forme dans le journal, « Marquer envoyé » ; résumé IA à chaque échange ou pièce ; dossier Drive d'un nouvel artiste ; booking : pas de fiche de renseignements ; fenêtre de prospection, To do et choix des artistes plus clairs ; budget de production (Production / Co-Production)
+
+
 ## 1.24.1 — 18/10/2026
 - Relecture Greptile : relances en brouillon revérifiées, prochaine relance à J+10 de l'envoi réel, factures Pennylane reconnues par leur identifiant, remplacement d'une pièce sans risque, migrations sûres
 
