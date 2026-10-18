@@ -76,6 +76,19 @@ export const BUDGET_ACTIONS = {
       }});
   },
   openBudgetFile: t => { const l = byId('budget_lines', t.dataset.id); if (l?.file_path) openStored(l.file_path); },
+  syncPennylane: async t => {
+    t.disabled = true; toast('Lecture des factures payées dans Pennylane…');
+    try {
+      const out = await pennylane('sync', {});
+      const {refreshShowSide} = await import('./data.js');
+      for (const sid of new Set(out.updated.map(u => S.db.show_payments.find(p => p.id === u.id)?.show_id).filter(Boolean))) await refreshShowSide(sid);
+      render();
+      const lines = [out.updated.length ? `${out.updated.length} facture(s) marquée(s) payée(s) :\n- ` + out.updated.map(u => u.label).join('\n- ') : 'Rien de nouveau : la Matrice est à jour.',
+        out.pennylaneLate.length ? `\nPayées dans la Matrice mais pas encore dans Pennylane (à mettre à jour dans Pennylane) :\n- ` + out.pennylaneLate.join('\n- ') : ''];
+      alert(lines.join('\n'));
+    } catch (err) { toast(err.message, true); }
+    t.disabled = false;
+  },
   testPennylane: async () => { try { const out = await pennylane('status', {}); toast(`Pennylane OK : ${out.company || 'compte connecté'}`); } catch (err) { toast(err.message, true); } },
   pennylaneQuote: async t => {
     const s = byId('shows', t.dataset.id);

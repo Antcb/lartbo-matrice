@@ -32,7 +32,7 @@ export function viewProduction(){
   const head = viewHead('Production', {
     sub: `${shows.length} date${shows.length>1?'s':''} confirmée${shows.length>1?'s':''}`,
     filters: filterBar() + `<input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-prod" placeholder="Artiste, ville, salle, festival, date…" data-search="production" value="${esc(q)}">`,
-    actions: `<button class="btn" data-act="expandAll">${shows.length && shows.every(s=>S.openProd.has(s.id)) ? 'Tout replier' : 'Tout déplier'}</button>`});
+    actions: `<button class="btn" data-act="syncPennylane" title="Coche « Payée » les acomptes et soldes réglés dans Pennylane">Synchroniser Pennylane</button><button class="btn" data-act="expandAll">${shows.length && shows.every(s=>S.openProd.has(s.id)) ? 'Tout replier' : 'Tout déplier'}</button>`});
   if (!all.length) return head + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
   return head + `
     <div class="stat-row">
