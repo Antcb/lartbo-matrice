@@ -83,7 +83,7 @@ export const ACTIONS = {
   // Mails et fiche de renseignements
   prepareMail: (t, e) => { e?.stopPropagation(); S.notifOpen = false; prepareMail(t.dataset.id, t.dataset.kind); },
   editTemplate: t => editTemplate(t.dataset.id),
-  newTemplate: t => editTemplate(null, t.dataset.project ? {project_id: t.dataset.project} : {}),
+  newTemplate: t => editTemplate(null, {...(t.dataset.project ? {project_id: t.dataset.project} : {}), ...(t.dataset.kind ? {kind: t.dataset.kind} : {})}),
   copyFiche: async t => { const s = byId('shows', t.dataset.id);
     const link = (setting('site_url') || location.origin + location.pathname.replace(/[^/]*$/, '')) + 'fiche.html?t=' + s.fiche_token;
     try { await navigator.clipboard.writeText(link); toast('Lien de la fiche copié'); } catch { prompt('Lien de la fiche :', link); } },

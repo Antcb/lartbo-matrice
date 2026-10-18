@@ -229,13 +229,31 @@ function confChecks(s){
 
 // ─────────────── Éditeur de modèles ───────────────
 
+/** Groupes de la liste des modèles (Réglages, onglet Mails d'un artiste) restés ouverts pendant la session */
+const openGroups = new Set();
+document.addEventListener('toggle', e => {
+  const g = e.target; if (!g.matches?.('.tpl-group')) return;
+  g.open ? openGroups.add(g.dataset.kind) : openGroups.delete(g.dataset.kind);
+}, true);
+
+/** Modèles rangés par type de mail, dans des groupes dépliables (repliés par défaut) */
 export function templatesList(projectId){
-  const rows = S.db.mail_templates.filter(t => projectId === undefined || t.project_id === projectId)
-    .sort((a,b)=>(projLabel(a.project_id)).localeCompare(projLabel(b.project_id)) || (a.kind||'').localeCompare(b.kind||'') || (a.name||'').localeCompare(b.name||''));
+  const rows = S.db.mail_templates.filter(t => projectId === undefined || t.project_id === projectId);
   if (!rows.length) return '<div class="empty">Aucun modèle pour l’instant.</div>';
-  return `<div class="tpl-list">${rows.map(t=>`<button type="button" class="tpl-row" data-act="editTemplate" data-id="${t.id}">
-    <span class="tpl-kind">${esc(MAIL_KINDS[t.kind]||t.kind)}${t.variant?` · ${esc(t.variant)}`:''}</span>
-    <b>${esc(t.name||'Sans nom')}</b><span class="muted">${esc(projLabel(t.project_id))}${t.applies_to && t.applies_to !== 'all' ? ` · ${esc(APPLIES[t.applies_to])}` : ''}${(t.attachments||[]).length ? ` · 📎 ${(t.attachments||[]).length}` : ''}</span></button>`).join('')}</div>`;
+  const kinds = [...Object.keys(MAIL_KINDS), ...new Set(rows.map(t => t.kind).filter(k => !MAIL_KINDS[k]))];
+  const row = t => `<button type="button" class="tpl-row" data-act="editTemplate" data-id="${t.id}">
+    <span class="tpl-kind">${esc(projLabel(t.project_id))}${t.variant?` · ${esc(t.variant)}`:''}</span>
+    <b>${esc(t.name||'Sans nom')}</b><span class="muted">${t.applies_to && t.applies_to !== 'all' ? esc(APPLIES[t.applies_to]) : ''}${(t.attachments||[]).length ? ` · 📎 ${(t.attachments||[]).length}` : ''}</span></button>`;
+  return `<div class="tpl-groups">${kinds.map(k => {
+    const list = rows.filter(t => (t.kind || 'autre') === k)
+      .sort((a,b) => (a.project_id ? 1 : 0) - (b.project_id ? 1 : 0) || projLabel(a.project_id).localeCompare(projLabel(b.project_id)) || (a.name||'').localeCompare(b.name||''));
+    if (!list.length) return '';
+    return `<details class="tpl-group" data-kind="${esc(k)}" ${openGroups.has(k) ? 'open' : ''}>
+      <summary><span>${esc(MAIL_KINDS[k] || k)}</span><span class="badge">${list.length}</span></summary>
+      <div class="tpl-list">${list.map(row).join('')}
+        <button type="button" class="btn sm ghost tpl-add" data-act="newTemplate" data-kind="${esc(k)}" ${projectId ? `data-project="${projectId}"` : ''}>+ Modèle « ${esc(MAIL_KINDS[k] || k)} »</button></div>
+    </details>`;
+  }).join('')}</div>`;
 }
 const projLabel = id => id ? (byId('projects', id)?.name || '?') : 'Tous les artistes (générique)';
 
