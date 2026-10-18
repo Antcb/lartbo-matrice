@@ -162,7 +162,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
   const draw = (force=false) => {
     drawConcerts();
     const t = byId('mail_templates', $('#pr-tpl').value);
-    const vars = prospectVars(st, {pids, contact, date: $('#pr-date')?.value || null, show: byId('shows', $('#pr-show').value)});
+    const vars = prospectVars(st, {pids, contact, date: $('#pr-date')?.value || null, show: $('#modal .pr-concert')?.hidden ? null : byId('shows', $('#pr-show').value)});   // concert : seulement pour un modèle d'invitation
     if ($('#pr-subj') && (force || !dirty)) $('#pr-subj').value = t ? fill(t.subject, vars, false) : '';
     if (force || !dirty) $('#pr-body').innerHTML = (t ? fill(t.html, vars, true) : '') + signatureOf(sender);
     if (force){ dirty = false; files = [...(t?.attachments || []).map(a => ({...a, on: true})), ...files.filter(f => f.mine)]; drawFiles(); if (t?.cc) $('#pr-cc').value = t.cc; }
