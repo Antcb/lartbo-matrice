@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.24.1 — 18/10/2026
+- Relecture Greptile : relances en brouillon revérifiées, prochaine relance à J+10 de l'envoi réel, factures Pennylane reconnues par leur identifiant, remplacement d'une pièce sans risque, migrations sûres
+
+
 ## 1.24.0 — 18/10/2026
 - Facturation : % ↔ HT ↔ TTC liés, solde automatique, 100 % max, total des factures face au cachet, montants au centime ; taxe CNM seulement si la date est concernée ; défilement gardé dans les tableaux ; To do : accès direct structure et suivi ; {{contact}} = prénom seul ; prospection depuis production@ avec la signature de Chloé ; invitation remplie depuis une date confirmée
 

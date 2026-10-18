@@ -37,7 +37,7 @@ do $$ begin
 end $$;
 
 -- Brevo : adresse des fonctions serveur propre à chaque projet (production / espace de test)
-insert into public.settings(key, value) values ('functions_base_url', to_jsonb(current_setting('app.functions_base_url', true))) on conflict (key) do nothing;
+insert into public.settings(key, value) values ('functions_base_url', to_jsonb(coalesce(current_setting('app.functions_base_url', true), ''))) on conflict (key) do nothing;
 create or replace function public.brevo_queue(p_contact uuid) returns void
 language plpgsql security definer set search_path = public, extensions as $$
 declare k text; sec text; base text;

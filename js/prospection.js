@@ -19,7 +19,6 @@ import { esc, firstName, fmtDate, toast, today } from './utils.js';
 const RELANCE_DAYS = 10;
 const MAIL_RELANCES = 3;   // après 3 relances par mail sans réponse : relance par téléphone
 const DRAFT_MARK = ' _(brouillon, pas encore envoyé)_';
-const inDays = n => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const longDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long', year:'numeric'}) : '';
 const plain = html => { const d = document.createElement('div'); d.innerHTML = String(html).replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p)>/gi, '\n'); return d.textContent.replace(/ /g, ' ').replace(/\n{3,}/g, '\n\n').trim(); };
 const andList = a => a.length < 2 ? (a[0] || '') : a.slice(0, -1).join(', ') + ' et ' + a[a.length - 1];
@@ -240,11 +239,11 @@ async function recordRelance(p, st, {to, html, send, out, contact}){
 }
 
 /** Brouillon de relance parti depuis Gmail : on la compte et on passe à la tâche suivante */
-async function relanceSent(p){
+async function relanceSent(p, sentOn){
   const st = byId('structures', p.structure_id); if (!st) return;
   const n = (p.relances || 0) + 1;
   await save('prospects', p.id, {relances: n}, {rerender: false});
-  await relanceTask(st, projIds(p), p.mail_subject, true, byId('prospects', p.id), n);
+  await relanceTask(st, projIds(p), p.mail_subject, true, byId('prospects', p.id), n, sentOn);
 }
 
 /** Clôt les tâches de relance encore ouvertes du suivi (ou, pour les anciennes, de la structure) */
@@ -254,9 +253,11 @@ async function closeOpenRelances(st, p){
 }
 
 /** Tâche de relance suivante, rattachée au suivi : par mail à J+10, puis par téléphone après 3 relances par mail */
-async function relanceTask(st, pids, subject, sent, p, n){
+async function relanceTask(st, pids, subject, sent, p, n, sentOn=today()){
   await closeOpenRelances(st, p);
-  const base = {department: 'Booking', status: 'To Do', assigned_to: S.user.email, deadline: inDays(RELANCE_DAYS),
+  const due = new Date(sentOn + 'T12:00:00'); due.setDate(due.getDate() + RELANCE_DAYS);   // J+10 après l'envoi réel
+  const deadline = `${due.getFullYear()}-${String(due.getMonth()+1).padStart(2,'0')}-${String(due.getDate()).padStart(2,'0')}`;
+  const base = {department: 'Booking', status: 'To Do', assigned_to: S.user.email, deadline,
     structure_id: st.id, project_ids: pids, project_id: pids[0] || null, prospect_id: p?.id || null};
   if (p && n >= MAIL_RELANCES){
     const phones = linksOfStructure(st.id).filter(c => c.phone).map(c => `${c.display_name} : ${c.phone}`);
@@ -268,7 +269,7 @@ async function relanceTask(st, pids, subject, sent, p, n){
     return;
   }
   await insert('tasks', {...base, title: `Relance — ${st.name}`, auto_kind: 'relance_mail',
-    notes: `${n ? `Relance n°${n}` : 'Mail'} « ${subject || ''} » ${sent ? 'envoyé le ' + fmtDate(today()) : 'préparé en brouillon le ' + fmtDate(today())}. Relance n°${n + 1} sur ${MAIL_RELANCES} par mail : bouton « Relance » sur le suivi ou la fiche de la structure.`});
+    notes: `${n ? `Relance n°${n}` : 'Mail'} « ${subject || ''} » ${sent ? 'envoyé le ' + fmtDate(sentOn) : 'préparé en brouillon le ' + fmtDate(today())}. Relance n°${n + 1} sur ${MAIL_RELANCES} par mail : bouton « Relance » sur le suivi ou la fiche de la structure.`});
 }
 
 /** Relance téléphone sans réponse : la tâche est fermée, le suivi est clos et le journal le note */
@@ -287,12 +288,14 @@ export async function closeNoAnswer(taskId, {deleted=false}={}){
  * Brouillon parti depuis Gmail ? On regarde le fil une fois par session (ou tout de suite si force) :
  * la date d'envoi est notée dans le journal et sur le suivi.
  */
-const CHECKED = new Set();
+const CHECKED = new Map();            // suivi → heure de la dernière vérification
+const RECHECK_MS = 2 * 60 * 1000;     // un brouillon pas encore parti est revérifié toutes les 2 min au plus
 export async function checkProspect(p, force=false){
-  if (!p?.mail_thread_id || !(p.mail_account === 'production' ? setting('drive_webhook_url') : scriptUrl()) || (!force && CHECKED.has(p.id))) return;
+  if (!p?.mail_thread_id || !(p.mail_account === 'production' ? setting('drive_webhook_url') : scriptUrl())) return;
+  if (!force && Date.now() - (CHECKED.get(p.id) || 0) < RECHECK_MS) return;
   const log = p.mail_log_id ? byId('prospect_logs', p.mail_log_id) : null;
   if (!force && p.mail_sent_at && (!log || log.date)) return;
-  CHECKED.add(p.id);
+  CHECKED.set(p.id, Date.now());
   try {
     const out = await callProspect('status', {thread_id: p.mail_thread_id}, p.mail_account || 'anthony');
     const sent = (out.sent || []).sort();
@@ -304,7 +307,7 @@ export async function checkProspect(p, force=false){
       const after = log.created_at ? sent.find(d => d.slice(0, 19) >= log.created_at.slice(0, 19)) : null;
       if (after){
         await save('prospect_logs', log.id, {date: after.slice(0, 10), body: String(log.body || '').replace(DRAFT_MARK, '')}, {rerender: false});
-        if (/^\*\*Relance n°/.test(log.body || '')) await relanceSent(byId('prospects', p.id));
+        if (/^\*\*Relance n°/.test(log.body || '')) await relanceSent(byId('prospects', p.id), after.slice(0, 10));
       }
       if (after) patch.last_contact = [p.last_contact, after.slice(0, 10)].filter(Boolean).sort().pop();
     }

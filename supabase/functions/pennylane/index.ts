@@ -121,18 +121,21 @@ Deno.serve(async (req) => {
 
     // Factures payées dans Pennylane → cochées « Payée » dans la Matrice (acomptes, soldes, autres lignes)
     if (body.action === 'sync') {
-      const inv: Record<string, any> = {};
+      const inv: Record<string, any> = {}, byId: Record<string, any> = {};
       let cursor = '';
       for (let i = 0; i < 30; i++) {
         const page = await pl('GET', '/customer_invoices?limit=100&sort=-id' + (cursor ? '&cursor=' + cursor : ''));
-        for (const x of page.items || []) if (x.invoice_number && !x.draft) inv[norm(x.invoice_number)] = x;
+        for (const x of page.items || []) { if (x.draft) continue; byId[String(x.id)] = x; if (x.invoice_number) inv[norm(x.invoice_number)] = x; }
         if (!page.has_more) break; cursor = page.next_cursor;
       }
-      const { data: pays } = await admin.from('show_payments').select('id, show_id, kind, label, invoice_number, paid_at, shows(date, city, venue)')
-        .in('kind', ['acompte', 'solde', 'autre']).not('invoice_number', 'is', null);
+      // factures créées depuis la Matrice : reconnues par leur identifiant Pennylane (le numéro n'est connu qu'une fois finalisées)
+      const { data: pays } = await admin.from('show_payments').select('id, show_id, kind, label, invoice_number, pennylane_id, paid_at, shows(date, city, venue)')
+        .in('kind', ['acompte', 'solde', 'autre']).or('invoice_number.not.is.null,pennylane_id.not.is.null');
       const updated: any[] = [], pennylaneLate: any[] = [];
       for (const p of pays || []) {
-        const x = inv[norm(p.invoice_number)]; if (!x) continue;
+        const x = (p.pennylane_id && byId[String(p.pennylane_id)]) || (p.invoice_number && inv[norm(p.invoice_number)]); if (!x) continue;
+        if (!p.invoice_number && x.invoice_number) await admin.from('show_payments').update({ invoice_number: x.invoice_number }).eq('id', p.id);
+        p.invoice_number = p.invoice_number || x.invoice_number || '';
         const where = `${frDate((p as any).shows?.date)} ${(p as any).shows?.city || ''}`.trim();
         const isPaid = x.paid === true && x.status !== 'cancelled';
         if (isPaid && !p.paid_at) {
@@ -201,7 +204,7 @@ Deno.serve(async (req) => {
         line = { ...(prod ? { product_id: prod.id } : {}), label: prod?.label || 'Production de Spectacles • ' + CONTRACT_LABEL[k], unit: 'no_unit',
           ...(fee && clean ? { quantity: Number(share.toFixed(4)), raw_currency_unit_price: money(fee) } : { quantity: 1, raw_currency_unit_price: money(amount) }),
           vat_rate: vatCode(p.vat_rate ?? s.vat_rate ?? 5.5, st?.admin?.country || st?.country || 'France'),
-          ...(p.kind === 'acompte' ? { description: `Acompte${p.pct ? ' ' + p.pct + ' %' : ''}` } : p.kind === 'solde' ? { description: 'Solde' } : {}) };
+          ...(p.kind === 'acompte' ? { description: `Acompte${p.pct ? ' ' + Number(p.pct).toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + ' %' : ''}` } : p.kind === 'solde' ? { description: 'Solde' } : {}) };
       }
       const customer_id = await customerFor(st);
       const { doc: inv, headers } = await create('customer_invoices', {

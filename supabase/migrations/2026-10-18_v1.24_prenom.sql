@@ -29,3 +29,13 @@ end $$;
 alter table public.prospects add column if not exists mail_account text;   -- null = anthony@ (script Prospection), 'production' = production@ (script Google principal)
 insert into public.settings(key, value) values ('prospect_signature_production', to_jsonb($sig$<br><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="text-align:left; color:#000000; font-family:'Helvetica Neue', sans-serif; font-size:14px;"><tbody><tr><td style="text-align:left; padding:0;">Chloé<br><strong>Chloé Coste</strong><br>Chargée de Production<br><a href="tel:+33604524275">+33 (0)6 04 52 42 75</a> <span style="margin:0 2px;">|</span> <a href="mailto:production@lartboristerie.com">production@lartboristerie.com</a><br><a href="https://www.lartboristerie.com/" target="_blank">lartboristerie.com</a> <span style="margin:0 2px;">|</span> <a href="https://www.instagram.com/lartboristerie/" target="_blank">Instagram</a><br><span style="font-size:12px;">SARL L'ArtBoristerie Productions - 48Bis rue Pajol, 75018 Paris</span><br><br><a href="https://www.lartboristerie.com/" target="_blank"><img src="https://www.lartboristerie.com/wp-content/uploads/2026/02/LArtBoristerie_LogoCouleur-scaled.png" alt="L'ArtBoristerie Logo" width="170" style="display:block; border:0; width:170px; height:auto;"></a></td></tr></tbody></table>$sig$::text))
 on conflict (key) do nothing;
+
+-- Invitation : objet avec la date courte du concert ; pages pro des artistes (balise {{lien_projet}})
+update mail_templates set subject = 'Invitation • {{artiste}} • {{date_concert_court}} • {{ville_concert}} ({{cp_concert}}) • {{lieu_concert}}', updated_at = now() where name = 'Invitation à un concert' and kind = 'prospection';
+update projects p set links = jsonb_build_array(jsonb_build_object('label', 'Page pro', 'url', v.url))
+from (values ('FAV','https://www.lartboristerie.com/professionnel/fav-pro/'), ('Montmartre','https://www.lartboristerie.com/artistes/montmartre/'),
+  ('Nova Noir','https://www.lartboristerie.com/professionnel/nova-noir-pro/'), ('The Locos','https://www.lartboristerie.com/professionnel/the-locos-pro/'),
+  ('Mad In Ska','https://www.lartboristerie.com/professionnel/mad-in-ska/'), ('Th/s /s Sh/t','https://www.lartboristerie.com/professionnel/this-is-shit-pro/'),
+  ('La Pigñata','https://www.lartboristerie.com/professionnel/la-pignata-pro/'), ('Telegraph','https://www.lartboristerie.com/professionnel/telegraph-pro/'),
+  ('Natalia M. King','https://www.lartboristerie.com/professionnel/natalia-m-king-pro/')) v(name, url)
+where p.name = v.name and not exists (select 1 from jsonb_array_elements(coalesce(p.links, '[]')) e where coalesce(e->>'url', '') <> '');
