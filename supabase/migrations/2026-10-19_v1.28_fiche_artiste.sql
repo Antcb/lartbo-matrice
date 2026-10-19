@@ -310,3 +310,28 @@ do $do$ declare d text; begin
     execute d;
   end if;
 end $do$;
+
+-- v1.31.4 : l'onglet « Fiche artiste » ne repousse que ce qui vient d'être modifié (structure, membres)
+do $do$ declare d text; begin
+  d := pg_get_functiondef('public.artist_sync(uuid,jsonb,boolean)'::regprocedure);
+  if position('adm <> ''{}''' in d) = 0 then
+    d := replace(d, 'if adm ? ''legal_name'' or adm ? ''siret'' then', 'if adm ? ''legal_name'' or adm ? ''siret'' or (p_team and p.admin_structure_id is not null and adm <> ''{}'') then');
+    execute d;
+  end if;
+end $do$;
+create or replace function public.artist_info_save(p_project uuid, p_info jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_old jsonb; v_diff jsonb;
+begin
+  if not public.is_team() then raise exception 'Réservé à l''équipe'; end if;
+  if length(coalesce(p_info::text, '')) > 60000 then raise exception 'Fiche trop longue'; end if;
+  select coalesce(artist_info, '{}') into v_old from projects where id = p_project for update;
+  update projects set artist_info = coalesce(p_info, '{}') where id = p_project;
+  -- seulement ce qui vient d'être modifié (une correction faite entre-temps dans Administratif / Membres n'est pas écrasée)
+  v_diff := coalesce((select jsonb_object_agg(e.key, e.value) from jsonb_each(coalesce(p_info, '{}')) e
+      where e.key like 'adm\_%' and e.value is distinct from v_old->e.key), '{}')
+    || jsonb_build_object('members', (select coalesce(jsonb_agg(m), '[]') from jsonb_array_elements(case when jsonb_typeof(p_info->'members') = 'array' then p_info->'members' else '[]' end) m
+      where not (case when jsonb_typeof(v_old->'members') = 'array' then v_old->'members' else '[]' end) @> jsonb_build_array(m)));
+  perform public.artist_sync(p_project, v_diff, true);
+  return jsonb_build_object('ok', true);
+end $$;

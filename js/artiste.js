@@ -6,6 +6,7 @@
  */
 import { CFG } from './config.js';
 import './ui/dropfiles.js';
+import './ui/filepick.js';
 import { ARTIST_DOCS, ARTIST_SECTIONS, PHOTO_CREDITS } from './artist-fields.js';
 import { input, migrateInfo, read, wireLists } from './artist-form.js';
 
@@ -53,7 +54,7 @@ function draw(d, values){
               <button type="button" class="btn sm doc-add" data-doc-add="${k}" data-one="${esc(one)}" data-accept="${esc(accept)}" data-label="${esc(l)}">+ Ajouter ${/^[AEIOUÉH]/i.test(one) ? 'un' : one === 'Photo' ? 'une' : 'un'} ${esc(one.toLowerCase())}</button></div>
             <span class="muted" style="font-size:12px">${esc(help)}</span></div>`;
           return `<div class="field"><label for="d-${k}">${esc(l)}${min && n < min ? ' <span class="req">*</span>' : ''}${got}</label>
-            <input id="d-${k}" type="file" data-doc="${k}" data-label="${esc(l)}" accept="${esc(accept)}" multiple><span class="muted" style="font-size:12px">${esc(help)}</span></div>`; }).join('')}
+            <input id="d-${k}" type="file" data-doc="${k}" data-label="${esc(l)}" accept="${esc(accept)}"><span class="muted" style="font-size:12px">${esc(help)}</span></div>`; }).join('')}
           ${input(PHOTO_CREDITS, values[PHOTO_CREDITS.k] ?? '')}</div></section>
       <div class="fiche-actions"><p class="help"><span class="req">*</span> obligatoire</p><button class="btn primary" type="submit">Envoyer la fiche</button></div>
     </form>`;

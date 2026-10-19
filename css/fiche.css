@@ -56,5 +56,20 @@
 .al-card [data-al-del]{position:absolute;top:6px;right:6px}
 .doc-slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
 .doc-slot{display:grid;gap:4px;font-weight:600;font-size:13px;padding:8px 10px;border:1px dashed var(--line);border-radius:var(--r);background:var(--soft)}
-.doc-slot input{border:0;padding:0;background:none}
+
 .doc-slots .doc-add{align-self:center;justify-self:start}
+/* Choix de fichier (pages publiques) : bouton + nom du fichier, alignés */
+.fp{display:flex;align-items:center;gap:10px;min-height:40px;padding:5px 6px;border:1px solid var(--line);border-radius:var(--r);background:#fff;min-width:0}
+.fp{position:relative}
+.fp-input{position:absolute !important;left:0;top:0;width:1px !important;height:1px;opacity:0;pointer-events:none;padding:0 !important;border:0 !important}
+.fp-btn{flex:none;font:600 13px/1 inherit;padding:8px 12px;border:1px solid var(--brand);border-radius:var(--r-sm);background:var(--brand);color:#fff;cursor:pointer}
+.fp-btn:hover{background:var(--brand-2);border-color:var(--brand-2)}
+.fp-name{flex:1;min-width:0;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fp.has .fp-name{color:var(--ink);font-weight:600}
+.fp.has{border-color:var(--ok);background:#F3FAF5}
+.fp:has(.fp-input.invalid){border-color:var(--danger);box-shadow:0 0 0 2px #F6D5D2}
+.drop-over .fp,.fp.drop-over{border-style:dashed;border-color:var(--brand-2)}
+.doc-slot{align-content:start}
+.doc-slot>span:first-child{font-size:13px}
+.doc-slots{align-items:start}
+.doc-slots .doc-add{align-self:end;justify-self:start;min-height:40px}
