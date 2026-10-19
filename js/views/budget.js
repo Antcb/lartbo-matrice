@@ -65,8 +65,10 @@ function summaryTable(s, b, com, p){
  */
 export function artistResult(s, b = showBudget(s)){
   const sl = b.lines.filter(isSolde), reste = r2(availableForArtist(s));
-  const known = sl.filter(l => l.amount != null), verse = r2(known.reduce((t, l) => t + Number(l.amount), 0));
-  return {reste, verse, hasVerse: known.length > 0, ecart: known.length ? r2(reste - verse) : null, lines: sl};
+  // versé = montant saisi ET date de versement ; un montant sans date = connu, encore à verser
+  const known = sl.filter(l => l.amount != null), paid = known.filter(l => l.paid_at);
+  const verse = r2(paid.reduce((t, l) => t + Number(l.amount), 0)), todo = r2(known.filter(l => !l.paid_at).reduce((t, l) => t + Number(l.amount), 0));
+  return {reste, verse, todo, hasVerse: paid.length > 0, ecart: known.length ? r2(reste - verse - todo) : null, lines: sl};
 }
 const r2 = n => Math.round(n * 100) / 100;
 export const ecartHTML = e => e == null ? '<span class="muted">—</span>' : Math.abs(e) < 0.01 ? '<span class="muted">0,00 €</span>'
@@ -80,15 +82,16 @@ function artistBlock(s, b, p){
       <td class="num"><input type="number" step="any" data-t="budget_lines" data-id="${l.id}" data-f="amount" value="${l.amount ?? ''}" placeholder="${esc(String(r.reste))}" title="Montant réellement versé (HT)"></td>
       <td class="${l.paid_at ? 'done-cell' : ''}">${cIn('budget_lines', l.id, 'paid_at', l.paid_at, 'date')}</td>
       <td>${cSel('budget_lines', l.id, 'payer', l.payer || 'compte', payers, false)}${(l.payer || 'compte') !== 'compte' && l.paid_at ? `<div class="reimb ${l.reimbursed_at ? 'done-cell' : ''}"><span class="muted">Déduit du compte le</span>${cIn('budget_lines', l.id, 'reimbursed_at', l.reimbursed_at, 'date')}</div>` : ''}</td>
+      <td class="nowrap">${l.file_path ? `<button class="btn icon sm" data-act="openBudgetFile" data-id="${l.id}" title="${esc(l.file_name||'Pièce')}" aria-label="Ouvrir la pièce">📎</button>` : ''}${l.drive_file_id ? `<a class="btn icon sm" href="https://drive.google.com/file/d/${esc(l.drive_file_id)}/view" target="_blank" rel="noopener" title="Rangée dans le Drive de la date" aria-label="Ouvrir dans le Drive">▲</a>` : ''}${cIn('budget_lines', l.id, 'doc_number', l.doc_number, 'text', 'placeholder="N° facture" style="min-width:80px"')}</td>
       <td><button class="btn icon sm ghost danger" data-act="delBudgetLine" data-id="${l.id}" aria-label="Supprimer ce versement">✕</button></td></tr>`).join('');
   return `<div class="artist-result">
     <h4 class="block-title">Reste pour ${esc(who)}</h4>
     <div class="ar-grid">
       <div class="stat"><b>${eur2(r.reste)}</b><span>calculé : cachet ${eur2(b.fee)} − commission ${eur2(b.com)} − dépenses ${eur2(b.expenses)}</span></div>
-      <div class="stat"><b>${r.hasVerse ? eur2(r.verse) : '—'}</b><span>versé à ${esc(who)}</span></div>
+      <div class="stat"><b>${r.hasVerse ? eur2(r.verse) : '—'}</b><span>versé à ${esc(who)}${r.todo ? ` · <b>${eur2(r.todo)}</b> encore à verser (pas de date)` : ''}</span></div>
       <div class="stat"><b>${ecartHTML(r.ecart)}</b><span>${r.ecart == null ? 'écart : quand le versement est noté' : r.ecart < -0.005 ? 'écart pour toi : versé plus que le reste, tu perds' : r.ecart > 0.005 ? 'écart pour toi : versé moins que le reste, tu gagnes' : 'écart pour toi : juste'}</span></div>
     </div>
-    ${r.lines.length ? `<div class="tbl-wrap"><table class="budget-table"><thead><tr><th>Versé à</th><th class="num">Montant versé HT</th><th>Versé le</th><th>Payé par</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
+    ${r.lines.length ? `<div class="tbl-wrap"><table class="budget-table"><thead><tr><th>Versé à</th><th class="num">Montant versé HT</th><th>Versé le</th><th>Payé par</th><th>Facture</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
     <div class="vh-actions" style="margin-top:8px">
       <button class="btn sm" data-act="addBudgetLine" data-show="${s.id}" data-cat="Solde artiste">${r.lines.length ? 'Ajouter un versement' : 'Noter le versement'}</button>
       <button class="btn sm ghost" data-act="exportArtistBudget" data-id="${s.id}">Exporter pour ${esc(who)}</button>

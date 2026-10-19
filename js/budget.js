@@ -45,7 +45,7 @@ export function lineForecast(l){
   if (l.auto === 'movinmotion' && s) return r2(payslipCost() * staffQty(s.id));
   if (l.auto === 'cnm' && s) return cnmDue(s) ? r2((Number(s.fee_ht)||0) * cnmPct() / 100) : 0;
   if (l.auto === 'solde_artiste' && s){   // ce qui reste du cachet, moins les autres soldes déjà notés
-    const others = linesOf(s.id).filter(x => isSolde(x) && x.id !== l.id).reduce((t,x) => t + (x.amount != null ? Number(x.amount) : Number(x.forecast)||0), 0);
+    const others = linesOf(s.id).filter(x => isSolde(x) && x.id !== l.id).reduce((t,x) => t + (x.amount != null ? Number(x.amount) : 0), 0);   // les autres versements ne comptent que par leur montant saisi
     return Math.max(0, r2(availableForArtist(s) - others));
   }
   return null;
