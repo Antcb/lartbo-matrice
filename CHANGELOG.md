@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.26.1 — 19/10/2026
+- Corrections de la relecture Greptile : limite des acomptes avec les factures déjà envoyées, « 0 acompte » respecté dans le mail et la fiche, pop-up de confirmation depuis la fiche de la date, mise à jour automatique plus fiable (réglages, liens contacts, reconnexion, sans doublon), contrat regénérable, envoi bloqué s'il manque une pièce jointe, solde artiste prévu / réel, Communication suit le filtre des inactifs, double envoi impossible
+
+
 ## 1.26.0 — 19/10/2026
 - Mise à jour automatique : ce que fait un collègue (date validée, échange, tâche…) apparaît tout seul, sans recharger.
 - Artistes inactifs masqués partout (Booking, Production, carte, Ticketing, Communication, To Do, Suivi), bouton « Afficher les inactifs ».

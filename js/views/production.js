@@ -94,7 +94,9 @@ function actionsBar(s, booking){
       ? `<span class="pa-item"><button class="btn sm primary" data-act="validateFiche" data-id="${s.id}">Vérifier la fiche</button><small class="warn-txt">reçue le ${fmtDate(s.fiche_submitted_at.slice(0,10))}</small></span>`
       : `<span class="pa-item"><button class="btn sm ghost" data-act="validateFiche" data-id="${s.id}">Fiche de renseignements</button><small class="muted">pas encore remplie</small></span>`;
   const contract = s.contract_doc_id
-    ? `<span class="pa-item"><a class="btn sm" href="https://docs.google.com/document/d/${esc(s.contract_doc_id)}/edit" target="_blank" rel="noopener">Contrat ↗</a>${s.contract_pdf_id ? `<a class="btn sm ghost" href="https://drive.google.com/file/d/${esc(s.contract_pdf_id)}/view" target="_blank" rel="noopener">PDF ↗</a>` : `<button class="btn sm ghost" data-act="contractPdf" data-id="${s.id}">Exporter en PDF</button>`}</span>`
+    ? `<span class="pa-item"><a class="btn sm" href="https://docs.google.com/document/d/${esc(s.contract_doc_id)}/edit" target="_blank" rel="noopener">Contrat ↗</a>${s.contract_pdf_id ? `<a class="btn sm ghost" href="https://drive.google.com/file/d/${esc(s.contract_pdf_id)}/view" target="_blank" rel="noopener">PDF ↗</a>` : ''}
+       <button class="btn sm ghost" data-act="contractPdf" data-id="${s.id}">${s.contract_pdf_id ? 'Refaire le PDF' : 'Exporter en PDF'}</button>
+       <button class="btn sm ghost" data-act="genContract" data-id="${s.id}" title="Refait le contrat avec les conditions à jour">Regénérer</button></span>`
     : `<span class="pa-item"><button class="btn sm ${s.fiche_validated_at ? 'primary' : 'ghost'}" data-act="genContract" data-id="${s.id}">Générer le contrat</button></span>`;
   return `<div class="prod-actions">
     <div class="pa-row">

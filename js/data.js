@@ -34,12 +34,13 @@ export async function save(table, id, patch, {rerender=true}={}){
   touch(table);
   const {data, error} = await sb.from(table).update(patch).eq('id', id).select().single();
   if (error){ if (row) Object.assign(row, before); touch(table); toast('Enregistrement impossible : '+error.message, true); render(); return null; }
-  Object.assign(row, data); touch(table);
-  summaryAfter(table, row);
+  if (row) Object.assign(row, data); else if (data) S.db[table].push(data);
+  touch(table);
+  summaryAfter(table, row || data);
   if (table==='shows' && (patch.status || patch.project_id)) await refreshShowSide(id);
   if (table==='shows' && ('ticketing_type' in patch || 'department' in patch || 'structure_id' in patch)) await (await import('./budget-actions.js')).syncCnmLine(id);
   if (rerender) render();
-  return before;
+  return before || {};   // réussi (même si la ligne n'était pas encore en mémoire)
 }
 
 /**
@@ -57,10 +58,19 @@ export async function saveLinger(table, id, patch, message){
 
 export const lingering = id => S.linger.has(id);
 
+/** Ajoute des lignes en mémoire sans doublon (une ligne déjà arrivée par la mise à jour automatique est remplacée) */
+export function mergeRows(table, rows){
+  for (const r of rows || []){ const i = S.db[table].findIndex(x => x.id === r.id); if (i >= 0) S.db[table][i] = r; else S.db[table].push(r); }
+  touch(table);
+}
+
 export async function insert(table, values){
   const {data, error} = await sb.from(table).insert(values).select().single();
   if (error){ toast('Création impossible : '+error.message, true); return null; }
-  S.db[table].push(data); touch(table);
+  // la ligne a pu arriver avant par la mise à jour automatique : on la remplace au lieu de l'ajouter deux fois
+  const i = data?.id != null ? S.db[table].findIndex(r => r.id === data.id) : -1;
+  if (i >= 0) S.db[table][i] = data; else S.db[table].push(data);
+  touch(table);
   summaryAfter(table, data);
   if (table==='shows') await refreshShowSide(data.id);
   return data;
@@ -113,7 +123,7 @@ export async function syncLinks(kind, id, ids){
   const col = kind==='contact' ? 'contact_id' : 'structure_id', other = kind==='contact' ? 'structure_id' : 'contact_id';
   const current = S.db.contact_structures.filter(l=>l[col]===id).map(l=>l[other]);
   const add = ids.filter(x=>!current.includes(x)), del = current.filter(x=>!ids.includes(x));
-  if (add.length){ const rows = add.map(x=>({[col]:id,[other]:x})); const {error}=await sb.from('contact_structures').insert(rows); if(!error) S.db.contact_structures.push(...rows); else toast(error.message,true); }
+  if (add.length){ const rows = add.map(x=>({[col]:id,[other]:x})); const {error}=await sb.from('contact_structures').insert(rows); if(!error){ S.db.contact_structures.push(...rows.filter(r => !S.db.contact_structures.some(l => l.contact_id === r.contact_id && l.structure_id === r.structure_id))); touch('contact_structures'); } else toast(error.message,true); }
   for (const x of del){ await sb.from('contact_structures').delete().eq(col,id).eq(other,x); S.db.contact_structures = S.db.contact_structures.filter(l=>!(l[col]===id && l[other]===x)); }
   touch('contact_structures');
 }

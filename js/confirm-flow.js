@@ -89,10 +89,14 @@ export async function validateTerms(showId){
       if (v.fee_ht == null){ toast('Indique le cachet HT', true); return false; }
       if (!v.contract_type || v.contract_type === 'N.C'){ toast('Choisis le type de contrat', true); return false; }
       const list = booking ? [] : [...document.querySelectorAll('#modal [data-terms-ac]')].map(i => Number(String(i.value).replace(',', '.')) || 0);
-      const sum = list.reduce((a, b) => a + b, 0);
-      if (sum > 100){ toast('Les acomptes dépassent 100 % du cachet', true); return false; }
-      await save('shows', s.id, {...v, terms_validated_at: new Date().toISOString()}, {rerender: false});
-      if (!booking) await syncAcomptes(s.id, list);
+      // total : acomptes proposés + factures déjà parties (acomptes au-delà du nombre choisi, solde envoyé ou payé)
+      const pays = paymentsOf(s.id), now = acomptesOf(s.id);
+      const lockedExtra = now.slice(list.length).filter(locked).reduce((a, p) => a + (billPct(p) || 0), 0);
+      const solde = pays.find(p => p.kind === 'solde'), soldeLocked = solde && locked(solde) ? (billPct(solde) || 0) : 0;
+      const sum = list.reduce((a, b) => a + b, 0) + lockedExtra + soldeLocked;
+      if (sum > 100.001){ toast(`Les factures dépasseraient 100 % du cachet (${String(r2(sum)).replace('.', ',')} % avec celles déjà envoyées)`, true); return false; }
+      if (!(await save('shows', s.id, {...v, terms_validated_at: new Date().toISOString()}, {rerender: false}))) return false;
+      if (!booking && !(await syncAcomptes(s.id, list))){ toast('Les acomptes n’ont pas pu être enregistrés : vérifie l’onglet Factures', true); return false; }
       toast('Conditions validées');
       return true;
     }});
@@ -124,17 +128,18 @@ async function syncAcomptes(showId, list){
     const p = acs[i];
     const label = list.length > 1 ? `Acompte ${i + 1}` : 'Acompte';
     if (i < list.length){
-      if (!p) await insert('show_payments', {show_id: showId, kind: 'acompte', label, pct: list[i], sort: ++sort});
+      if (!p){ if (!(await insert('show_payments', {show_id: showId, kind: 'acompte', label, pct: list[i], sort: ++sort}))) return false; }
       else if (!p.sent_at && !p.paid_at){
         // le nom suit le nombre d'acomptes (Acompte / Acompte 1, 2…), sauf un nom choisi à la main
         const patch = {};
         if (Number(p.pct) !== list[i] || p.amount != null) Object.assign(patch, {pct: list[i], amount: null});
         if (!p.label || /^acompte( \d+)?$/i.test(p.label.trim())) if (p.label !== label) patch.label = label;
-        if (Object.keys(patch).length) await save('show_payments', p.id, patch, {rerender: false});
+        if (Object.keys(patch).length && !(await save('show_payments', p.id, patch, {rerender: false}))) return false;
       }
-    } else if (p && !p.sent_at && !p.paid_at) await remove('show_payments', p.id);
+    } else if (p && !p.sent_at && !p.paid_at && !(await remove('show_payments', p.id))) return false;
   }
-  if (!paymentsOf(showId).some(p => p.kind === 'solde')) await insert('show_payments', {show_id: showId, kind: 'solde', label: 'Solde', pct: 100, sort: 100});
+  if (!paymentsOf(showId).some(p => p.kind === 'solde') && !(await insert('show_payments', {show_id: showId, kind: 'solde', label: 'Solde', pct: 100, sort: 100}))) return false;
   await rebalanceSolde(showId);
   render();
+  return true;
 }

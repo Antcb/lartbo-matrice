@@ -13,7 +13,7 @@ import { byArtist, dateCell, notConcerned } from './ticketing.js';
 export function viewCommunication(){
   const all = showsFiltered().filter(s => s.status && s.status.startsWith('Confirmée'));
   // artistes inactifs masqués
-  const shows = all.filter(s => (s.communication_enabled || lingering(s.id)) && byId('projects', s.project_id)?.active !== false);
+  const shows = all.filter(s => (s.communication_enabled || lingering(s.id)));   // artistes inactifs : filtre commun (bouton « Afficher les inactifs »)
   const others = all.filter(s => !s.communication_enabled && !lingering(s.id));
   const q = (s, f, l) => `<label class="qty"><span class="muted">${l}</span>${cIn('shows',s.id,f,s[f],'number','class="narrow" aria-label="Affiches '+l+'"')}</label>`;
   const row = (l, html) => `<div><span class="muted">${l}</span>${html}</div>`;

@@ -55,7 +55,9 @@ function summaryTable(s, b, com, p){
     ${row('Commission L’ArtBo', b.com, com?.paid_at ? b.com : null, com?.paid_at ? 'virée' : 'pas encore virée')}
     ${row('Dépenses', b.forecastExp, withDoc ? realExp : null, `${withDoc}/${known} ligne${known > 1 ? 's' : ''} avec un montant réel`)}
     ${row('Reste pour l’artiste', b.fee - b.com - b.forecastExp, withDoc ? b.fee - b.com - realExp - (known - withDoc ? b.lines.filter(l => !isSolde(l) && l.amount == null).reduce((t, l) => t + (lineForecast(l) || 0), 0) : 0) : null, 'cachet − commission − dépenses (réel quand connu)', true)}
-    ${row('Solde versé à l’artiste' + (p?.artist_payee ? ` (${esc(p.artist_payee)})` : ''), b.solde, null)}
+    ${(() => { const sl = b.lines.filter(isSolde), real = sl.filter(l => l.amount != null);
+      return row('Solde versé à l’artiste' + (p?.artist_payee ? ` (${esc(p.artist_payee)})` : ''), sl.reduce((t, l) => t + (lineForecast(l) ?? (Number(l.amount) || 0)), 0),
+        real.length ? real.reduce((t, l) => t + Number(l.amount), 0) : null, real.length ? (sl.some(l => l.paid_at) ? 'versé' : 'montant connu, pas encore versé') : 'pas encore versé'); })()}
   </tbody></table></div>
   ${Math.abs(b.result) >= 1 ? `<p class="warn-txt" style="margin:6px 0 0;font-size:13px">Écart de ${eur2(b.result)} entre le cachet et commission + dépenses + solde artiste : ajuste le solde artiste.</p>` : ''}
   <p class="muted" style="font-size:12px;margin:6px 0 12px">Pièces reçues : ${b.docsIn}/${b.docsAll} · ${b.paid} payées.</p>`;
