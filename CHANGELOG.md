@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.33.1 — 19/10/2026
+- Budget : un montant sans date de versement compte comme « encore à verser » ; facture de l'artiste visible sur le versement
+
+
 ## 1.33.0 — 19/10/2026
 - Budget d'une date : le solde artiste sort du tableau des dépenses ; un bloc « Reste pour l'artiste » (calculé) + versements + écart pour toi (négatif = tu perds, positif = tu gagnes)
 - Export du budget d'une date pour l'artiste (page à imprimer / PDF)

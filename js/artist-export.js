@@ -15,7 +15,7 @@ export function exportArtistBudget(showId){
   const CAT = {Staff: 'Salaires', Movinmotion: 'Frais de paie (Movinmotion)', Taxes: 'Taxes'};
   const row = l => `<tr><td>${esc(CAT[l.category] || l.category || '')}</td><td>${esc(l.label || '')}${l.supplier ? ` <span class="m">· ${esc(l.supplier)}</span>` : ''}</td>
     <td class="n">${eur2(lineValue(l))}${l.amount == null ? ' <span class="m">(prévu)</span>' : ''}</td></tr>`;
-  const paid = r.lines.filter(l => l.amount != null);
+  const paid = r.lines.filter(l => l.amount != null && l.paid_at), todo = r.lines.filter(l => l.amount != null && !l.paid_at);
   const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(artist)} — budget du ${esc(fmtDate(s.date))}</title>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600;800&display=swap" rel="stylesheet">
@@ -52,7 +52,8 @@ export function exportArtistBudget(showId){
   <table><tbody>
     <tr class="big"><td><b>Reste pour ${esc(who)}</b><div class="m">cachet − commission − dépenses</div></td><td class="n"><b>${eur2(r.reste)}</b></td></tr>
     ${paid.map(l => `<tr><td>Versé${l.paid_at ? ' le ' + esc(fmtDate(l.paid_at)) : ''}${l.supplier ? ' à ' + esc(l.supplier) : ''}</td><td class="n">${eur2(l.amount)}</td></tr>`).join('')
-      || `<tr><td class="m" colspan="2">Versement pas encore effectué.</td></tr>`}
+      || (todo.length ? '' : `<tr><td class="m" colspan="2">Versement pas encore effectué.</td></tr>`)}
+    ${todo.map(l => `<tr><td>À verser${l.supplier ? ' à ' + esc(l.supplier) : ''}</td><td class="n">${eur2(l.amount)}</td></tr>`).join('')}
   </tbody></table>
   ${exp.some(l => l.amount == null) ? '<p class="m">« (prévu) » : montant estimé, la pièce n’est pas encore arrivée.</p>' : ''}
   <footer>L’ArtBoristerie Productions · établi le ${esc(fmtDate(new Date().toLocaleDateString('sv-SE')))}</footer>
