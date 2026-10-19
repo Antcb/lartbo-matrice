@@ -47,10 +47,15 @@ function apply(table, ev){
 }
 
 /** Tout recharger (après une coupure) puis redessiner au bon moment */
-let reloading = false;
+let reloading = false, pendingEvents = [];
 async function catchUp(render){
-  if (reloading || !S.user) return; reloading = true;
-  try { await loadAll(); later(render); } finally { reloading = false; }
+  if (reloading || !S.user) return; reloading = true; pendingEvents = [];
+  try {
+    await loadAll();
+    // ce qui est arrivé pendant le rechargement est rejoué par-dessus (sinon l'ancien résultat l'effacerait)
+    for (const [table, ev] of pendingEvents) if (apply(table, ev)) touch(table);
+    later(render);
+  } finally { reloading = false; pendingEvents = []; }
 }
 
 export function startRealtime(render){
@@ -58,6 +63,7 @@ export function startRealtime(render){
   try { channel = sb.channel('matrice-db'); } catch(e){ return; }
   TABLES.forEach(table => channel.on('postgres_changes', {event: '*', schema: 'public', table}, ev => {
     if (!S.user) return;
+    if (reloading) pendingEvents.push([table, ev]);
     if (apply(table, ev)){ touch(table); later(render); }
   }));
   // reconnexion après une coupure (wifi, veille…) : on recharge ce qui a pu être manqué
