@@ -53,3 +53,14 @@ begin
   select pg_get_functiondef(p.oid) into d from pg_proc p join pg_namespace s on s.oid = p.pronamespace where s.nspname = 'public' and p.proname = 'generate_reminders';
   if d is not null and position(o in d) > 0 then execute replace(d, o, n); end if;
 end $$;
+
+-- v1.33.6 : rappel de commission (L'ArtBo et partenaire) dès le premier encaissement, acompte OU solde (une date sans acompte n'avait jamais de rappel)
+do $$ declare d text; begin
+  select pg_get_functiondef(p.oid) into d from pg_proc p join pg_namespace s on s.oid = p.pronamespace where s.nspname = 'public' and p.proname = 'generate_reminders';
+  if d is null then return; end if;
+  d := replace(d, 'select ''commission'', id, a_paid + 10,', 'select ''commission'', id, least(a_paid, so_paid) + 10,');
+  d := replace(d, 'select ''commission_partenaire'', id, a_paid + 10,', 'select ''commission_partenaire'', id, least(a_paid, so_paid) + 10,');
+  d := replace(d, 'where mode <> ''booking'' and a_paid is not null and c_id is not null', 'where mode <> ''booking'' and coalesce(a_paid, so_paid) is not null and c_id is not null');
+  d := replace(d, 'where mode <> ''booking'' and a_paid is not null and pt_id is not null', 'where mode <> ''booking'' and coalesce(a_paid, so_paid) is not null and pt_id is not null');
+  execute d;
+end $$;
