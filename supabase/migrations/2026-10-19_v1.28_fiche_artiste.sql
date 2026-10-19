@@ -43,7 +43,7 @@ create or replace function public.artist_submit(p_token text, p_info jsonb, p_do
 language plpgsql security definer set search_path = public as $$
 declare p projects%rowtype; d jsonb; v_docs jsonb;
 begin
-  select * into p from projects where artist_token = p_token;
+  select * into p from projects where artist_token = p_token for update;   -- verrou : le rangement Drive ne peut pas écrire en même temps
   if not found then raise exception 'Lien invalide'; end if;
   if length(coalesce(p_info::text,'')) + length(coalesce(p_docs::text,'')) > 60000 then raise exception 'Fiche trop longue'; end if;
   v_docs := coalesce(p.artist_docs, '[]');
@@ -70,3 +70,35 @@ revoke execute on function public.artist_get(text) from public;
 revoke execute on function public.artist_submit(text, jsonb, jsonb) from public;
 grant execute on function public.artist_get(text) to anon, authenticated;
 grant execute on function public.artist_submit(text, jsonb, jsonb) to anon, authenticated;
+
+-- Rangement dans le Drive (script Google) : chaque fichier est réservé puis marqué rangé, un par un,
+-- sans réécrire toute la liste (un envoi de l'artiste pendant le rangement n'est jamais perdu)
+create or replace function public.artist_doc_claim(p_project uuid, p_path text) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare docs jsonb; ok boolean := false;
+begin
+  select artist_docs into docs from projects where id = p_project for update;
+  if docs is null then return false; end if;
+  select jsonb_agg(case when d->>'path' = p_path and d->>'file_id' is null
+      and (d->>'claimed_at' is null or (d->>'claimed_at')::timestamptz < now() - interval '15 minutes')
+    then d || jsonb_build_object('claimed_at', now()) else d end order by i),
+    bool_or(d->>'path' = p_path and d->>'file_id' is null and (d->>'claimed_at' is null or (d->>'claimed_at')::timestamptz < now() - interval '15 minutes'))
+    into docs, ok from jsonb_array_elements(docs) with ordinality as t(d, i);
+  if ok then update projects set artist_docs = docs where id = p_project; end if;
+  return coalesce(ok, false);
+end $$;
+create or replace function public.artist_doc_filed(p_project uuid, p_path text, p_file_id text, p_name text) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare docs jsonb;
+begin
+  select artist_docs into docs from projects where id = p_project for update;
+  if docs is null then return false; end if;
+  select jsonb_agg(case when d->>'path' = p_path then (d - 'claimed_at') || jsonb_build_object('path', null, 'file_id', p_file_id, 'drive_name', p_name) else d end order by i)
+    into docs from jsonb_array_elements(docs) with ordinality as t(d, i);
+  update projects set artist_docs = docs where id = p_project;
+  return true;
+end $$;
+revoke execute on function public.artist_doc_claim(uuid, text) from public, anon, authenticated;
+revoke execute on function public.artist_doc_filed(uuid, text, text, text) from public, anon, authenticated;
+grant execute on function public.artist_doc_claim(uuid, text) to service_role;
+grant execute on function public.artist_doc_filed(uuid, text, text, text) to service_role;

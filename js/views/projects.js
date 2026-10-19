@@ -3,8 +3,9 @@
  * Aperçu (cachets et commissions par année), Dates, Suivis, Tâches, Échanges, Liens, Drive,
  * Administratif (structure juridique de l'artiste), Membres (import CSV Movinmotion possible), Modèles de mail.
  */
-import { ARTIST_DOCS, ARTIST_SECTIONS } from '../artist-fields.js';
+import { ARTIST_DOCS, ARTIST_SECTIONS, PHOTO_CREDITS } from '../artist-fields.js';
 import { netArtbo } from '../calc.js';
+import { ENV } from '../config.js';
 import { templatesList, tplProjects } from '../mail.js';
 import { CONFIRMED_PROD, LOG_ICON, stClass } from '../constants.js';
 import { signedCached, signedUrl } from '../data.js';
@@ -191,13 +192,15 @@ function mailsTab(p){
 /** Fiche artiste : ce que l'artiste a rempli via son lien, et ses fichiers rangés dans le Drive */
 function artistTab(p){
   const info = p.artist_info || {}, docs = p.artist_docs || [];
+  const link = x => /^https?:/.test(x) ? `<a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a>` : esc(x);
   const val = (f, v) => {
+    if (f.type === 'roles') return v && Object.keys(v).length ? `<ul class="af-list">${Object.entries(v).map(([r, o]) => `<li><b>${esc(r)}</b> : ${f.cols.map(c => o[c.k] ? link(o[c.k]) : '').filter(Boolean).join(' · ')}</li>`).join('')}</ul>` : '';
     if (f.type === 'list') return (v || []).length ? `<ul class="af-list">${v.map(r => `<li>${f.cols.map(c => r[c.k] ? (/^https?:/.test(r[c.k]) ? `<a href="${esc(r[c.k])}" target="_blank" rel="noopener">${esc(r[c.k])}</a>` : esc(r[c.k])) : '').filter(Boolean).join(' · ')}</li>`).join('')}</ul>` : '';
     if (!v) return '';
     if (f.type === 'url' || /^https?:\/\//.test(v)) return `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>`;
     return `<span style="white-space:pre-line">${esc(v)}</span>`;
   };
-  const sections = ARTIST_SECTIONS.map(sec => { const rows = sec.fields.map(f => [f, val(f, info[f.k])]).filter(([, h]) => h);
+  const sections = [...ARTIST_SECTIONS, {title: 'Photos', fields: [PHOTO_CREDITS]}].map(sec => { const rows = sec.fields.map(f => [f, val(f, info[f.k])]).filter(([, h]) => h);
     return rows.length ? `<h3 class="block-title">${esc(sec.title)}</h3><dl class="af-dl">${rows.map(([f, h]) => `<dt>${esc(f.label || '')}</dt><dd>${h}</dd>`).join('')}</dl>` : ''; }).join('');
   const label = k => (ARTIST_DOCS.find(d => d[0] === k) || [k, k])[1];
   return `<div class="panel pad">
@@ -208,4 +211,4 @@ function artistTab(p){
     ${sections}
   </div>`;
 }
-export const artistLink = p => (setting('site_url') || location.origin + location.pathname.replace(/[^/]*$/, '')) + 'artiste.html?t=' + p.artist_token;
+export const artistLink = p => (setting('site_url') || location.origin + location.pathname.replace(/[^/]*$/, '')) + 'artiste.html?t=' + p.artist_token + (ENV === 'test' ? '&test' : '');   // espace de test : le lien ouvre la base de test

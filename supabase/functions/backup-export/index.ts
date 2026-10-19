@@ -44,15 +44,17 @@ Deno.serve(async (req) => {
       ...T.show_payments.filter((p) => p.file_path).map((p) => ({ path: p.file_path })),
       ...T.mail_templates.flatMap((m) => (m.attachments || []).filter((a: any) => a?.path).map((a: any) => ({ path: a.path, size: a.size }))),
     ].filter((f: any) => f.path).map((f: any) => ({ bucket: 'suivi', path: f.path, size: f.size || 0 }))
-      .concat(T.employees.flatMap((e) => (e.docs || []).filter((d: any) => d?.path && !d.file_id).map((d: any) => ({ bucket: 'rh', path: d.path, size: 0 }))));
+      .concat(T.employees.flatMap((e) => (e.docs || []).filter((d: any) => d?.path && !d.file_id).map((d: any) => ({ bucket: 'rh', path: d.path, size: 0 }))))
+      // fichiers envoyés par les artistes (fiche artiste) pas encore rangés dans le Drive (« artiste »)
+      .concat(T.projects.flatMap((p) => (p.artist_docs || []).filter((d: any) => d?.path && !d.file_id).map((d: any) => ({ bucket: 'artiste', path: d.path, size: 0 }))));
     const out: { bucket: string; path: string; url: string; size: number }[] = [];
-    for (const bucket of ['suivi', 'rh']) {
+    for (const bucket of ['suivi', 'rh', 'artiste']) {
       const list = [...new Map(files.filter((f) => f.bucket === bucket).map((f) => [f.path, f])).values()];
       for (let i = 0; i < list.length; i += 100) {
         const chunk = list.slice(i, i + 100);
         const { data, error } = await sb.storage.from(bucket).createSignedUrls(chunk.map((f) => f.path), 7200);
         if (error) throw error;
-        // chemin d'origine pour « suivi » (compatible avec les sauvegardes existantes), préfixé pour « rh »
+        // chemin d'origine pour « suivi » (compatible avec les sauvegardes existantes), préfixé pour « rh » et « artiste »
         data.forEach((d, j) => d.signedUrl && out.push({ bucket, path: (bucket === 'suivi' ? '' : bucket + '/') + chunk[j].path, url: d.signedUrl, size: chunk[j].size }));
       }
     }

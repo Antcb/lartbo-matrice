@@ -47,3 +47,7 @@
 .fiche-grid .choice input[type=radio],.fiche-grid .choice input[type=checkbox]{width:16px !important;height:16px;min-height:0;min-width:0;padding:0;margin:0;border:0;box-shadow:none;flex:none;accent-color:var(--brand)}
 .fiche-grid .choice label{display:inline-flex;align-items:center;gap:6px;font-weight:500}
 .fiche-grid.cols3.even{grid-template-columns:1fr 1fr 1fr}
+.fiche-grid.cols4.even{grid-template-columns:repeat(4,1fr)}
+.al-role b{font-size:13px}
+@media (max-width:640px){ .fiche-grid.cols4.even,.fiche-grid.cols3.even{grid-template-columns:1fr 1fr} .al-role{grid-template-columns:1fr !important} .al-role input{grid-column:1 !important} }
+.fiche-grid.cols4.even{align-items:end}
