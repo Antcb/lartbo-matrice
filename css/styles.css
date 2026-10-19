@@ -729,3 +729,6 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .pp-list .ac-item{flex-direction:row;align-items:center;gap:0}
 .pp-list .pp-toggle .count{margin-left:8px}
 .terms-ac .terms-due{flex:1;min-width:160px}
+.filter-note{margin:0 0 10px;font-size:13px;color:var(--warn);font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.update-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:3000;background:var(--brand);color:#fff;padding:10px 14px;border-radius:var(--r-lg);box-shadow:var(--shadow-pop);display:flex;gap:12px;align-items:center;font-weight:600}
+.update-bar .btn{background:#fff;color:var(--brand)}

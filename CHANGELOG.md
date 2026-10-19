@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.27.1 — 19/10/2026
+- To Do : filtres en cours rappelés au-dessus de la liste avec « Tout afficher » ; bandeau « Nouvelle version — Recharger » quand le site est mis à jour
+
+
 ## 1.27.0 — 19/10/2026
 - Plusieurs acomptes : chaque acompte a son échéance (le 1er : à la signature du contrat) et sa ligne dans le mail de confirmation.
 - Réglages › Google : « Copier le code à jour » (Code.gs) et « Tester le script » ; message clair quand le script de production@ n'est pas à jour.
