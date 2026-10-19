@@ -143,7 +143,7 @@ async function syncAcomptes(showId, rows){
         if ((p.due_label || null) !== dues[i]) patch.due_label = dues[i];
         if (!p.label || /^acompte( \d+)?$/i.test(p.label.trim())) if (p.label !== label) patch.label = label;
         if (Object.keys(patch).length && !(await save('show_payments', p.id, patch, {rerender: false}))) return false;
-      }
+      } else if ((p.due_label || null) !== dues[i] && !(await save('show_payments', p.id, {due_label: dues[i]}, {rerender: false}))) return false;   // facture partie : seule l'échéance change
     } else if (p && !p.sent_at && !p.paid_at && !(await remove('show_payments', p.id))) return false;
   }
   if (!paymentsOf(showId).some(p => p.kind === 'solde') && !(await insert('show_payments', {show_id: showId, kind: 'solde', label: 'Solde', pct: 100, sort: 100}))) return false;

@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.27.2 — 19/10/2026
+- Correctif : pages longues (To Do, tâches terminées…) 8 fois plus rapides, plus de blocage de Safari ; échéance d'un acompte déjà facturé enregistrée ; la fiche de renseignements affiche les acomptes avec leurs échéances
+
+
 ## 1.27.1 — 19/10/2026
 - To Do : filtres en cours rappelés au-dessus de la liste avec « Tout afficher » ; bandeau « Nouvelle version — Recharger » quand le site est mis à jour
 

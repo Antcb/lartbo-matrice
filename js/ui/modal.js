@@ -127,7 +127,13 @@ export const hiddenFields = (vals, keys) => keys.map(([k, num]) => `<input type=
 
 /** Ajuste la hauteur des zones de texte à leur contenu */
 export function autosize(ta){ ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 2) + 'px'; }
-export function autosizeAll(root=document){ root.querySelectorAll('textarea.cell-ta, .field textarea').forEach(autosize); }
+/** Toutes les zones d'un coup : écrire, puis lire, puis écrire (sinon le navigateur recalcule la page à chaque zone : très lent sur une longue liste) */
+export function autosizeAll(root=document){
+  const tas = [...root.querySelectorAll('textarea.cell-ta, .field textarea')]; if (!tas.length) return;
+  tas.forEach(ta => { ta.style.height = 'auto'; });
+  const hs = tas.map(ta => ta.scrollHeight);
+  tas.forEach((ta, i) => { ta.style.height = (hs[i] + 2) + 'px'; });
+}
 document.addEventListener('input', e => { if (e.target.matches?.('textarea.cell-ta, .field textarea')) autosize(e.target); });
 // Entrée valide un champ d'une ligne (Maj+Entrée pour aller à la ligne)
 document.addEventListener('keydown', e => { if (e.key==='Enter' && !e.shiftKey && e.target.matches?.('textarea.cell-ta')){ e.preventDefault(); e.target.blur(); } });
