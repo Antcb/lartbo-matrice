@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.33.2 — 19/10/2026
+- Commission : le % se modifie aussi depuis le budget de la date ; quand on change la commission d'un artiste, ses dates suivent (après confirmation)
+
+
 ## 1.33.1 — 19/10/2026
 - Budget : un montant sans date de versement compte comme « encore à verser » ; facture de l'artiste visible sur le versement
 
