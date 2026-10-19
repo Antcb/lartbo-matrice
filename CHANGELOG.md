@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.31.3 — 19/10/2026
+- Onglet « Fiche artiste » : une correction met aussi à jour la structure administrative et l'onglet Membres ; une modification non enregistrée reste affichée avec « Réessayer » ; anciennes réponses reprises ; commission par défaut aussi appliquée par la base aux dates confirmées
+
+
 ## 1.31.2 — 19/10/2026
 - Fiche artiste : « + Ajouter un logo » et « + Ajouter une photo » pour en déposer autant que nécessaire
 

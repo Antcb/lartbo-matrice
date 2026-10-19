@@ -186,3 +186,127 @@ begin
 end $$;
 revoke execute on function public.artist_submit(text, jsonb, jsonb) from public;
 grant execute on function public.artist_submit(text, jsonb, jsonb) to anon, authenticated;
+-- v1.31.3 : structure administrative et membres tenus à jour depuis la fiche artiste,
+-- par l'artiste (artist_submit : ne modifie jamais une structure qui n'est pas la sienne, complète seulement)
+-- ou par l'équipe dans l'onglet « Fiche artiste » (artist_info_save : peut corriger et relier)
+create or replace function public.artist_sync(p_project uuid, p_info jsonb, p_team boolean) returns void
+language plpgsql security definer set search_path = public as $$
+declare p projects%rowtype; m jsonb; adm jsonb := '{}'; k text; st_id uuid; dup_id uuid; mem_id uuid; bd date;
+begin
+  select * into p from projects where id = p_project;
+  if not found then return; end if;
+  for k in select jsonb_object_keys(coalesce(p_info, '{}')) loop
+    if k like 'adm\_%' and coalesce(p_info->>k, '') <> '' then adm := adm || jsonb_build_object(substr(k, 5), left(p_info->>k, 300)); end if;
+  end loop;
+  if adm ? 'legal_name' or adm ? 'siret' then
+    st_id := p.admin_structure_id;
+    if st_id is null then
+      select id into dup_id from structures where adm ? 'siret' and regexp_replace(adm->>'siret', '\D', '', 'g') <> ''
+        and regexp_replace(coalesce(admin->>'siret',''), '\D', '', 'g') = regexp_replace(adm->>'siret', '\D', '', 'g') limit 1;
+      if dup_id is null then
+        insert into structures (name, address, postal_code, city, country, admin, tags)
+          values (coalesce(adm->>'legal_name', 'Structure de ' || p.name), adm->>'address', adm->>'postal_code', adm->>'city', coalesce(adm->>'country', 'France'), adm, array['Structure artiste'])
+          returning id into st_id;
+        update projects set admin_structure_id = st_id where id = p.id;
+      elsif p_team then
+        -- l'équipe a tapé ce SIRET : on relie la structure existante et on la complète
+        st_id := dup_id; update projects set admin_structure_id = st_id where id = p.id;
+        update structures set admin = adm || (select coalesce(jsonb_object_agg(e.key, e.value), '{}') from jsonb_each(coalesce(admin, '{}')) e where coalesce(e.value #>> '{}', '') <> '') where id = st_id;
+      else
+        insert into notifications (kind, title, body, dedupe_key)
+          values ('artiste', 'Structure à relier — ' || trim(regexp_replace(p.name, '\s*•.*$', '')),
+            'Le SIRET donné dans la fiche artiste correspond à « ' || (select name from structures where id = dup_id) || ' ». À relier dans l''onglet Administratif du projet si c''est bien elle.',
+            'artiste-structure:' || p.id || ':' || dup_id)
+          on conflict (dedupe_key) do nothing;
+      end if;
+    elsif p_team then
+      -- l'équipe corrige : ses valeurs remplacent les anciennes
+      update structures set admin = coalesce(admin, '{}') || adm,
+        address = coalesce(adm->>'address', address), postal_code = coalesce(adm->>'postal_code', postal_code),
+        city = coalesce(adm->>'city', city), country = coalesce(adm->>'country', country), updated_at = now()
+        where id = st_id;
+    else
+      -- l'artiste complète seulement ce qui manque sur sa structure
+      update structures set admin = adm || (select coalesce(jsonb_object_agg(e.key, e.value), '{}') from jsonb_each(coalesce(admin, '{}')) e where coalesce(e.value #>> '{}', '') <> ''),
+        address = coalesce(nullif(address, ''), adm->>'address'), postal_code = coalesce(nullif(postal_code, ''), adm->>'postal_code'),
+        city = coalesce(nullif(city, ''), adm->>'city'), country = coalesce(nullif(country, ''), adm->>'country'), updated_at = now()
+        where id = st_id;
+    end if;
+  end if;
+  for m in select * from jsonb_array_elements(case when jsonb_typeof(p_info->'members') = 'array' then p_info->'members' else '[]' end) loop
+    if coalesce(m->>'first_name', '') = '' and coalesce(m->>'last_name', '') = '' then continue; end if;
+    bd := null; mem_id := null;
+    if coalesce(m->>'birth_date', '') ~ '^\d{1,2}/\d{1,2}/\d{4}$' then begin bd := to_date(m->>'birth_date', 'DD/MM/YYYY'); exception when others then bd := null; end;
+    elsif coalesce(m->>'birth_date', '') ~ '^\d{4}-\d{2}-\d{2}$' then begin bd := (m->>'birth_date')::date; exception when others then bd := null; end; end if;
+    select id into mem_id from project_members where project_id = p.id and (
+      (coalesce(m->>'email', '') <> '' and lower(email) = lower(m->>'email'))
+      or (lower(coalesce(first_name, '')) = lower(coalesce(m->>'first_name', '')) and lower(coalesce(last_name, '')) = lower(coalesce(m->>'last_name', '')))) limit 1;
+    if mem_id is null then
+      insert into project_members (project_id, first_name, last_name, role, email, phone, birth_date, address, data)
+        values (p.id, nullif(m->>'first_name', ''), nullif(m->>'last_name', ''), nullif(m->>'role', ''), nullif(m->>'email', ''), nullif(m->>'phone', ''), bd,
+          nullif(concat_ws(', ', nullif(m->>'city', ''), nullif(m->>'country', '')), ''),
+          jsonb_strip_nulls(jsonb_build_object('city', nullif(m->>'city', ''), 'country', nullif(m->>'country', ''))));
+    else
+      update project_members set first_name = coalesce(nullif(m->>'first_name', ''), first_name), last_name = coalesce(nullif(m->>'last_name', ''), last_name),
+        role = coalesce(nullif(m->>'role', ''), role), email = coalesce(nullif(m->>'email', ''), email), phone = coalesce(nullif(m->>'phone', ''), phone), birth_date = coalesce(bd, birth_date),
+        address = case when p_team then coalesce(nullif(concat_ws(', ', nullif(m->>'city', ''), nullif(m->>'country', '')), ''), address)
+                       else coalesce(nullif(address, ''), nullif(concat_ws(', ', nullif(m->>'city', ''), nullif(m->>'country', '')), '')) end,
+        data = coalesce(data, '{}') || jsonb_strip_nulls(jsonb_build_object('city', nullif(m->>'city', ''), 'country', nullif(m->>'country', '')))
+        where id = mem_id;
+    end if;
+  end loop;
+end $$;
+revoke execute on function public.artist_sync(uuid, jsonb, boolean) from public, anon, authenticated;
+
+create or replace function public.artist_info_save(p_project uuid, p_info jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_team() then raise exception 'Réservé à l''équipe'; end if;
+  if length(coalesce(p_info::text, '')) > 60000 then raise exception 'Fiche trop longue'; end if;
+  perform 1 from projects where id = p_project for update;
+  update projects set artist_info = coalesce(p_info, '{}') where id = p_project;
+  perform public.artist_sync(p_project, p_info, true);
+  return jsonb_build_object('ok', true);
+end $$;
+revoke execute on function public.artist_info_save(uuid, jsonb) from public, anon;
+grant execute on function public.artist_info_save(uuid, jsonb) to authenticated;
+
+create or replace function public.artist_submit(p_token text, p_info jsonb, p_docs jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare p projects%rowtype; d jsonb; v_docs jsonb;
+begin
+  select * into p from projects where artist_token = p_token for update;   -- verrou : le rangement Drive ne peut pas écrire en même temps
+  if not found then raise exception 'Lien invalide'; end if;
+  if length(coalesce(p_info::text,'')) + length(coalesce(p_docs::text,'')) > 60000 then raise exception 'Fiche trop longue'; end if;
+  v_docs := coalesce(p.artist_docs, '[]');
+  for d in select * from jsonb_array_elements(coalesce(p_docs, '[]')) loop
+    if (d->>'path') like p_token || '/%' then
+      v_docs := v_docs || jsonb_build_array(jsonb_build_object('kind', d->>'kind', 'label', d->>'label', 'path', d->>'path', 'name', left(d->>'name', 200), 'at', now()));
+    end if;
+  end loop;
+  update projects set artist_info = coalesce(p_info, '{}'), artist_docs = v_docs, artist_submitted_at = now() where id = p.id;
+  perform public.artist_sync(p.id, p_info, false);
+  insert into notifications (kind, title, body, dedupe_key)
+    values ('artiste', 'Fiche artiste remplie — ' || trim(regexp_replace(p.name, '\s*•.*$', '')),
+            case when jsonb_array_length(coalesce(p_docs, '[]')) > 0 then jsonb_array_length(p_docs) || ' fichier(s) rangé(s) dans son dossier Drive' else 'Sans fichier' end,
+            'artiste:' || p.id || ':' || extract(epoch from now())::bigint)
+    on conflict (dedupe_key) do nothing;
+  if jsonb_array_length(coalesce(p_docs, '[]')) > 0 and coalesce(setting_text('drive_webhook_url'), '') <> '' then
+    perform net.http_post(url := setting_text('drive_webhook_url'),
+      body := jsonb_build_object('secret', setting_text('drive_webhook_secret'), 'action', 'artist_file_docs', 'project_id', p.id),
+      timeout_milliseconds := 120000);
+  end if;
+  return jsonb_build_object('ok', true);
+end $$;
+revoke execute on function public.artist_submit(text, jsonb, jsonb) from public;
+grant execute on function public.artist_submit(text, jsonb, jsonb) to anon, authenticated;
+
+-- commission par défaut selon le type de suivi (Réglages : booking / production)
+insert into public.settings(key, value) values ('default_artbo_pct_booking', '15'), ('default_artbo_pct_production', '20') on conflict (key) do nothing;
+do $do$ declare d text; begin
+  d := pg_get_functiondef('public.on_show_confirmed()'::regprocedure);
+  if position('default_artbo_pct_booking' in d) = 0 then
+    d := replace(d, 'coalesce(p.default_artbo_pct, setting_num(''default_artbo_pct''))', 'coalesce(p.default_artbo_pct, setting_num(case when coalesce(new.prod_mode, p.mode) = ''booking'' then ''default_artbo_pct_booking'' else ''default_artbo_pct_production'' end), setting_num(''default_artbo_pct''))');
+    execute d;
+  end if;
+end $do$;

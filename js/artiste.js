@@ -7,7 +7,7 @@
 import { CFG } from './config.js';
 import './ui/dropfiles.js';
 import { ARTIST_DOCS, ARTIST_SECTIONS, PHOTO_CREDITS } from './artist-fields.js';
-import { input, read, wireLists } from './artist-form.js';
+import { input, migrateInfo, read, wireLists } from './artist-form.js';
 
 const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {auth: {persistSession: false}});
 const root = document.getElementById('fiche');
@@ -22,10 +22,8 @@ async function load(){
   if (error) return fail('La fiche ne peut pas être chargée pour le moment. Réessaie dans quelques minutes.');
   if (!data) return fail('Ce lien n’est pas valide. Écris-nous à production@lartboristerie.com.');
   let draft = {}; try { draft = JSON.parse(localStorage.getItem(DRAFT) || '{}'); } catch {}
-  const values = {...(data.info || {}), ...draft};
   // ancienne version de la fiche : la structure administrative était une ligne de « l'équipe pro » → reprise dans ses nouveaux champs
-  const old = values.pros?.['Structure administrative de l’artiste'];
-  if (old){ if (!values.adm_legal_name && old.name) values.adm_legal_name = old.name; if (!values.adm_email && old.email) values.adm_email = old.email; if (!values.adm_phone && old.phone) values.adm_phone = old.phone; }
+  const values = migrateInfo({...(data.info || {}), ...draft});
   draw(data, values);
 }
 function fail(msg){ root.innerHTML = `<div class="panel pad fiche-msg">${esc(msg)}</div>`; }

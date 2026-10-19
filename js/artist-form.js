@@ -80,6 +80,18 @@ export function listClick(e, form, onChange = () => {}){
   return false;
 }
 
+/** Anciennes réponses : la structure administrative était une ligne de « l'équipe pro » → reprise dans ses champs à elle */
+export function migrateInfo(info){
+  const v = {...(info || {})}, old = v.pros?.['Structure administrative de l’artiste'];
+  if (old){
+    if (!v.adm_legal_name && (old.org || old.name)) v.adm_legal_name = old.org || old.name;
+    if (!v.adm_email && old.email) v.adm_email = old.email;
+    if (!v.adm_phone && old.phone) v.adm_phone = old.phone;
+    const {['Structure administrative de l’artiste']: _, ...rest} = v.pros; v.pros = rest;
+  }
+  return v;
+}
+
 /** Texte d'une réponse, prêt à coller (listes : une ligne par élément) */
 export function fieldText(f, v){
   if (f.type === 'roles') return Object.entries(v || {}).map(([r, o]) => `${r} : ${f.cols.map(c => o?.[c.k]).filter(Boolean).join(' · ')}`).join('\n');
