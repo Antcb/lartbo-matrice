@@ -4,7 +4,7 @@
  */
 import { lingering } from '../data.js';
 import { distKm } from '../geo.js';
-import { byId, eventsOfStructure, lastExchange, linksOfStructure, projName, prospectsOfStructure, showsOfStructure, tasksOfStructure } from '../selectors.js';
+import { suiviClosed, byId, eventsOfStructure, lastExchange, linksOfStructure, projName, prospectsOfStructure, showsOfStructure, tasksOfStructure } from '../selectors.js';
 import { S } from '../state.js';
 import { curTab, fold, pstBadge, stBadge, stSelect, tabsBar, tag, viewHead } from '../ui/bits.js';
 import { cAc, cIn, cSel } from '../ui/cells.js';
@@ -34,14 +34,14 @@ export function structurePage(st){
   const shows = showsOfStructure(st.id).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const tasks = tasksOfStructure(st.id);
   const events = eventsOfStructure(st.id);
-  const openSuivis = suivis.filter(p=>p.status!=='Closed' || lingering(p.id));
+  const openSuivis = suivis.filter(p=>!suiviClosed(p) || lingering(p.id));
   const tab = curTab('structure', 'home');
   const tabs = tabsBar('structure', [['home','Accueil'], ['suivi','Suivi', openSuivis.length], ['dates','Dates', shows.filter(x=>!isOff(x.status)).length], ['tasks','Tâches', tasks.filter(t=>!['Done','Cancelled'].includes(t.status)).length],
     ['events','Festivals / salles', events.length], ['admin','Coordonnées administratives']]);
   let body = '';
   if (tab==='home') body = homeTab(st, contacts, events) + `<div class="section-title">Tâches <span class="count">${tasks.filter(t=>!['Done','Cancelled'].includes(t.status)).length}</span><span class="spacer"></span><button class="btn sm" data-act="newTaskFor" data-id="${st.id}">Nouvelle tâche</button></div>${taskSection(tasks)}`;
   else if (tab==='suivi'){
-    const closed = suivis.filter(p=>p.status==='Closed' && !lingering(p.id));
+    const closed = suivis.filter(p=>suiviClosed(p) && !lingering(p.id));
     const shown = S.showClosed ? suivis : openSuivis;
     body = `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newSuiviFor" data-id="${st.id}">Nouveau suivi</button></div>`
       + (openSuivis.map(p => suiviCard(p)).join('') || `<div class="empty panel">${closed.length ? 'Aucun suivi en cours avec cette structure.' : 'Aucun suivi avec cette structure.'}</div>`)

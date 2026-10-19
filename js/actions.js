@@ -315,7 +315,7 @@ ${p.content_md||'(aucune)'}`;
 // --- Crochets d'enregistrement direct -----------------------------------------------------
 // Suivi clos : reste visible 5 s avec « Annuler »
 ACTIONS['change:prospects.status'] = async (t, v) => {
-  if (v === 'Closed') return saveLinger('prospects', t.dataset.id, {status:v}, 'Suivi clos');
+  if (v === 'Closed' || v === 'Confirmed') return saveLinger('prospects', t.dataset.id, {status:v}, v === 'Confirmed' ? 'Suivi confirmé : rangé dans les suivis clos' : 'Suivi clos');
   await save('prospects', t.dataset.id, {status:v});
 };
 // Date retirée du ticketing / de la communication : reste visible 5 s

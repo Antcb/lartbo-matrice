@@ -8,7 +8,7 @@ import { CFG } from './config.js';
 import { CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PROSPECT, STATUSES, TASK_STATUS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
 import { insert, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode } from './geo.js';
-import { attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
+import { suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow } from './ui/bits.js';
@@ -147,9 +147,9 @@ const inDays = n => { const d = new Date(); d.setDate(d.getDate() + n); return `
 
 /** Suivis proposés pour une tâche : ceux de sa structure d'abord, puis les autres suivis ouverts */
 function suiviOptions(t){
-  const open = S.db.prospects.filter(p => p.status !== 'Closed' || p.id === t.prospect_id);
+  const open = S.db.prospects.filter(p => !suiviClosed(p) || p.id === t.prospect_id);
   const mine = open.filter(p => t.structure_id && p.structure_id === t.structure_id), rest = open.filter(p => !mine.includes(p));
-  const lab = p => prospectTitle(p) + (p.status === 'Closed' ? ' (clos)' : '');
+  const lab = p => prospectTitle(p) + (suiviClosed(p) ? (p.status === 'Confirmed' ? ' (confirmé)' : ' (clos)') : '');
   return [...mine, ...rest.sort((a,b) => lab(a).localeCompare(lab(b)))].map(p => [p.id, lab(p)]);
 }
 

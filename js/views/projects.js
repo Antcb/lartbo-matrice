@@ -7,7 +7,7 @@ import { netArtbo } from '../calc.js';
 import { templatesList, tplProjects } from '../mail.js';
 import { CONFIRMED_PROD, LOG_ICON, stClass } from '../constants.js';
 import { signedCached, signedUrl } from '../data.js';
-import { attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, structName, tasksOfProject } from '../selectors.js';
+import { suiviClosed, attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, structName, tasksOfProject } from '../selectors.js';
 import { S } from '../state.js';
 import { curTab, dropZone, fileRow, fold, pstBadge, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cAc, cIn } from '../ui/cells.js';
@@ -62,7 +62,7 @@ export function projectPage(p){
   const logs = logsOfProject(p.id);
   const members = membersOfProject(p.id);
   const tab = curTab('project', 'overview');
-  const tabs = tabsBar('project', [['overview','Aperçu'], ['dates','Dates', shows.length], ['suivis','Suivis', suivis.filter(x=>x.status!=='Closed').length],
+  const tabs = tabsBar('project', [['overview','Aperçu'], ['dates','Dates', shows.length], ['suivis','Suivis', suivis.filter(x=>!suiviClosed(x)).length],
     ['tasks','Tâches', tasks.filter(t=>!isDone(t)).length], ['logs','Échanges', logs.length], ['links','Liens', (p.links||[]).length],
     ['drive','Drive'], ['mails','Modèles de mail', S.db.mail_templates.filter(t=>tplProjects(t).includes(p.id)).length], ['admin','Administratif'], ['members','Membres', members.length]]);
   const body = {overview, dates:datesTab, suivis:suivisTab, tasks:() => `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newTaskProject" data-id="${p.id}">Nouvelle tâche</button></div>${taskSection(tasks)}`,
@@ -96,7 +96,7 @@ function overview(p, {shows, tasks, suivis}){
   <div class="struct-hero" style="margin-top:18px">
     <div class="panel pad"><h3 class="block-title">Prochaines dates</h3>${next.map(s=>`<div class="plan-row" data-act="editShow" data-id="${s.id}" style="cursor:pointer"><span class="d">${fmtDate(s.date)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span>${stSelect(s)}</div>`).join('') || '<p class="muted" style="margin:0">Aucune date à venir.</p>'}</div>
     <div class="panel pad"><h3 class="block-title">En cours</h3>
-      <p style="margin:0 0 6px"><b>${tasks.filter(t=>!isDone(t)).length}</b> tâche(s) à faire · <b>${suivis.filter(x=>x.status!=='Closed').length}</b> suivi(s) ouverts</p>
+      <p style="margin:0 0 6px"><b>${tasks.filter(t=>!isDone(t)).length}</b> tâche(s) à faire · <b>${suivis.filter(x=>!suiviClosed(x)).length}</b> suivi(s) ouverts</p>
       ${p.notes?`<div class="md">${md(p.notes)}</div>`:''}</div>
   </div>`;
 }
@@ -109,8 +109,8 @@ function datesTab(p, {shows}){
 }
 
 function suivisTab(p, {suivis}){
-  const list = suivis.filter(x => S.showClosed || x.status!=='Closed').map(x=>({x, last:lastExchange(x)})).sort((a,b)=>(b.last||'').localeCompare(a.last||''));
-  const nClosed = suivis.filter(x=>x.status==='Closed').length;
+  const list = suivis.filter(x => S.showClosed || !suiviClosed(x)).map(x=>({x, last:lastExchange(x)})).sort((a,b)=>(b.last||'').localeCompare(a.last||''));
+  const nClosed = suivis.filter(x=>suiviClosed(x)).length;
   return `<div class="vh-actions" style="margin-bottom:12px"><button class="btn" data-act="exportSuivis" data-project="${p.id}">Exporter</button>${nClosed?`<button class="btn" data-act="toggleClosed" aria-pressed="${!!S.showClosed}">${S.showClosed?'Masquer':'Afficher'} les suivis clos (${nClosed})</button>`:''}</div>
   <div class="tbl-wrap"><table><thead><tr><th>Structure</th><th>Statut</th><th>Dernier échange</th><th>Résumé</th></tr></thead><tbody>
     ${list.map(({x,last})=>`<tr class="click" data-act="openSuivi" data-id="${x.id}"><td><b>${esc(structName(x.structure_id)||x.name)}</b><span class="sub">${esc(byId('structures',x.structure_id)?.city||'')}</span></td><td>${pstBadge(x.status)}</td><td class="nowrap">${last?fmtDate(last):'—'}</td><td class="muted">${esc((x.summary||'').replace(/\*\*/g,'').replace(/\n/g,' ').slice(0,180))}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Aucun suivi.</td></tr>'}

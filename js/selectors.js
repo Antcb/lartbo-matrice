@@ -98,6 +98,9 @@ export const tasksOfShow = id => byCol('tasks','show_id').get(id) || [];
 
 export function lastExchange(p){ const l = logsOf(p.id).find(x=>x.date); const d = [l?.date, p.last_contact].filter(Boolean).sort().pop(); return d || null; }
 
+/** Suivi terminé : clos (Closed) ou confirmé (Confirmed) — rangé dans « suivis clos », plus de relance */
+export const suiviClosed = p => p?.status === 'Closed' || p?.status === 'Confirmed';
+
 export function projIds(p){ return (p.project_ids && p.project_ids.length) ? p.project_ids : (p.project_id ? [p.project_id] : []); }
 
 export function projNames(p){ return projIds(p).map(projName).filter(Boolean).join(', '); }

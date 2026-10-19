@@ -5,7 +5,7 @@
 import { CFG } from '../config.js';
 import { TASK_STATUS, TEAM_NAMES } from '../constants.js';
 import { lingering } from '../data.js';
-import { projFilterOk, deptColor, deptNames, attachmentsOf, isDone, projIds, projNames, prospectsOfStructure, showLabel, byId, structName, taskSort, teamName, urgency } from '../selectors.js';
+import { suiviClosed, projFilterOk, deptColor, deptNames, attachmentsOf, isDone, projIds, projNames, prospectsOfStructure, showLabel, byId, structName, taskSort, teamName, urgency } from '../selectors.js';
 import { S } from '../state.js';
 import { deptBadge, inactiveToggle, projPicker, viewHead } from '../ui/bits.js';
 import { cAc, cIn, cSel, projChips } from '../ui/cells.js';
@@ -21,12 +21,12 @@ export function taskSuiviBtns(t, {structure=true}={}){
   if (!p && stId){
     const pids = projIds(t);
     // seulement un suivi des artistes de la tâche (sinon aucun bouton plutôt qu'un mauvais suivi)
-    p = prospectsOfStructure(stId).filter(x => x.status !== 'Closed' && (!pids.length || pids.some(id => projIds(x).includes(id))))
+    p = prospectsOfStructure(stId).filter(x => !suiviClosed(x) && (!pids.length || pids.some(id => projIds(x).includes(id))))
       .sort((a, b) => (b.last_contact || '').localeCompare(a.last_contact || ''))[0] || null;
   }
   return (structure && stId && !(S.view === "structures" && S.structurePage === stId) ? `<button class="btn sm ghost" data-act="openStructure" data-id="${stId}" title="Ouvrir la fiche de ${esc(structName(stId))}">Structure ↗</button>` : '')
-    + (p ? `<button class="btn sm ghost" data-act="openSuivi" data-id="${p.id}" title="Ouvrir le suivi${p.status==='Closed'?' (clos)':''}">Suivi ↗</button>` : '')
-    + (p && t.prospect_id === p.id && t.auto_kind === 'relance_tel' && !isDone(t) && p.status !== 'Closed' ? `<button class="btn sm ghost danger" data-act="noAnswerClose" data-id="${t.id}">Pas de réponse : clore le suivi</button>` : '');
+    + (p ? `<button class="btn sm ghost" data-act="openSuivi" data-id="${p.id}" title="Ouvrir le suivi${suiviClosed(p)?' (clos)':''}">Suivi ↗</button>` : '')
+    + (p && t.prospect_id === p.id && t.auto_kind === 'relance_tel' && !isDone(t) && !suiviClosed(p) ? `<button class="btn sm ghost danger" data-act="noAnswerClose" data-id="${t.id}">Pas de réponse : clore le suivi</button>` : '');
 }
 
 export function taskSection(all){

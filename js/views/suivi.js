@@ -9,7 +9,7 @@
 import { LOG_ICON, LOG_KINDS, PROSPECT, isOff, stColor } from '../constants.js';
 import { lingering } from '../data.js';
 import { distKm, routeCached, route } from '../geo.js';
-import { projFilterOk, byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, projIds, projName, projNames, projectOptions, showCoords, showsOfProject, structName } from '../selectors.js';
+import { suiviClosed, projFilterOk, byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, projIds, projName, projNames, projectOptions, showCoords, showsOfProject, structName } from '../selectors.js';
 import { S, localGet, localSet } from '../state.js';
 import { inactiveToggle, dropZone, fileRow, fold, projPicker, stSelect, pstBadge, stBadge, tabsBar, curTab, viewHead } from '../ui/bits.js';
 import { cAc, cIn, cSel, projChips } from '../ui/cells.js';
@@ -24,8 +24,8 @@ export function viewProspects(){
   const q = S.search.prospects || '';
   const st = S.suiviStatus || '';
   let rows = S.db.prospects.filter(p => projFilterOk(projIds(p)) && (!st || p.status===st));
-  const nClosed = st ? 0 : rows.filter(p=>p.status==='Closed' && !lingering(p.id)).length;
-  if (!st && !S.showClosed) rows = rows.filter(p=>p.status!=='Closed' || lingering(p.id));
+  const nClosed = st ? 0 : rows.filter(p=>suiviClosed(p) && !lingering(p.id)).length;
+  if (!st && !S.showClosed) rows = rows.filter(p=>!suiviClosed(p) || lingering(p.id));
   if (q) rows = rows.filter(p => matches(`${structName(p.structure_id)} ${byId('structures',p.structure_id)?.city||''} ${projNames(p)} ${p.summary||''}`, q));
   rows = rows.map(p=>({p, last:lastExchange(p)})).sort((a,b)=>(b.last||'').localeCompare(a.last||'') || (b.p.updated_at||'').localeCompare(a.p.updated_at||''));
   return viewHead('Suivi', {
@@ -71,7 +71,7 @@ export function suiviCard(p, {page=false}={}){
         ${cIn('tasks',t.id,'title',t.title,'text','aria-label="Nom de la tâche"')}
         ${cIn('tasks',t.id,'deadline',t.deadline,'date')}
         ${u?`<span class="urg ${u.cls}">${esc(u.label)}</span>`:'<span></span>'}
-        <button type="button" class="btn sm ghost" data-act="editTask" data-id="${t.id}">Détails</button>${t.auto_kind==='relance_tel' && !isDone(t) && p.status!=='Closed' ? `<button type="button" class="btn sm ghost danger" data-act="noAnswerClose" data-id="${t.id}">Pas de réponse : clore</button>` : ''}</div>`; }).join('')}</div>` : '<p class="muted" style="margin:0">Aucune tâche liée à ce suivi.</p>'}</div>`;
+        <button type="button" class="btn sm ghost" data-act="editTask" data-id="${t.id}">Détails</button>${t.auto_kind==='relance_tel' && !isDone(t) && !suiviClosed(p) ? `<button type="button" class="btn sm ghost danger" data-act="noAnswerClose" data-id="${t.id}">Pas de réponse : clore</button>` : ''}</div>`; }).join('')}</div>` : '<p class="muted" style="margin:0">Aucune tâche liée à ce suivi.</p>'}</div>`;
   const journal = `
       <div class="suivi-block"><h3 class="block-title">Journal des échanges <span class="count">${logs.length}</span>${files.length?` <span class="muted" style="font-weight:500;font-size:13px">· ${files.length} pièce${files.length>1?'s':''} jointe${files.length>1?'s':''}</span>`:''}</h3>
         <form class="log-form" data-logform="${p.id}">
