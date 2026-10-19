@@ -20,7 +20,8 @@ const chip = v => `<span class="tp-chip" data-v="${esc(v)}">${esc(v)}<button typ
 
 const box = el => el.closest('[data-tagpick]');
 const valuesOf = b => [...b.querySelectorAll('.tp-chip')].map(c => c.dataset.v);
-function sync(b){ const h = b.querySelector('input[type=hidden]'); h.value = valuesOf(b).join(', '); h.dispatchEvent(new Event('input', {bubbles: true})); }
+function sync(b){ const f = b.closest('form'); if (f) f._draftGen = (f._draftGen || 0) + 1;   // action de l'utilisateur : le brouillon ne repasse plus dessus
+  const h = b.querySelector('input[type=hidden]'); h.value = valuesOf(b).join(', '); h.dispatchEvent(new Event('input', {bubbles: true})); }
 function add(b, v){
   v = String(v || '').trim(); if (!v) return;
   if (valuesOf(b).some(x => norm(x) === norm(v))) return;
