@@ -75,7 +75,7 @@ function draw(d){
       .concat([...form.querySelectorAll('fieldset[data-req]')].filter(fs => shown(fs) && !fs.querySelector('input:checked')))
       .concat([...form.querySelectorAll('[data-req-doc]')].filter(x => shown(x) && !x.files.length));
     if (missing.length){ missing.forEach(x => x.classList.add('invalid')); (missing[0].querySelector?.('input') || missing[0]).focus(); return note(`Il manque ${missing.length} élément${missing.length > 1 ? 's' : ''} obligatoire${missing.length > 1 ? 's' : ''}.`, true); }
-    const badDate = [...form.querySelectorAll('input[type=date]')].find(x => x.value && ((x.min && x.value < x.min) || (x.max && x.value > x.max)));
+    const badDate = [...form.querySelectorAll('input[type=date]')].find(x => shown(x) && x.value && ((x.min && x.value < x.min) || (x.max && x.value > x.max)));
     if (badDate){ badDate.classList.add('invalid'); badDate.focus(); return note(badDate.min && badDate.value < badDate.min ? 'La date d’expiration ne peut pas être avant la date de délivrance.' : 'Cette date ne peut pas être dans le futur.', true); }
     const v = Object.fromEntries([...new FormData(form)].filter(([, x]) => typeof x === 'string').map(([k, x]) => [k, x.trim()]));
     const main = {}, data = {};

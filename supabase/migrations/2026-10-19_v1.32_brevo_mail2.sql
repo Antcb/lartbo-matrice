@@ -25,6 +25,21 @@ do $$ begin
   end if;
 end $$;
 
--- mail_vars : « contact_email » reprend les deux mails du contact (séparés par une virgule) — appliqué par remplacement dans la fonction en place :
---   'contact_email', coalesce(nullif(concat_ws(', ', nullif(trim(c.email), ''), nullif(trim(c.email_2), '')), ''), ''),
+-- mail_vars : « contact_email » reprend les deux mails du contact (séparés par une virgule)
+do $$ declare d text; begin
+  select pg_get_functiondef(p.oid) into d from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'mail_vars';
+  if d is not null and position('''contact_email'', coalesce(c.email, ''''),' in d) > 0 then
+    execute replace(d, '''contact_email'', coalesce(c.email, ''''),',
+      '''contact_email'', coalesce(nullif(concat_ws('', '', nullif(trim(c.email), ''''), nullif(trim(c.email_2), '''')), ''''), ''''),');
+  end if;
+end $$;
+
+-- mails créés dans Brevo par la Matrice : ajout sans écraser (deux synchronisations du même contact peuvent tourner en même temps)
+create or replace function public.brevo_add_emails(p_contact uuid, p_emails text[]) returns void
+language sql security definer set search_path = public as $$
+  update contacts set brevo_emails = (select coalesce(array_agg(distinct e), '{}') from unnest(brevo_emails || coalesce(p_emails, '{}')) e)
+  where id = p_contact;
+$$;
+revoke execute on function public.brevo_add_emails(uuid, text[]) from public, anon, authenticated;
+
 update contacts set brevo_emails = array[lower(trim(email))] where brevo_created and email is not null and brevo_emails = '{}';

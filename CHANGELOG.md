@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.32.1 — 19/10/2026
+- Corrections relecture : fiche salarié (dates des questions masquées), Brevo (liste des mails créés jamais écrasée)
+
+
 ## 1.32.0 — 19/10/2026
 - Dates début / fin cohérentes partout (calendrier de fin ouvert sur le début, fin avant début refusée, la fin suit le début)
 - Production : plus d'alerte « conditions pas encore validées » sur une date passée ou déjà confirmée par mail
