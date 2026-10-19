@@ -58,10 +58,10 @@ block = f'''<!-- import-map:début (généré par tools/bump_version.py) -->
   }}
   </script>
   <!-- import-map:fin -->'''
-for page in (index, root / "fiche.html", root / "rh.html"):   # pages publiques : fiche de renseignements, fiche salarié
+for page in (index, root / "fiche.html", root / "rh.html", root / "artiste.html"):   # pages publiques : fiche de renseignements, fiche salarié, fiche artiste
     if not page.exists(): continue
     s = page.read_text(encoding="utf-8")
     s = re.sub(r"<!-- import-map:début.*?import-map:fin -->", block, s, flags=re.S)
-    s = re.sub(r'(css/styles\.css|css/fiche\.css|js/app\.js|js/fiche\.js|js/rh\.js)\?v=[\w.-]+', lambda m: f"{m.group(1)}?v={version}", s)
+    s = re.sub(r'(css/styles\.css|css/fiche\.css|js/app\.js|js/fiche\.js|js/rh\.js|js/artiste\.js)\?v=[\w.-]+', lambda m: f"{m.group(1)}?v={version}", s)
     page.write_text(s, encoding="utf-8")
 print(f"version {version} — {len(mods)} modules")

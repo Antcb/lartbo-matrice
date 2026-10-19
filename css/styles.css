@@ -732,3 +732,8 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .filter-note{margin:0 0 10px;font-size:13px;color:var(--warn);font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .update-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:3000;background:var(--brand);color:#fff;padding:10px 14px;border-radius:var(--r-lg);box-shadow:var(--shadow-pop);display:flex;gap:12px;align-items:center;font-weight:600}
 .update-bar .btn{background:#fff;color:var(--brand)}
+.af-dl{display:grid;grid-template-columns:220px 1fr;gap:6px 14px;margin:0 0 14px}
+.af-dl dt{color:var(--muted);font-weight:600;font-size:13px}
+.af-dl dd{margin:0;word-break:break-word}
+.af-list{margin:0 0 14px;padding-left:18px}
+@media (max-width:720px){ .af-dl{grid-template-columns:1fr} }

@@ -93,6 +93,9 @@ export const ACTIONS = {
   copyFiche: async t => { const s = byId('shows', t.dataset.id);
     const link = (setting('site_url') || location.origin + location.pathname.replace(/[^/]*$/, '')) + 'fiche.html?t=' + s.fiche_token;
     try { await navigator.clipboard.writeText(link); toast('Lien de la fiche copié'); } catch { prompt('Lien de la fiche :', link); } },
+  copyArtistLink: async t => { const p = byId('projects', t.dataset.id); if (!p?.artist_token) return toast('Lien pas encore prêt : recharge la page', true);
+    const {artistLink} = await import('./views/projects.js'); const link = artistLink(p);
+    try { await navigator.clipboard.writeText(link); toast('Lien de la fiche artiste copié'); } catch { prompt('Lien de la fiche artiste :', link); } },
   validateFiche: t => validateFiche(t.dataset.id),
   genContract: t => generateContract(t.dataset.id),
   contractPdf: t => exportContractPdf(t.dataset.id),

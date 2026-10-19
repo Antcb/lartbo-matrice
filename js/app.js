@@ -32,6 +32,7 @@ import { viewProspects } from './views/suivi.js';
 import { viewTicketing } from './views/ticketing.js';
 import { viewTodo } from './views/todo.js';
 import { startRealtime } from './realtime.js';
+import { bootTrace, startDiag } from './diag.js';
 
 const VIEW_FN = {booking:viewBooking, production:viewProduction, ticketing:viewTicketing, communication:viewCommunication,
   projects:viewProjects, todo:viewTodo, prospects:viewProspects, contacts:viewContacts, structures:viewStructures, settings:viewSettings, employees:viewEmployees};
@@ -166,11 +167,12 @@ document.addEventListener('input', e => {
 window.matrice = { S, render, loadAll, byId, paymentsOf, payAmount, netArtbo };
 
 export async function boot(){
+  startDiag(sb);
   const {data:{session}} = await sb.auth.getSession();
   S.user = session?.user || null;
   if (S.user){ $('#app').innerHTML = '<div class="loading"><img src="assets/picto.png" alt="" width="54" height="64"><span>Chargement…</span></div>'; await loadAll(); }
   render();
-  if (S.user) startRealtime(render);
+  if (S.user){ startRealtime(render); bootTrace(); }
   sb.auth.onAuthStateChange(async (ev, session) => {
     if (ev==='SIGNED_IN' && !S.user){ S.user=session.user; await loadAll(); render(); startRealtime(render); }
     if (ev==='SIGNED_OUT'){ S.user=null; render(); }

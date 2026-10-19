@@ -66,6 +66,7 @@ function doPost(e) {
     else if (action === 'move_items') out = moveItems_(body.items);
     else if (action === 'save_urls') out = saveUrls_(body.folder_id, body.files);
     else if (action === 'artist_folder') out = createArtistFolder_(body.project_id);
+    else if (action === 'artist_file_docs') out = { ok: true, filed: artistFileDocs_(body.project_id) };
     else if (action === 'ping') out = { ok: true, account: Session.getEffectiveUser().getEmail() };
     else out = { ok: false, error: 'Action inconnue : ' + action };
   } catch (err) {
@@ -170,6 +171,7 @@ function pickTemplate_(show, kind) {
  */
 function dailyJob() {
   try { rhFileDocs_(); } catch (err) { Logger.log('Pièces salariés : ' + err); }
+  try { artistFileDocs_(); } catch (err) { Logger.log('Fichiers artistes : ' + err); }
   var notifs = sb_('GET', 'notifications?emailed_at=is.null&select=*&order=created_at.asc') || [];
   var KIND = { boucle_accueil: 'boucle_tech', boucle_com: 'boucle_com' };
   var drafted = [];
@@ -387,6 +389,51 @@ function rhFileDocs_() {
         file.setTrashed(true); d.file_id = null; d.drive_name = null; d.path = oldPath;
         Logger.log('Pièce non rangée (enregistrement impossible, réessai au prochain passage) : ' + err); return;
       }
+      UrlFetchApp.fetch(url, { method: 'delete', headers: authHeaders_({}), muteHttpExceptions: true });
+      filed++;
+    });
+  });
+  return filed;
+}
+
+// ─────────────── Fiche artiste : fichiers envoyés par l'artiste → son dossier Drive ───────────────
+
+/** Sous-dossier de rangement de chaque type de fichier (même liste que js/artist-fields.js) */
+var ARTIST_DOC_PATHS = {
+  photos: ['033_Promotion', 'Visuals'], logos: ['033_Promotion', 'Logos'],
+  tech_rider: ['030_Reference', 'Technical'], stage_plot: ['030_Reference', 'Technical'], hosp_rider: ['030_Reference', 'Technical'],
+  press_kit: ['033_Promotion', 'Content Text'], audio: ['033_Promotion', 'Audio']
+};
+var ARTIST_DOC_NAMES = { photos: 'Photo', logos: 'Logo', tech_rider: 'Fiche technique', stage_plot: 'Plan de scène', hosp_rider: 'Fiche accueil', press_kit: 'Dossier de presse', audio: '' };
+
+/** Range les fichiers en attente (d'un artiste, ou de tous) puis les retire du stockage temporaire */
+function artistFileDocs_(projectId) {
+  var p = props_(), filed = 0;
+  var list = sb_('GET', 'projects?select=id,name,drive_artist_folder_id,artist_docs' + (projectId ? '&id=eq.' + projectId : '')) || [];
+  list.forEach(function (pr) {
+    var docs = pr.artist_docs || [];
+    if (!docs.some(function (d) { return d.path && !d.file_id; })) return;
+    var base;
+    try { base = artistFolder_(pr, p); } catch (e) { base = DriveApp.getFolderById(createArtistFolder_(pr.id).folder_id); }
+    var artist = String(pr.name || '').replace(/\s*•.*$/, '').trim();
+    docs.forEach(function (d) {
+      if (!d.path || d.file_id) return;
+      var folder = base;
+      (ARTIST_DOC_PATHS[d.kind] || ['033_Promotion']).forEach(function (n) { folder = childFolder_(folder, n, true); });
+      var url = p.SUPABASE_URL + '/storage/v1/object/artiste/' + d.path.split('/').map(encodeURIComponent).join('/');
+      var res = UrlFetchApp.fetch(url, { headers: authHeaders_({}), muteHttpExceptions: true });
+      if (res.getResponseCode() >= 300) { Logger.log('Fichier artiste introuvable : ' + d.path); return; }
+      // nom : « Fiche technique - Artiste.pdf » ; photos et titres gardent leur nom d'origine
+      var orig = String(d.name || d.path.split('/').pop()), ext = (orig.match(/\.(\w{1,5})$/) || ['', ''])[1];
+      var label = ARTIST_DOC_NAMES[d.kind];
+      var stem = (d.kind === 'photos' || d.kind === 'audio' || !label) ? orig.replace(/\.(\w{1,5})$/, '') : label + ' - ' + artist;
+      var name = stem + (ext ? '.' + ext : ''), n = 1;
+      while (folder.getFilesByName(name).hasNext()) name = stem + ' (' + (++n) + ')' + (ext ? '.' + ext : '');
+      var file = folder.createFile(res.getBlob().setName(name));
+      var oldPath = d.path;
+      d.file_id = file.getId(); d.drive_name = name; d.path = null;
+      try { sb_('PATCH', 'projects?id=eq.' + pr.id, { artist_docs: docs }); }
+      catch (err) { file.setTrashed(true); d.file_id = null; d.drive_name = null; d.path = oldPath; Logger.log('Fichier artiste non rangé : ' + err); return; }
       UrlFetchApp.fetch(url, { method: 'delete', headers: authHeaders_({}), muteHttpExceptions: true });
       filed++;
     });
