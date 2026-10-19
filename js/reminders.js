@@ -9,7 +9,7 @@
  *  - 10 j après « Contrat signé » sans « Contrat co-signé renvoyé »
  *  - Contrat envoyé alors que la facture d'acompte n'est pas envoyée
  *  - 10 j après l'envoi de la facture d'acompte / de solde sans paiement
- *  - 10 j après le paiement de l'acompte sans facture de commission L'ArtBo / partenaire envoyée et payée
+ *  - 10 j après le paiement de l'acompte : commission L'ArtBo pas encore versée (pas de facture en production) ; facture partenaire pas envoyée / payée
  *  - Jour ouvré le plus proche de J-7 (sans descendre sous 7 jours) : envoyer la facture de solde
  * Booking seul : après le contrat co-signé, envoyer la facture de commission ; 10 j après, vérifier le paiement.
  */
@@ -50,7 +50,10 @@ export function remindersOf(s){
   if (s.date && so && !so.sent_at && s.date >= addDays(now, -30)) rule('solde', soldeReminderDay(s.date), 'Envoyer la facture de solde');
   if (upcoming && s.date && !s.boucle_tech) rule('boucle_tech', addDays(s.date, -122), 'Boucle accueil & technique à envoyer (J-4 mois)');
   if (upcoming && s.contract_cosigned_sent && !s.boucle_com) rule('boucle_com', s.contract_cosigned_sent, 'Boucle communication à envoyer');
-  if (ac?.paid_at) for (const k of ['artbo','partner']){ const p = first(k); if (p && (!p.sent_at || !p.paid_at)) rule(k, addDays(ac.paid_at, 10), `Facture ${p.label} à ${p.sent_at?'faire payer':'envoyer'}`); }
+  // en production, la commission L'ArtBo n'est pas facturée : L'ArtBo se la verse depuis le compte de l'artiste
+  const com = first('artbo'), part = first('partner');
+  if (ac?.paid_at && com && !com.paid_at) rule('artbo', addDays(ac.paid_at, 10), `${com.label || 'Commission L’ArtBo'} à te verser`);
+  if (ac?.paid_at && part && (!part.sent_at || !part.paid_at)) rule('partner', addDays(ac.paid_at, 10), `Facture ${part.label} à ${part.sent_at?'faire payer':'envoyer'}`);
   return out;
 }
 
