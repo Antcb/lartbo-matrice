@@ -115,10 +115,10 @@ Deno.serve(async (req) => {
     if (!c || !mails.length) return json({ ok: true, skipped: "pas de mail" });
     const st = await structuresOf([c.id]);
     const attrs = attributes(c as Contact, st.get(c.id) || [], a);
+    const errors: string[] = [], done: string[] = [], created: string[] = [];
     // mails créés par la Matrice (avant la v1.32 : seul le mail 1, signalé par brevo_created)
     const ours = new Set<string>((c.brevo_emails || []).map((e: string) => e.toLowerCase()));
-    if (c.brevo_created && !ours.size && c.email) ours.add(c.email.trim().toLowerCase());
-    const errors: string[] = [], done: string[] = [];
+    if (c.brevo_created && !ours.size && c.email) { ours.add(c.email.trim().toLowerCase()); created.push(c.email.trim().toLowerCase()); }
     for (const email of mails) {
       const g = await fetch(`${API}/contacts/${encodeURIComponent(email)}`, { headers: { "api-key": key, accept: "application/json" } });
       if (g.ok) {
@@ -130,12 +130,14 @@ Deno.serve(async (req) => {
       const r = await fetch(`${API}/contacts`, { method: "POST", headers: { "api-key": key, "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({ email, attributes: attrs, ...(listIds.length ? { listIds } : {}) }) });
       const txt = r.ok ? "" : await r.text();
-      if (r.ok) { ours.add(email); done.push(email); }
+      if (r.ok) { ours.add(email); created.push(email); done.push(email); }
       else if (/duplicate/i.test(txt)) done.push(email);
       else errors.push(`${email} : Brevo ${r.status} : ${txt.slice(0, 200)}`);
     }
     const err = errors.length ? errors.join(" · ") : null;
-    await sb.from("contacts").update({ brevo_at: new Date().toISOString(), brevo_error: err, brevo_emails: [...ours], ...(ours.size ? { brevo_created: true } : {}) }).eq("id", c.id);
+    // ajout des mails créés à la liste enregistrée, sans l'écraser (une autre synchronisation du même contact peut tourner en même temps)
+    if (created.length) await sb.rpc("brevo_add_emails", { p_contact: c.id, p_emails: created });
+    await sb.from("contacts").update({ brevo_at: new Date().toISOString(), brevo_error: err, ...(ours.size ? { brevo_created: true } : {}) }).eq("id", c.id);
     return json({ ok: !err, error: err, emails: done });
   } catch (e) {
     const msg = String(e);
