@@ -745,3 +745,12 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .af-copy:hover{background:var(--brand-tint)}
 .af-edit .fiche-grid label{display:flex;align-items:center;gap:0}
 .accueil-grid{max-width:640px}
+/* Budget d'une date : reste pour l'artiste et versements */
+.artist-result{margin-top:16px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--soft)}
+.artist-result .block-title{margin:0 0 8px}
+.ar-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:10px}
+.ar-grid .stat{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:10px 12px}
+.ar-grid .stat b{font-size:22px}
+.ar-grid .stat span{font-size:12px}
+.acc-moves{margin:0 0 14px}
+.acc-moves summary{cursor:pointer;font-weight:600;color:var(--brand);padding:6px 0}

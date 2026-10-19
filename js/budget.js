@@ -39,7 +39,7 @@ const staffQty = showId => linesOf(showId).filter(l => l.category === 'Staff').r
 
 /** Montant prévu HT d'une ligne (saisi, ou calculé pour les lignes automatiques) */
 export function lineForecast(l){
-  if (l.forecast != null) return Number(l.forecast);
+  if (l.forecast != null && !isSolde(l)) return Number(l.forecast);   // le solde artiste n'a pas de prévu saisi : c'est toujours le reste calculé
   if (!l.auto && l.qty != null && l.unit_cost != null) return r2(Number(l.qty) * Number(l.unit_cost));   // quantité × prix unitaire (salariés, salle, promoteur…)
   const s = byId('shows', l.show_id);
   if (l.auto === 'movinmotion' && s) return r2(payslipCost() * staffQty(s.id));
@@ -112,6 +112,34 @@ export function accountOf(projectId){
   a.real = r2(a.opening + a.inDone - a.outDone);
   a.end = r2(a.real + a.inTodo - a.outTodo);
   return a;
+}
+
+/**
+ * Mouvements réels du compte dédié, dans l'ordre des dates, avec le solde après chaque mouvement :
+ * exactement ce que compte « solde réel » (à pointer avec le relevé de la banque).
+ */
+export function accountMoves(projectId){
+  const p = byId('projects', projectId), moves = [];
+  const isOwnProd = s => /^(Production|Co-Production)$/.test(s?.contract_type || '');
+  const where = s => s ? `${s.venue || '?'} (${String(s.date || '').split('-').reverse().join('/')})` : 'hors date';
+  for (const s of prodShowsOf(projectId).filter(x => !isOwnProd(x))){
+    for (const pay of paymentsOf(s.id)){
+      const v = payAmount(pay) || 0; if (!pay.paid_at || !v) continue;
+      if (['acompte','solde','autre'].includes(pay.kind) && payee(pay) === 'compte')
+        moves.push({date: pay.paid_at, label: `${pay.label || pay.kind} — ${where(s)}`, amount: v, calc: pay.amount == null || pay.amount === ''});
+      if (pay.kind === 'artbo') moves.push({date: pay.paid_at, label: `Commission L'ArtBo — ${where(s)}`, amount: -v, calc: pay.amount == null || pay.amount === ''});
+    }
+  }
+  const lines = S.db.budget_lines.filter(l => l.project_id === projectId && (!l.show_id || isProdShow(byId('shows', l.show_id)) && CONFIRMED_PROD.includes(byId('shows', l.show_id)?.status) && !isOwnProd(byId('shows', l.show_id))));
+  for (const l of lines){
+    const payer = l.payer || 'compte', date = payer === 'compte' ? l.paid_at : (payer === 'artbo' || payer === 'autre') ? l.reimbursed_at : null;
+    const v = lineValue(l); if (!date || !v) continue;
+    moves.push({date, label: `${l.label || l.category || 'Dépense'}${l.supplier ? ' · ' + l.supplier : ''} — ${where(byId('shows', l.show_id))}${payer !== 'compte' ? ` (avance ${payerLabel(payer, p)} remboursée)` : ''}`, amount: -v, calc: l.amount == null});
+  }
+  moves.sort((a, b) => a.date.localeCompare(b.date) || b.amount - a.amount);
+  let bal = Number(p?.account_opening) || 0;
+  for (const m of moves){ bal = r2(bal + m.amount); m.balance = bal; }
+  return moves;
 }
 
 /** Libellés des payeurs pour un projet */

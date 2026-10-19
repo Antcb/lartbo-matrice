@@ -4,11 +4,12 @@
  */
 import { render } from './app.js';
 import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
-import { cnmDue, lineForecast, linesOf, prodShowsOf } from './budget.js';
+import { cnmDue, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
 import { paymentsOf, payAmount } from './calc.js';
 import { insert, mergeRows, openStored, remove, save, sb } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
 import { callScript } from './mail.js';
+import { exportArtistBudget } from './artist-export.js';
 import { S, touch } from './state.js';
 import { openModal } from './ui/modal.js';
 import { esc, fmtDate, norm, toast, today } from './utils.js';
@@ -96,9 +97,16 @@ export const BUDGET_ACTIONS = {
     const s = t.dataset.show ? byId('shows', t.dataset.show) : null;
     const project_id = s ? s.project_id : t.dataset.project;
     const cat = t.dataset.cat || (s ? 'Technique' : 'Promo');
+    if (cat === 'Solde artiste' && s){   // versement à l'artiste : depuis le compte dédié, au bénéficiaire du projet
+      const first = !linesOf(s.id).some(isSolde);
+      await insert('budget_lines', {project_id, show_id: s.id, category: cat, label: 'Solde artiste', supplier: byId('projects', project_id)?.artist_payee || null,
+        payer: 'compte', auto: first ? 'solde_artiste' : null, sort: nextSort(s.id)});
+      return render();
+    }
     await insert('budget_lines', {project_id, show_id: s?.id || null, category: cat, label: cat === 'Staff' ? 'Cachet' : null, payer: isProductionShow(s) ? 'artbo' : 'compte', sort: s ? nextSort(s.id) : 0, doc_date: s ? null : today()});
     render();
   },
+  exportArtistBudget: t => exportArtistBudget(t.dataset.id),
   delBudgetLine: async t => { if (confirm('Supprimer cette ligne du budget ?') && await remove('budget_lines', t.dataset.id)) render(); },
   prefillBudget: async t => { await prefill(byId('shows', t.dataset.id)); render(); },
   copyBudget: t => {
