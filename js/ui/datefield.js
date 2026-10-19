@@ -33,6 +33,8 @@ function commit(txt){
   const box = txt.closest('.dt'), val = box.querySelector('.dt-val');
   const iso = parseDate(txt.value);
   if (iso === null){ txt.classList.add('bad'); txt.title = 'Date illisible : tape par ex. 08/10/2026'; return; }
+  const start = iso && startFor(val);
+  if (start && iso < start){ txt.classList.add('bad'); txt.title = `La fin ne peut pas être avant le début (${fmtNum(start)})`; return; }
   txt.classList.remove('bad'); txt.title = '';
   txt.value = fmtNum(iso);
   if (iso !== val.value){ val.value = iso; val.dispatchEvent(new Event('change', {bubbles:true})); }
@@ -56,14 +58,47 @@ document.addEventListener('input', e => {
   if (out !== v) t.value = out;
 });
 
-/** Date de début liée à une date de fin (même formulaire ou même ligne) */
-const START_OF = {date_end: ['date', 'date_start'], to: ['from'], end: ['start'], date_to: ['date_from']};
-function startFor(val){
-  const key = val.name || val.dataset.f; const starts = START_OF[key]; if (!starts) return '';
-  const scope = val.closest('form, tr, .panel, dialog') || document;
-  for (const k of starts){ const el = scope.querySelector(`.dt-val[name="${k}"], .dt-val[data-f="${k}"]`); if (el?.value) return el.value; }
-  return '';
+/**
+ * Couple début → fin, partout sur le site (formulaires, lignes de tableau, champs préfixés comme « _ev_date_end ») :
+ * - le calendrier de la fin s'ouvre sur le mois du début, et rien avant le début n'est proposé ;
+ * - une fin tapée avant le début est refusée ;
+ * - si on recule… ou avance le début après la fin, la fin suit.
+ */
+const PAIRS = [['date_end', ['date', 'date_start']], ['to', ['from']], ['end', ['start']], ['date_to', ['date_from']], ['expires', ['issued']]];
+const keyOf = el => el.name || el.dataset.f || '';
+const scopeOf = el => el.closest('form, tr, .panel, dialog') || document;
+const find = (scope, k) => scope.querySelector(`.dt-val[name="${k}"], .dt-val[data-f="${k}"]`);
+/** Champ « début » d'un champ « fin » */
+function startEl(val){
+  const key = keyOf(val);
+  for (const [end, starts] of PAIRS){
+    if (key !== end && !key.endsWith('_' + end)) continue;
+    const pre = key.slice(0, key.length - end.length);
+    for (const k of starts){ const el = find(scopeOf(val), pre + k); if (el) return el; }
+  }
+  return null;
 }
+/** Champ « fin » d'un champ « début » */
+function endEl(val){
+  const key = keyOf(val);
+  for (const [end, starts] of PAIRS) for (const k of starts){
+    if (key !== k && !key.endsWith('_' + k)) continue;
+    const el = find(scopeOf(val), key.slice(0, key.length - k.length) + end);
+    if (el) return el;
+  }
+  return null;
+}
+const startFor = val => startEl(val)?.value || '';
+function setVal(val, iso){
+  val.value = iso;
+  const txt = val.parentElement.querySelector('.dt-txt'); if (txt){ txt.value = fmtNum(iso); txt.classList.remove('bad'); txt.title = ''; }
+  val.dispatchEvent(new Event('change', {bubbles: true}));
+}
+// le début passe après la fin : la fin suit
+document.addEventListener('change', e => {
+  const val = e.target; if (!val.classList?.contains('dt-val') || !val.value) return;
+  const end = endEl(val); if (end?.value && end.value < val.value) setVal(end, val.value);
+});
 
 document.addEventListener('click', e => {
   const b = e.target.closest('.dt-cal'); if (!b) return;
@@ -72,10 +107,16 @@ document.addEventListener('click', e => {
   // date de fin : le calendrier s'ouvre au mois de la date de début (la fin ne peut pas être avant)
   const start = startFor(val);
   if (start) val.min = start; else val.removeAttribute('min');
+  // fin encore vide : le calendrier s'ouvre sur le début (et pas sur aujourd'hui) ; rien n'est gardé si on ferme sans choisir
+  if (start && !val.value){ val.value = start; val.dataset.tmp = '1'; }
   try { val.showPicker(); } catch(_) { val.focus(); }
 });
+const dropTmp = () => document.querySelectorAll('.dt-val[data-tmp]').forEach(v => { v.value = ''; delete v.dataset.tmp; });
+document.addEventListener('pointerdown', dropTmp, true);
+document.addEventListener('keydown', dropTmp, true);
 // Choix dans le calendrier → met à jour le texte
 document.addEventListener('input', e => {
   if (!e.target.classList?.contains('dt-val')) return;
+  delete e.target.dataset.tmp;
   const txt = e.target.parentElement.querySelector('.dt-txt'); txt.value = fmtNum(e.target.value); txt.classList.remove('bad');
 });

@@ -56,6 +56,16 @@ function draw(d){
       <div class="fiche-actions"><p class="help"><span class="req">*</span> obligatoire</p><button class="btn primary" type="submit">Envoyer</button></div>
     </form>`;
   const form = document.getElementById('rh-form');
+  // dates cohérentes : naissance / délivrance / obtention pas dans le futur ; expiration jamais avant la délivrance
+  const todayISO = new Date().toLocaleDateString('sv-SE');
+  form.querySelectorAll('input[type=date]').forEach(i => { if (/^birth_date$|_issued$|_date$/.test(i.name) && !/_expires$/.test(i.name)) i.max = todayISO; });
+  const pairExp = () => form.querySelectorAll('input[type=date][name$="_expires"]').forEach(x => {
+    const iss = form.querySelector(`input[name="${x.name.replace(/_expires$/, '_issued')}"]`);
+    if (iss?.value) x.min = iss.value; else x.removeAttribute('min');
+    x.setCustomValidity(iss?.value && x.value && x.value < iss.value ? 'La date d’expiration ne peut pas être avant la date de délivrance' : '');
+  });
+  pairExp();
+  form.addEventListener('change', e => { if (e.target.type === 'date') pairExp(); });
   form.addEventListener('change', e => { if (e.target.type === 'radio') form.querySelectorAll(`[data-if="${e.target.name}"]`).forEach(w => { w.hidden = e.target.value !== w.dataset.eq; }); });
   form.addEventListener('submit', async e => {
     e.preventDefault();
@@ -65,6 +75,8 @@ function draw(d){
       .concat([...form.querySelectorAll('fieldset[data-req]')].filter(fs => shown(fs) && !fs.querySelector('input:checked')))
       .concat([...form.querySelectorAll('[data-req-doc]')].filter(x => shown(x) && !x.files.length));
     if (missing.length){ missing.forEach(x => x.classList.add('invalid')); (missing[0].querySelector?.('input') || missing[0]).focus(); return note(`Il manque ${missing.length} élément${missing.length > 1 ? 's' : ''} obligatoire${missing.length > 1 ? 's' : ''}.`, true); }
+    const badDate = [...form.querySelectorAll('input[type=date]')].find(x => x.value && ((x.min && x.value < x.min) || (x.max && x.value > x.max)));
+    if (badDate){ badDate.classList.add('invalid'); badDate.focus(); return note(badDate.min && badDate.value < badDate.min ? 'La date d’expiration ne peut pas être avant la date de délivrance.' : 'Cette date ne peut pas être dans le futur.', true); }
     const v = Object.fromEntries([...new FormData(form)].filter(([, x]) => typeof x === 'string').map(([k, x]) => [k, x.trim()]));
     const main = {}, data = {};
     SECTIONS.forEach(sec => sec.fields.forEach(f => { if (v[f.k]) (f.col ? main : data)[f.k] = v[f.k]; }));

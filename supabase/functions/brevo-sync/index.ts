@@ -50,7 +50,7 @@ async function brevoEmails(key: string) {
   return out;
 }
 
-type Contact = { id: string; email: string | null; first_name: string | null; last_name: string | null; display_name: string | null };
+type Contact = { id: string; email: string | null; email_2?: string | null; first_name: string | null; last_name: string | null; display_name: string | null };
 
 async function structuresOf(ids: string[]) {
   const out = new Map<string, string[]>();
@@ -60,6 +60,9 @@ async function structuresOf(ids: string[]) {
   }
   return out;
 }
+
+/** Mails valides d'un contact (mail 1 puis mail 2), en minuscules et sans doublon */
+const mailsOf = (c: Contact) => [...new Set([c.email, c.email_2].map((e) => String(e || "").trim().toLowerCase()).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
 
 function attributes(c: Contact, structs: string[], a: NonNullable<typeof ATTRS>) {
   const at: Record<string, string> = {};
@@ -86,18 +89,20 @@ Deno.serve(async (req) => {
     if (body.all) {
       const all: Contact[] = [];
       for (let from = 0; ; from += 1000) {
-        const { data } = await sb.from("contacts").select("id,email,first_name,last_name,display_name").not("email", "is", null).range(from, from + 999);
+        const { data } = await sb.from("contacts").select("id,email,email_2,first_name,last_name,display_name").or("email.not.is.null,email_2.not.is.null").range(from, from + 999);
         all.push(...((data || []) as Contact[]));
         if (!data || data.length < 1000) break;
       }
       // seulement les mails absents de Brevo : les contacts existants (et les désabonnés) ne sont pas touchés
       const known = await brevoEmails(key);
       const seen = new Set<string>();
-      const list = all.filter((c) => { const e = (c.email || "").trim().toLowerCase(); if (!/@/.test(e) || known.has(e) || seen.has(e)) return false; seen.add(e); return true; });
+      // chaque mail du contact (mail 1 et mail 2) devient un contact Brevo
+      const list: { c: Contact; email: string }[] = [];
+      for (const c of all) for (const e of mailsOf(c)) { if (known.has(e) || seen.has(e)) continue; seen.add(e); list.push({ c, email: e }); }
       if (!list.length) return json({ ok: true, count: 0 });
-      const st = await structuresOf(list.map((c) => c.id));
+      const st = await structuresOf([...new Set(list.map((x) => x.c.id))]);
       const r = await fetch(`${API}/contacts/import`, { method: "POST", headers: { "api-key": key, "content-type": "application/json" },
-        body: JSON.stringify({ jsonBody: list.map((c) => ({ email: c.email!.trim().toLowerCase(), attributes: attributes(c, st.get(c.id) || [], a) })),
+        body: JSON.stringify({ jsonBody: list.map(({ c, email }) => ({ email, attributes: attributes(c, st.get(c.id) || [], a) })),
           ...(listIds.length ? { listIds } : {}), updateExistingContacts: false, emptyContactsAttributes: false }) });
       if (!r.ok) return json({ ok: false, error: `Brevo ${r.status} : ${await r.text()}` });
       return json({ ok: true, count: list.length });
@@ -105,25 +110,33 @@ Deno.serve(async (req) => {
 
     // Un contact : petite attente pour que les structures rattachées juste après la création soient là
     await new Promise((ok) => setTimeout(ok, 3000));
-    const { data: c } = await sb.from("contacts").select("id,email,first_name,last_name,display_name,brevo_created").eq("id", body.contact_id).single();
-    if (!c || !/@/.test(c.email || "")) return json({ ok: true, skipped: "pas de mail" });
-    const email = c.email!.trim().toLowerCase();
-    // déjà dans Brevo (abonné ou désabonné) : on n'y touche pas
-    const g = await fetch(`${API}/contacts/${encodeURIComponent(email)}`, { headers: { "api-key": key, accept: "application/json" } });
+    const { data: c } = await sb.from("contacts").select("id,email,email_2,first_name,last_name,display_name,brevo_created,brevo_emails").eq("id", body.contact_id).single();
+    const mails = c ? mailsOf(c as Contact) : [];
+    if (!c || !mails.length) return json({ ok: true, skipped: "pas de mail" });
     const st = await structuresOf([c.id]);
-    if (g.ok) {
-      // créé par la Matrice (ex. la structure rattachée juste après) : on complète seulement prénom / nom / structure
-      if (c.brevo_created) await fetch(`${API}/contacts/${encodeURIComponent(email)}`, { method: "PUT", headers: { "api-key": key, "content-type": "application/json" },
-        body: JSON.stringify({ attributes: attributes(c as Contact, st.get(c.id) || [], a) }) });
-      await sb.from("contacts").update({ brevo_at: new Date().toISOString(), brevo_error: null }).eq("id", c.id);
-      return json({ ok: true, skipped: c.brevo_created ? "complété" : "déjà dans Brevo" });
+    const attrs = attributes(c as Contact, st.get(c.id) || [], a);
+    // mails créés par la Matrice (avant la v1.32 : seul le mail 1, signalé par brevo_created)
+    const ours = new Set<string>((c.brevo_emails || []).map((e: string) => e.toLowerCase()));
+    if (c.brevo_created && !ours.size && c.email) ours.add(c.email.trim().toLowerCase());
+    const errors: string[] = [], done: string[] = [];
+    for (const email of mails) {
+      const g = await fetch(`${API}/contacts/${encodeURIComponent(email)}`, { headers: { "api-key": key, accept: "application/json" } });
+      if (g.ok) {
+        // déjà dans Brevo : on n'y touche pas, sauf si c'est la Matrice qui l'a créé (on complète prénom / nom / structure)
+        if (ours.has(email)) await fetch(`${API}/contacts/${encodeURIComponent(email)}`, { method: "PUT", headers: { "api-key": key, "content-type": "application/json" },
+          body: JSON.stringify({ attributes: attrs }) });
+        done.push(email); continue;
+      }
+      const r = await fetch(`${API}/contacts`, { method: "POST", headers: { "api-key": key, "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ email, attributes: attrs, ...(listIds.length ? { listIds } : {}) }) });
+      const txt = r.ok ? "" : await r.text();
+      if (r.ok) { ours.add(email); done.push(email); }
+      else if (/duplicate/i.test(txt)) done.push(email);
+      else errors.push(`${email} : Brevo ${r.status} : ${txt.slice(0, 200)}`);
     }
-    const r = await fetch(`${API}/contacts`, { method: "POST", headers: { "api-key": key, "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ email, attributes: attributes(c as Contact, st.get(c.id) || [], a), ...(listIds.length ? { listIds } : {}) }) });
-    const txt = r.ok ? "" : await r.text();
-    const err = r.ok || /duplicate/i.test(txt) ? null : `Brevo ${r.status} : ${txt.slice(0, 300)}`;
-    await sb.from("contacts").update({ brevo_at: new Date().toISOString(), brevo_error: err, ...(r.ok ? { brevo_created: true } : {}) }).eq("id", c.id);
-    return json({ ok: !err, error: err });
+    const err = errors.length ? errors.join(" · ") : null;
+    await sb.from("contacts").update({ brevo_at: new Date().toISOString(), brevo_error: err, brevo_emails: [...ours], ...(ours.size ? { brevo_created: true } : {}) }).eq("id", c.id);
+    return json({ ok: !err, error: err, emails: done });
   } catch (e) {
     const msg = String(e);
     if (/unrecognised IP/i.test(msg)) return json({ ok: false, error: "Brevo bloque la connexion (adresse IP non autorisée). Dans Brevo : Paramètres › Sécurité › IP autorisées, désactive le blocage des adresses IP inconnues, puis réessaie." });

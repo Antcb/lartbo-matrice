@@ -8,7 +8,7 @@
  */
 import { render } from '../app.js';
 import { S } from '../state.js';
-import { $, esc } from '../utils.js';
+import { $, esc, toast } from '../utils.js';
 import { SOURCES, acInput, commitTypedText } from './autocomplete.js';
 import { dateInput } from './datefield.js';
 import { projPicker } from './projpicker.js';
@@ -85,6 +85,9 @@ export function openModal({title, fields, values={}, onSave, onDelete, extra='',
       commitTypedText(ev.target);
       // un seul enregistrement à la fois : tous les boutons du bas attendent la fin (envoi, brouillon…)
       if (dlg._busy) return;
+      // une date illisible ou une fin avant le début : on ne ferme pas, on montre le champ
+      const bad = ev.target.querySelector('.dt-txt.bad');
+      if (bad){ toast(bad.title || 'Date à corriger', true); bad.focus(); return; }
       const out = readForm(ev.target, fields);
       const btns = [...ev.target.querySelectorAll('.modal-foot button')];
       dlg._busy = true; btns.forEach(b => b.disabled = true);

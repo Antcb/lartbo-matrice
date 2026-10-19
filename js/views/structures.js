@@ -102,7 +102,7 @@ function homeTab(st, contacts, events){
     <div class="panel pad"><h3 class="block-title">Contacts <span class="count">${contacts.length}</span><span class="spacer"></span><button class="btn sm" data-act="newContactFor" data-id="${st.id}">Ajouter un contact</button></h3>
       ${contacts.map(c=>`<div class="contact-row"><a href="#" data-act="editContact" data-id="${c.id}"><b>${esc(c.display_name)}</b></a>
         <span class="muted">${esc((c.roles||[]).join(', '))}</span>
-        <span class="links">${c.email?`<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`:''}${c.phone?`<a href="tel:${esc(c.phone.replace(/\s/g,''))}">${esc(c.phone)}</a>`:''}</span></div>`).join('') || '<div class="muted">Aucun contact lié.</div>'}
+        <span class="links">${[c.email, c.email_2].filter(Boolean).map(m => `<a href="mailto:${esc(m)}">${esc(m)}</a>`).join('')}${[c.phone, c.phone_2].filter(Boolean).map(t => `<a href="tel:${esc(t.replace(/\s/g,''))}">${esc(t)}</a>`).join('')}</span></div>`).join('') || '<div class="muted">Aucun contact lié.</div>'}
     </div></div>`;
 }
 

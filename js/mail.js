@@ -8,7 +8,7 @@
  */
 import { billPct } from './calc.js';
 import { insert, remove, save, sb } from './data.js';
-import { byId, linksOfStructure, projectOptions, setting } from './selectors.js';
+import { byId, contactMails, linksOfStructure, projectOptions, setting } from './selectors.js';
 import { S } from './state.js';
 import { openModal } from './ui/modal.js';
 import { rtStyle, rtToolbar, wrapMail } from './ui/richtext.js';
@@ -96,7 +96,7 @@ export async function prepareMail(showId, kind){
   const tpls = templatesFor(s, kind);
   if (!tpls.length) return toast(`Aucun modèle « ${MAIL_KINDS[kind]} » pour cet artiste. Ajoute-le dans Réglages › Modèles de mail.`, true);
   const contacts = linksOfStructure(s.structure_id);
-  let contactId = s.conf_contact_id && contacts.some(c=>c.id===s.conf_contact_id) ? s.conf_contact_id : (contacts.find(c=>c.email)?.id || '');
+  let contactId = s.conf_contact_id && contacts.some(c=>c.id===s.conf_contact_id) ? s.conf_contact_id : (contacts.find(c=>contactMails(c))?.id || '');
   let vars = await mailVars(showId, contactId);
   const log = s.mail_log?.[kind];
   const booking = isBookingOnly(s);
@@ -108,7 +108,7 @@ export async function prepareMail(showId, kind){
     <div class="mail-grid">
       <label for="ml-tpl">Modèle</label><select id="ml-tpl">${tpls.map(t=>`<option value="${t.id}">${esc(t.name||MAIL_KINDS[t.kind])}${tplProjects(t).length?'':' · générique'}</option>`).join('')}</select>
       <label>Envoyé par</label><span class="ml-from">${esc(PROD_MAIL)}${sig ? ' <span class="muted">· avec la signature production@</span>' : ' <span class="muted">· pas de signature (Réglages › Prospection, signature de Chloé)</span>'}</span>
-      <label for="ml-contact">Destinataire</label><span class="mail-to"><select id="ml-contact"><option value="">— autre adresse —</option>${contacts.map(c=>`<option value="${c.id}" ${c.id===contactId?'selected':''}>${esc(c.display_name)}${c.email?` · ${esc(c.email)}`:' (pas de mail)'}</option>`).join('')}</select>
+      <label for="ml-contact">Destinataire</label><span class="mail-to"><select id="ml-contact"><option value="">— autre adresse —</option>${contacts.map(c=>`<option value="${c.id}" ${c.id===contactId?'selected':''}>${esc(c.display_name)}${contactMails(c)?` · ${esc(contactMails(c))}`:' (pas de mail)'}</option>`).join('')}</select>
         <input id="ml-to" type="text" inputmode="email" placeholder="adresse@exemple.fr (plusieurs : séparées par des virgules)" value="${esc(vars.contact_email||'')}"></span>
       <label for="ml-cc">Copie</label><input id="ml-cc" type="text" placeholder="Nom <adresse@…>, …">
       <label for="ml-subj">Objet</label><input id="ml-subj">

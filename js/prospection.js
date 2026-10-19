@@ -9,7 +9,7 @@ import { render } from './app.js';
 import { insert, save, sb, signedUrl } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
 import { PROSPECT_TAGS, callScript, fill, tplLabel, tplProjects } from './mail.js';
-import { suiviClosed, byId, eventsOfStructure, linksOfStructure, logsOf, projIds, projName, prospectsOfStructure, setting, structName } from './selectors.js';
+import { suiviClosed, byId, contactMails, eventsOfStructure, linksOfStructure, logsOf, projIds, projName, prospectsOfStructure, setting, structName } from './selectors.js';
 import { S } from './state.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { dateInput } from './ui/datefield.js';
@@ -90,7 +90,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
   const contacts = linksOfStructure(st.id);
   const active = S.db.projects.filter(x => x.active).sort((a, b) => a.name.localeCompare(b.name));
   let pids = relance ? projIds(p) : (S.project && byId('projects', S.project)?.active ? [S.project] : []);
-  let contact = relance ? contacts.find(c => c.email && p.mail_to && p.mail_to.toLowerCase().includes(c.email.toLowerCase())) : contacts.find(c => c.email);
+  let contact = relance ? contacts.find(c => p.mail_to && [c.email, c.email_2].some(e => e && p.mail_to.toLowerCase().includes(e.toLowerCase()))) : contacts.find(c => contactMails(c));
   // tous les modèles du type : ceux des artistes cochés d'abord, puis les génériques, puis les autres (choisir un modèle coche ses artistes)
   const rank = t => { const ids = tplProjects(t); return ids.some(id => pids.includes(id)) ? 0 : !ids.length ? 1 : 2; };
   const tplsFor = () => S.db.mail_templates.filter(t => t.kind === kind)
@@ -105,8 +105,8 @@ export async function openProspection(structureId, {prospectId=null}={}){
       <label for="pr-from">Envoyé par</label><select id="pr-from" ${relance ? 'disabled title="La relance part de la boîte qui a envoyé la prospection"' : ''}>${Object.entries(SENDERS).map(([k, l]) => `<option value="${k}" ${k === sender ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
       <label for="pr-tpl">Modèle</label><select id="pr-tpl"></select>
       <label for="pr-show" class="pr-concert" hidden>Concert</label><span class="pr-concert" hidden><select id="pr-show"></select><small class="muted">remplit la date, la ville, le lieu, la date limite de réponse et les liens</small></span>
-      <label for="pr-contact">Destinataire</label><span class="mail-to"><select id="pr-contact"><option value="">— autre adresse —</option>${contacts.map(c => `<option value="${c.id}" ${c.id === contact?.id ? 'selected' : ''}>${esc(c.display_name)}${c.email ? ` · ${esc(c.email)}` : ' (pas de mail)'}</option>`).join('')}</select>
-        <input id="pr-to" type="email" placeholder="adresse@exemple.fr" value="${esc(relance ? (p.mail_to || '') : (contact?.email || ''))}"></span>
+      <label for="pr-contact">Destinataire</label><span class="mail-to"><select id="pr-contact"><option value="">— autre adresse —</option>${contacts.map(c => `<option value="${c.id}" ${c.id === contact?.id ? 'selected' : ''}>${esc(c.display_name)}${contactMails(c) ? ` · ${esc(contactMails(c))}` : ' (pas de mail)'}</option>`).join('')}</select>
+        <input id="pr-to" type="email" multiple placeholder="adresse@exemple.fr (plusieurs : séparées par des virgules)" value="${esc(relance ? (p.mail_to || '') : contactMails(contact))}"></span>
       <label for="pr-cc">Copie</label><input id="pr-cc">
       ${relance ? '' : `<label for="pr-subj">Objet</label><input id="pr-subj">
       <label>Date proposée</label><span class="pr-date">${dateInput('', 'id="pr-date"')}<small class="muted">facultatif : crée la date en « Intérêt » pour chaque artiste</small></span>`}
@@ -187,7 +187,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
     $('#pr-tpl').dataset.prev = $('#pr-tpl').value;
     if ($('#pr-tpl').value !== before && !dirty) draw(true); else draw();
   });
-  $('#pr-contact').onchange = e => { contact = byId('contacts', e.target.value) || null; if (contact?.email) $('#pr-to').value = contact.email; draw(); };
+  $('#pr-contact').onchange = e => { contact = byId('contacts', e.target.value) || null; if (contactMails(contact)) $('#pr-to').value = contactMails(contact); draw(); };
   $('#pr-date')?.addEventListener('change', () => draw());
   $('#pr-show').onchange = () => { if (dirty && !confirm('Remplacer le texte retouché ?')) return; draw(true); };
   $('#pr-from').onchange = e => { const before = signatureOf(sender); sender = e.target.value; $('#pr-from-addr').textContent = fromAddr();

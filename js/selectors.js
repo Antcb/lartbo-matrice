@@ -119,6 +119,9 @@ export const tasksOfProject = id => cached('tasks.proj', ['tasks'], () => {
 
 export function prospectTitle(p){ return [structName(p.structure_id), projNames(p)].filter(Boolean).join(' — ') || p.name; }
 
+/** Les mails d'un contact (mail 1, mail 2), séparés par une virgule : prêts pour « À » d'un mail */
+export const contactMails = c => [c?.email, c?.email_2].map(e => String(e || '').trim()).filter(Boolean).filter((e, i, a) => a.findIndex(x => x.toLowerCase() === e.toLowerCase()) === i).join(', ');
+
 export function linksOfContact(id){ return (byCol('contact_structures','contact_id').get(id)||[]).map(l=>byId('structures',l.structure_id)).filter(Boolean); }
 
 export function linksOfStructure(id){ return (byCol('contact_structures','structure_id').get(id)||[]).map(l=>byId('contacts',l.contact_id)).filter(Boolean); }
