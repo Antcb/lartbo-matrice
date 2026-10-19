@@ -123,7 +123,7 @@ function conditionsTab(s, booking){
         <label>Cachet HT</label>${cIn('shows',s.id,'fee_ht',s.fee_ht,'number')}
         <label>TVA du cachet (%)</label>${cIn('shows',s.id,'vat_rate',s.vat_rate,'number','placeholder="5.5" class="narrow"')}
         <label>Cachet TTC</label><b>${eur2(ttc(s.fee_ht, showVat(s)))}</b>
-        ${booking ? '' : `<label>Acomptes</label><span>${b.lines.filter(p => p.kind === 'acompte').map(p => `${esc(p.label || 'Acompte')} ${pctVal(billPct(p))} %`).join(' · ') || '<span class="muted">aucun</span>'}${b.lines.some(p => p.kind === 'solde') ? ` · solde ${pctVal(billPct(b.lines.find(p => p.kind === 'solde')))} %` : ''}</span>`}
+        ${booking ? '' : `<label>Acomptes</label><span>${b.lines.filter(p => p.kind === 'acompte').map(p => `${esc(p.label || 'Acompte')} ${pctVal(billPct(p))} %${p.due_label ? ` <span class="muted">(${esc(p.due_label)})</span>` : ''}`).join(' · ') || '<span class="muted">aucun</span>'}${b.lines.some(p => p.kind === 'solde') ? ` · solde ${pctVal(billPct(b.lines.find(p => p.kind === 'solde')))} %` : ''}</span>`}
         <label>Heure de passage</label>${cIn('shows',s.id,'show_time',s.show_time,'text','placeholder="ex. 22h30" class="narrow"')}
         <label>Durée du set</label>${cIn('shows',s.id,'set_length',s.set_length,'text','placeholder="ex. 1h15" class="narrow"')}
         ${booking ? '' : `<label>Invitations producteur</label>${cIn('shows',s.id,'invitations',s.invitations,'number','placeholder="10" class="narrow"')}`}

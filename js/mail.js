@@ -80,6 +80,8 @@ export async function callScript(action, payload){
   const res = await fetch(url, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({secret: setting('drive_webhook_secret'), action, ...payload})});
   const out = await res.json().catch(() => ({ok:false, error:'Réponse illisible du script'}));
+  // script pas encore mis à jour sur production@ : on dit quoi faire
+  if (!out.ok && /Action inconnue/i.test(out.error || '')) throw new Error('Le script Google de production@ n’est pas à jour. Réglages › Google : « Copier le code à jour », colle-le dans Code.gs puis redéploie (nouvelle version).');
   if (!out.ok) throw new Error(out.error || 'Erreur du script');
   return out;
 }
@@ -149,7 +151,7 @@ export async function prepareMail(showId, kind){
     $('#ml-cc').value = t.cc || '';
     $('#ml-subj').value = fill(t.subject, vars, false);
     // date en booking uniquement : pas de fiche de renseignements (les parties s'arrangent entre elles après le mail)
-    $('#ml-body').innerHTML = fill(booking ? withoutFiche(t.html) : t.html, vars, true) + sig;
+    $('#ml-body').innerHTML = fill(expandAcomptes(booking ? withoutFiche(t.html) : t.html, s), vars, true) + sig;
   };
   draw();
   $('#ml-tpl').onchange = draw;
@@ -190,6 +192,32 @@ async function logMail(s, kind, to, draft, mail=null){
 /** À vérifier avant la confirmation : cachet, TVA, contrat, acomptes */
 /** Date en booking uniquement (date cochée, ou artiste « booking seul ») */
 export const isBookingOnly = s => (s?.prod_mode || byId('projects', s?.project_id)?.mode) === 'booking';   // le mode de la date prime sur celui de l'artiste
+/**
+ * Plusieurs acomptes : la ligne du modèle qui contient {{acompte_pct}} est répétée, une par acompte,
+ * avec son % et son échéance (« à la signature du contrat » pour le 1er, « le 15 janvier 2027 »… pour les suivants).
+ */
+export function expandAcomptes(html, s){
+  const acs = S.db.show_payments.filter(p => p.show_id === s.id && p.kind === 'acompte').sort((a, b) => (a.sort || 0) - (b.sort || 0));
+  const TAG = '{{acompte_pct}}', FIRST = 'à la signature du contrat';
+  if (!acs.length || !String(html || '').includes(TAG)) return html;
+  if (acs.length === 1 && (!acs[0].due_label || acs[0].due_label === FIRST)) return html;   // cas simple : le modèle tel quel
+  const pctTxt = p => { const v = billPct(p); return v == null ? '' : String(Math.round(v * 100) / 100).replace('.', ',') + '%'; };
+  const div = document.createElement('div'); div.innerHTML = String(html);
+  const blocks = [...div.querySelectorAll('div,p,li')].filter(b => b.innerHTML.includes(TAG));
+  const block = blocks.find(b => !blocks.some(o => o !== b && b.contains(o)));
+  const line = (p, i) => {
+    const due = p.due_label || (i === 0 ? FIRST : '');
+    let h = block.outerHTML.replace(TAG, esc(pctTxt(p)));
+    if (h.includes(FIRST)) h = h.replace(FIRST, esc(due));
+    else if (due && due !== FIRST) h = h.replace(esc(pctTxt(p)), esc(pctTxt(p)) + ' ' + esc(due));
+    return h;
+  };
+  if (!block) return html.replace(TAG, acs.map((p, i) => `${pctTxt(p)} ${p.due_label || (i === 0 ? FIRST : '')}`.trim()).join(', '));
+  block.insertAdjacentHTML('afterend', acs.map(line).join(''));
+  block.remove();
+  return div.innerHTML;
+}
+
 /** Retire du mail les paragraphes qui renvoient à la fiche de renseignements ({{lien_fiche}}) */
 export function withoutFiche(html){
   const TAG = /\{\{lien_fiche\}\}/, div = document.createElement('div'); div.innerHTML = String(html || '');
