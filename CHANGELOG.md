@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.27.3 — 19/10/2026
+- Suivis « Confirmed » rangés avec les suivis clos partout (Suivi, fiche structure, fiche artiste, To Do, relances)
+
+
 ## 1.27.2 — 19/10/2026
 - Correctif : pages longues (To Do, tâches terminées…) 8 fois plus rapides, plus de blocage de Safari ; échéance d'un acompte déjà facturé enregistrée ; la fiche de renseignements affiche les acomptes avec leurs échéances
 

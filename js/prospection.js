@@ -9,7 +9,7 @@ import { render } from './app.js';
 import { insert, save, sb, signedUrl } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
 import { PROSPECT_TAGS, callScript, fill, tplLabel, tplProjects } from './mail.js';
-import { byId, eventsOfStructure, linksOfStructure, logsOf, projIds, projName, prospectsOfStructure, setting, structName } from './selectors.js';
+import { suiviClosed, byId, eventsOfStructure, linksOfStructure, logsOf, projIds, projName, prospectsOfStructure, setting, structName } from './selectors.js';
 import { S } from './state.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { dateInput } from './ui/datefield.js';
@@ -211,7 +211,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
 async function recordProspection(st, {to, subject, html, send, out, pids, contact, date, account}){
   const now = today();
   // un suivi en cours avec cette structure et un de ces artistes : on le complète, sinon on en crée un
-  let p = prospectsOfStructure(st.id).find(x => x.status !== 'Closed' && projIds(x).some(id => pids.includes(id)));
+  let p = prospectsOfStructure(st.id).find(x => !suiviClosed(x) && projIds(x).some(id => pids.includes(id)));
   if (p){
     const ids = [...new Set([...projIds(p), ...pids])];
     await save('prospects', p.id, {project_ids: ids, project_id: ids[0]}, {rerender: false});
@@ -357,7 +357,7 @@ export function checkVisibleProspects(){
 }
 
 /** Le suivi le plus récent de la structure qui a un mail de prospection (pour le bouton « Relance ») */
-export const lastProspectMail = stId => prospectsOfStructure(stId).filter(p => p.mail_thread_id && p.status !== 'Closed')
+export const lastProspectMail = stId => prospectsOfStructure(stId).filter(p => p.mail_thread_id && !suiviClosed(p))
   .sort((a, b) => (b.mail_sent_at || b.updated_at || '').localeCompare(a.mail_sent_at || a.updated_at || ''))[0] || null;
 
 export { PROSPECT_TAGS, logsOf };
