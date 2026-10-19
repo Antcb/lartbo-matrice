@@ -159,13 +159,13 @@ begin
       (coalesce(m->>'email', '') <> '' and lower(email) = lower(m->>'email'))
       or (lower(coalesce(first_name, '')) = lower(coalesce(m->>'first_name', '')) and lower(coalesce(last_name, '')) = lower(coalesce(m->>'last_name', '')))) limit 1;
     if mem_id is null then
-      insert into project_members (project_id, first_name, last_name, role, email, birth_date, address, data)
-        values (p.id, nullif(m->>'first_name', ''), nullif(m->>'last_name', ''), nullif(m->>'role', ''), nullif(m->>'email', ''), bd,
+      insert into project_members (project_id, first_name, last_name, role, email, phone, birth_date, address, data)
+        values (p.id, nullif(m->>'first_name', ''), nullif(m->>'last_name', ''), nullif(m->>'role', ''), nullif(m->>'email', ''), nullif(m->>'phone', ''), bd,
           nullif(concat_ws(', ', nullif(m->>'city', ''), nullif(m->>'country', '')), ''),
           jsonb_strip_nulls(jsonb_build_object('city', nullif(m->>'city', ''), 'country', nullif(m->>'country', ''))));
     else
       update project_members set first_name = coalesce(nullif(m->>'first_name', ''), first_name), last_name = coalesce(nullif(m->>'last_name', ''), last_name),
-        role = coalesce(nullif(m->>'role', ''), role), email = coalesce(nullif(m->>'email', ''), email), birth_date = coalesce(bd, birth_date),
+        role = coalesce(nullif(m->>'role', ''), role), email = coalesce(nullif(m->>'email', ''), email), phone = coalesce(nullif(m->>'phone', ''), phone), birth_date = coalesce(bd, birth_date),
         address = coalesce(nullif(address, ''), nullif(concat_ws(', ', nullif(m->>'city', ''), nullif(m->>'country', '')), '')),
         data = coalesce(data, '{}') || jsonb_strip_nulls(jsonb_build_object('city', nullif(m->>'city', ''), 'country', nullif(m->>'country', '')))
         where id = mem_id;

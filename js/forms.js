@@ -8,7 +8,7 @@ import { CFG } from './config.js';
 import { CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PROSPECT, STATUSES, TASK_STATUS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
 import { insert, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode } from './geo.js';
-import { suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
+import { defaultCommission, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow } from './ui/bits.js';
@@ -92,13 +92,13 @@ export function editShow(id, projectId, prefill={}){
 
 /* ------------------------------------------------------------------ Projets */
 export function editProject(id){
-  const p = id ? byId('projects', id) : {active:true, mode:'production'};
+  const p = id ? byId('projects', id) : {active:true, mode:'production', default_artbo_pct: defaultCommission('production')};
   openModal({ title: id ? p.name : 'Nouveau projet', values: {...p, _make_folder: !id},
     fields: [
       {k:'name', label:'Nom', full:true}, {k:'active', label:'Projet actif', type:'checkbox'},
       {k:'mode', label:'Type de suivi', type:'select', blank:false, options:[['production','Production (L’ArtBo produit les dates)'],['booking','Booking seul (commission facturée à l’artiste)']],
         help:'Le changement s’applique aux nouvelles dates ; les dates existantes gardent leur suivi.'},
-      {k:'default_artbo_pct', label:"% L'ArtBo (15 ou 20)", type:'number'},
+      {k:'default_artbo_pct', label:"Commission L'ArtBo (%)", type:'number', help:'Par défaut : booking ' + defaultCommission('booking') + ' %, production ' + defaultCommission('production') + ' % (Réglages › Pourcentages par défaut).'},
       {k:'default_partner_id', label:'Co-producteur par défaut', type:'select', options:S.db.partners.map(x=>[x.id,x.name])},
       {k:'default_partner_pct', label:'% partenaire sur la commission', type:'number'},
       ...(p.drive_artist_folder_id ? [] : [{k:'_make_folder', label:'Créer son dossier Drive à son nom (à partir du modèle artiste)', type:'checkbox', full:true}]),
@@ -125,6 +125,10 @@ export function editProject(id){
       if (row && makeFolder && !row.drive_artist_folder_id) createArtistFolder(row.id);
     }
   });
+  // le type de suivi change : la commission suit (booking / production) tant qu'elle est celle par défaut
+  const modeSel = document.querySelector('#modal [name=mode]'), pct = document.querySelector('#modal [name=default_artbo_pct]');
+  if (modeSel && pct){ let prev = modeSel.value;
+    modeSel.addEventListener('change', () => { if (pct.value === '' || Number(pct.value) === defaultCommission(prev)) pct.value = defaultCommission(modeSel.value); prev = modeSel.value; }); }
 }
 
 /** Dossier Drive d'un artiste (créé depuis le modèle s'il n'existe pas encore) */

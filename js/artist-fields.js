@@ -55,7 +55,7 @@ export const ARTIST_SECTIONS = [
     {k: 'lead', label: 'Lead', type: 'choice', options: ['Féminin', 'Masculin', 'Mixte', 'Non-genré'], full: true},
     {k: 'members', label: 'Musiciens et techniciens', type: 'list', wrap: true, full: true, add: 'Ajouter une personne',
       cols: [{k: 'role', label: 'Poste', placeholder: 'ex. Chant, guitare, son…'}, {k: 'first_name', label: 'Prénom'}, {k: 'last_name', label: 'Nom'},
-        {k: 'birth_date', label: 'Date de naissance', placeholder: 'JJ/MM/AAAA'}, {k: 'email', label: 'Mail'}, {k: 'city', label: 'Ville de résidence'}, {k: 'country', label: 'Pays de résidence'}]},
+        {k: 'birth_date', label: 'Date de naissance', placeholder: 'JJ/MM/AAAA'}, {k: 'email', label: 'Mail'}, {k: 'phone', label: 'Téléphone'}, {k: 'city', label: 'Ville de résidence'}, {k: 'country', label: 'Pays de résidence'}]},
   ]},
   {title: '9. Musicien référent', help: 'La personne du groupe à contacter.', fields: [
     {k: 'ref_name', label: 'Prénom et nom', req: true},
@@ -65,7 +65,7 @@ export const ARTIST_SECTIONS = [
   ]},
   {title: '10. Équipe professionnelle', help: 'Remplis seulement les lignes qui vous concernent.', fields: [
     {k: 'pros', type: 'roles', full: true, roles: ['Manager', 'Booker', 'Label', 'Attaché·e de presse (RP)', 'Éditeur', 'Community manager (CM)'],
-      cols: [{k: 'name', label: 'Nom / structure'}, {k: 'email', label: 'Mail'}, {k: 'phone', label: 'Téléphone', w: '150px'}]},
+      cols: [{k: 'org', label: 'Structure'}, {k: 'name', label: 'Prénom et nom'}, {k: 'email', label: 'Mail'}, {k: 'phone', label: 'Téléphone', w: '140px'}]},
   ]},
   {title: '11. Structure administrative de l’artiste', help: 'La structure qui porte le projet (association, société, label…) : elle sert pour les contrats et la facturation.', fields: [
     {k: 'adm_legal_name', label: 'Raison sociale'},
@@ -113,15 +113,15 @@ export const ARTIST_SECTIONS = [
 /** Crédits photo : demandés avec les fichiers (section 13) */
 export const PHOTO_CREDITS = {k: 'photo_credits', label: 'Crédits photo', placeholder: 'ex. Camille Legrand', full: true};
 
-/** Fichiers : [clé, libellé, aide, chemin dans le dossier Drive de l'artiste, types acceptés, nombre minimum] */
+/** Fichiers : [clé, libellé, aide, chemin dans le dossier Drive de l'artiste, types acceptés, nombre minimum (une case par fichier), nom d'une case, cases à ajouter (+ Ajouter)] */
 export const ARTIST_DOCS = [
   ['photo_square', 'Photo récente — format carré', 'ex. 1080 × 1080', ['033_Promotion', 'Visuals'], 'image/*'],
   ['photo_portrait', 'Photo récente — 300 × 400 (portrait)', 'ou même proportion en plus grand', ['033_Promotion', 'Visuals'], 'image/*'],
   ['photo_landscape', 'Photo récente — 400 × 300 (paysage)', 'ou même proportion en plus grand', ['033_Promotion', 'Visuals'], 'image/*'],
-  ['photos', 'Autres photos / visuels HD', 'Plusieurs fichiers possibles', ['033_Promotion', 'Visuals'], 'image/*'],
-  ['logos', 'Logos', 'PNG fond transparent de préférence', ['033_Promotion', 'Logos'], 'image/*,application/pdf'],
+  ['photos', 'Photos / visuels supplémentaires', 'Facultatif : « + Ajouter une photo » pour en mettre autant que tu veux', ['033_Promotion', 'Visuals'], 'image/*', 0, 'Photo', true],
+  ['logos', 'Logos', 'PNG fond transparent de préférence ; « + Ajouter un logo » pour en mettre plusieurs', ['033_Promotion', 'Logos'], 'image/*,application/pdf', 0, 'Logo', true],
   ['tech_rider', 'Fiche technique (avec le plan de scène)', 'PDF', ['030_Reference', 'Technical'], 'application/pdf,image/*'],
   ['hosp_rider', 'Fiche accueil (hospitality rider)', 'PDF', ['030_Reference', 'Technical'], 'application/pdf'],
   ['press_kit', 'Dossier de presse / EPK', 'PDF', ['033_Promotion', 'Content Text'], 'application/pdf'],
-  ['audio', 'Titres audio en MP3 (3 minimum)', 'Au moins 3 titres en MP3', ['033_Promotion', 'Audio'], 'audio/mpeg,.mp3', 3],
+  ['audio', 'Titres audio en MP3 ou WAV (3 minimum)', 'Un titre par case, en MP3 ou en WAV', ['033_Promotion', 'Audio'], 'audio/mpeg,audio/wav,audio/x-wav,audio/wave,.mp3,.wav', 3, 'Titre'],
 ];

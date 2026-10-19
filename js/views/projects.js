@@ -4,17 +4,18 @@
  * Administratif (structure juridique de l'artiste), Membres (import CSV Movinmotion possible), Modèles de mail.
  */
 import { ARTIST_DOCS, ARTIST_SECTIONS, PHOTO_CREDITS } from '../artist-fields.js';
+import { ALL_FIELDS as AF_FIELDS, ficheText, fieldText, input as afInput, listClick, read as afRead } from '../artist-form.js';
 import { netArtbo } from '../calc.js';
 import { ENV } from '../config.js';
 import { templatesList, tplProjects } from '../mail.js';
 import { CONFIRMED_PROD, LOG_ICON, stClass } from '../constants.js';
-import { signedCached, signedUrl } from '../data.js';
-import { setting, suiviClosed, attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, structName, tasksOfProject } from '../selectors.js';
+import { save, signedCached, signedUrl } from '../data.js';
+import { defaultCommission, projectCommission, setting, suiviClosed, attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, structName, tasksOfProject } from '../selectors.js';
 import { S } from '../state.js';
 import { curTab, dropZone, fileRow, fold, pstBadge, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cAc, cIn } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
-import { esc, eur, fmtDate, md, today, url } from '../utils.js';
+import { esc, eur, fmtDate, md, toast, today, url } from '../utils.js';
 import { adminForm } from './structures.js';
 import { taskSection } from './todo.js';
 
@@ -74,7 +75,7 @@ export function projectPage(p){
     <div style="display:flex;flex-direction:column;gap:6px;align-items:center">${photoHTML(p, 'lg')}<button class="btn sm ghost" data-act="projectPhoto" data-id="${p.id}">${p.photo_path?'Changer / recadrer':'Ajouter une photo'}</button></div>
     <div style="flex:1;min-width:0"><h1>${esc(p.name)}</h1>
       <div class="proj-chips" style="margin-top:8px"><span class="badge ${p.mode==='booking'?'tag':'proj'}">${p.mode==='booking'?'Booking seul':'Production'}</span><span class="badge tag">${p.active?'Actif':'Inactif'}</span>
-        ${p.default_artbo_pct?`<span class="badge tag">Commission ${p.default_artbo_pct} %</span>`:''}</div></div>
+        <span class="badge tag" title="${p.default_artbo_pct != null && p.default_artbo_pct !== '' ? 'Propre à l’artiste' : 'Par défaut (Réglages)'}">Commission ${projectCommission(p)} %</span></div></div>
     <div class="vh-actions">${p.drive_artist_folder_id ? `<a class="btn" href="https://drive.google.com/drive/folders/${esc(p.drive_artist_folder_id)}" target="_blank" rel="noopener">Dossier Drive ↗</a>`
         : S.folderPending === p.id ? '<span class="btn" aria-busy="true">Création du dossier Drive…</span>' : `<button class="btn primary" data-act="createArtistFolder" data-id="${p.id}">Créer son dossier Drive</button>`}
       <button class="btn" data-act="copyArtistLink" data-id="${p.id}" title="Lien à envoyer à l’artiste : il remplit sa fiche et envoie ses fichiers">Copier le lien de la fiche artiste</button>
@@ -98,6 +99,14 @@ function overview(p, {shows, tasks, suivis}){
       <td class="num">${eur(conf.reduce((a,s)=>a+(Number(s.fee_ht)||0),0))}</td><td class="num"><b>${eur(l.filter(s=>CONFIRMED_PROD.includes(s.status)).reduce((a,s)=>a+netArtbo(s),0))}</b></td></tr>`;}).join('') || '<tr><td colspan="7" class="empty">Aucune date.</td></tr>'}
   </tbody></table></div>
   <p class="help">Commissions nettes = commission L'ArtBo moins la part reversée aux partenaires (ex. Pyrprod), sur les dates confirmées salle / festival.</p>
+  <div class="panel pad" style="margin-top:18px"><h3 class="block-title">Accueil <span class="muted" style="font-weight:400;font-size:13px">· repris dans les contrats et les mails ({{personnes}}, {{chambres}}, {{montage}}), enregistré dès que tu quittes le champ</span></h3>
+    <div class="steps accueil-grid">
+      <label>Personnes sur la route (= repas)</label>${cIn('projects', p.id, 'road_people', p.road_people, 'number', 'class="narrow"')}
+      <label>Mise à disposition du lieu (montage, balances), en heures</label>${cIn('projects', p.id, 'setup_hours', p.setup_hours, 'number', 'class="narrow"')}
+      <label>Chambres single</label>${cIn('projects', p.id, 'rooms_single', p.rooms_single, 'number', 'class="narrow"')}
+      <label>Chambres twin</label>${cIn('projects', p.id, 'rooms_twin', p.rooms_twin, 'number', 'class="narrow"')}
+      <label>Commission L'ArtBo (%)</label>${cIn('projects', p.id, 'default_artbo_pct', p.default_artbo_pct, 'number', `class="narrow" placeholder="${defaultCommission(p.mode)}"`)}
+    </div></div>
   <div class="struct-hero" style="margin-top:18px">
     <div class="panel pad"><h3 class="block-title">Prochaines dates</h3>${next.map(s=>`<div class="plan-row" data-act="editShow" data-id="${s.id}" style="cursor:pointer"><span class="d">${fmtDate(s.date)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span>${stSelect(s)}</div>`).join('') || '<p class="muted" style="margin:0">Aucune date à venir.</p>'}</div>
     <div class="panel pad"><h3 class="block-title">En cours</h3>
@@ -191,26 +200,44 @@ function mailsTab(p){
     <div class="vh-actions" style="margin-top:12px"><button class="btn primary" data-act="newTemplate" data-project="${p.id}">Nouveau modèle</button></div></div>`;
 }
 
-/** Fiche artiste : ce que l'artiste a rempli via son lien, et ses fichiers rangés dans le Drive */
+/** Fiche artiste : ce que l'artiste a rempli via son lien, modifiable ici, avec « Copier » sur chaque champ */
 function artistTab(p){
   const info = p.artist_info || {}, docs = p.artist_docs || [];
-  const link = x => /^https?:/.test(x) ? `<a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a>` : esc(x);
-  const val = (f, v) => {
-    if (f.type === 'roles') return v && Object.keys(v).length ? `<ul class="af-list">${Object.entries(v).map(([r, o]) => `<li><b>${esc(r)}</b> : ${f.cols.map(c => o[c.k] ? link(o[c.k]) : '').filter(Boolean).join(' · ')}</li>`).join('')}</ul>` : '';
-    if (f.type === 'list') return (v || []).length ? `<ul class="af-list">${v.map(r => `<li>${f.cols.map(c => r[c.k] ? (/^https?:/.test(r[c.k]) ? `<a href="${esc(r[c.k])}" target="_blank" rel="noopener">${esc(r[c.k])}</a>` : esc(r[c.k])) : '').filter(Boolean).join(' · ')}</li>`).join('')}</ul>` : '';
-    if (!v) return '';
-    if (f.type === 'url' || /^https?:\/\//.test(v)) return `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>`;
-    return `<span style="white-space:pre-line">${esc(v)}</span>`;
-  };
-  const sections = [...ARTIST_SECTIONS, {title: 'Photos', fields: [PHOTO_CREDITS]}].map(sec => { const rows = sec.fields.map(f => [f, val(f, info[f.k])]).filter(([, h]) => h);
-    return rows.length ? `<h3 class="block-title">${esc(sec.title)}</h3><dl class="af-dl">${rows.map(([f, h]) => `<dt>${esc(f.label || '')}</dt><dd>${h}</dd>`).join('')}</dl>` : ''; }).join('');
   const label = k => (ARTIST_DOCS.find(d => d[0] === k) || [k, k])[1];
+  const sections = ARTIST_SECTIONS.map(sec => `<section class="af-sec"><h3 class="block-title">${esc(sec.title)}</h3>
+    <div class="fiche-grid${sec.cols ? ` cols${sec.cols} even` : ''}">${sec.fields.map(f => afInput(f, info[f.k] ?? '', {copy: true, prefix: 'af-' + p.id.slice(0, 6) + '-'})).join('')}</div></section>`).join('');
   return `<div class="panel pad">
-    <p class="tab-intro">Envoie ce lien à l’artiste : il remplit sa fiche et dépose ses fichiers (photos, logos, fiche technique…), rangés tout seuls dans son dossier Drive. Il peut revenir sur le même lien pour corriger.
+    <p class="tab-intro">Envoie ce lien à l’artiste : il remplit sa fiche et dépose ses fichiers (photos, logos, fiche technique, titres…), rangés tout seuls dans son dossier Drive. Il peut revenir sur le même lien pour corriger.
       <button class="btn sm primary" data-act="copyArtistLink" data-id="${p.id}">Copier le lien</button> <a class="btn sm ghost" href="${esc(artistLink(p))}" target="_blank" rel="noopener">Voir la fiche ↗</a></p>
-    ${p.artist_submitted_at ? `<p class="ok-txt">✓ Remplie le ${fmtDate(p.artist_submitted_at.slice(0, 10))}</p>` : '<p class="muted">Pas encore remplie.</p>'}
-    ${docs.length ? `<h3 class="block-title">Fichiers</h3><ul class="af-list">${docs.map(d => `<li>${esc(label(d.kind))} : ${d.file_id ? `<a href="https://drive.google.com/file/d/${esc(d.file_id)}/view" target="_blank" rel="noopener">${esc(d.drive_name || d.name)}</a>` : `${esc(d.name)} <span class="muted">(rangement dans le Drive en cours)</span>`}</li>`).join('')}</ul>` : ''}
-    ${sections}
+    ${p.artist_submitted_at ? `<p class="ok-txt">✓ Remplie le ${fmtDate(p.artist_submitted_at.slice(0, 10))}</p>` : '<p class="muted">Pas encore remplie par l’artiste : tu peux aussi la remplir ici.</p>'}
+    ${docs.length ? `<h3 class="block-title">Fichiers reçus</h3><ul class="af-list">${docs.map(d => `<li>${esc(label(d.kind))} : ${d.file_id ? `<a href="https://drive.google.com/file/d/${esc(d.file_id)}/view" target="_blank" rel="noopener">${esc(d.drive_name || d.name)}</a>` : `${esc(d.name)} <span class="muted">(rangement dans le Drive en cours)</span>`}</li>`).join('')}</ul>` : ''}
+    <div class="af-bar"><button type="button" class="btn sm" data-af-copyall="${p.id}">Copier toute la fiche</button><span class="muted af-state" data-af-state="${p.id}">Modifie un champ : c’est enregistré tout seul.</span></div>
+    <form class="af-edit fiche-form" data-af-form="${p.id}" autocomplete="off" onsubmit="return false">${sections}
+      <section class="af-sec"><h3 class="block-title">Photos</h3><div class="fiche-grid">${afInput(PHOTO_CREDITS, info[PHOTO_CREDITS.k] ?? '', {copy: true, prefix: 'af-' + p.id.slice(0, 6) + '-'})}</div></section></form>
   </div>`;
 }
+
+// Fiche artiste dans la Matrice : enregistrement automatique, copie d'un champ ou de toute la fiche
+const afTimers = new Map();
+function afSave(form){
+  const id = form.dataset.afForm; clearTimeout(afTimers.get(id));
+  const state = document.querySelector(`[data-af-state="${id}"]`); if (state) state.textContent = 'Enregistrement…';
+  afTimers.set(id, setTimeout(async () => {
+    const ok = await save('projects', id, {artist_info: afRead(form)}, {rerender: false});
+    const st = document.querySelector(`[data-af-state="${id}"]`); if (st) st.textContent = ok ? 'Enregistré ✓' : 'Pas enregistré : réessaie';
+  }, 600));
+}
+document.addEventListener('input', e => { const f = e.target.closest?.('form.af-edit'); if (f) afSave(f); });
+document.addEventListener('change', e => { const f = e.target.closest?.('form.af-edit'); if (f){ e.stopPropagation(); afSave(f); } }, true);
+document.addEventListener('click', async e => {
+  const form = e.target.closest?.('form.af-edit');
+  if (form && listClick(e, form, () => afSave(form))) return;
+  const one = e.target.closest?.('[data-af-copy]');
+  if (one && form){ e.preventDefault(); const f = AF_FIELDS.find(x => x.k === one.dataset.afCopy); const txt = fieldText(f, afRead(form)[f.k]);
+    try { await navigator.clipboard.writeText(txt); one.textContent = 'Copié ✓'; setTimeout(() => { one.textContent = 'Copier'; }, 1200); } catch { prompt('À copier :', txt); } return; }
+  const all = e.target.closest?.('[data-af-copyall]');
+  if (all){ const fm = document.querySelector(`form[data-af-form="${all.dataset.afCopyall}"]`); const p = byId('projects', all.dataset.afCopyall);
+    const txt = ficheText(fm ? afRead(fm) : (p?.artist_info || {}), p?.name || '');
+    try { await navigator.clipboard.writeText(txt); toast('Fiche copiée : colle-la où tu veux'); } catch { prompt('Fiche :', txt); } }
+});
 export const artistLink = p => (setting('site_url') || location.origin + location.pathname.replace(/[^/]*$/, '')) + 'artiste.html?t=' + p.artist_token + (ENV === 'test' ? '&test' : '');   // espace de test : le lien ouvre la base de test

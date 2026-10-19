@@ -5,6 +5,26 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.31.2 — 19/10/2026
+- Fiche artiste : « + Ajouter un logo » et « + Ajouter une photo » pour en déposer autant que nécessaire
+
+
+## 1.31.1 — 19/10/2026
+- Projet : bloc « Accueil » (personnes, montage, chambres, commission) modifiable directement dans l'Aperçu
+
+
+## 1.31.0 — 19/10/2026
+- Onglet « Fiche artiste » : toutes les réponses modifiables (enregistrées toutes seules), « Copier » sur chaque champ et « Copier toute la fiche » ; équipe pro : structure + prénom et nom + mail + téléphone ; téléphone des membres ; une case par titre audio ; commission par défaut selon le type de suivi (booking 15 %, production 20 %), réglable dans Réglages
+
+
+## 1.30.3 — 19/10/2026
+- Fiche artiste : équipe professionnelle avec structure + prénom et nom + mail + téléphone ; téléphone des membres ; une case par titre audio
+
+
+## 1.30.2 — 19/10/2026
+- Fiche artiste : titres audio en MP3 ou WAV (3 minimum)
+
+
 ## 1.30.1 — 19/10/2026
 - Fiche artiste : une structure déjà en base (même SIRET) n'est jamais modifiée par l'artiste, elle est signalée « à relier » ; l'artiste complète seulement ce qui manque sur sa structure ; noms des membres corrigés ; seuls les MP3 comptent ; reprise des anciennes réponses « structure administrative »
 
