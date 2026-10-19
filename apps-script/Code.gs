@@ -102,7 +102,11 @@ function createDraft_(body) {
       }
     } catch (e) { Logger.log('Pièce jointe : ' + e); }
     return null;
-  }).filter(Boolean);
+  });
+  // envoi direct : on n'envoie pas un mail auquel il manque une pièce jointe (brouillon : on garde celles qui sont lisibles)
+  var missing = (body.attachments || []).filter(function (a, i) { return !files[i]; }).map(function (a) { return (a && a.name) || 'pièce jointe'; });
+  if (body.send && missing.length) throw new Error('Mail non envoyé : pièce(s) jointe(s) introuvable(s) : ' + missing.join(', '));
+  files = files.filter(Boolean);
   // brouillon en MIME UTF-8 (API Gmail) : GmailApp.createDraft abîme les émojis
   // send: true → envoyé tout de suite (confirmation, boucles), sinon brouillon
   var out = pMime_({ to: body.to, cc: body.cc, subject: body.subject, html: mailWrap_(body.html), attachments: files, fromName: "L'ArtBoristerie Productions", send: !!body.send });

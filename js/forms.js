@@ -62,14 +62,15 @@ export function editShow(id, projectId, prefill={}){
         if (st && st.lat!=null && (!v.city || v.city===st.city)){ v.lat=st.lat; v.lng=st.lng; v.department = v.department || st.department_code; }
         else if (v.lat==null || v.city!==s.city){ v.lat=null; v.lng=null; await fillCoords(v, [v.city, v.department && /^\d/.test(v.department) ? 'France' : ''].filter(Boolean).join(', ')); }
       }
-      const wasOff = isOff(s.status), nowOff = isOff(v.status);
-      let showId = id;
+      const before = s.status, wasOff = isOff(before), nowOff = isOff(v.status);
+      let showId = id, ok = true;
       if (id){
         if (nowOff && !wasOff){ await saveLinger('shows', id, v, `Date passée en « ${v.status} »`); }
-        else await save('shows', id, v, {rerender:false});
+        else ok = !!(await save('shows', id, v, {rerender:false}));
       } else showId = (await insert('shows', v))?.id;
+      if (!ok || !showId) return false;
       // date qui passe en confirmée : envoyer la confirmation maintenant ? (une fois cette fenêtre fermée)
-      if (showId && becameConfirmed(s.status, v.status)) setTimeout(() => askConfirmation(showId), 80);
+      if (becameConfirmed(before, v.status)) setTimeout(() => askConfirmation(showId), 80);
     }
   });
   // Choix d'une structure → nom du lieu, ville et département repris de sa fiche

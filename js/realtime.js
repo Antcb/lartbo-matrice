@@ -28,18 +28,29 @@ function later(render){
   }, 400);
 }
 
+/** Clé d'une ligne : id, sauf les réglages (key) et les liens contact ↔ structure (le couple) */
+const KEYS = {settings: ['key'], contact_structures: ['contact_id', 'structure_id']};
+const keyOf = (table, row) => { const k = KEYS[table] || ['id']; return row && k.every(c => row[c] != null) ? k.map(c => row[c]).join('|') : null; };
+
 function apply(table, ev){
   const rows = S.db[table]; if (!rows) return false;
   if (ev.eventType === 'DELETE'){
-    const id = ev.old?.id; if (!id) return false;
-    const n = rows.length; S.db[table] = rows.filter(r => r.id !== id);
+    const key = keyOf(table, ev.old); if (!key) return false;
+    const n = rows.length; S.db[table] = rows.filter(r => keyOf(table, r) !== key);
     return S.db[table].length !== n;
   }
-  const row = ev.new; if (!row?.id) return false;
-  const i = rows.findIndex(r => r.id === row.id);
+  const row = ev.new, key = keyOf(table, row); if (!key) return false;
+  const i = rows.findIndex(r => keyOf(table, r) === key);
   if (i >= 0){ if (JSON.stringify(rows[i]) === JSON.stringify(row)) return false; rows[i] = row; }
   else rows.push(row);
   return true;
+}
+
+/** Tout recharger (après une coupure) puis redessiner au bon moment */
+let reloading = false;
+async function catchUp(render){
+  if (reloading || !S.user) return; reloading = true;
+  try { await loadAll(); later(render); } finally { reloading = false; }
 }
 
 export function startRealtime(render){
@@ -49,10 +60,16 @@ export function startRealtime(render){
     if (!S.user) return;
     if (apply(table, ev)){ touch(table); later(render); }
   }));
-  channel.subscribe();
+  // reconnexion après une coupure (wifi, veille…) : on recharge ce qui a pu être manqué
+  let joined = false, lost = false;
+  channel.subscribe(status => {
+    if (status === 'SUBSCRIBED'){ if (joined && lost) catchUp(render); joined = true; lost = false; }
+    else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') lost = true;
+  });
+  window.addEventListener('online', () => catchUp(render));
   // retour sur l'onglet après une longue absence : on recharge tout (des messages ont pu être perdus pendant la veille)
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState !== 'visible'){ lastSeen = Date.now(); return; }
-    if (S.user && Date.now() - lastSeen > 60_000){ await loadAll(); later(render); }
+    if (Date.now() - lastSeen > 60_000) catchUp(render);
   });
 }

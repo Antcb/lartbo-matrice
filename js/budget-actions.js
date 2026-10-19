@@ -6,7 +6,7 @@ import { render } from './app.js';
 import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
 import { cnmDue, lineForecast, linesOf, prodShowsOf } from './budget.js';
 import { paymentsOf, payAmount } from './calc.js';
-import { insert, openStored, remove, save, sb } from './data.js';
+import { insert, mergeRows, openStored, remove, save, sb } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
 import { callScript } from './mail.js';
 import { S, touch } from './state.js';
@@ -35,7 +35,7 @@ async function prefill(s){
   let sort = nextSort(s.id);
   const {data, error} = await sb.from('budget_lines').insert(rows.map(r => ({payer:'compte', ...r, project_id:s.project_id, show_id:s.id, sort: sort++}))).select();
   if (error) return toast('Préremplissage impossible : ' + error.message, true);
-  S.db.budget_lines.push(...data); touch('budget_lines');
+  mergeRows('budget_lines', data);
   toast(prev ? `Budget prérempli (salariés repris du ${fmtDate(prev.date)})` : 'Budget prérempli');
 }
 
@@ -70,7 +70,7 @@ export const BUDGET_ACTIONS = {
     const rows = PROD_LINES.map(([category, label]) => ({project_id: s.project_id, show_id: s.id, category, label, payer: 'artbo', sort: sort++}));
     const {data, error} = await sb.from('budget_lines').insert(rows).select();
     if (error) return toast('Préremplissage impossible : ' + error.message, true);
-    S.db.budget_lines.push(...data); touch('budget_lines');
+    mergeRows('budget_lines', data);
     if (!s.production) await saveProd(s.id, () => {});
     render(); toast('Budget de production prérempli : indique les quantités et prix unitaires');
   },
@@ -119,7 +119,7 @@ export const BUDGET_ACTIONS = {
         if (!rows.length) return toast('Rien à copier', true);
         const {data, error} = await sb.from('budget_lines').insert(rows).select();
         if (error){ toast(error.message, true); return false; }
-        S.db.budget_lines.push(...data); touch('budget_lines'); toast(`${data.length} ligne(s) copiée(s)`); render();
+        mergeRows('budget_lines', data); toast(`${data.length} ligne(s) copiée(s)`); render();
       }});
   },
   openBudgetFile: t => { const l = byId('budget_lines', t.dataset.id); if (l?.file_path) openStored(l.file_path); },

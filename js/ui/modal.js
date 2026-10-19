@@ -83,10 +83,13 @@ export function openModal({title, fields, values={}, onSave, onDelete, extra='',
       // un champ date en cours de saisie doit être validé avant lecture
       if (document.activeElement?.classList.contains('dt-txt')) document.activeElement.blur();
       commitTypedText(ev.target);
+      // un seul enregistrement à la fois : tous les boutons du bas attendent la fin (envoi, brouillon…)
+      if (dlg._busy) return;
       const out = readForm(ev.target, fields);
-      const btn = ev.target.querySelector('button[type=submit]'); btn.disabled = true;
-      const ok = await onSave(out);
-      btn.disabled = false;
+      const btns = [...ev.target.querySelectorAll('.modal-foot button')];
+      dlg._busy = true; btns.forEach(b => b.disabled = true);
+      let ok;
+      try { ok = await onSave(out); } finally { dlg._busy = false; btns.forEach(b => b.disabled = false); }
       if (ok!==false){ modalSaved(dlg); dlg.close(); if (level===1) render(); resolve(ok); }
     };
     // fermeture sans enregistrer : null. Un « close » en retard de la fenêtre précédente (fenêtres enchaînées) est ignoré.
