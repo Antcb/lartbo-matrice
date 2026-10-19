@@ -5,6 +5,14 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.28.1 — 19/10/2026
+- Fiche artiste : mise en page des choix (boutons ronds) corrigée, équipe sur 3 colonnes
+
+
+## 1.28.0 — 19/10/2026
+- Fiche artiste : un lien propre à chaque artiste (fiche projet › « Copier le lien de la fiche artiste ») ; l'artiste remplit infos, présentation, actualités, dates, équipe, référent, liens, prestation live et dépose ses fichiers, rangés automatiquement dans son dossier Drive ; ses réponses s'affichent dans l'onglet « Fiche artiste »
+
+
 ## 1.27.4 — 19/10/2026
 - Diagnostic : une erreur du site est affichée et notée pour correction (table client_errors)
 

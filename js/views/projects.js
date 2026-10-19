@@ -3,11 +3,12 @@
  * Aperçu (cachets et commissions par année), Dates, Suivis, Tâches, Échanges, Liens, Drive,
  * Administratif (structure juridique de l'artiste), Membres (import CSV Movinmotion possible), Modèles de mail.
  */
+import { ARTIST_DOCS, ARTIST_SECTIONS } from '../artist-fields.js';
 import { netArtbo } from '../calc.js';
 import { templatesList, tplProjects } from '../mail.js';
 import { CONFIRMED_PROD, LOG_ICON, stClass } from '../constants.js';
 import { signedCached, signedUrl } from '../data.js';
-import { suiviClosed, attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, structName, tasksOfProject } from '../selectors.js';
+import { setting, suiviClosed, attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, structName, tasksOfProject } from '../selectors.js';
 import { S } from '../state.js';
 import { curTab, dropZone, fileRow, fold, pstBadge, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cAc, cIn } from '../ui/cells.js';
@@ -64,16 +65,17 @@ export function projectPage(p){
   const tab = curTab('project', 'overview');
   const tabs = tabsBar('project', [['overview','Aperçu'], ['dates','Dates', shows.length], ['suivis','Suivis', suivis.filter(x=>!suiviClosed(x)).length],
     ['tasks','Tâches', tasks.filter(t=>!isDone(t)).length], ['logs','Échanges', logs.length], ['links','Liens', (p.links||[]).length],
-    ['drive','Drive'], ['mails','Modèles de mail', S.db.mail_templates.filter(t=>tplProjects(t).includes(p.id)).length], ['admin','Administratif'], ['members','Membres', members.length]]);
+    ['fiche','Fiche artiste', p.artist_submitted_at ? '✓' : ''], ['drive','Drive'], ['mails','Modèles de mail', S.db.mail_templates.filter(t=>tplProjects(t).includes(p.id)).length], ['admin','Administratif'], ['members','Membres', members.length]]);
   const body = {overview, dates:datesTab, suivis:suivisTab, tasks:() => `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newTaskProject" data-id="${p.id}">Nouvelle tâche</button></div>${taskSection(tasks)}`,
-    logs:logsTab, links:linksTab, drive:driveTab, mails:mailsTab, admin:adminTab, members:membersTab}[tab](p, {shows, tasks, suivis, logs, members});
+    logs:logsTab, links:linksTab, fiche:artistTab, drive:driveTab, mails:mailsTab, admin:adminTab, members:membersTab}[tab](p, {shows, tasks, suivis, logs, members});
   return `<button class="btn ghost back" data-act="closeProject">← Projets</button>
   <div class="project-hero">
     <div style="display:flex;flex-direction:column;gap:6px;align-items:center">${photoHTML(p, 'lg')}<button class="btn sm ghost" data-act="projectPhoto" data-id="${p.id}">${p.photo_path?'Changer / recadrer':'Ajouter une photo'}</button></div>
     <div style="flex:1;min-width:0"><h1>${esc(p.name)}</h1>
       <div class="proj-chips" style="margin-top:8px"><span class="badge ${p.mode==='booking'?'tag':'proj'}">${p.mode==='booking'?'Booking seul':'Production'}</span><span class="badge tag">${p.active?'Actif':'Inactif'}</span>
         ${p.default_artbo_pct?`<span class="badge tag">Commission ${p.default_artbo_pct} %</span>`:''}</div></div>
-    <div class="vh-actions"><button class="btn" data-act="editProject" data-id="${p.id}">Modifier</button>
+    <div class="vh-actions"><button class="btn" data-act="copyArtistLink" data-id="${p.id}" title="Lien à envoyer à l’artiste : il remplit sa fiche et envoie ses fichiers">Copier le lien de la fiche artiste</button>
+      <button class="btn" data-act="editProject" data-id="${p.id}">Modifier</button>
       <button class="btn" data-act="newTaskProject" data-id="${p.id}">Nouvelle tâche</button>
       <button class="btn primary" data-act="newShow" data-project="${p.id}">Nouvelle date</button></div>
   </div>
@@ -185,3 +187,25 @@ function mailsTab(p){
     ${templatesList(p.id)}
     <div class="vh-actions" style="margin-top:12px"><button class="btn primary" data-act="newTemplate" data-project="${p.id}">Nouveau modèle</button></div></div>`;
 }
+
+/** Fiche artiste : ce que l'artiste a rempli via son lien, et ses fichiers rangés dans le Drive */
+function artistTab(p){
+  const info = p.artist_info || {}, docs = p.artist_docs || [];
+  const val = (f, v) => {
+    if (f.type === 'list') return (v || []).length ? `<ul class="af-list">${v.map(r => `<li>${f.cols.map(c => r[c.k] ? (/^https?:/.test(r[c.k]) ? `<a href="${esc(r[c.k])}" target="_blank" rel="noopener">${esc(r[c.k])}</a>` : esc(r[c.k])) : '').filter(Boolean).join(' · ')}</li>`).join('')}</ul>` : '';
+    if (!v) return '';
+    if (f.type === 'url' || /^https?:\/\//.test(v)) return `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>`;
+    return `<span style="white-space:pre-line">${esc(v)}</span>`;
+  };
+  const sections = ARTIST_SECTIONS.map(sec => { const rows = sec.fields.map(f => [f, val(f, info[f.k])]).filter(([, h]) => h);
+    return rows.length ? `<h3 class="block-title">${esc(sec.title)}</h3><dl class="af-dl">${rows.map(([f, h]) => `<dt>${esc(f.label || '')}</dt><dd>${h}</dd>`).join('')}</dl>` : ''; }).join('');
+  const label = k => (ARTIST_DOCS.find(d => d[0] === k) || [k, k])[1];
+  return `<div class="panel pad">
+    <p class="tab-intro">Envoie ce lien à l’artiste : il remplit sa fiche et dépose ses fichiers (photos, logos, fiche technique…), rangés tout seuls dans son dossier Drive. Il peut revenir sur le même lien pour corriger.
+      <button class="btn sm primary" data-act="copyArtistLink" data-id="${p.id}">Copier le lien</button> <a class="btn sm ghost" href="${esc(artistLink(p))}" target="_blank" rel="noopener">Voir la fiche ↗</a></p>
+    ${p.artist_submitted_at ? `<p class="ok-txt">✓ Remplie le ${fmtDate(p.artist_submitted_at.slice(0, 10))}</p>` : '<p class="muted">Pas encore remplie.</p>'}
+    ${docs.length ? `<h3 class="block-title">Fichiers</h3><ul class="af-list">${docs.map(d => `<li>${esc(label(d.kind))} : ${d.file_id ? `<a href="https://drive.google.com/file/d/${esc(d.file_id)}/view" target="_blank" rel="noopener">${esc(d.drive_name || d.name)}</a>` : `${esc(d.name)} <span class="muted">(rangement dans le Drive en cours)</span>`}</li>`).join('')}</ul>` : ''}
+    ${sections}
+  </div>`;
+}
+export const artistLink = p => (setting('site_url') || location.origin + location.pathname.replace(/[^/]*$/, '')) + 'artiste.html?t=' + p.artist_token;
