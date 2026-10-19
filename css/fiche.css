@@ -75,4 +75,4 @@
 .doc-slots .doc-add{align-self:end;justify-self:start;min-height:34px}
 
 /* zones de texte : la hauteur suit la longueur du texte */
-.fiche-grid textarea{resize:vertical;overflow:hidden;min-height:90px}
+.fiche-grid textarea{resize:vertical;overflow:auto;min-height:90px}

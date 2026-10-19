@@ -6,6 +6,7 @@
  * ou les acomptes, la fiche est à jour sans renvoyer de lien.
  */
 import { CFG } from './config.js';
+import './ui/autogrow.js';
 import { FICHE_SECTIONS, ficheDefaults, ficheKind, fieldOn } from './fiche-fields.js';
 
 const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {auth:{persistSession:false}});

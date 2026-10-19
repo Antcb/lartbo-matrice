@@ -7,6 +7,7 @@
 import { CFG } from './config.js';
 import './ui/dropfiles.js';
 import './ui/filepick.js';
+import './ui/autogrow.js';
 import { ARTIST_DOCS, ARTIST_SECTIONS, PHOTO_CREDITS } from './artist-fields.js';
 import { input, migrateInfo, read, wireLists } from './artist-form.js';
 
@@ -63,9 +64,6 @@ function draw(d, values){
     const c = form.querySelector(`[data-count-for="${t.name}"]`); if (c){ c.textContent = `${n} / ${max} mots`; c.classList.toggle('over', n > max); } });
   count();
   // la zone de texte (présentation, stratégie…) grandit avec le texte
-  const fit = ta => { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 2) + 'px'; };
-  form.querySelectorAll('textarea').forEach(fit);
-  form.addEventListener('input', e => { if (e.target.tagName === 'TEXTAREA') fit(e.target); });
   const keep = () => { try { localStorage.setItem(DRAFT, JSON.stringify(read(form))); } catch {} };
   form.addEventListener('input', () => { count(); keep(); });
   form.addEventListener('change', keep);
