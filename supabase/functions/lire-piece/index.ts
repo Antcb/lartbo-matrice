@@ -33,6 +33,50 @@ Réponds UNIQUEMENT avec un objet JSON, sans texte autour, avec ces clés (null 
 }
 Les montants sont des nombres avec un point décimal, sans symbole. N'invente rien.`;
 
+/**
+ * Appel à Gemini (offre gratuite) : essaie les modèles « Flash » du plus récent au plus ancien.
+ * Les plus récents sont souvent saturés (« high demand ») : on passe au suivant, puis on refait un tour après une pause.
+ * `accept` transforme la réponse (ou lève une erreur si elle est inutilisable).
+ */
+async function askGemini<T>(gkey: string, parts: unknown[], generationConfig: Record<string, unknown>, accept: (txt: string) => T): Promise<{ ok: T } | { error: string }> {
+  const list = await (await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + gkey)).json();
+  if (list.error) return { error: 'Gemini : ' + list.error.message };
+  const models: string[] = (list.models || [])
+    .filter((m: any) => /flash/i.test(m.name) && !/lite|image|tts|audio|live|omni|thinking-exp|embedding/i.test(m.name)
+      && (m.supportedGenerationMethods || []).includes('generateContent'))
+    .map((m: any) => m.name)
+    .sort((a: string, b: string) => {
+      const v = (n: string) => parseFloat((n.match(/(\d+(?:\.\d+)?)/) || ['0'])[0]);
+      const pre = (n: string) => /preview|exp/.test(n) ? 1 : 0;
+      return pre(a) - pre(b) || v(b) - v(a);
+    })
+    .slice(0, 6);
+  if (!models.length) return { error: 'Gemini : aucun modèle Flash disponible' };
+  const deadline = Date.now() + 110_000;
+  let lastErr = '', busy = 0, tries = 0;
+  for (let round = 0; round < 2; round++) {
+    if (round) await new Promise((r) => setTimeout(r, 4000));
+    for (const model of models) {
+      if (Date.now() > deadline) break;
+      tries++;
+      try {
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${gkey}`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig }),
+        });
+        const out = await r.json();
+        if (r.status === 404) { tries--; continue; }   // modèle retiré par Google : on passe au suivant
+        if (!r.ok) { lastErr = out?.error?.message || String(r.status); if (r.status === 503 || r.status === 429) busy++; continue; }
+        const txt = (out.candidates?.[0]?.content?.parts || []).filter((p: any) => !p.thought).map((p: any) => p.text || '').join('').trim();
+        if (!txt) { lastErr = 'réponse vide (' + (out.candidates?.[0]?.finishReason || '?') + ')'; continue; }
+        return { ok: accept(txt) };
+      } catch (e) { lastErr = String((e as any)?.message || e); }
+    }
+  }
+  if (tries && busy === tries) return { error: 'Gemini est saturé en ce moment (forte demande chez Google). Réessaie dans quelques minutes.' };
+  return { error: 'Gemini : ' + (lastErr || 'pas de réponse') };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   try {
@@ -65,31 +109,11 @@ Deno.serve(async (req) => {
     const mime = blob.type && blob.type !== 'application/octet-stream' ? blob.type
       : lower.endsWith('.pdf') ? 'application/pdf' : /\.(jpe?g)$/.test(lower) ? 'image/jpeg' : lower.endsWith('.png') ? 'image/png' : lower.endsWith('.heic') ? 'image/heic' : 'application/pdf';
 
-    const list = await (await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + gkey)).json();
-    if (list.error) return json({ error: 'Gemini : ' + list.error.message }, 502);
-    const models = (list.models || [])
-      .filter((m: any) => /flash/i.test(m.name) && !/lite|image|tts|audio|live|thinking-exp|embedding/i.test(m.name) && (m.supportedGenerationMethods || []).includes('generateContent'))
-      .map((m: any) => m.name)
-      .sort((a: string, b: string) => {
-        const v = (n: string) => parseFloat((n.match(/(\d+(?:\.\d+)?)/) || ['0'])[0]);
-        const pre = (n: string) => /preview|exp/.test(n) ? 1 : 0;
-        return v(b) - v(a) || pre(a) - pre(b);
-      });
-    let lastErr = '', doc: any = null;
-    for (const model of models.slice(0, 3)) {
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${gkey}`, {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ inline_data: { mime_type: mime, data: btoa(bin) } }, { text: PROMPT(ctx) }] }],
-          generationConfig: { temperature: 0, maxOutputTokens: 1500, responseMimeType: 'application/json' },
-        }),
-      });
-      const out = await r.json();
-      if (!r.ok) { lastErr = out?.error?.message || String(r.status); continue; }
-      const txt = (out.candidates?.[0]?.content?.parts || []).map((p: any) => p.text || '').join('').trim().replace(/^```[a-z]*\n?|```$/g, '');
-      try { doc = JSON.parse(txt); break; } catch { lastErr = 'réponse illisible'; }
-    }
-    if (!doc) return json({ error: 'Gemini : ' + (lastErr || 'pas de réponse') }, 502);
+    const res = await askGemini(gkey, [{ inline_data: { mime_type: mime, data: btoa(bin) } }, { text: PROMPT(ctx) }],
+      { temperature: 0, maxOutputTokens: 8192, responseMimeType: 'application/json' },
+      (t) => JSON.parse(t.replace(/^```[a-z]*\n?|```$/g, '')));
+    if ('error' in res) return json({ error: res.error }, 502);
+    const doc: any = res.ok;
     if (doc.categorie && !CATS.includes(doc.categorie)) doc.categorie = 'Autres';
     for (const k of ['montant_ht', 'montant_ttc', 'tva_taux', 'cout_employeur', 'net']) {
       if (doc[k] != null && typeof doc[k] !== 'number') { const n = parseFloat(String(doc[k]).replace(/\s/g, '').replace(',', '.')); doc[k] = isNaN(n) ? null : n; }

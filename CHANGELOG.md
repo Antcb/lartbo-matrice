@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.31.8 — 19/10/2026
+- IA (résumé de suivi, lecture des pièces) : si les modèles Gemini les plus récents sont saturés, on passe automatiquement aux suivants
+
+
 ## 1.31.7 — 19/10/2026
 - Fiches organisateur, salarié et artiste : les grandes cases de texte s'adaptent à la longueur du texte
 
