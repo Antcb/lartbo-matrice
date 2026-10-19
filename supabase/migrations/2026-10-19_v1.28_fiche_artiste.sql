@@ -106,7 +106,7 @@ grant execute on function public.artist_doc_filed(uuid, text, text, text) to ser
 -- et les membres de l'équipe (onglet Membres du projet)
 create or replace function public.artist_submit(p_token text, p_info jsonb, p_docs jsonb) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare p projects%rowtype; d jsonb; v_docs jsonb; m jsonb; adm jsonb := '{}'; k text; st_id uuid; mem_id uuid; bd date;
+declare p projects%rowtype; d jsonb; v_docs jsonb; m jsonb; adm jsonb := '{}'; k text; st_id uuid; dup_id uuid; mem_id uuid; bd date;
 begin
   select * into p from projects where artist_token = p_token for update;   -- verrou : le rangement Drive ne peut pas écrire en même temps
   if not found then raise exception 'Lien invalide'; end if;
@@ -125,19 +125,28 @@ begin
   end loop;
   if adm ? 'legal_name' or adm ? 'siret' then
     st_id := p.admin_structure_id;
-    if st_id is null and adm ? 'siret' then select id into st_id from structures where regexp_replace(coalesce(admin->>'siret',''), '\D', '', 'g') = regexp_replace(adm->>'siret', '\D', '', 'g') limit 1; end if;
     if st_id is null then
-      insert into structures (name, address, postal_code, city, country, admin, tags)
-        values (coalesce(adm->>'legal_name', 'Structure de ' || p.name), adm->>'address', adm->>'postal_code', adm->>'city', coalesce(adm->>'country', 'France'), adm, array['Structure artiste'])
-        returning id into st_id;
+      -- une structure déjà en base (même SIRET) n'est jamais modifiée ni reliée sans l'équipe : on la signale seulement
+      select id into dup_id from structures where adm ? 'siret' and regexp_replace(coalesce(admin->>'siret',''), '\D', '', 'g') = regexp_replace(adm->>'siret', '\D', '', 'g') and regexp_replace(adm->>'siret', '\D', '', 'g') <> '' limit 1;
+      if dup_id is null then
+        insert into structures (name, address, postal_code, city, country, admin, tags)
+          values (coalesce(adm->>'legal_name', 'Structure de ' || p.name), adm->>'address', adm->>'postal_code', adm->>'city', coalesce(adm->>'country', 'France'), adm, array['Structure artiste'])
+          returning id into st_id;
+        update projects set admin_structure_id = st_id where id = p.id;
+      else
+        insert into notifications (kind, title, body, dedupe_key)
+          values ('artiste', 'Structure à relier — ' || trim(regexp_replace(p.name, '\s*•.*$', '')),
+            'Le SIRET donné dans la fiche artiste correspond à « ' || (select name from structures where id = dup_id) || ' ». À relier dans l''onglet Administratif du projet si c''est bien elle.',
+            'artiste-structure:' || p.id || ':' || dup_id)
+          on conflict (dedupe_key) do nothing;
+      end if;
     else
-      -- on complète sans effacer : une réponse vide ne remplace jamais une info déjà connue
-      update structures set admin = coalesce(admin, '{}') || adm,
+      -- sa propre structure : on complète seulement ce qui manque (une info déjà connue n'est jamais remplacée par l'artiste)
+      update structures set admin = adm || (select coalesce(jsonb_object_agg(e.key, e.value), '{}') from jsonb_each(coalesce(admin, '{}')) e where coalesce(e.value #>> '{}', '') <> ''),
         address = coalesce(nullif(address, ''), adm->>'address'), postal_code = coalesce(nullif(postal_code, ''), adm->>'postal_code'),
         city = coalesce(nullif(city, ''), adm->>'city'), country = coalesce(nullif(country, ''), adm->>'country'), updated_at = now()
         where id = st_id;
     end if;
-    update projects set admin_structure_id = st_id where id = p.id and admin_structure_id is distinct from st_id;
   end if;
 
   -- membres (musiciens et techniciens) : ajoutés ou complétés dans l'onglet Membres du projet (même mail, ou même prénom + nom)
@@ -155,7 +164,8 @@ begin
           nullif(concat_ws(', ', nullif(m->>'city', ''), nullif(m->>'country', '')), ''),
           jsonb_strip_nulls(jsonb_build_object('city', nullif(m->>'city', ''), 'country', nullif(m->>'country', ''))));
     else
-      update project_members set role = coalesce(nullif(m->>'role', ''), role), email = coalesce(nullif(m->>'email', ''), email), birth_date = coalesce(bd, birth_date),
+      update project_members set first_name = coalesce(nullif(m->>'first_name', ''), first_name), last_name = coalesce(nullif(m->>'last_name', ''), last_name),
+        role = coalesce(nullif(m->>'role', ''), role), email = coalesce(nullif(m->>'email', ''), email), birth_date = coalesce(bd, birth_date),
         address = coalesce(nullif(address, ''), nullif(concat_ws(', ', nullif(m->>'city', ''), nullif(m->>'country', '')), '')),
         data = coalesce(data, '{}') || jsonb_strip_nulls(jsonb_build_object('city', nullif(m->>'city', ''), 'country', nullif(m->>'country', '')))
         where id = mem_id;
