@@ -21,7 +21,11 @@ async function load(){
   if (error) return fail('La fiche ne peut pas être chargée pour le moment. Réessaie dans quelques minutes.');
   if (!data) return fail('Ce lien n’est pas valide. Écris-nous à production@lartboristerie.com.');
   let draft = {}; try { draft = JSON.parse(localStorage.getItem(DRAFT) || '{}'); } catch {}
-  draw(data, {...(data.info || {}), ...draft});
+  const values = {...(data.info || {}), ...draft};
+  // ancienne version de la fiche : la structure administrative était une ligne de « l'équipe pro » → reprise dans ses nouveaux champs
+  const old = values.pros?.['Structure administrative de l’artiste'];
+  if (old){ if (!values.adm_legal_name && old.name) values.adm_legal_name = old.name; if (!values.adm_email && old.email) values.adm_email = old.email; if (!values.adm_phone && old.phone) values.adm_phone = old.phone; }
+  draw(data, values);
 }
 function fail(msg){ root.innerHTML = `<div class="panel pad fiche-msg">${esc(msg)}</div>`; }
 
@@ -122,7 +126,11 @@ function draw(d, values){
     const missing = [...form.querySelectorAll('[required]')].filter(x => !x.value.trim())
       .concat([...form.querySelectorAll('fieldset[data-req]')].filter(fs => !fs.querySelector('input:checked')));
     // nombre minimum de fichiers (ex. 3 titres MP3), en comptant ceux déjà reçus
-    const short = ARTIST_DOCS.filter(([k, , , , , min]) => min && have.filter(x => x.kind === k).length + (form.querySelector(`#d-${k}`)?.files.length || 0) < min);
+    // « 3 MP3 minimum » : seuls les fichiers .mp3 comptent (déjà reçus + choisis maintenant)
+    const isMp3 = n => /\.mp3$/i.test(String(n || ''));
+    const counted = k => k === 'audio' ? (have.filter(x => x.kind === k && isMp3(x.name)).length + [...(form.querySelector(`#d-${k}`)?.files || [])].filter(f => isMp3(f.name) || f.type === 'audio/mpeg').length)
+      : have.filter(x => x.kind === k).length + (form.querySelector(`#d-${k}`)?.files.length || 0);
+    const short = ARTIST_DOCS.filter(([k, , , , , min]) => min && counted(k) < min);
     if (short.length && !missing.length){ const [k, l, , , , min] = short[0]; form.querySelector(`#d-${k}`).classList.add('invalid'); form.querySelector(`#d-${k}`).focus();
       return note(`${l} : il en faut au moins ${min}.`, true); }
     const tooLong = [...form.querySelectorAll('[data-words]')].filter(t => words(t.value) > Number(t.dataset.words));

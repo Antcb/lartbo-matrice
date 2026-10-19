@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.30.1 — 19/10/2026
+- Fiche artiste : une structure déjà en base (même SIRET) n'est jamais modifiée par l'artiste, elle est signalée « à relier » ; l'artiste complète seulement ce qui manque sur sa structure ; noms des membres corrigés ; seuls les MP3 comptent ; reprise des anciennes réponses « structure administrative »
+
+
 ## 1.30.0 — 19/10/2026
 - Fiche artiste : jusqu'à 3 formules, membres de l'équipe (poste, nom, prénom, naissance, mail, ville et pays de résidence) ajoutés dans l'onglet Membres, structure administrative créée / complétée dans la base et reliée au projet, 3 MP3 minimum, plan de scène avec la fiche technique ; nouveau projet : case « Créer son dossier Drive à son nom » et bouton « Créer son dossier Drive » en haut de la fiche projet
 
