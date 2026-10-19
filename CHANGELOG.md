@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.34.1 — 20/10/2026
+- Relecture : tags gardés au brouillon et à l'enregistrement, budget type sans écrasement, migration budget_template
+
+
 ## 1.34.0 — 20/10/2026
 - Budget type prérempli, tags des structures, nouvelle structure ouverte, acompte 50 % par défaut, budget et To Do allégés, mobile sans débordement
 

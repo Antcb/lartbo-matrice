@@ -17,7 +17,7 @@ function snapshot(form){
   const d = {f: {}, h: {}};
   form.querySelectorAll('input[name], textarea[name], select[name], input[id], textarea[id], select[id]').forEach(el => {
     if (el.type === 'file' || el.type === 'search' || el.closest('.rt-bar, .pm-list, .gm-pick')) return;
-    if (el.type === 'hidden' && !el.classList.contains('dt-val') && !el.classList.contains('ac-val')) return;
+    if (el.type === 'hidden' && !el.classList.contains('dt-val') && !el.classList.contains('ac-val') && !el.classList.contains('tp-val')) return;
     const k = el.name || '#' + el.id;
     if (el.type === 'checkbox' || el.type === 'radio'){ (d.f[k] ||= {c: []}).c.push(el.checked ? el.value || 'on' : null); return; }
     d.f[k] = el.value;
@@ -45,6 +45,7 @@ function apply(form, d){
     // champ date : la partie affichée suit la valeur
     if (e.classList.contains('dt-val')){ const t = e.parentElement?.querySelector('.dt-txt'); if (t && v){ const [y, m, j] = v.split('-'); t.value = `${j}/${m}/${y}`; } }
     if (e.tagName === 'TEXTAREA') fire(e, 'input');
+    if (e.classList.contains('tp-val')) fire(e, 'tp-set');
   }));
   Object.entries(d.h || {}).forEach(([id, html]) => { const el = form.querySelector('#' + CSS.escape(id)); if (el && el.innerHTML !== html){ el.innerHTML = html; fire(el, 'input'); } });
   };
