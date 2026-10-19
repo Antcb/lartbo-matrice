@@ -5,6 +5,16 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.26.0 — 19/10/2026
+- Mise à jour automatique : ce que fait un collègue (date validée, échange, tâche…) apparaît tout seul, sans recharger.
+- Artistes inactifs masqués partout (Booking, Production, carte, Ticketing, Communication, To Do, Suivi), bouton « Afficher les inactifs ».
+- Filtre artistes en haut des pages : un ou plusieurs artistes, la liste reste ouverte entre deux choix.
+- Date passée en « Confirmée » : proposition d'envoyer la confirmation tout de suite → conditions à valider (contrat, cachet, TVA, nombre et % des acomptes…) → mail.
+- Mails des dates (confirmation, boucles) : « Envoyer maintenant » depuis production@ (date d'envoi notée dans le suivi), signature de Chloé, destinataire / copie / objet sur toute la largeur, pièces jointes par glisser-déposer ; boutons Gmail retirés.
+- Date en production : actions (confirmation, boucles, fiche, contrat, Drive) en haut, puis onglets Conditions / Factures / Budget / Suivi admin ; budget en prévu / réel / écart.
+- Correctif : la position de défilement est de nouveau gardée après un enregistrement.
+
+
 ## 1.25.2 — 18/10/2026
 - Brouillons de mail rouverts : l'adresse, l'objet et le texte écrits restent ; déplier une section garde la position des tableaux ; invitation : le concert ne compte que pour un modèle d'invitation
 

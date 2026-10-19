@@ -678,3 +678,53 @@ dialog.mail .mode-note{margin:0}
 .fsel{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
 .fsel select{height:36px;padding:0 8px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel);color:var(--ink);font:14px Geist,system-ui,sans-serif}
 .prod-production h4.block-title{margin:18px 0 8px}.prod-params{margin-top:12px}
+
+/* v1.26 — Date en production : actions en haut, onglets Conditions / Factures / Budget / Suivi admin */
+.prod-body{display:block !important;padding:0 0 16px}
+.prod-actions{display:flex;flex-direction:column;gap:10px;padding:14px 16px;background:var(--brand-tint);border-bottom:1px solid var(--line)}
+.pa-row{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center}
+.pa-item{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pa-item small{font-size:12px}
+.pa-item.drive{gap:6px}
+.ok-txt{color:var(--ok);font-weight:600}
+.warn-txt{color:var(--warn);font-weight:600}
+.prod-body>.subtabs{margin:0;padding:0 16px;background:var(--panel)}
+.prod-tab{padding:16px}
+.prod-tab .prod-budget,.prod-tab .prod-bill{border:0;padding:0;margin:0}
+.tab-intro{margin:0 0 12px;font-size:13px;color:var(--muted);line-height:1.8}
+.tab-intro .btn{margin-left:8px}
+.tbl-wrap:has(>.budget-sum){max-width:760px}
+.prod-cols{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:28px}
+@media (max-width:900px){ .prod-cols{grid-template-columns:1fr} }
+/* Budget : prévu / réel / écart */
+.budget-sum{max-width:720px}
+.budget-sum td,.budget-sum th{padding:7px 10px}
+.budget-sum .neg{color:var(--danger);font-weight:600}
+.budget-sum .pos{color:var(--ok);font-weight:600}
+.budget-table th.col-prev{background:#F1F4F9}
+.budget-table th.col-real{background:#EEF6F0}
+/* Conditions à valider avant la confirmation */
+.terms-acs{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r);background:var(--soft)}
+.terms-n{display:flex;gap:10px;align-items:center;font-weight:600}
+.terms-ac{display:flex;gap:8px;align-items:center}
+.terms-ac>span:first-child{min-width:90px}
+.terms-solde{font-size:13px}
+/* Filtre artistes : plusieurs choix */
+.pp-box{display:inline-grid;place-items:center;width:16px;height:16px;border:1.5px solid var(--line);border-radius:4px;margin-right:8px;font-size:11px;font-weight:700;color:var(--brand-ink);vertical-align:-3px}
+.ac-item.on .pp-box{background:var(--brand);border-color:var(--brand)}
+.pp-btn.pp-on{border-color:var(--brand);color:var(--brand);font-weight:600}
+.inactive-tgl{white-space:nowrap}
+/* Fenêtre de mail : destinataire, copie, objet sur toute la largeur */
+dialog.mail .mail-grid>input[id$="-cc"],dialog.mail .mail-grid>input[id$="-subj"]{grid-column:span 3}
+dialog.mail .mail-to{grid-template-columns:minmax(200px,1fr) minmax(0,2fr)}
+dialog.mail .mail-grid input{width:100%;min-width:0}
+.ml-from{font-size:13px;align-self:center}
+.ml-att .drop-hint{color:var(--faint);font-size:12px}
+.ml-att.drop-over{outline:2px dashed var(--brand-2);outline-offset:4px;border-radius:var(--r)}
+@media (max-width:900px){ dialog.mail .mail-grid>input[id$="-cc"],dialog.mail .mail-grid>input[id$="-subj"]{grid-column:auto} dialog.mail .mail-to{grid-template-columns:1fr} }
+.terms-ac input{width:90px !important;flex:none}
+.terms-eur{white-space:nowrap}
+.terms-n select{width:auto;flex:none}
+.prod-actions .btn.ghost{background:var(--panel);border:1px solid var(--line)}
+.pp-list .ac-item{flex-direction:row;align-items:center;gap:0}
+.pp-list .pp-toggle .count{margin-left:8px}

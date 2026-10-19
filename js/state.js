@@ -8,7 +8,8 @@ export const TABLES = ['structures','contacts','contact_structures','projects','
 export const S = {
   user:null, view: localGet('view') || 'todo', todoWho: localGet('todoWho') || '',
   year: Number(localGet('year')) || new Date().getFullYear(),
-  project: localGet('project') || '',
+  projects: (() => { try { const v = JSON.parse(localGet('projects') || 'null'); if (Array.isArray(v)) return v; } catch(e){} const one = localGet('project'); return one ? [one] : []; })(),
+  showInactive: localGet('showInactive') === '1',   // dates, tâches… des artistes inactifs (masqués par défaut)
   db: Object.fromEntries(TABLES.map(t => [t, []])),
   rev: Object.fromEntries(TABLES.map(t => [t, 0])),   // compteur de modifications par table (index en cache)
   openProd: new Set(), mapHidden: new Set(JSON.parse(localGet('mapHidden') || '[]')), routePick: {a:null,b:null}, routeCache: {}, search:{},
@@ -16,6 +17,13 @@ export const S = {
   tab: {},                 // onglet ouvert dans chaque page (structure, projet, suivi)
   linger: new Map(),       // id → heure limite : éléments gardés visibles 5 s après clôture
 };
+
+/** Filtre artistes (un ou plusieurs). S.project = l'artiste quand un seul est choisi (valeur par défaut des nouvelles fiches) */
+Object.defineProperty(S, 'project', {
+  get(){ return S.projects.length === 1 ? S.projects[0] : ''; },
+  set(v){ S.projects = v ? [v] : []; },
+});
+export function setProjects(ids){ S.projects = [...new Set((ids || []).filter(Boolean))]; localSet('projects', JSON.stringify(S.projects)); }
 
 export function localGet(k){ try { return localStorage.getItem('artbo.'+k); } catch(e){ return null; } }
 

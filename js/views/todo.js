@@ -5,9 +5,9 @@
 import { CFG } from '../config.js';
 import { TASK_STATUS, TEAM_NAMES } from '../constants.js';
 import { lingering } from '../data.js';
-import { deptColor, deptNames, attachmentsOf, isDone, projIds, projNames, prospectsOfStructure, showLabel, byId, structName, taskSort, teamName, urgency } from '../selectors.js';
+import { projFilterOk, deptColor, deptNames, attachmentsOf, isDone, projIds, projNames, prospectsOfStructure, showLabel, byId, structName, taskSort, teamName, urgency } from '../selectors.js';
 import { S } from '../state.js';
-import { deptBadge, projPicker, viewHead } from '../ui/bits.js';
+import { deptBadge, inactiveToggle, projPicker, viewHead } from '../ui/bits.js';
 import { cAc, cIn, cSel, projChips } from '../ui/cells.js';
 import { daysUntil, esc, fmtDate, matches } from '../utils.js';
 
@@ -59,7 +59,7 @@ export function taskTable(tasks, emptyMsg){
 export function viewTodo(){
   const f = S.todoFilter || 'open';
   const dept = S.todoDept || '';
-  let tasks = S.db.tasks.filter(t => !S.project || projIds(t).includes(S.project));
+  let tasks = S.db.tasks.filter(t => projFilterOk(projIds(t)));
   const open = t => !isDone(t) || lingering(t.id);
   if (f==='open') tasks = tasks.filter(open);
   if (f==='mine') tasks = tasks.filter(t=>open(t) && t.assigned_to===S.user.email);
@@ -82,7 +82,7 @@ export function viewTodo(){
       filters:`<label class="fsel"><span>Afficher</span><select data-todo-sel="f" aria-label="Afficher">${opt('open','À faire',f)}${opt('late','Urgentes (≤ 7 j)',f)}${opt('done','Terminées (30 j)',f)}</select></label>
         <label class="fsel"><span>Pour</span><select data-todo-sel="who" aria-label="Pour qui">${who_.map(([k,l]) => opt(k,l,who)).join('')}</select></label>
         <label class="fsel"><span>Pôle</span><select data-todo-sel="dept" aria-label="Pôle">${depts.map(([k,l]) => opt(k,l,dept)).join('')}</select></label>
-        ${projPicker(S.project, {attrs:'id="f-project" aria-label="Artiste"'})}
+        ${projPicker(S.projects, {attrs:'id="f-project" aria-label="Artiste"', multi:true}) + inactiveToggle()}
         <input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-taches" placeholder="Rechercher une tâche" data-search="todo" value="${esc(q)}">`,
       actions:'<button class="btn primary" data-act="newTask">Nouvelle tâche</button>'})
     + taskTable(tasks);

@@ -2,6 +2,7 @@
  * Toutes les actions déclenchées par un clic (boutons data-act="…"),
  * et les « crochets » d'enregistrement direct (clé 'change:table.champ').
  */
+import { askConfirmation, becameConfirmed, sendConfirmation, validateTerms } from './confirm-flow.js';
 import { go, render } from './app.js';
 import { BILL_KINDS, billPct, paymentsOf, payVat } from './calc.js';
 import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
@@ -64,6 +65,7 @@ export const ACTIONS = {
 
   // Booking
   toggleCancelled: () => { S.showCancelled=!S.showCancelled; render(); },
+  toggleInactive: () => { S.showInactive = !S.showInactive; localSet('showInactive', S.showInactive ? '1' : ''); render(); },
   pick: (t, e) => { e.stopPropagation(); const p=t.dataset.p; S.routePick[p] = S.routePick[p]===t.dataset.id ? null : t.dataset.id; render(); },
   clearPick: () => { S.routePick = {a:null, b:null}; render(); },
   bookingPane: t => { S.bookingPane = t.dataset.p; render(); },
@@ -83,7 +85,8 @@ export const ACTIONS = {
   },
   linkDrive: t => linkDrive(t.dataset.id),
   // Mails et fiche de renseignements
-  prepareMail: (t, e) => { e?.stopPropagation(); S.notifOpen = false; prepareMail(t.dataset.id, t.dataset.kind); },
+  prepareMail: (t, e) => { e?.stopPropagation(); S.notifOpen = false; t.dataset.kind === 'confirmation' ? sendConfirmation(t.dataset.id) : prepareMail(t.dataset.id, t.dataset.kind); },
+  validateTerms: (t, e) => { e?.stopPropagation(); validateTerms(t.dataset.id); },
   editTemplate: t => editTemplate(t.dataset.id),
   newTemplate: t => editTemplate(null, {...(t.dataset.project ? {project_id: t.dataset.project, project_ids: [t.dataset.project]} : {}), ...(t.dataset.kind ? {kind: t.dataset.kind} : {})}),
   copyFiche: async t => { const s = byId('shows', t.dataset.id);
@@ -313,7 +316,12 @@ ACTIONS['change:prospects.status'] = async (t, v) => {
 for (const f of ['ticketing_enabled','communication_enabled'])
   ACTIONS['change:shows.'+f] = async (t, v) => v ? save('shows', t.dataset.id, {[f]:true}) : saveLinger('shows', t.dataset.id, {[f]:false}, f==='ticketing_enabled' ? 'Date retirée du ticketing' : 'Date retirée de la communication');
 // Date annulée / sans suite : reste visible 5 s
-ACTIONS['change:shows.status'] = async (t, v) => isOff(v) ? saveLinger('shows', t.dataset.id, {status:v}, `Date passée en « ${v} »`) : save('shows', t.dataset.id, {status:v});
+ACTIONS['change:shows.status'] = async (t, v) => {
+  const before = byId('shows', t.dataset.id)?.status;
+  if (isOff(v)) return saveLinger('shows', t.dataset.id, {status:v}, `Date passée en « ${v} »`);
+  await save('shows', t.dataset.id, {status:v});
+  if (becameConfirmed(before, v)) askConfirmation(t.dataset.id);   // envoyer la confirmation maintenant ?
+};
 
 export { go };
 

@@ -89,7 +89,14 @@ export function openModal({title, fields, values={}, onSave, onDelete, extra='',
       btn.disabled = false;
       if (ok!==false){ modalSaved(dlg); dlg.close(); if (level===1) render(); resolve(ok); }
     };
-    dlg.addEventListener('close', () => resolve(null), {once:true});
+    // fermeture sans enregistrer : null. Un « close » en retard de la fenêtre précédente (fenêtres enchaînées) est ignoré.
+    const token = dlg._mtoken = {};
+    const onClose = () => {
+      if (dlg._mtoken !== token){ dlg.removeEventListener('close', onClose); return; }
+      if (dlg.open) return;
+      dlg.removeEventListener('close', onClose); resolve(null);
+    };
+    dlg.addEventListener('close', onClose);
   });
 }
 
