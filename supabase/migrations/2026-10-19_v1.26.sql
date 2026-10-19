@@ -20,3 +20,11 @@ end $do$;
 
 -- v1.27 : échéance de chaque acompte (« à la signature du contrat », « le 15 janvier 2027 »…), reprise dans le mail de confirmation
 alter table public.show_payments add column if not exists due_label text;
+-- v1.27.2 : la fiche de renseignements reçoit l'échéance de chaque acompte
+do $do$ declare d text; begin
+  d := pg_get_functiondef('public.fiche_get(text)'::regprocedure);
+  if position('due_label' in d) = 0 then
+    d := replace(d, '''kind'', p.kind, ''pct'', p.pct,', '''kind'', p.kind, ''pct'', p.pct, ''due_label'', p.due_label,');
+    execute d;
+  end if;
+end $do$;

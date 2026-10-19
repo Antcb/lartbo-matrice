@@ -85,7 +85,15 @@ export function viewTodo(){
         ${projPicker(S.projects, {attrs:'id="f-project" aria-label="Artiste"', multi:true}) + inactiveToggle()}
         <input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-taches" placeholder="Rechercher une tâche" data-search="todo" value="${esc(q)}">`,
       actions:'<button class="btn primary" data-act="newTask">Nouvelle tâche</button>'})
-    + taskTable(tasks);
+    + activeFilters(f, who, dept, q)
+    + taskTable(tasks, f === 'done' ? 'Aucune tâche terminée ces 30 derniers jours avec ces filtres.' : null);
+}
+
+/** Filtres en cours (personne, pôle, artistes, recherche) : rappelés au-dessus de la liste, avec « Tout afficher » */
+function activeFilters(f, who, dept, q){
+  const on = [who && `pour ${who === 'me' ? 'moi' : esc(TEAM_NAMES[who] || who)}`, dept && `pôle ${dept === '-' ? 'sans pôle' : esc(dept)}`,
+    S.projects.length && `${S.projects.length} artiste${S.projects.length > 1 ? 's' : ''}`, q && `recherche « ${esc(q)} »`].filter(Boolean);
+  return on.length ? `<p class="filter-note">Filtres en cours : ${on.join(' · ')} <button class="btn sm ghost" data-act="resetTodoFilters">Tout afficher</button></p>` : '';
 }
 
 export { teamName, TASK_STATUS };

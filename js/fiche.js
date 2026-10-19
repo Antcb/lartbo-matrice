@@ -28,14 +28,17 @@ function fail(msg){ root.innerHTML = `<div class="panel pad fiche-msg">${esc(msg
 
 function conditions(d){
   const cr = ficheKind(d.contract_type) === 'cr';
-  const pays = (d.payments || []).map(p => `<li>${esc(p.label || (p.kind === 'solde' ? 'Solde' : 'Acompte'))}${p.pct != null ? ` : ${pct(p.pct)}` : ''}${p.ht != null ? ` · ${eur(p.ht)} HT` : ''}</li>`).join('');
+  const pays = (d.payments || []).map(p => `<li>${esc(p.label || (p.kind === 'solde' ? 'Solde' : 'Acompte'))}${p.pct != null ? ` : ${pct(p.pct)}` : ''}${p.ht != null ? ` · ${eur(p.ht)} HT` : ''}${p.due_label ? ` · ${esc(p.due_label)}` : ''}</li>`).join('');
+  // acomptes et leurs échéances (le 1er : à la signature du contrat, sauf autre échéance validée)
+  const acs = (d.payments || []).filter(p => p.kind === 'acompte' && Number(p.pct));
+  const acText = acs.length ? acs.map((p, i) => `${pct(p.pct)} ${esc(p.due_label || (i === 0 ? 'à la signature du contrat' : ''))}`.trim()).join(', puis ') : '';
   return `<section class="panel pad fiche-cond">
     <p class="fiche-kicker">Fiche de renseignements</p>
     <h1>${esc(d.artist)}</h1>
     <p class="fiche-when">${esc(d.date_label || '')}${d.date_end && d.date_end !== d.date ? ` → ${esc(d.date_end.split('-').reverse().join('/'))}` : ''} · ${esc(d.venue || '')} · ${esc(d.city || '')}${d.cp ? ` (${esc(d.cp)})` : ''}</p>
     <p class="fiche-engage">La validation de cette fiche de renseignements vous engage à contractualiser aux conditions définies ci-dessous.
       Une fois validée par le producteur, elle engage irrévocablement l’organisateur sur le montant ${cr ? 'de co-réalisation' : 'de cession'} du contrat.
-      ${Number(d.acompte_pct) ? `À la signature du contrat, un acompte de ${pct(d.acompte_pct)} vous sera demandé.` : 'Aucun acompte n’est demandé à la signature du contrat.'}</p>
+      ${acText ? `Acompte${acs.length > 1 ? 's' : ''} demandé${acs.length > 1 ? 's' : ''} : ${acText}.` : Number(d.acompte_pct) ? `À la signature du contrat, un acompte de ${pct(d.acompte_pct)} vous sera demandé.` : 'Aucun acompte n’est demandé à la signature du contrat.'}</p>
     <h2>Conditions convenues</h2>
     <dl class="fiche-dl">
       <dt>Contrat</dt><dd>${esc(d.contract_type || 'à préciser')}</dd>

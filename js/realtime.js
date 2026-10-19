@@ -4,6 +4,7 @@
  * L'écran n'est redessiné qu'à un moment sans risque : pas pendant qu'on écrit dans un champ ou qu'une fenêtre est ouverte.
  * En revenant sur l'onglet après une coupure (ordinateur en veille…), tout est rechargé une fois.
  */
+import { APP_VERSION } from './config.js';
 import { loadAll, sb } from './data.js';
 import { S, TABLES, touch } from './state.js';
 
@@ -59,6 +60,7 @@ async function catchUp(render){
 }
 
 export function startRealtime(render){
+  watchVersion();
   if (channel || typeof sb.channel !== 'function') return;
   try { channel = sb.channel('matrice-db'); } catch(e){ return; }
   TABLES.forEach(table => channel.on('postgres_changes', {event: '*', schema: 'public', table}, ev => {
@@ -78,4 +80,27 @@ export function startRealtime(render){
     if (document.visibilityState !== 'visible'){ lastSeen = Date.now(); return; }
     if (Date.now() - lastSeen > 60_000) catchUp(render);
   });
+}
+
+/**
+ * Nouvelle version du site publiée : bandeau « Recharger » (plus besoin de Cmd + Maj + R).
+ * Vérifié toutes les 5 minutes et au retour sur l'onglet ; le rechargement garde les brouillons.
+ */
+let versionTimer = null;
+async function checkVersion(){
+  try {
+    const txt = await (await fetch('js/config.js?check=' + Date.now(), {cache: 'no-store'})).text();
+    const v = (txt.match(/APP_VERSION\s*=\s*'([^']+)'/) || [])[1];
+    if (v && v !== APP_VERSION && !document.querySelector('.update-bar')){
+      const bar = document.createElement('div'); bar.className = 'update-bar';
+      bar.innerHTML = `Nouvelle version de la Matrice (${v}). <button type="button" class="btn sm primary">Recharger</button>`;
+      bar.querySelector('button').onclick = () => location.reload();
+      document.body.appendChild(bar);
+    }
+  } catch(e){ /* hors ligne : on réessaiera */ }
+}
+export function watchVersion(){
+  if (versionTimer) return;
+  versionTimer = setInterval(checkVersion, 5 * 60_000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkVersion(); });
 }

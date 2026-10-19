@@ -10,7 +10,7 @@ import { insert, openStored, refreshShowSide, remove, removeWhere, save, saveLin
 import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, logsOf, projIds, projNames, setting, showsFiltered, structName } from './selectors.js';
 import { CFG } from './config.js';
-import { S, localSet, touch } from './state.js';
+import { S, localSet, setProjects, touch } from './state.js';
 import { MODALS, openModal } from './ui/modal.js';
 import { modalSaved } from './ui/drafts.js';
 import { applyAcompte, saveDepartments } from './views/settings.js';
@@ -65,6 +65,7 @@ export const ACTIONS = {
 
   // Booking
   toggleCancelled: () => { S.showCancelled=!S.showCancelled; render(); },
+  resetTodoFilters: () => { S.todoWho = ''; localSet('todoWho', ''); S.todoDept = ''; S.search.todo = ''; setProjects([]); render(); },
   toggleInactive: () => { S.showInactive = !S.showInactive; localSet('showInactive', S.showInactive ? '1' : ''); render(); },
   pick: (t, e) => { e.stopPropagation(); const p=t.dataset.p; S.routePick[p] = S.routePick[p]===t.dataset.id ? null : t.dataset.id; render(); },
   clearPick: () => { S.routePick = {a:null, b:null}; render(); },
