@@ -3,10 +3,11 @@
  * Pour ajouter une question : une ligne dans la bonne section. Pour un fichier : une ligne dans ARTIST_DOCS
  * (le chemin dit dans quel sous-dossier du dossier Drive de l'artiste il est rangé).
  * Types : text (par défaut), date, number, email, tel, url, textarea (words = mots max), choice (boutons), select,
- * list (lignes répétables : cols = colonnes).
+ * list (lignes répétables : cols = colonnes), roles (une ligne par rôle : roles = rôles, cols = colonnes).
  */
 const YN = ['Oui', 'Non'];
 
+const NB = {type: 'number'};
 export const ARTIST_SECTIONS = [
   {title: '1. Informations générales', fields: [
     {k: 'group_name', label: 'Nom du groupe / de l’artiste', req: true},
@@ -15,9 +16,10 @@ export const ARTIST_SECTIONS = [
     {k: 'language', label: 'Langue de communication', placeholder: 'ex. Français'},
     {k: 'country', label: 'Pays représenté', placeholder: 'ex. France'},
     {k: 'region', label: 'Région', placeholder: 'ex. Auvergne-Rhône-Alpes'},
+    {k: 'department', label: 'Département', placeholder: 'ex. Isère (38)'},
     {k: 'departure_country', label: 'Pays de départ', placeholder: 'ex. France'},
     {k: 'departure_city', label: 'Ville de départ', placeholder: 'ex. Grenoble'},
-    {k: 'music_family', label: 'Grande famille musicale', type: 'select', full: true,
+    {k: 'music_family', label: 'Grande famille musicale', type: 'select',
       options: ['Musiques Actuelles (Pop, rock, électro, rap, reggae…)', 'Jazz / Blues', 'Musiques du monde / Traditionnelles', 'Chanson', 'Musique classique / contemporaine', 'Jeune public', 'Autre']},
     {k: 'style_1', label: 'Style musical — choix 1', placeholder: 'ex. Électro Pop'},
     {k: 'style_2', label: 'Style musical — choix 2', placeholder: 'ex. Pop alternative / Indie Pop'},
@@ -28,43 +30,52 @@ export const ARTIST_SECTIONS = [
   {title: '3. Actualités du projet', help: 'Signatures, sorties, accompagnements, temps forts…', fields: [
     {k: 'news', type: 'list', full: true, add: 'Ajouter une actualité', cols: [{k: 'when', label: 'Quand', placeholder: 'ex. Mars 2026', w: '160px'}, {k: 'what', label: 'Quoi', placeholder: 'ex. Sortie du 1er album'}]},
   ]},
-  {title: '4. Dates / tournée', help: 'Concerts passés marquants et à venir.', fields: [
+  {title: '4. Dernières sorties', help: 'EP, albums, singles : les plus récents d’abord.', fields: [
+    {k: 'releases', type: 'list', full: true, add: 'Ajouter une sortie', cols: [{k: 'title', label: 'Titre', w: '1.2fr'}, {k: 'type', label: 'Type', placeholder: 'EP, Album, Single', w: '110px'},
+      {k: 'date', label: 'Date de sortie', placeholder: 'ex. 31/10/2025', w: '130px'}, {k: 'url', label: 'Lien', placeholder: 'https://…', w: '1.5fr'}]},
+  ]},
+  {title: '5. Dates / tournée', help: 'Concerts passés marquants et à venir.', fields: [
     {k: 'gigs', type: 'list', full: true, add: 'Ajouter une date', cols: [{k: 'date', label: 'Date', placeholder: 'JJ/MM/AAAA', w: '130px'}, {k: 'venue', label: 'Lieu'}, {k: 'city', label: 'Ville'}, {k: 'note', label: 'Précision', placeholder: 'ex. 1ère partie de…'}]},
   ]},
-  {title: '5. Stratégie et motivation', fields: [
+  {title: '6. Répétitions et accompagnement', fields: [
+    {k: 'rehearsal_place', label: 'Lieu de répétition', placeholder: 'ex. La Belle Électrique, Grenoble'},
+    {k: 'current_support', label: 'Accompagnement en cours', placeholder: 'ex. Haute Fréquence, La Belle Électrique (2026-2027)'},
+    {k: 'past_support', label: 'Dispositifs d’accompagnement déjà suivis', type: 'list', full: true, add: 'Ajouter un dispositif',
+      cols: [{k: 'name', label: 'Dispositif', placeholder: 'ex. Contrat de filière CNM'}, {k: 'org', label: 'Structure', placeholder: 'ex. Le Ciel'}, {k: 'year', label: 'Année', placeholder: 'ex. 2025', w: '100px'}]},
+  ]},
+  {title: '7. Stratégie et motivation', fields: [
     {k: 'strategy', label: 'Où en est le projet, ce qui arrive, ce que vous cherchez', type: 'textarea', full: true, rows: 8},
   ]},
-  {title: '6. Composition de l’équipe', cols: 3, fields: [
-    {k: 'musicians', label: 'Nombre de musiciens', type: 'number'},
-    {k: 'musicians_w', label: 'dont femmes', type: 'number'},
-    {k: 'musicians_m', label: 'dont hommes', type: 'number'},
-    {k: 'techs', label: 'Nombre de techniciens', type: 'number'},
-    {k: 'techs_w', label: 'dont femmes', type: 'number'},
-    {k: 'techs_m', label: 'dont hommes', type: 'number'},
-    {k: 'lead', label: 'Lead', type: 'choice', options: ['Féminin', 'Masculin', 'Mixte'], full: true},
+  {title: '8. Composition de l’équipe', cols: 4, fields: [
+    {k: 'musicians', label: 'Nombre de musiciens', ...NB}, {k: 'musicians_w', label: 'dont femmes', ...NB}, {k: 'musicians_m', label: 'dont hommes', ...NB}, {k: 'musicians_x', label: 'dont personnes non-genrées', ...NB},
+    {k: 'techs', label: 'Nombre de techniciens', ...NB}, {k: 'techs_w', label: 'dont femmes', ...NB}, {k: 'techs_m', label: 'dont hommes', ...NB}, {k: 'techs_x', label: 'dont personnes non-genrées', ...NB},
+    {k: 'lead', label: 'Lead', type: 'choice', options: ['Féminin', 'Masculin', 'Mixte', 'Non-genré'], full: true},
   ]},
-  {title: '7. Musicien référent', help: 'La personne du groupe à contacter.', fields: [
+  {title: '9. Musicien référent', help: 'La personne du groupe à contacter.', fields: [
     {k: 'ref_name', label: 'Prénom et nom', req: true},
     {k: 'ref_role', label: 'Fonction', placeholder: 'ex. Chanteur, guitariste'},
     {k: 'ref_email', label: 'Mail', type: 'email', req: true},
     {k: 'ref_phone', label: 'Mobile', type: 'tel', req: true},
   ]},
-  {title: '8. Liens', fields: [
+  {title: '10. Équipe professionnelle', help: 'Remplis seulement les lignes qui vous concernent.', fields: [
+    {k: 'pros', type: 'roles', full: true, roles: ['Manager', 'Booker', 'Label', 'Attaché·e de presse (RP)', 'Éditeur', 'Community manager (CM)', 'Structure administrative de l’artiste'],
+      cols: [{k: 'name', label: 'Nom / structure'}, {k: 'email', label: 'Mail'}, {k: 'phone', label: 'Téléphone', w: '150px'}]},
+  ]},
+  {title: '11. Liens', fields: [
     {k: 'tracks', label: 'Titres / vidéos', type: 'list', full: true, add: 'Ajouter un titre ou une vidéo', cols: [{k: 'title', label: 'Titre', w: '220px'}, {k: 'url', label: 'Lien', placeholder: 'https://…'}]},
     {k: 'youtube', label: 'Chaîne YouTube', type: 'url'},
     {k: 'spotify', label: 'Spotify', type: 'url'},
-    {k: 'deezer', label: 'Deezer', type: 'url'},
     {k: 'apple_music', label: 'Apple Music', type: 'url'},
+    {k: 'deezer', label: 'Deezer', type: 'url'},
     {k: 'soundcloud', label: 'SoundCloud', type: 'url'},
     {k: 'bandcamp', label: 'Bandcamp', type: 'url'},
     {k: 'instagram', label: 'Instagram', type: 'url'},
     {k: 'facebook', label: 'Facebook', type: 'url'},
     {k: 'tiktok', label: 'TikTok', type: 'url'},
     {k: 'website', label: 'Site internet', type: 'url'},
-    {k: 'linktree', label: 'Linktree', type: 'url'},
-    {k: 'photo_credits', label: 'Crédits photo', placeholder: 'ex. Camille Legrand', full: true},
+    {k: 'linktree', label: 'Linktree', type: 'url', full: true},
   ]},
-  {title: '9. Prestation live', fields: [
+  {title: '12. Prestation live', fields: [
     {k: 'set_max', label: 'Durée maximum du set', placeholder: 'ex. 45 minutes'},
     {k: 'set_min', label: 'Durée minimum du set', placeholder: 'ex. 30 minutes'},
     {k: 'multi_shows', label: 'Plusieurs concerts possibles sur un même événement', type: 'choice', options: ['Oui, le même jour et/ou sur plusieurs jours', 'Oui, sur plusieurs jours seulement', 'Non'], full: true},
@@ -75,9 +86,15 @@ export const ARTIST_SECTIONS = [
   ]},
 ];
 
+/** Crédits photo : demandés avec les fichiers (section 13) */
+export const PHOTO_CREDITS = {k: 'photo_credits', label: 'Crédits photo', placeholder: 'ex. Camille Legrand', full: true};
+
 /** Fichiers : [clé, libellé, aide, chemin dans le dossier Drive de l'artiste, types acceptés] */
 export const ARTIST_DOCS = [
-  ['photos', 'Photos du groupe (HD)', 'Plusieurs photos possibles', ['033_Promotion', 'Visuals'], 'image/*'],
+  ['photo_square', 'Photo récente — format carré', 'ex. 1080 × 1080', ['033_Promotion', 'Visuals'], 'image/*'],
+  ['photo_portrait', 'Photo récente — 300 × 400 (portrait)', 'ou même proportion en plus grand', ['033_Promotion', 'Visuals'], 'image/*'],
+  ['photo_landscape', 'Photo récente — 400 × 300 (paysage)', 'ou même proportion en plus grand', ['033_Promotion', 'Visuals'], 'image/*'],
+  ['photos', 'Autres photos / visuels HD', 'Plusieurs fichiers possibles', ['033_Promotion', 'Visuals'], 'image/*'],
   ['logos', 'Logos', 'PNG fond transparent de préférence', ['033_Promotion', 'Logos'], 'image/*,application/pdf'],
   ['tech_rider', 'Fiche technique', 'PDF', ['030_Reference', 'Technical'], 'application/pdf,image/*'],
   ['stage_plot', 'Plan de scène / patch', 'PDF ou image', ['030_Reference', 'Technical'], 'application/pdf,image/*'],

@@ -400,11 +400,12 @@ function rhFileDocs_() {
 
 /** Sous-dossier de rangement de chaque type de fichier (même liste que js/artist-fields.js) */
 var ARTIST_DOC_PATHS = {
-  photos: ['033_Promotion', 'Visuals'], logos: ['033_Promotion', 'Logos'],
+  photos: ['033_Promotion', 'Visuals'], photo_square: ['033_Promotion', 'Visuals'], photo_portrait: ['033_Promotion', 'Visuals'], photo_landscape: ['033_Promotion', 'Visuals'],
+  logos: ['033_Promotion', 'Logos'],
   tech_rider: ['030_Reference', 'Technical'], stage_plot: ['030_Reference', 'Technical'], hosp_rider: ['030_Reference', 'Technical'],
   press_kit: ['033_Promotion', 'Content Text'], audio: ['033_Promotion', 'Audio']
 };
-var ARTIST_DOC_NAMES = { photos: 'Photo', logos: 'Logo', tech_rider: 'Fiche technique', stage_plot: 'Plan de scène', hosp_rider: 'Fiche accueil', press_kit: 'Dossier de presse', audio: '' };
+var ARTIST_DOC_NAMES = { photos: 'Photo', photo_square: 'Photo carrée', photo_portrait: 'Photo 300x400', photo_landscape: 'Photo 400x300', logos: 'Logo', tech_rider: 'Fiche technique', stage_plot: 'Plan de scène', hosp_rider: 'Fiche accueil', press_kit: 'Dossier de presse', audio: '' };
 
 /** Range les fichiers en attente (d'un artiste, ou de tous) puis les retire du stockage temporaire */
 function artistFileDocs_(projectId) {
@@ -418,6 +419,8 @@ function artistFileDocs_(projectId) {
     var artist = String(pr.name || '').replace(/\s*•.*$/, '').trim();
     docs.forEach(function (d) {
       if (!d.path || d.file_id) return;
+      // réservé d'abord (deux rangements en même temps ne traitent jamais le même fichier)
+      if (!sb_('POST', 'rpc/artist_doc_claim', { p_project: pr.id, p_path: d.path })) return;
       var folder = base;
       (ARTIST_DOC_PATHS[d.kind] || ['033_Promotion']).forEach(function (n) { folder = childFolder_(folder, n, true); });
       var url = p.SUPABASE_URL + '/storage/v1/object/artiste/' + d.path.split('/').map(encodeURIComponent).join('/');
@@ -430,10 +433,9 @@ function artistFileDocs_(projectId) {
       var name = stem + (ext ? '.' + ext : ''), n = 1;
       while (folder.getFilesByName(name).hasNext()) name = stem + ' (' + (++n) + ')' + (ext ? '.' + ext : '');
       var file = folder.createFile(res.getBlob().setName(name));
-      var oldPath = d.path;
-      d.file_id = file.getId(); d.drive_name = name; d.path = null;
-      try { sb_('PATCH', 'projects?id=eq.' + pr.id, { artist_docs: docs }); }
-      catch (err) { file.setTrashed(true); d.file_id = null; d.drive_name = null; d.path = oldPath; Logger.log('Fichier artiste non rangé : ' + err); return; }
+      // seule la ligne de ce fichier est mise à jour (un envoi de l'artiste pendant ce temps est gardé)
+      try { sb_('POST', 'rpc/artist_doc_filed', { p_project: pr.id, p_path: d.path, p_file_id: file.getId(), p_name: name }); }
+      catch (err) { file.setTrashed(true); Logger.log('Fichier artiste non rangé (réessai au prochain passage) : ' + err); return; }
       UrlFetchApp.fetch(url, { method: 'delete', headers: authHeaders_({}), muteHttpExceptions: true });
       filed++;
     });

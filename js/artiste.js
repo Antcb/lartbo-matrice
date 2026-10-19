@@ -6,7 +6,7 @@
  */
 import { CFG } from './config.js';
 import './ui/dropfiles.js';
-import { ARTIST_DOCS, ARTIST_SECTIONS } from './artist-fields.js';
+import { ARTIST_DOCS, ARTIST_SECTIONS, PHOTO_CREDITS } from './artist-fields.js';
 
 const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {auth: {persistSession: false}});
 const root = document.getElementById('fiche');
@@ -40,6 +40,14 @@ function input(f, v){
       <div class="al-rows">${rows.map(r => listRow(f, r)).join('')}</div>
       <button type="button" class="btn sm" data-al-add="${f.k}">+ ${esc(f.add || 'Ajouter')}</button></div></div>`;
   }
+  if (f.type === 'roles'){
+    const val = v && typeof v === 'object' ? v : {}, grid = `grid-template-columns:minmax(150px,1fr) ${f.cols.map(c => c.w || '1fr').join(' ')}`;
+    return `<div class="${cls}"><div class="al" data-roles="${f.k}">
+      <div class="al-head" style="${grid}"><span>Rôle</span>${f.cols.map(c => `<span>${esc(c.label)}</span>`).join('')}</div>
+      ${f.roles.map(r => `<div class="al-row al-role" data-role="${esc(r)}" style="${grid}"><b>${esc(r)}</b>${f.cols.map(c =>
+        `<input data-col="${c.k}" value="${esc(val[r]?.[c.k])}" placeholder="${esc(c.label)}" aria-label="${esc(r + ' : ' + c.label)}"${c.k === 'email' ? ' type="email"' : c.k === 'phone' ? ' type="tel"' : ''}>`).join('')}</div>`).join('')}
+    </div></div>`;
+  }
   if (f.type === 'choice') return `<div class="${cls}"><fieldset class="choice"${f.req ? ' data-req="1"' : ''}><legend>${lab(f)}</legend>${f.options.map(o =>
     `<label><input type="radio" name="${f.k}" value="${esc(o)}" ${o === v ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</fieldset></div>`;
   if (f.type === 'select') return `<div class="${cls}"><label for="${id}">${lab(f)}</label><select id="${id}" name="${f.k}"${f.req ? ' required' : ''}>
@@ -53,12 +61,16 @@ function input(f, v){
 function read(form){
   const v = {};
   ARTIST_SECTIONS.forEach(sec => sec.fields.forEach(f => {
-    if (f.type === 'list'){
+    if (f.type === 'roles'){
+      v[f.k] = Object.fromEntries([...form.querySelectorAll(`[data-roles="${f.k}"] [data-role]`)].map(r => [r.dataset.role, Object.fromEntries([...r.querySelectorAll('[data-col]')].map(i => [i.dataset.col, i.value.trim()]))])
+        .filter(([, o]) => Object.values(o).some(Boolean)));
+    } else if (f.type === 'list'){
       v[f.k] = [...form.querySelectorAll(`[data-list="${f.k}"] .al-row`)].map(r => Object.fromEntries([...r.querySelectorAll('[data-col]')].map(i => [i.dataset.col, i.value.trim()])))
         .filter(r => Object.values(r).some(Boolean));
     } else if (f.type === 'choice') v[f.k] = form.querySelector(`[name="${f.k}"]:checked`)?.value || '';
     else v[f.k] = (form.elements[f.k]?.value || '').trim();
   }));
+  v[PHOTO_CREDITS.k] = (form.elements[PHOTO_CREDITS.k]?.value || '').trim();
   return v;
 }
 
@@ -71,11 +83,12 @@ function draw(d, values){
       ${d.submitted_at ? `<p class="fiche-engage">Fiche déjà envoyée le ${new Date(d.submitted_at).toLocaleDateString('fr-FR')}. Tes réponses sont reprises ci-dessous.</p>` : ''}</section>
     <form id="artist-form" class="fiche-form" novalidate>
       ${ARTIST_SECTIONS.map(sec => `<section class="panel pad"><h2>${esc(sec.title)}</h2>${sec.help ? `<p class="help">${esc(sec.help)}</p>` : ''}
-        <div class="fiche-grid${sec.cols === 3 ? ' cols3 even' : ''}">${sec.fields.map(f => input(f, values[f.k] ?? '')).join('')}</div></section>`).join('')}
-      <section class="panel pad"><h2>10. Fichiers</h2><p class="help">Glisse tes fichiers sur la bonne ligne ou clique pour les choisir. Ils sont rangés directement dans ton dossier chez nous.</p>
+        <div class="fiche-grid${sec.cols ? ` cols${sec.cols} even` : ''}">${sec.fields.map(f => input(f, values[f.k] ?? '')).join('')}</div></section>`).join('')}
+      <section class="panel pad"><h2>${ARTIST_SECTIONS.length + 1}. Photos et fichiers</h2><p class="help">Photos récentes de préférence. Glisse tes fichiers sur la bonne ligne ou clique pour les choisir : ils sont rangés directement dans ton dossier chez nous.</p>
         <div class="fiche-grid">${ARTIST_DOCS.map(([k, l, help, , accept]) => { const n = have.filter(x => x.kind === k).length;
           return `<div class="field"><label for="d-${k}">${esc(l)}${n ? ` <span class="doc-ok">✓ ${n} déjà reçu${n > 1 ? 's' : ''}</span>` : ''}</label>
-            <input id="d-${k}" type="file" data-doc="${k}" data-label="${esc(l)}" accept="${esc(accept)}" multiple><span class="muted" style="font-size:12px">${esc(help)}</span></div>`; }).join('')}</div></section>
+            <input id="d-${k}" type="file" data-doc="${k}" data-label="${esc(l)}" accept="${esc(accept)}" multiple><span class="muted" style="font-size:12px">${esc(help)}</span></div>`; }).join('')}
+          ${input(PHOTO_CREDITS, values[PHOTO_CREDITS.k] ?? '')}</div></section>
       <div class="fiche-actions"><p class="help"><span class="req">*</span> obligatoire</p><button class="btn primary" type="submit">Envoyer la fiche</button></div>
     </form>`;
   const form = document.getElementById('artist-form');
@@ -95,9 +108,16 @@ function draw(d, values){
   form.addEventListener('submit', async e => {
     e.preventDefault();
     form.querySelectorAll('.invalid').forEach(x => x.classList.remove('invalid'));
+    // un lien collé sans « https:// » (instagram.com/…) est complété
+    form.querySelectorAll('input[type=url]').forEach(x => { const v = x.value.trim(); if (v && !/^https?:\/\//i.test(v)) x.value = 'https://' + v; });
+    form.querySelectorAll('.al-row input[data-col=url]').forEach(x => { const v = x.value.trim(); if (v && !/^https?:\/\//i.test(v) && /\.\w{2,}/.test(v)) x.value = 'https://' + v; });
     const missing = [...form.querySelectorAll('[required]')].filter(x => !x.value.trim())
       .concat([...form.querySelectorAll('fieldset[data-req]')].filter(fs => !fs.querySelector('input:checked')));
     const tooLong = [...form.querySelectorAll('[data-words]')].filter(t => words(t.value) > Number(t.dataset.words));
+    // mail, liens, nombres : au bon format
+    const bad = [...form.querySelectorAll('input[type=email], input[type=url], input[type=number]')].filter(x => x.value.trim() && !x.checkValidity());
+    if (bad.length && !missing.length){ bad.forEach(x => x.classList.add('invalid')); bad[0].focus();
+      return note(bad[0].type === 'email' ? 'L’adresse mail n’est pas valide.' : bad[0].type === 'url' ? 'Un lien n’est pas valide : il doit commencer par https://' : 'Un nombre n’est pas valide.', true); }
     if (missing.length){ missing.forEach(x => x.classList.add('invalid')); (missing[0].querySelector?.('input') || missing[0]).focus(); return note(`Il manque ${missing.length} élément${missing.length > 1 ? 's' : ''} obligatoire${missing.length > 1 ? 's' : ''}.`, true); }
     if (tooLong.length){ tooLong.forEach(x => x.classList.add('invalid')); tooLong[0].focus(); return note(`La présentation dépasse ${tooLong[0].dataset.words} mots.`, true); }
     const info = read(form);

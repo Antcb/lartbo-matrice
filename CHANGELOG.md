@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.29.0 — 19/10/2026
+- Fiche artiste : département, dernières sorties (EP / album / single), répétitions et accompagnement (lieu, accompagnement en cours, dispositifs déjà suivis), personnes non-genrées dans l'équipe, équipe professionnelle (manager, booker, label, RP, éditeur, CM, structure administrative), photos récentes en carré / 300×400 / 400×300 ; vérification des mails et liens ; sauvegarde des fichiers en attente ; rangement Drive fichier par fichier
+
+
 ## 1.28.1 — 19/10/2026
 - Fiche artiste : mise en page des choix (boutons ronds) corrigée, équipe sur 3 colonnes
 
