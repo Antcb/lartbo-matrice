@@ -75,7 +75,9 @@ export function projectPage(p){
     <div style="flex:1;min-width:0"><h1>${esc(p.name)}</h1>
       <div class="proj-chips" style="margin-top:8px"><span class="badge ${p.mode==='booking'?'tag':'proj'}">${p.mode==='booking'?'Booking seul':'Production'}</span><span class="badge tag">${p.active?'Actif':'Inactif'}</span>
         ${p.default_artbo_pct?`<span class="badge tag">Commission ${p.default_artbo_pct} %</span>`:''}</div></div>
-    <div class="vh-actions"><button class="btn" data-act="copyArtistLink" data-id="${p.id}" title="Lien à envoyer à l’artiste : il remplit sa fiche et envoie ses fichiers">Copier le lien de la fiche artiste</button>
+    <div class="vh-actions">${p.drive_artist_folder_id ? `<a class="btn" href="https://drive.google.com/drive/folders/${esc(p.drive_artist_folder_id)}" target="_blank" rel="noopener">Dossier Drive ↗</a>`
+        : S.folderPending === p.id ? '<span class="btn" aria-busy="true">Création du dossier Drive…</span>' : `<button class="btn primary" data-act="createArtistFolder" data-id="${p.id}">Créer son dossier Drive</button>`}
+      <button class="btn" data-act="copyArtistLink" data-id="${p.id}" title="Lien à envoyer à l’artiste : il remplit sa fiche et envoie ses fichiers">Copier le lien de la fiche artiste</button>
       <button class="btn" data-act="editProject" data-id="${p.id}">Modifier</button>
       <button class="btn" data-act="newTaskProject" data-id="${p.id}">Nouvelle tâche</button>
       <button class="btn primary" data-act="newShow" data-project="${p.id}">Nouvelle date</button></div>

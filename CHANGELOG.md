@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.30.0 — 19/10/2026
+- Fiche artiste : jusqu'à 3 formules, membres de l'équipe (poste, nom, prénom, naissance, mail, ville et pays de résidence) ajoutés dans l'onglet Membres, structure administrative créée / complétée dans la base et reliée au projet, 3 MP3 minimum, plan de scène avec la fiche technique ; nouveau projet : case « Créer son dossier Drive à son nom » et bouton « Créer son dossier Drive » en haut de la fiche projet
+
+
 ## 1.29.0 — 19/10/2026
 - Fiche artiste : département, dernières sorties (EP / album / single), répétitions et accompagnement (lieu, accompagnement en cours, dispositifs déjà suivis), personnes non-genrées dans l'équipe, équipe professionnelle (manager, booker, label, RP, éditeur, CM, structure administrative), photos récentes en carré / 300×400 / 400×300 ; vérification des mails et liens ; sauvegarde des fichiers en attente ; rangement Drive fichier par fichier
 

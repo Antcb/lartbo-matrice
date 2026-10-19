@@ -27,6 +27,10 @@ function fail(msg){ root.innerHTML = `<div class="panel pad fiche-msg">${esc(msg
 
 const lab = f => `${esc(f.label || '')}${f.req ? ' <span class="req" aria-hidden="true">*</span>' : ''}`;
 function listRow(f, row = {}){
+  // wrap : une fiche par personne, champs sur plusieurs lignes avec leur intitulé
+  if (f.wrap) return `<div class="al-row al-card">${f.cols.map(c => `<label class="al-cell"><span>${esc(c.label)}</span>
+      <input data-col="${c.k}" value="${esc(row[c.k])}" placeholder="${esc(c.placeholder || '')}"${c.k === 'email' ? ' type="email"' : ''}></label>`).join('')}
+    <button type="button" class="btn icon sm ghost" data-al-del aria-label="Retirer">✕</button></div>`;
   return `<div class="al-row" style="grid-template-columns:${f.cols.map(c => c.w || '1fr').join(' ')} auto">${f.cols.map(c =>
     `<input data-col="${c.k}" value="${esc(row[c.k])}" placeholder="${esc(c.placeholder || c.label)}" aria-label="${esc(c.label)}">`).join('')}
     <button type="button" class="btn icon sm ghost" data-al-del aria-label="Retirer la ligne">✕</button></div>`;
@@ -36,9 +40,9 @@ function input(f, v){
   if (f.type === 'list'){
     const rows = Array.isArray(v) && v.length ? v : [{}];
     return `<div class="${cls}">${f.label ? `<label>${lab(f)}</label>` : ''}<div class="al" data-list="${f.k}">
-      <div class="al-head" style="grid-template-columns:${f.cols.map(c => c.w || '1fr').join(' ')} auto">${f.cols.map(c => `<span>${esc(c.label)}</span>`).join('')}<span></span></div>
-      <div class="al-rows">${rows.map(r => listRow(f, r)).join('')}</div>
-      <button type="button" class="btn sm" data-al-add="${f.k}">+ ${esc(f.add || 'Ajouter')}</button></div></div>`;
+      ${f.wrap ? '' : `<div class="al-head" style="grid-template-columns:${f.cols.map(c => c.w || '1fr').join(' ')} auto">${f.cols.map(c => `<span>${esc(c.label)}</span>`).join('')}<span></span></div>`}
+      <div class="al-rows">${rows.slice(0, f.max || 99).map(r => listRow(f, r)).join('')}</div>
+      <button type="button" class="btn sm" data-al-add="${f.k}" ${f.max && rows.length >= f.max ? 'hidden' : ''}>+ ${esc(f.add || 'Ajouter')}</button></div></div>`;
   }
   if (f.type === 'roles'){
     const val = v && typeof v === 'object' ? v : {}, grid = `grid-template-columns:minmax(150px,1fr) ${f.cols.map(c => c.w || '1fr').join(' ')}`;
@@ -85,8 +89,8 @@ function draw(d, values){
       ${ARTIST_SECTIONS.map(sec => `<section class="panel pad"><h2>${esc(sec.title)}</h2>${sec.help ? `<p class="help">${esc(sec.help)}</p>` : ''}
         <div class="fiche-grid${sec.cols ? ` cols${sec.cols} even` : ''}">${sec.fields.map(f => input(f, values[f.k] ?? '')).join('')}</div></section>`).join('')}
       <section class="panel pad"><h2>${ARTIST_SECTIONS.length + 1}. Photos et fichiers</h2><p class="help">Photos récentes de préférence. Glisse tes fichiers sur la bonne ligne ou clique pour les choisir : ils sont rangés directement dans ton dossier chez nous.</p>
-        <div class="fiche-grid">${ARTIST_DOCS.map(([k, l, help, , accept]) => { const n = have.filter(x => x.kind === k).length;
-          return `<div class="field"><label for="d-${k}">${esc(l)}${n ? ` <span class="doc-ok">✓ ${n} déjà reçu${n > 1 ? 's' : ''}</span>` : ''}</label>
+        <div class="fiche-grid">${ARTIST_DOCS.map(([k, l, help, , accept, min]) => { const n = have.filter(x => x.kind === k).length;
+          return `<div class="field"><label for="d-${k}">${esc(l)}${min && n < min ? ' <span class="req">*</span>' : ''}${n ? ` <span class="doc-ok">✓ ${n} déjà reçu${n > 1 ? 's' : ''}</span>` : ''}</label>
             <input id="d-${k}" type="file" data-doc="${k}" data-label="${esc(l)}" accept="${esc(accept)}" multiple><span class="muted" style="font-size:12px">${esc(help)}</span></div>`; }).join('')}
           ${input(PHOTO_CREDITS, values[PHOTO_CREDITS.k] ?? '')}</div></section>
       <div class="fiche-actions"><p class="help"><span class="req">*</span> obligatoire</p><button class="btn primary" type="submit">Envoyer la fiche</button></div>
@@ -101,9 +105,13 @@ function draw(d, values){
   form.addEventListener('click', e => {
     const add = e.target.closest('[data-al-add]');
     if (add){ const f = ARTIST_SECTIONS.flatMap(s => s.fields).find(x => x.k === add.dataset.alAdd);
-      form.querySelector(`[data-list="${f.k}"] .al-rows`).insertAdjacentHTML('beforeend', listRow(f)); form.querySelector(`[data-list="${f.k}"] .al-row:last-child input`)?.focus(); return; }
+      const rowsBox = form.querySelector(`[data-list="${f.k}"] .al-rows`);
+      if (f.max && rowsBox.children.length >= f.max) return;
+      rowsBox.insertAdjacentHTML('beforeend', listRow(f)); rowsBox.querySelector('.al-row:last-child input')?.focus();
+      if (f.max && rowsBox.children.length >= f.max) add.hidden = true;   // pas plus que le maximum (3 formules)
+      return; }
     const del = e.target.closest('[data-al-del]');
-    if (del){ const rows = del.closest('.al-rows'); if (rows.children.length > 1) del.closest('.al-row').remove(); else del.closest('.al-row').querySelectorAll('input').forEach(i => i.value = ''); keep(); }
+    if (del){ const rows = del.closest('.al-rows'); const addBtn = del.closest('.al')?.querySelector('[data-al-add]'); if (addBtn) addBtn.hidden = false; if (rows.children.length > 1) del.closest('.al-row').remove(); else del.closest('.al-row').querySelectorAll('input').forEach(i => i.value = ''); keep(); }
   });
   form.addEventListener('submit', async e => {
     e.preventDefault();
@@ -113,6 +121,10 @@ function draw(d, values){
     form.querySelectorAll('.al-row input[data-col=url]').forEach(x => { const v = x.value.trim(); if (v && !/^https?:\/\//i.test(v) && /\.\w{2,}/.test(v)) x.value = 'https://' + v; });
     const missing = [...form.querySelectorAll('[required]')].filter(x => !x.value.trim())
       .concat([...form.querySelectorAll('fieldset[data-req]')].filter(fs => !fs.querySelector('input:checked')));
+    // nombre minimum de fichiers (ex. 3 titres MP3), en comptant ceux déjà reçus
+    const short = ARTIST_DOCS.filter(([k, , , , , min]) => min && have.filter(x => x.kind === k).length + (form.querySelector(`#d-${k}`)?.files.length || 0) < min);
+    if (short.length && !missing.length){ const [k, l, , , , min] = short[0]; form.querySelector(`#d-${k}`).classList.add('invalid'); form.querySelector(`#d-${k}`).focus();
+      return note(`${l} : il en faut au moins ${min}.`, true); }
     const tooLong = [...form.querySelectorAll('[data-words]')].filter(t => words(t.value) > Number(t.dataset.words));
     // mail, liens, nombres : au bon format
     const bad = [...form.querySelectorAll('input[type=email], input[type=url], input[type=number]')].filter(x => x.value.trim() && !x.checkValidity());

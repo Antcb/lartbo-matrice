@@ -51,3 +51,6 @@
 .al-role b{font-size:13px}
 @media (max-width:640px){ .fiche-grid.cols4.even,.fiche-grid.cols3.even{grid-template-columns:1fr 1fr} .al-role{grid-template-columns:1fr !important} .al-role input{grid-column:1 !important} }
 .fiche-grid.cols4.even{align-items:end}
+.al-card{display:grid !important;grid-template-columns:repeat(auto-fill,minmax(170px,1fr)) !important;gap:8px 10px;padding:10px 40px 10px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--soft);position:relative}
+.al-card .al-cell{display:grid;gap:3px;font-weight:600;font-size:12px;color:var(--muted)}
+.al-card [data-al-del]{position:absolute;top:6px;right:6px}

@@ -93,7 +93,7 @@ export function editShow(id, projectId, prefill={}){
 /* ------------------------------------------------------------------ Projets */
 export function editProject(id){
   const p = id ? byId('projects', id) : {active:true, mode:'production'};
-  openModal({ title: id ? p.name : 'Nouveau projet', values: p,
+  openModal({ title: id ? p.name : 'Nouveau projet', values: {...p, _make_folder: !id},
     fields: [
       {k:'name', label:'Nom', full:true}, {k:'active', label:'Projet actif', type:'checkbox'},
       {k:'mode', label:'Type de suivi', type:'select', blank:false, options:[['production','Production (L’ArtBo produit les dates)'],['booking','Booking seul (commission facturée à l’artiste)']],
@@ -101,7 +101,8 @@ export function editProject(id){
       {k:'default_artbo_pct', label:"% L'ArtBo (15 ou 20)", type:'number'},
       {k:'default_partner_id', label:'Co-producteur par défaut', type:'select', options:S.db.partners.map(x=>[x.id,x.name])},
       {k:'default_partner_pct', label:'% partenaire sur la commission', type:'number'},
-      {k:'drive_artist_folder_id', label:'Dossier Drive de l’artiste (lien ou identifiant)', full:true},
+      ...(p.drive_artist_folder_id ? [] : [{k:'_make_folder', label:'Créer son dossier Drive à son nom (à partir du modèle artiste)', type:'checkbox', full:true}]),
+      {k:'drive_artist_folder_id', label:'Dossier Drive existant (lien ou identifiant) — sinon laisse vide', full:true},
       {k:'_h_acc', type:'html', full:true, html:'<h3 class="block-title" style="margin:6px 0 0">Accueil (repris dans les contrats)</h3>'},
       {k:'road_people', label:'Personnes sur la route (= repas)', type:'number'},
       {k:'setup_hours', label:'Mise à disposition du lieu (montage, balances) en heures', type:'number'},
@@ -115,12 +116,13 @@ export function editProject(id){
     onDelete: id ? () => deleteProject(id) : null,
     onSave: async v => {
       if (!v.name) return false;
+      const makeFolder = v._make_folder; delete v._make_folder;
       if (v.drive_artist_folder_id) v.drive_artist_folder_id = driveId(v.drive_artist_folder_id);
       ['contract_template_cc','contract_template_cr'].forEach(k => { if (v[k]) v[k] = (String(v[k]).match(/[-\w]{25,}/) || [v[k]])[0]; });
-      if (id) { await save('projects', id, v, {rerender:false}); return; }
+      if (id){ const ok = await save('projects', id, v, {rerender:false}); if (ok && makeFolder && !v.drive_artist_folder_id) createArtistFolder(id); return; }
       const row = await insert('projects', v);
-      // nouvel artiste : son dossier Drive est créé à partir du modèle (LARTBOTRICE › 01_Modèles Drive)
-      if (row && !row.drive_artist_folder_id) createArtistFolder(row.id);
+      // nouvel artiste : son dossier Drive est créé à son nom, à partir du modèle (LARTBOTRICE › 01_Modèles Drive)
+      if (row && makeFolder && !row.drive_artist_folder_id) createArtistFolder(row.id);
     }
   });
 }
@@ -128,13 +130,15 @@ export function editProject(id){
 /** Dossier Drive d'un artiste (créé depuis le modèle s'il n'existe pas encore) */
 export async function createArtistFolder(projectId){
   const {callScript} = await import('./mail.js');
-  toast('Création du dossier Drive de l’artiste…');
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = 'Création du dossier Drive de l’artiste à partir du modèle… (1 à 2 minutes, tu peux continuer)';
+  document.querySelectorAll('.toast').forEach(x => x.remove()); document.body.appendChild(t);
+  S.folderPending = projectId; render();
   try {
     const out = await callScript('artist_folder', {project_id: projectId});
     const p = byId('projects', projectId); if (p) p.drive_artist_folder_id = out.folder_id;
-    touch('projects'); render();
+    S.folderPending = null; touch('projects'); render();
     toast(out.created ? 'Dossier Drive de l’artiste créé' : 'Dossier Drive de l’artiste retrouvé et relié', false, out.url ? {label: 'Ouvrir', fn: () => window.open(out.url, '_blank')} : null);
-  } catch (err) { toast('Dossier Drive : ' + err.message, true); }
+  } catch (err) { S.folderPending = null; render(); toast('Dossier Drive : ' + err.message, true); }
 }
 
 /** Identifiant d'un dossier Drive à partir d'un lien collé */
