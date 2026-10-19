@@ -28,7 +28,7 @@ export const ARTIST_SECTIONS = [
         {k: 'techs', label: 'Techniciens', placeholder: 'nb', w: '100px'}, {k: 'note', label: 'Précision', placeholder: 'ex. version acoustique', w: '1.5fr'}]},
   ]},
   {title: '2. Présentation', fields: [
-    {k: 'bio', label: 'Présentation', type: 'textarea', words: 250, full: true, rows: 9, req: true},
+    {k: 'bio', label: 'Présentation', type: 'textarea', words: 250, full: true, rows: 3, req: true},
   ]},
   {title: '3. Actualités du projet', help: 'Signatures, sorties, accompagnements, temps forts…', fields: [
     {k: 'news', type: 'list', full: true, add: 'Ajouter une actualité', cols: [{k: 'when', label: 'Quand', placeholder: 'ex. Mars 2026', w: '160px'}, {k: 'what', label: 'Quoi', placeholder: 'ex. Sortie du 1er album'}]},
@@ -47,7 +47,7 @@ export const ARTIST_SECTIONS = [
       cols: [{k: 'name', label: 'Dispositif', placeholder: 'ex. Contrat de filière CNM'}, {k: 'org', label: 'Structure', placeholder: 'ex. Le Ciel'}, {k: 'year', label: 'Année', placeholder: 'ex. 2025', w: '100px'}]},
   ]},
   {title: '7. Stratégie et motivation', fields: [
-    {k: 'strategy', label: 'Où en est le projet, ce qui arrive, ce que vous cherchez', type: 'textarea', full: true, rows: 8},
+    {k: 'strategy', label: 'Où en est le projet, ce qui arrive, ce que vous cherchez', type: 'textarea', full: true, rows: 3},
   ]},
   {title: '8. Composition de l’équipe', cols: 4, fields: [
     {k: 'musicians', label: 'Nombre de musiciens', ...NB}, {k: 'musicians_w', label: 'dont femmes', ...NB}, {k: 'musicians_m', label: 'dont hommes', ...NB}, {k: 'musicians_x', label: 'dont personnes non-genrées', ...NB},
