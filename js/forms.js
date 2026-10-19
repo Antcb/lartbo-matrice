@@ -6,7 +6,7 @@ import { FORMAT_FIELD, exportTable } from './exports.js';
 import { propagateCommission } from './commission.js';
 import { render } from './app.js';
 import { CFG } from './config.js';
-import { CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PROSPECT, STATUSES, TASK_STATUS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
+import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PROSPECT, STATUSES, TASK_STATUS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
 import { insert, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode } from './geo.js';
 import { contactMails, defaultCommission, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
@@ -179,7 +179,7 @@ export function editTask(id, prefill={}){
       {k:'structure_id', label:'Structure', type:'ac', kind:'structures', create:true},
       {k:'show_id', label:'Date concernée', type:'ac', kind:'shows', placeholder:'Artiste, lieu, ville ou date…'},
       {k:'prospect_id', label:'Suivi (facultatif)', type:'select', options:suiviOptions(t)},
-      {k:'priority', label:'Priorité (si pas d’échéance)', type:'select', options:PRIORITIES}, {k:'tags', label:'Tags (Call, Mail…)', type:'tags'},
+      {k:'priority', label:'Priorité (si pas d’échéance)', type:'select', options:PRIORITIES}, {k:'tags', label:'Tags', type:'tags', suggest: () => ['Call', 'Mail', ...S.db.tasks.flatMap(x => x.tags || [])]},
       {k:'notes', label:'Notes', type:'textarea', full:true, rows:5},
       ...(files.length ? [{k:'_existing', type:'html', label:'Pièces jointes', full:true, html: files.map(f=>fileRow(f, 'openAttachment', 'delAttachment')).join('')}] : []),
       {k:'_files', label: files.length ? 'Ajouter des pièces jointes' : 'Pièces jointes', type:'files', full:true},
@@ -225,7 +225,7 @@ export function editContact(id, prefill={}){
     fields: [
       {k:'first_name', label:'Prénom'}, {k:'last_name', label:'Nom'},
       {k:'_structures', label:'Structures', type:'links', source:'structures', create:true, full:true},
-      {k:'roles', label:'Poste(s)', type:'tags', full:true},
+      {k:'roles', label:'Poste(s)', type:'tags', full:true, suggest: () => [...CONTACT_ROLES, ...S.db.contacts.flatMap(x => x.roles || [])]},
       ...CONTACT_COORDS,
       {k:'notes', label:'Notes', type:'textarea', full:true},
     ],
@@ -244,7 +244,7 @@ export function editContact(id, prefill={}){
 /* ------------------------------------------------------------------ Structures */
 const structFields = () => [
   {k:'name', label:'Nom', full:true},
-  {k:'tags', label:'Type (Festival, SMAC, Salle, Association…)', type:'tags', full:true},
+  {k:'tags', label:'Types (tags)', type:'tags', full:true, suggest: () => [...STRUCT_TAGS, ...S.db.structures.flatMap(x => x.tags || [])]},
   {k:'address', label:'Adresse — tape une adresse ou une ville, les champs se remplissent', type:'place', full:true},
   {k:'postal_code', label:'Code postal'}, {k:'city', label:'Ville'},
   {k:'region', label:'Région'}, {k:'country', label:'Pays'},
@@ -291,7 +291,10 @@ export function editStructure(id){
   openModal({ title: id ? s.name : 'Nouvelle structure', values: {...s, _contacts: links}, extra: structHidden(s),
     fields: structFormFields(!id),
     onDelete: id ? () => remove('structures', id) : null,
-    onSave: async v => { const row = await saveStructure(id, s, v); if (!row) return false; }
+    onSave: async v => { const row = await saveStructure(id, s, v); if (!row) return false;
+      // nouvelle structure : sa fiche s'ouvre une fois la fenêtre fermée
+      if (!id) setTimeout(() => { S.view = 'structures'; S.structurePage = row.id; S.tab.structure = 'home'; S.focusProspect = null; render(); window.scrollTo(0, 0); }, 0);
+    }
   });
 }
 
@@ -331,7 +334,7 @@ CREATORS.structures = async name => {
 CREATORS.contacts = async name => {
   const [first, ...rest] = String(name).trim().split(/\s+/);
   const row = await openModal({ level:2, title:'Nouveau contact', values:{first_name:first, last_name:rest.join(' ')}, saveLabel:'Créer le contact',
-    fields:[{k:'first_name', label:'Prénom'}, {k:'last_name', label:'Nom'}, {k:'roles', label:'Poste(s)', type:'tags', full:true}, ...CONTACT_COORDS],
+    fields:[{k:'first_name', label:'Prénom'}, {k:'last_name', label:'Nom'}, {k:'roles', label:'Poste(s)', type:'tags', full:true, suggest: () => [...CONTACT_ROLES, ...S.db.contacts.flatMap(x => x.roles || [])]}, ...CONTACT_COORDS],
     onSave: async v => { v.display_name = [v.first_name, v.last_name].filter(Boolean).join(' ') || v.email || v.email_2; if (!v.display_name){ toast('Indique au moins un nom', true); return false; } return await insert('contacts', v); } });
   if (!row) return null;
   return {id: row.id, label: row.display_name};

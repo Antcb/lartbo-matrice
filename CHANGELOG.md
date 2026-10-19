@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.34.0 — 20/10/2026
+- Budget type prérempli, tags des structures, nouvelle structure ouverte, acompte 50 % par défaut, budget et To Do allégés, mobile sans débordement
+
+
 ## 1.33.6 — 20/10/2026
 - Rappel « commission à te verser » dès le premier encaissement, même sans acompte
 

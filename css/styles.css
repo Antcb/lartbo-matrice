@@ -399,6 +399,11 @@ dialog::backdrop{background:rgba(16,24,42,.5)}
   body{font-size:15px}
   input,select,textarea{font-size:16px!important}           /* évite le zoom automatique d'iOS */
   main{padding:12px 12px 48px}
+  /* rien ne dépasse la largeur du téléphone */
+  .qtys{flex-wrap:wrap} .mini-grid>div{grid-template-columns:64px minmax(0,1fr)}
+  #main input,#main select,#main textarea,#main .ac,#main .btn,#main .badge{max-width:100%}
+  #main .btn,#main .badge{white-space:normal;height:auto;min-height:28px;text-align:left}
+  .task-title{flex-wrap:wrap} .task-title .cell-ta{min-width:0;flex:1 1 100%}
   .top{position:static}
   .top-row{padding:6px 12px;gap:8px;flex-wrap:wrap}
   .brand-logo{display:none} .brand-picto{display:block}
@@ -422,6 +427,10 @@ dialog::backdrop{background:rgba(16,24,42,.5)}
   .prod-head{grid-template-columns:44px minmax(0,1fr) 16px;gap:10px;padding:10px 12px}
   .prod-head .progress,.prod-head .st-badge{grid-column:2}
   .steps{grid-template-columns:1fr auto}
+  .view-settings .steps{grid-template-columns:minmax(0,1fr)} .view-settings .steps label{margin-top:6px}
+  .mini-grid .ac,.mini-grid .ac-input,.mini-grid .cell-ta{width:100%;min-width:0}
+  .secret-line{flex-wrap:wrap}
+  .qty-line{flex-wrap:wrap;justify-content:flex-end}
   .pcard{grid-template-columns:minmax(0,1fr) 84px} .pcard .photo{width:84px}
   .link-row{grid-template-columns:1fr auto} .link-row input:first-child{grid-column:1/-1}
   .log-form{grid-template-columns:1fr 1fr}
@@ -432,6 +441,7 @@ dialog::backdrop{background:rgba(16,24,42,.5)}
   table.cards thead{display:none}
   table.cards tr{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);margin-bottom:8px;padding:8px 12px}
   table.cards td{position:relative;border:0;padding:5px 0 5px 38%;text-align:right;min-height:30px;overflow-wrap:anywhere}
+  table.cards td,table.cards th{min-width:0 !important;max-width:none}
   table.cards td::before{content:attr(data-label);position:absolute;left:0;top:8px;width:36%;text-align:left;color:var(--muted);font-size:12px;font-weight:600}
   table.cards td[data-label=""]{padding-left:0;text-align:left}
   table.cards td[data-label=""]::before{display:none}
@@ -754,3 +764,48 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .ar-grid .stat span{font-size:12px}
 .acc-moves{margin:0 0 14px}
 .acc-moves summary{cursor:pointer;font-weight:600;color:var(--brand);padding:6px 0}
+/* Étiquettes : sélecteur (fenêtres) et filtre (liste des structures) */
+.tagpick{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:38px;padding:4px 6px;border:1px solid var(--line);border-radius:var(--r);background:#fff}
+.tagpick:focus-within{border-color:var(--brand-2);box-shadow:0 0 0 3px rgba(40,60,99,.12)}
+.tp-chips{display:contents}
+.tp-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 9px;border-radius:999px;background:var(--soft);border:1px solid var(--line);font-size:13px;font-weight:600;color:var(--ink)}
+.tp-rm{border:0;background:none;color:var(--muted);font-size:15px;line-height:1;cursor:pointer;padding:0 4px;border-radius:50%}
+.tp-rm:hover{color:var(--danger);background:#fff}
+.tp-q{flex:1;min-width:110px;border:0 !important;outline:0;box-shadow:none !important;padding:4px !important;background:transparent}
+.tp-sugg{position:absolute;left:-1px;right:-1px;top:calc(100% + 4px);z-index:30;display:flex;flex-wrap:wrap;gap:6px;max-height:220px;overflow:auto;padding:8px;background:#fff;border:1px solid var(--line);border-radius:var(--r);box-shadow:0 10px 28px rgba(16,24,40,.14)}
+.tp-opt{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.tp-opt:hover{border-color:var(--brand);color:var(--brand)}
+.tp-new{border-style:dashed;color:var(--brand);font-weight:600}
+.tag-filter{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 14px}
+.tag-chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer;color:var(--ink)}
+.tag-chip .n{color:var(--muted);font-size:12px;margin-left:2px}
+.tag-chip.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.tag-chip.on .n{color:rgba(255,255,255,.75)}
+.tag-link{cursor:pointer;font-family:inherit;font-size:12px}
+.tag-link:hover{filter:brightness(.95);text-decoration:underline}
+.bt-form{display:grid;gap:6px;max-width:460px}
+.bt-row{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:14px;color:var(--ink);margin:0}
+.bt-form input{width:92px !important;flex:none;text-align:right;border:1px solid var(--line) !important;background:#fff !important;border-radius:var(--r);padding:6px 8px;font:inherit}
+.bt-tiers{width:100%;margin-top:8px;border-collapse:collapse}
+.bt-tiers caption{text-align:left;font-weight:600;font-size:14px;padding:0 0 6px}
+.bt-tiers th,.bt-tiers td{padding:4px 0;font-size:14px;border:0;background:none}
+.bt-tiers th{font-size:12px;color:var(--muted);font-weight:600;text-align:left}
+.bt-tiers td input{display:inline-block;margin:0 4px}
+/* Budget : ligne plus compacte */
+.budget-table .qty-line{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.budget-table .qty-line .x{color:var(--muted)}
+.budget-table .qty-line b{min-width:76px;text-align:right;font-variant-numeric:tabular-nums}
+.budget-table input.narrow2{width:74px}
+.budget-table input.doc-no{min-width:80px;width:110px}
+.budget-table tr.has-doc td{background:#FFF9EC}
+.budget-table .calc-note{font-size:11px;margin-top:2px}
+.budget-table .reimb{flex-direction:row;align-items:center;gap:6px}
+.budget-table select{max-width:170px}
+.budget-table .dt{max-width:140px}
+.budget-table td{padding-left:8px;padding-right:8px}
+/* To Do : échéance + urgence dans la même case, structure + date dans « Lié à » */
+.due-cell{min-width:150px}
+.due-cell .urg{display:inline-block;margin-top:4px}
+.link-cell{min-width:240px}
+.link-cell > * + *{margin-top:4px}
+.view-head .search{min-width:180px;max-width:220px}

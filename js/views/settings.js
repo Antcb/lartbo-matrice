@@ -11,6 +11,7 @@ import { cIn } from '../ui/cells.js';
 import { esc, toast } from '../utils.js';
 import { render } from '../app.js';
 import { templatesList } from '../mail.js';
+import { templateForm } from '../budget-template.js';
 import { FONTS, SIZES, mailFont, rtStyle, rtToolbar } from '../ui/richtext.js';
 
 export function viewSettings(){
@@ -29,6 +30,9 @@ export function viewSettings(){
       </div>
       <p class="help" style="margin:14px 0 8px">Les nouvelles dates confirmées prennent ces pourcentages. Les dates déjà confirmées gardent les leurs, sauf si tu les mets à jour :</p>
       <button class="btn sm" data-act="applyAcompte">Appliquer ${esc(ac)} % / ${esc(100-ac)} % aux acomptes et soldes pas encore envoyés</button></div>
+    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Budget type</h3>
+      <p class="help" style="margin:0 0 12px">Le budget prévisionnel posé sur chaque nouvelle date confirmée en production.</p>
+      ${templateForm('settings')}</div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Pôles des tâches</h3>
       <p class="help" style="margin:0 0 12px">Renommer un pôle met à jour les tâches qui l’utilisent.</p>
       ${departments().map((d,i)=>`<div class="link-row" style="grid-template-columns:44px 1fr auto"><input type="color" value="${esc(d.color)}" data-dept="${i}" data-k="color" aria-label="Couleur du pôle ${esc(d.name)}" style="padding:2px;height:32px">
@@ -163,7 +167,8 @@ document.addEventListener('change', async e => {
   if (k==='default_acompte_pct'){
     if (v==null || v<0 || v>100) return toast("L'acompte doit être entre 0 et 100 %", true);
     if (await setSetting(k, v) && await setSetting('default_solde_pct', 100 - v)) toast(`Acompte ${v} % · solde ${100 - v} %`);
-    return render();
+    render();
+    return applyAcompte();   // les dates à venir pas encore facturées suivent (après confirmation)
   }
   if (await setSetting(k, v)) toast('Réglage enregistré');
 });
@@ -187,11 +192,19 @@ document.addEventListener('change', async e => {
 
 export async function applyAcompte(){
   const ac = Number(setting('default_acompte_pct') ?? 0);
-  if (!confirm(`Mettre ${ac} % sur les acomptes et ${100-ac} % sur les soldes pas encore envoyés (sans montant saisi à la main) ?`)) return;
+  if (!confirm(`Mettre ${ac} % d’acompte et ${100-ac} % de solde sur les dates à venir pas encore facturées ?`)) return;
   // seulement l'acompte et le solde créés à la confirmation (pas les acomptes ajoutés à la main)
-  for (const [kind, pct, sort] of [['acompte', ac, 10], ['solde', 100-ac, 20]]){
-    const {error} = await sb.from('show_payments').update({pct}).eq('kind', kind).eq('sort', sort).is('sent_at', null).is('amount', null);
-    if (error) return toast(error.message, true);
+  // dates à venir dont les conditions ne sont pas validées, avec un seul acompte et rien d'envoyé / payé / saisi à la main
+  const now = new Date().toLocaleDateString('sv-SE');
+  const ids = S.db.shows.filter(s => !s.terms_validated_at && s.prod_mode !== 'booking' && (!s.date || s.date >= now)).map(s => s.id).filter(id => {
+    const p = S.db.show_payments.filter(x => x.show_id === id && ['acompte','solde'].includes(x.kind));
+    return p.filter(x => x.kind === 'acompte').length === 1 && p.every(x => !x.sent_at && !x.paid_at && (x.amount == null || x.amount === ''));
+  });
+  for (const [kind, pct] of [['acompte', ac], ['solde', 100-ac]]){
+    for (let i = 0; i < ids.length; i += 100){
+      const {error} = await sb.from('show_payments').update({pct}).eq('kind', kind).in('show_id', ids.slice(i, i + 100));
+      if (error) return toast(error.message, true);
+    }
   }
   S.db.show_payments = await fetchAll('show_payments'); touch('show_payments');
   toast('Acomptes et soldes mis à jour'); render();

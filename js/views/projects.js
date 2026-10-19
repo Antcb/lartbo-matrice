@@ -4,6 +4,7 @@
  * Administratif (structure juridique de l'artiste), Membres (import CSV Movinmotion possible), Modèles de mail.
  */
 import { ARTIST_DOCS, ARTIST_SECTIONS, PHOTO_CREDITS } from '../artist-fields.js';
+import { templateForm } from '../budget-template.js';
 import { ALL_FIELDS as AF_FIELDS, ficheText, fieldText, input as afInput, listClick, migrateInfo, read as afRead } from '../artist-form.js';
 import { netArtbo } from '../calc.js';
 import { ENV } from '../config.js';
@@ -107,6 +108,7 @@ function overview(p, {shows, tasks, suivis}){
       <label>Chambres twin</label>${cIn('projects', p.id, 'rooms_twin', p.rooms_twin, 'number', 'class="narrow"')}
       <label>Commission L'ArtBo (%)</label>${cIn('projects', p.id, 'default_artbo_pct', p.default_artbo_pct, 'number', `class="narrow" placeholder="${defaultCommission(p.mode)}"`)}
     </div></div>
+  ${p.mode === 'booking' ? '' : `<div class="panel pad" style="margin-top:18px"><h3 class="block-title">Budget type <span class="muted" style="font-weight:400;font-size:13px">· budget prévisionnel posé sur chaque nouvelle date confirmée</span></h3>${templateForm(p.id)}</div>`}
   <div class="struct-hero" style="margin-top:18px">
     <div class="panel pad"><h3 class="block-title">Prochaines dates</h3>${next.map(s=>`<div class="plan-row" data-act="editShow" data-id="${s.id}" style="cursor:pointer"><span class="d">${fmtDate(s.date)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span>${stSelect(s)}</div>`).join('') || '<p class="muted" style="margin:0">Aucune date à venir.</p>'}</div>
     <div class="panel pad"><h3 class="block-title">En cours</h3>

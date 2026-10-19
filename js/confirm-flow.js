@@ -7,6 +7,7 @@
  * Partout pareil : la liste des statuts, la fiche de la date, la page Production.
  */
 import { render } from './app.js';
+import { applyTemplate } from './budget-template.js';
 import { billPct, paymentsOf } from './calc.js';
 import { CONFIRMED_PROD, CONTRACTS } from './constants.js';
 import { insert, refreshShowSide, remove, save } from './data.js';
@@ -25,6 +26,7 @@ export const becameConfirmed = (before, after) => CONFIRMED_PROD.includes(after)
 export async function askConfirmation(showId){
   const s = byId('shows', showId); if (!s) return;
   await refreshShowSide(showId);   // acompte, solde et commission créés par la base au passage en confirmée
+  await applyTemplate(byId('shows', showId), {quiet: true});   // budget prévisionnel : le budget type de l'artiste
   const ok = await openModal({title: 'Date confirmée', fields: [], saveLabel: 'Oui, envoyer la confirmation',
     extra: `<p style="margin:0 0 6px"><b>${esc(s.venue || '')}</b>${s.city ? ` · ${esc(s.city)}` : ''} · ${fmtDate(s.date)}</p>
       <p class="muted" style="margin:0">Tu veux envoyer la confirmation à l’organisateur maintenant ? Tu valideras d’abord les conditions (cachet, acomptes…), puis le mail.
@@ -61,7 +63,7 @@ export async function validateTerms(showId){
   const booking = isBookingOnly(s);
   const acs = acomptesOf(showId);
   const locked = p => !!(p.sent_at || p.paid_at);
-  const def = Number(setting('default_acompte_pct') ?? 20) || 20;
+  const def = Number(setting('default_acompte_pct') ?? 50) || 50;
   const pcts = acs.length ? acs.map(p => ({v: r2(billPct(p) ?? 0), due: p.due_label || ''})) : [{v: def, due: ''}];
   // chaque acompte : son % et son échéance (le 1er : à la signature du contrat, sauf autre choix)
   const acRows = (list) => list.map(({v, due}, i) => `<div class="terms-ac"><span>Acompte ${list.length > 1 ? i + 1 : ''}</span>
