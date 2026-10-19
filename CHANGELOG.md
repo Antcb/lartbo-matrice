@@ -5,6 +5,12 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.33.0 — 19/10/2026
+- Budget d'une date : le solde artiste sort du tableau des dépenses ; un bloc « Reste pour l'artiste » (calculé) + versements + écart pour toi (négatif = tu perds, positif = tu gagnes)
+- Export du budget d'une date pour l'artiste (page à imprimer / PDF)
+- Compte dédié : détail de tous les mouvements comptés, avec le solde après chacun, pour pointer avec la banque
+
+
 ## 1.32.1 — 19/10/2026
 - Corrections relecture : fiche salarié (dates des questions masquées), Brevo (liste des mails créés jamais écrasée)
 
