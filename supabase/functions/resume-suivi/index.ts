@@ -27,6 +27,50 @@ Format : une puce par ligne commençant par « - », libellés en **gras** comme
 /** Région où tourne la fonction (ex. eu-west-3 = Paris) */
 const region = () => Deno.env.get('SB_REGION') || Deno.env.get('DENO_REGION') || '';
 
+/**
+ * Appel à Gemini (offre gratuite) : essaie les modèles « Flash » du plus récent au plus ancien.
+ * Les plus récents sont souvent saturés (« high demand ») : on passe au suivant, puis on refait un tour après une pause.
+ * `accept` transforme la réponse (ou lève une erreur si elle est inutilisable).
+ */
+async function askGemini<T>(gkey: string, parts: unknown[], generationConfig: Record<string, unknown>, accept: (txt: string) => T): Promise<{ ok: T } | { error: string }> {
+  const list = await (await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + gkey)).json();
+  if (list.error) return { error: 'Gemini : ' + list.error.message };
+  const models: string[] = (list.models || [])
+    .filter((m: any) => /flash/i.test(m.name) && !/lite|image|tts|audio|live|omni|thinking-exp|embedding/i.test(m.name)
+      && (m.supportedGenerationMethods || []).includes('generateContent'))
+    .map((m: any) => m.name)
+    .sort((a: string, b: string) => {
+      const v = (n: string) => parseFloat((n.match(/(\d+(?:\.\d+)?)/) || ['0'])[0]);
+      const pre = (n: string) => /preview|exp/.test(n) ? 1 : 0;
+      return pre(a) - pre(b) || v(b) - v(a);
+    })
+    .slice(0, 6);
+  if (!models.length) return { error: 'Gemini : aucun modèle Flash disponible' };
+  const deadline = Date.now() + 110_000;
+  let lastErr = '', busy = 0, tries = 0;
+  for (let round = 0; round < 2; round++) {
+    if (round) await new Promise((r) => setTimeout(r, 4000));
+    for (const model of models) {
+      if (Date.now() > deadline) break;
+      tries++;
+      try {
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${gkey}`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig }),
+        });
+        const out = await r.json();
+        if (r.status === 404) { tries--; continue; }   // modèle retiré par Google : on passe au suivant
+        if (!r.ok) { lastErr = out?.error?.message || String(r.status); if (r.status === 503 || r.status === 429) busy++; continue; }
+        const txt = (out.candidates?.[0]?.content?.parts || []).filter((p: any) => !p.thought).map((p: any) => p.text || '').join('').trim();
+        if (!txt) { lastErr = 'réponse vide (' + (out.candidates?.[0]?.finishReason || '?') + ')'; continue; }
+        return { ok: accept(txt) };
+      } catch (e) { lastErr = String((e as any)?.message || e); }
+    }
+  }
+  if (tries && busy === tries) return { error: 'Gemini est saturé en ce moment (forte demande chez Google). Réessaie dans quelques minutes.' };
+  return { error: 'Gemini : ' + (lastErr || 'pas de réponse') };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   try {
@@ -80,34 +124,12 @@ Deno.serve(async (req) => {
       // Google applique ses règles « payantes » (pas d'entraînement, pas de relecture humaine) aux demandes venant d'Europe :
       // on n'envoie rien à Gemini si la fonction ne tourne pas dans une région européenne
       if (region() && !/^eu-/.test(region())) return json({ error: `Résumé non envoyé : la fonction ne tourne pas en Europe (${region() || 'région inconnue'}).` }, 503);
-      // Gemini (offre gratuite de Google AI Studio) : on choisit le meilleur modèle « Flash » disponible
-      const list = await (await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + gkey)).json();
-      if (list.error) return json({ error: 'Gemini : ' + list.error.message }, 502);
-      const models = (list.models || [])
-        .filter((m: any) => /flash/i.test(m.name) && !/lite|image|tts|audio|live|thinking-exp|embedding/i.test(m.name)
-          && (m.supportedGenerationMethods || []).includes('generateContent'))
-        .map((m: any) => m.name)
-        .sort((a: string, b: string) => {
-          const v = (n: string) => parseFloat((n.match(/(\d+(?:\.\d+)?)/) || ['0'])[0]);
-          const pre = (n: string) => /preview|exp/.test(n) ? 1 : 0;
-          return v(b) - v(a) || pre(a) - pre(b);
-        });
-      if (!models.length) return json({ error: 'Gemini : aucun modèle Flash disponible' }, 502);
-      let lastErr = '';
-      for (const model of models.slice(0, 3)) {
-        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${gkey}`, {
-          method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ contents: [{ role: 'user', parts: [
-            ...pdfs.map((p) => ({ inline_data: { mime_type: 'application/pdf', data: p.data } })),
-            { text: instruction },
-          ] }], generationConfig: { temperature: 0.2, maxOutputTokens: 2000 } }),
-        });
-        const out = await r.json();
-        if (!r.ok) { lastErr = out?.error?.message || String(r.status); continue; }
-        summary = (out.candidates?.[0]?.content?.parts || []).map((p: any) => p.text || '').join('').trim();
-        if (summary) break;
-      }
-      if (!summary) return json({ error: 'Gemini : ' + (lastErr || 'pas de réponse') }, 502);
+      const res = await askGemini(gkey, [
+        ...pdfs.map((p) => ({ inline_data: { mime_type: 'application/pdf', data: p.data } })),
+        { text: instruction },
+      ], { temperature: 0.2, maxOutputTokens: 8192 }, (t) => t);
+      if ('error' in res) return json({ error: res.error }, 502);
+      summary = res.ok;
     } else {
       const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
