@@ -98,15 +98,14 @@ document.addEventListener('change', e => {
     if (scope === 'settings'){
       let row = S.db.settings.find(x => x.key === 'budget_template');
       if (!row){ row = {key: 'budget_template', value: {}}; S.db.settings.push(row); }
-      const cur = {...(row.value || {})}; if (v == null) delete cur[k]; else cur[k] = v;
+      const prev = row.value, cur = {...(prev || {})}; if (v == null) delete cur[k]; else cur[k] = v;
       row.value = cur;
       const {error} = await sb.from('settings').upsert({key: 'budget_template', value: cur}, {onConflict: 'key'});
-      if (error) return toast(error.message, true);
+      if (error){ row.value = prev; toast(error.message, true); return render(); }
       touch('settings'); toast('Budget type enregistré');
     } else {
       const p = byId('projects', scope); if (!p) return;
       const cur = {...(p.budget_template || {})}; if (v == null) delete cur[k]; else cur[k] = v;
-      p.budget_template = cur;
       if (await save('projects', scope, {budget_template: cur}, {rerender: false})) toast('Budget type de l’artiste enregistré');
     }
     render();
