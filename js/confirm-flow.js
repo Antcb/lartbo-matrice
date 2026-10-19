@@ -18,6 +18,7 @@ import { esc, eur2, fmtDate, toast } from './utils.js';
 import { rebalanceSolde } from './actions.js';
 
 const r2 = n => Math.round(n * 100) / 100;
+export const DUE_FIRST = 'à la signature du contrat';
 export const becameConfirmed = (before, after) => CONFIRMED_PROD.includes(after) && !CONFIRMED_PROD.includes(before);
 
 /** Juste après le passage en « Confirmée » : envoyer la confirmation maintenant ? */
@@ -61,9 +62,11 @@ export async function validateTerms(showId){
   const acs = acomptesOf(showId);
   const locked = p => !!(p.sent_at || p.paid_at);
   const def = Number(setting('default_acompte_pct') ?? 20) || 20;
-  const pcts = acs.length ? acs.map(p => r2(billPct(p) ?? 0)) : [def];
-  const acRows = (list) => list.map((v, i) => `<div class="terms-ac"><span>Acompte ${list.length > 1 ? i + 1 : ''}</span>
+  const pcts = acs.length ? acs.map(p => ({v: r2(billPct(p) ?? 0), due: p.due_label || ''})) : [{v: def, due: ''}];
+  // chaque acompte : son % et son échéance (le 1er : à la signature du contrat, sauf autre choix)
+  const acRows = (list) => list.map(({v, due}, i) => `<div class="terms-ac"><span>Acompte ${list.length > 1 ? i + 1 : ''}</span>
       <input type="number" step="any" inputmode="decimal" class="narrow" data-terms-ac="${i}" value="${v}" ${acs[i] && locked(acs[i]) ? 'disabled title="Facture déjà envoyée"' : ''} aria-label="% de l’acompte ${i + 1}"> %
+      <input type="text" class="terms-due" data-terms-due="${i}" value="${esc(due || (i === 0 ? DUE_FIRST : ''))}" placeholder="${i === 0 ? DUE_FIRST : 'ex. le 15 janvier 2027'}" aria-label="Échéance de l’acompte ${i + 1}">
       <span class="muted terms-eur" data-terms-eur="${i}"></span></div>`).join('');
   const extra = booking ? `<p class="mode-note">Booking uniquement : pas d’acompte ni de solde, seulement la facture de commission. L’organisateur et l’artiste font leur contrat entre eux.</p>`
     : `<div class="field full"><label>Acomptes</label>
@@ -72,7 +75,7 @@ export async function validateTerms(showId){
         <div id="terms-list">${acRows(pcts)}</div>
         <div class="terms-solde" id="terms-solde"></div>
       </div>
-      <div class="help">Le solde prend ce qui reste. Ces % partent dans le mail ({{acompte_pct}}), la fiche de renseignements et le contrat, et créent les lignes de facturation.</div></div>`;
+      <div class="help">Le solde prend ce qui reste. Dans le mail de confirmation, chaque acompte a sa ligne avec son % et son échéance ; ces % partent aussi dans la fiche de renseignements et le contrat, et créent les lignes de facturation.</div></div>`;
   const p = openModal({title: `Conditions à valider · ${s.venue || ''}`, saveLabel: 'Valider et préparer le mail',
     values: {id: s.id, contract_type: s.contract_type, fee_ht: s.fee_ht, vat_rate: s.vat_rate, show_time: s.show_time, set_length: s.set_length, invitations: s.invitations, artbo_pct: s.artbo_pct},
     extraTop: `<p class="muted" style="margin:0 0 10px">${fmtDate(s.date)} · ${esc(byId('projects', s.project_id)?.name || '')}${s.terms_validated_at ? ` · déjà validées le ${fmtDate(s.terms_validated_at.slice(0, 10))}` : ''}</p>`,
@@ -88,7 +91,11 @@ export async function validateTerms(showId){
     onSave: async v => {
       if (v.fee_ht == null){ toast('Indique le cachet HT', true); return false; }
       if (!v.contract_type || v.contract_type === 'N.C'){ toast('Choisis le type de contrat', true); return false; }
-      const list = booking ? [] : [...document.querySelectorAll('#modal [data-terms-ac]')].map(i => Number(String(i.value).replace(',', '.')) || 0);
+      const rows = booking ? [] : [...document.querySelectorAll('#modal [data-terms-ac]')].map((inp, i) => ({pct: Number(String(inp.value).replace(',', '.')) || 0,
+        due: (document.querySelector(`#modal [data-terms-due="${i}"]`)?.value || '').trim()}));
+      const noDue = rows.findIndex((r, i) => i > 0 && !r.due);
+      if (noDue >= 0){ toast(`Indique l’échéance de l’acompte ${noDue + 1} (ex. « le 15 janvier 2027 »)`, true); return false; }
+      const list = rows.map(r => r.pct);
       // total : acomptes proposés + factures déjà parties (acomptes au-delà du nombre choisi, solde envoyé ou payé)
       const pays = paymentsOf(s.id), now = acomptesOf(s.id);
       const lockedExtra = now.slice(list.length).filter(locked).reduce((a, p) => a + (billPct(p) || 0), 0);
@@ -96,7 +103,7 @@ export async function validateTerms(showId){
       const sum = list.reduce((a, b) => a + b, 0) + lockedExtra + soldeLocked;
       if (sum > 100.001){ toast(`Les factures dépasseraient 100 % du cachet (${String(r2(sum)).replace('.', ',')} % avec celles déjà envoyées)`, true); return false; }
       if (!(await save('shows', s.id, {...v, terms_validated_at: new Date().toISOString()}, {rerender: false}))) return false;
-      if (!booking && !(await syncAcomptes(s.id, list))){ toast('Les acomptes n’ont pas pu être enregistrés : vérifie l’onglet Factures', true); return false; }
+      if (!booking && !(await syncAcomptes(s.id, rows))){ toast('Les acomptes n’ont pas pu être enregistrés : vérifie l’onglet Factures', true); return false; }
       toast('Conditions validées');
       return true;
     }});
@@ -110,8 +117,8 @@ export async function validateTerms(showId){
       if (box) box.innerHTML = rest < 0 ? `<span class="err">Les acomptes dépassent 100 % du cachet</span>` : `Solde : <b>${String(rest).replace('.', ',')} %</b>${fee ? ` = ${eur2(fee * rest / 100)} HT` : ''}`;
     };
     document.querySelector('#modal #terms-n')?.addEventListener('change', e => {
-      const n = Number(e.target.value), cur = [...document.querySelectorAll('#modal [data-terms-ac]')].map(i => i.value);
-      const next = Array.from({length: n}, (_, i) => cur[i] ?? (n ? r2(Math.max(0, 100 - cur.slice(0, i).reduce((a, b) => a + (Number(b) || 0), 0)) / Math.max(1, n - i) / 2) : 0));
+      const n = Number(e.target.value), cur = [...document.querySelectorAll('#modal [data-terms-ac]')].map((x, i) => ({v: x.value, due: document.querySelector(`#modal [data-terms-due="${i}"]`)?.value || ''}));
+      const next = Array.from({length: n}, (_, i) => cur[i] ?? {v: r2(Math.max(0, 100 - cur.slice(0, i).reduce((a, b) => a + (Number(b.v) || 0), 0)) / Math.max(1, n - i) / 2), due: ''});
       document.querySelector('#modal #terms-list').innerHTML = acRows(next); draw();
     });
     document.querySelector('#modal')?.addEventListener('input', e => { if (e.target.matches('[data-terms-ac], [name=fee_ht]')) draw(); });
@@ -121,18 +128,19 @@ export async function validateTerms(showId){
 }
 
 /** Lignes d'acompte = la liste validée (une facture déjà envoyée ou payée n'est jamais touchée), solde = le reste */
-async function syncAcomptes(showId, list){
-  const acs = acomptesOf(showId);
+async function syncAcomptes(showId, rows){
+  const acs = acomptesOf(showId), list = rows.map(r => r.pct), dues = rows.map(r => r.due || null);
   let sort = Math.max(0, ...paymentsOf(showId).filter(p => p.kind !== 'solde').map(p => p.sort || 0));
   for (let i = 0; i < Math.max(list.length, acs.length); i++){
     const p = acs[i];
     const label = list.length > 1 ? `Acompte ${i + 1}` : 'Acompte';
     if (i < list.length){
-      if (!p){ if (!(await insert('show_payments', {show_id: showId, kind: 'acompte', label, pct: list[i], sort: ++sort}))) return false; }
+      if (!p){ if (!(await insert('show_payments', {show_id: showId, kind: 'acompte', label, pct: list[i], due_label: dues[i], sort: ++sort}))) return false; }
       else if (!p.sent_at && !p.paid_at){
         // le nom suit le nombre d'acomptes (Acompte / Acompte 1, 2…), sauf un nom choisi à la main
         const patch = {};
         if (Number(p.pct) !== list[i] || p.amount != null) Object.assign(patch, {pct: list[i], amount: null});
+        if ((p.due_label || null) !== dues[i]) patch.due_label = dues[i];
         if (!p.label || /^acompte( \d+)?$/i.test(p.label.trim())) if (p.label !== label) patch.label = label;
         if (Object.keys(patch).length && !(await save('show_payments', p.id, patch, {rerender: false}))) return false;
       }

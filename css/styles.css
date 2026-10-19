@@ -728,3 +728,4 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .prod-actions .btn.ghost{background:var(--panel);border:1px solid var(--line)}
 .pp-list .ac-item{flex-direction:row;align-items:center;gap:0}
 .pp-list .pp-toggle .count{margin-left:8px}
+.terms-ac .terms-due{flex:1;min-width:160px}

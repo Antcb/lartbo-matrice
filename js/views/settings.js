@@ -63,7 +63,9 @@ export function viewSettings(){
         <label for="set-ndft">Dossier type d’une note de frais (« NOM Prénom »)</label><input id="set-ndft" data-setting-text="ndf_template_folder_id" value="${esc(setting('ndf_template_folder_id')||'')}" placeholder="Lien du dossier">
         <label for="set-temp">Dossier « - Temp » (tableaux de renommage…)</label><input id="set-temp" data-setting-text="temp_folder_id" value="${esc(setting('temp_folder_id')||'')}" placeholder="Lien du dossier">
         <label for="set-site">Adresse du site (liens des fiches)</label><input id="set-site" data-setting-text="site_url" value="${esc(setting('site_url')||'')}">
+        <label>Code du script (Code.gs)</label><span class="vh-actions"><button class="btn sm" data-act="copyMainScript">Copier le code à jour</button><button class="btn sm ghost" data-act="testMainScript">Tester le script</button></span>
       </div>
+      <p class="help" style="margin:8px 0 0">Mettre à jour le script : sur production@, ouvre script.google.com › le projet du script › fichier Code.gs › sélectionne tout et colle le code copié › Enregistrer › Déployer › Gérer les déploiements › crayon › Version : Nouvelle version › Déployer. L’adresse ne change pas.</p>
       <div class="vh-actions" style="margin-top:12px"><button class="btn sm" data-act="testScript">Tester le script</button>
         <button class="btn sm" data-act="driveScan">Rattacher les dossiers Drive existants</button></div>
       <p class="help" style="margin:14px 0 6px">Noms des dossiers de dates (« MM-DD • Ville • Salle (79) ») et des contrats (« Artiste • AAAA-MM-JJ • Ville (79) • Salle • CC/CR ») : la vérification crée un Google Sheet avec les renommages proposés, sans rien toucher. Décoche ce qui ne convient pas, puis applique.</p>

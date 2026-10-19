@@ -17,3 +17,6 @@ do $do$ declare d text; begin
     execute d;
   end if;
 end $do$;
+
+-- v1.27 : échéance de chaque acompte (« à la signature du contrat », « le 15 janvier 2027 »…), reprise dans le mail de confirmation
+alter table public.show_payments add column if not exists due_label text;

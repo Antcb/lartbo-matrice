@@ -114,6 +114,11 @@ export const ACTIONS = {
       await navigator.clipboard.writeText(code); toast('Code du script copié : colle-le dans le nouveau projet Apps Script');
     } catch (err) { toast('Copie impossible : ' + err.message, true); }
   },
+  copyMainScript: async () => {
+    try { await navigator.clipboard.writeText(await (await fetch('apps-script/Code.gs?v=' + Date.now())).text()); toast('Code.gs copié : colle-le à la place de tout le contenu de Code.gs dans le script de production@, puis redéploie'); }
+    catch (err) { toast('Copie impossible : ' + err.message, true); }
+  },
+  testMainScript: async () => { try { const out = await callScript('ping', {}); toast(`Script Google OK (${out.account || 'compte Google'})`); } catch (err) { toast(err.message, true); } },
   testProspectScript: async () => { try { const out = await callProspect('ping', {}); toast(`Script de prospection OK (${out.account || 'compte Google'})`); } catch (err) { toast(err.message, true); } },
   saveSignature: async t => { const key = t.dataset.key || 'prospect_signature', el = $('#' + (t.dataset.el || 'set-sig')); if (!el) return;
     const {error} = await sb.from('settings').upsert({key, value: el.innerHTML});
