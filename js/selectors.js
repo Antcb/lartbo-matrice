@@ -98,6 +98,12 @@ export const tasksOfShow = id => byCol('tasks','show_id').get(id) || [];
 
 export function lastExchange(p){ const l = logsOf(p.id).find(x=>x.date); const d = [l?.date, p.last_contact].filter(Boolean).sort().pop(); return d || null; }
 
+/** Commission L'ArtBo par défaut selon le type de suivi (Réglages › Pourcentages par défaut) : booking 15 %, production 20 % */
+export const defaultCommission = mode => { const v = Number(setting(mode === 'booking' ? 'default_artbo_pct_booking' : 'default_artbo_pct_production'));
+  return Number.isFinite(v) && v > 0 ? v : (mode === 'booking' ? 15 : 20); };
+/** Commission d'un projet : la sienne, sinon celle par défaut de son type de suivi */
+export const projectCommission = p => p?.default_artbo_pct != null && p.default_artbo_pct !== '' ? Number(p.default_artbo_pct) : defaultCommission(p?.mode);
+
 /** Suivi terminé : clos (Closed) ou confirmé (Confirmed) — rangé dans « suivis clos », plus de relance */
 export const suiviClosed = p => p?.status === 'Closed' || p?.status === 'Confirmed';
 
