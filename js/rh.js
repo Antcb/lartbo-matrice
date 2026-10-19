@@ -7,6 +7,7 @@
 import { CFG } from './config.js';
 import './ui/dropfiles.js';
 import './ui/filepick.js';
+import './ui/autogrow.js';
 import { RH_DOCS, RH_PARTS, RH_SECTIONS, partOf } from './rh-fields.js';
 
 const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {auth:{persistSession:false}});
