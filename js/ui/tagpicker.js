@@ -10,7 +10,7 @@ const norm = s => String(s || '').trim().toLowerCase().normalize('NFD').replace(
 export function tagPicker({id, name, values = [], suggestions = [], placeholder = 'Ajouter…'}){
   const sugg = [...new Set(suggestions.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr'));
   return `<div class="tagpick" data-tagpick data-sugg="${esc(JSON.stringify(sugg))}">
-    <input type="hidden" id="${id}" name="${esc(name)}" value="${esc(values.join(', '))}">
+    <input type="hidden" class="tp-val" id="${id}" name="${esc(name)}" value="${esc(values.join(', '))}">
     <span class="tp-chips">${values.map(chip).join('')}</span>
     <input type="text" class="tp-q" placeholder="${esc(placeholder)}" autocomplete="off" aria-label="Ajouter un tag">
     <div class="tp-sugg" hidden></div>
@@ -36,6 +36,17 @@ function show(b){
     + (q && !exact ? `<button type="button" class="tp-opt tp-new" data-v="${esc(q)}">+ Créer « ${esc(q)} »</button>` : '');
   s.hidden = !s.innerHTML;
 }
+
+/** Avant d'enregistrer : le tag tapé mais pas encore validé est ajouté */
+export function commitTags(root){
+  root.querySelectorAll('[data-tagpick] .tp-q').forEach(q => { if (q.value.trim()){ add(box(q), q.value); q.value = ''; } });
+}
+/** Brouillon restauré : les pastilles suivent la valeur du champ caché */
+document.addEventListener('tp-set', e => {
+  const b = box(e.target); if (!b) return;
+  const vals = String(e.target.value || '').split(',').map(x => x.trim()).filter(Boolean);
+  b.querySelector('.tp-chips').innerHTML = vals.map(chip).join('');
+});
 
 document.addEventListener('focusin', e => { if (e.target.classList?.contains('tp-q')) show(box(e.target)); });
 document.addEventListener('input', e => { if (e.target.classList?.contains('tp-q')) show(box(e.target)); });

@@ -88,20 +88,27 @@ export function templateForm(scope){
       : 'Cases vides = valeurs de Réglages (en gris). Posé sur chaque nouvelle date confirmée ; ensuite tu ajoutes ou retires des lignes.'}</p>`;
 }
 
-document.addEventListener('change', async e => {
+// les enregistrements se suivent (deux champs changés vite ne s'écrasent pas) ; la copie locale est mise à jour tout de suite
+let queue = Promise.resolve();
+document.addEventListener('change', e => {
   const el = e.target; if (!el.dataset?.bt) return;
   e.stopPropagation();
   const scope = el.dataset.btScope, k = el.dataset.bt, v = num(String(el.value).replace(',', '.'));
-  if (scope === 'settings'){
-    const cur = {...(setting('budget_template') || {})}; if (v == null) delete cur[k]; else cur[k] = v;
-    const {error} = await sb.from('settings').upsert({key: 'budget_template', value: cur}, {onConflict: 'key'});
-    if (error) return toast(error.message, true);
-    const row = S.db.settings.find(x => x.key === 'budget_template'); if (row) row.value = cur; else S.db.settings.push({key: 'budget_template', value: cur});
-    touch('settings'); toast('Budget type enregistré');
-  } else {
-    const p = byId('projects', scope); if (!p) return;
-    const cur = {...(p.budget_template || {})}; if (v == null) delete cur[k]; else cur[k] = v;
-    if (await save('projects', scope, {budget_template: cur}, {rerender: false})) toast('Budget type de l’artiste enregistré');
-  }
-  render();
+  queue = queue.then(async () => {
+    if (scope === 'settings'){
+      let row = S.db.settings.find(x => x.key === 'budget_template');
+      if (!row){ row = {key: 'budget_template', value: {}}; S.db.settings.push(row); }
+      const cur = {...(row.value || {})}; if (v == null) delete cur[k]; else cur[k] = v;
+      row.value = cur;
+      const {error} = await sb.from('settings').upsert({key: 'budget_template', value: cur}, {onConflict: 'key'});
+      if (error) return toast(error.message, true);
+      touch('settings'); toast('Budget type enregistré');
+    } else {
+      const p = byId('projects', scope); if (!p) return;
+      const cur = {...(p.budget_template || {})}; if (v == null) delete cur[k]; else cur[k] = v;
+      p.budget_template = cur;
+      if (await save('projects', scope, {budget_template: cur}, {rerender: false})) toast('Budget type de l’artiste enregistré');
+    }
+    render();
+  });
 }, true);

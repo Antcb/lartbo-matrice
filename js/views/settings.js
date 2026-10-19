@@ -202,7 +202,7 @@ export async function applyAcompte(){
   });
   for (const [kind, pct] of [['acompte', ac], ['solde', 100-ac]]){
     for (let i = 0; i < ids.length; i += 100){
-      const {error} = await sb.from('show_payments').update({pct}).eq('kind', kind).in('show_id', ids.slice(i, i + 100));
+      const {error} = await sb.from('show_payments').update({pct}).eq('kind', kind).is('sent_at', null).is('paid_at', null).is('amount', null).in('show_id', ids.slice(i, i + 100));
       if (error) return toast(error.message, true);
     }
   }
