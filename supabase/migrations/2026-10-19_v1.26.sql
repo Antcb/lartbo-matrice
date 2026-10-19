@@ -28,3 +28,7 @@ do $do$ declare d text; begin
     execute d;
   end if;
 end $do$;
+-- v1.27.4 : erreurs du site notées pour diagnostic
+create table if not exists public.client_errors (id bigint generated always as identity primary key, created_at timestamptz default now(), user_email text, version text, view text, message text, stack text, ua text);
+alter table public.client_errors enable row level security;
+create policy "insert own errors" on public.client_errors for insert to authenticated with check (true);

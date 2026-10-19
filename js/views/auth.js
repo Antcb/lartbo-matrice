@@ -5,6 +5,7 @@ import { render } from '../app.js';
 import { CFG, ENV } from '../config.js';
 import { loadAll, sb } from '../data.js';
 import { startRealtime } from '../realtime.js';
+import { bootTrace } from '../diag.js';
 import { S } from '../state.js';
 import { $ } from '../utils.js';
 
@@ -24,5 +25,5 @@ document.addEventListener('submit', async e => {
   $('#login-msg').textContent = 'Connexion…';
   const {data, error} = await sb.auth.signInWithPassword({email, password: $('#login-pw').value});
   if (error){ $('#login-msg').textContent = 'Connexion impossible : mail ou mot de passe incorrect.'; return; }
-  S.user = data.user; $('#app').innerHTML = '<div class="loading"><img src="assets/picto.png" alt="" width="54" height="64"><span>Chargement…</span></div>'; await loadAll(); render(); startRealtime(render);
+  S.user = data.user; $('#app').innerHTML = '<div class="loading"><img src="assets/picto.png" alt="" width="54" height="64"><span>Chargement…</span></div>'; await loadAll(); render(); startRealtime(render); bootTrace();
 });

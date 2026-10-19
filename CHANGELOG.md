@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.27.4 — 19/10/2026
+- Diagnostic : une erreur du site est affichée et notée pour correction (table client_errors)
+
+
 ## 1.27.3 — 19/10/2026
 - Suivis « Confirmed » rangés avec les suivis clos partout (Suivi, fiche structure, fiche artiste, To Do, relances)
 
