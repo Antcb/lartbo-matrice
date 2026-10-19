@@ -2,8 +2,9 @@
  * Budget dans l'onglet Production : le budget de chaque date (prévu / réel, pièces, qui paie)
  * et la vue d'ensemble d'un artiste (compte dédié, toutes les dates, frais hors date).
  */
-import { accountOf, commissionAmount, commissionOf, isFree, lineForecast, lineStatus, linesOf, offLinesOf, payerLabel, payslipCost, prodShowsOf, showBudget } from '../budget.js';
+import { accountOf, commissionAmount, commissionOf, isFree, isSolde, lineForecast, lineStatus, linesOf, offLinesOf, payerLabel, payslipCost, prodShowsOf, showBudget } from '../budget.js';
 import { BUDGET_CATS, PAYERS } from '../constants.js';
+import { payAmount, paymentsOf } from '../calc.js';
 import { byId } from '../selectors.js';
 import { S } from '../state.js';
 import { cIn, cSel } from '../ui/cells.js';
@@ -32,12 +33,32 @@ function lineRow(l, project, {qtyAll = false} = {}){
   </tr>`;
 }
 
-const HEAD = '<thead><tr><th>Catégorie</th><th>Libellé</th><th>Fournisseur / bénéficiaire</th><th>Payé par</th><th class="num">Prévu HT</th><th class="num">Réel HT</th><th>Pièce</th><th>Payé le</th><th>État</th><th></th></tr></thead>';
+const HEAD = '<thead><tr><th>Catégorie</th><th>Libellé</th><th>Fournisseur / bénéficiaire</th><th>Payé par</th><th class="num col-prev">Prévu HT</th><th class="num col-real">Réel HT (pièce)</th><th>Pièce</th><th>Payé le</th><th>État</th><th></th></tr></thead>';
 
 function dropZone(attrs, text){
   return `<div class="dropzone budget-drop" ${attrs}>
     <label class="btn sm file-btn">Ajouter une pièce<input class="file-input" type="file" multiple accept="application/pdf,image/*" ${attrs.replace('data-budget-drop','data-budget-pick')}></label>
     <span class="drop-hint">${text}</span></div>`;
+}
+
+/** Résumé lisible : prévu / réel / écart, ligne par ligne */
+function summaryTable(s, b, com, p){
+  const realExp = b.lines.filter(l => !isSolde(l) && l.amount != null).reduce((t, l) => t + Number(l.amount), 0);
+  const known = b.lines.filter(l => !isSolde(l)).length, withDoc = b.lines.filter(l => !isSolde(l) && l.amount != null).length;
+  const cashed = paymentsOf(s.id).filter(x => ['acompte', 'solde'].includes(x.kind) && x.paid_at).reduce((t, x) => t + (payAmount(x) || 0), 0);
+  const row = (label, f, r, help = '', strong = false) => { const gap = r == null ? null : r - f;
+    return `<tr class="${strong ? 'bill-total' : ''}"><td>${strong ? `<b>${label}</b>` : label}${help ? `<div class="muted" style="font-size:11px">${help}</div>` : ''}</td>
+      <td class="num nowrap">${strong ? `<b>${eur2(f)}</b>` : eur2(f)}</td><td class="num nowrap">${r == null ? '<span class="muted">—</span>' : strong ? `<b>${eur2(r)}</b>` : eur2(r)}</td>
+      <td class="num nowrap ${gap == null || Math.abs(gap) < 0.01 ? 'muted' : gap > 0 === label.startsWith('Dépenses') ? 'neg' : 'pos'}">${gap == null ? '' : (gap > 0 ? '+' : '') + eur2(gap)}</td></tr>`; };
+  return `<div class="tbl-wrap"><table class="budget-sum"><thead><tr><th></th><th class="num">Prévu</th><th class="num">Réel</th><th class="num">Écart</th></tr></thead><tbody>
+    ${row('Cachet HT', b.fee, cashed || null, cashed ? 'réel : acomptes et solde déjà payés' : 'rien d’encaissé pour l’instant')}
+    ${row('Commission L’ArtBo', b.com, com?.paid_at ? b.com : null, com?.paid_at ? 'virée' : 'pas encore virée')}
+    ${row('Dépenses', b.forecastExp, withDoc ? realExp : null, `${withDoc}/${known} ligne${known > 1 ? 's' : ''} avec un montant réel`)}
+    ${row('Reste pour l’artiste', b.fee - b.com - b.forecastExp, withDoc ? b.fee - b.com - realExp - (known - withDoc ? b.lines.filter(l => !isSolde(l) && l.amount == null).reduce((t, l) => t + (lineForecast(l) || 0), 0) : 0) : null, 'cachet − commission − dépenses (réel quand connu)', true)}
+    ${row('Solde versé à l’artiste' + (p?.artist_payee ? ` (${esc(p.artist_payee)})` : ''), b.solde, null)}
+  </tbody></table></div>
+  ${Math.abs(b.result) >= 1 ? `<p class="warn-txt" style="margin:6px 0 0;font-size:13px">Écart de ${eur2(b.result)} entre le cachet et commission + dépenses + solde artiste : ajuste le solde artiste.</p>` : ''}
+  <p class="muted" style="font-size:12px;margin:6px 0 12px">Pièces reçues : ${b.docsIn}/${b.docsAll} · ${b.paid} payées.</p>`;
 }
 
 /** Budget d'une date (dans la date dépliée) */
@@ -48,15 +69,8 @@ export function showBudgetHTML(s){
     <td class="${com?.paid_at?'done-cell':''}">${com ? cIn('show_payments', com.id, 'paid_at', com.paid_at, 'date', 'title="Commission virée à L’ArtBo le"') : '<span class="muted">—</span>'}</td>
     <td>${com?.paid_at ? '<span class="ok-badge">Payée</span>' : '<span class="warn-badge">À virer</span>'}</td><td></td></tr>`;
   return `<div class="prod-budget">
-    <h3 class="block-title">Budget de la date</h3>
-    <div class="stat-row budget-stats">
-      <div class="stat"><b>${eur2(b.fee)}</b><span>Cachet HT${isFree(s)?' · entrée gratuite':''}</span></div>
-      <div class="stat"><b>${eur2(b.com + b.expenses)}</b><span>Commission + dépenses</span></div>
-      <div class="stat"><b>${eur2(b.available)}</b><span>Reste pour l'artiste</span></div>
-      <div class="stat"><b>${eur2(b.solde)}</b><span>Solde artiste${p?.artist_payee ? ' ('+esc(p.artist_payee)+')' : ''}</span></div>
-      <div class="stat"><b style="${Math.abs(b.result)>=1?'color:var(--warn)':''}">${eur2(b.result)}</b><span>Écart (doit tomber à 0)</span></div>
-      <div class="stat"><b>${b.docsIn}/${b.docsAll}</b><span>Pièces reçues · ${b.paid} payées</span></div>
-    </div>
+    <p class="tab-intro">Ce que la date coûte et ce qui revient à l’artiste. <b>Prévu</b> : avant la date (montants estimés). <b>Réel</b> : d’après les pièces reçues (factures, bulletins). L’écart montre où on en est.</p>
+    ${summaryTable(s, b, com, p)}
     <div class="tbl-wrap"><table class="budget-table">${HEAD}<tbody>${comRow}${b.lines.map(l => lineRow(l, p)).join('')}</tbody></table></div>
     <div class="vh-actions" style="margin-top:10px">
       <button class="btn sm" data-act="addBudgetLine" data-show="${s.id}">Ajouter une dépense</button>

@@ -16,6 +16,7 @@ import { hiddenFields, openModal } from './ui/modal.js';
 import { $, downloadCSV, esc, fmtDate, toast, today } from './utils.js';
 import { driveHTML } from './views/production.js';
 import { closeNoAnswer } from './prospection.js';
+import { askConfirmation, becameConfirmed } from './confirm-flow.js';
 
 const team = () => CFG.TEAM.map(e=>[e, TEAM_NAMES[e]||e]);
 const activeProjects = keep => projectOptions(true, keep).map(x=>[x.id, x.name]);
@@ -62,11 +63,13 @@ export function editShow(id, projectId, prefill={}){
         else if (v.lat==null || v.city!==s.city){ v.lat=null; v.lng=null; await fillCoords(v, [v.city, v.department && /^\d/.test(v.department) ? 'France' : ''].filter(Boolean).join(', ')); }
       }
       const wasOff = isOff(s.status), nowOff = isOff(v.status);
+      let showId = id;
       if (id){
         if (nowOff && !wasOff){ await saveLinger('shows', id, v, `Date passée en « ${v.status} »`); }
         else await save('shows', id, v, {rerender:false});
-      } else await insert('shows', v);
-      if (CONFIRMED_PROD.includes(v.status) && !CONFIRMED_PROD.includes(s.status)) toast('Date confirmée : facturation créée dans Production');
+      } else showId = (await insert('shows', v))?.id;
+      // date qui passe en confirmée : envoyer la confirmation maintenant ? (une fois cette fenêtre fermée)
+      if (showId && becameConfirmed(s.status, v.status)) setTimeout(() => askConfirmation(showId), 80);
     }
   });
   // Choix d'une structure → nom du lieu, ville et département repris de sa fiche

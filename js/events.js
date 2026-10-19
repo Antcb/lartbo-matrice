@@ -7,7 +7,7 @@ import { render } from './app.js';
 import { insert, save, sb, uploadFiles } from './data.js';
 import { geocode } from './geo.js';
 import { byId, projIds } from './selectors.js';
-import { S, localSet } from './state.js';
+import { S, localSet, setProjects } from './state.js';
 import { parseCSV, toast, today } from './utils.js';
 import { setLogDraft } from './views/suivi.js';
 import { clearDraft } from './ui/drafts.js';
@@ -36,7 +36,7 @@ document.addEventListener('change', e => {
   if (t.matches('[data-struct-tag]')){ S.structTag = t.value; render(); return; }
   if (t.form?.id === 'near-form' && t.name === 'km' && S.near){ S.near.km = Number(t.value); render(); return; }
   const k = t.dataset?.suiviFilter;
-  if (k==='project'){ S.project = t.value; localSet('project', S.project); render(); }
+  if (k==='project'){ setProjects(t.value.split(',')); render(); }
   else if (k==='status'){ S.suiviStatus = t.value; render(); }
   else if (t.dataset?.todoDept !== undefined){ S.todoDept = t.value; render(); }
   else if (t.dataset?.todoSel === 'f'){ S.todoFilter = t.value; render(); }

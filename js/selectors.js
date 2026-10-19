@@ -29,9 +29,20 @@ export const teamName = email => TEAM_NAMES[email] || (email ? email.split('@')[
 export function setting(k){ const s = S.db.settings.find(x=>x.key===k); return s ? s.value : null; }
 
 /** Dates du projet et de l'année choisis (filtres de la vue) */
-export function showsFiltered({year=true, project=S.project}={}){
+/**
+ * Filtre artistes commun à toutes les pages : les artistes choisis en haut (un ou plusieurs),
+ * sinon tous les artistes actifs (les inactifs seulement avec « Afficher les inactifs »).
+ * Une ligne sans artiste reste toujours visible.
+ */
+export function projFilterOk(ids){
+  ids = (ids || []).filter(Boolean);
+  if (S.projects.length) return ids.some(id => S.projects.includes(id));
+  if (S.showInactive || !ids.length) return true;
+  return ids.some(id => byId('projects', id)?.active);
+}
+export function showsFiltered({year=true}={}){
   return S.db.shows.filter(s =>
-    (!project || s.project_id === project) &&
+    projFilterOk([s.project_id]) &&
     (!year || !s.date || Number(s.date.slice(0,4)) === S.year)
   ).sort((a,b) => (a.date||'9999').localeCompare(b.date||'9999'));
 }

@@ -6,6 +6,7 @@
  * Le brouillon est créé dans Gmail (compte production@) par le script Apps Script
  * (réglage drive_webhook_url) ; sans lui, on copie le mail pour le coller dans Gmail.
  */
+import { billPct } from './calc.js';
 import { insert, remove, save, sb } from './data.js';
 import { byId, linksOfStructure, projectOptions, setting } from './selectors.js';
 import { S } from './state.js';
@@ -83,17 +84,9 @@ export async function callScript(action, payload){
   return out;
 }
 
-/** Copie riche (HTML) : se colle mise en forme dans Gmail */
-async function copyRich(html, text){
-  try {
-    await navigator.clipboard.write([new ClipboardItem({'text/html': new Blob([html], {type:'text/html'}), 'text/plain': new Blob([text], {type:'text/plain'})})]);
-    return true;
-  } catch {
-    try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
-  }
-}
-
-const plain = html => { const d = document.createElement('div'); d.innerHTML = html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p)>/gi, '\n'); return d.textContent.replace(/\n{3,}/g, '\n\n').trim(); };
+/** Mails des dates : envoyés depuis production@, avec la signature production@ (Réglages › Prospection, signature de Chloé) */
+const PROD_MAIL = 'production@lartboristerie.com';
+export const prodSignature = () => setting('prospect_signature_production') || '';
 
 /** Fenêtre « Préparer le mail » pour une date */
 export async function prepareMail(showId, kind){
@@ -106,60 +99,58 @@ export async function prepareMail(showId, kind){
   const log = s.mail_log?.[kind];
   const booking = isBookingOnly(s);
   const checks = kind === 'confirmation' ? confChecks(s, booking) : '';
+  const sig = prodSignature();
   const extra = `<div class="mail-wrap">
-    ${log ? `<p class="mode-note">Déjà préparé le ${fmtDate(log.at.slice(0,10))}${log.to?` pour ${esc(log.to)}`:''}${log.draft?' (brouillon Gmail)':''}.</p>` : ''}
+    ${log ? `<p class="mode-note">${log.sent ? 'Envoyé' : 'Déjà préparé'} le ${fmtDate(log.at.slice(0,10))}${log.to?` à ${esc(log.to)}`:''}${log.draft?' (brouillon Gmail)':''}.</p>` : ''}
     ${checks}
     <div class="mail-grid">
       <label for="ml-tpl">Modèle</label><select id="ml-tpl">${tpls.map(t=>`<option value="${t.id}">${esc(t.name||MAIL_KINDS[t.kind])}${tplProjects(t).length?'':' · générique'}</option>`).join('')}</select>
+      <label>Envoyé par</label><span class="ml-from">${esc(PROD_MAIL)}${sig ? ' <span class="muted">· avec la signature production@</span>' : ' <span class="muted">· pas de signature (Réglages › Prospection, signature de Chloé)</span>'}</span>
       <label for="ml-contact">Destinataire</label><span class="mail-to"><select id="ml-contact"><option value="">— autre adresse —</option>${contacts.map(c=>`<option value="${c.id}" ${c.id===contactId?'selected':''}>${esc(c.display_name)}${c.email?` · ${esc(c.email)}`:' (pas de mail)'}</option>`).join('')}</select>
-        <input id="ml-to" type="email" placeholder="adresse@exemple.fr" value="${esc(vars.contact_email||'')}"></span>
-      <label for="ml-cc">Copie</label><input id="ml-cc">
+        <input id="ml-to" type="text" inputmode="email" placeholder="adresse@exemple.fr (plusieurs : séparées par des virgules)" value="${esc(vars.contact_email||'')}"></span>
+      <label for="ml-cc">Copie</label><input id="ml-cc" type="text" placeholder="Nom <adresse@…>, …">
       <label for="ml-subj">Objet</label><input id="ml-subj">
     </div>
     ${rtToolbar('ml-body')}<div class="mail-preview" id="ml-body" contenteditable="true" style="${rtStyle()}" aria-label="Texte du mail (modifiable)"></div>
-    <div class="ml-att"><b class="fiche-lbl">Pièces jointes</b> <span id="ml-files"></span>
+    <div class="ml-att dropzone-soft"><b class="fiche-lbl">Pièces jointes</b> <span id="ml-files"></span>
       <label class="btn sm file-btn">Ajouter un fichier<input type="file" class="file-input" multiple id="ml-up"></label>
-      ${scriptUrl() ? '<button type="button" class="btn sm" id="ml-gm">Depuis un mail Gmail…</button>' : ''}</div>
-    <div class="gm-pick" id="ml-gm-box" hidden>
-      <div class="gm-search"><input id="ml-gm-q" type="search" placeholder="Rechercher dans Gmail (mail de l’organisateur, objet, nom du fichier…)" autocomplete="off" data-1p-ignore><button type="button" class="btn sm" id="ml-gm-go">Chercher</button></div>
-      <div id="ml-gm-list" class="gm-list"></div></div>
-    <p class="help">Le texte est modifiable ici avant de créer le brouillon. Les zones jaunes sont à compléter.${scriptUrl()?'':' Le script Google n’est pas encore installé : « Copier le mail » puis colle-le dans un nouveau mail Gmail.'}</p>
-    <label class="check-line"><input type="checkbox" id="ml-sent"> Noter « envoyé » aujourd’hui (${esc(SENT_FIELD[kind] ? stepLabel(kind) : '')})</label>
-    <div class="vh-actions" style="margin-top:10px">
-      <button type="button" class="btn" id="ml-copy">Copier le mail</button>
-      <a class="btn" id="ml-gmail" target="_blank" rel="noopener">Ouvrir Gmail</a>
-    </div></div>`;
+      <span class="drop-hint">ou glisse les fichiers ici</span></div>
+    <p class="help">Le texte est modifiable ici. Les zones jaunes sont à compléter. « Envoyer maintenant » l’envoie tout de suite depuis production@ et note la date d’envoi dans le suivi de la date${SENT_FIELD[kind] ? ` (${esc(stepLabel(kind))})` : ''} ; « Enregistrer en brouillon » le met dans les brouillons Gmail.</p>
+    </div>`;
+  let wantDraft = false;
   const dlgP = openModal({title: `${MAIL_KINDS[kind]} · ${s.venue}`, fields: [], extra, mail: true,
-    saveLabel: scriptUrl() ? 'Créer le brouillon Gmail' : 'Fermer',
+    saveLabel: 'Envoyer maintenant', footExtra: '<button type="button" class="btn" id="ml-draft">Enregistrer en brouillon</button>',
     onSave: async () => {
-      if (!scriptUrl()) return true;
+      const send = !wantDraft; wantDraft = false;
+      if (!scriptUrl()){ toast('Le script Google (Apps Script) n’est pas encore installé (Réglages).', true); return false; }
       const m = current();
       if (!m.to) { toast('Indique le destinataire', true); return false; }
+      if (/\[\w+ à compléter\]/.test(m.html + m.subject) && !confirm('Il reste des zones à compléter (en jaune). Continuer quand même ?')) return false;
+      if (send && !confirm(`Envoyer le mail à ${m.to} maintenant ?`)) return false;
       try {
-        const tpl = byId('mail_templates', $('#ml-tpl').value);
-        const out = await callScript('draft', {to: m.to, cc: m.cc, subject: m.subject, html: m.html,
-          attachments: files.filter(f => f.on).map(f => f.gmail ? {gmail: f.gmail, idx: f.idx, name: f.name} : f.path ? {path: f.path, name: f.name} : {id: f.id})});
-        await logMail(s, kind, m.to, true);
-        toast('Brouillon créé dans Gmail', false, out.url ? {label:'Ouvrir', fn: () => window.open(out.url, '_blank')} : null);
+        const out = await callScript('draft', {to: m.to, cc: m.cc, subject: m.subject, html: m.html, send,
+          attachments: files.filter(f => f.on).map(f => f.path ? {path: f.path, name: f.name} : {id: f.id})});
+        // ancien script (pas encore redéployé) : il ne sait faire que le brouillon
+        if (send && !out.sent){ await logMail(s, kind, m.to, true); toast('Le mail est dans les brouillons Gmail mais n’est pas parti : redéploie le script Google (Code.gs du jour) pour l’envoi direct.', true); return true; }
+        await logMail(s, kind, m.to, !send, m);
+        toast(send ? 'Mail envoyé · date d’envoi notée' : 'Brouillon créé dans Gmail', false, !send && out.url ? {label:'Ouvrir', fn: () => window.open(out.url, '_blank')} : null);
         return true;
       } catch (err) { toast(err.message, true); return false; }
     }});
   const $ = sel => document.querySelector('#modal ' + sel);
+  $('#ml-draft').onclick = () => { wantDraft = true; $('form').requestSubmit(); };
   const current = () => ({to: $('#ml-to').value.trim(), cc: $('#ml-cc').value.trim(), subject: $('#ml-subj').value.trim(), html: wrapMail($('#ml-body').innerHTML)});
-  // Pièces jointes : celles du modèle (cochées) + celles ajoutées pour ce mail
+  // Pièces jointes : celles du modèle (cochées) + celles ajoutées pour ce mail (bouton ou glisser-déposer)
   let files = [];
-  const drawFiles = () => { $('#ml-files').innerHTML = files.map((f, i) => `<label class="att-chip"><input type="checkbox" data-att="${i}" ${f.on ? 'checked' : ''}> ${f.gmail ? '✉️' : f.path ? '📎' : '🔗'} ${esc(f.name || 'Fichier Drive')}</label>`).join('') || '<span class="muted">aucune</span>'; };
+  const drawFiles = () => { $('#ml-files').innerHTML = files.map((f, i) => `<label class="att-chip"><input type="checkbox" data-att="${i}" ${f.on ? 'checked' : ''}> ${f.path ? '📎' : '🔗'} ${esc(f.name || 'Fichier Drive')}</label>`).join('') || '<span class="muted">aucune</span>'; };
   const draw = () => {
     const t = byId('mail_templates', $('#ml-tpl').value);
     files = [...(t.attachments || []).map(a => ({...a, on: true})), ...files.filter(f => f.mine)]; drawFiles();
     $('#ml-cc').value = t.cc || '';
     $('#ml-subj').value = fill(t.subject, vars, false);
     // date en booking uniquement : pas de fiche de renseignements (les parties s'arrangent entre elles après le mail)
-    $('#ml-body').innerHTML = fill(booking ? withoutFiche(t.html) : t.html, vars, true);
-    gmailLink();
+    $('#ml-body').innerHTML = fill(booking ? withoutFiche(t.html) : t.html, vars, true) + sig;
   };
-  const gmailLink = () => { const m = current();
-    $('#ml-gmail').href = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(m.to)}&cc=${encodeURIComponent(m.cc)}&su=${encodeURIComponent(m.subject)}`; };
   draw();
   $('#ml-tpl').onchange = draw;
   $('#ml-contact').onchange = async e => {
@@ -167,7 +158,6 @@ export async function prepareMail(showId, kind){
     $('#ml-to').value = vars.contact_email || ''; draw();
     if (contactId && contactId !== s.conf_contact_id) save('shows', s.id, {conf_contact_id: contactId}, {rerender:false});
   };
-  ['#ml-to','#ml-cc','#ml-subj'].forEach(k => $(k).oninput = gmailLink);
   $('#ml-files').addEventListener('change', e => { const i = e.target.dataset.att; if (i != null) files[i].on = e.target.checked; });
   $('#ml-up').addEventListener('change', async e => {
     for (const f of e.target.files){
@@ -178,45 +168,23 @@ export async function prepareMail(showId, kind){
     }
     e.target.value = ''; drawFiles();
   });
-  // Pièces jointes d'un mail reçu dans Gmail : jointes au brouillon directement, sans les enregistrer sur l'ordinateur
-  const gmBtn = $('#ml-gm');
-  if (gmBtn){
-    const box = $('#ml-gm-box'), list = $('#ml-gm-list'), q = $('#ml-gm-q');
-    const search = async () => {
-      list.innerHTML = '<p class="muted">Recherche dans Gmail…</p>';
-      try {
-        const out = await callScript('gmail_attachments', {query: q.value.trim()});
-        list.innerHTML = (out.attachments || []).map((a, i) => `<label class="gm-row"><input type="checkbox" data-gm="${i}" ${files.some(f => f.gmail === a.msg && f.idx === a.idx) ? 'checked' : ''}>
-          <span><b>📎 ${esc(a.name)}</b> <span class="muted">${a.size > 1e6 ? (a.size/1e6).toFixed(1)+' Mo' : Math.max(1, Math.round(a.size/1024))+' Ko'}</span><br>
-          <span class="muted">${esc(a.subject || '(sans objet)')} · ${esc((a.from || '').replace(/<.*>/, '').trim())} · ${fmtDate(a.date.slice(0, 10))}</span></span></label>`).join('')
-          || '<p class="muted">Aucune pièce jointe trouvée. Essaie un autre mot (nom de la salle, de l’organisateur…).</p>';
-        list.onchange = e => { const i = e.target.dataset.gm; if (i == null) return; const a = out.attachments[i];
-          files = files.filter(f => !(f.gmail === a.msg && f.idx === a.idx));
-          if (e.target.checked) files.push({gmail: a.msg, idx: a.idx, name: a.name, on: true, mine: true});
-          drawFiles(); };
-      } catch (err) { list.innerHTML = `<p class="err">${esc(err.message)}</p>`; }
-    };
-    gmBtn.onclick = () => { box.hidden = !box.hidden; if (!box.hidden){ q.value = q.value || $('#ml-to').value.trim(); search(); q.focus(); } };
-    $('#ml-gm-go').onclick = search;
-    q.onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); search(); } };
-  }
-  $('#ml-copy').onclick = async () => {
-    const m = current();
-    if (await copyRich(m.html, plain(m.html))) toast(files.some(f => f.on) ? 'Mail copié. Pense à joindre les pièces jointes à la main dans Gmail' : 'Mail copié : colle-le dans Gmail (objet et destinataires sont dans « Ouvrir Gmail »)');
-    else toast('Copie impossible avec ce navigateur', true);
-    await logMail(s, kind, m.to, false);
-  };
-  $('#ml-gmail').addEventListener('click', async () => { const m = current(); await copyRich(m.html, plain(m.html)); toast('Mail copié : colle-le dans le nouveau message'); await logMail(s, kind, m.to, false); });
   dlgP.then(() => {});
 }
 
 function stepLabel(kind){ return {confirmation:'Conf + FT + kit envoyés', boucle_tech:'Boucle accueil & technique', boucle_com:'Boucle communication'}[kind] || ''; }
 
-async function logMail(s, kind, to, draft){
-  const patch = {mail_log: {...(s.mail_log||{}), [kind]: {at: new Date().toISOString(), to, draft}}};
-  const sent = document.querySelector('#modal #ml-sent')?.checked;
-  if (sent && SENT_FIELD[kind] && !s[SENT_FIELD[kind]]) patch[SENT_FIELD[kind]] = new Date().toISOString().slice(0,10);
+/** Mail préparé ou envoyé : noté sur la date ; envoyé = l'étape du suivi admin prend la date du jour */
+async function logMail(s, kind, to, draft, mail=null){
+  const fresh = byId('shows', s.id) || s;
+  const patch = {mail_log: {...(fresh.mail_log||{}), [kind]: {at: new Date().toISOString(), to, draft, sent: !draft}}};
+  if (!draft && SENT_FIELD[kind]) patch[SENT_FIELD[kind]] = new Date().toISOString().slice(0,10);
   await save('shows', s.id, patch, {rerender:false});
+  // envoyé : l'échange s'ajoute aussi au journal du suivi de la date (s'il y en a un)
+  if (!draft && mail && fresh.prospect_id && byId('prospects', fresh.prospect_id)){
+    const d = document.createElement('div'); d.innerHTML = mail.html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p)>/gi, '\n');
+    await insert('prospect_logs', {prospect_id: fresh.prospect_id, date: new Date().toISOString().slice(0,10), kind: 'Mail', contact_name: to, author: S.user?.email,
+      body: `**${MAIL_KINDS[kind] || 'Mail'} envoyée** · ${fresh.venue || ''}\n**Objet :** ${mail.subject}\n\n${d.textContent.replace(/\n{3,}/g, '\n\n').trim()}`, body_html: mail.html});
+  }
 }
 
 /** À vérifier avant la confirmation : cachet, TVA, contrat, acomptes */
@@ -238,13 +206,13 @@ function confChecks(s, booking=false){
   if (s.fee_ht == null) miss.push('le cachet HT');
   if (!s.contract_type || s.contract_type === 'N.C') miss.push('le type de contrat');
   if (!s.structure_id) miss.push('la structure');
-  if (!pays.length) miss.push('les acomptes');
-  const vat = s.vat_rate ?? 5.5;
+  if (!booking && !pays.length) miss.push('les acomptes');
+  const vat = s.vat_rate ?? 5.5, pc = p => { const v = billPct(p); return v == null ? '' : (Math.round(v * 100) / 100).toLocaleString('fr-FR') + ' %'; };
   return `<div class="conf-check ${miss.length?'warn':''}">
-    <b>À vérifier avant d’envoyer</b>
+    <b>${s.terms_validated_at ? `Conditions validées le ${fmtDate(s.terms_validated_at.slice(0,10))}` : 'Conditions reprises dans le mail'}</b>
     <div>${esc(s.contract_type||'Contrat ?')} · ${s.fee_ht!=null?`${Number(s.fee_ht).toLocaleString('fr-FR')} € HT · TVA ${String(vat).replace('.',',')} %`:'cachet ?'}
-      · ${pays.map(p=>`${esc(p.label||p.kind)} ${p.pct!=null?esc(String(p.pct).replace('.',','))+' %':''}`).join(' · ') || 'aucun acompte'}</div>
-    ${miss.length ? `<div class="err">Manque : ${miss.join(', ')}. Complète la date avant d’envoyer (le mail reprend ces infos).</div>` : ''}
+      ${booking ? '' : '· ' + (pays.map(p=>`${esc(p.label||p.kind)} ${pc(p)}`).join(' · ') || 'aucun acompte')}</div>
+    ${miss.length ? `<div class="err">Manque : ${miss.join(', ')}. Ferme ce mail et valide les conditions de la date (le mail reprend ces infos).</div>` : ''}
     <div class="muted">${booking ? 'Booking uniquement : le lien de la fiche de renseignements est retiré du mail, l’organisateur et l’artiste s’arrangent entre eux pour le contrat.' : 'La fiche de renseignements affiche toujours les conditions à jour : tu peux encore les corriger après l’envoi, tant que le contrat n’est pas parti.'}</div>
   </div>`;
 }

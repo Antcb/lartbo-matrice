@@ -11,7 +11,7 @@ import { netArtbo, payAmount, paymentsOf } from './calc.js';
 import { APP_VERSION, ENV } from './config.js';
 import { VIEWS } from './constants.js';
 import { loadAll, save, sb } from './data.js';
-import { S, localSet } from './state.js';
+import { S, localSet, setProjects } from './state.js';
 import { $, esc, fmtDate } from './utils.js';
 import { autosizeAll } from './ui/modal.js';
 import { loginHTML } from './views/auth.js';
@@ -31,6 +31,7 @@ import { viewStructures } from './views/structures.js';
 import { viewProspects } from './views/suivi.js';
 import { viewTicketing } from './views/ticketing.js';
 import { viewTodo } from './views/todo.js';
+import { startRealtime } from './realtime.js';
 
 const VIEW_FN = {booking:viewBooking, production:viewProduction, ticketing:viewTicketing, communication:viewCommunication,
   projects:viewProjects, todo:viewTodo, prospects:viewProspects, contacts:viewContacts, structures:viewStructures, settings:viewSettings, employees:viewEmployees};
@@ -88,7 +89,7 @@ function saveScroll(root){
   return {pos, x: window.scrollX, y: window.scrollY, page: LAST_PAGE};   // la page réellement affichée, pas l'état déjà changé
 }
 let LAST_PAGE = null;
-const pageSig = () => [S.view, S.projectPage, S.structurePage, S.suiviPage, JSON.stringify(Object.entries(S.tab || {}).filter(([k]) => !k.startsWith('fold:')))]   // déplier une section reste sur la même page.join('|');
+const pageSig = () => [S.view, S.projectPage, S.structurePage, S.suiviPage, JSON.stringify(Object.entries(S.tab || {}).filter(([k]) => !/^(fold|prod):/.test(k)))].join('|');   // déplier une section, changer d'onglet dans une date : même page
 function restoreScroll(root, saved){
   const now = pageSig(), same = saved.page === now; LAST_PAGE = now;
   if (!same) return;   // autre page : on repart du haut
@@ -144,7 +145,7 @@ document.addEventListener('click', async e => {
 document.addEventListener('change', async e => {
   const t = e.target;
   if (t.id==='f-year'){ S.year=Number(t.value); localSet('year',S.year); render(); return; }
-  if (t.id==='f-project'){ S.project=t.value; localSet('project',S.project); render(); return; }
+  if (t.id==='f-project'){ setProjects(t.value.split(',')); render(); return; }
   // Enregistrement direct : data-t (table) data-id data-f (champ)
   if (t.dataset.t && t.dataset.id && t.dataset.f && !t.dataset.custom){
     let v = t.type==='checkbox' ? t.checked : t.value;
@@ -169,8 +170,9 @@ export async function boot(){
   S.user = session?.user || null;
   if (S.user){ $('#app').innerHTML = '<div class="loading"><img src="assets/picto.png" alt="" width="54" height="64"><span>Chargement…</span></div>'; await loadAll(); }
   render();
+  if (S.user) startRealtime(render);
   sb.auth.onAuthStateChange(async (ev, session) => {
-    if (ev==='SIGNED_IN' && !S.user){ S.user=session.user; await loadAll(); render(); }
+    if (ev==='SIGNED_IN' && !S.user){ S.user=session.user; await loadAll(); render(); startRealtime(render); }
     if (ev==='SIGNED_OUT'){ S.user=null; render(); }
   });
 }

@@ -122,7 +122,7 @@ function setBookingMap(shows){
       <div class="pop-actions"><button type="button" class="btn sm ${S.routePick.a===s.id?'on':''}" data-act="pick" data-p="a" data-id="${s.id}">Départ (A)</button><button type="button" class="btn sm ${S.routePick.b===s.id?'on':''}" data-act="pick" data-p="b" data-id="${s.id}">Arrivée (B)</button></div>`}; }).filter(Boolean);
   const a0 = byId('shows', S.routePick.a), b0 = byId('shows', S.routePick.b);
   const rr = a0 && b0 ? routeCached(a0, b0) : null;
-  setMapData({points: pts, key: `booking|${S.year}|${S.project}|${S.showCancelled}`, keepView: true, line: rr?.geometry || null});
+  setMapData({points: pts, key: `booking|${S.year}|${S.projects.join()}|${S.showInactive}|${S.showCancelled}`, keepView: true, line: rr?.geometry || null});
   // calcul des trajets en arrière-plan, puis mise à jour du cadre « Trajet »
   const jobs = chains(shows).map(c => [c.a, c.b]);
   const a = byId('shows', S.routePick.a), b = byId('shows', S.routePick.b); if (a && b) jobs.push([a, b]);

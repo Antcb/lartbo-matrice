@@ -28,12 +28,18 @@ export function tabsBar(key, tabs){
 }
 export const curTab = (key, def) => S.tab[key] || def;
 
+/** Bouton « Inactifs » à côté du filtre artistes : montre aussi les dates, tâches et suivis des artistes inactifs */
+export function inactiveToggle(){
+  if (S.projects.length || !S.db.projects.some(p => !p.active)) return '';
+  return `<button type="button" class="btn sm ghost inactive-tgl" data-act="toggleInactive" aria-pressed="${S.showInactive}" title="Dates, tâches et suivis des artistes inactifs">${S.showInactive ? 'Masquer les inactifs' : 'Afficher les inactifs'}</button>`;
+}
+
 /** Filtres Année / Projet affichés dans l'en-tête de la vue */
 export function filterBar({year=true, project=true, years=null}={}){
   const ys = years || [...new Set(S.db.shows.filter(s=>s.date).map(s=>Number(s.date.slice(0,4))).concat([new Date().getFullYear(), new Date().getFullYear()+1]))].sort();
   return `<div class="filters">
     ${year?`<select id="f-year" class="sel" aria-label="Année">${ys.map(y=>`<option ${y===S.year?'selected':''}>${y}</option>`).join('')}</select>`:''}
-    ${project?projPicker(S.project, {attrs:'id="f-project" aria-label="Artiste"'}):''}
+    ${project?projPicker(S.projects, {attrs:'id="f-project" aria-label="Artiste"', multi:true}) + inactiveToggle():''}
   </div>`;
 }
 

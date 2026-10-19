@@ -8,7 +8,7 @@ import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
 import { byId, projName, setting, showsFiltered, structName } from '../selectors.js';
 import { lateSteps, remindersOf } from '../reminders.js';
 import { S } from '../state.js';
-import { filterBar, stBadge, stSelect, viewHead } from '../ui/bits.js';
+import { filterBar, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { esc, eur2, fmtDate, matches } from '../utils.js';
@@ -69,38 +69,92 @@ function prodRow(s){
 }
 
 function prodBody(s, booking, steps, pays, late){
-  const partners = S.db.partners.map(p=>[p.id,p.name]);
-  const rem = remindersOf(s);
+  const key = 'prod:' + s.id;
+  const tabs = [['conditions', 'Conditions'], ['factures', 'Factures', pays.length], ...(booking ? [] : [['budget', 'Budget']]), ['suivi', 'Suivi admin', late.size ? '⚠︎' : '']];
+  const cur = tabs.some(([k]) => k === S.tab[key]) ? S.tab[key] : 'conditions';
+  const body = {conditions: () => conditionsTab(s, booking), factures: () => billingTab(s, booking, pays, late),
+    budget: () => isProductionShow(s) ? productionBudgetHTML(s) : showBudgetHTML(s), suivi: () => suiviTab(s, booking, steps, late)}[cur]();
   return `<div class="prod-body">
-    <div>
-      <h3 class="block-title">Suivi admin</h3>
-      ${booking ? '<p class="mode-note">Booking seul : L\'ArtBoristerie envoie la conf + FT + kit, puis facture sa commission à l\'artiste une fois le contrat co-signé entre l\'artiste et l\'organisateur.</p>' : ''}
-      <div class="steps">${steps.map(([k,l])=>`<label style="${late.has(k)?'color:var(--danger);font-weight:700':''}">${l}</label>${dateInput(s[k], `data-t="shows" data-id="${s.id}" data-f="${k}"`)}`).join('')}</div>
-      ${rem.length ? `<div style="margin-top:12px">${rem.map(r=>`<div class="${r.late?'':'muted'}" style="font-size:13px;${r.late?'color:var(--danger);font-weight:600':''}">${r.late?'⚠︎':'•'} ${esc(r.title)} — ${r.late?'depuis le':'le'} ${fmtDate(r.due)}</div>`).join('')}</div>` : ''}
+    ${actionsBar(s, booking)}
+    ${tabsBar(key, tabs.map(([k, l, n]) => [k, l, n]))}
+    <div class="prod-tab">${body}</div>
+  </div>`;
+}
+
+/** En haut de la date : les mails à envoyer, la fiche, le contrat, le Drive — tout de suite visibles */
+function actionsBar(s, booking){
+  const log = s.mail_log || {};
+  const state = kind => { const l = log[kind]; if (!l) return '';
+    const sent = l.sent || (kind === 'confirmation' ? s.conf_kit_sent : s[kind]);
+    return `<small class="${sent ? 'ok-txt' : 'muted'}">${sent ? '✓ envoyé' : 'brouillon'} le ${fmtDate((sent && typeof sent === 'string' && sent.length === 10 ? sent : l.at).slice(0,10))}</small>`; };
+  const mailBtn = (kind, label) => `<span class="pa-item"><button class="btn sm ${log[kind] ? '' : 'primary'}" data-act="prepareMail" data-kind="${kind}" data-id="${s.id}">${label}</button>${state(kind)}</span>`;
+  const fiche = s.fiche_validated_at
+    ? `<span class="pa-item"><button class="btn sm ghost" data-act="validateFiche" data-id="${s.id}">Fiche de renseignements</button><small class="ok-txt">✓ validée le ${fmtDate(s.fiche_validated_at.slice(0,10))}</small></span>`
+    : s.fiche_submitted_at
+      ? `<span class="pa-item"><button class="btn sm primary" data-act="validateFiche" data-id="${s.id}">Vérifier la fiche</button><small class="warn-txt">reçue le ${fmtDate(s.fiche_submitted_at.slice(0,10))}</small></span>`
+      : `<span class="pa-item"><button class="btn sm ghost" data-act="validateFiche" data-id="${s.id}">Fiche de renseignements</button><small class="muted">pas encore remplie</small></span>`;
+  const contract = s.contract_doc_id
+    ? `<span class="pa-item"><a class="btn sm" href="https://docs.google.com/document/d/${esc(s.contract_doc_id)}/edit" target="_blank" rel="noopener">Contrat ↗</a>${s.contract_pdf_id ? `<a class="btn sm ghost" href="https://drive.google.com/file/d/${esc(s.contract_pdf_id)}/view" target="_blank" rel="noopener">PDF ↗</a>` : `<button class="btn sm ghost" data-act="contractPdf" data-id="${s.id}">Exporter en PDF</button>`}</span>`
+    : `<span class="pa-item"><button class="btn sm ${s.fiche_validated_at ? 'primary' : 'ghost'}" data-act="genContract" data-id="${s.id}">Générer le contrat</button></span>`;
+  return `<div class="prod-actions">
+    <div class="pa-row">
+      ${mailBtn('confirmation', 'Envoyer la confirmation')}
+      ${booking ? '' : mailBtn('boucle_tech', 'Boucle accueil & technique') + mailBtn('boucle_com', 'Boucle communication')}
     </div>
+    <div class="pa-row">
+      ${booking ? '' : fiche + contract}
+      <span class="pa-item drive">${driveHTML(s)}</span>
+    </div>
+  </div>`;
+}
+
+/** Conditions : ce que reprennent le mail de confirmation, la fiche et le contrat */
+function conditionsTab(s, booking){
+  const partners = S.db.partners.map(p=>[p.id,p.name]);
+  const b = billingOf(s);
+  return `<div class="prod-cols">
     <div>
-      <h3 class="block-title">Cachet et commission</h3>
-      <label class="chk booking-only"><input type="checkbox" data-act="toggleBookingOnly" data-id="${s.id}" ${booking?'checked':''}><span>Booking uniquement sur cette date <span class="muted">(seulement la facture de commission, pas de budget)</span></span></label>
+      <p class="tab-intro">${s.terms_validated_at ? `<span class="ok-txt">✓ Conditions validées le ${fmtDate(s.terms_validated_at.slice(0,10))}</span>` : '<span class="warn-txt">Conditions pas encore validées</span>'} · elles partent dans la confirmation, la fiche et le contrat.
+        <button class="btn sm ${s.terms_validated_at ? 'ghost' : 'primary'}" data-act="validateTerms" data-id="${s.id}">${s.terms_validated_at ? 'Modifier les conditions' : 'Valider les conditions'}</button></p>
       <div class="steps">
+        <label>Contrat</label><span>${esc(s.contract_type || '—')}</span>
         <label>Cachet HT</label>${cIn('shows',s.id,'fee_ht',s.fee_ht,'number')}
         <label>TVA du cachet (%)</label>${cIn('shows',s.id,'vat_rate',s.vat_rate,'number','placeholder="5.5" class="narrow"')}
         <label>Cachet TTC</label><b>${eur2(ttc(s.fee_ht, showVat(s)))}</b>
+        ${booking ? '' : `<label>Acomptes</label><span>${b.lines.filter(p => p.kind === 'acompte').map(p => `${esc(p.label || 'Acompte')} ${pctVal(billPct(p))} %`).join(' · ') || '<span class="muted">aucun</span>'}${b.lines.some(p => p.kind === 'solde') ? ` · solde ${pctVal(billPct(b.lines.find(p => p.kind === 'solde')))} %` : ''}</span>`}
         <label>Heure de passage</label>${cIn('shows',s.id,'show_time',s.show_time,'text','placeholder="ex. 22h30" class="narrow"')}
         <label>Durée du set</label>${cIn('shows',s.id,'set_length',s.set_length,'text','placeholder="ex. 1h15" class="narrow"')}
         ${booking ? '' : `<label>Invitations producteur</label>${cIn('shows',s.id,'invitations',s.invitations,'number','placeholder="10" class="narrow"')}`}
         ${s.contract_type === 'Co-Réalisation' ? `<label>% résultat net après break au producteur</label>${cIn('shows',s.id,'cr_producer_pct',s.cr_producer_pct,'number','class="narrow"')}
         <label>Break</label>${cIn('shows',s.id,'cr_break',s.cr_break,'text','placeholder="ex. 450 entrées payantes"')}` : ''}
+      </div>
+    </div>
+    <div>
+      <h3 class="block-title">Commission</h3>
+      <label class="chk booking-only"><input type="checkbox" data-act="toggleBookingOnly" data-id="${s.id}" ${booking?'checked':''}><span>Booking uniquement sur cette date <span class="muted">(seulement la facture de commission, pas de budget)</span></span></label>
+      <div class="steps">
         <label>% L'ArtBo</label>${cIn('shows',s.id,'artbo_pct',s.artbo_pct,'number')}
         ${booking ? '' : `<label>Partenaire</label>${cSel('shows',s.id,'partner_id',s.partner_id,partners)}
         <label>% partenaire</label>${cIn('shows',s.id,'partner_pct',s.partner_pct,'number')}`}
       </div>
       <p class="muted" style="font-size:13px;margin:8px 0 0">${booking ? `Commission : <b>${eur2(netArtbo(s))}</b>` : `Le % partenaire s'applique à la commission L'ArtBo. Net L'ArtBo : <b>${eur2(netArtbo(s))}</b>`}</p>
-      <div class="drive">${driveHTML(s)}</div>
+      ${booking ? '<p class="mode-note">Booking seul : L\'ArtBoristerie envoie la conf + FT + kit, puis facture sa commission à l\'artiste une fois le contrat co-signé entre l\'artiste et l\'organisateur.</p>' : ''}
     </div>
-    ${booking ? '' : isProductionShow(s) ? productionBudgetHTML(s) : showBudgetHTML(s)}
-    ${mailsHTML(s, booking)}
-    <div class="prod-bill">
-      <h3 class="block-title">Facturation</h3>
+  </div>`;
+}
+
+/** Suivi admin : les étapes datées et les rappels */
+function suiviTab(s, booking, steps, late){
+  const rem = remindersOf(s);
+  return `<p class="tab-intro">Chaque étape prend la date du jour où elle est faite (les mails envoyés depuis la Matrice la remplissent tout seuls).</p>
+    <div class="steps">${steps.map(([k,l])=>`<label style="${late.has(k)?'color:var(--danger);font-weight:700':''}">${l}</label>${dateInput(s[k], `data-t="shows" data-id="${s.id}" data-f="${k}"`)}`).join('')}</div>
+    ${rem.length ? `<div style="margin-top:12px">${rem.map(r=>`<div class="${r.late?'':'muted'}" style="font-size:13px;${r.late?'color:var(--danger);font-weight:600':''}">${r.late?'⚠︎':'•'} ${esc(r.title)} — ${r.late?'depuis le':'le'} ${fmtDate(r.due)}</div>`).join('')}</div>` : ''}`;
+}
+
+/** Factures : ce que l'organisateur paie (acomptes, solde), la commission, les autres lignes */
+function billingTab(s, booking, pays, late){
+  return `<div class="prod-bill">
+      <p class="tab-intro">${booking ? 'La facture de commission de L’ArtBo à l’artiste.' : 'Ce que l’organisateur paie (acomptes + solde = le cachet), et la commission de L’ArtBo.'} Montants HT ; saisis le %, le HT ou le TTC, les deux autres se calculent.</p>
       <div class="tbl-wrap"><table>
         <thead><tr><th>Ligne</th><th class="num">%</th><th class="num">Montant HT</th><th class="num">TVA</th><th class="num">TTC</th><th>Arrive sur</th><th>N° facture</th><th>Envoyée</th><th>Relancée</th><th>Payée</th><th>Pennylane</th><th></th></tr></thead>
         <tbody>${pays.map(p=>{ const a=payAmount(p), ov=p.amount!=null;
@@ -128,9 +182,8 @@ function prodBody(s, booking, steps, pays, late){
         <button class="btn sm ghost" data-act="editShow" data-id="${s.id}">Fiche complète de la date</button>
         ${s.structure_id ? `<button class="btn sm ghost" data-act="openStructure" data-id="${s.structure_id}">Fiche de la structure</button>` : ''}
       </div>
-      <p class="muted" style="font-size:12px;margin:8px 0 0">Montants HT. Vide = calcul automatique sur le cachet HT ; un montant saisi à la main apparaît en orange. TVA par défaut : 5,5 % sur le cachet, 20 % sur les commissions. Saisis le %, le HT ou le TTC : les deux autres se calculent. Le solde prend ce qui reste (100 % − acomptes) tant qu’il n’est pas envoyé ; acomptes + solde ne dépassent jamais 100 % du cachet (commissions et autres lignes à part).</p>
-    </div>
-  </div>`;
+      <p class="muted" style="font-size:12px;margin:8px 0 0">Vide = calcul automatique sur le cachet HT ; un montant saisi à la main apparaît en orange. TVA par défaut : 5,5 % sur le cachet, 20 % sur les commissions. Le solde prend ce qui reste (100 % − acomptes) tant qu’il n’est pas envoyé ; acomptes + solde ne dépassent jamais 100 % du cachet (commissions et autres lignes à part).</p>
+    </div>`;
 }
 
 const pctVal = v => v == null ? '' : Math.round(v * 100) / 100;
@@ -166,34 +219,6 @@ function pennylaneCell(p){
   if (!['acompte','solde','artbo','autre'].includes(p.kind)) return '';
   if (p.pennylane_id) return p.pennylane_url ? `<a class="btn sm ghost" href="${esc(p.pennylane_url)}" target="_blank" rel="noopener">Brouillon ↗</a>` : '<span class="ok-badge">Brouillon créé</span>';
   return `<button class="btn sm" data-act="pennylaneInvoice" data-id="${p.id}" title="Crée la facture en brouillon dans Pennylane">Créer</button>`;
-}
-
-/** Mails (confirmation, boucles) et fiche de renseignements */
-function mailsHTML(s, booking){
-  const log = s.mail_log || {};
-  const btn = (kind, label) => `<button class="btn sm ${log[kind]?'':'primary'}" data-act="prepareMail" data-kind="${kind}" data-id="${s.id}">${label}</button>${log[kind]?`<span class="muted mail-done">préparé le ${fmtDate(log[kind].at.slice(0,10))}</span>`:''}`;
-  const fiche = s.fiche_validated_at
-    ? `<span class="badge ok-badge">Fiche validée le ${fmtDate(s.fiche_validated_at.slice(0,10))}</span> <button class="btn sm ghost" data-act="validateFiche" data-id="${s.id}">Revoir</button>`
-    : s.fiche_submitted_at
-      ? `<span class="badge warn-badge">Fiche reçue le ${fmtDate(s.fiche_submitted_at.slice(0,10))} : à valider</span> <button class="btn sm primary" data-act="validateFiche" data-id="${s.id}">Vérifier et valider</button>`
-      : `<span class="muted">Fiche pas encore remplie par l’organisateur.</span> <button class="btn sm ghost" data-act="validateFiche" data-id="${s.id}">Remplir à sa place</button>`;
-  const contract = s.contract_doc_id
-    ? `<a class="btn sm" href="https://docs.google.com/document/d/${esc(s.contract_doc_id)}/edit" target="_blank" rel="noopener">Ouvrir le contrat</a>
-       ${s.contract_pdf_id ? `<a class="btn sm" href="https://drive.google.com/file/d/${esc(s.contract_pdf_id)}/view" target="_blank" rel="noopener">Ouvrir le PDF</a>` : ''}
-       <button class="btn sm ${s.contract_pdf_id ? 'ghost' : 'primary'}" data-act="contractPdf" data-id="${s.id}">${s.contract_pdf_id ? 'Refaire le PDF' : 'Exporter en PDF'}</button>
-       <button class="btn sm ghost" data-act="genContract" data-id="${s.id}">Regénérer</button>`
-    : `<button class="btn sm ${s.fiche_validated_at ? 'primary' : ''}" data-act="genContract" data-id="${s.id}">Générer le contrat</button>`;
-  return `<div class="prod-mails">
-    <h3 class="block-title">Mails et fiche de renseignements</h3>
-    <div class="mail-btns">
-      <span>${btn('confirmation', 'Préparer la confirmation')}</span>
-      ${booking ? '' : `<span>${btn('boucle_tech', 'Boucle accueil & technique')}</span><span>${btn('boucle_com', 'Boucle communication')}</span>`}
-    </div>
-    ${booking ? '' : `<div class="fiche-line">${fiche}
-      <button class="btn sm ghost" data-act="copyFiche" data-id="${s.id}">Copier le lien de la fiche</button>
-      <a class="btn sm ghost" href="fiche.html?t=${esc(s.fiche_token||'')}" target="_blank" rel="noopener">Ouvrir la fiche</a></div>
-    <div class="fiche-line"><b class="fiche-lbl">Contrat ${s.contract_type === 'Co-Réalisation' ? 'de co-réalisation' : 'de cession'}</b> ${contract}</div>`}
-  </div>`;
 }
 
 export function driveHTML(s){

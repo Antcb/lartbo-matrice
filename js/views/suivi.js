@@ -9,9 +9,9 @@
 import { LOG_ICON, LOG_KINDS, PROSPECT, isOff, stColor } from '../constants.js';
 import { lingering } from '../data.js';
 import { distKm, routeCached, route } from '../geo.js';
-import { byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, projIds, projName, projNames, projectOptions, showCoords, showsOfProject, structName } from '../selectors.js';
+import { projFilterOk, byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, projIds, projName, projNames, projectOptions, showCoords, showsOfProject, structName } from '../selectors.js';
 import { S, localGet, localSet } from '../state.js';
-import { dropZone, fileRow, fold, projPicker, stSelect, pstBadge, stBadge, tabsBar, curTab, viewHead } from '../ui/bits.js';
+import { inactiveToggle, dropZone, fileRow, fold, projPicker, stSelect, pstBadge, stBadge, tabsBar, curTab, viewHead } from '../ui/bits.js';
 import { cAc, cIn, cSel, projChips } from '../ui/cells.js';
 import { acInput } from '../ui/autocomplete.js';
 import { dateInput } from '../ui/datefield.js';
@@ -23,7 +23,7 @@ export function viewProspects(){
   if (S.suiviPage){ const p = byId('prospects', S.suiviPage); if (p) return suiviPage(p); S.suiviPage = null; }
   const q = S.search.prospects || '';
   const st = S.suiviStatus || '';
-  let rows = S.db.prospects.filter(p => (!S.project || projIds(p).includes(S.project)) && (!st || p.status===st));
+  let rows = S.db.prospects.filter(p => projFilterOk(projIds(p)) && (!st || p.status===st));
   const nClosed = st ? 0 : rows.filter(p=>p.status==='Closed' && !lingering(p.id)).length;
   if (!st && !S.showClosed) rows = rows.filter(p=>p.status!=='Closed' || lingering(p.id));
   if (q) rows = rows.filter(p => matches(`${structName(p.structure_id)} ${byId('structures',p.structure_id)?.city||''} ${projNames(p)} ${p.summary||''}`, q));
@@ -31,7 +31,7 @@ export function viewProspects(){
   return viewHead('Suivi', {
     sub: `${rows.length} suivi${rows.length>1?'s':''}`,
     filters: `<div class="filters">
-      ${projPicker(S.project, {attrs:'data-suivi-filter="project" aria-label="Artiste"'})}
+      ${projPicker(S.projects, {attrs:'data-suivi-filter="project" aria-label="Artiste"', multi:true}) + inactiveToggle()}
       <select class="sel" data-suivi-filter="status" aria-label="Statut"><option value="">Tous les statuts</option>${PROSPECT.map(x=>`<option value="${x}" ${x===st?'selected':''}>${x}</option>`).join('')}</select>
       <input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-suivi" placeholder="Structure, ville, mot du résumé…" data-search="prospects" value="${esc(q)}"></div>`,
     actions: `${nClosed ? `<button class="btn" data-act="toggleClosed" aria-pressed="${!!S.showClosed}">${S.showClosed?'Masquer':'Afficher'} les suivis clos (${nClosed})</button>` : ''}

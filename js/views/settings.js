@@ -87,7 +87,7 @@ export function viewSettings(){
       <h4 class="block-title" style="margin:16px 0 6px">Signature d’Anthony (mails envoyés par anthony@)</h4>
       ${rtToolbar('set-sig')}<div class="mail-preview" id="set-sig" contenteditable="true" style="${rtStyle()}">${setting('prospect_signature') || ''}</div>
       <div class="vh-actions" style="margin-top:8px"><button class="btn sm" data-act="saveSignature">Enregistrer la signature</button></div>
-      <h4 class="block-title" style="margin:16px 0 6px">Signature de Chloé (mails envoyés par production@)</h4>
+      <h4 class="block-title" style="margin:16px 0 6px">Signature de Chloé (tous les mails envoyés par production@ : prospection, confirmations, boucles)</h4>
       ${rtToolbar('set-sig-prod')}<div class="mail-preview" id="set-sig-prod" contenteditable="true" style="${rtStyle()}">${setting('prospect_signature_production') || ''}</div>
       <div class="vh-actions" style="margin-top:8px"><button class="btn sm" data-act="saveSignature" data-key="prospect_signature_production" data-el="set-sig-prod">Enregistrer la signature</button></div></div>
     <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Brevo</h3>

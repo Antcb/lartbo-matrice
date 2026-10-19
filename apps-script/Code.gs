@@ -104,8 +104,10 @@ function createDraft_(body) {
     return null;
   }).filter(Boolean);
   // brouillon en MIME UTF-8 (API Gmail) : GmailApp.createDraft abîme les émojis
-  var out = pMime_({ to: body.to, cc: body.cc, subject: body.subject, html: mailWrap_(body.html), attachments: files, fromName: "L'ArtBoristerie Productions" });
-  return { ok: true, draft_id: out.draft_id, url: out.url };
+  // send: true → envoyé tout de suite (confirmation, boucles), sinon brouillon
+  var out = pMime_({ to: body.to, cc: body.cc, subject: body.subject, html: mailWrap_(body.html), attachments: files, fromName: "L'ArtBoristerie Productions", send: !!body.send });
+  out.ok = true;
+  return out;
 }
 
 /** Pièces jointes des mails Gmail (production@) qui correspondent à la recherche, du plus récent au plus ancien */
