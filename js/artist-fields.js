@@ -3,7 +3,7 @@
  * Pour ajouter une question : une ligne dans la bonne section. Pour un fichier : une ligne dans ARTIST_DOCS
  * (le chemin dit dans quel sous-dossier du dossier Drive de l'artiste il est rangé).
  * Types : text (par défaut), date, number, email, tel, url, textarea (words = mots max), choice (boutons), select,
- * list (lignes répétables : cols = colonnes), roles (une ligne par rôle : roles = rôles, cols = colonnes).
+ * list (lignes répétables : cols = colonnes, max = nombre de lignes, wrap = colonnes sur plusieurs lignes), roles (une ligne par rôle : roles = rôles, cols = colonnes).
  */
 const YN = ['Oui', 'Non'];
 
@@ -12,7 +12,7 @@ export const ARTIST_SECTIONS = [
   {title: '1. Informations générales', fields: [
     {k: 'group_name', label: 'Nom du groupe / de l’artiste', req: true},
     {k: 'created_on', label: 'Date de création', placeholder: 'ex. 14/01/2022'},
-    {k: 'lineup', label: 'Formation', type: 'select', options: ['Solo', 'Duo', 'Trio', 'Quatuor', 'Quintette', 'Sextette', '7 et plus']},
+    {k: 'lineup', label: 'Formation principale', type: 'select', options: ['Solo', 'Duo', 'Trio', 'Quatuor', 'Quintette', 'Sextette', '7 et plus']},
     {k: 'language', label: 'Langue de communication', placeholder: 'ex. Français'},
     {k: 'country', label: 'Pays représenté', placeholder: 'ex. France'},
     {k: 'region', label: 'Région', placeholder: 'ex. Auvergne-Rhône-Alpes'},
@@ -23,6 +23,9 @@ export const ARTIST_SECTIONS = [
       options: ['Musiques Actuelles (Pop, rock, électro, rap, reggae…)', 'Jazz / Blues', 'Musiques du monde / Traditionnelles', 'Chanson', 'Musique classique / contemporaine', 'Jeune public', 'Autre']},
     {k: 'style_1', label: 'Style musical — choix 1', placeholder: 'ex. Électro Pop'},
     {k: 'style_2', label: 'Style musical — choix 2', placeholder: 'ex. Pop alternative / Indie Pop'},
+    {k: 'formulas', label: 'Formules proposées (jusqu’à 3)', type: 'list', max: 3, full: true, add: 'Ajouter une formule',
+      cols: [{k: 'name', label: 'Formule', placeholder: 'ex. Solo, Trio, Full band', w: '1.3fr'}, {k: 'musicians', label: 'Musiciens', placeholder: 'nb', w: '90px'},
+        {k: 'techs', label: 'Techniciens', placeholder: 'nb', w: '100px'}, {k: 'note', label: 'Précision', placeholder: 'ex. version acoustique', w: '1.5fr'}]},
   ]},
   {title: '2. Présentation', fields: [
     {k: 'bio', label: 'Présentation', type: 'textarea', words: 250, full: true, rows: 9, req: true},
@@ -50,6 +53,9 @@ export const ARTIST_SECTIONS = [
     {k: 'musicians', label: 'Nombre de musiciens', ...NB}, {k: 'musicians_w', label: 'dont femmes', ...NB}, {k: 'musicians_m', label: 'dont hommes', ...NB}, {k: 'musicians_x', label: 'dont personnes non-genrées', ...NB},
     {k: 'techs', label: 'Nombre de techniciens', ...NB}, {k: 'techs_w', label: 'dont femmes', ...NB}, {k: 'techs_m', label: 'dont hommes', ...NB}, {k: 'techs_x', label: 'dont personnes non-genrées', ...NB},
     {k: 'lead', label: 'Lead', type: 'choice', options: ['Féminin', 'Masculin', 'Mixte', 'Non-genré'], full: true},
+    {k: 'members', label: 'Musiciens et techniciens', type: 'list', wrap: true, full: true, add: 'Ajouter une personne',
+      cols: [{k: 'role', label: 'Poste', placeholder: 'ex. Chant, guitare, son…'}, {k: 'first_name', label: 'Prénom'}, {k: 'last_name', label: 'Nom'},
+        {k: 'birth_date', label: 'Date de naissance', placeholder: 'JJ/MM/AAAA'}, {k: 'email', label: 'Mail'}, {k: 'city', label: 'Ville de résidence'}, {k: 'country', label: 'Pays de résidence'}]},
   ]},
   {title: '9. Musicien référent', help: 'La personne du groupe à contacter.', fields: [
     {k: 'ref_name', label: 'Prénom et nom', req: true},
@@ -58,10 +64,28 @@ export const ARTIST_SECTIONS = [
     {k: 'ref_phone', label: 'Mobile', type: 'tel', req: true},
   ]},
   {title: '10. Équipe professionnelle', help: 'Remplis seulement les lignes qui vous concernent.', fields: [
-    {k: 'pros', type: 'roles', full: true, roles: ['Manager', 'Booker', 'Label', 'Attaché·e de presse (RP)', 'Éditeur', 'Community manager (CM)', 'Structure administrative de l’artiste'],
+    {k: 'pros', type: 'roles', full: true, roles: ['Manager', 'Booker', 'Label', 'Attaché·e de presse (RP)', 'Éditeur', 'Community manager (CM)'],
       cols: [{k: 'name', label: 'Nom / structure'}, {k: 'email', label: 'Mail'}, {k: 'phone', label: 'Téléphone', w: '150px'}]},
   ]},
-  {title: '11. Liens', fields: [
+  {title: '11. Structure administrative de l’artiste', help: 'La structure qui porte le projet (association, société, label…) : elle sert pour les contrats et la facturation.', fields: [
+    {k: 'adm_legal_name', label: 'Raison sociale'},
+    {k: 'adm_legal_form', label: 'Forme juridique', placeholder: 'ex. Association loi 1901, SARL…'},
+    {k: 'adm_siret', label: 'SIRET', placeholder: '14 chiffres'},
+    {k: 'adm_ape', label: 'Code APE / NAF', placeholder: 'ex. 9001Z'},
+    {k: 'adm_vat', label: 'N° TVA intracommunautaire'},
+    {k: 'adm_licence', label: 'Licence(s) d’entrepreneur de spectacles', placeholder: 'ex. PLATESV-R-…'},
+    {k: 'adm_address', label: 'Adresse du siège', full: true},
+    {k: 'adm_postal_code', label: 'Code postal'},
+    {k: 'adm_city', label: 'Ville'},
+    {k: 'adm_country', label: 'Pays', placeholder: 'ex. France'},
+    {k: 'adm_vat_subject', label: 'Soumise à la TVA', type: 'choice', options: YN},
+    {k: 'adm_signatory', label: 'Représentée par (prénom et nom)'},
+    {k: 'adm_signatory_role', label: 'Qualité', placeholder: 'ex. Président·e, gérant·e'},
+    {k: 'adm_email', label: 'Mail administratif', type: 'email'},
+    {k: 'adm_phone', label: 'Téléphone', type: 'tel'},
+    {k: 'adm_billing_email', label: 'Mail de facturation', type: 'email'},
+  ]},
+  {title: '12. Liens', fields: [
     {k: 'tracks', label: 'Titres / vidéos', type: 'list', full: true, add: 'Ajouter un titre ou une vidéo', cols: [{k: 'title', label: 'Titre', w: '220px'}, {k: 'url', label: 'Lien', placeholder: 'https://…'}]},
     {k: 'youtube', label: 'Chaîne YouTube', type: 'url'},
     {k: 'spotify', label: 'Spotify', type: 'url'},
@@ -75,7 +99,7 @@ export const ARTIST_SECTIONS = [
     {k: 'website', label: 'Site internet', type: 'url'},
     {k: 'linktree', label: 'Linktree', type: 'url', full: true},
   ]},
-  {title: '12. Prestation live', fields: [
+  {title: '13. Prestation live', fields: [
     {k: 'set_max', label: 'Durée maximum du set', placeholder: 'ex. 45 minutes'},
     {k: 'set_min', label: 'Durée minimum du set', placeholder: 'ex. 30 minutes'},
     {k: 'multi_shows', label: 'Plusieurs concerts possibles sur un même événement', type: 'choice', options: ['Oui, le même jour et/ou sur plusieurs jours', 'Oui, sur plusieurs jours seulement', 'Non'], full: true},
@@ -89,16 +113,15 @@ export const ARTIST_SECTIONS = [
 /** Crédits photo : demandés avec les fichiers (section 13) */
 export const PHOTO_CREDITS = {k: 'photo_credits', label: 'Crédits photo', placeholder: 'ex. Camille Legrand', full: true};
 
-/** Fichiers : [clé, libellé, aide, chemin dans le dossier Drive de l'artiste, types acceptés] */
+/** Fichiers : [clé, libellé, aide, chemin dans le dossier Drive de l'artiste, types acceptés, nombre minimum] */
 export const ARTIST_DOCS = [
   ['photo_square', 'Photo récente — format carré', 'ex. 1080 × 1080', ['033_Promotion', 'Visuals'], 'image/*'],
   ['photo_portrait', 'Photo récente — 300 × 400 (portrait)', 'ou même proportion en plus grand', ['033_Promotion', 'Visuals'], 'image/*'],
   ['photo_landscape', 'Photo récente — 400 × 300 (paysage)', 'ou même proportion en plus grand', ['033_Promotion', 'Visuals'], 'image/*'],
   ['photos', 'Autres photos / visuels HD', 'Plusieurs fichiers possibles', ['033_Promotion', 'Visuals'], 'image/*'],
   ['logos', 'Logos', 'PNG fond transparent de préférence', ['033_Promotion', 'Logos'], 'image/*,application/pdf'],
-  ['tech_rider', 'Fiche technique', 'PDF', ['030_Reference', 'Technical'], 'application/pdf,image/*'],
-  ['stage_plot', 'Plan de scène / patch', 'PDF ou image', ['030_Reference', 'Technical'], 'application/pdf,image/*'],
+  ['tech_rider', 'Fiche technique (avec le plan de scène)', 'PDF', ['030_Reference', 'Technical'], 'application/pdf,image/*'],
   ['hosp_rider', 'Fiche accueil (hospitality rider)', 'PDF', ['030_Reference', 'Technical'], 'application/pdf'],
   ['press_kit', 'Dossier de presse / EPK', 'PDF', ['033_Promotion', 'Content Text'], 'application/pdf'],
-  ['audio', 'Titres audio (MP3 / WAV)', 'Les titres à faire écouter', ['033_Promotion', 'Audio'], 'audio/*'],
+  ['audio', 'Titres audio en MP3 (3 minimum)', 'Au moins 3 titres en MP3', ['033_Promotion', 'Audio'], 'audio/mpeg,.mp3', 3],
 ];
