@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.30.2 — 19/10/2026
+- Fiche artiste : titres audio en MP3 ou WAV (3 minimum)
+
+
 ## 1.30.1 — 19/10/2026
 - Fiche artiste : une structure déjà en base (même SIRET) n'est jamais modifiée par l'artiste, elle est signalée « à relier » ; l'artiste complète seulement ce qui manque sur sa structure ; noms des membres corrigés ; seuls les MP3 comptent ; reprise des anciennes réponses « structure administrative »
 

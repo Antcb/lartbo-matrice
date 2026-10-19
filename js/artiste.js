@@ -126,9 +126,9 @@ function draw(d, values){
     const missing = [...form.querySelectorAll('[required]')].filter(x => !x.value.trim())
       .concat([...form.querySelectorAll('fieldset[data-req]')].filter(fs => !fs.querySelector('input:checked')));
     // nombre minimum de fichiers (ex. 3 titres MP3), en comptant ceux déjà reçus
-    // « 3 MP3 minimum » : seuls les fichiers .mp3 comptent (déjà reçus + choisis maintenant)
-    const isMp3 = n => /\.mp3$/i.test(String(n || ''));
-    const counted = k => k === 'audio' ? (have.filter(x => x.kind === k && isMp3(x.name)).length + [...(form.querySelector(`#d-${k}`)?.files || [])].filter(f => isMp3(f.name) || f.type === 'audio/mpeg').length)
+    // « 3 titres minimum » : seuls les fichiers MP3 ou WAV comptent (déjà reçus + choisis maintenant)
+    const isAudio = n => /\.(mp3|wav)$/i.test(String(n || ''));
+    const counted = k => k === 'audio' ? (have.filter(x => x.kind === k && isAudio(x.name)).length + [...(form.querySelector(`#d-${k}`)?.files || [])].filter(f => isAudio(f.name)).length)
       : have.filter(x => x.kind === k).length + (form.querySelector(`#d-${k}`)?.files.length || 0);
     const short = ARTIST_DOCS.filter(([k, , , , , min]) => min && counted(k) < min);
     if (short.length && !missing.length){ const [k, l, , , , min] = short[0]; form.querySelector(`#d-${k}`).classList.add('invalid'); form.querySelector(`#d-${k}`).focus();

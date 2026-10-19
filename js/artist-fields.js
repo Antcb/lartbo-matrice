@@ -123,5 +123,5 @@ export const ARTIST_DOCS = [
   ['tech_rider', 'Fiche technique (avec le plan de scène)', 'PDF', ['030_Reference', 'Technical'], 'application/pdf,image/*'],
   ['hosp_rider', 'Fiche accueil (hospitality rider)', 'PDF', ['030_Reference', 'Technical'], 'application/pdf'],
   ['press_kit', 'Dossier de presse / EPK', 'PDF', ['033_Promotion', 'Content Text'], 'application/pdf'],
-  ['audio', 'Titres audio en MP3 (3 minimum)', 'Au moins 3 titres en MP3', ['033_Promotion', 'Audio'], 'audio/mpeg,.mp3', 3],
+  ['audio', 'Titres audio en MP3 ou WAV (3 minimum)', 'Au moins 3 titres, en MP3 ou en WAV', ['033_Promotion', 'Audio'], 'audio/mpeg,audio/wav,audio/x-wav,audio/wave,.mp3,.wav', 3],
 ];
