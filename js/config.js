@@ -1,7 +1,7 @@
 /**
  * Réglages : adresse et clé publique Supabase, équipe autorisée, numéro de version.
  */
-export const APP_VERSION = '1.33.2';   // ← incrémenté par tools/bump_version.py (voir CHANGELOG.md)
+export const APP_VERSION = '1.33.3';   // ← incrémenté par tools/bump_version.py (voir CHANGELOG.md)
 
 /**
  * Espace de test : …/lartbo-matrice/?test bascule ce navigateur sur une copie séparée de la Matrice
