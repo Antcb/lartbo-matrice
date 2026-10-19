@@ -4,14 +4,14 @@
  * Administratif (structure juridique de l'artiste), Membres (import CSV Movinmotion possible), Modèles de mail.
  */
 import { ARTIST_DOCS, ARTIST_SECTIONS, PHOTO_CREDITS } from '../artist-fields.js';
-import { ALL_FIELDS as AF_FIELDS, ficheText, fieldText, input as afInput, listClick, read as afRead } from '../artist-form.js';
+import { ALL_FIELDS as AF_FIELDS, ficheText, fieldText, input as afInput, listClick, migrateInfo, read as afRead } from '../artist-form.js';
 import { netArtbo } from '../calc.js';
 import { ENV } from '../config.js';
 import { templatesList, tplProjects } from '../mail.js';
 import { CONFIRMED_PROD, LOG_ICON, stClass } from '../constants.js';
-import { save, signedCached, signedUrl } from '../data.js';
+import { save, sb, signedCached, signedUrl } from '../data.js';
 import { defaultCommission, projectCommission, setting, suiviClosed, attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, structName, tasksOfProject } from '../selectors.js';
-import { S } from '../state.js';
+import { S, touch } from '../state.js';
 import { curTab, dropZone, fileRow, fold, pstBadge, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cAc, cIn } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
@@ -202,7 +202,8 @@ function mailsTab(p){
 
 /** Fiche artiste : ce que l'artiste a rempli via son lien, modifiable ici, avec « Copier » sur chaque champ */
 function artistTab(p){
-  const info = p.artist_info || {}, docs = p.artist_docs || [];
+  // une modification pas encore enregistrée (échec d'enregistrement) reste affichée pour pouvoir réessayer
+  const info = AF_UNSAVED.get(p.id) || migrateInfo(p.artist_info), docs = p.artist_docs || [];
   const label = k => (ARTIST_DOCS.find(d => d[0] === k) || [k, k])[1];
   const sections = ARTIST_SECTIONS.map(sec => `<section class="af-sec"><h3 class="block-title">${esc(sec.title)}</h3>
     <div class="fiche-grid${sec.cols ? ` cols${sec.cols} even` : ''}">${sec.fields.map(f => afInput(f, info[f.k] ?? '', {copy: true, prefix: 'af-' + p.id.slice(0, 6) + '-'})).join('')}</div></section>`).join('');
@@ -217,15 +218,29 @@ function artistTab(p){
   </div>`;
 }
 
-// Fiche artiste dans la Matrice : enregistrement automatique, copie d'un champ ou de toute la fiche
-const afTimers = new Map();
+// Fiche artiste dans la Matrice : enregistrement automatique (la structure administrative et l'onglet Membres suivent),
+// copie d'un champ ou de toute la fiche
+const afTimers = new Map(), AF_UNSAVED = new Map();
 function afSave(form){
   const id = form.dataset.afForm; clearTimeout(afTimers.get(id));
+  AF_UNSAVED.set(id, afRead(form));
   const state = document.querySelector(`[data-af-state="${id}"]`); if (state) state.textContent = 'Enregistrement…';
-  afTimers.set(id, setTimeout(async () => {
-    const ok = await save('projects', id, {artist_info: afRead(form)}, {rerender: false});
-    const st = document.querySelector(`[data-af-state="${id}"]`); if (st) st.textContent = ok ? 'Enregistré ✓' : 'Pas enregistré : réessaie';
-  }, 600));
+  afTimers.set(id, setTimeout(() => afWrite(id), 600));
+}
+async function afWrite(id){
+  const info = AF_UNSAVED.get(id); if (!info) return;
+  const {error} = await sb.rpc('artist_info_save', {p_project: id, p_info: info});
+  const st = document.querySelector(`[data-af-state="${id}"]`);
+  if (error){ if (st) st.innerHTML = `<span class="err">Pas enregistré (${esc(error.message)})</span> <button type="button" class="btn sm" data-af-retry="${id}">Réessayer</button>`; return; }
+  if (AF_UNSAVED.get(id) === info) AF_UNSAVED.delete(id);
+  const p = byId('projects', id); if (p) p.artist_info = info; touch('projects');
+  // structure administrative et membres mis à jour par la base : on les recharge
+  const [{data: pr}, {data: mem}] = await Promise.all([sb.from('projects').select('*').eq('id', id).single(), sb.from('project_members').select('*').eq('project_id', id)]);
+  if (pr && p) Object.assign(p, pr);
+  if (mem){ S.db.project_members = S.db.project_members.filter(m => m.project_id !== id).concat(mem); touch('project_members'); }
+  if (pr?.admin_structure_id && !byId('structures', pr.admin_structure_id)){ const {data: st2} = await sb.from('structures').select('*').eq('id', pr.admin_structure_id).single(); if (st2){ S.db.structures.push(st2); touch('structures'); } }
+  else if (pr?.admin_structure_id){ const {data: st2} = await sb.from('structures').select('*').eq('id', pr.admin_structure_id).single(); const cur = byId('structures', pr.admin_structure_id); if (st2 && cur){ Object.assign(cur, st2); touch('structures'); } }
+  if (st) st.textContent = 'Enregistré ✓ (structure administrative et membres mis à jour)';
 }
 document.addEventListener('input', e => { const f = e.target.closest?.('form.af-edit'); if (f) afSave(f); });
 document.addEventListener('change', e => { const f = e.target.closest?.('form.af-edit'); if (f){ e.stopPropagation(); afSave(f); } }, true);
@@ -235,6 +250,8 @@ document.addEventListener('click', async e => {
   const one = e.target.closest?.('[data-af-copy]');
   if (one && form){ e.preventDefault(); const f = AF_FIELDS.find(x => x.k === one.dataset.afCopy); const txt = fieldText(f, afRead(form)[f.k]);
     try { await navigator.clipboard.writeText(txt); one.textContent = 'Copié ✓'; setTimeout(() => { one.textContent = 'Copier'; }, 1200); } catch { prompt('À copier :', txt); } return; }
+  const retry = e.target.closest?.('[data-af-retry]');
+  if (retry){ afWrite(retry.dataset.afRetry); return; }
   const all = e.target.closest?.('[data-af-copyall]');
   if (all){ const fm = document.querySelector(`form[data-af-form="${all.dataset.afCopyall}"]`); const p = byId('projects', all.dataset.afCopyall);
     const txt = ficheText(fm ? afRead(fm) : (p?.artist_info || {}), p?.name || '');
