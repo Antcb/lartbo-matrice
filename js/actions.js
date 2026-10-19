@@ -209,6 +209,10 @@ export const ACTIONS = {
   // Contacts & structures
   newContact: () => editContact(null), editContact: t => editContact(t.dataset.id),
   newContactFor: t => editContact(null, {_structures:[t.dataset.id]}),
+  // filtre par étiquette : clic = ajoute / retire ; depuis une fiche ou une ligne = uniquement cette étiquette
+  filterTag: (t, e) => { e?.stopPropagation(); const tg = t.dataset.tag; const cur = S.structTags || [];
+    S.structTags = !tg ? [] : t.dataset.only ? [tg] : cur.includes(tg) ? cur.filter(x => x !== tg) : [...cur, tg];
+    S.view = 'structures'; S.structurePage = null; render(); window.scrollTo(0, 0); },
   newStructure: () => editStructure(null), editStructure: t => editStructure(t.dataset.id),
   openStructure: t => { if ($('#modal').open) $('#modal').close(); S.view='structures'; S.structurePage=t.dataset.id; S.tab.structure = 'home'; /* toujours sur l'Accueil */ S.focusProspect=null; render(); window.scrollTo(0,0); },
   closeStructure: () => { S.structurePage=null; render(); },

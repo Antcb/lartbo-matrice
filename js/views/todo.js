@@ -40,7 +40,7 @@ export function taskSection(all){
 export function taskTable(tasks, emptyMsg){
   if (!tasks.length) return `<div class="empty panel">${emptyMsg || 'Rien à faire ici. Ajoute une tâche avec « Nouvelle tâche ».'}</div>`;
   const team = CFG.TEAM.map(e=>[e, TEAM_NAMES[e]||e]);
-  return `<div class="tbl-wrap"><table><thead><tr><th></th><th>Tâche</th><th>Pôle</th><th>Urgence</th><th>Échéance</th><th>Pour</th><th>Projets</th><th>Structure</th><th>Date concernée</th></tr></thead><tbody>
+  return `<div class="tbl-wrap"><table><thead><tr><th></th><th>Tâche</th><th>Pôle</th><th>Échéance</th><th>Pour</th><th>Artistes</th><th>Lié à (structure, date)</th></tr></thead><tbody>
   ${tasks.map(t=>{ const u=urgency(t), nf = attachmentsOf('task_id', t.id).length; const leaving = lingering(t.id) && isDone(t);
     return `<tr class="${isDone(t) && !leaving ? 'task-done' : ''} ${leaving?'leaving':''}">
       <td><input type="checkbox" data-act="toggleTask" data-id="${t.id}" ${t.status==='Done'?'checked':''} aria-label="Marquer comme faite"></td>
@@ -48,12 +48,10 @@ export function taskTable(tasks, emptyMsg){
         <button class="btn sm ghost" data-act="editTask" data-id="${t.id}" title="Notes, pièces jointes, statut…">Détails${nf?` · ${nf} 📎`:''}</button>${taskSuiviBtns(t)}</div>
         ${t.notes?`<div class="muted" style="font-size:13px;padding:0 6px;white-space:pre-line">${esc(t.notes.length>160?t.notes.slice(0,160)+'…':t.notes)}</div>`:''}</td>
       <td><select class="dept-sel" data-t="tasks" data-id="${t.id}" data-f="department" style="--c:${deptColor(t.department)}" aria-label="Pôle"><option value="">Pôle ?</option>${deptNames().concat(t.department && !deptNames().includes(t.department) ? [t.department] : []).map(d=>`<option ${d===t.department?'selected':''}>${esc(d)}</option>`).join('')}</select></td>
-      <td>${t.status==='Done' && t.done_at ? `<span class="muted nowrap">Faite le ${fmtDate(t.done_at.slice(0,10))}</span>` : u?`<span class="urg ${u.cls}">${esc(u.label)}</span>`:''}</td>
-      <td>${cIn('tasks',t.id,'deadline',t.deadline,'date')}</td>
+      <td class="due-cell">${cIn('tasks',t.id,'deadline',t.deadline,'date')}${t.status==='Done' && t.done_at ? `<span class="muted nowrap">Faite le ${fmtDate(t.done_at.slice(0,10))}</span>` : u?`<span class="urg ${u.cls}">${esc(u.label)}</span>`:''}</td>
       <td>${cSel('tasks',t.id,'assigned_to',t.assigned_to,team)}</td>
-      <td style="min-width:180px">${projChips('tasks', t)}</td>
-      <td style="min-width:200px">${cAc('structures','tasks',t.id,'structure_id',t.structure_id,{placeholder:'Chercher une structure…', create:true})}</td>
-      <td style="min-width:270px">${cAc('shows','tasks',t.id,'show_id',t.show_id,{placeholder:'Chercher une date…'})}</td></tr>`;}).join('')}
+      <td style="min-width:200px">${projChips('tasks', t)}</td>
+      <td class="link-cell">${cAc('structures','tasks',t.id,'structure_id',t.structure_id,{placeholder:'Structure…', create:true})}${cAc('shows','tasks',t.id,'show_id',t.show_id,{placeholder:'Date…'})}</td></tr>`;}).join('')}
   </tbody></table></div>`;
 }
 

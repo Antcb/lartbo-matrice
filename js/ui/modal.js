@@ -11,6 +11,7 @@ import { S } from '../state.js';
 import { $, esc, toast } from '../utils.js';
 import { SOURCES, acInput, commitTypedText } from './autocomplete.js';
 import { dateInput } from './datefield.js';
+import { tagPicker } from './tagpicker.js';
 import { projPicker } from './projpicker.js';
 import { trackModal } from './history.js';
 import { modalSaved, watchModal } from './drafts.js';
@@ -27,7 +28,7 @@ export function field(f, v){
   else if (f.type==='ac') input = acInput(f.kind, {value:v, attrs:`name="${f.k}"`, create:f.create, placeholder:f.placeholder||'Taper pour chercher…'});
   else if (f.type==='fulladdr') input = acInput('fulladdr', {value:v, text:v||'', attrs:`name="${f.k}"`, placeholder:f.placeholder||'Taper une adresse…'});
   else if (f.type==='place' || f.type==='city') input = acInput(f.type==='city'?'cities':'places', {value:v, text:v||'', attrs:`name="${f.k}"`, fill:f.fill??'', placeholder:f.placeholder||(f.type==='city'?'Taper une ville…':'Taper une adresse ou une ville…')});
-  else if (f.type==='tags') input = `<input id="${id}" name="${f.k}" value="${esc((v||[]).join(', '))}" placeholder="séparés par des virgules">`;
+  else if (f.type==='tags') input = tagPicker({id, name: f.k, values: Array.isArray(v) ? v : (v ? String(v).split(',').map(x=>x.trim()).filter(Boolean) : []), suggestions: typeof f.suggest === 'function' ? f.suggest() : (f.suggest || [])});
   else if (f.type==='links') input = linksPicker(f, v);
   else if (f.type==='checks') input = `<div class="checks pills">${f.options.map(([val,lab])=>`<label><input type="checkbox" name="${f.k}" value="${esc(val)}" ${(v||[]).includes(val)?'checked':''}> ${esc(lab)}</label>`).join('')}</div>`;
   else if (f.type==='files') input = `<div class="dropzone" data-drop-form="${f.k}"><label class="btn sm file-btn">Ajouter un fichier<input type="file" name="${f.k}" multiple class="file-input" data-filelist="${f.k}"></label><span class="drop-hint">ou glisse les fichiers ici</span><div class="muted file-list" id="fl-${f.k}"></div></div>`;

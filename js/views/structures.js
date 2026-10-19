@@ -92,7 +92,7 @@ function homeTab(st, contacts, events){
   ].filter(([,v])=>v);
   return `<div class="struct-hero">
     <div class="panel pad">
-      ${(st.tags||[]).length ? `<div class="proj-chips">${st.tags.map(tag).join('')}</div>` : ''}
+      ${(st.tags||[]).length ? `<div class="proj-chips">${st.tags.map(tagLink).join('')}</div>` : ''}
       <div class="facts">${facts.map(([k,v])=>`<span><small>${k}</small>${esc(v)}</span>`).join('')}
         ${st.website?`<span><small>Site</small><a href="${esc(url(st.website))}" target="_blank" rel="noopener">${esc(st.website.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,''))}</a></span>`:''}</div>
       ${eventsSummary(st, events)}
@@ -142,12 +142,15 @@ function adminTab(st){
   </div>`;
 }
 
+/** Étiquette cliquable : ouvre la liste des structures qui l'ont */
+const tagLink = t => `<button type="button" class="badge tag tag-link" data-act="filterTag" data-tag="${esc(t)}" data-only="1" title="Toutes les structures « ${esc(t)} »">${esc(t)}</button>`;
+
 export function viewStructures(){
   if (S.structurePage) return structurePage(byId('structures', S.structurePage));
   const words = norm(S.search.structures).split(/\s+/).filter(Boolean);
-  const tg = S.structTag || '';
+  const sel = S.structTags || [];
   let rows = S.db.structures;
-  if (tg) rows = rows.filter(s => (s.tags||[]).includes(tg));
+  if (sel.length) rows = rows.filter(s => sel.every(t => (s.tags||[]).includes(t)));   // toutes les étiquettes choisies
   if (words.length) rows = rows.filter(s => { const hay = hayOf([s.name,...eventsOfStructure(s.id).map(e=>e.name),s.address,s.city,s.postal_code,s.department_code,s.department_name,s.region,s.country,...(s.tags||[])].join(' '));
     return words.every(w => hay.includes(w)); });
   const near = S.near;   // {label, lat, lng, km}
@@ -156,12 +159,15 @@ export function viewStructures(){
     rows = rows.filter(s => s.lat!=null).map(s => { const d = distKm([near.lat,near.lng],[s.lat,s.lng]); dist.set(s.id, d); return s; })
       .filter(s => dist.get(s.id) <= near.km).sort((a,b)=>dist.get(a.id)-dist.get(b.id));
   } else rows = rows.slice().sort((a,b)=>a.name.localeCompare(b.name));
-  const tags = [...new Set(S.db.structures.flatMap(s=>s.tags||[]))].sort((a,b)=>a.localeCompare(b));
+  const counts = new Map(); S.db.structures.forEach(s => (s.tags||[]).forEach(t => counts.set(t, (counts.get(t)||0) + 1)));
+  const tags = [...counts.keys()].sort((a,b)=>a.localeCompare(b, 'fr'));
+  const tagBar = tags.length ? `<div class="tag-filter" role="group" aria-label="Filtrer par type">
+      <span class="muted">Types :</span>${tags.map(t => `<button type="button" class="tag-chip ${sel.includes(t)?'on':''}" data-act="filterTag" data-tag="${esc(t)}" aria-pressed="${sel.includes(t)}">${esc(t)} <span class="n">${counts.get(t)}</span></button>`).join('')}
+      ${sel.length ? '<button type="button" class="btn sm ghost" data-act="filterTag" data-tag="">Tout afficher</button>' : ''}</div>` : '';
   return viewHead('Structures', {sub:`${rows.length} structure${rows.length>1?'s':''}${near?` à moins de ${near.km} km de ${esc(near.label)}`:''}`,
       actions:'<button class="btn primary" data-act="newStructure">Nouvelle structure</button>'}) + `
     <form class="near-form" id="near-form" autocomplete="off">
       <input class="search" type="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche" placeholder="Nom, ville, département (69, Rhône…), région, type…" data-search="structures" value="${esc(S.search.structures||'')}">
-      <select class="sel" data-struct-tag aria-label="Type"><option value="">Tous les types</option>${tags.map(t=>`<option ${t===tg?'selected':''}>${esc(t)}</option>`).join('')}</select>
       <span class="near-box">
         <input class="inp" type="search" autocomplete="off" data-1p-ignore name="autour" placeholder="Autour de… (ville)" value="${esc(near?.label||'')}" aria-label="Autour de quelle ville">
         <select class="sel" name="km" aria-label="Rayon">${[20,50,100,150,200,300].map(k=>`<option value="${k}" ${(near?.km||50)===k?'selected':''}>${k} km</option>`).join('')}</select>
@@ -169,10 +175,11 @@ export function viewStructures(){
         ${near?'<button type="button" class="btn ghost" data-act="clearNear">Effacer</button>':''}
       </span>
     </form>
+    ${tagBar}
     ${near?'<p class="help" style="margin:-6px 0 12px">Seules les structures dont la ville est connue apparaissent dans la recherche par distance.</p>':''}
     <div class="tbl-wrap"><table><thead><tr><th>Structure</th><th>Ville</th><th>Département · région</th><th class="num">Jauge</th><th class="num">Contacts</th><th>Suivi</th></tr></thead><tbody>
     ${rows.slice(0,300).map(s=>{ const ps = prospectsOfStructure(s.id); return `<tr class="click" data-act="openStructure" data-id="${s.id}">
-      <td class="struct-name"><b>${esc(s.name)}</b>${(s.tags||[]).length?`<div class="proj-chips" style="margin-top:4px">${s.tags.map(tag).join('')}</div>`:''}</td>
+      <td class="struct-name"><b>${esc(s.name)}</b>${(s.tags||[]).length?`<div class="proj-chips" style="margin-top:4px">${s.tags.map(tagLink).join('')}</div>`:''}</td>
       <td>${esc(s.city||'')}${near?` <span class="muted">· ${Math.round(dist.get(s.id))} km</span>`:''}${s.country && s.country!=='France'?`<span class="sub">${esc(s.country)}</span>`:''}</td>
       <td>${esc(s.department_code ? `${s.department_code} ${s.department_name||''}` : '')}<span class="sub">${esc(s.region||'')}</span></td>
       <td class="num">${[...new Set(eventsOfStructure(s.id).map(e=>e.capacity).filter(Boolean))].join(' / ')}</td>

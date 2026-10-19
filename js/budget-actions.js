@@ -9,6 +9,7 @@ import { paymentsOf, payAmount } from './calc.js';
 import { insert, mergeRows, openStored, remove, save, sb } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
 import { callScript } from './mail.js';
+import { applyTemplate } from './budget-template.js';
 import { exportArtistBudget } from './artist-export.js';
 import { S, touch } from './state.js';
 import { openModal } from './ui/modal.js';
@@ -19,26 +20,6 @@ const safeName = n => n.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w.\
 const simil = (a, b) => { a = norm(a||''); b = norm(b||''); if (!a || !b) return 0; if (a === b) return 1;
   const wa = new Set(a.split(/\W+/).filter(w => w.length > 2)), wb = b.split(/\W+/).filter(w => w.length > 2);
   return wb.length ? wb.filter(w => wa.has(w)).length / Math.max(wa.size, wb.length) : 0; };
-
-/** Lignes standard d'une date : salariés (repris de la dernière date budgétée), Movinmotion, CNM, solde artiste */
-async function prefill(s){
-  const p = byId('projects', s.project_id);
-  const prev = prodShowsOf(s.project_id).filter(x => x.id !== s.id && linesOf(x.id).some(l => l.category === 'Staff'))
-    .sort((a,b) => Math.abs(new Date(a.date) - new Date(s.date)) - Math.abs(new Date(b.date) - new Date(s.date)))[0];
-  const staff = prev ? linesOf(prev.id).filter(l => l.category === 'Staff').map(l => ({supplier:l.supplier, label:l.label, qty:l.qty, unit_cost:l.unit_cost, employee_id:l.employee_id}))
-    : membersOfProject(s.project_id).map(m => ({supplier:[m.first_name, m.last_name].filter(Boolean).join(' '), label:m.role || 'Cachet', qty:null, unit_cost:null}));
-  const rows = [
-    ...staff.map(x => ({...x, category:'Staff', label: x.label || 'Cachet'})),
-    {category:'Movinmotion', label:'Commission bulletins de paie', supplier:'Movinmotion', auto:'movinmotion'},
-    ...(cnmDue(s) ? [{category:'Taxes', label:'Taxe CNM (entrée gratuite)', supplier:'CNM', auto:'cnm'}] : []),   // seulement si la date est concernée
-    {category:'Solde artiste', label:'Solde artiste', supplier: p?.artist_payee || null, auto:'solde_artiste', payer:'compte'},
-  ];
-  let sort = nextSort(s.id);
-  const {data, error} = await sb.from('budget_lines').insert(rows.map(r => ({payer:'compte', ...r, project_id:s.project_id, show_id:s.id, sort: sort++}))).select();
-  if (error) return toast('Préremplissage impossible : ' + error.message, true);
-  mergeRows('budget_lines', data);
-  toast(prev ? `Budget prérempli (salariés repris du ${fmtDate(prev.date)})` : 'Budget prérempli');
-}
 
 /** Taxe CNM : la ligne n'existe que si la date est concernée (entrée gratuite, en France). Appelé quand la billetterie change. */
 export async function syncCnmLine(showId){
@@ -82,7 +63,7 @@ export const BUDGET_ACTIONS = {
     // passage en production : l'acompte et le solde doivent exister pour que le cachet arrive sur le compte (factures déjà faites gardées)
     if (!on){
       const pays = paymentsOf(s.id), sort = Math.max(0, ...pays.map(p => p.sort || 0));
-      const ac = Number(setting('default_acompte_pct') ?? 20);
+      const ac = Number(setting('default_acompte_pct') ?? 50);
       const add = [];
       if (!pays.some(p => p.kind === 'acompte')) add.push({show_id: s.id, kind: 'acompte', label: 'Acompte', pct: ac, sort: sort + 1, payee: 'compte'});
       if (!pays.some(p => p.kind === 'solde')) add.push({show_id: s.id, kind: 'solde', label: 'Solde', pct: Math.max(0, 100 - pays.filter(p => p.kind === 'acompte').reduce((t, p) => t + (Number(p.pct) || 0), add.length ? ac : 0)), sort: sort + 2, payee: 'compte'});
@@ -108,7 +89,7 @@ export const BUDGET_ACTIONS = {
   },
   exportArtistBudget: t => exportArtistBudget(t.dataset.id),
   delBudgetLine: async t => { if (confirm('Supprimer cette ligne du budget ?') && await remove('budget_lines', t.dataset.id)) render(); },
-  prefillBudget: async t => { await prefill(byId('shows', t.dataset.id)); render(); },
+  prefillBudget: async t => { await applyTemplate(byId('shows', t.dataset.id)); render(); },
   copyBudget: t => {
     const s = byId('shows', t.dataset.id);
     const opts = prodShowsOf(s.project_id).filter(x => x.id !== s.id && linesOf(x.id).length).map(x => [x.id, `${fmtDate(x.date)} · ${x.venue}${x.city ? ' (' + x.city + ')' : ''}`]);

@@ -76,3 +76,8 @@ export const LINGER_MS = 5000;
 // Festivals / salles / événements d'une structure
 export const EVENT_KINDS = ['Festival', 'Salle', 'Événement'];
 export const PRICING = ['Payant', 'Gratuit', 'Prix libre'];
+
+/** Types de structure proposés d'office (on peut en créer d'autres d'un clic) */
+export const STRUCT_TAGS = ['Festival', 'Salle', 'SMAC', 'Scène nationale', 'Théâtre', 'Bar / Club', 'Association', 'Mairie / Collectivité', 'Comité des fêtes', 'Tourneur', 'Producteur', 'Label', 'Média', 'Entreprise'];
+/** Postes proposés d'office pour un contact */
+export const CONTACT_ROLES = ['Programmateur·rice', 'Direction', 'Administration', 'Production', 'Régie générale', 'Régie technique', 'Communication', 'Billetterie', 'Président·e', 'Booker', 'Manager'];
