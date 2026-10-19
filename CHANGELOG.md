@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.31.6 — 19/10/2026
+- Fiche artiste : cases de fichier plus petites ; la présentation et la stratégie s'agrandissent avec le texte
+
+
 ## 1.31.5 — 19/10/2026
 - Fiche artiste : une case = un fichier, bouton court dans les petites cases ; l'onglet Fiche artiste n'écrase plus une correction faite dans Administratif ou Membres
 

@@ -62,6 +62,10 @@ function draw(d, values){
   const count = () => form.querySelectorAll('[data-words]').forEach(t => { const n = words(t.value), max = Number(t.dataset.words);
     const c = form.querySelector(`[data-count-for="${t.name}"]`); if (c){ c.textContent = `${n} / ${max} mots`; c.classList.toggle('over', n > max); } });
   count();
+  // la zone de texte (présentation, stratégie…) grandit avec le texte
+  const fit = ta => { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 2) + 'px'; };
+  form.querySelectorAll('textarea').forEach(fit);
+  form.addEventListener('input', e => { if (e.target.tagName === 'TEXTAREA') fit(e.target); });
   const keep = () => { try { localStorage.setItem(DRAFT, JSON.stringify(read(form))); } catch {} };
   form.addEventListener('input', () => { count(); keep(); });
   form.addEventListener('change', keep);
