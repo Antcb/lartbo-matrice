@@ -37,8 +37,8 @@ export const SOURCES = {
   },
   contacts: {
     label: id => byId('contacts', id)?.display_name || '',
-    search: q => rank(S.db.contacts, q, c => `${c.display_name} — ${c.email||''}`)
-      .map(c => ({id:c.id, label:c.display_name, hint:c.email||''})),
+    search: q => rank(S.db.contacts, q, c => `${c.display_name} — ${c.email||''} ${c.email_2||''}`)
+      .map(c => ({id:c.id, label:c.display_name, hint:[c.email, c.email_2].filter(Boolean).join(' · ')})),
   },
   shows: {
     label: id => showLabel(byId('shows', id)),

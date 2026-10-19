@@ -5,6 +5,12 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.32.0 — 19/10/2026
+- Dates début / fin cohérentes partout (calendrier de fin ouvert sur le début, fin avant début refusée, la fin suit le début)
+- Production : plus d'alerte « conditions pas encore validées » sur une date passée ou déjà confirmée par mail
+- Contacts : 2 mails et 2 téléphones partout (création rapide comprise), les 2 mails partent dans Brevo et dans les mails
+
+
 ## 1.31.8 — 19/10/2026
 - IA (résumé de suivi, lecture des pièces) : si les modèles Gemini les plus récents sont saturés, on passe automatiquement aux suivants
 

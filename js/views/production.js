@@ -11,7 +11,7 @@ import { S } from '../state.js';
 import { filterBar, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
-import { esc, eur2, fmtDate, matches } from '../utils.js';
+import { esc, eur2, fmtDate, matches, today } from '../utils.js';
 import { payerLabel } from '../budget.js';
 import { productionBudgetHTML, projectBudgetHTML, showBudgetHTML } from './budget.js';
 import { isProductionShow } from '../production-budget.js';
@@ -110,14 +110,27 @@ function actionsBar(s, booking){
   </div>`;
 }
 
+/**
+ * Conditions à valider ? Pas pour une date passée, ni pour une date dont la confirmation est déjà partie
+ * (les conditions étaient dans le mail) : le rappel ne concerne que les dates à venir pas encore confirmées par mail.
+ */
+const isPastShow = s => !!s.date && s.date < today();
+const termsPending = s => !s.terms_validated_at && !isPastShow(s) && !s.conf_kit_sent;
+function termsStatus(s){
+  if (s.terms_validated_at) return `<span class="ok-txt">✓ Conditions validées le ${fmtDate(s.terms_validated_at.slice(0,10))}</span>`;
+  if (s.conf_kit_sent) return `<span class="ok-txt">✓ Conditions envoyées dans la confirmation du ${fmtDate(String(s.conf_kit_sent).slice(0,10))}</span>`;
+  if (isPastShow(s)) return '<span class="muted">Date passée</span>';
+  return '<span class="warn-txt">Conditions pas encore validées</span>';
+}
+
 /** Conditions : ce que reprennent le mail de confirmation, la fiche et le contrat */
 function conditionsTab(s, booking){
   const partners = S.db.partners.map(p=>[p.id,p.name]);
   const b = billingOf(s);
   return `<div class="prod-cols">
     <div>
-      <p class="tab-intro">${s.terms_validated_at ? `<span class="ok-txt">✓ Conditions validées le ${fmtDate(s.terms_validated_at.slice(0,10))}</span>` : '<span class="warn-txt">Conditions pas encore validées</span>'} · elles partent dans la confirmation, la fiche et le contrat.
-        <button class="btn sm ${s.terms_validated_at ? 'ghost' : 'primary'}" data-act="validateTerms" data-id="${s.id}">${s.terms_validated_at ? 'Modifier les conditions' : 'Valider les conditions'}</button></p>
+      <p class="tab-intro">${termsStatus(s)} · elles partent dans la confirmation, la fiche et le contrat.
+        <button class="btn sm ${termsPending(s) ? 'primary' : 'ghost'}" data-act="validateTerms" data-id="${s.id}">${termsPending(s) ? 'Valider les conditions' : 'Modifier les conditions'}</button></p>
       <div class="steps">
         <label>Contrat</label><span>${esc(s.contract_type || '—')}</span>
         <label>Cachet HT</label>${cIn('shows',s.id,'fee_ht',s.fee_ht,'number')}

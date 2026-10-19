@@ -9,7 +9,7 @@ import { esc, matches } from '../utils.js';
 export function viewContacts(){
   const q = S.search.contacts || '';
   let rows = S.db.contacts;
-  if (q) rows = rows.filter(c => matches([c.display_name,c.email,c.email_2,c.phone,(c.roles||[]).join(' '),...linksOfContact(c.id).map(s=>s.name)].join(' '), q));
+  if (q) rows = rows.filter(c => matches([c.display_name,c.email,c.email_2,c.phone,c.phone_2,(c.roles||[]).join(' '),...linksOfContact(c.id).map(s=>s.name)].join(' '), q));
   rows = rows.slice().sort((a,b)=>String(a.display_name).localeCompare(String(b.display_name)));
   return viewHead('Contacts', {sub:`${rows.length} personne${rows.length>1?'s':''}`,
       filters:`<input class="search" type="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-contacts" placeholder="Nom, mail, téléphone, structure…" data-search="contacts" value="${esc(q)}">`,

@@ -130,7 +130,7 @@ export const ACTIONS = {
     const r = S.db.settings.find(x => x.key === key); if (r) r.value = el.innerHTML; else S.db.settings.push({key, value: el.innerHTML});
     toast('Signature enregistrée'); },
   brevoSyncAll: async () => {
-    const n = S.db.contacts.filter(c => /@/.test(c.email || '')).length;
+    const n = S.db.contacts.reduce((n, c) => n + new Set([c.email, c.email_2].filter(e => /@/.test(e || '')).map(e => e.trim().toLowerCase())).size, 0);
     if (!confirm(`Envoyer dans Brevo les contacts de la Matrice (${n} avec un mail) ? Seuls ceux qui ne sont pas encore dans Brevo sont ajoutés : les autres (et les désabonnés) ne sont pas touchés.`)) return;
     toast('Envoi à Brevo…');
     try {

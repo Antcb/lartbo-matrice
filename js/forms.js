@@ -8,7 +8,7 @@ import { CFG } from './config.js';
 import { CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PROSPECT, STATUSES, TASK_STATUS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
 import { insert, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode } from './geo.js';
-import { defaultCommission, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
+import { contactMails, defaultCommission, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow } from './ui/bits.js';
@@ -207,6 +207,11 @@ export function editTask(id, prefill={}){
 }
 
 /* ------------------------------------------------------------------ Contacts */
+/** Coordonnées d'un contact : les mêmes cases partout où l'on crée ou modifie une personne (les 2 mails partent dans Brevo) */
+const CONTACT_COORDS = [
+  {k:'email', label:'Mail', type:'email'}, {k:'email_2', label:'Mail 2', type:'email'},
+  {k:'phone', label:'Téléphone'}, {k:'phone_2', label:'Téléphone 2'},
+];
 export function editContact(id, prefill={}){
   const c = id ? byId('contacts', id) : {...prefill};
   const links = id ? linksOfContact(id).map(s=>s.id) : (prefill._structures || []);
@@ -217,14 +222,13 @@ export function editContact(id, prefill={}){
       {k:'first_name', label:'Prénom'}, {k:'last_name', label:'Nom'},
       {k:'_structures', label:'Structures', type:'links', source:'structures', create:true, full:true},
       {k:'roles', label:'Poste(s)', type:'tags', full:true},
-      {k:'email', label:'Mail', type:'email'}, {k:'email_2', label:'Mail 2', type:'email'},
-      {k:'phone', label:'Téléphone'}, {k:'phone_2', label:'Téléphone 2'},
+      ...CONTACT_COORDS,
       {k:'notes', label:'Notes', type:'textarea', full:true},
     ],
     onDelete: id ? () => remove('contacts', id) : null,
     onSave: async v => {
       const ids = v._structures; delete v._structures;
-      v.display_name = [v.first_name, v.last_name].filter(Boolean).join(' ') || c.display_name || v.email;
+      v.display_name = [v.first_name, v.last_name].filter(Boolean).join(' ') || c.display_name || v.email || v.email_2;
       if (!v.display_name){ toast('Indique au moins un nom', true); return false; }
       let row; if (id){ await save('contacts', id, v, {rerender:false}); row={id}; } else row = await insert('contacts', v);
       if (row) await syncLinks('contact', row.id, ids);
@@ -323,8 +327,8 @@ CREATORS.structures = async name => {
 CREATORS.contacts = async name => {
   const [first, ...rest] = String(name).trim().split(/\s+/);
   const row = await openModal({ level:2, title:'Nouveau contact', values:{first_name:first, last_name:rest.join(' ')}, saveLabel:'Créer le contact',
-    fields:[{k:'first_name', label:'Prénom'}, {k:'last_name', label:'Nom'}, {k:'email', label:'Mail', type:'email'}, {k:'phone', label:'Téléphone'}, {k:'roles', label:'Poste(s)', type:'tags', full:true}],
-    onSave: async v => { v.display_name = [v.first_name, v.last_name].filter(Boolean).join(' ') || v.email; if (!v.display_name) return false; return await insert('contacts', v); } });
+    fields:[{k:'first_name', label:'Prénom'}, {k:'last_name', label:'Nom'}, {k:'roles', label:'Poste(s)', type:'tags', full:true}, ...CONTACT_COORDS],
+    onSave: async v => { v.display_name = [v.first_name, v.last_name].filter(Boolean).join(' ') || v.email || v.email_2; if (!v.display_name){ toast('Indique au moins un nom', true); return false; } return await insert('contacts', v); } });
   if (!row) return null;
   return {id: row.id, label: row.display_name};
 };
@@ -388,7 +392,7 @@ export function exportSuivis(projectId){
         const st = byId('structures', p.structure_id), contacts = linksOfStructure(p.structure_id), last = lastExchange(p) || '';
         const base = {project: projName(pid), structure: st?.name||p.name, city: st?.city||'', status: p.status, last};
         if (!contacts.length) rows.push(base);
-        for (const c of contacts) rows.push({...base, first: c.first_name||'', lastname: c.last_name || (c.first_name?'':c.display_name) || '', email: c.email||''});
+        for (const c of contacts) rows.push({...base, first: c.first_name||'', lastname: c.last_name || (c.first_name?'':c.display_name) || '', email: contactMails(c)});
       }
       const columns = [{header:'Projet', key:'project', width:18}, {header:'Structure', key:'structure', width:28}, {header:'Ville', key:'city', width:18},
         {header:'Prénom', key:'first', width:14}, {header:'Nom', key:'lastname', width:16}, {header:'Mail', key:'email', width:28},
