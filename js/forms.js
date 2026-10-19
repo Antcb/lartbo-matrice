@@ -3,6 +3,7 @@
  * créations rapides (structure, contact) depuis un champ de recherche, export CSV des suivis, photo de projet.
  */
 import { FORMAT_FIELD, exportTable } from './exports.js';
+import { propagateCommission } from './commission.js';
 import { render } from './app.js';
 import { CFG } from './config.js';
 import { CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PROSPECT, STATUSES, TASK_STATUS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
@@ -119,7 +120,10 @@ export function editProject(id){
       const makeFolder = v._make_folder; delete v._make_folder;
       if (v.drive_artist_folder_id) v.drive_artist_folder_id = driveId(v.drive_artist_folder_id);
       ['contract_template_cc','contract_template_cr'].forEach(k => { if (v[k]) v[k] = (String(v[k]).match(/[-\w]{25,}/) || [v[k]])[0]; });
-      if (id){ const ok = await save('projects', id, v, {rerender:false}); if (ok && makeFolder && !v.drive_artist_folder_id) createArtistFolder(id); return; }
+      if (id){ const pctChanged = String(v.default_artbo_pct ?? '') !== String(p.default_artbo_pct ?? '');
+        const ok = await save('projects', id, v, {rerender:false}); if (ok && makeFolder && !v.drive_artist_folder_id) createArtistFolder(id);
+        if (ok && pctChanged) setTimeout(() => propagateCommission(id), 0);   // après la fermeture de la fenêtre
+        return; }
       const row = await insert('projects', v);
       // nouvel artiste : son dossier Drive est créé à son nom, à partir du modèle (LARTBOTRICE › 01_Modèles Drive)
       if (row && makeFolder && !row.drive_artist_folder_id) createArtistFolder(row.id);

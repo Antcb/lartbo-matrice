@@ -102,7 +102,7 @@ function artistBlock(s, b, p){
 /** Budget d'une date (dans la date dépliée) */
 export function showBudgetHTML(s){
   const p = byId('projects', s.project_id), b = showBudget(s), com = commissionOf(s);
-  const comRow = `<tr class="${com?.paid_at?'is-paid':''}"><td><b>Commission</b></td><td>Commission L'ArtBo (${esc(String(com?.pct ?? s.artbo_pct ?? 15))} %)</td><td>L'ArtBoristerie</td><td>${esc(payerLabel('compte', p))}</td>
+  const comRow = `<tr class="${com?.paid_at?'is-paid':''}"><td><b>Commission</b></td><td>Commission L'ArtBo ${com?.pct != null && com.pct !== '' ? cIn('show_payments', com.id, 'pct', com.pct, 'number', 'class="narrow" title="% de commission sur cette date"') : cIn('shows', s.id, 'artbo_pct', s.artbo_pct, 'number', 'class="narrow" title="% de commission sur cette date"')} %</td><td>L'ArtBoristerie</td><td>${esc(payerLabel('compte', p))}</td>
     <td class="num">${money(commissionAmount(s))}</td><td class="num">—</td><td>${esc(com?.invoice_number||'')}</td>
     <td class="${com?.paid_at?'done-cell':''}">${com ? cIn('show_payments', com.id, 'paid_at', com.paid_at, 'date', 'title="Commission virée à L’ArtBo le"') : '<span class="muted">—</span>'}</td>
     <td>${com?.paid_at ? '<span class="ok-badge">Payée</span>' : '<span class="warn-badge">À virer</span>'}</td><td></td></tr>`;

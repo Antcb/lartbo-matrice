@@ -10,6 +10,7 @@ import { insert, openStored, refreshShowSide, remove, removeWhere, save, saveLin
 import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, logsOf, projIds, projNames, setting, showsFiltered, structName } from './selectors.js';
 import { CFG } from './config.js';
+import { propagateCommission } from './commission.js';
 import { S, localSet, setProjects, touch } from './state.js';
 import { MODALS, openModal } from './ui/modal.js';
 import { modalSaved } from './ui/drafts.js';
@@ -351,6 +352,12 @@ async function setBill(pay, pct){
   if (pct > max + 0.001){ toast(`Les factures ne peuvent pas dépasser 100 % du cachet : ${String(max).replace('.', ',')} % au plus pour cette ligne`, true); return true; }
   return false;
 }
+// commission de l'artiste changée : ses dates suivent (après confirmation)
+ACTIONS['change:projects.default_artbo_pct'] = async (t, v) => {
+  if (!await save('projects', t.dataset.id, {default_artbo_pct: v}, {rerender: false})) return;
+  await propagateCommission(t.dataset.id);
+  render();
+};
 ACTIONS['change:show_payments.pct'] = async (t, v) => {
   const pay = byId('show_payments', t.dataset.id);
   if (v != null && await setBill(pay, v)){ render(); return; }
