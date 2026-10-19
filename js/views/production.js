@@ -181,7 +181,7 @@ function billingTab(s, booking, pays, late){
           <td class="num"><input type="number" step="any" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="vat_rate" value="${p.vat_rate??''}" placeholder="${payVat(p)}" aria-label="TVA %"></td>
           <td class="num nowrap">${BILL_KINDS.includes(p.kind) && s.fee_ht ? `<input type="number" step="any" inputmode="decimal" data-t="show_payments" data-id="${p.id}" data-f="amount_ttc" value="${a==null?'':ttc(a, payVat(p))}" aria-label="Montant TTC" title="Saisis le TTC : le HT et le % se calculent">` : eur2(ttc(a, payVat(p)))}</td>
           <td>${payeeCell(s, p, booking)}</td>
-          ${selfPaid ? `<td colspan="3" class="muted" style="font-size:12px">Pas de facture : tu te verses ta commission depuis le compte de l’artiste</td>
+          ${selfPaid ? `<td class="muted" style="font-size:12px">Pas de facture : tu te verses ta commission depuis le compte de l’artiste</td><td></td><td></td>
           <td class="${p.paid_at?'done-cell':late.has('artbo')?'late-cell':''}" title="Commission versée à L’ArtBo le">${cIn('show_payments',p.id,'paid_at',p.paid_at,'date')}</td><td></td>` : `
           <td>${cIn('show_payments',p.id,'invoice_number',p.invoice_number,'text','style="min-width:90px"')}</td>
           <td class="${late.has(p.kind)&&!p.sent_at?'late-cell':''}">${cIn('show_payments',p.id,'sent_at',p.sent_at,'date')}</td>
