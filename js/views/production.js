@@ -178,7 +178,7 @@ function billingTab(s, booking, pays, late){
           <td class="num">${BILL_KINDS.includes(p.kind) ? `<input type="number" step="any" inputmode="decimal" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="pct" value="${pctVal(billPct(p))}" aria-label="% du cachet">`
             : ['cnm','autre'].includes(p.kind) ? cIn('show_payments',p.id,'pct',p.pct,'number','class="narrow"') : `<span class="muted">${payPct(p)??'—'}</span>`}</td>
           <td class="num"><input type="number" step="any" data-t="show_payments" data-id="${p.id}" data-f="amount" value="${ov?p.amount:''}" placeholder="${a==null?'à saisir':a}" title="Laisse vide pour le calcul automatique" class="${ov?'override':''}"></td>
-          <td class="num"><input type="number" step="any" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="vat_rate" value="${p.vat_rate??''}" placeholder="${payVat(p)}" aria-label="TVA %"></td>
+          ${selfPaid ? '<td class="num muted">—</td>' : `<td class="num"><input type="number" step="any" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="vat_rate" value="${p.vat_rate??''}" placeholder="${payVat(p)}" aria-label="TVA %"></td>`}
           <td class="num nowrap">${BILL_KINDS.includes(p.kind) && s.fee_ht ? `<input type="number" step="any" inputmode="decimal" data-t="show_payments" data-id="${p.id}" data-f="amount_ttc" value="${a==null?'':ttc(a, payVat(p))}" aria-label="Montant TTC" title="Saisis le TTC : le HT et le % se calculent">` : eur2(ttc(a, payVat(p)))}</td>
           <td>${payeeCell(s, p, booking)}</td>
           ${selfPaid ? `<td class="muted" style="font-size:12px">Pas de facture : tu te verses ta commission depuis le compte de l’artiste</td><td></td><td></td>

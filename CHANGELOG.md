@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.33.5 — 19/10/2026
+- Production : pas de TVA sur la commission L'ArtBo (elle n'est pas facturée)
+
+
 ## 1.33.4 — 19/10/2026
 - Corrections relecture (rappel de commission, affichage mobile)
 
