@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.33.4 — 19/10/2026
+- Corrections relecture (rappel de commission, affichage mobile)
+
+
 ## 1.33.3 — 19/10/2026
 - Production : plus de « facture de commission » — la commission L'ArtBo est « à te verser » (date de versement seulement), rappels et notifications compris
 - Commission : les commissions déjà versées ou facturées ne changent pas quand on change le % de l'artiste

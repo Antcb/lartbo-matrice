@@ -44,7 +44,12 @@ revoke execute on function public.brevo_add_emails(uuid, text[]) from public, an
 
 update contacts set brevo_emails = array[lower(trim(email))] where brevo_created and email is not null and brevo_emails = '{}';
 
--- v1.33.3 : en production, la commission L'ArtBo n'est pas facturée : le rappel dit « à te verser » (virement du compte de l'artiste)
--- (remplacement dans generate_reminders :)
---   select 'commission', id, a_paid + 10, coalesce(c_label,'Commission L''ArtBo') || ' : à te verser (virement du compte de l''artiste vers L''ArtBo)'
---     from s where mode <> 'booking' and a_paid is not null and c_id is not null and c_paid is null
+-- v1.33.3 : en production, la commission L'ArtBo n'est pas facturée : le rappel dit « à te verser » et ne regarde que la date de versement
+do $$ declare d text; o text := 'coalesce(c_label,''Commission L''''ArtBo'') || '' : facture à '' || case when c_sent is null then ''envoyer'' else ''faire payer'' end
+                     from s where mode <> ''booking'' and a_paid is not null and c_id is not null and (c_sent is null or c_paid is null)';
+  n text := 'coalesce(c_label,''Commission L''''ArtBo'') || '' : à te verser (virement du compte de l''''artiste vers L''''ArtBo)''
+                     from s where mode <> ''booking'' and a_paid is not null and c_id is not null and c_paid is null';
+begin
+  select pg_get_functiondef(p.oid) into d from pg_proc p join pg_namespace s on s.oid = p.pronamespace where s.nspname = 'public' and p.proname = 'generate_reminders';
+  if d is not null and position(o in d) > 0 then execute replace(d, o, n); end if;
+end $$;
