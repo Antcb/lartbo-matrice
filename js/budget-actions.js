@@ -30,6 +30,14 @@ export async function syncCnmLine(showId){
   if (!cnmDue(s)) for (const l of cnm) if (l.amount == null && l.forecast == null && !l.file_path && !l.doc_number && !l.paid_at) await remove('budget_lines', l.id);
 }
 
+/** Frais Movinmotion : dès qu'une date a un salarié, la ligne « Commission bulletins de paie » (calculée seule) est ajoutée */
+export async function syncMovinmotionLine(showId){
+  const s = byId('shows', showId); if (!s || s.prod_mode === 'booking') return;
+  const ls = linesOf(s.id);
+  if (ls.some(l => l.category === 'Staff') && !ls.some(l => l.auto === 'movinmotion'))
+    await insert('budget_lines', {project_id:s.project_id, show_id:s.id, category:'Movinmotion', label:'Commission bulletins de paie', supplier:'Movinmotion', auto:'movinmotion', payer:'compte', sort: nextSort(s.id)});
+}
+
 /** Budget de production : paramètres et tarifs enregistrés sur la date (shows.production) */
 async function saveProd(showId, change){
   const s = byId('shows', showId); if (!s) return;
@@ -59,7 +67,7 @@ export const BUDGET_ACTIONS = {
   toggleBookingOnly: async t => {
     const s = byId('shows', t.dataset.id), on = t.checked;
     if (on && linesOf(s.id).length && !confirm('Cette date a déjà un budget. Il sera masqué (pas supprimé) et la date sortira du solde du compte. Continuer ?')){ t.checked = false; return; }
-    await save('shows', s.id, {prod_mode: on ? 'booking' : 'production'}, {rerender: false});
+    await save('shows', s.id, {prod_mode: on ? 'booking' : 'production', prod_mode_manual: (on ? 'booking' : 'production') !== (byId('projects', s.project_id)?.mode || 'production')}, {rerender: false});
     // passage en production : l'acompte et le solde doivent exister pour que le cachet arrive sur le compte (factures déjà faites gardées)
     if (!on){
       const pays = paymentsOf(s.id), sort = Math.max(0, ...pays.map(p => p.sort || 0));
@@ -85,6 +93,7 @@ export const BUDGET_ACTIONS = {
       return render();
     }
     await insert('budget_lines', {project_id, show_id: s?.id || null, category: cat, label: cat === 'Staff' ? 'Cachet' : null, payer: isProductionShow(s) ? 'artbo' : 'compte', sort: s ? nextSort(s.id) : 0, doc_date: s ? null : today()});
+    if (s && cat === 'Staff') await syncMovinmotionLine(s.id);
     render();
   },
   exportArtistBudget: t => exportArtistBudget(t.dataset.id),
@@ -108,7 +117,7 @@ export const BUDGET_ACTIONS = {
         if (!rows.length) return toast('Rien à copier', true);
         const {data, error} = await sb.from('budget_lines').insert(rows).select();
         if (error){ toast(error.message, true); return false; }
-        mergeRows('budget_lines', data); toast(`${data.length} ligne(s) copiée(s)`); render();
+        mergeRows('budget_lines', data); await syncMovinmotionLine(s.id); toast(`${data.length} ligne(s) copiée(s)`); render();
       }});
   },
   openBudgetFile: t => { const l = byId('budget_lines', t.dataset.id); if (l?.file_path) openStored(l.file_path); },
@@ -246,6 +255,7 @@ async function applyPiece({doc, path, name, show_id, project_id, line}){
   const row = await insert('budget_lines', {project_id, show_id: s?.id || null, category: bulletin ? 'Staff' : (d.categorie || 'Autres'),
     label: d.libelle || (bulletin ? 'Cachet' : name), supplier: (bulletin ? d.personne : d.emetteur) || null, payer: 'compte',
     qty: bulletin ? 1 : null, sort: s ? nextSort(s.id) : 0, ...patch});
+  if (row && bulletin && s) await syncMovinmotionLine(s.id);
   if (row) toast(`Nouvelle ligne ajoutée : ${row.label} (${row.category})`);
   return row ? {table: 'budget_lines', id: row.id} : null;
 }

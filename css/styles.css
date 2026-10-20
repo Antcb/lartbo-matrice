@@ -193,9 +193,15 @@ td input:not([type=checkbox]):not([type=radio]):not(.dt-txt):not(.dt-val):not(.t
 .cell-ta.is-url{min-width:180px;font-size:13px;overflow-wrap:anywhere;color:var(--brand-2)}
 td input:hover,td select:hover,td textarea:hover,.cell-ta:hover{border-color:var(--line)}
 td input:focus,td select:focus,td textarea:focus,.cell-ta:focus{border-color:var(--brand-2);background:var(--panel);outline:none}
-td input[type=number]{text-align:right;width:90px}
-td input[type=number].narrow{width:72px}
+td :is(input[type=number],input.num-in){text-align:right;width:90px}
+td :is(input[type=number],input.num-in).narrow{width:72px}
 td input[type=checkbox]{width:16px;height:16px;accent-color:var(--brand)}
+/* chiffres sans flèches +/- (partout) */
+:is(input[type=number],input.num-in){-moz-appearance:textfield;appearance:textfield}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+/* alignement au cordeau : le texte d'un champ dans un tableau tombe sur la même ligne que le titre de sa colonne */
+td:not(.num) > :is(input:not([type=checkbox]):not([type=radio]),select:not(.dept-sel):not(.st-sel),.dt,textarea.cell-ta):first-child,td:not(.num) > .ac{margin-left:-9px;max-width:calc(100% + 9px)}
+td.num > :is(input,.dt){margin-right:-9px}
 .url-cell{display:flex;align-items:flex-start;gap:4px}
 .url-cell .cell-ta{flex:1}
 .override{color:var(--warn)!important;font-weight:700}
@@ -295,7 +301,7 @@ td .ac-input:hover{border-color:var(--line)}
 .steps{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;align-items:center}
 .steps label{font-size:14px}
 .steps .dt{width:150px}
-.steps input[type=number],.steps select{height:var(--h-sm);border:1px solid var(--line);border-radius:var(--r-sm);padding:0 8px;background:var(--panel);width:150px}
+.steps :is(input[type=number],input.num-in),.steps select{height:var(--h-sm);border:1px solid var(--line);border-radius:var(--r-sm);padding:0 8px;background:var(--panel);width:150px}
 .drive{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px;font-size:14px}
 .drive .err{color:var(--danger)}
 .mode-note{font-size:13px;color:var(--muted);background:var(--soft);border-radius:var(--r);padding:8px 10px;margin:0 0 10px}
@@ -370,7 +376,7 @@ td .ac-input:hover{border-color:var(--line)}
 /* 15 — To Do ----------------------------------------------------------- */
 .task-title{display:flex;align-items:flex-start;gap:4px;flex-wrap:wrap}
 .task-notes{color:var(--muted);font-size:13px;padding:0 8px;white-space:pre-line;overflow-wrap:anywhere;max-width:520px}
-.task-title .cell-ta{font-weight:700;min-width:200px;max-width:380px;flex:1 1 240px}
+.task-title .cell-ta{font-weight:700;min-width:200px;max-width:380px;flex:1 1 240px;margin-left:-9px}
 /* dans un tableau, une pastille longue (nom de structure) passe à la ligne au lieu d'élargir la colonne */
 td .badge{white-space:normal;height:auto;min-height:22px;text-align:left}
 .task-done td{opacity:.5}
@@ -482,7 +488,7 @@ dialog::backdrop{background:rgba(16,24,42,.5)}
 .target-msg.free{background:#E7F3EA;color:var(--ok)}
 .target-msg.busy{background:#FBE4E1;color:var(--danger)}
 .seg .btn.on{background:var(--brand-tint)}
-td input[type=number],td .dt{background:var(--soft);border-color:var(--line-2)}
+td :is(input[type=number],input.num-in),td .dt{background:var(--soft);border-color:var(--line-2)}
 .dept-sel{font-weight:700;font-size:12px;border-radius:999px!important;height:var(--h-pill);padding:0 24px 0 9px!important;color:color-mix(in srgb,var(--c) 85%,#000);background-color:color-mix(in srgb,var(--c) 12%,#fff)!important;border:1px solid color-mix(in srgb,var(--c) 35%,#fff)!important}
 .side{max-height:calc(100vh - 92px);overflow:auto;padding-bottom:8px;scrollbar-width:thin}
 .pop-actions{display:flex;gap:4px;margin-top:8px}
@@ -629,7 +635,7 @@ button.add-proj{cursor:pointer}
 .budget-stats{gap:22px}
 .budget-stats .stat b{font-size:22px}
 .budget-table td{vertical-align:middle}
-.budget-table input[type=number]{width:96px}
+.budget-table :is(input[type=number],input.num-in){width:96px}
 .budget-table input.narrow{width:54px}
 .budget-table tr.is-paid td{background:#F4FAF6}
 .budget-table tr.budget-over td{background:var(--brand-tint);outline:2px dashed var(--brand-2);outline-offset:-2px}
@@ -810,12 +816,12 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .budget-table tr.has-doc td{background:#FFF9EC}
 .budget-table .calc-note{font-size:11px;margin-top:2px}
 .budget-table .reimb{flex-direction:row;align-items:center;gap:6px}
-.budget-table select{max-width:170px}
+.budget-table td > select{max-width:170px!important}
 .budget-table .dt{max-width:140px}
 .budget-table td{padding-left:8px;padding-right:8px}
 /* To Do : échéance + urgence dans la même case, structure + date dans « Lié à » */
 .due-cell{min-width:150px}
-.due-cell .urg{display:inline-block;margin-top:4px}
+.due-cell .urg{display:inline-block;margin-top:4px;margin-left:-9px}
 .link-cell{min-width:240px}
 .link-cell > * + *{margin-top:4px}
 .view-head .search{min-width:180px;max-width:220px}
@@ -841,6 +847,7 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
   table.cards td input,table.cards td select,table.cards .ac-input{border-color:var(--line)}
   table.cards .dt{border-color:var(--line)}
   table.cards .proj-chips{justify-content:flex-end}
+  table.cards td > :is(input,select,.dt,.ac,textarea),table.cards .task-title .cell-ta,table.cards .due-cell .urg{margin-left:0!important;margin-right:0!important}
   /* case à cocher (tâche faite…) : en haut à droite de la fiche */
   table.cards tr{position:relative}
   table.cards td:first-child:has(> input[type=checkbox]){position:absolute;top:12px;right:12px;width:auto;padding:0;min-height:0}

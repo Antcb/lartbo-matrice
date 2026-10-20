@@ -20,7 +20,7 @@ function lineRow(l, project, {qtyAll = false} = {}){
   const payers = PAYERS.map(c => [c, payerLabel(c, project)]);
   const hasQty = staff && l.forecast == null;
   const prev = staff && hasQty
-    ? `<span class="qty-line">${cIn('budget_lines', l.id, 'qty', l.qty, 'number', `class="narrow" title="${qtyAll ? 'Quantité' : 'Nombre de bulletins'}" placeholder="${qtyAll ? 'qté' : 'nb'}"`)}<span class="x">✕</span>${cIn('budget_lines', l.id, 'unit_cost', l.unit_cost, 'number', `class="narrow2" title="${qtyAll ? 'Prix unitaire HT' : 'Coût employeur d’un bulletin'}" placeholder="${qtyAll ? 'P.U.' : 'coût'}"`)}<b>${eur2(fc ?? 0)}</b></span>`
+    ? `<span class="qty-line">${cIn('budget_lines', l.id, 'qty', l.qty, 'number', `class="narrow" title="${qtyAll ? 'Quantité' : 'Nombre de bulletins'}" placeholder="${qtyAll ? 'qté' : 'nb'}"`)}<span class="x">×</span>${cIn('budget_lines', l.id, 'unit_cost', l.unit_cost, 'number', `class="narrow2" title="${qtyAll ? 'Prix unitaire HT' : 'Coût employeur d’un bulletin'}" placeholder="${qtyAll ? 'P.U.' : 'coût'}"`)}<b>${eur2(fc ?? 0)}</b></span>`
     : `<input type="number" step="any" data-t="budget_lines" data-id="${l.id}" data-f="forecast" value="${l.forecast??''}" placeholder="${fc==null?'à saisir':fc}" class="${l.forecast!=null?'override':''}" title="${auto?'Vide = calcul automatique':'Montant prévu HT'}">`;
   const calc = l.auto==='movinmotion' ? 'bulletins × coût Movinmotion' : l.auto==='cnm' ? '% du cachet (entrée gratuite)' : '';
   return `<tr data-budget-line="${l.id}" class="${st==='paid'?'is-paid':st==='doc'?'has-doc':''}" title="${st==='paid'?'Payé':st==='doc'?'Pièce reçue, pas encore payée':'Prévu'}">
@@ -105,7 +105,7 @@ function artistBlock(s, b, p){
 /** Budget d'une date (dans la date dépliée) */
 export function showBudgetHTML(s){
   const p = byId('projects', s.project_id), b = showBudget(s), com = commissionOf(s);
-  const comRow = `<tr class="${com?.paid_at?'is-paid':''}"><td><b>Commission</b></td><td>Commission L'ArtBo ${com?.amount != null && com.amount !== '' ? `<span class="muted" title="Montant saisi à la main dans Factures">(montant saisi)</span>` : com?.pct != null && com.pct !== '' ? cIn('show_payments', com.id, 'pct', com.pct, 'number', 'class="narrow" title="% de commission sur cette date"') : cIn('shows', s.id, 'artbo_pct', s.artbo_pct, 'number', 'class="narrow" title="% de commission sur cette date"')} %</td><td>L'ArtBoristerie</td><td>${esc(payerLabel('compte', p))}</td>
+  const comRow = `<tr class="${com?.paid_at?'is-paid':''}"><td><b>Commission</b></td><td><span>Commission L'ArtBo</span> ${com?.amount != null && com.amount !== '' ? `<span class="muted" title="Montant saisi à la main dans Factures">(montant saisi)</span>` : com?.pct != null && com.pct !== '' ? cIn('show_payments', com.id, 'pct', com.pct, 'number', 'class="narrow" title="% de commission sur cette date"') : cIn('shows', s.id, 'artbo_pct', s.artbo_pct, 'number', 'class="narrow" title="% de commission sur cette date"')} %</td><td>L'ArtBoristerie</td><td>${esc(payerLabel('compte', p))}</td>
     <td class="num">${money(commissionAmount(s))}</td><td class="num">—</td><td class="muted">${com?.paid_at ? 'versée' : 'à te verser'}</td>
     <td class="${com?.paid_at?'done-cell':''}">${com ? cIn('show_payments', com.id, 'paid_at', com.paid_at, 'date', 'title="Commission versée à L’ArtBo le"') : '<span class="muted">—</span>'}</td><td></td></tr>`;
   return `<div class="prod-budget">

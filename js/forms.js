@@ -123,6 +123,8 @@ export function editProject(id){
       if (id){ const pctChanged = String(v.default_artbo_pct ?? '') !== String(p.default_artbo_pct ?? '');
         const ok = await save('projects', id, v, {rerender:false}); if (ok && makeFolder && !v.drive_artist_folder_id) createArtistFolder(id);
         if (ok && pctChanged) setTimeout(() => propagateCommission(id), 0);   // après la fermeture de la fenêtre
+        // l'artiste change de mode : ses dates suivent (fait aussi par la base), sauf celles réglées à la main
+        if (ok) for (const x of S.db.shows) if (x.project_id === id && !x.prod_mode_manual && x.prod_mode !== v.mode && v.mode) x.prod_mode = v.mode;
         return; }
       const row = await insert('projects', v);
       // nouvel artiste : son dossier Drive est créé à son nom, à partir du modèle (LARTBOTRICE › 01_Modèles Drive)

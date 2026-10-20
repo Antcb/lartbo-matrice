@@ -11,6 +11,15 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const API = "https://api.brevo.com/v3";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "content-type, x-hook-secret, authorization, apikey" };
+/** Appel à Brevo qui patiente et réessaie quand Brevo dit « trop de demandes » (429), jusqu'à 5 fois */
+async function bfetch(url: string, init: RequestInit = {}): Promise<Response> {
+  for (let i = 0; ; i++) {
+    const r = await fetch(url, init);
+    if (r.status !== 429 || i >= 4) return r;
+    const wait = Number(r.headers.get("retry-after")) * 1000 || 1000 * 2 ** i;
+    await new Promise((ok) => setTimeout(ok, Math.min(wait, 10000)));
+  }
+}
 const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
 async function settings() {
@@ -24,13 +33,13 @@ let ATTRS: { first?: string; last?: string; struct?: string } | null = null;
 /** Noms des champs Brevo du compte (PRENOM / FIRSTNAME…) ; crée « STRUCTURE » s'il n'existe aucun champ pour la structure */
 async function attrNames(key: string) {
   if (ATTRS) return ATTRS;
-  const r = await fetch(`${API}/contacts/attributes`, { headers: { "api-key": key, accept: "application/json" } });
+  const r = await bfetch(`${API}/contacts/attributes`, { headers: { "api-key": key, accept: "application/json" } });
   if (!r.ok) throw new Error(`Brevo ${r.status} : ${await r.text()}`);
   const names = new Set(((await r.json()).attributes || []).map((a: { name: string }) => a.name.toUpperCase()));
   const pick = (list: string[]) => list.find((n) => names.has(n));
   let struct = pick(["STRUCTURE", "SOCIETE", "ENTREPRISE", "COMPANY", "COMPANY_NAME", "ORGANISATION"]);
   if (!struct) {
-    const c = await fetch(`${API}/contacts/attributes/normal/STRUCTURE`, { method: "POST", headers: { "api-key": key, "content-type": "application/json" }, body: JSON.stringify({ type: "text" }) });
+    const c = await bfetch(`${API}/contacts/attributes/normal/STRUCTURE`, { method: "POST", headers: { "api-key": key, "content-type": "application/json" }, body: JSON.stringify({ type: "text" }) });
     if (c.ok || c.status === 400) struct = "STRUCTURE";
   }
   ATTRS = { first: pick(["PRENOM", "FIRSTNAME", "FNAME"]), last: pick(["NOM", "LASTNAME", "LNAME"]), struct };
@@ -41,7 +50,7 @@ async function attrNames(key: string) {
 async function brevoEmails(key: string) {
   const out = new Set<string>();
   for (let offset = 0; ; offset += 1000) {
-    const r = await fetch(`${API}/contacts?limit=1000&offset=${offset}`, { headers: { "api-key": key, accept: "application/json" } });
+    const r = await bfetch(`${API}/contacts?limit=1000&offset=${offset}`, { headers: { "api-key": key, accept: "application/json" } });
     if (!r.ok) throw new Error(`Brevo ${r.status} : ${await r.text()}`);
     const j = await r.json();
     for (const c of j.contacts || []) if (c.email) out.add(String(c.email).trim().toLowerCase());
@@ -101,7 +110,7 @@ Deno.serve(async (req) => {
       for (const c of all) for (const e of mailsOf(c)) { if (known.has(e) || seen.has(e)) continue; seen.add(e); list.push({ c, email: e }); }
       if (!list.length) return json({ ok: true, count: 0 });
       const st = await structuresOf([...new Set(list.map((x) => x.c.id))]);
-      const r = await fetch(`${API}/contacts/import`, { method: "POST", headers: { "api-key": key, "content-type": "application/json" },
+      const r = await bfetch(`${API}/contacts/import`, { method: "POST", headers: { "api-key": key, "content-type": "application/json" },
         body: JSON.stringify({ jsonBody: list.map(({ c, email }) => ({ email, attributes: attributes(c, st.get(c.id) || [], a) })),
           ...(listIds.length ? { listIds } : {}), updateExistingContacts: false, emptyContactsAttributes: false }) });
       if (!r.ok) return json({ ok: false, error: `Brevo ${r.status} : ${await r.text()}` });
@@ -120,14 +129,15 @@ Deno.serve(async (req) => {
     const ours = new Set<string>((c.brevo_emails || []).map((e: string) => e.toLowerCase()));
     if (c.brevo_created && !ours.size && c.email) { ours.add(c.email.trim().toLowerCase()); created.push(c.email.trim().toLowerCase()); }
     for (const email of mails) {
-      const g = await fetch(`${API}/contacts/${encodeURIComponent(email)}`, { headers: { "api-key": key, accept: "application/json" } });
+      const g = await bfetch(`${API}/contacts/${encodeURIComponent(email)}`, { headers: { "api-key": key, accept: "application/json" } });
+      if (!g.ok && g.status !== 404) { errors.push(`${email} : Brevo ${g.status} : ${(await g.text()).slice(0, 200)}`); continue; }
       if (g.ok) {
         // déjà dans Brevo : on n'y touche pas, sauf si c'est la Matrice qui l'a créé (on complète prénom / nom / structure)
-        if (ours.has(email)) await fetch(`${API}/contacts/${encodeURIComponent(email)}`, { method: "PUT", headers: { "api-key": key, "content-type": "application/json" },
+        if (ours.has(email)) await bfetch(`${API}/contacts/${encodeURIComponent(email)}`, { method: "PUT", headers: { "api-key": key, "content-type": "application/json" },
           body: JSON.stringify({ attributes: attrs }) });
         done.push(email); continue;
       }
-      const r = await fetch(`${API}/contacts`, { method: "POST", headers: { "api-key": key, "content-type": "application/json", accept: "application/json" },
+      const r = await bfetch(`${API}/contacts`, { method: "POST", headers: { "api-key": key, "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({ email, attributes: attrs, ...(listIds.length ? { listIds } : {}) }) });
       const txt = r.ok ? "" : await r.text();
       if (r.ok) { ours.add(email); created.push(email); done.push(email); }
