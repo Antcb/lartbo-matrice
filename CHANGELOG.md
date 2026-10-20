@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.36.0 — 20/10/2026
+- Dates qui suivent le mode de l'artiste, Movinmotion ajouté dès qu'il y a un salarié, pôles en français, nombres à la virgule, tableaux alignés au cordeau
+
+
 ## 1.35.2 — 20/10/2026
 - Relecture : « Annuler » sur un suivi clos remet aussi ses relances
 
