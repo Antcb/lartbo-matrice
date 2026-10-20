@@ -64,11 +64,22 @@ export const lingering = id => S.linger.has(id);
 /** Recharge les lignes d'une table liées à une ou plusieurs dates (après un ajout fait par la base) */
 export async function refreshFor(table, col, ids){
   ids = [].concat(ids).filter(Boolean); if (!ids.length) return;
-  const {data, error} = await sb.from(table).select('*').in(col, ids);
-  if (error) return;
-  const keep = new Set((data || []).map(r => r.id));
-  S.db[table] = S.db[table].filter(r => !ids.includes(r[col]) || keep.has(r.id));
-  mergeRows(table, data);
+  // les changements reçus en direct pendant la lecture sont gardés, puis rejoués par-dessus (sinon l'ancienne lecture les effacerait)
+  const buf = []; S.rtBuffers.add(buf);
+  try {
+    const data = [];
+    for (let i = 0; i < ids.length; i += 200){            // par paquets de dates, et toutes les pages de chaque paquet
+      for (let from = 0; ; from += 1000){
+        const r = await sb.from(table).select('*').in(col, ids.slice(i, i + 200)).range(from, from + 999);
+        if (r.error) return;
+        data.push(...r.data); if (r.data.length < 1000) break;
+      }
+    }
+    const keep = new Set(data.map(r => r.id));
+    S.db[table] = S.db[table].filter(r => !ids.includes(r[col]) || keep.has(r.id));
+    mergeRows(table, data);
+    for (const [t, ev] of buf) if (S.rtApply?.(t, ev)) touch(t);
+  } finally { S.rtBuffers.delete(buf); }
 }
 
 export function mergeRows(table, rows){

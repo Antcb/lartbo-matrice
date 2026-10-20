@@ -6,6 +6,7 @@ export const TABLES = ['structures','contacts','contact_structures','projects','
   'structure_events','project_logs','project_members','attachments','notifications','mail_templates','employees','budget_lines'];
 
 export const S = {
+  rtBuffers: new Set(), rtApply: null,   // changements en direct gardés pendant un rechargement partiel (data.js refreshFor)
   user:null, view: localGet('view') || 'todo', todoWho: localGet('todoWho') || '',
   year: Number(localGet('year')) || new Date().getFullYear(),
   projects: (() => { try { const v = JSON.parse(localGet('projects') || 'null'); if (Array.isArray(v)) return v; } catch(e){} const one = localGet('project'); return one ? [one] : []; })(),
