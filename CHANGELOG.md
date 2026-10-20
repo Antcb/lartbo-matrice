@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.37.3 — 20/10/2026
+- Téléphone : notifications et menu du compte (Réglages) s'ouvrent sous les icônes
+
+
 ## 1.37.2 — 20/10/2026
 - Relecture : rechargement partiel par pages stables, rejeu limité à la table rechargée
 
