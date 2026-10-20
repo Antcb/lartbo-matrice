@@ -16,7 +16,7 @@ import { fileRow } from './ui/bits.js';
 import { hiddenFields, openModal } from './ui/modal.js';
 import { $, downloadCSV, esc, fmtDate, toast, today } from './utils.js';
 import { driveHTML } from './views/production.js';
-import { closeNoAnswer } from './prospection.js';
+import { cancelAutoRelances, closeNoAnswer } from './prospection.js';
 import { askConfirmation, becameConfirmed } from './confirm-flow.js';
 
 const team = () => CFG.TEAM.map(e=>[e, TEAM_NAMES[e]||e]);
@@ -362,7 +362,7 @@ export function editProspect(id){
       ['_files','_note','_contact','_kind'].forEach(k => delete v[k]);
       v.project_id = v.project_ids[0] || null;
       v.name = p.name || 'Suivi';
-      if (id){ await save('prospects', id, v, {rerender:false}); return; }
+      if (id){ if (await save('prospects', id, v, {rerender:false}) && suiviClosed(v)) await cancelAutoRelances(id); return; }
       const row = await insert('prospects', v);
       if (!row) return false;
       const c = byId('contacts', contact);

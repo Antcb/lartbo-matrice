@@ -157,6 +157,8 @@ export async function prepareMail(showId, kind){
   $('#ml-tpl').onchange = draw;
   $('#ml-contact').onchange = async e => {
     contactId = e.target.value; vars = await mailVars(showId, contactId);
+    // brouillon en cours de restauration (événement non déclenché par un clic) : on garde l'adresse, l'objet et le texte restaurés
+    if (!e.isTrusted) return;
     $('#ml-to').value = vars.contact_email || ''; draw();
     if (contactId && contactId !== s.conf_contact_id) save('shows', s.id, {conf_contact_id: contactId}, {rerender:false});
   };

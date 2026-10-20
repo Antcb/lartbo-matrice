@@ -287,9 +287,16 @@ async function closeOpenRelances(st, p){
     await save('tasks', t.id, {status: 'Done', done_at: new Date().toISOString()}, {rerender: false});
 }
 
+/** Suivi confirmé ou clos : ses relances automatiques encore ouvertes sont annulées (les autres tâches restent) */
+export async function cancelAutoRelances(prospectId){
+  for (const t of S.db.tasks.filter(t => t.prospect_id === prospectId && ['relance_mail', 'relance_tel'].includes(t.auto_kind) && !['Done', 'Cancelled'].includes(t.status)))
+    await save('tasks', t.id, {status: 'Cancelled', done_at: new Date().toISOString()}, {rerender: false});
+}
+
 /** Tâche de relance suivante, rattachée au suivi : par mail à J+10, puis par téléphone après 3 relances par mail */
 async function relanceTask(st, pids, subject, sent, p, n, sentOn=today()){
   await closeOpenRelances(st, p);
+  if (suiviClosed(p)) return;   // suivi confirmé ou clos : plus de relance
   const due = new Date(sentOn + 'T12:00:00'); due.setDate(due.getDate() + RELANCE_DAYS);   // J+10 après l'envoi réel
   const deadline = `${due.getFullYear()}-${String(due.getMonth()+1).padStart(2,'0')}-${String(due.getDate()).padStart(2,'0')}`;
   const base = {department: 'Booking', status: 'To Do', assigned_to: S.user.email, deadline,

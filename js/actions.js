@@ -21,7 +21,7 @@ import { rtStyle, rtToolbar } from './ui/richtext.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
 import { exportShows } from './exports.js';
-import { callProspect, closeNoAnswer, markLogSent, openProspection } from './prospection.js';
+import { callProspect, cancelAutoRelances, closeNoAnswer, markLogSent, openProspection } from './prospection.js';
 import { EMP_ACTIONS, editEmployee } from './views/employees.js';
 import { BUDGET_ACTIONS } from './budget-actions.js';
 
@@ -323,7 +323,7 @@ ${p.content_md||'(aucune)'}`;
 // --- Crochets d'enregistrement direct -----------------------------------------------------
 // Suivi clos : reste visible 5 s avec « Annuler »
 ACTIONS['change:prospects.status'] = async (t, v) => {
-  if (v === 'Closed' || v === 'Confirmed') return saveLinger('prospects', t.dataset.id, {status:v}, v === 'Confirmed' ? 'Suivi confirmé : rangé dans les suivis clos' : 'Suivi clos');
+  if (v === 'Closed' || v === 'Confirmed'){ await cancelAutoRelances(t.dataset.id); return saveLinger('prospects', t.dataset.id, {status:v}, v === 'Confirmed' ? 'Suivi confirmé : rangé dans les suivis clos (relances automatiques retirées)' : 'Suivi clos (relances automatiques retirées)'); }
   await save('prospects', t.dataset.id, {status:v});
 };
 // Date retirée du ticketing / de la communication : reste visible 5 s

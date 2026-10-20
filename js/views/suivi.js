@@ -100,7 +100,7 @@ export function suiviCard(p, {page=false}={}){
       <span class="muted">Dernier échange : ${lastExchange(p)?fmtDate(lastExchange(p)):'—'}</span>
       <span class="spacer"></span>
       ${p.mail_thread_id ? `<span class="muted mail-state">✉️ ${p.mail_sent_at ? `Prospection envoyée le ${fmtDate(p.mail_sent_at.slice(0,10))}` : `Prospection en brouillon${p.mail_log_id && byId('prospect_logs', p.mail_log_id) ? ` <button class="btn sm" data-act="markLogSent" data-id="${p.mail_log_id}">Marquer envoyé</button>` : ''}`}${p.relances ? ` · ${p.relances} relance${p.relances>1?'s':''}${(h => h.length ? ' (' + h.map(fmtDate).join(', ') + ')' : '')(relanceHistory(p).relances)}` : ''}</span>
-        <button class="btn sm" data-act="relance" data-id="${p.id}">Relance</button>` : ''}
+        ${suiviClosed(p) ? '' : `<button class="btn sm" data-act="relance" data-id="${p.id}">Relance</button>`}` : ''}
       ${page ? '' : `<button class="btn sm" data-act="openSuivi" data-id="${p.id}">Ouvrir avec planning et carte</button>`}
       <button class="btn sm ghost danger" data-act="delProspect" data-id="${p.id}">Supprimer</button>
     </div>`;
