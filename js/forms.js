@@ -270,10 +270,13 @@ async function locate(v, before={}){
   const g = !fr ? null : v.address ? (await geocode(q, {france:true}) || (v.city ? await geoFrance(v.city) : null)) : await geoFrance([v.postal_code, v.city].filter(Boolean).join(' '));
   if (g && g.department_code){ v.lat=g.lat; v.lng=g.lng; v.department_code=g.department_code; v.department_name=g.department_name; v.region = v.region || g.region; v.city = v.city || g.city; v.postal_code = v.postal_code || g.postcode; return; }
   // hors de France (ou introuvable en France) : la ville est cherchée dans le monde, avec sa région et son pays
-  const p = v.city ? (await searchPlaces(v.city, {cities:true})).find(x => norm(x.city || '') === norm(v.city)) : null;
-  if (p){ v.lat=p.lat; v.lng=p.lng; v.region = v.region || p.region || null; if (p.country && (fr || !v.country)) v.country = p.country;
-    if (p.department_code){ v.department_code=p.department_code; v.department_name=p.department_name; } return; }
-  const w = await geocode(q || v.city, {france:false}); if (w){ v.lat=w.lat; v.lng=w.lng; }
+  // résultat retenu seulement s'il est bien dans le pays indiqué (et au bon code postal s'il est donné) : pas d'homonyme à l'autre bout du monde
+  const sameCountry = x => fr ? x.country !== 'France' : norm(x.country || '') === norm(v.country) || norm(x.country_code || '') === norm(v.country);
+  const okPlace = x => norm(x.city || '') === norm(v.city) && sameCountry(x) && (!v.postal_code || !x.postcode || String(x.postcode).replace(/\s/g,'') === String(v.postal_code).replace(/\s/g,''));
+  const p = v.city ? (await searchPlaces([v.city, fr ? '' : v.country].filter(Boolean).join(' '), {cities:true})).find(okPlace) : null;
+  if (p){ v.lat=p.lat; v.lng=p.lng; v.region = v.region || p.region || null; if (p.country && fr) v.country = p.country; return; }
+  // dernier recours : l'adresse complète avec le pays ; sinon pas de coordonnées (mieux que de fausses)
+  if (!fr){ const w = await geocode([q, v.country].filter(Boolean).join(' '), {france:false}); if (w && norm(w.label || '').includes(norm(v.country))){ v.lat=w.lat; v.lng=w.lng; } }
 }
 
 /** Champs de la fiche structure (les mêmes partout : onglet Structures, nouveau suivi, nouvelle date, tâche…) */

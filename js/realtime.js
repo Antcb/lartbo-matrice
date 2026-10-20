@@ -60,12 +60,14 @@ async function catchUp(render){
 }
 
 export function startRealtime(render){
+  S.rtApply = apply;
   watchVersion();
   if (channel || typeof sb.channel !== 'function') return;
   try { channel = sb.channel('matrice-db'); } catch(e){ return; }
   TABLES.forEach(table => channel.on('postgres_changes', {event: '*', schema: 'public', table}, ev => {
     if (!S.user) return;
     if (reloading) pendingEvents.push([table, ev]);
+    for (const b of S.rtBuffers) b.push([table, ev]);   // rechargements partiels en cours (refreshFor)
     if (apply(table, ev)){ touch(table); later(render); }
   }));
   // reconnexion après une coupure (wifi, veille…) : on recharge ce qui a pu être manqué

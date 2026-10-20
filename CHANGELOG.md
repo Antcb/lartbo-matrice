@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.37.1 — 20/10/2026
+- Relecture : lieu vérifié dans le bon pays ; paiements au passage en production respectent « sans acompte » ; rechargements partiels complets et sans perte
+
+
 ## 1.37.0 — 20/10/2026
 - Tags : liste dans la fiche qui se ferme, anciens tags proposés ; lieu d'une structure remplacé en entier ; recherche par mail de contact ; téléphone : calendrier et choix des artistes
 
