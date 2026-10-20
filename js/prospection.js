@@ -289,8 +289,16 @@ async function closeOpenRelances(st, p){
 
 /** Suivi confirmé ou clos : ses relances automatiques encore ouvertes sont annulées (les autres tâches restent) */
 export async function cancelAutoRelances(prospectId){
-  for (const t of S.db.tasks.filter(t => t.prospect_id === prospectId && ['relance_mail', 'relance_tel'].includes(t.auto_kind) && !['Done', 'Cancelled'].includes(t.status)))
-    await save('tasks', t.id, {status: 'Cancelled', done_at: new Date().toISOString()}, {rerender: false});
+  const undo = [];
+  for (const t of S.db.tasks.filter(t => t.prospect_id === prospectId && ['relance_mail', 'relance_tel'].includes(t.auto_kind) && !['Done', 'Cancelled'].includes(t.status))){
+    const prev = {status: t.status, done_at: t.done_at ?? null};
+    if (await save('tasks', t.id, {status: 'Cancelled', done_at: new Date().toISOString()}, {rerender: false})) undo.push([t.id, prev]);
+  }
+  return undo;
+}
+/** « Annuler » : les relances retirées reviennent comme avant */
+export async function restoreRelances(undo){
+  for (const [id, prev] of undo || []) await save('tasks', id, prev, {rerender: false});
 }
 
 /** Tâche de relance suivante, rattachée au suivi : par mail à J+10, puis par téléphone après 3 relances par mail */
