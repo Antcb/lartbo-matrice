@@ -9,7 +9,7 @@
  *   - fill  : pour les adresses, préfixe des champs du formulaire à remplir automatiquement
  * Au choix, l'input caché reçoit l'identifiant et déclenche « change » (enregistrement direct ou formulaire).
  */
-import { byId, showLabel, structName } from '../selectors.js';
+import { byId, linksOfStructure, showLabel, structName } from '../selectors.js';
 import { S } from '../state.js';
 import { esc, fmtDate, hayOf, norm } from '../utils.js';
 import { searchPlaces } from '../geo.js';
@@ -32,7 +32,7 @@ function rank(rows, q, text, limit=LIMIT){
 export const SOURCES = {
   structures: {
     label: id => structName(id),
-    search: q => rank(S.db.structures, q, s => `${s.name} — ${[s.city, s.department_code].filter(Boolean).join(' ')}`)
+    search: q => rank(S.db.structures, q, s => `${s.name} — ${[s.city, s.department_code].filter(Boolean).join(' ')}${q.includes('@') ? ' ' + linksOfStructure(s.id).flatMap(c => [c.email, c.email_2]).filter(Boolean).join(' ') : ''}`)
       .map(s => ({id:s.id, label:s.name, hint:[s.city, s.department_code && '('+s.department_code+')'].filter(Boolean).join(' ')})),
   },
   contacts: {
@@ -151,8 +151,9 @@ async function choose(i){
 /** Adresse choisie : remplit adresse, code postal, ville, département, région, pays, coordonnées */
 function fillPlace(box, p){
   const root = box.closest('form') || document;
-  const set = (k, v) => { const el = root.querySelector(`[name="${box.dataset.fill}${k}"]`); if (el && v != null && el.value !== String(v)) { el.value = v; el.dispatchEvent(new Event('input', {bubbles:true})); if (!el.closest('form')) el.dispatchEvent(new Event('change', {bubbles:true})); } };
-  if (p.street) set('address', p.street);
+  // un lieu choisi remplace TOUT l'emplacement : ce que le nouveau lieu n'indique pas est vidé (pas d'ancien département / région qui traîne)
+  const set = (k, v) => { const el = root.querySelector(`[name="${box.dataset.fill}${k}"]`); v = v ?? ''; if (el && el !== box.querySelector('.ac-val') && el.value !== String(v)) { el.value = v; el.dispatchEvent(new Event('input', {bubbles:true})); if (!el.closest('form')) el.dispatchEvent(new Event('change', {bubbles:true})); } };
+  set('address', p.street);
   set('postal_code', p.postcode); set('city', p.city); set('region', p.region); set('country', p.country);
   set('department_code', p.department_code); set('department_name', p.department_name);
   set('department', p.department_code || (p.country && p.country !== 'France' ? p.country_code : null));
@@ -160,7 +161,8 @@ function fillPlace(box, p){
 }
 
 document.addEventListener('input', e => { if (e.target.classList?.contains('ac-input')){ clearTimeout(e.target._t); const t = e.target; const async = SOURCES[t.closest('.ac').dataset.ac].async; t._t = setTimeout(() => update(t), async ? 160 : 60); } });
-document.addEventListener('focusin', e => { if (e.target.classList?.contains('ac-input')){ e.target.select(); if (e.target.value) update(e.target); } });
+// tout le texte est sélectionné au clic (on tape par-dessus) ; pas sur téléphone, où la sélection forcée gêne le « Coller »
+document.addEventListener('focusin', e => { if (e.target.classList?.contains('ac-input')){ if (!matchMedia('(pointer:coarse)').matches) e.target.select(); if (e.target.value) update(e.target); } });
 document.addEventListener('keydown', e => {
   if (!e.target.classList?.contains('ac-input')) return;
   if (!OPEN || OPEN.input !== e.target){ if (e.key === 'ArrowDown'){ update(e.target); e.preventDefault(); } return; }
@@ -191,4 +193,4 @@ document.addEventListener('focusout', e => {
   }, 150);
 });
 window.addEventListener('scroll', () => { if (OPEN) place(OPEN.list, OPEN.input); }, true);
-window.addEventListener('resize', close);
+window.addEventListener('resize', () => { if (OPEN) place(OPEN.list, OPEN.input); });   // le clavier du téléphone redimensionne l'écran : la liste suit au lieu de se fermer

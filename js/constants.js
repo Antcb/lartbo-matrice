@@ -84,6 +84,7 @@ export const EVENT_KINDS = ['Festival', 'Salle', 'Événement'];
 export const PRICING = ['Payant', 'Gratuit', 'Prix libre'];
 
 /** Types de structure proposés d'office (on peut en créer d'autres d'un clic) */
-export const STRUCT_TAGS = ['Festival', 'Salle', 'SMAC', 'Scène nationale', 'Théâtre', 'Bar / Club', 'Association', 'Mairie / Collectivité', 'Comité des fêtes', 'Tourneur', 'Producteur', 'Label', 'Média', 'Entreprise'];
+/** Types de structure proposés d'office, écrits comme les tags déjà utilisés (pas de doublon SMAC / Scène de Musiques Actuelles…) */
+export const STRUCT_TAGS = ['Festival', 'Salle', 'Scène de Musiques Actuelles', 'Scène nationale', 'Théâtre', 'Café Concert', 'Bar / Club', 'Association', 'Mairie / Collectivité', 'Comité des fêtes', 'Agent tourneur', 'Producteur de Spectacles', 'Labels', 'Médias', 'Managers', 'Entreprise'];
 /** Postes proposés d'office pour un contact */
 export const CONTACT_ROLES = ['Programmateur·rice', 'Direction', 'Administration', 'Production', 'Régie générale', 'Régie technique', 'Communication', 'Billetterie', 'Président·e', 'Booker', 'Manager'];
