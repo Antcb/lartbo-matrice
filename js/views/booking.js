@@ -82,10 +82,10 @@ export function chains(shows){
 
 export function routeBoxHTML(shows){
   const a = byId('shows', S.routePick.a), b = byId('shows', S.routePick.b);
-  let pair = '<p class="muted" style="margin:0">Clique sur A puis sur B dans deux dates pour calculer la distance et le temps de route.</p>';
+  let pair = '<p class="muted m0">Clique sur A puis sur B dans deux dates pour calculer la distance et le temps de route.</p>';
   if (a || b){
     const r = a && b ? routeCached(a, b) : null;
-    pair = `<p style="margin:0 0 6px"><b>A</b> ${a?esc(a.venue)+' <span class="muted">'+esc(a.city||'')+'</span>':'—'}<br><b>B</b> ${b?esc(b.venue)+' <span class="muted">'+esc(b.city||'')+'</span>':'—'}</p>
+    pair = `<p class="mb-sm"><b>A</b> ${a?esc(a.venue)+' <span class="muted">'+esc(a.city||'')+'</span>':'—'}<br><b>B</b> ${b?esc(b.venue)+' <span class="muted">'+esc(b.city||'')+'</span>':'—'}</p>
       ${a && b ? `<div class="route-result">${r ? (r.error ? `<span class="muted">${esc(r.error)}</span>` : `<b>${r.km} km</b> · ${r.time} de route`) : '<span class="muted">Calcul en cours…</span>'}</div>` : ''}
       <button class="btn sm ghost" data-act="clearPick">Effacer</button>`;
   }
@@ -97,7 +97,7 @@ export function routeBoxHTML(shows){
   }).join('');
   const n = chains(shows).length;
   return `<h3>Trajet</h3>${pair}
-    ${fold('chains', 'Enchaînements', legs ? `<ul class="legs">${legs}</ul>` : '<p class="muted" style="margin:0">Aucune date qui se suit (au plus un jour off) sur cette période.</p>', {open:false, count:n})}`;
+    ${fold('chains', 'Enchaînements', legs ? `<ul class="legs">${legs}</ul>` : '<p class="muted m0">Aucune date qui se suit (au plus un jour off) sur cette période.</p>', {open:false, count:n})}`;
 }
 
 /* ---------------------------------------------------------------------------------------

@@ -18,47 +18,47 @@ export function viewSettings(){
   const ac = Number(setting('default_acompte_pct') ?? 0);
   return viewHead('Réglages') + `
   <div class="grid-cards" style="grid-template-columns:repeat(auto-fill,minmax(360px,1fr))">
-    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Pourcentages par défaut</h3>
-      <p class="help" style="margin:0 0 12px">Appliqués aux nouvelles dates confirmées. Chaque date et chaque projet peuvent les remplacer.</p>
-      <div class="steps">
+    <div class="panel pad"><h3 class="panel-title">Pourcentages par défaut</h3>
+      <p class="help mb">Appliqués aux nouvelles dates confirmées. Chaque date et chaque projet peuvent les remplacer.</p>
+      <div class="steps kv-grid">
         <label for="set-ac">Acompte (% du cachet)</label><input id="set-ac" type="number" step="any" data-act-setting="default_acompte_pct" value="${esc(ac)}">
-        <label>Solde</label><span><b>${esc(100 - ac)} %</b> <span class="muted">(100 % − acompte)</span></span>
+        <label>Solde (100 % − acompte)</label><span><b>${esc(100 - ac)} %</b></span>
         <label for="set-artbo-b">Commission L'ArtBo par défaut — booking (%)</label><input id="set-artbo-b" type="number" step="any" data-act-setting="default_artbo_pct_booking" value="${esc(setting('default_artbo_pct_booking')??15)}">
         <label for="set-artbo-p">Commission L'ArtBo par défaut — production (%)</label><input id="set-artbo-p" type="number" step="any" data-act-setting="default_artbo_pct_production" value="${esc(setting('default_artbo_pct_production')??20)}">
         <label for="set-cnm">Taxe CNM (%)</label><input id="set-cnm" type="number" step="any" data-act-setting="default_cnm_pct" value="${esc(setting('default_cnm_pct')??'')}">
         <label for="set-mvm">Coût Movinmotion par bulletin (€)</label><input id="set-mvm" type="number" step="any" data-act-setting="movinmotion_payslip_cost" value="${esc(setting('movinmotion_payslip_cost')??'')}">
       </div>
-      <p class="help" style="margin:14px 0 8px">Les nouvelles dates confirmées prennent ces pourcentages. Les dates déjà confirmées gardent les leurs, sauf si tu les mets à jour :</p>
+      <p class="help mt mb-sm">Les nouvelles dates confirmées prennent ces pourcentages. Les dates déjà confirmées gardent les leurs, sauf si tu les mets à jour :</p>
       <button class="btn sm" data-act="applyAcompte">Appliquer ${esc(ac)} % / ${esc(100-ac)} % aux acomptes et soldes pas encore envoyés</button></div>
-    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Budget type</h3>
-      <p class="help" style="margin:0 0 12px">Le budget prévisionnel posé sur chaque nouvelle date confirmée en production.</p>
+    <div class="panel pad"><h3 class="panel-title">Budget type</h3>
+      <p class="help mb">Le budget prévisionnel posé sur chaque nouvelle date confirmée en production.</p>
       ${templateForm('settings')}</div>
-    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Pôles des tâches</h3>
-      <p class="help" style="margin:0 0 12px">Renommer un pôle met à jour les tâches qui l’utilisent.</p>
+    <div class="panel pad"><h3 class="panel-title">Pôles des tâches</h3>
+      <p class="help mb">Renommer un pôle met à jour les tâches qui l’utilisent.</p>
       ${departments().map((d,i)=>`<div class="link-row" style="grid-template-columns:44px 1fr auto"><input type="color" value="${esc(d.color)}" data-dept="${i}" data-k="color" aria-label="Couleur du pôle ${esc(d.name)}" style="padding:2px;height:32px">
         <input value="${esc(d.name)}" data-dept="${i}" data-k="name" aria-label="Nom du pôle">
         <button class="btn icon sm ghost danger" data-act="rmDept" data-i="${i}" aria-label="Supprimer le pôle ${esc(d.name)}">✕</button></div>`).join('')}
-      <button class="btn sm" data-act="addDept" style="margin-top:10px">Ajouter un pôle</button></div>
-    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Partenaires / co-producteurs</h3>
-      <p class="help" style="margin:0 0 12px">% de la commission L'ArtBo reversé au partenaire, sur les projets où il est choisi.</p>
+      <button class="btn sm mt" data-act="addDept">Ajouter un pôle</button></div>
+    <div class="panel pad"><h3 class="panel-title">Partenaires / co-producteurs</h3>
+      <p class="help mb">% de la commission L'ArtBo reversé au partenaire, sur les projets où il est choisi.</p>
       <table><tbody>${S.db.partners.map(p=>`<tr><td>${cIn('partners',p.id,'name',p.name)}</td><td class="num">${cIn('partners',p.id,'default_pct',p.default_pct,'number','class="narrow"')} %</td></tr>`).join('')}</tbody></table>
-      <button class="btn sm" data-act="newPartner" style="margin-top:10px">Ajouter un partenaire</button></div>
-    <div class="panel pad" style="grid-column:1/-1"><h3 style="font-size:22px;margin-bottom:6px">Modèles de mail</h3>
-      <p class="help" style="margin:0 0 12px">Rangés par type de mail : clique sur un groupe pour le déplier. Les modèles « génériques » servent pour les artistes qui n’ont pas le leur. Les balises comme {{date}} ou {{structure}} sont remplacées par les infos de la date ou de la structure ; une balise inconnue (ex. {{date_concert}}) reste surlignée en jaune pour être complétée à la main.</p>
-      <div class="steps" style="margin-bottom:12px">
+      <button class="btn sm mt" data-act="newPartner">Ajouter un partenaire</button></div>
+    <div class="panel pad" style="grid-column:1/-1"><h3 class="panel-title">Modèles de mail</h3>
+      <p class="help mb">Rangés par type de mail : clique sur un groupe pour le déplier. Les modèles « génériques » servent pour les artistes qui n’ont pas le leur. Les balises comme {{date}} ou {{structure}} sont remplacées par les infos de la date ou de la structure ; une balise inconnue (ex. {{date_concert}}) reste surlignée en jaune pour être complétée à la main.</p>
+      <div class="steps mb">
         <label for="set-mfont">Police par défaut des mails</label><select id="set-mfont" data-setting-text="mail_font">${FONTS.map(([v, l]) => `<option value="${esc(v)}" ${v === mailFont().family ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
         <label for="set-msize">Taille par défaut</label><select id="set-msize" data-setting-text="mail_font_size">${SIZES.map(n => `<option value="${n}" ${n === mailFont().size ? 'selected' : ''}>${n}</option>`).join('')}</select>
       </div>
       ${templatesList()}
-      <button class="btn sm primary" data-act="newTemplate" style="margin-top:10px">Nouveau modèle</button></div>
-    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Contrats</h3>
-      <p class="help" style="margin:0 0 12px">Modèles Google Docs avec les balises &lt;&lt;…&gt;&gt; de la fiche de renseignements. Dépose le .docx dans le Drive, ouvre-le puis « Fichier › Enregistrer au format Google Docs », et colle ici le lien du Google Doc.</p>
+      <button class="btn sm primary mt" data-act="newTemplate">Nouveau modèle</button></div>
+    <div class="panel pad"><h3 class="panel-title">Contrats</h3>
+      <p class="help mb">Modèles Google Docs avec les balises &lt;&lt;…&gt;&gt; de la fiche de renseignements. Dépose le .docx dans le Drive, ouvre-le puis « Fichier › Enregistrer au format Google Docs », et colle ici le lien du Google Doc.</p>
       <div class="steps">
         <label for="set-tcc">Modèle contrat de cession</label><input id="set-tcc" data-setting-text="contract_template_cc" value="${esc(setting('contract_template_cc')||'')}" placeholder="https://docs.google.com/document/d/…">
         <label for="set-tcr">Modèle contrat de co-réalisation</label><input id="set-tcr" data-setting-text="contract_template_cr" value="${esc(setting('contract_template_cr')||'')}" placeholder="https://docs.google.com/document/d/…">
       </div></div>
-    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Google : Drive et Gmail</h3>
-      <p class="help" style="margin:0 0 12px">Le script Google installé sur le compte production@ crée les dossiers Drive des dates et les brouillons Gmail.</p>
+    <div class="panel pad"><h3 class="panel-title">Google : Drive et Gmail</h3>
+      <p class="help mb">Le script Google installé sur le compte production@ crée les dossiers Drive des dates et les brouillons Gmail.</p>
       <div class="steps">
         <label for="set-gas">Adresse du script (Apps Script)</label><input id="set-gas" data-setting-text="drive_webhook_url" value="${esc(setting('drive_webhook_url')||'')}" placeholder="https://script.google.com/macros/s/…/exec">
         <label>Code secret à coller dans le script</label><span class="secret-line"><code>${esc(String(setting('drive_webhook_secret')||'').slice(0,8))}…</code> <button class="btn sm ghost" data-act="copySecret">Copier</button></span>
@@ -70,15 +70,15 @@ export function viewSettings(){
         <label for="set-site">Adresse du site (liens des fiches)</label><input id="set-site" data-setting-text="site_url" value="${esc(setting('site_url')||'')}">
         <label>Code du script (Code.gs)</label><span class="vh-actions"><button class="btn sm" data-act="copyMainScript">Copier le code à jour</button><button class="btn sm ghost" data-act="testMainScript">Tester le script</button></span>
       </div>
-      <p class="help" style="margin:8px 0 0">Mettre à jour le script : sur production@, ouvre script.google.com › le projet du script › fichier Code.gs › sélectionne tout et colle le code copié › Enregistrer › Déployer › Gérer les déploiements › crayon › Version : Nouvelle version › Déployer. L’adresse ne change pas.</p>
-      <div class="vh-actions" style="margin-top:12px"><button class="btn sm" data-act="testScript">Tester le script</button>
+      <p class="help mt-sm">Mettre à jour le script : sur production@, ouvre script.google.com › le projet du script › fichier Code.gs › sélectionne tout et colle le code copié › Enregistrer › Déployer › Gérer les déploiements › crayon › Version : Nouvelle version › Déployer. L’adresse ne change pas.</p>
+      <div class="vh-actions mt"><button class="btn sm" data-act="testScript">Tester le script</button>
         <button class="btn sm" data-act="driveScan">Rattacher les dossiers Drive existants</button></div>
-      <p class="help" style="margin:14px 0 6px">Noms des dossiers de dates (« MM-DD • Ville • Salle (79) ») et des contrats (« Artiste • AAAA-MM-JJ • Ville (79) • Salle • CC/CR ») : la vérification crée un Google Sheet avec les renommages proposés, sans rien toucher. Décoche ce qui ne convient pas, puis applique.</p>
+      <p class="help mt mb-sm">Noms des dossiers de dates (« MM-DD • Ville • Salle (79) ») et des contrats (« Artiste • AAAA-MM-JJ • Ville (79) • Salle • CC/CR ») : la vérification crée un Google Sheet avec les renommages proposés, sans rien toucher. Décoche ce qui ne convient pas, puis applique.</p>
       <div class="vh-actions"><button class="btn sm" data-act="renameAudit">Vérifier les noms</button>
         ${setting('rename_sheet_url') ? `<a class="btn sm" href="${esc(setting('rename_sheet_url'))}" target="_blank" rel="noopener">Ouvrir le dernier tableau</a>` : ''}
         <button class="btn sm" data-act="renameApply">Appliquer les renommages cochés</button></div></div>
-    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Prospection</h3>
-      <p class="help" style="margin:0 0 10px">Les mails de prospection et les relances partent du Gmail de <b>${esc(setting('prospect_from') || 'anthony@lartboristerie.com')}</b> grâce à un petit script installé sur ce compte (une seule fois) :</p>
+    <div class="panel pad"><h3 class="panel-title">Prospection</h3>
+      <p class="help mb">Les mails de prospection et les relances partent du Gmail de <b>${esc(setting('prospect_from') || 'anthony@lartboristerie.com')}</b> grâce à un petit script installé sur ce compte (une seule fois) :</p>
       <ol class="help" style="margin:0 0 12px;padding-left:18px">
         <li><button class="btn sm" data-act="copyProspectScript">Copier le code du script</button></li>
         <li>Va sur <a href="https://script.google.com/home/projects/create" target="_blank" rel="noopener">script.google.com</a> connecté avec ce compte : un nouveau projet s’ouvre. Efface tout, colle le code, enregistre (⌘S) et nomme-le « Matrice Prospection ».</li>
@@ -89,34 +89,34 @@ export function viewSettings(){
       <div class="steps">
         <label for="set-pscript">Adresse du script de prospection</label><input id="set-pscript" data-setting-text="prospect_script_url" value="${esc(setting('prospect_script_url')||'')}" placeholder="https://script.google.com/macros/s/…/exec">
       </div>
-      <div class="vh-actions" style="margin-top:10px"><button class="btn sm" data-act="testProspectScript">Tester</button></div>
-      <p class="help" style="margin:10px 0 0">Chloé peut aussi prospecter depuis <b>production@</b> : choisis « Envoyé par : Production » dans la fenêtre de prospection. Ces mails passent par le script Google principal (Réglages › Google) : il faut y avoir ajouté le service <b>Gmail API</b> (Services › + › Gmail API) pour les relances.</p>
-      <h4 class="block-title" style="margin:16px 0 6px">Signature d’Anthony (mails envoyés par anthony@)</h4>
+      <div class="vh-actions mt"><button class="btn sm" data-act="testProspectScript">Tester</button></div>
+      <p class="help mt">Chloé peut aussi prospecter depuis <b>production@</b> : choisis « Envoyé par : Production » dans la fenêtre de prospection. Ces mails passent par le script Google principal (Réglages › Google) : il faut y avoir ajouté le service <b>Gmail API</b> (Services › + › Gmail API) pour les relances.</p>
+      <h4 class="block-title mt mb-sm">Signature d’Anthony (mails envoyés par anthony@)</h4>
       ${rtToolbar('set-sig')}<div class="mail-preview" id="set-sig" contenteditable="true" style="${rtStyle()}">${setting('prospect_signature') || ''}</div>
-      <div class="vh-actions" style="margin-top:8px"><button class="btn sm" data-act="saveSignature">Enregistrer la signature</button></div>
-      <h4 class="block-title" style="margin:16px 0 6px">Signature de Chloé (tous les mails envoyés par production@ : prospection, confirmations, boucles)</h4>
+      <div class="vh-actions mt-sm"><button class="btn sm" data-act="saveSignature">Enregistrer la signature</button></div>
+      <h4 class="block-title mt mb-sm">Signature de Chloé (tous les mails envoyés par production@ : prospection, confirmations, boucles)</h4>
       ${rtToolbar('set-sig-prod')}<div class="mail-preview" id="set-sig-prod" contenteditable="true" style="${rtStyle()}">${setting('prospect_signature_production') || ''}</div>
-      <div class="vh-actions" style="margin-top:8px"><button class="btn sm" data-act="saveSignature" data-key="prospect_signature_production" data-el="set-sig-prod">Enregistrer la signature</button></div></div>
-    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Brevo</h3>
-      <p class="help" style="margin:0 0 12px">Chaque nouveau contact de la Matrice qui a un mail est ajouté automatiquement dans Brevo (mail, prénom, nom, structure). Un mail déjà présent dans Brevo n’est jamais modifié : ni ses infos, ni ses listes, et un désabonné reste désabonné. Dans Brevo : ton nom en haut à droite › « SMTP et API » › onglet « Clés API » › « Générer une nouvelle clé API », puis colle-la ici. La liste est facultative : son numéro est dans Contacts › Listes (colonne ID).</p>
+      <div class="vh-actions mt-sm"><button class="btn sm" data-act="saveSignature" data-key="prospect_signature_production" data-el="set-sig-prod">Enregistrer la signature</button></div></div>
+    <div class="panel pad"><h3 class="panel-title">Brevo</h3>
+      <p class="help mb">Chaque nouveau contact de la Matrice qui a un mail est ajouté automatiquement dans Brevo (mail, prénom, nom, structure). Un mail déjà présent dans Brevo n’est jamais modifié : ni ses infos, ni ses listes, et un désabonné reste désabonné. Dans Brevo : ton nom en haut à droite › « SMTP et API » › onglet « Clés API » › « Générer une nouvelle clé API », puis colle-la ici. La liste est facultative : son numéro est dans Contacts › Listes (colonne ID).</p>
       <div class="steps">
         <label for="set-brevo">Clé API Brevo</label><input id="set-brevo" type="password" autocomplete="off" data-1p-ignore data-setting-text="brevo_api_key" value="${esc(setting('brevo_api_key')||'')}" placeholder="xkeysib-…">
         <label for="set-brevo-list">Liste Brevo (n°, ou plusieurs séparés par des virgules)</label><input id="set-brevo-list" data-setting-text="brevo_list_id" value="${esc(setting('brevo_list_id')||'')}" placeholder="ex. 3">
       </div>
-      <div class="vh-actions" style="margin-top:12px"><button class="btn sm" data-act="brevoSyncAll" ${setting('brevo_api_key') ? '' : 'disabled title="Colle d’abord la clé API"'}>Envoyer tous les contacts existants à Brevo</button></div></div>
-    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">IA (résumés de suivi)</h3>
-      <p class="help" style="margin:0 0 12px">Le bouton « Mettre à jour avec l’IA » d’un suivi utilise Gemini, l’IA gratuite de Google. Va sur <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> avec le compte production@, clique sur « Create API key » (« Créer une clé API »), copie la clé (elle commence par « AIza » ou « AQ. ») et colle-la ici. Les demandes partent toujours des serveurs de Paris : Google applique alors ses règles européennes (pas d’entraînement de son IA sur vos données, pas de relecture humaine).</p>
+      <div class="vh-actions mt"><button class="btn sm" data-act="brevoSyncAll" ${setting('brevo_api_key') ? '' : 'disabled title="Colle d’abord la clé API"'}>Envoyer tous les contacts existants à Brevo</button></div></div>
+    <div class="panel pad"><h3 class="panel-title">IA (résumés de suivi)</h3>
+      <p class="help mb">Le bouton « Mettre à jour avec l’IA » d’un suivi utilise Gemini, l’IA gratuite de Google. Va sur <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> avec le compte production@, clique sur « Create API key » (« Créer une clé API »), copie la clé (elle commence par « AIza » ou « AQ. ») et colle-la ici. Les demandes partent toujours des serveurs de Paris : Google applique alors ses règles européennes (pas d’entraînement de son IA sur vos données, pas de relecture humaine).</p>
       <div class="steps">
         <label for="set-ai">Clé Google AI Studio</label><span class="secret-line"><input id="set-ai" type="password" autocomplete="off" data-1p-ignore data-ai-key="1" placeholder="AIza… ou AQ.…" style="flex:1">
           <span class="muted" id="ai-state">…</span></span>
       </div></div>
-    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Pennylane</h3>
-      <p class="help" style="margin:0 0 12px">La Matrice crée dans Pennylane les devis (cession, co-réalisation, co-production…) et les factures d’acompte, de solde et de commission <b>en brouillon</b> : rien n’est envoyé, tu vérifies et tu finalises dans Pennylane. Dans Pennylane : Paramètres › Connectivité › Développeurs › « Générer un jeton API », droits <b>lecture et écriture</b> sur Clients, Factures clients et Devis. Copie le jeton et colle-le ici : il est gardé sur le serveur, jamais affiché dans le site.</p>
+    <div class="panel pad"><h3 class="panel-title">Pennylane</h3>
+      <p class="help mb">La Matrice crée dans Pennylane les devis (cession, co-réalisation, co-production…) et les factures d’acompte, de solde et de commission <b>en brouillon</b> : rien n’est envoyé, tu vérifies et tu finalises dans Pennylane. Dans Pennylane : Paramètres › Connectivité › Développeurs › « Générer un jeton API », droits <b>lecture et écriture</b> sur Clients, Factures clients et Devis. Copie le jeton et colle-le ici : il est gardé sur le serveur, jamais affiché dans le site.</p>
       <div class="steps">
         <label for="set-pl">Jeton API Pennylane</label><span class="secret-line"><input id="set-pl" type="password" autocomplete="off" data-1p-ignore data-pl-key="1" placeholder="Coller le jeton" style="flex:1">
           <span class="muted" id="pl-state">…</span> <button class="btn sm" data-act="testPennylane">Tester</button></span>
       </div></div>
-    <div class="panel pad"><h3 style="font-size:22px;margin-bottom:6px">Version</h3>
+    <div class="panel pad"><h3 class="panel-title">Version</h3>
       <p>Matrice L'ArtBoristerie Productions <b>v${APP_VERSION}</b></p>
       <p class="help">Historique des mises à jour : <a href="CHANGELOG.md" target="_blank" rel="noopener">journal des versions</a>.</p></div>
   </div>`;

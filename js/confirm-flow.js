@@ -28,8 +28,8 @@ export async function askConfirmation(showId){
   await refreshShowSide(showId);   // acompte, solde et commission créés par la base au passage en confirmée
   await applyTemplate(byId('shows', showId), {quiet: true});   // budget prévisionnel : le budget type de l'artiste
   const ok = await openModal({title: 'Date confirmée', fields: [], saveLabel: 'Oui, envoyer la confirmation',
-    extra: `<p style="margin:0 0 6px"><b>${esc(s.venue || '')}</b>${s.city ? ` · ${esc(s.city)}` : ''} · ${fmtDate(s.date)}</p>
-      <p class="muted" style="margin:0">Tu veux envoyer la confirmation à l’organisateur maintenant ? Tu valideras d’abord les conditions (cachet, acomptes…), puis le mail.
+    extra: `<p class="mb-sm"><b>${esc(s.venue || '')}</b>${s.city ? ` · ${esc(s.city)}` : ''} · ${fmtDate(s.date)}</p>
+      <p class="muted m0">Tu veux envoyer la confirmation à l’organisateur maintenant ? Tu valideras d’abord les conditions (cachet, acomptes…), puis le mail.
       Sinon, le bouton « Envoyer la confirmation » t’attend en haut de la date, dans Production.</p>`,
     onSave: () => true});
   if (ok) openConfirmation(showId);
@@ -80,7 +80,7 @@ export async function validateTerms(showId){
       <div class="help">Le solde prend ce qui reste. Dans le mail de confirmation, chaque acompte a sa ligne avec son % et son échéance ; ces % partent aussi dans la fiche de renseignements et le contrat, et créent les lignes de facturation.</div></div>`;
   const p = openModal({title: `Conditions à valider · ${s.venue || ''}`, saveLabel: 'Valider et préparer le mail',
     values: {id: s.id, contract_type: s.contract_type, fee_ht: s.fee_ht, vat_rate: s.vat_rate, show_time: s.show_time, set_length: s.set_length, invitations: s.invitations, artbo_pct: s.artbo_pct},
-    extraTop: `<p class="muted" style="margin:0 0 10px">${fmtDate(s.date)} · ${esc(byId('projects', s.project_id)?.name || '')}${s.terms_validated_at ? ` · déjà validées le ${fmtDate(s.terms_validated_at.slice(0, 10))}` : ''}</p>`,
+    extraTop: `<p class="muted mb">${fmtDate(s.date)} · ${esc(byId('projects', s.project_id)?.name || '')}${s.terms_validated_at ? ` · déjà validées le ${fmtDate(s.terms_validated_at.slice(0, 10))}` : ''}</p>`,
     fields: [
       {k: 'contract_type', label: 'Type de contrat', type: 'select', options: CONTRACTS, blank: false},
       {k: 'fee_ht', label: 'Cachet HT (€)', type: 'number'},

@@ -190,7 +190,7 @@ export const ACTIONS = {
   closeProject: () => { S.projectPage=null; render(); },
   projectPhoto: t => projectPhoto(t.dataset.id),
   addLink: async t => { const p = byId('projects', t.dataset.id), f = t.dataset.field; await save('projects', p.id, {[f]: [...(p[f]||[]), {label:'', url:''}]}); },
-  rmLink: async t => { const p = byId('projects', t.dataset.id), f = t.dataset.field; const list = (p[f]||[]).slice(); list.splice(Number(t.dataset.i), 1); await save('projects', p.id, {[f]: list}); },
+  rmLink: async t => { if (!confirm('Retirer ce lien ?')) return; const p = byId('projects', t.dataset.id), f = t.dataset.field; const list = (p[f]||[]).slice(); list.splice(Number(t.dataset.i), 1); await save('projects', p.id, {[f]: list}); },
   delProjLog: async t => { if (!confirm('Supprimer cet échange et ses fichiers ?')) return;
     const files = attachmentsOf('project_log_id', t.dataset.id); if (files.length){ await sb.storage.from('suivi').remove(files.map(f=>f.path)); await removeWhere('attachments', 'project_log_id', t.dataset.id); }
     if (await remove('project_logs', t.dataset.id)) render(); },

@@ -6,7 +6,7 @@
  *  - toutes ses dates dans le monde 5 jours avant / après,
  * avec distance et temps de route depuis la structure, et le planning de l'artiste.
  */
-import { LOG_ICON, LOG_KINDS, PROSPECT, isOff, stColor } from '../constants.js';
+import { LOG_ICON, LOG_KINDS, PROSPECT, PROSPECT_LABEL, PROSPECT_OPTS, isOff, stColor } from '../constants.js';
 import { lingering } from '../data.js';
 import { distKm, routeCached, route } from '../geo.js';
 import { suiviClosed, projFilterOk, byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, projIds, projName, projNames, projectOptions, showCoords, showsOfProject, structName } from '../selectors.js';
@@ -32,7 +32,7 @@ export function viewProspects(){
     sub: `${rows.length} suivi${rows.length>1?'s':''}`,
     filters: `<div class="filters">
       ${projPicker(S.projects, {attrs:'data-suivi-filter="project" aria-label="Artiste"', multi:true}) + inactiveToggle()}
-      <select class="sel" data-suivi-filter="status" aria-label="Statut"><option value="">Tous les statuts</option>${PROSPECT.map(x=>`<option value="${x}" ${x===st?'selected':''}>${x}</option>`).join('')}</select>
+      <select class="sel" data-suivi-filter="status" aria-label="Statut"><option value="">Tous les statuts</option>${PROSPECT.map(x=>`<option value="${x}" ${x===st?'selected':''}>${PROSPECT_LABEL[x]}</option>`).join('')}</select>
       <input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-suivi" placeholder="Structure, ville, mot du résumé…" data-search="prospects" value="${esc(q)}"></div>`,
     actions: `${nClosed ? `<button class="btn" data-act="toggleClosed" aria-pressed="${!!S.showClosed}">${S.showClosed?'Masquer':'Afficher'} les suivis clos (${nClosed})</button>` : ''}
       <button class="btn" data-act="exportSuivis">Exporter</button>
@@ -71,7 +71,7 @@ export function suiviCard(p, {page=false}={}){
         ${cIn('tasks',t.id,'title',t.title,'text','aria-label="Nom de la tâche"')}
         ${cIn('tasks',t.id,'deadline',t.deadline,'date')}
         ${u?`<span class="urg ${u.cls}">${esc(u.label)}</span>`:'<span></span>'}
-        <button type="button" class="btn sm ghost" data-act="editTask" data-id="${t.id}">Détails</button>${t.auto_kind==='relance_tel' && !isDone(t) && !suiviClosed(p) ? `<button type="button" class="btn sm ghost danger" data-act="noAnswerClose" data-id="${t.id}">Pas de réponse : clore</button>` : ''}</div>`; }).join('')}</div>` : '<p class="muted" style="margin:0">Aucune tâche liée à ce suivi.</p>'}</div>`;
+        <button type="button" class="btn sm ghost" data-act="editTask" data-id="${t.id}">Détails</button>${t.auto_kind==='relance_tel' && !isDone(t) && !suiviClosed(p) ? `<button type="button" class="btn sm ghost danger" data-act="noAnswerClose" data-id="${t.id}">Pas de réponse : clore</button>` : ''}</div>`; }).join('')}</div>` : '<p class="muted m0">Aucune tâche liée à ce suivi.</p>'}</div>`;
   const journal = `
       <div class="suivi-block"><h3 class="block-title">Journal des échanges <span class="count">${logs.length}</span>${files.length?` <span class="muted" style="font-weight:500;font-size:13px">· ${files.length} pièce${files.length>1?'s':''} jointe${files.length>1?'s':''}</span>`:''}</h3>
         <form class="log-form" data-logform="${p.id}">
@@ -96,7 +96,7 @@ export function suiviCard(p, {page=false}={}){
         <div class="md">${md(p.content_md) || '<span class="muted">—</span>'}</div></div>`;
   const head = `<div class="suivi-head">
       ${projChips('prospects', p)}
-      <span class="sel-wrap">${cSel('prospects',p.id,'status',p.status,PROSPECT,false)}</span>
+      <span class="sel-wrap">${cSel('prospects',p.id,'status',p.status,PROSPECT_OPTS,false)}</span>
       <span class="muted">Dernier échange : ${lastExchange(p)?fmtDate(lastExchange(p)):'—'}</span>
       <span class="spacer"></span>
       ${p.mail_thread_id ? `<span class="muted mail-state">✉️ ${p.mail_sent_at ? `Prospection envoyée le ${fmtDate(p.mail_sent_at.slice(0,10))}` : `Prospection en brouillon${p.mail_log_id && byId('prospect_logs', p.mail_log_id) ? ` <button class="btn sm" data-act="markLogSent" data-id="${p.mail_log_id}">Marquer envoyé</button>` : ''}`}${p.relances ? ` · ${p.relances} relance${p.relances>1?'s':''}${(h => h.length ? ' (' + h.map(fmtDate).join(', ') + ')' : '')(relanceHistory(p).relances)}` : ''}</span>
@@ -149,12 +149,10 @@ function suiviPage(p){
   }
   const contacts = linksOfStructure(p.structure_id);
   return `<button class="btn ghost back" data-act="closeSuivi">← Suivi</button>
-  <div class="view-head"><div class="vh-title"><h1>${esc(st?.name || 'Nouveau suivi')}</h1>
-    <span class="sub">${esc([st?.city, st?.department_code && '('+st.department_code+')', st?.country && st.country!=='France' ? st.country : ''].filter(Boolean).join(' '))}</span></div>
-    <span class="spacer"></span>
-    <div class="vh-actions">${st?`<button class="btn" data-act="openStructure" data-id="${st.id}">Fiche structure</button>`:''}
+  ${viewHead(esc(st?.name || 'Nouveau suivi'), {sub: esc([st?.city, st?.department_code && '('+st.department_code+')', st?.country && st.country!=='France' ? st.country : ''].filter(Boolean).join(' ')),
+    actions: `${st?`<button class="btn" data-act="openStructure" data-id="${st.id}">Fiche structure</button>`:''}
       <button class="btn" data-act="wsTask" data-id="${p.id}">Nouvelle tâche</button>
-      <button class="btn primary" data-act="wsShow" data-id="${p.id}" ${st?'':'disabled title="Choisis d’abord la structure"'}>Poser une date</button></div></div>
+      <button class="btn primary" data-act="wsShow" data-id="${p.id}" ${st?'':'disabled title="Choisis d’abord la structure"'}>Poser une date</button>`})}
   <div class="panel pad ws-who">
     <div class="field"><label>Structure</label>${cAc('structures','prospects',p.id,'structure_id',p.structure_id,{create:true, placeholder:'Chercher ou créer la structure (salle, festival…)'})}</div>
     <div class="field"><label>Contacts de la structure</label><div class="proj-chips">${contacts.map(c=>`<a href="#" class="chip" data-act="editContact" data-id="${c.id}" style="padding-right:10px">${esc(c.display_name)}</a>`).join('')}
@@ -178,10 +176,10 @@ function sidePanel(p, st, proj, linked){
       <span style="display:flex;gap:4px;flex-direction:column;align-items:flex-end"><button type="button" class="btn sm" data-act="editShow" data-id="${s.id}">Modifier</button>
         ${s.date && s.date!==S.wsTarget?`<button type="button" class="btn sm ghost" data-act="wsSetTarget" data-d="${s.date}">Centrer</button>`:''}</span></div>`;
   const linkedHTML = `<div class="panel pad"><h3 class="block-title">Dates de ce suivi <span class="count">${active.length}</span></h3>
-    ${active.map(linkedRow).join('') || '<p class="muted" style="margin:0 0 6px">Aucune date en cours pour ce suivi.</p>'}
+    ${active.map(linkedRow).join('') || '<p class="muted mb-sm">Aucune date en cours pour ce suivi.</p>'}
     ${others.length ? fold('suivi-others', 'Sans suite, annulées ou autres artistes', others.map(linkedRow).join(''), {count: others.length}) : ''}
-    <div class="field" style="margin-top:8px"><label>Rattacher une date existante</label>${acInput('shows', {attrs:`data-link-show="${p.id}"`, placeholder:'Chercher une date (artiste, lieu, date)…'})}</div></div>`;
-  if (!ids.length) return linkedHTML + `<div class="panel pad"><p class="muted" style="margin:0">Ajoute l'artiste concerné (+ Projet) pour voir son planning et ses dates autour.</p></div>`;
+    <div class="field mt-sm"><label>Rattacher une date existante</label>${acInput('shows', {attrs:`data-link-show="${p.id}"`, placeholder:'Chercher une date (artiste, lieu, date)…'})}</div></div>`;
+  if (!ids.length) return linkedHTML + `<div class="panel pad"><p class="muted m0">Ajoute l'artiste concerné (+ Projet) pour voir son planning et ses dates autour.</p></div>`;
   const target = S.wsTarget;
   const R = S.wsRadius ?? 200;
   const here = st && st.lat!=null ? [st.lat, st.lng] : null;
@@ -205,14 +203,14 @@ function sidePanel(p, st, proj, linked){
   return linkedHTML + `
     ${ids.length>1 ? `<div class="seg" role="tablist">${ids.map(id=>`<button class="btn ${id===proj?'on':''}" data-act="wsProject" data-id="${id}" aria-pressed="${id===proj}">${esc(projName(id))}</button>`).join('')}</div>` : ''}
     <div class="panel pad">
-      <div class="target-row"><label class="block-title" style="margin:0">Date en négociation</label>
+      <div class="target-row"><label class="block-title m0">Date en négociation</label>
         ${dateInput(target, 'data-ws-target="1"')}
         ${target?`<button class="btn sm ghost" data-act="wsClear">Effacer</button>`:''}</div>
-      <div class="target-row" style="margin-top:8px"><label class="block-title" style="margin:0" for="ws-radius">Rayon</label>
+      <div class="target-row mt-sm"><label class="block-title m0" for="ws-radius">Rayon</label>
         <input id="ws-radius" type="range" min="0" max="300" step="10" value="${R}" data-ws-radius="1" aria-label="Rayon en kilomètres"><b class="num" id="ws-radius-v">${R} km</b></div>
       ${target ? (busy.length ? `<p class="target-msg busy">${esc(projName(proj))} n'est pas libre le ${fmtDate(target)} : ${busy.map(s=>`${esc(s.venue)} (${esc(s.status)})`).join(', ')}</p>`
                                 : `<p class="target-msg free">${esc(projName(proj))} est libre le ${fmtDate(target)}.</p>`)
-               : '<p class="help" style="margin:6px 0 0">Indique la date demandée : la carte montre ses dates 5 jours avant / après, et celles dans le rayon jusqu’à un an après.</p>'}
+               : '<p class="help mt-sm">Indique la date demandée : la carte montre ses dates 5 jours avant / après, et celles dans le rayon jusqu’à un an après.</p>'}
     </div>
     <div class="map-box"><div id="map-slot" role="region" aria-label="Carte des dates de l'artiste"></div></div>
     ${target ? `<div id="ws-lists">${lists(around, inRadius, here, target, R, until)}</div>` : ''}
@@ -234,10 +232,10 @@ function lists(around, inRadius, here, target, R, until){
     return `<li><span>${stBadge(s.status)} <b>${esc(s.venue)}</b> · ${esc(s.city||'')}<br><span class="muted">${period(s)} ${s.date.slice(0,4)} (${d===0?'même jour':d>0?'J+'+d:'J'+d})${s.fee_ht?' · '+eur(s.fee_ht)+' HT':''}</span></span>
       <span class="num" style="text-align:right">${distCell(s, here)}</span></li>`; };
   return `<div class="panel pad near-list"><h3 class="block-title">5 jours avant / après <span class="count">${around.length}</span></h3>
-      ${around.length ? `<ul>${around.map(row).join('')}</ul>` : '<p class="muted" style="margin:0">Aucune date entre le '+fmtDate(addD(target,-5))+' et le '+fmtDate(addD(target,5))+'.</p>'}
+      ${around.length ? `<ul>${around.map(row).join('')}</ul>` : '<p class="muted m0">Aucune date entre le '+fmtDate(addD(target,-5))+' et le '+fmtDate(addD(target,5))+'.</p>'}
     </div>
     <div class="panel pad near-list"><h3 class="block-title">Dans un rayon de ${R} km jusqu’au ${fmtDate(until)} <span class="count">${inRadius.length}</span></h3>
-      ${!here ? '<p class="muted" style="margin:0">Cette structure n’a pas de ville localisée : ajoute son adresse dans la fiche structure.</p>'
-        : inRadius.length ? `<ul>${inRadius.map(row).join('')}</ul>` : '<p class="muted" style="margin:0">Aucune date dans ce rayon sur la période.</p>'}
+      ${!here ? '<p class="muted m0">Cette structure n’a pas de ville localisée : ajoute son adresse dans la fiche structure.</p>'
+        : inRadius.length ? `<ul>${inRadius.map(row).join('')}</ul>` : '<p class="muted m0">Aucune date dans ce rayon sur la période.</p>'}
     </div>`;
 }

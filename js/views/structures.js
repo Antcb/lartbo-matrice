@@ -43,7 +43,7 @@ export function structurePage(st){
   else if (tab==='suivi'){
     const closed = suivis.filter(p=>suiviClosed(p) && !lingering(p.id));
     const shown = S.showClosed ? suivis : openSuivis;
-    body = `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newSuiviFor" data-id="${st.id}">Nouveau suivi</button></div>`
+    body = `<div class="vh-actions mb"><button class="btn primary" data-act="newSuiviFor" data-id="${st.id}">Nouveau suivi</button></div>`
       + (openSuivis.map(p => suiviCard(p)).join('') || `<div class="empty panel">${closed.length ? 'Aucun suivi en cours avec cette structure.' : 'Aucun suivi avec cette structure.'}</div>`)
       + (closed.length ? fold('closed-suivis', 'Suivis clos', closed.map(p => suiviCard(p)).join(''), {count: closed.length}) : '');
   }
@@ -53,10 +53,10 @@ export function structurePage(st){
     const table = list => `<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Artiste</th><th>Lieu</th><th>Statut</th><th class="num">Cachet</th><th>Contrat</th></tr></thead><tbody>
       ${list.map(x=>`<tr class="click" data-act="editShow" data-id="${x.id}"><td class="nowrap">${fmtDate(x.date)}</td><td>${esc(projName(x.project_id))}</td><td>${esc(x.venue)}<span class="sub">${esc(x.city||'')}</span></td><td>${stSelect(x)}</td><td class="num">${eur(x.fee_ht)}</td><td>${esc(x.contract_type||'')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aucune date en cours avec cette structure.</td></tr>'}
       </tbody></table></div>`;
-    body = `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newShowFor" data-id="${st.id}">Nouvelle date</button></div>
+    body = `<div class="vh-actions mb"><button class="btn primary" data-act="newShowFor" data-id="${st.id}">Nouvelle date</button></div>
       ${table(live)}${off.length ? fold('struct-off-dates', 'Sans suite et annulées', table(off), {count: off.length}) : ''}`;
   }
-  else if (tab==='tasks') body = `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newTaskFor" data-id="${st.id}">Nouvelle tâche</button></div>${taskSection(tasks)}`;
+  else if (tab==='tasks') body = `<div class="vh-actions mb"><button class="btn primary" data-act="newTaskFor" data-id="${st.id}">Nouvelle tâche</button></div>${taskSection(tasks)}`;
   else if (tab==='events') body = eventsTab(st, events);
   else if (tab==='admin') body = adminTab(st);
   return `<button class="btn ghost back" data-act="closeStructure">← Structures</button>
@@ -96,8 +96,8 @@ function homeTab(st, contacts, events){
       <div class="facts">${facts.map(([k,v])=>`<span><small>${k}</small>${esc(v)}</span>`).join('')}
         ${st.website?`<span><small>Site</small><a href="${esc(url(st.website))}" target="_blank" rel="noopener">${esc(st.website.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,''))}</a></span>`:''}</div>
       ${eventsSummary(st, events)}
-      ${st.notes?`<div class="md" style="margin-top:14px">${md(st.notes)}</div>`:''}
-      ${!facts.length && !st.notes ? '<p class="muted" style="margin:0">« Modifier la fiche » pour ajouter l’adresse, le site…</p>' : ''}
+      ${st.notes?`<div class="md mt">${md(st.notes)}</div>`:''}
+      ${!facts.length && !st.notes ? '<p class="muted m0">« Modifier la fiche » pour ajouter l’adresse, le site…</p>' : ''}
     </div>
     <div class="panel pad"><h3 class="block-title">Contacts <span class="count">${contacts.length}</span><span class="spacer"></span><button class="btn sm" data-act="newContactFor" data-id="${st.id}">Ajouter un contact</button></h3>
       ${contacts.map(c=>`<div class="contact-row"><a href="#" data-act="editContact" data-id="${c.id}"><b>${esc(c.display_name)}</b></a>
@@ -107,7 +107,7 @@ function homeTab(st, contacts, events){
 }
 
 function eventsTab(st, events){
-  return `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newEvent" data-id="${st.id}">Ajouter un festival, une salle ou un événement</button></div>
+  return `<div class="vh-actions mb"><button class="btn primary" data-act="newEvent" data-id="${st.id}">Ajouter un festival, une salle ou un événement</button></div>
   <div class="tbl-wrap"><table><thead><tr><th>Type</th><th>Nom</th><th>Début</th><th>Fin</th><th>Période habituelle</th><th>Lieu</th><th>Ville</th><th class="num">Jauge</th><th>Payant / gratuit</th><th class="num">Prix moyen (€)</th><th>Notes</th><th></th></tr></thead><tbody>
   ${events.map(e=>`<tr>
     <td>${cSel('structure_events',e.id,'kind',e.kind,EVENT_KINDS)}</td>
@@ -136,9 +136,9 @@ export function adminForm(st){
 
 function adminTab(st){
   return `<div class="panel pad">
-    <p class="help" style="margin:0 0 14px">Informations utilisées pour les contrats. Enregistrées dès que tu quittes le champ.</p>
+    <p class="help mb">Informations utilisées pour les contrats. Enregistrées dès que tu quittes le champ.</p>
     ${adminForm(st)}
-    <div class="vh-actions" style="margin-top:12px"><button class="btn sm" data-act="adminFromStructure" data-id="${st.id}">Reprendre l’adresse de la fiche</button></div>
+    <div class="vh-actions mt"><button class="btn sm" data-act="adminFromStructure" data-id="${st.id}">Reprendre l’adresse de la fiche</button></div>
   </div>`;
 }
 
@@ -179,7 +179,7 @@ export function viewStructures(){
     ${near?'<p class="help" style="margin:-6px 0 12px">Seules les structures dont la ville est connue apparaissent dans la recherche par distance.</p>':''}
     <div class="tbl-wrap"><table><thead><tr><th>Structure</th><th>Ville</th><th>Département · région</th><th class="num">Jauge</th><th class="num">Contacts</th><th>Suivi</th></tr></thead><tbody>
     ${rows.slice(0,300).map(s=>{ const ps = prospectsOfStructure(s.id); return `<tr class="click" data-act="openStructure" data-id="${s.id}">
-      <td class="struct-name"><b>${esc(s.name)}</b>${(s.tags||[]).length?`<div class="proj-chips" style="margin-top:4px">${s.tags.map(tagLink).join('')}</div>`:''}</td>
+      <td class="struct-name"><b>${esc(s.name)}</b>${(s.tags||[]).length?`<div class="proj-chips mt-sm">${s.tags.map(tagLink).join('')}</div>`:''}</td>
       <td>${esc(s.city||'')}${near?` <span class="muted">· ${Math.round(dist.get(s.id))} km</span>`:''}${s.country && s.country!=='France'?`<span class="sub">${esc(s.country)}</span>`:''}</td>
       <td>${esc(s.department_code ? `${s.department_code} ${s.department_name||''}` : '')}<span class="sub">${esc(s.region||'')}</span></td>
       <td class="num">${[...new Set(eventsOfStructure(s.id).map(e=>e.capacity).filter(Boolean))].join(' / ')}</td>

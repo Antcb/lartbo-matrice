@@ -12,7 +12,7 @@ import { byId, setting } from '../selectors.js';
 import { S } from '../state.js';
 import { viewHead } from '../ui/bits.js';
 import { openModal } from '../ui/modal.js';
-import { esc, fmtDate, matches, norm, parseCSV, toast } from '../utils.js';
+import { esc, fmtDate, matches, norm, parseCSV, toast, today } from '../utils.js';
 
 const REQ = RH_FIELDS.filter(f => f.req);
 const val = (e, f) => f.col ? e[f.k] : e.info?.[f.k];
@@ -27,14 +27,14 @@ export function viewEmployees(){
   const waiting = all.reduce((n, e) => n + pending(e), 0);
   const head = viewHead('Salariés', {sub: `${all.filter(e => e.active).length} salarié${all.length > 1 ? 's' : ''}`,
     filters: `<input class="search" type="search" autocomplete="off" data-1p-ignore placeholder="Nom, poste, mail…" data-search="employees" value="${esc(q)}">
-      <label class="check-line" style="margin:0"><input type="checkbox" data-act="toggleInactiveEmployees" ${showOff ? 'checked' : ''}> Anciens salariés</label>`,
+      <label class="check-line m0"><input type="checkbox" data-act="toggleInactiveEmployees" ${showOff ? 'checked' : ''}> Anciens salariés</label>`,
     actions: `<label class="btn file-btn">Importer l’export Movinmotion<input type="file" class="file-input" accept=".csv,text/csv" data-mm-import="1"></label>
       ${waiting ? `<button class="btn" data-act="rhFileDocs">Ranger ${waiting} pièce${waiting > 1 ? 's' : ''} dans le Drive</button>` : ''}
       <button class="btn primary" data-act="newEmployee">Nouveau salarié</button>`});
   return head + `<div class="tbl-wrap panel"><table class="emp-table"><thead><tr><th>Nom</th><th>Poste</th><th>Mail</th><th>Téléphone</th><th>Fiche</th><th>Pièces</th><th>Drive</th></tr></thead><tbody>
     ${rows.map(e => {
       const filled = REQ.filter(f => val(e, f)).length, kinds = docKinds(e);
-      return `<tr class="${e.active ? '' : 'muted'}" data-act="openEmployee" data-id="${e.id}" style="cursor:pointer">
+      return `<tr class="${e.active ? '' : 'muted'} click" data-act="openEmployee" data-id="${e.id}">
         <td><b>${esc(fullName(e) || 'Sans nom')}</b></td><td>${esc(e.role || '')}</td><td>${esc(e.email || '')}</td><td class="nowrap">${esc(e.phone || '')}</td>
         <td><span class="${filled === REQ.length ? 'ok-badge' : 'warn-badge'}">${filled}/${REQ.length}</span>${e.form_submitted_at ? ` <span class="muted" title="Questionnaire rempli">✓ ${fmtDate(e.form_submitted_at.slice(0,10))}</span>` : e.form_sent_at ? ' <span class="muted">questionnaire envoyé</span>' : ''}</td>
         <td class="nowrap">${RH_DOCS.filter(d => d[2]).map(([k, l]) => `<span class="doc-chip ${kinds.has(k) ? 'on' : ''}" title="${esc(l)}">${esc(l)}</span>`).join(' ')}${pending(e) ? ` <span class="warn-badge">${pending(e)} à ranger</span>` : ''}</td>
@@ -49,10 +49,10 @@ export function editEmployee(id){
   const e = id ? byId('employees', id) : {active: true, info: {}, docs: []};
   const fields = [];
   RH_SECTIONS.forEach(sec => {
-    fields.push({k:'_h_' + sec.title, type:'html', full:true, html:`<h3 class="block-title" style="margin:6px 0 0">${esc(sec.title)}</h3>`});
+    fields.push({k:'_h_' + sec.title, type:'html', full:true, html:`<h3 class="block-title mt-sm">${esc(sec.title)}</h3>`});
     sec.fields.forEach(f => fields.push({k:f.k, label:f.label, full:f.full, type: f.type === 'choice' ? 'select' : f.type === 'tel' ? 'text' : f.type, options:f.options}));
   });
-  fields.push({k:'_h_team', type:'html', full:true, html:'<h3 class="block-title" style="margin:6px 0 0">Équipe</h3>'});
+  fields.push({k:'_h_team', type:'html', full:true, html:'<h3 class="block-title mt-sm">Équipe</h3>'});
   RH_TEAM_FIELDS.forEach(f => fields.push({k:f.k, label:f.label, full:f.full, type:f.type, placeholder:f.placeholder}));
   fields.push({k:'active', label:'Salarié actif', type:'checkbox'});
   const values = {...Object.fromEntries([...RH_FIELDS, ...RH_TEAM_FIELDS].map(f => [f.k, val(e, f)])), active: e.active, id};
@@ -63,9 +63,9 @@ export function editEmployee(id){
     <div class="vh-actions"><button type="button" class="btn sm primary" data-act="rhSendForm" data-part="extra" data-id="${e.id}">Préparer le mail</button>
       <button type="button" class="btn sm" data-act="rhCopyLink" data-part="extra" data-id="${e.id}">Copier le lien</button>
       <button type="button" class="btn sm ghost" data-act="rhSheet" data-id="${e.id}">Créer la fiche RH (Google Sheet)</button></div>
-    <h3 class="block-title" style="margin-top:16px">Pièces et documents</h3>
+    <h3 class="block-title mt-lg">Pièces et documents</h3>
     ${docsHTML(e)}
-    <div class="vh-actions" style="margin-top:8px">
+    <div class="vh-actions mt-sm">
       <select class="sel" id="emp-doc-kind" aria-label="Type de pièce">${RH_DOCS.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('')}<option value="bds">Bulletin de paie</option><option value="ndf">Note de frais</option><option value="autre">Autre</option></select>
       <input id="emp-doc-when" placeholder="Bulletin : 2026-09-12 ou 2026-09-12_25 · NDF : 2026-09" title="Date(s) du bulletin de paie ou mois de la note de frais" style="min-width:260px">
       <label class="btn sm primary file-btn">Ajouter le fichier<input type="file" class="file-input" multiple data-emp-doc="${e.id}"></label>
@@ -73,7 +73,7 @@ export function editEmployee(id){
     <p class="help">Les pièces vont dans le dossier Drive du salarié (« RIB - ${esc(fullName(e))} »…). Les bulletins de paie (« BDS-${esc(fullName(e))} 2026-09-12 ») vont dans 01_Finance › exercice › E - Sociale › mois, et les notes de frais (« NDF-2026-09 ${esc(fullName(e))} ») dans 01_Finance › exercice › B - Notes de Frais › mois › ${esc(fullName(e))}.</p>
     <div class="vh-actions">${e.drive_folder_id ? `<a class="btn sm" href="https://drive.google.com/drive/folders/${esc(e.drive_folder_id)}" target="_blank" rel="noopener">Ouvrir le dossier Drive</a>` : `<button type="button" class="btn sm" data-act="rhFolder" data-id="${e.id}">Créer le dossier Drive</button>`}
       ${pending(e) ? `<button type="button" class="btn sm primary" data-act="rhFileDocs">Ranger les pièces dans le Drive</button>` : ''}</div>
-    ${Object.keys(mm).length ? `<details style="margin-top:14px"><summary>Données de l’export Movinmotion (${Object.keys(mm).length})</summary><dl class="fiche-dl" style="margin-top:8px">${Object.entries(mm).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></details>` : ''}
+    ${Object.keys(mm).length ? `<details class="mt"><summary>Données de l’export Movinmotion (${Object.keys(mm).length})</summary><dl class="fiche-dl mt-sm">${Object.entries(mm).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></details>` : ''}
   </div>` : '';
   return openModal({title: id ? fullName(e) || 'Salarié' : 'Nouveau salarié', wide: true, fields, values, extraTop: extra,
     onDelete: id ? () => remove('employees', id) : null,
@@ -92,7 +92,7 @@ function docsHTML(e){
   const docs = (e.docs || []).slice().sort((a,b) => (b.at || '').localeCompare(a.at || ''));
   const kinds = docKinds(e);
   const missing = RH_DOCS.filter(([k,, req]) => req && !kinds.has(k)).map(d => d[1]);
-  return `${missing.length ? `<p class="err" style="margin:0 0 6px">Manque : ${missing.map(esc).join(', ')}</p>` : ''}
+  return `${missing.length ? `<p class="err mb-sm">Manque : ${missing.map(esc).join(', ')}</p>` : ''}
     ${docs.length ? `<ul class="doc-list">${docs.map(d => `<li>${d.file_id ? `<a href="https://drive.google.com/file/d/${esc(d.file_id)}/view" target="_blank" rel="noopener">${esc(d.drive_name || d.target || d.name)}</a>` : `<span>${esc(d.target || d.label || d.kind)} <span class="muted">(${esc(d.name)})</span></span> <span class="warn-badge">à ranger</span>`}
       <span class="muted">${d.at ? fmtDate(d.at.slice(0,10)) : ''}</span></li>`).join('')}</ul>` : '<p class="muted">Aucune pièce pour l’instant.</p>'}`;
 }
@@ -137,8 +137,8 @@ async function reload(){ const m = await import('../data.js'); await m.loadAll()
 /** Nom du fichier dans le Drive pour une pièce déposée par l'équipe */
 function targetName(e, kind, when){
   const n = fullName(e);
-  if (kind === 'bds') return `BDS-${n} ${when || new Date().toISOString().slice(0,10)}`;
-  if (kind === 'ndf') return `NDF-${(when || new Date().toISOString()).slice(0,7)} ${n}`;
+  if (kind === 'bds') return `BDS-${n} ${when || today()}`;
+  if (kind === 'ndf') return `NDF-${(when || today()).slice(0,7)} ${n}`;
   const d = RH_DOCS.find(x => x[0] === kind);
   return `${d ? d[1] : 'Document'} - ${n}`;
 }

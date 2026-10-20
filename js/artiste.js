@@ -48,14 +48,14 @@ function draw(d, values){
               `<label class="doc-slot"><span>${esc(one || 'Fichier')} ${i + 1}${i >= n ? ' <span class="req">*</span>' : ''}</span>
                 <input id="d-${k}-${i}" type="file" data-doc="${k}" data-label="${esc(l)}" accept="${esc(accept)}"></label>`).join('')}
               <button type="button" class="btn sm doc-add" data-doc-add="${k}" data-one="${esc(one || 'Fichier')}" data-accept="${esc(accept)}" data-label="${esc(l)}">+ Ajouter un ${esc((one || 'fichier').toLowerCase())}</button></div>
-            <span class="muted" style="font-size:12px">${esc(help)}</span></div>`;
+            <span class="muted small">${esc(help)}</span></div>`;
           // logos, photos en plus : une case, et « + Ajouter » pour en mettre d'autres
           if (more) return `<div class="field full"><label>${esc(l)}${got}</label><div class="doc-slots" data-slots="${k}">
               <label class="doc-slot"><span>${esc(one)} 1</span><input id="d-${k}-0" type="file" data-doc="${k}" data-label="${esc(l)}" accept="${esc(accept)}"></label>
               <button type="button" class="btn sm doc-add" data-doc-add="${k}" data-one="${esc(one)}" data-accept="${esc(accept)}" data-label="${esc(l)}">+ Ajouter ${/^[AEIOUÉH]/i.test(one) ? 'un' : one === 'Photo' ? 'une' : 'un'} ${esc(one.toLowerCase())}</button></div>
-            <span class="muted" style="font-size:12px">${esc(help)}</span></div>`;
+            <span class="muted small">${esc(help)}</span></div>`;
           return `<div class="field"><label for="d-${k}">${esc(l)}${min && n < min ? ' <span class="req">*</span>' : ''}${got}</label>
-            <input id="d-${k}" type="file" data-doc="${k}" data-label="${esc(l)}" accept="${esc(accept)}"><span class="muted" style="font-size:12px">${esc(help)}</span></div>`; }).join('')}
+            <input id="d-${k}" type="file" data-doc="${k}" data-label="${esc(l)}" accept="${esc(accept)}"><span class="muted small">${esc(help)}</span></div>`; }).join('')}
           ${input(PHOTO_CREDITS, values[PHOTO_CREDITS.k] ?? '')}</div></section>
       <div class="fiche-actions"><p class="help"><span class="req">*</span> obligatoire</p><button class="btn primary" type="submit">Envoyer la fiche</button></div>
     </form>`;

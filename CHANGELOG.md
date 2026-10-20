@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.35.0 — 20/10/2026
+- Audit : design system (hauteurs, titres, espacements, flèches), en-tête commun, dates JJ/MM/AAAA, statuts en français, tablette en fiches, rien ne déborde
+
+
 ## 1.34.2 — 20/10/2026
 - Relecture : tags et budget type fiables
 

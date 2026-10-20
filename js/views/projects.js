@@ -69,16 +69,16 @@ export function projectPage(p){
   const tabs = tabsBar('project', [['overview','Aperçu'], ['dates','Dates', shows.length], ['suivis','Suivis', suivis.filter(x=>!suiviClosed(x)).length],
     ['tasks','Tâches', tasks.filter(t=>!isDone(t)).length], ['logs','Échanges', logs.length], ['links','Liens', (p.links||[]).length],
     ['fiche','Fiche artiste', p.artist_submitted_at ? '✓' : ''], ['drive','Drive'], ['mails','Modèles de mail', S.db.mail_templates.filter(t=>tplProjects(t).includes(p.id)).length], ['admin','Administratif'], ['members','Membres', members.length]]);
-  const body = {overview, dates:datesTab, suivis:suivisTab, tasks:() => `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="newTaskProject" data-id="${p.id}">Nouvelle tâche</button></div>${taskSection(tasks)}`,
+  const body = {overview, dates:datesTab, suivis:suivisTab, tasks:() => `<div class="vh-actions mb"><button class="btn primary" data-act="newTaskProject" data-id="${p.id}">Nouvelle tâche</button></div>${taskSection(tasks)}`,
     logs:logsTab, links:linksTab, fiche:artistTab, drive:driveTab, mails:mailsTab, admin:adminTab, members:membersTab}[tab](p, {shows, tasks, suivis, logs, members});
   return `<button class="btn ghost back" data-act="closeProject">← Projets</button>
   <div class="project-hero">
     <div style="display:flex;flex-direction:column;gap:6px;align-items:center">${photoHTML(p, 'lg')}<button class="btn sm ghost" data-act="projectPhoto" data-id="${p.id}">${p.photo_path?'Changer / recadrer':'Ajouter une photo'}</button></div>
     <div style="flex:1;min-width:0"><h1>${esc(p.name)}</h1>
-      <div class="proj-chips" style="margin-top:8px"><span class="badge ${p.mode==='booking'?'tag':'proj'}">${p.mode==='booking'?'Booking seul':'Production'}</span><span class="badge tag">${p.active?'Actif':'Inactif'}</span>
+      <div class="proj-chips mt-sm"><span class="badge ${p.mode==='booking'?'tag':'proj'}">${p.mode==='booking'?'Booking seul':'Production'}</span><span class="badge tag">${p.active?'Actif':'Inactif'}</span>
         <span class="badge tag" title="${p.default_artbo_pct != null && p.default_artbo_pct !== '' ? 'Propre à l’artiste' : 'Par défaut (Réglages)'}">Commission ${projectCommission(p)} %</span></div></div>
     <div class="vh-actions">${p.drive_artist_folder_id ? `<a class="btn" href="https://drive.google.com/drive/folders/${esc(p.drive_artist_folder_id)}" target="_blank" rel="noopener">Dossier Drive ↗</a>`
-        : S.folderPending === p.id ? '<span class="btn" aria-busy="true">Création du dossier Drive…</span>' : `<button class="btn primary" data-act="createArtistFolder" data-id="${p.id}">Créer son dossier Drive</button>`}
+        : S.folderPending === p.id ? '<span class="btn" aria-busy="true">Création du dossier Drive…</span>' : `<button class="btn" data-act="createArtistFolder" data-id="${p.id}">Créer son dossier Drive</button>`}
       <button class="btn" data-act="copyArtistLink" data-id="${p.id}" title="Lien à envoyer à l’artiste : il remplit sa fiche et envoie ses fichiers">Copier le lien de la fiche artiste</button>
       <button class="btn" data-act="editProject" data-id="${p.id}">Modifier</button>
       <button class="btn" data-act="newTaskProject" data-id="${p.id}">Nouvelle tâche</button>
@@ -100,19 +100,19 @@ function overview(p, {shows, tasks, suivis}){
       <td class="num">${eur(conf.reduce((a,s)=>a+(Number(s.fee_ht)||0),0))}</td><td class="num"><b>${eur(l.filter(s=>CONFIRMED_PROD.includes(s.status)).reduce((a,s)=>a+netArtbo(s),0))}</b></td></tr>`;}).join('') || '<tr><td colspan="7" class="empty">Aucune date.</td></tr>'}
   </tbody></table></div>
   <p class="help">Commissions nettes = commission L'ArtBo moins la part reversée aux partenaires (ex. Pyrprod), sur les dates confirmées salle / festival.</p>
-  <div class="panel pad" style="margin-top:18px"><h3 class="block-title">Accueil <span class="muted" style="font-weight:400;font-size:13px">· repris dans les contrats et les mails ({{personnes}}, {{chambres}}, {{montage}}), enregistré dès que tu quittes le champ</span></h3>
-    <div class="steps accueil-grid">
+  <div class="panel pad mt-lg"><h3 class="block-title">Accueil <span class="muted title-note">· repris dans les contrats et les mails ({{personnes}}, {{chambres}}, {{montage}}), enregistré dès que tu quittes le champ</span></h3>
+    <div class="steps kv-grid">
       <label>Personnes sur la route (= repas)</label>${cIn('projects', p.id, 'road_people', p.road_people, 'number', 'class="narrow"')}
       <label>Mise à disposition du lieu (montage, balances), en heures</label>${cIn('projects', p.id, 'setup_hours', p.setup_hours, 'number', 'class="narrow"')}
       <label>Chambres single</label>${cIn('projects', p.id, 'rooms_single', p.rooms_single, 'number', 'class="narrow"')}
       <label>Chambres twin</label>${cIn('projects', p.id, 'rooms_twin', p.rooms_twin, 'number', 'class="narrow"')}
       <label>Commission L'ArtBo (%)</label>${cIn('projects', p.id, 'default_artbo_pct', p.default_artbo_pct, 'number', `class="narrow" placeholder="${defaultCommission(p.mode)}"`)}
     </div></div>
-  ${p.mode === 'booking' ? '' : `<div class="panel pad" style="margin-top:18px"><h3 class="block-title">Budget type <span class="muted" style="font-weight:400;font-size:13px">· budget prévisionnel posé sur chaque nouvelle date confirmée</span></h3>${templateForm(p.id)}</div>`}
-  <div class="struct-hero" style="margin-top:18px">
-    <div class="panel pad"><h3 class="block-title">Prochaines dates</h3>${next.map(s=>`<div class="plan-row" data-act="editShow" data-id="${s.id}" style="cursor:pointer"><span class="d">${fmtDate(s.date)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span>${stSelect(s)}</div>`).join('') || '<p class="muted" style="margin:0">Aucune date à venir.</p>'}</div>
+  ${p.mode === 'booking' ? '' : `<div class="panel pad mt-lg"><h3 class="block-title">Budget type <span class="muted title-note">· budget prévisionnel posé sur chaque nouvelle date confirmée</span></h3>${templateForm(p.id)}</div>`}
+  <div class="struct-hero mt-lg">
+    <div class="panel pad"><h3 class="block-title">Prochaines dates</h3>${next.map(s=>`<div class="plan-row click" data-act="editShow" data-id="${s.id}"><span class="d">${fmtDate(s.date)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span>${stSelect(s)}</div>`).join('') || '<p class="muted m0">Aucune date à venir.</p>'}</div>
     <div class="panel pad"><h3 class="block-title">En cours</h3>
-      <p style="margin:0 0 6px"><b>${tasks.filter(t=>!isDone(t)).length}</b> tâche(s) à faire · <b>${suivis.filter(x=>!suiviClosed(x)).length}</b> suivi(s) ouverts</p>
+      <p class="mb-sm"><b>${tasks.filter(t=>!isDone(t)).length}</b> tâche(s) à faire · <b>${suivis.filter(x=>!suiviClosed(x)).length}</b> suivi(s) ouverts</p>
       ${p.notes?`<div class="md">${md(p.notes)}</div>`:''}</div>
   </div>`;
 }
@@ -127,14 +127,14 @@ function datesTab(p, {shows}){
 function suivisTab(p, {suivis}){
   const list = suivis.filter(x => S.showClosed || !suiviClosed(x)).map(x=>({x, last:lastExchange(x)})).sort((a,b)=>(b.last||'').localeCompare(a.last||''));
   const nClosed = suivis.filter(x=>suiviClosed(x)).length;
-  return `<div class="vh-actions" style="margin-bottom:12px"><button class="btn" data-act="exportSuivis" data-project="${p.id}">Exporter</button>${nClosed?`<button class="btn" data-act="toggleClosed" aria-pressed="${!!S.showClosed}">${S.showClosed?'Masquer':'Afficher'} les suivis clos (${nClosed})</button>`:''}</div>
+  return `<div class="vh-actions mb"><button class="btn" data-act="exportSuivis" data-project="${p.id}">Exporter</button>${nClosed?`<button class="btn" data-act="toggleClosed" aria-pressed="${!!S.showClosed}">${S.showClosed?'Masquer':'Afficher'} les suivis clos (${nClosed})</button>`:''}</div>
   <div class="tbl-wrap"><table><thead><tr><th>Structure</th><th>Statut</th><th>Dernier échange</th><th>Résumé</th></tr></thead><tbody>
     ${list.map(({x,last})=>`<tr class="click" data-act="openSuivi" data-id="${x.id}"><td><b>${esc(structName(x.structure_id)||x.name)}</b><span class="sub">${esc(byId('structures',x.structure_id)?.city||'')}</span></td><td>${pstBadge(x.status)}</td><td class="nowrap">${last?fmtDate(last):'—'}</td><td class="muted">${esc((x.summary||'').replace(/\*\*/g,'').replace(/\n/g,' ').slice(0,180))}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Aucun suivi.</td></tr>'}
   </tbody></table></div>`;
 }
 
 function logsTab(p, {logs}){
-  return `<div class="panel pad" style="margin-bottom:14px">
+  return `<div class="panel pad mb">
     <form class="log-form" data-projlog="${p.id}" data-draft="projlog.${p.id}" style="grid-template-columns:auto auto 1fr">
       ${dateInput(today(), 'name="date"')}
       <select name="kind" class="sel" aria-label="Type">${['Note','Mail','Appel','Lien','Fichier'].map(k=>`<option>${k}</option>`).join('')}</select>
@@ -143,7 +143,7 @@ function logsTab(p, {logs}){
       <div class="dropzone" data-drop-form="files" style="grid-column:1/-1;margin:0"><label class="btn sm file-btn">Ajouter un fichier<input type="file" name="files" multiple class="file-input" data-filelist="plog"></label><span class="drop-hint">ou glisse les fichiers ici</span><div class="muted file-list" id="fl-plog"></div></div>
       <button class="btn primary sm">Ajouter aux échanges</button>
     </form></div>
-  ${logs.map(l=>`<div class="panel pad" style="margin-bottom:8px"><div class="log-head">${LOG_ICON[l.kind]||'📝'} <b>${l.date?fmtDate(l.date):'Sans date'}</b> · ${esc(l.kind||'')}
+  ${logs.map(l=>`<div class="panel pad mb-sm"><div class="log-head">${LOG_ICON[l.kind]||'📝'} <b>${l.date?fmtDate(l.date):'Sans date'}</b> · ${esc(l.kind||'')}
       <span class="spacer"></span><button class="btn sm ghost" data-act="editProjLog" data-id="${l.id}">Modifier</button>
       <button class="btn icon sm ghost danger" data-act="delProjLog" data-id="${l.id}" aria-label="Supprimer l'échange">✕</button></div>
     ${l.body?`<div class="md">${md(l.body)}</div>`:''}${l.url?`<div><a href="${esc(url(l.url))}" target="_blank" rel="noopener">${esc(l.url)}</a></div>`:''}
@@ -156,9 +156,9 @@ function linkList(p, field, kinds, placeholder){
     ${list.map((l,i)=>`<div class="link-row">
       <input list="dl-${field}" value="${esc(l.label||'')}" data-plink="${field}" data-i="${i}" data-k="label" data-pid="${p.id}" aria-label="Nom du lien" placeholder="Nom">
       <input value="${esc(l.url||'')}" data-plink="${field}" data-i="${i}" data-k="url" data-pid="${p.id}" aria-label="Adresse du lien" placeholder="${placeholder}">
-      <span style="display:flex;gap:4px">${l.url?`<a class="btn icon sm" href="${esc(url(l.url))}" target="_blank" rel="noopener" aria-label="Ouvrir">↗</a>`:''}<button class="btn icon sm ghost danger" data-act="rmLink" data-field="${field}" data-i="${i}" data-id="${p.id}" aria-label="Supprimer le lien">✕</button></span></div>`).join('') || '<p class="muted" style="margin:0 0 8px">Aucun lien pour l’instant.</p>'}
+      <span style="display:flex;gap:4px">${l.url?`<a class="btn icon sm" href="${esc(url(l.url))}" target="_blank" rel="noopener" aria-label="Ouvrir">↗</a>`:''}<button class="btn icon sm ghost danger" data-act="rmLink" data-field="${field}" data-i="${i}" data-id="${p.id}" aria-label="Supprimer le lien">✕</button></span></div>`).join('') || '<p class="muted mb-sm">Aucun lien pour l’instant.</p>'}
     <datalist id="dl-${field}">${kinds.map(k=>`<option value="${esc(k)}">`).join('')}</datalist>
-    <button class="btn sm" data-act="addLink" data-field="${field}" data-id="${p.id}" style="margin-top:10px">Ajouter un lien</button></div>`;
+    <button class="btn sm mt" data-act="addLink" data-field="${field}" data-id="${p.id}">Ajouter un lien</button></div>`;
 }
 
 const linksTab = p => linkList(p, 'links', LINK_KINDS, 'https://…');
@@ -177,14 +177,14 @@ function adminTab(p){
   return `<div class="panel pad">
     <div class="field" style="max-width:520px"><label>Structure juridique de l’artiste (association, label, société…)</label>
       ${cAc('structures','projects',p.id,'admin_structure_id',p.admin_structure_id,{placeholder:'Chercher ou créer la structure…', create:true})}</div>
-    ${st ? `<div style="margin-top:14px">${adminForm(st)}</div>
+    ${st ? `<div class="mt">${adminForm(st)}</div>
       <p class="help">Ces informations sont celles de la fiche structure « ${esc(st.name)} » (onglet Coordonnées administratives).</p>`
       : '<p class="help">Choisis ou crée la structure qui porte l’artiste pour renseigner ses coordonnées administratives.</p>'}
   </div>`;
 }
 
 function membersTab(p, {members}){
-  return `<div class="vh-actions" style="margin-bottom:12px"><button class="btn primary" data-act="addMember" data-id="${p.id}">Ajouter un membre</button></div>
+  return `<div class="vh-actions mb"><button class="btn primary" data-act="addMember" data-id="${p.id}">Ajouter un membre</button></div>
   <div class="tbl-wrap"><table><thead><tr><th>Prénom</th><th>Nom</th><th>Poste</th><th>Mail</th><th>Téléphone</th><th>Adresse</th><th>Naissance</th><th></th></tr></thead><tbody>
     ${members.map(m=>`<tr><td>${cIn('project_members',m.id,'first_name',m.first_name)}</td><td>${cIn('project_members',m.id,'last_name',m.last_name)}</td>
       <td>${cIn('project_members',m.id,'role',m.role,'text','placeholder="Chant, régie…"')}</td><td>${cIn('project_members',m.id,'email',m.email)}</td><td>${cIn('project_members',m.id,'phone',m.phone)}</td>
@@ -192,14 +192,14 @@ function membersTab(p, {members}){
       <td class="nowrap">${m.employee_id ? `<button type="button" class="btn sm" data-act="employeeCard" data-id="${m.employee_id}">Fiche salarié</button>` : `<button type="button" class="btn sm" data-act="memberCard" data-id="${m.id}">Fiche complète${Object.keys(m.data||{}).length?` (${Object.keys(m.data).length})`:''}</button>`}
         <button type="button" class="btn icon sm ghost danger" data-act="delMember" data-id="${m.id}" aria-label="Supprimer le membre">✕</button></td></tr>`).join('') || `<tr><td colspan="8" class="empty">Aucun membre. Ajoute-les un par un ou importe l’export Movinmotion.</td></tr>`}
   </tbody></table></div>
-  <div class="dropzone" data-members-drop="${p.id}" style="margin-top:12px"><label class="btn sm file-btn">Importer un export Movinmotion (CSV)<input type="file" class="file-input" accept=".csv,text/csv" data-members-import="${p.id}"></label>
+  <div class="dropzone mt" data-members-drop="${p.id}"><label class="btn sm file-btn">Importer un export Movinmotion (CSV)<input type="file" class="file-input" accept=".csv,text/csv" data-members-import="${p.id}"></label>
     <span class="drop-hint">ou glisse le fichier ici — chaque personne est ajoutée (ou mise à jour) dans l’onglet Salariés avec toute sa fiche, et reliée à ce projet.</span></div>`;
 }
 
 function mailsTab(p){
-  return `<div class="panel pad"><p class="help" style="margin:0 0 12px">Modèles utilisés pour les mails de cet artiste (confirmation, boucles). Sans modèle ici, les modèles génériques des Réglages servent.</p>
+  return `<div class="panel pad"><p class="help mb">Modèles utilisés pour les mails de cet artiste (confirmation, boucles). Sans modèle ici, les modèles génériques des Réglages servent.</p>
     ${templatesList(p.id)}
-    <div class="vh-actions" style="margin-top:12px"><button class="btn primary" data-act="newTemplate" data-project="${p.id}">Nouveau modèle</button></div></div>`;
+    <div class="vh-actions mt"><button class="btn primary" data-act="newTemplate" data-project="${p.id}">Nouveau modèle</button></div></div>`;
 }
 
 /** Fiche artiste : ce que l'artiste a rempli via son lien, modifiable ici, avec « Copier » sur chaque champ */

@@ -8,7 +8,7 @@ import { payAmount, paymentsOf } from '../calc.js';
 import { byId } from '../selectors.js';
 import { S } from '../state.js';
 import { cIn, cSel } from '../ui/cells.js';
-import { esc, eur2, fmtDate } from '../utils.js';
+import { esc, eur2, fmtDate, today } from '../utils.js';
 import { PROD_CATS, productionBudget } from '../production-budget.js';
 
 const STATUS = {paid:['Payé','ok-badge'], doc:['Pièce reçue','warn-badge'], planned:['Prévu','badge']};
@@ -20,7 +20,7 @@ function lineRow(l, project, {qtyAll = false} = {}){
   const payers = PAYERS.map(c => [c, payerLabel(c, project)]);
   const hasQty = staff && l.forecast == null;
   const prev = staff && hasQty
-    ? `<span class="qty-line">${cIn('budget_lines', l.id, 'qty', l.qty, 'number', `class="narrow" title="${qtyAll ? 'Quantité' : 'Nombre de bulletins'}" placeholder="${qtyAll ? 'qté' : 'nb'}"`)}<span class="x">×</span>${cIn('budget_lines', l.id, 'unit_cost', l.unit_cost, 'number', `class="narrow2" title="${qtyAll ? 'Prix unitaire HT' : 'Coût employeur d’un bulletin'}" placeholder="${qtyAll ? 'P.U.' : 'coût'}"`)}<b>${eur2(fc ?? 0)}</b></span>`
+    ? `<span class="qty-line">${cIn('budget_lines', l.id, 'qty', l.qty, 'number', `class="narrow" title="${qtyAll ? 'Quantité' : 'Nombre de bulletins'}" placeholder="${qtyAll ? 'qté' : 'nb'}"`)}<span class="x">✕</span>${cIn('budget_lines', l.id, 'unit_cost', l.unit_cost, 'number', `class="narrow2" title="${qtyAll ? 'Prix unitaire HT' : 'Coût employeur d’un bulletin'}" placeholder="${qtyAll ? 'P.U.' : 'coût'}"`)}<b>${eur2(fc ?? 0)}</b></span>`
     : `<input type="number" step="any" data-t="budget_lines" data-id="${l.id}" data-f="forecast" value="${l.forecast??''}" placeholder="${fc==null?'à saisir':fc}" class="${l.forecast!=null?'override':''}" title="${auto?'Vide = calcul automatique':'Montant prévu HT'}">`;
   const calc = l.auto==='movinmotion' ? 'bulletins × coût Movinmotion' : l.auto==='cnm' ? '% du cachet (entrée gratuite)' : '';
   return `<tr data-budget-line="${l.id}" class="${st==='paid'?'is-paid':st==='doc'?'has-doc':''}" title="${st==='paid'?'Payé':st==='doc'?'Pièce reçue, pas encore payée':'Prévu'}">
@@ -50,7 +50,7 @@ function summaryTable(s, b, com, p){
   const known = b.lines.filter(l => !isSolde(l)).length, withDoc = b.lines.filter(l => !isSolde(l) && l.amount != null).length;
   const cashed = paymentsOf(s.id).filter(x => ['acompte', 'solde'].includes(x.kind) && x.paid_at).reduce((t, x) => t + (payAmount(x) || 0), 0);
   const row = (label, f, r, help = '', strong = false) => { const gap = r == null ? null : r - f;
-    return `<tr class="${strong ? 'bill-total' : ''}"><td>${strong ? `<b>${label}</b>` : label}${help ? `<div class="muted" style="font-size:11px">${help}</div>` : ''}</td>
+    return `<tr class="${strong ? 'bill-total' : ''}"><td>${strong ? `<b>${label}</b>` : label}${help ? `<div class="muted tiny">${help}</div>` : ''}</td>
       <td class="num nowrap">${strong ? `<b>${eur2(f)}</b>` : eur2(f)}</td><td class="num nowrap">${r == null ? '<span class="muted">—</span>' : strong ? `<b>${eur2(r)}</b>` : eur2(r)}</td>
       <td class="num nowrap ${gap == null || Math.abs(gap) < 0.01 ? 'muted' : gap > 0 === label.startsWith('Dépenses') ? 'neg' : 'pos'}">${gap == null ? '' : (gap > 0 ? '+' : '') + eur2(gap)}</td></tr>`; };
   return `<div class="tbl-wrap"><table class="budget-sum"><thead><tr><th></th><th class="num">Prévu</th><th class="num">Réel</th><th class="num">Écart</th></tr></thead><tbody>
@@ -95,7 +95,7 @@ function artistBlock(s, b, p){
       <div class="stat"><b>${ecartHTML(r.ecart)}</b><span>${r.ecart == null ? 'écart : quand le versement est noté' : r.ecart < -0.005 ? 'écart pour toi : versé plus que le reste, tu perds' : r.ecart > 0.005 ? 'écart pour toi : versé moins que le reste, tu gagnes' : 'écart pour toi : juste'}</span></div>
     </div>
     ${r.lines.length ? `<div class="tbl-wrap"><table class="budget-table"><thead><tr><th>Versé à</th><th class="num">Montant versé HT</th><th>Versé le</th><th>Payé par</th><th>Facture</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
-    <div class="vh-actions" style="margin-top:8px">
+    <div class="vh-actions mt-sm">
       <button class="btn sm" data-act="addBudgetLine" data-show="${s.id}" data-cat="Solde artiste">${r.lines.length ? 'Ajouter un versement' : 'Noter le versement'}</button>
       <button class="btn sm ghost" data-act="exportArtistBudget" data-id="${s.id}">Exporter pour ${esc(who)}</button>
     </div>
@@ -112,7 +112,7 @@ export function showBudgetHTML(s){
 
     ${summaryTable(s, b, com, p)}
     <div class="tbl-wrap"><table class="budget-table">${HEAD}<tbody>${comRow}${b.lines.filter(l => !isSolde(l)).map(l => lineRow(l, p)).join('')}</tbody></table></div>
-    <div class="vh-actions" style="margin-top:10px">
+    <div class="vh-actions mt">
       <button class="btn sm" data-act="addBudgetLine" data-show="${s.id}">Ajouter une dépense</button>
       <button class="btn sm" data-act="addBudgetLine" data-show="${s.id}" data-cat="Staff">Ajouter un salarié</button>
       ${b.lines.length ? '' : `<button class="btn sm primary" data-act="prefillBudget" data-id="${s.id}">Préremplir (budget type)</button>`}
@@ -120,7 +120,7 @@ export function showBudgetHTML(s){
     </div>
     ${dropZone(`data-budget-drop='${JSON.stringify({show_id:s.id})}'`, 'Glisse ici une facture, un bulletin ou une note de frais (ou sur une ligne précise) : l’IA la lit, met la ligne à jour, la marque payée et la range dans le Drive de la date (02_Finance).')}
     ${artistBlock(s, b, p)}
-    <p class="muted" style="font-size:12px;margin:8px 0 0">Montants HT ; salaires en coût total. Ligne verte : payée ; jaune : pièce reçue, pas encore payée.</p>
+    <p class="muted small mt-sm">Montants HT ; salaires en coût total. Ligne verte : payée ; jaune : pièce reçue, pas encore payée.</p>
   </div>`;
 }
 
@@ -133,8 +133,8 @@ export function projectBudgetHTML(projectId){
   const head = `<button class="btn sm ${open?'':'primary'}" data-act="toggleProjBudget" data-id="${projectId}" aria-expanded="${!!open}">${open?'Masquer le budget':'Budget et compte'}</button>
     ${p.account_name ? `<span class="badge" title="Solde réel du compte : encaissé − payé">${esc(p.account_name)} : <b>${eur2(a.real)}</b></span>` : ''}`;
   if (!open) return `<div class="proj-budget-bar">${head}</div>`;
-  const rows = shows.map(s => { const b = showBudget(s); const today = new Date().toISOString().slice(0,10);
-    const missing = s.date && s.date < today && b.docsIn < b.docsAll;
+  const rows = shows.map(s => { const b = showBudget(s); const now = today();
+    const missing = s.date && s.date < now && b.docsIn < b.docsAll;
     return `<tr><td class="nowrap"><a href="#" data-act="openProdShow" data-id="${s.id}">${fmtDate(s.date)}</a></td><td>${esc(s.venue||'')}${s.city?` <span class="muted">(${esc(s.city)})</span>`:''}</td>
       <td class="num">${eur2(b.fee)}</td><td class="num">${eur2(b.com)}</td><td class="num">${eur2(b.expenses)}</td><td class="num"><b>${eur2(b.available)}</b></td><td class="num">${(r => r.hasVerse ? eur2(r.verse) : '<span class="muted">—</span>')(artistResult(s, b))}</td>
       ${b.lines.length ? `<td class="num nowrap">${ecartHTML(artistResult(s, b).ecart)}</td>
@@ -156,7 +156,7 @@ export function projectBudgetHTML(projectId){
       ${mv.map(m => `<tr><td class="nowrap">${fmtDate(m.date)}</td><td>${esc(m.label)}${m.calc ? ' <span class="muted" title="Pas de montant saisi : calculé à partir du pourcentage ou du prévu">(calculé)</span>' : ''}</td>
         <td class="num nowrap">${m.amount > 0 ? eur2(m.amount) : ''}</td><td class="num nowrap">${m.amount < 0 ? eur2(-m.amount) : ''}</td><td class="num nowrap">${eur2(m.balance)}</td></tr>`).join('')}
       </tbody></table></div>
-      <p class="muted" style="font-size:12px">Comptés : acomptes et soldes notés payés (encaissés sur le compte), commissions L’ArtBo virées, dépenses payées par le compte, avances remboursées par le compte. « (calculé) » : aucun montant saisi, c’est le pourcentage ou le prévu qui est utilisé.</p></details>` : ''; })()}
+      <p class="muted small">Comptés : acomptes et soldes notés payés (encaissés sur le compte), commissions L’ArtBo virées, dépenses payées par le compte, avances remboursées par le compte. « (calculé) » : aucun montant saisi, c’est le pourcentage ou le prévu qui est utilisé.</p></details>` : ''; })()}
     <div class="steps" style="max-width:640px;margin-bottom:12px">
       <label>Nom du compte dédié</label>${cIn('projects', p.id, 'account_name', p.account_name, 'text', 'placeholder="ex. Compte The Locos L’ArtBo (vide = pas de compte dédié)"')}
       <label>Solde de départ du compte</label>${cIn('projects', p.id, 'account_opening', p.account_opening, 'number', 'class="narrow" placeholder="0"')}
@@ -167,7 +167,7 @@ export function projectBudgetHTML(projectId){
     <p class="muted" style="font-size:13px;margin:6px 0 14px">Dépenses par catégorie : ${cats.map(([k,v]) => `${esc(k)} <b>${eur2(v)}</b>`).join(' · ') || '—'} · coût moyen par date : <b>${eur2(shows.length ? (tot.com + tot.expenses) / shows.length : 0)}</b></p>
     <h3 class="block-title">Frais hors date (affiches, avances…)</h3>
     <div class="tbl-wrap"><table class="budget-table">${HEAD}<tbody>${off.map(l => lineRow(l, p)).join('') || '<tr><td colspan="9" class="muted">Aucun frais hors date.</td></tr>'}</tbody></table></div>
-    <div class="vh-actions" style="margin-top:10px"><button class="btn sm" data-act="addBudgetLine" data-project="${p.id}">Ajouter un frais hors date</button></div>
+    <div class="vh-actions mt"><button class="btn sm" data-act="addBudgetLine" data-project="${p.id}">Ajouter un frais hors date</button></div>
     ${dropZone(`data-budget-drop='${JSON.stringify({project_id:p.id})}'`, 'Glisse ici une pièce hors date : l’IA la lit et l’ajoute.')}
   </div>`;
 }
@@ -220,7 +220,7 @@ export function productionBudgetHTML(s){
       <tbody>${tickets}
         <tr><td>Invitations</td><td class="num">${pin(s, 'invitations', p.invitations, 'class="narrow"')}</td><td colspan="5"></td><td class="num">${pin(s, 'real_invitations', p.real_invitations, 'class="narrow" placeholder="—"')}</td><td colspan="2"></td></tr></tbody>
       <tfoot><tr class="bill-total"><td><b>Total</b></td><td class="num"><b>${f.paying}</b> payants</td><td colspan="4" class="muted">prix moyen ${eur2(f.avgPrice)}</td><td class="num nowrap"><b>${eur2(f.grossTtc)}</b></td><td class="num">${hasReal ? `<b>${r.paying}</b>` : '—'}</td><td class="num nowrap">${hasReal ? `<b>${eur2(r.grossTtc)}</b>` : '—'}</td><td></td></tr></tfoot></table></div>
-    <div class="vh-actions" style="margin:8px 0 14px"><button class="btn sm" data-act="prodAddTicket" data-id="${s.id}">Ajouter un tarif</button></div>
+    <div class="vh-actions mt-sm mb"><button class="btn sm" data-act="prodAddTicket" data-id="${s.id}">Ajouter un tarif</button></div>
 
     <h4 class="block-title">Droits et taxes</h4>
     <div class="tbl-wrap"><table class="budget-table prod-table"><thead><tr><th></th><th class="num">Taux</th><th class="num">Prévu</th><th class="num">Réel</th></tr></thead><tbody>
@@ -238,7 +238,7 @@ export function productionBudgetHTML(s){
 
     <h4 class="block-title">Coûts de production</h4>
     <div class="tbl-wrap"><table class="budget-table">${HEAD}<tbody>${cats.map(c => { const ls = lines.filter(l => (l.category || 'Autres') === c); return ls.length ? `<tr class="cat-row"><td colspan="9"><b>${esc(c)}</b> <span class="muted">· prévu ${eur2(f.byCat[c] || 0)} · réel ${eur2(r.byCat[c] || 0)}</span></td></tr>` + ls.map(l => lineRow(l, proj, {qtyAll: true})).join('') : ''; }).join('')}</tbody></table></div>
-    <div class="vh-actions" style="margin-top:10px">
+    <div class="vh-actions mt">
       <button class="btn sm" data-act="addBudgetLine" data-show="${s.id}" data-cat="Salle">Ajouter une ligne salle</button>
       <button class="btn sm" data-act="addBudgetLine" data-show="${s.id}" data-cat="Promoteur">Ajouter une ligne promoteur</button>
       ${lines.length ? '' : `<button class="btn sm primary" data-act="prefillProduction" data-id="${s.id}">Préremplir (modèle du budget de production)</button>`}
@@ -257,6 +257,6 @@ export function productionBudgetHTML(s){
       ${f.share < 1 ? `<tr><td>Part L’ArtBo (${esc(String(p.artbo_share))} %)</td><td></td>${two(f.artbo, R(r.artbo))}</tr>
       <tr><td>Part ${esc(f.partnerName)} (${esc(String(100 - p.artbo_share))} %)</td><td></td>${two(f.partner, R(r.partner))}</tr>` : ''}
     </tbody></table></div>
-    <p class="muted" style="font-size:12px;margin:8px 0 0">Montants HT sauf la billetterie (TTC). Le réel se remplit avec les billets vendus et les montants réels des pièces ; tant qu’aucun billet vendu n’est saisi, les recettes réelles restent vides. Une date produite par L’ArtBo n’entre pas dans le compte dédié de l’artiste.</p>
+    <p class="muted small mt-sm">Montants HT sauf la billetterie (TTC). Le réel se remplit avec les billets vendus et les montants réels des pièces ; tant qu’aucun billet vendu n’est saisi, les recettes réelles restent vides. Une date produite par L’ArtBo n’entre pas dans le compte dédié de l’artiste.</p>
   </div>`;
 }
