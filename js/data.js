@@ -61,6 +61,16 @@ export async function saveLinger(table, id, patch, message, {after, onUndo} = {}
 export const lingering = id => S.linger.has(id);
 
 /** Ajoute des lignes en mémoire sans doublon (une ligne déjà arrivée par la mise à jour automatique est remplacée) */
+/** Recharge les lignes d'une table liées à une ou plusieurs dates (après un ajout fait par la base) */
+export async function refreshFor(table, col, ids){
+  ids = [].concat(ids).filter(Boolean); if (!ids.length) return;
+  const {data, error} = await sb.from(table).select('*').in(col, ids);
+  if (error) return;
+  const keep = new Set((data || []).map(r => r.id));
+  S.db[table] = S.db[table].filter(r => !ids.includes(r[col]) || keep.has(r.id));
+  mergeRows(table, data);
+}
+
 export function mergeRows(table, rows){
   for (const r of rows || []){ const i = S.db[table].findIndex(x => x.id === r.id); if (i >= 0) S.db[table][i] = r; else S.db[table].push(r); }
   touch(table);

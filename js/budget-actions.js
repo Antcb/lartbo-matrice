@@ -6,7 +6,7 @@ import { render } from './app.js';
 import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
 import { cnmDue, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
 import { paymentsOf, payAmount } from './calc.js';
-import { insert, mergeRows, openStored, remove, save, sb } from './data.js';
+import { insert, mergeRows, openStored, refreshFor, remove, save, sb } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
 import { callScript } from './mail.js';
 import { applyTemplate } from './budget-template.js';
@@ -34,8 +34,11 @@ export async function syncCnmLine(showId){
 export async function syncMovinmotionLine(showId){
   const s = byId('shows', showId); if (!s || s.prod_mode === 'booking') return;
   const ls = linesOf(s.id);
-  if (ls.some(l => l.category === 'Staff') && !ls.some(l => l.auto === 'movinmotion'))
-    await insert('budget_lines', {project_id:s.project_id, show_id:s.id, category:'Movinmotion', label:'Commission bulletins de paie', supplier:'Movinmotion', auto:'movinmotion', payer:'compte', sort: nextSort(s.id)});
+  if (!ls.some(l => l.category === 'Staff') || ls.some(l => l.auto === 'movinmotion')) return;
+  // ajout fait par la base : une seule ligne Movinmotion par date, même si deux personnes ajoutent un salarié en même temps
+  const {error} = await sb.rpc('ensure_movinmotion', {p_show: s.id});
+  if (error) return toast('Ligne Movinmotion : ' + error.message, true);
+  await refreshFor('budget_lines', 'show_id', s.id);
 }
 
 /** Budget de production : paramètres et tarifs enregistrés sur la date (shows.production) */
@@ -68,15 +71,8 @@ export const BUDGET_ACTIONS = {
     const s = byId('shows', t.dataset.id), on = t.checked;
     if (on && linesOf(s.id).length && !confirm('Cette date a déjà un budget. Il sera masqué (pas supprimé) et la date sortira du solde du compte. Continuer ?')){ t.checked = false; return; }
     await save('shows', s.id, {prod_mode: on ? 'booking' : 'production', prod_mode_manual: (on ? 'booking' : 'production') !== (byId('projects', s.project_id)?.mode || 'production')}, {rerender: false});
-    // passage en production : l'acompte et le solde doivent exister pour que le cachet arrive sur le compte (factures déjà faites gardées)
-    if (!on){
-      const pays = paymentsOf(s.id), sort = Math.max(0, ...pays.map(p => p.sort || 0));
-      const ac = Number(setting('default_acompte_pct') ?? 50);
-      const add = [];
-      if (!pays.some(p => p.kind === 'acompte')) add.push({show_id: s.id, kind: 'acompte', label: 'Acompte', pct: ac, sort: sort + 1, payee: 'compte'});
-      if (!pays.some(p => p.kind === 'solde')) add.push({show_id: s.id, kind: 'solde', label: 'Solde', pct: Math.max(0, 100 - pays.filter(p => p.kind === 'acompte').reduce((t, p) => t + (Number(p.pct) || 0), add.length ? ac : 0)), sort: sort + 2, payee: 'compte'});
-      for (const row of add) await insert('show_payments', row);
-    }
+    // passage en production : la base ajoute l'acompte et le solde manquants (factures déjà faites gardées) ; on les recharge
+    if (!on) await refreshFor('show_payments', 'show_id', s.id);
     render();
     toast(on ? 'Date en booking uniquement : seulement la facture de commission' : 'Date en production : budget et compte dédié');
   },

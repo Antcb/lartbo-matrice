@@ -151,7 +151,11 @@ document.addEventListener('change', async e => {
   // Enregistrement direct : data-t (table) data-id data-f (champ)
   if (t.dataset.t && t.dataset.id && t.dataset.f && !t.dataset.custom){
     let v = t.type==='checkbox' ? t.checked : t.value;
-    if (t.type==='number' || t.dataset.num) v = v==='' ? null : Number(String(v).replace(',','.'));
+    if (t.type==='number' || t.dataset.num){
+      v = v==='' ? null : Number(String(v).replace(',','.'));
+      // nombre illisible (« 12x ») : rien n'est enregistré, l'ancienne valeur revient
+      if (v != null && !Number.isFinite(v)){ toast('Nombre illisible : rien n’a été enregistré', true); const row = byId(t.dataset.t, t.dataset.id); t.value = row?.[t.dataset.f] ?? ''; t.focus(); return; }
+    }
     if (typeof v === 'string'){ v = v.trim(); if (v==='') v = null; }
     const hook = ACTIONS['change:'+t.dataset.t+'.'+t.dataset.f];
     if (hook) return hook(t, v);

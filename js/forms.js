@@ -7,7 +7,7 @@ import { propagateCommission } from './commission.js';
 import { render } from './app.js';
 import { CFG } from './config.js';
 import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PRIORITY_OPTS, PROSPECT, PROSPECT_OPTS, STATUSES, TASK_STATUS, TASK_STATUS_OPTS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
-import { insert, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
+import { insert, refreshFor, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode } from './geo.js';
 import { contactMails, defaultCommission, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
 import { S, touch } from './state.js';
@@ -120,11 +120,14 @@ export function editProject(id){
       const makeFolder = v._make_folder; delete v._make_folder;
       if (v.drive_artist_folder_id) v.drive_artist_folder_id = driveId(v.drive_artist_folder_id);
       ['contract_template_cc','contract_template_cr'].forEach(k => { if (v[k]) v[k] = (String(v[k]).match(/[-\w]{25,}/) || [v[k]])[0]; });
-      if (id){ const pctChanged = String(v.default_artbo_pct ?? '') !== String(p.default_artbo_pct ?? '');
+      if (id){ const pctChanged = String(v.default_artbo_pct ?? '') !== String(p.default_artbo_pct ?? ''); const prevMode = p.mode;
         const ok = await save('projects', id, v, {rerender:false}); if (ok && makeFolder && !v.drive_artist_folder_id) createArtistFolder(id);
         if (ok && pctChanged) setTimeout(() => propagateCommission(id), 0);   // après la fermeture de la fenêtre
         // l'artiste change de mode : ses dates suivent (fait aussi par la base), sauf celles réglées à la main
-        if (ok) for (const x of S.db.shows) if (x.project_id === id && !x.prod_mode_manual && x.prod_mode !== v.mode && v.mode) x.prod_mode = v.mode;
+        if (ok && v.mode && v.mode !== prevMode){   // la base a mis à jour les dates (et ajouté acomptes / soldes en production) : on recharge
+          const ids = S.db.shows.filter(x => x.project_id === id).map(x => x.id);
+          await refreshFor('shows', 'project_id', id); await refreshFor('show_payments', 'show_id', ids); render();
+        }
         return; }
       const row = await insert('projects', v);
       // nouvel artiste : son dossier Drive est créé à son nom, à partir du modèle (LARTBOTRICE › 01_Modèles Drive)
