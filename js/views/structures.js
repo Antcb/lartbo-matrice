@@ -151,7 +151,9 @@ export function viewStructures(){
   const sel = S.structTags || [];
   let rows = S.db.structures;
   if (sel.length) rows = rows.filter(s => sel.every(t => (s.tags||[]).includes(t)));   // toutes les étiquettes choisies
-  if (words.length) rows = rows.filter(s => { const hay = hayOf([s.name,...eventsOfStructure(s.id).map(e=>e.name),s.address,s.city,s.postal_code,s.department_code,s.department_name,s.region,s.country,...(s.tags||[])].join(' '));
+  if (words.length) rows = rows.filter(s => { const hay = hayOf([s.name,...eventsOfStructure(s.id).map(e=>e.name),s.address,s.city,s.postal_code,s.department_code,s.department_name,s.region,s.country,...(s.tags||[]),
+      // les contacts de la structure : nom, mails, téléphones (on retrouve une structure par le mail d'un de ses contacts)
+      ...linksOfStructure(s.id).flatMap(c => [c.display_name, c.email, c.email_2, c.phone, c.phone_2])].join(' '));
     return words.every(w => hay.includes(w)); });
   const near = S.near;   // {label, lat, lng, km}
   const dist = new Map();
@@ -167,7 +169,7 @@ export function viewStructures(){
   return viewHead('Structures', {sub:`${rows.length} structure${rows.length>1?'s':''}${near?` à moins de ${near.km} km de ${esc(near.label)}`:''}`,
       actions:'<button class="btn primary" data-act="newStructure">Nouvelle structure</button>'}) + `
     <form class="near-form" id="near-form" autocomplete="off">
-      <input class="search" type="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche" placeholder="Nom, ville, département (69, Rhône…), région, type…" data-search="structures" value="${esc(S.search.structures||'')}">
+      <input class="search" type="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche" placeholder="Nom, ville, département, type, contact ou mail…" data-search="structures" value="${esc(S.search.structures||'')}">
       <span class="near-box">
         <input class="inp" type="search" autocomplete="off" data-1p-ignore name="autour" placeholder="Autour de… (ville)" value="${esc(near?.label||'')}" aria-label="Autour de quelle ville">
         <select class="sel" name="km" aria-label="Rayon">${[20,50,100,150,200,300].map(k=>`<option value="${k}" ${(near?.km||50)===k?'selected':''}>${k} km</option>`).join('')}</select>

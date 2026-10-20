@@ -40,7 +40,7 @@ function commit(txt){
   if (iso !== val.value){ val.value = iso; val.dispatchEvent(new Event('change', {bubbles:true})); }
 }
 
-document.addEventListener('focusin', e => { const t = e.target; if (!t.classList?.contains('dt-txt')) return; const v = t.value; setTimeout(() => { if (t.value === v) t.select(); }, 0); });
+document.addEventListener('focusin', e => { const t = e.target; if (!t.classList?.contains('dt-txt') || matchMedia('(pointer:coarse)').matches) return; const v = t.value; setTimeout(() => { if (t.value === v) t.select(); }, 0); });
 document.addEventListener('mouseup', e => { if (e.target.classList?.contains('dt-txt') && document.activeElement===e.target && e.target.selectionStart===e.target.selectionEnd) e.target.select(); });
 document.addEventListener('focusout', e => { if (e.target.classList?.contains('dt-txt')) commit(e.target); });
 document.addEventListener('keydown', e => {
@@ -100,17 +100,23 @@ document.addEventListener('change', e => {
   const end = endEl(val); if (end?.value && end.value < val.value) setVal(end, val.value);
 });
 
-document.addEventListener('click', e => {
-  const b = e.target.closest('.dt-cal'); if (!b) return;
-  e.preventDefault(); e.stopPropagation();
-  const val = b.parentElement.querySelector('.dt-val');
+/** Avant d'ouvrir le calendrier : date de fin bornée par le début, et ouverte sur le mois du début */
+function prepare(val){
   // date de fin : le calendrier s'ouvre au mois de la date de début (la fin ne peut pas être avant)
   const start = startFor(val);
   if (start) val.min = start; else val.removeAttribute('min');
   // fin encore vide : le calendrier s'ouvre sur le début (et pas sur aujourd'hui) ; rien n'est gardé si on ferme sans choisir
   if (start && !val.value){ val.value = start; val.dataset.tmp = '1'; }
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('.dt-cal'); if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  const val = b.parentElement.querySelector('.dt-val');
+  prepare(val);
   try { val.showPicker(); } catch(_) { val.focus(); }
 });
+// Téléphone / tablette : le vrai calendrier du téléphone est posé (invisible) sur l'icône, un appui l'ouvre directement
+document.addEventListener('pointerdown', e => { if (e.target.classList?.contains('dt-val')) prepare(e.target); });
 const dropTmp = () => document.querySelectorAll('.dt-val[data-tmp]').forEach(v => { v.value = ''; delete v.dataset.tmp; });
 document.addEventListener('pointerdown', dropTmp, true);
 document.addEventListener('keydown', dropTmp, true);

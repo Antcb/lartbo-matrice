@@ -8,13 +8,13 @@ import { render } from './app.js';
 import { CFG } from './config.js';
 import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PRIORITY_OPTS, PROSPECT, PROSPECT_OPTS, STATUSES, TASK_STATUS, TASK_STATUS_OPTS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
 import { insert, refreshFor, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
-import { fillCoords, geocode } from './geo.js';
+import { fillCoords, geocode, geoFrance, searchPlaces } from './geo.js';
 import { contactMails, defaultCommission, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow } from './ui/bits.js';
 import { hiddenFields, openModal } from './ui/modal.js';
-import { $, downloadCSV, esc, fmtDate, toast, today } from './utils.js';
+import { $, downloadCSV, esc, fmtDate, norm, toast, today } from './utils.js';
 import { driveHTML } from './views/production.js';
 import { cancelAutoRelances, closeNoAnswer } from './prospection.js';
 import { askConfirmation, becameConfirmed } from './confirm-flow.js';
@@ -257,13 +257,23 @@ const structFields = () => [
 const structHidden = s => hiddenFields(s, [['lat',1],['lng',1],['department_code'],['department_name']]);
 
 async function locate(v, before={}){
-  // coordonnées déjà fournies par le choix d'une adresse : rien à faire
-  if (v.lat!=null && v.city===before.city && v.postal_code===before.postal_code && v.address===before.address && before.lat!=null) return;
-  if (v.lat!=null && (v.city!==before.city || v.address!==before.address) && v.lat!==before.lat) return;
+  const moved = ['address','postal_code','city','country'].some(k => (v[k] || '') !== (before[k] || ''));
+  // coordonnées déjà fournies par le choix d'une adresse dans la liste : rien à faire
+  if (v.lat != null && v.lat !== before.lat) return;
+  if (!moved && before.lat != null) return;
   if (!v.city && !v.postal_code && !v.address) return;
+  // l'emplacement a changé à la main : l'ancien département, l'ancienne région et les coordonnées ne valent plus
+  if (moved){ v.lat = v.lng = null; v.department_code = v.department_name = null; if ((v.region || '') === (before.region || '')) v.region = null; }
   const fr = !v.country || /^france$/i.test(v.country);
-  const g = await geocode([v.address, v.postal_code, v.city].filter(Boolean).join(' '), {france:fr}) || (v.city ? await geocode(v.city, {france:fr}) : null);
-  if (g){ v.lat=g.lat; v.lng=g.lng; if (g.department_code){ v.department_code=g.department_code; v.department_name=g.department_name; v.region = v.region || g.region; v.city = v.city || g.city; v.postal_code = v.postal_code || g.postcode; } }
+  const q = [v.address, v.postal_code, v.city].filter(Boolean).join(' ');
+  // ville seule : on ne cherche qu'une commune (pas une « rue de Charleroi » en France)
+  const g = !fr ? null : v.address ? (await geocode(q, {france:true}) || (v.city ? await geoFrance(v.city) : null)) : await geoFrance([v.postal_code, v.city].filter(Boolean).join(' '));
+  if (g && g.department_code){ v.lat=g.lat; v.lng=g.lng; v.department_code=g.department_code; v.department_name=g.department_name; v.region = v.region || g.region; v.city = v.city || g.city; v.postal_code = v.postal_code || g.postcode; return; }
+  // hors de France (ou introuvable en France) : la ville est cherchée dans le monde, avec sa région et son pays
+  const p = v.city ? (await searchPlaces(v.city, {cities:true})).find(x => norm(x.city || '') === norm(v.city)) : null;
+  if (p){ v.lat=p.lat; v.lng=p.lng; v.region = v.region || p.region || null; if (p.country && (fr || !v.country)) v.country = p.country;
+    if (p.department_code){ v.department_code=p.department_code; v.department_name=p.department_name; } return; }
+  const w = await geocode(q || v.city, {france:false}); if (w){ v.lat=w.lat; v.lng=w.lng; }
 }
 
 /** Champs de la fiche structure (les mêmes partout : onglet Structures, nouveau suivi, nouvelle date, tâche…) */

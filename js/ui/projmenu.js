@@ -9,6 +9,8 @@ import { S } from '../state.js';
 import { esc, hayOf, norm } from '../utils.js';
 
 let OPEN = null;
+// téléphone / tablette : la liste s'ouvre en bas de l'écran, sans clavier (sinon le clavier fait défiler la page et la liste se refermait)
+const touch = () => matchMedia('(pointer:coarse)').matches;
 
 function close(){
   if (!OPEN) return;
@@ -37,9 +39,10 @@ document.addEventListener('click', e => {
       <div class="pm-foot"><button type="button" class="btn sm primary" data-pm-done="1">OK</button></div>`;
     (b.closest('dialog') || document.body).appendChild(list);
     OPEN = {btn: b, list, table: b.dataset.t, id: b.dataset.id, q: '', changed: false};
-    const r = b.getBoundingClientRect();
-    list.style.left = Math.min(r.left, innerWidth - 280) + 'px'; list.style.top = (r.bottom + 4) + 'px'; list.style.minWidth = '260px';
-    draw(); list.querySelector('.pp-q').focus();
+    if (touch()) list.classList.add('pm-sheet');
+    else { const r = b.getBoundingClientRect();
+      list.style.left = Math.min(r.left, innerWidth - 280) + 'px'; list.style.top = (r.bottom + 4) + 'px'; list.style.minWidth = '260px'; }
+    draw(); if (!touch()) list.querySelector('.pp-q').focus();
     return;
   }
   if (!OPEN) return;
@@ -58,4 +61,4 @@ document.addEventListener('change', async e => {
 
 document.addEventListener('input', e => { if (OPEN && e.target.classList?.contains('pp-q') && OPEN.list.contains(e.target)){ OPEN.q = e.target.value; draw(); } });
 document.addEventListener('keydown', e => { if (OPEN && (e.key === 'Escape' || (e.key === 'Enter' && e.target.classList?.contains('pp-q')))){ e.preventDefault(); e.stopPropagation(); close(); } }, true);
-window.addEventListener('scroll', e => { if (OPEN && !OPEN.list.contains(e.target)) close(); }, true);
+window.addEventListener('scroll', e => { if (OPEN && !touch() && !OPEN.list.contains(e.target)) close(); }, true);

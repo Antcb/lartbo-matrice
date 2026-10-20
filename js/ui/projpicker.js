@@ -94,7 +94,7 @@ function open(btn, q=''){
   place();
   btn.setAttribute('aria-expanded','true');
   const inp = list.querySelector('.pp-q'); inp.value = q;
-  draw(); inp.focus();
+  draw(); if (!matchMedia('(pointer:coarse)').matches) inp.focus();   // téléphone : pas de clavier d'office
 }
 
 document.addEventListener('click', e => {
@@ -128,4 +128,4 @@ document.addEventListener('keydown', e => {
     const it = items[OPEN.idx >= 0 ? OPEN.idx : 0]; if (it) choose(it.dataset.pp);
   } else if (e.key === 'Tab') close();
 }, true);
-window.addEventListener('scroll', e => { if (OPEN && Date.now() - QUIET > 500 && !OPEN.list.contains(e.target) && e.target !== OPEN.list) close(); }, true);
+window.addEventListener('scroll', e => { if (OPEN && !matchMedia('(pointer:coarse)').matches && Date.now() - QUIET > 500 && !OPEN.list.contains(e.target) && e.target !== OPEN.list) close(); }, true);
