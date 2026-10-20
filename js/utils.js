@@ -9,13 +9,18 @@ export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','
 
 /** Montant au centime (budgets) */
 export const eur2 = n => n==null || n==='' || isNaN(n) ? '—' : Number(n).toLocaleString('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2});
-export const eur = n => n==null || n==='' || isNaN(n) ? '—' : Number(n).toLocaleString('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0});
+/** Montant courant : sans centimes quand il est rond (1 200 €), avec sinon (8 967,50 €) */
+export const eur = n => n==null || n==='' || isNaN(n) ? '—' : Number(n).toLocaleString('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2});
 
-export const fmtDate = d => d ? new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'}) : '';
+/** Date affichée partout en JJ/MM/AAAA (stockage : AAAA-MM-JJ) ; accepte aussi un horodatage */
+export const fmtDate = d => { if (!d) return ''; const s = String(d); return /^\d{4}-\d\d-\d\d$/.test(s) ? fmtNum(s) : /T/.test(s) ? new Date(s).toLocaleDateString('fr-FR') : s; };
 
-export const fmtShort = d => d ? new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'short'}) : '';
+/** Date courte avec le jour : « sam. 10/01 » (listes compactes) */
+export const fmtShort = d => d ? `${new Date(String(d).slice(0,10)+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short'})} ${fmtNum(d).slice(0,5)}` : '';
+/** Jour de la semaine en toutes lettres : « mercredi » */
+export const fmtWeekday = d => d ? new Date(String(d).slice(0,10)+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long'}) : '';
 
-export const fmtNum = d => { if (!d) return ''; const [y,m,j] = d.split('-'); return `${j}/${m}/${y}`; };
+export function fmtNum(d){ if (!d) return ''; const [y,m,j] = String(d).slice(0,10).split('-'); return `${j}/${m}/${y}`; }
 
 export const today = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10); };
 
@@ -86,13 +91,11 @@ export function md(text){
 
 export const url = u => !u ? '' : /^https?:\/\//i.test(u) ? u : 'https://' + u;
 
-/** Date ou période d'une date : « ven. 12 juil. » ou « 12 → 14 juil. » */
+/** Date ou période d'une date : « ven. 12/07 » ou « 12/07 → 14/07 » */
 export const period = s => {
   if (!s?.date) return 'Sans date';
   if (!s.date_end || s.date_end === s.date) return fmtShort(s.date);
-  const a = new Date(s.date+'T12:00:00'), b = new Date(s.date_end+'T12:00:00');
-  const sameMonth = a.getMonth()===b.getMonth() && a.getFullYear()===b.getFullYear();
-  return sameMonth ? `${a.getDate()} → ${b.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}` : `${a.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} → ${b.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}`;
+  return `${fmtNum(s.date).slice(0,5)} → ${fmtNum(s.date_end).slice(0,5)}`;
 };
 
 /**

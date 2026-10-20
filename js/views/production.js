@@ -163,7 +163,7 @@ function suiviTab(s, booking, steps, late){
   const rem = remindersOf(s);
   return `<p class="tab-intro">Chaque étape prend la date du jour où elle est faite (les mails envoyés depuis la Matrice la remplissent tout seuls).</p>
     <div class="steps">${steps.map(([k,l])=>`<label style="${late.has(k)?'color:var(--danger);font-weight:700':''}">${l}</label>${dateInput(s[k], `data-t="shows" data-id="${s.id}" data-f="${k}"`)}`).join('')}</div>
-    ${rem.length ? `<div style="margin-top:12px">${rem.map(r=>`<div class="${r.late?'':'muted'}" style="font-size:13px;${r.late?'color:var(--danger);font-weight:600':''}">${r.late?'⚠︎':'•'} ${esc(r.title)} — ${r.late?'depuis le':'le'} ${fmtDate(r.due)}</div>`).join('')}</div>` : ''}`;
+    ${rem.length ? `<div class="mt">${rem.map(r=>`<div class="${r.late?'':'muted'}" style="font-size:13px;${r.late?'color:var(--danger);font-weight:600':''}">${r.late?'⚠︎':'•'} ${esc(r.title)} — ${r.late?'depuis le':'le'} ${fmtDate(r.due)}</div>`).join('')}</div>` : ''}`;
 }
 
 /** Factures : ce que l'organisateur paie (acomptes, solde), la commission, les autres lignes */
@@ -181,7 +181,7 @@ function billingTab(s, booking, pays, late){
           ${selfPaid ? '<td class="num muted">—</td>' : `<td class="num"><input type="number" step="any" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="vat_rate" value="${p.vat_rate??''}" placeholder="${payVat(p)}" aria-label="TVA %"></td>`}
           <td class="num nowrap">${BILL_KINDS.includes(p.kind) && s.fee_ht ? `<input type="number" step="any" inputmode="decimal" data-t="show_payments" data-id="${p.id}" data-f="amount_ttc" value="${a==null?'':ttc(a, payVat(p))}" aria-label="Montant TTC" title="Saisis le TTC : le HT et le % se calculent">` : eur2(ttc(a, payVat(p)))}</td>
           <td>${payeeCell(s, p, booking)}</td>
-          ${selfPaid ? `<td class="muted" style="font-size:12px">Pas de facture : tu te verses ta commission depuis le compte de l’artiste</td><td></td><td></td>
+          ${selfPaid ? `<td class="muted small">Pas de facture : tu te verses ta commission depuis le compte de l’artiste</td><td></td><td></td>
           <td class="${p.paid_at?'done-cell':late.has('artbo')?'late-cell':''}" title="Commission versée à L’ArtBo le">${cIn('show_payments',p.id,'paid_at',p.paid_at,'date')}</td><td></td>` : `
           <td>${cIn('show_payments',p.id,'invoice_number',p.invoice_number,'text','style="min-width:90px"')}</td>
           <td class="${late.has(p.kind)&&!p.sent_at?'late-cell':''}">${cIn('show_payments',p.id,'sent_at',p.sent_at,'date')}</td>
@@ -190,7 +190,7 @@ function billingTab(s, booking, pays, late){
           <td>${pennylaneCell(p)}</td>`}
           <td><button class="btn icon sm ghost danger" data-act="delPay" data-id="${p.id}" aria-label="Supprimer la ligne">✕</button></td></tr>`;}).join('')}
         </tbody>${booking ? '' : billFoot(s)}</table></div>
-      <div class="vh-actions" style="margin-top:10px">
+      <div class="vh-actions mt">
         ${booking ? '' : `<button class="btn sm" data-act="addPay" data-kind="acompte" data-id="${s.id}">Ajouter un acompte</button>
         <button class="btn sm" data-act="addPay" data-kind="cnm" data-id="${s.id}">Ajouter la taxe CNM</button>`}
         <button class="btn sm" data-act="addPay" data-kind="autre" data-id="${s.id}">Autre ligne</button>
@@ -199,7 +199,7 @@ function billingTab(s, booking, pays, late){
         <button class="btn sm ghost" data-act="editShow" data-id="${s.id}">Fiche complète de la date</button>
         ${s.structure_id ? `<button class="btn sm ghost" data-act="openStructure" data-id="${s.structure_id}">Fiche de la structure</button>` : ''}
       </div>
-      <p class="muted" style="font-size:12px;margin:8px 0 0">Vide = calcul automatique sur le cachet HT ; un montant saisi à la main apparaît en orange. TVA par défaut : 5,5 % sur le cachet, 20 % sur les commissions. Le solde prend ce qui reste (100 % − acomptes) tant qu’il n’est pas envoyé ; acomptes + solde ne dépassent jamais 100 % du cachet (commissions et autres lignes à part).</p>
+      <p class="muted small mt-sm">Vide = calcul automatique sur le cachet HT ; un montant saisi à la main apparaît en orange. TVA par défaut : 5,5 % sur le cachet, 20 % sur les commissions. Le solde prend ce qui reste (100 % − acomptes) tant qu’il n’est pas envoyé ; acomptes + solde ne dépassent jamais 100 % du cachet (commissions et autres lignes à part).</p>
     </div>`;
 }
 
@@ -209,7 +209,7 @@ const pctVal = v => v == null ? '' : Math.round(v * 100) / 100;
 function billFoot(s){
   const b = billingOf(s), ok = Math.abs(b.gap) < 0.01;
   return `<tfoot><tr class="bill-total ${ok ? 'ok' : 'warn'}">
-    <td><b>Total factures</b><div class="muted" style="font-size:11px">acomptes + solde</div></td>
+    <td><b>Total factures</b><div class="muted tiny">acomptes + solde</div></td>
     <td class="num"><b>${pctVal(b.pct)} %</b></td><td class="num nowrap"><b>${eur2(b.ht)}</b></td><td></td><td class="num nowrap"><b>${eur2(b.ttc)}</b></td>
     <td colspan="7">${ok ? `<span class="ok-badge">✓ = cachet (${eur2(b.fee)} HT · ${eur2(b.feeTtc)} TTC)</span>`
       : `<span class="warn-badge">${b.gap > 0 ? `Il manque ${eur2(b.gap)} HT` : `${eur2(-b.gap)} HT de trop`} par rapport au cachet (${eur2(b.fee)} HT)</span>`}

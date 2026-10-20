@@ -8,11 +8,11 @@ import { projName, showsFiltered } from '../selectors.js';
 import { S } from '../state.js';
 import { filterBar, fold, viewHead } from '../ui/bits.js';
 import { cChk, cIn, cUrl } from '../ui/cells.js';
-import { esc, fmtShort } from '../utils.js';
+import { esc, fmtDate, fmtWeekday } from '../utils.js';
 
 const pct = (a, b) => b ? Math.round((a||0) / b * 100) : null;
 const meter = (p, label) => p==null ? '<span class="muted">—</span>'
-  : `<div class="meter" style="--c:${p>=100?'var(--ok)':p>=60?'var(--brand-2)':p>=30?'var(--warn)':'var(--danger)'}"><b>${p} %</b><div class="bar"><i style="width:${Math.min(p,100)}%"></i></div>${label?`<span class="muted" style="font-size:12px">${label}</span>`:''}</div>`;
+  : `<div class="meter" style="--c:${p>=100?'var(--ok)':p>=60?'var(--brand-2)':p>=30?'var(--warn)':'var(--danger)'}"><b>${p} %</b><div class="bar"><i style="width:${Math.min(p,100)}%"></i></div>${label?`<span class="muted small">${label}</span>`:''}</div>`;
 
 /** Dates confirmées groupées par artiste : [[projectId, [dates]]] */
 export function byArtist(shows){
@@ -20,7 +20,7 @@ export function byArtist(shows){
   return Object.entries(g).sort((a,b)=>projName(a[0]).localeCompare(projName(b[0])));
 }
 
-export const dateCell = s => `<td class="nowrap"><b>${fmtShort(s.date)}</b><span class="sub">${s.date?s.date.slice(0,4):''}</span></td>
+export const dateCell = s => `<td class="nowrap"><b>${fmtDate(s.date)}</b><span class="sub">${fmtWeekday(s.date)}</span></td>
   <td style="min-width:170px"><b>${esc(s.venue)}</b><span class="sub">${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))}</span></td>`;
 
 export function viewTicketing(){

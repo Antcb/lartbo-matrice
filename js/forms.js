@@ -6,7 +6,7 @@ import { FORMAT_FIELD, exportTable } from './exports.js';
 import { propagateCommission } from './commission.js';
 import { render } from './app.js';
 import { CFG } from './config.js';
-import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PROSPECT, STATUSES, TASK_STATUS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
+import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PRIORITY_OPTS, PROSPECT, PROSPECT_OPTS, STATUSES, TASK_STATUS, TASK_STATUS_OPTS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
 import { insert, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode } from './geo.js';
 import { contactMails, defaultCommission, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
@@ -104,12 +104,12 @@ export function editProject(id){
       {k:'default_partner_pct', label:'% partenaire sur la commission', type:'number'},
       ...(p.drive_artist_folder_id ? [] : [{k:'_make_folder', label:'Créer son dossier Drive à son nom (à partir du modèle artiste)', type:'checkbox', full:true}]),
       {k:'drive_artist_folder_id', label:'Dossier Drive existant (lien ou identifiant) — sinon laisse vide', full:true},
-      {k:'_h_acc', type:'html', full:true, html:'<h3 class="block-title" style="margin:6px 0 0">Accueil (repris dans les contrats)</h3>'},
+      {k:'_h_acc', type:'html', full:true, html:'<h3 class="block-title mt-sm">Accueil (repris dans les contrats)</h3>'},
       {k:'road_people', label:'Personnes sur la route (= repas)', type:'number'},
       {k:'setup_hours', label:'Mise à disposition du lieu (montage, balances) en heures', type:'number'},
       {k:'rooms_single', label:'Chambres single', type:'number'},
       {k:'rooms_twin', label:'Chambres twin', type:'number'},
-      {k:'_h_tpl', type:'html', full:true, html:'<h3 class="block-title" style="margin:6px 0 0">Modèles de contrat propres à l’artiste</h3><p class="help" style="margin:0">Lien d’un Google Doc. Laisse vide pour utiliser le modèle général (Réglages › Contrats).</p>'},
+      {k:'_h_tpl', type:'html', full:true, html:'<h3 class="block-title mt-sm">Modèles de contrat propres à l’artiste</h3><p class="help m0">Lien d’un Google Doc. Laisse vide pour utiliser le modèle général (Réglages › Contrats).</p>'},
       {k:'contract_template_cc', label:'Contrat de cession', full:true, placeholder:'https://docs.google.com/document/d/…'},
       {k:'contract_template_cr', label:'Contrat de co-réalisation', full:true, placeholder:'https://docs.google.com/document/d/…'},
       {k:'notes', label:'Notes', type:'textarea', full:true},
@@ -174,12 +174,12 @@ export function editTask(id, prefill={}){
       {k:'title', label:'Tâche', full:true},
       {k:'department', label:'Pôle', type:'select', options:deptNames().concat(t.department && !deptNames().includes(t.department) ? [t.department] : [])},
       {k:'assigned_to', label:'Pour', type:'select', options:team()},
-      {k:'deadline', label:'Échéance', type:'date'}, {k:'status', label:'Statut', type:'select', options:TASK_STATUS, blank:false},
+      {k:'deadline', label:'Échéance', type:'date'}, {k:'status', label:'Statut', type:'select', options:TASK_STATUS_OPTS, blank:false},
       {k:'project_ids', label:'Projet(s)', type:'checks', options:activeProjects(projIds(t)), full:true},
       {k:'structure_id', label:'Structure', type:'ac', kind:'structures', create:true},
       {k:'show_id', label:'Date concernée', type:'ac', kind:'shows', placeholder:'Artiste, lieu, ville ou date…'},
       {k:'prospect_id', label:'Suivi (facultatif)', type:'select', options:suiviOptions(t)},
-      {k:'priority', label:'Priorité (si pas d’échéance)', type:'select', options:PRIORITIES}, {k:'tags', label:'Tags', type:'tags', suggest: () => ['Call', 'Mail', ...S.db.tasks.flatMap(x => x.tags || [])]},
+      {k:'priority', label:'Priorité (si pas d’échéance)', type:'select', options:PRIORITY_OPTS}, {k:'tags', label:'Tags', type:'tags', suggest: () => ['Call', 'Mail', ...S.db.tasks.flatMap(x => x.tags || [])]},
       {k:'notes', label:'Notes', type:'textarea', full:true, rows:5},
       ...(files.length ? [{k:'_existing', type:'html', label:'Pièces jointes', full:true, html: files.map(f=>fileRow(f, 'openAttachment', 'delAttachment')).join('')}] : []),
       {k:'_files', label: files.length ? 'Ajouter des pièces jointes' : 'Pièces jointes', type:'files', full:true},
@@ -268,7 +268,7 @@ const structFormFields = (isNew, nested=false) => [...structFields(),
   {k:'_contacts', label:'Contacts', type:'links', source:'contacts', create:!nested, full:true},
   {k:'notes', label:'Notes', type:'textarea', full:true},
   // à la création : le festival / la salle / l'événement de la structure, avec ses dates, sa jauge et son tarif
-  ...(isNew ? [{k:'_h_ev', type:'html', full:true, html:'<h3 class="block-title" style="margin:6px 0 0">Festival, salle ou événement</h3><p class="help" style="margin:0">Facultatif. D’autres pourront être ajoutés dans l’onglet « Festivals / salles » de la fiche.</p>'},
+  ...(isNew ? [{k:'_h_ev', type:'html', full:true, html:'<h3 class="block-title mt-sm">Festival, salle ou événement</h3><p class="help m0">Facultatif. D’autres pourront être ajoutés dans l’onglet « Festivals / salles » de la fiche.</p>'},
     ...eventFields('_ev_')] : []),
 ];
 
@@ -347,7 +347,7 @@ export function editProspect(id){
     fields: [
       {k:'structure_id', label:'Structure — tape le nom, ou crée-la si elle n’existe pas', type:'ac', kind:'structures', create:true, full:true},
       {k:'project_ids', label:'Artiste(s) concerné(s)', type:'checks', options:activeProjects(projIds(p)), full:true},
-      {k:'status', label:'Statut', type:'select', options:PROSPECT, blank:false},
+      {k:'status', label:'Statut', type:'select', options:PROSPECT_OPTS, blank:false},
       {k:'last_contact', label:'Dernier contact', type:'date'},
       ...(id ? [{k:'summary', label:'Résumé', type:'textarea', full:true}] : [
         {k:'_contact', label:'Interlocuteur (contact de la structure)', type:'ac', kind:'contacts', create:true, full:true},
@@ -381,7 +381,7 @@ export function exportSuivis(projectId){
     values:{project: projectId || S.project || '', statuses: PROSPECT.filter(x=>x!=='Closed'), format:'xlsx'},
     fields:[
       ...(fixed ? [] : [{k:'project', label:'Projet', type:'project', full:true}]),
-      {k:'statuses', label:'Statuts', type:'checks', options:PROSPECT.map(x=>[x,x]), full:true},
+      {k:'statuses', label:'Statuts', type:'checks', options:PROSPECT_OPTS, full:true},
       {k:'from', label:'Dernier échange à partir du', type:'date'}, {k:'to', label:'jusqu’au', type:'date'},
       FORMAT_FIELD,
     ],

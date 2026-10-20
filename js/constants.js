@@ -28,10 +28,16 @@ export const TICKETING = ['Payant/Prix Libre','Gratuit'];
 export const POSTER = ['Quantité à demander','En attente des quantités souhaitées','En attente de commande',"En attente d'expédition",'Expédiée','Livrée','Non concerné'];
 
 export const PROSPECT = ['Mailed','Interest','Option','Confirmed','Closed'];
+/** Libellés affichés des statuts de suivi (les valeurs restent en anglais dans la base) */
+export const PROSPECT_LABEL = {Mailed:'Mail envoyé', Interest:'Intérêt', Option:'Option', Confirmed:'Confirmé', Closed:'Clos'};
+export const PROSPECT_OPTS = PROSPECT.map(x => [x, PROSPECT_LABEL[x]]);
 
 export const TASK_STATUS = ['To Do','In Progress','Done','Cancelled'];
+export const TASK_STATUS_OPTS = [['To Do','À faire'],['In Progress','En cours'],['Done','Faite'],['Cancelled','Annulée']];
 
 export const PRIORITIES = ['D-Day','Critical','High','Medium','Low'];
+export const PRIORITY_LABEL = {'D-Day':'Jour J', Critical:'Critique', High:'Haute', Medium:'Moyenne', Low:'Basse'};
+export const PRIORITY_OPTS = PRIORITIES.map(x => [x, PRIORITY_LABEL[x]]);
 
 // Pôles des tâches par défaut (modifiables dans Réglages → réglage « departments »)
 export const DEFAULT_DEPARTMENTS = [{name:'Booking',color:'#4A86D4'},{name:'Production',color:'#1D6B3A'},{name:'Communication',color:'#B4539A'},{name:'Admin',color:'#7A5AC8'},{name:'Accounting',color:'#C98A12'},{name:'Projects',color:'#283C63'}];

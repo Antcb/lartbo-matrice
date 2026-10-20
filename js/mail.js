@@ -12,7 +12,7 @@ import { byId, contactMails, linksOfStructure, projectOptions, setting } from '.
 import { S } from './state.js';
 import { openModal } from './ui/modal.js';
 import { rtStyle, rtToolbar, wrapMail } from './ui/richtext.js';
-import { esc, fmtDate, toast } from './utils.js';
+import { esc, fmtDate, toast, today } from './utils.js';
 
 export const MAIL_KINDS = { confirmation: 'Confirmation', boucle_tech: 'Boucle accueil & technique', boucle_com: 'Boucle communication', prospection: 'Prospection', relance: 'Relance de prospection', autre: 'Autre' };
 /** Mails envoyés depuis une structure (pas depuis une date) : balises de la structure */
@@ -179,12 +179,12 @@ function stepLabel(kind){ return {confirmation:'Conf + FT + kit envoyés', boucl
 async function logMail(s, kind, to, draft, mail=null){
   const fresh = byId('shows', s.id) || s;
   const patch = {mail_log: {...(fresh.mail_log||{}), [kind]: {at: new Date().toISOString(), to, draft, sent: !draft}}};
-  if (!draft && SENT_FIELD[kind]) patch[SENT_FIELD[kind]] = new Date().toISOString().slice(0,10);
+  if (!draft && SENT_FIELD[kind]) patch[SENT_FIELD[kind]] = today();
   await save('shows', s.id, patch, {rerender:false});
   // envoyé : l'échange s'ajoute aussi au journal du suivi de la date (s'il y en a un)
   if (!draft && mail && fresh.prospect_id && byId('prospects', fresh.prospect_id)){
     const d = document.createElement('div'); d.innerHTML = mail.html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p)>/gi, '\n');
-    await insert('prospect_logs', {prospect_id: fresh.prospect_id, date: new Date().toISOString().slice(0,10), kind: 'Mail', contact_name: to, author: S.user?.email,
+    await insert('prospect_logs', {prospect_id: fresh.prospect_id, date: today(), kind: 'Mail', contact_name: to, author: S.user?.email,
       body: `**${MAIL_KINDS[kind] || 'Mail'} envoyée** · ${fresh.venue || ''}\n**Objet :** ${mail.subject}\n\n${d.textContent.replace(/\n{3,}/g, '\n\n').trim()}`, body_html: mail.html});
   }
 }
@@ -283,7 +283,7 @@ export async function editTemplate(id, defaults={}){
   let files = (t.attachments || []).slice();   // [{path, name}] fichier déposé · [{id, url, name}] fichier Drive
   const variants = [...new Set(['CC', 'CC Club', 'CC Festival', 'CCR Club', ...S.db.mail_templates.map(x => x.variant).filter(Boolean)])];
   const extra = `<div class="field full"><label>Pièces jointes</label><div id="tpl-files"></div>
-      <div class="vh-actions" style="margin-top:6px"><label class="btn sm file-btn">Ajouter un fichier<input type="file" class="file-input" multiple id="tpl-up"></label>
+      <div class="vh-actions mt-sm"><label class="btn sm file-btn">Ajouter un fichier<input type="file" class="file-input" multiple id="tpl-up"></label>
         <input id="tpl-drive" placeholder="ou coller un lien Drive puis Entrée" style="min-width:260px"></div>
       <div class="help">Jointes au brouillon Gmail (ex. fiche technique, rider, kit promo). Tu pourras en ajouter d’autres au moment d’envoyer.</div></div>
     <div class="field full"><label>Texte du mail</label>${fmtBar}${tagBar}<div class="mail-preview" id="tpl-body" contenteditable="true" style="${rtStyle()}">${t.html||''}</div>
@@ -291,7 +291,7 @@ export async function editTemplate(id, defaults={}){
     <datalist id="tpl-variants">${variants.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
     ${id ? `<div class="field full"><button type="button" class="btn sm" id="tpl-dup">Dupliquer ce modèle (pour créer une autre variante)</button></div>` : ''}`;
   const drawFiles = () => { const box = document.querySelector('#tpl-files'); if (!box) return;
-    box.innerHTML = files.length ? `<ul class="doc-list">${files.map((f, i) => `<li><span>${f.path ? '📎' : '🔗'} ${esc(f.name || f.url || f.id)}</span><button type="button" class="btn icon sm ghost danger" data-rmf="${i}" aria-label="Retirer">✕</button></li>`).join('')}</ul>` : '<p class="muted" style="margin:0">Aucune pièce jointe.</p>'; };  let lastRange = null;
+    box.innerHTML = files.length ? `<ul class="doc-list">${files.map((f, i) => `<li><span>${f.path ? '📎' : '🔗'} ${esc(f.name || f.url || f.id)}</span><button type="button" class="btn icon sm ghost danger" data-rmf="${i}" aria-label="Retirer">✕</button></li>`).join('')}</ul>` : '<p class="muted m0">Aucune pièce jointe.</p>'; };  let lastRange = null;
   const pids = tplProjects(t);
   const p = openModal({title: id ? 'Modèle de mail' : 'Nouveau modèle de mail', wide: true, values: {...t, project_ids: pids, applies_to: t.applies_to || 'all'},
     fields: [

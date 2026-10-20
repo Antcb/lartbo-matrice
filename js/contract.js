@@ -59,7 +59,7 @@ export function validateFiche(showId){
     }).join('');
   }).join('');
   const extra = `<div class="mail-wrap">
-    <p class="help" style="margin-top:0">${s.fiche_submitted_at ? `Fiche envoyée par l’organisateur le ${fmtDate(s.fiche_submitted_at.slice(0,10))}.` : 'L’organisateur n’a pas encore rempli la fiche : tu peux tout de même compléter les infos ici.'}
+    <p class="help mt0">${s.fiche_submitted_at ? `Fiche envoyée par l’organisateur le ${fmtDate(s.fiche_submitted_at.slice(0,10))}.` : 'L’organisateur n’a pas encore rempli la fiche : tu peux tout de même compléter les infos ici.'}
       Corrige la colonne « Valeur retenue » si besoin : c’est elle qui part dans le contrat. En orange : l’organisateur a donné une autre valeur que celle de la fiche structure.</p>
     <div class="tbl-wrap"><table class="vf-table"><thead><tr><th>Champ</th><th>Réponse de l’organisateur</th><th>Valeur retenue</th></tr></thead><tbody>${rows}</tbody></table></div>
     <label class="check-line"><input type="checkbox" id="vf-struct" checked> Mettre à jour les coordonnées de la structure${st ? ` « ${esc(st.name)} »` : ''} avec ces valeurs</label>

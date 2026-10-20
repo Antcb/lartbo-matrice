@@ -36,7 +36,7 @@ export function viewCommunication(){
   return viewHead('Communication', {sub: `${shows.length} date${shows.length>1?'s':''} suivie${shows.length>1?'s':''}`, filters: filterBar()})
     + (shows.length ? byArtist(shows).map(([pid, list]) => { const now = today(), up = list.filter(s => (s.date_end||s.date||'9999') >= now), past = list.filter(s => (s.date_end||s.date||'9999') < now);
         return `<section class="group"><div class="group-head"><h2>${esc(projName(pid)||'Sans projet')}</h2><span class="count">${up.length}</span></div>
-          ${up.length ? table(up) : '<p class="muted" style="margin:0 0 6px">Aucune date à venir.</p>'}
+          ${up.length ? table(up) : '<p class="muted mb-sm">Aucune date à venir.</p>'}
           ${past.length ? fold('compast-'+pid, 'Dates passées', table(past), {count:past.length}) : ''}</section>`; }).join('')
        : `<div class="empty panel">Aucune date suivie en communication. Ajoute une date depuis la liste ci-dessous.</div>`)
     + notConcerned(others, 'communication_enabled', 'communication');

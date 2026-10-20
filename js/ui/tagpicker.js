@@ -16,7 +16,7 @@ export function tagPicker({id, name, values = [], suggestions = [], placeholder 
     <div class="tp-sugg" hidden></div>
   </div>`;
 }
-const chip = v => `<span class="tp-chip" data-v="${esc(v)}">${esc(v)}<button type="button" class="tp-rm" aria-label="Retirer ${esc(v)}">×</button></span>`;
+const chip = v => `<span class="tp-chip" data-v="${esc(v)}">${esc(v)}<button type="button" class="tp-rm" aria-label="Retirer ${esc(v)}">✕</button></span>`;
 
 const box = el => el.closest('[data-tagpick]');
 const valuesOf = b => [...b.querySelectorAll('.tp-chip')].map(c => c.dataset.v);

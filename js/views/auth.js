@@ -15,7 +15,7 @@ export function loginHTML(){
       <input type="email" id="login-email" placeholder="prenom@lartboristerie.com" required autocomplete="email">
       <input type="password" id="login-pw" placeholder="Mot de passe" required autocomplete="current-password">
       <button class="btn primary" style="width:100%">Se connecter</button></form>
-    <p id="login-msg" class="muted" style="margin-top:12px"></p></div>`;
+    <p id="login-msg" class="muted mt"></p></div>`;
 }
 
 document.addEventListener('submit', async e => {

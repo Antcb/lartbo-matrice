@@ -19,7 +19,7 @@ export function cIn(t, id, f, v, type='text', extra=''){
   return `<input type="${type}" ${type==='number'?'step="any" inputmode="decimal"':''} ${dataAttrs(t,id,f)} value="${esc(v??'')}" ${extra}>`;
 }
 
-export const cSel = (t,id,f,v,opts,blank=true) => `<select ${dataAttrs(t,id,f)}>${blank?'<option value=""></option>':''}${opts.map(o=>{ const [val,lab]=Array.isArray(o)?o:[o,o]; return `<option value="${esc(val)}" ${String(val)===String(v??'')?'selected':''}>${esc(lab)}</option>`;}).join('')}</select>`;
+export const cSel = (t,id,f,v,opts,blank=true) => `<select ${dataAttrs(t,id,f)}>${blank?'<option value="">—</option>':''}${opts.map(o=>{ const [val,lab]=Array.isArray(o)?o:[o,o]; return `<option value="${esc(val)}" ${String(val)===String(v??'')?'selected':''}>${esc(lab)}</option>`;}).join('')}</select>`;
 
 export const cChk = (t,id,f,v,label='') => `<label class="chk"><input type="checkbox" ${dataAttrs(t,id,f)} ${v?'checked':''}>${label?`<span>${esc(label)}</span>`:''}</label>`;
 

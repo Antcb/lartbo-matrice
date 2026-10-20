@@ -84,7 +84,7 @@ export function templateForm(scope){
         <tr><td>au-delà</td><td class="num">${inp('t3')}</td></tr>
       </tbody></table>
     </div>
-    <p class="help" style="margin:8px 0 0">${isSettings ? 'Posé sur chaque nouvelle date confirmée en production. Movinmotion (' + eur2(Number(setting('movinmotion_payslip_cost') ?? 20.3)) + ' par bulletin), la taxe CNM et le solde artiste se calculent seuls. Chaque artiste peut remplacer ces valeurs sur sa fiche.'
+    <p class="help mt-sm">${isSettings ? 'Posé sur chaque nouvelle date confirmée en production. Movinmotion (' + eur2(Number(setting('movinmotion_payslip_cost') ?? 20.3)) + ' par bulletin), la taxe CNM et le solde artiste se calculent seuls. Chaque artiste peut remplacer ces valeurs sur sa fiche.'
       : 'Cases vides = valeurs de Réglages (en gris). Posé sur chaque nouvelle date confirmée ; ensuite tu ajoutes ou retires des lignes.'}</p>`;
 }
 

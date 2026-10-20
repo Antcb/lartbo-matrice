@@ -46,7 +46,7 @@ export function taskTable(tasks, emptyMsg){
       <td><input type="checkbox" data-act="toggleTask" data-id="${t.id}" ${t.status==='Done'?'checked':''} aria-label="Marquer comme faite"></td>
       <td class="full-cell" style="min-width:260px"><div class="task-title">${cIn('tasks',t.id,'title',t.title,'text','aria-label="Nom de la tâche"')}
         <button class="btn sm ghost" data-act="editTask" data-id="${t.id}" title="Notes, pièces jointes, statut…">Détails${nf?` · ${nf} 📎`:''}</button>${taskSuiviBtns(t)}</div>
-        ${t.notes?`<div class="muted" style="font-size:13px;padding:0 6px;white-space:pre-line">${esc(t.notes.length>160?t.notes.slice(0,160)+'…':t.notes)}</div>`:''}</td>
+        ${t.notes?`<div class="task-notes">${esc(t.notes.length>160?t.notes.slice(0,160)+'…':t.notes)}</div>`:''}</td>
       <td><select class="dept-sel" data-t="tasks" data-id="${t.id}" data-f="department" style="--c:${deptColor(t.department)}" aria-label="Pôle"><option value="">Pôle ?</option>${deptNames().concat(t.department && !deptNames().includes(t.department) ? [t.department] : []).map(d=>`<option ${d===t.department?'selected':''}>${esc(d)}</option>`).join('')}</select></td>
       <td class="due-cell">${cIn('tasks',t.id,'deadline',t.deadline,'date')}${t.status==='Done' && t.done_at ? `<span class="muted nowrap">Faite le ${fmtDate(t.done_at.slice(0,10))}</span>` : u?`<span class="urg ${u.cls}">${esc(u.label)}</span>`:''}</td>
       <td>${cSel('tasks',t.id,'assigned_to',t.assigned_to,team)}</td>

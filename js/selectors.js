@@ -3,7 +3,7 @@
  * Les recherches fréquentes passent par des index en cache (recalculés quand la table change),
  * ce qui garde l'app rapide malgré les milliers de structures et de contacts.
  */
-import { DEFAULT_DEPARTMENTS, TEAM_NAMES, isOff } from './constants.js';
+import { DEFAULT_DEPARTMENTS, PRIORITY_LABEL, TEAM_NAMES, isOff } from './constants.js';
 import { lingering } from './data.js';
 import { S } from './state.js';
 import { daysUntil, fmtDate } from './utils.js';
@@ -62,7 +62,7 @@ export const showLabel = s => s ? `${s.date ? s.date.split('-').reverse().join('
 export function urgency(t){
   if (['Done','Cancelled'].includes(t.status)) return null;
   const d = daysUntil(t.deadline);
-  if (d==null) return t.priority ? {cls:{'D-Day':'today',Critical:'crit',High:'high',Medium:'med',Low:'low'}[t.priority]||'med', label:t.priority} : null;
+  if (d==null) return t.priority ? {cls:{'D-Day':'today',Critical:'crit',High:'high',Medium:'med',Low:'low'}[t.priority]||'med', label:PRIORITY_LABEL[t.priority]||t.priority} : null;
   if (d<0) return {cls:'late', label:`En retard de ${-d} j`};
   if (d===0) return {cls:'today', label:"Aujourd'hui"};
   if (d<=2) return {cls:'crit', label:`J-${d}`};

@@ -2,7 +2,7 @@
  * Petits éléments d'interface réutilisés partout : pastilles de statut, de pôle, d'urgence,
  * barre d'onglets d'une page, filtres Année / Projet, zone de dépôt de fichiers.
  */
-import { STATUSES, stClass, stColor } from '../constants.js';
+import { PROSPECT_LABEL, STATUSES, stClass, stColor } from '../constants.js';
 import { deptColor, projName, projectOptions } from '../selectors.js';
 import { S } from '../state.js';
 import { esc } from '../utils.js';
@@ -13,7 +13,7 @@ export const stBadge = s => `<span class="badge st-badge st-${stClass(s)}" style
 /** Statut d'une date modifiable d'un clic (liste déroulante en forme de pastille) */
 export const stSelect = s => `<select class="st-sel" data-t="shows" data-id="${s.id}" data-f="status" style="--c:${stColor(s.status)}" aria-label="Statut de la date">${(STATUSES.includes(s.status) ? STATUSES : [s.status, ...STATUSES]).map(x=>`<option ${x===s.status?'selected':''}>${esc(x)}</option>`).join('')}</select>`;
 
-export const pstBadge = s => s ? `<span class="badge pst pst-${esc(s)}">${esc({Mailed:'Mail envoyé',Interest:'Intérêt',Option:'Option',Confirmed:'Confirmé',Closed:'Clos'}[s]||s)}</span>` : '';
+export const pstBadge = s => s ? `<span class="badge pst pst-${esc(s)}">${esc(PROSPECT_LABEL[s]||s)}</span>` : '';
 
 export const deptBadge = d => d ? `<span class="badge dept" style="--c:${deptColor(d)}">${esc(d)}</span>` : '';
 
@@ -54,9 +54,9 @@ export function dropZone(owner, inner=''){
 export const fileRow = (f, act='openFile', del='delFile') => `<div class="file-row"><span class="file-ico" aria-hidden="true">📎</span><a href="#" data-act="${act}" data-id="${f.id}">${esc(f.name)}</a>${f.size?` <span class="muted">${f.size>1e6?(f.size/1e6).toFixed(1)+' Mo':Math.max(1,Math.round(f.size/1024))+' Ko'}</span>`:''}
   <button type="button" class="btn icon sm ghost danger" data-act="${del}" data-id="${f.id}" aria-label="Supprimer ${esc(f.name)}">✕</button></div>`;
 
-/** En-tête de vue standard */
+/** En-tête de page commun à tout le site : titre et actions sur la première ligne, filtres en dessous */
 export const viewHead = (title, {sub='', filters='', actions=''}={}) =>
-  `<div class="view-head"><div class="vh-title"><h1>${title}</h1>${sub?`<span class="sub">${sub}</span>`:''}</div>${filters}<span class="spacer"></span><div class="vh-actions">${actions}</div></div>`;
+  `<div class="view-head"><div class="vh-top"><div class="vh-title"><h1>${title}</h1>${sub?`<span class="sub">${sub}</span>`:''}</div><span class="spacer"></span>${actions?`<div class="vh-actions">${actions}</div>`:''}</div>${filters?`<div class="vh-filters">${filters}</div>`:''}</div>`;
 
 /** Bloc repliable */
 export const fold = (key, title, inner, {open=false, count=null}={}) => {
