@@ -69,16 +69,21 @@ export async function refreshFor(table, col, ids){
   try {
     const data = [];
     for (let i = 0; i < ids.length; i += 200){            // par paquets de dates, et toutes les pages de chaque paquet
-      for (let from = 0; ; from += 1000){
-        const r = await sb.from(table).select('*').in(col, ids.slice(i, i + 200)).range(from, from + 999);
+      // pages lues par identifiant croissant, en repartant du dernier lu : aucune ligne sautée même si d'autres changent entre deux pages
+      for (let last = null; ;){
+        let q = sb.from(table).select('*').in(col, ids.slice(i, i + 200)).order('id', {ascending: true}).limit(1000);
+        if (last) q = q.gt('id', last);
+        const r = await q;
         if (r.error) return;
         data.push(...r.data); if (r.data.length < 1000) break;
+        last = r.data[r.data.length - 1].id;
       }
     }
     const keep = new Set(data.map(r => r.id));
     S.db[table] = S.db[table].filter(r => !ids.includes(r[col]) || keep.has(r.id));
     mergeRows(table, data);
-    for (const [t, ev] of buf) if (S.rtApply?.(t, ev)) touch(t);
+    // seuls les événements de la table rechargée sont rejoués (les autres sont déjà appliqués)
+    for (const [t, ev] of buf) if (t === table && S.rtApply?.(t, ev)) touch(t);
   } finally { S.rtBuffers.delete(buf); }
 }
 

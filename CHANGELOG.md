@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.37.2 — 20/10/2026
+- Relecture : rechargement partiel par pages stables, rejeu limité à la table rechargée
+
+
 ## 1.37.1 — 20/10/2026
 - Relecture : lieu vérifié dans le bon pays ; paiements au passage en production respectent « sans acompte » ; rechargements partiels complets et sans perte
 
