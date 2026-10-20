@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.35.1 — 20/10/2026
+- Relecture : brouillon de mail restauré sans écrasement ; suivi confirmé ou clos = relances automatiques retirées
+
+
 ## 1.35.0 — 20/10/2026
 - Audit : design system (hauteurs, titres, espacements, flèches), en-tête commun, dates JJ/MM/AAAA, statuts en français, tablette en fiches, rien ne déborde
 
