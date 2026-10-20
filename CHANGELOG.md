@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.36.2 — 20/10/2026
+- Relecture : nombre illisible refusé partout ; une seule ligne Movinmotion par date ; acompte et solde ajoutés quand une date passe en production
+
+
 ## 1.36.1 — 20/10/2026
 - Contacts toujours propres (mails, téléphones) ; Brevo réessaie quand il est saturé
 

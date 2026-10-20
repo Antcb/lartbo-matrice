@@ -90,6 +90,9 @@ export function openModal({title, fields, values={}, onSave, onDelete, extra='',
       const bad = ev.target.querySelector('.dt-txt.bad');
       if (bad){ toast(bad.title || 'Date à corriger', true); bad.focus(); return; }
       const out = readForm(ev.target, fields);
+      // un nombre illisible (« 12x ») : la fenêtre reste ouverte sur le champ, rien n'est enregistré
+      const badNum = fields.find(f => f.type === 'number' && out[f.k] != null && !Number.isFinite(out[f.k]));
+      if (badNum){ toast(`« ${badNum.label || badNum.k} » : nombre illisible`, true); ev.target.elements[badNum.k]?.focus(); return; }
       const btns = [...ev.target.querySelectorAll('.modal-foot button')];
       dlg._busy = true; btns.forEach(b => b.disabled = true);
       let ok;
