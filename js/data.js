@@ -47,12 +47,14 @@ export async function save(table, id, patch, {rerender=true}={}){
  * Enregistre un changement qui fait disparaître l'élément (tâche faite, suivi clos, date annulée) :
  * il reste visible 5 s avec un bouton « Annuler ».
  */
-export async function saveLinger(table, id, patch, message){
+export async function saveLinger(table, id, patch, message, {after, onUndo} = {}){
   S.linger.set(id, Date.now() + LINGER_MS);
   const before = await save(table, id, patch);
   if (!before) { S.linger.delete(id); return; }
+  // suite liée (ex. relances retirées) : seulement si l'enregistrement a réussi, et défaite avec « Annuler »
+  const extra = after ? await after() : null;
   const undo = {}; Object.keys(patch).forEach(k => undo[k] = before[k] ?? null);
-  toast(message, false, {label:'Annuler', fn: async () => { S.linger.delete(id); await save(table, id, undo); }});
+  toast(message, false, {label:'Annuler', fn: async () => { S.linger.delete(id); await save(table, id, undo); if (onUndo) await onUndo(extra); render(); }});
   setTimeout(() => { if (S.linger.has(id) && S.linger.get(id) <= Date.now() + 50){ S.linger.delete(id); render(); } }, LINGER_MS + 100);
 }
 
