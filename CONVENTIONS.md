@@ -172,7 +172,7 @@ Toute suppression (tâche, suivi, date, structure, contact, artiste, ligne de bu
 
 ### 4.7 Notifications [EN PLACE]
 - Interface : `toast(msg)` (succès), `toast(msg, true)` (erreur), `toast(msg, false, {label, fn})` (Annuler, Ouvrir).
-- Rappels : table `notifications`, écrits par `generate_reminders` (tous les jours 5 h UTC), clé anti-doublon `règle:id:échéance` = **une seule notification par échéance**, jamais une nouvelle chaque jour pour la même dette [DÉCIDÉ Q13] ; récapitulatif par mail via Apps Script.
+- Rappels : table `notifications`, écrits par `generate_reminders` (tous les jours 5 h UTC, soit 6 h en hiver et 7 h en été à Paris), clé anti-doublon `règle:id:échéance` = **une seule notification par échéance**, jamais une nouvelle chaque jour pour la même dette [DÉCIDÉ Q13] ; récapitulatif par mail via Apps Script.
 
 ### 4.8 Navigation
 - [EN PLACE] Changer d'onglet : `go(view)` (`js/app.js`) — remet à zéro les pages détail, mémorise la vue.
@@ -315,7 +315,7 @@ Ordre général : **valeur saisie sur la ligne (facture) > valeur de la date > v
 ### 7.5 Migrations [DÉCIDÉ Q38]
 - [EN PLACE] Un fichier par version : `supabase/migrations/AAAA-MM-JJ_vX.Y_sujet.sql`, rejouable (`if not exists`, `create or replace`).
 - [NOUVELLE] Application par le mécanisme de migrations de Supabase (historique enregistré), en plusieurs morceaux si l'outil refuse un lot ; un numéro de version unique par migration ; **interdit** : modifier une fonction par remplacement de texte (`pg_get_functiondef` + `replace`) — réécrire la fonction entière.
-- [CORRECTION] mise en cohérence : 30 fichiers dans le dépôt, 13 enregistrés dans l'historique Supabase ; numéros en double (v1.18, v1.26, v1.36) ; `supabase/schema.sql` décrit 13 tables sur 26 (à régénérer depuis la base).
+- [CORRECTION] mise en cohérence : 30 fichiers dans le dépôt, 13 enregistrés dans l'historique Supabase ; numéros en double (v1.18, v1.26, v1.36) ; `supabase/schema.sql` décrit 13 tables sur 26 (à régénérer depuis la base) ; une partie des objets (notifications, `generate_reminders`, `workday`, triggers de mode, nettoyage des contacts) n'existe que par migrations successives, dont l'ordre détermine le résultat ; `v1.32_brevo_mail2.sql` ne crée le trigger `brevo_contacts` que s'il existe déjà (installation neuve non garantie ; présent en production au 21/10/2026).
 
 ### 7.6 Opérations sensibles [DÉCIDÉ Q38]
 Avant toute opération sensible (migration qui modifie des données, contrainte ajoutée sur des données existantes, déplacement de secret, correction en lot) : **vérifier que la sauvegarde de la nuit** (dépôt `lartbo-matrice-backup`) est récente et complète, **exporter les lignes concernées** avant modification, puis **vérifier après** (requête de contrôle). Toute modification de données historiques est validée par Anthony.
@@ -414,5 +414,6 @@ Ordre indicatif ; chaque chantier respecte `CLAUDE.md` §8 (autorisation Q0) et 
 6. **Formats et saisies** : heure de Paris partout ; date longue unique ; centimes selon le contexte ; « 50 % » ; mails refusés sans déplacement ; téléphones nettoyés sans altération (§1, §2, §3.4).
 7. **Navigation** : liens directs ; filtres persistants + « Réinitialiser les filtres » ; tri des dates sur les fiches ; recherche des structures par contact ; changements de vue par `go()` (§4.8, §5).
 8. **Supabase** : secrets, contraintes, `search_path`, protection des mots de passe, historique des migrations, `schema.sql` (§7) ; aucune suppression d'objet sans validation (§7.8).
-9. **Architecture** : cycle d'imports, `toast` non importé dans `app.js`, doublons (§8.3, §8.5), écarts JS ↔ SQL (§8.4).
-10. **Outillage** : tests dans le dépôt (§9) ; indicateur de version des scripts Google (§8.6).
+9. **Documentation** : `README.md` à mettre à jour (page `artiste.html` et `js/artiste.js`, modules budget, Brevo, Pennylane, temps réel, fonctions edge récentes, `css/fiche.css`, factures désormais créées et rangées via Pennylane).
+10. **Architecture** : cycle d'imports, `toast` non importé dans `app.js`, doublons (§8.3, §8.5), écarts JS ↔ SQL (§8.4).
+11. **Outillage** : tests dans le dépôt (§9) ; indicateur de version des scripts Google (§8.6).
