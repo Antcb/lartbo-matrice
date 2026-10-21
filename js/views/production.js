@@ -243,7 +243,7 @@ function pennylaneCell(p, s){
   if (['acompte','solde'].includes(p.kind)){
     if (p.invoice_number) return '';
     return s?.pennylane_quote_id
-      ? `<a class="btn sm ghost" href="https://app.pennylane.com/" target="_blank" rel="noopener" title="Dans Pennylane, ouvre le devis de cette date puis « Créer une facture d’acompte » (ou la facture de solde). Le numéro revient ici avec « Synchroniser Pennylane ».">Facturer depuis le devis ↗</a>`
+      ? `<a class="btn sm ghost" href="${esc(s.pennylane_quote_url || 'https://app.pennylane.com/')}" target="_blank" rel="noopener" title="Ouvre le devis dans Pennylane : « Créer une facture d’acompte » (ou la facture de solde). Le numéro revient ici avec « Synchroniser Pennylane ».">Facturer depuis le devis ↗</a>`
       : `<button class="btn sm" data-act="pennylaneQuote" data-id="${p.show_id}" title="L’acompte et le solde se facturent depuis le devis Pennylane">Créer le devis</button>`;
   }
   return `<button class="btn sm" data-act="pennylaneInvoice" data-id="${p.id}" title="Crée la facture en brouillon dans Pennylane">Créer</button>`;
