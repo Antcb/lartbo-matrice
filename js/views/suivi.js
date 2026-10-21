@@ -7,7 +7,7 @@
  * avec distance et temps de route depuis la structure, et le planning de l'artiste.
  */
 import { LOG_ICON, LOG_KINDS, PROSPECT, PROSPECT_LABEL, PROSPECT_OPTS, isOff, stColor } from '../constants.js';
-import { lingering } from '../data.js';
+import { lingering, summaryRetryAt } from '../data.js';
 import { distKm, routeCached, route } from '../geo.js';
 import { suiviClosed, projFilterOk, byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, projIds, projName, projNames, projectOptions, showCoords, showsOfProject, structName } from '../selectors.js';
 import { S, localGet, localSet } from '../state.js';
@@ -57,6 +57,7 @@ export function suiviCard(p, {page=false}={}){
         <button class="btn sm" data-act="aiSummary" data-id="${p.id}" title="Résumé automatique à partir du journal, des notes et des PDF">Mettre à jour avec l'IA</button>
         <button class="btn sm ghost" data-act="editText" data-id="${p.id}" data-f="summary">Modifier</button>
         <button class="btn sm ghost" data-act="copyForAi" data-id="${p.id}" title="Copie le suivi pour le coller dans ChatGPT">Copier pour ChatGPT</button></h3>
+        ${(at => at ? `<p class="help m0 mb-sm">⏳ L’IA était saturée : nouvel essai automatique vers ${new Date(at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'})}.</p>` : '')(summaryRetryAt(p.id))}
         <div class="md">${md(p.summary) || '<span class="muted">Pas encore de résumé.</span>'}</div></div>`;
   const d = logDraft(p.id);
   // Fil de la date : échanges et pièces jointes mêlés, du plus récent au plus ancien

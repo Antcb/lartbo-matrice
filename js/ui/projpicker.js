@@ -7,6 +7,7 @@
  * multi:true (filtres en haut des pages) : on coche un ou plusieurs artistes, la liste reste ouverte entre deux choix ;
  * l'input caché reçoit les identifiants séparés par des virgules.
  */
+import { byUsage } from '../selectors.js';
 import { S } from '../state.js';
 import { esc, hayOf, norm } from '../utils.js';
 
@@ -34,7 +35,7 @@ function draw(){
   const words = norm(q).split(/\s+/).filter(Boolean);
   const ok = p => !words.length || words.every(w => hayOf(p.name).includes(w));
   // ceux qui commencent par ce qu'on tape d'abord
-  const sort = (a, b) => (words.length ? (norm(a.name).startsWith(words[0]) ? 0 : 1) - (norm(b.name).startsWith(words[0]) ? 0 : 1) : 0) || a.name.localeCompare(b.name);
+  const sort = (a, b) => (words.length ? (norm(a.name).startsWith(words[0]) ? 0 : 1) - (norm(b.name).startsWith(words[0]) ? 0 : 1) : 0) || byUsage(a, b);
   const act = S.db.projects.filter(p => p.active && ok(p)).sort(sort);
   const ina = S.db.projects.filter(p => !p.active && ok(p)).sort(sort);
   const multi = OPEN.multi, sel = idsOf(val.value);

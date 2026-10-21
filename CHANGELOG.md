@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.39.0 — 21/10/2026
+- Artistes les plus utilisés en premier, mail .eml au journal, menu Types compact, en-têtes alignés, recherche structures par nom d'abord, factures Pennylane rangées dans le Drive, relances J+10 au lundi, recherche sélectionnée au clic, résumé IA réessayé automatiquement
+
+
 ## 1.38.2 — 21/10/2026
 - Pennylane : « Facturer depuis le devis » et « Facture ↗ » ouvrent directement la page du devis / de la facture
 

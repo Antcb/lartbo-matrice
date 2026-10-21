@@ -160,11 +160,21 @@ export function viewStructures(){
   if (near){
     rows = rows.filter(s => s.lat!=null).map(s => { const d = distKm([near.lat,near.lng],[s.lat,s.lng]); dist.set(s.id, d); return s; })
       .filter(s => dist.get(s.id) <= near.km).sort((a,b)=>dist.get(a.id)-dist.get(b.id));
-  } else rows = rows.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  } else {
+    // recherche : d'abord les structures dont le nom correspond (qui commence par ce qu'on tape, puis qui le contient),
+    // ensuite celles trouvées ailleurs (ville, contacts, mails…)
+    const rank = s => { if (!words.length) return 0; const n = hayOf(s.name);
+      return words.every(w => n.includes(w)) ? (n.startsWith(words[0]) ? 0 : 1) : words.some(w => n.includes(w)) ? 2 : 3; };
+    const r = new Map(rows.map(s => [s.id, rank(s)]));
+    rows = rows.slice().sort((a,b)=>(r.get(a.id)-r.get(b.id)) || a.name.localeCompare(b.name));
+  }
   const counts = new Map(); S.db.structures.forEach(s => (s.tags||[]).forEach(t => counts.set(t, (counts.get(t)||0) + 1)));
   const tags = [...counts.keys()].sort((a,b)=>a.localeCompare(b, 'fr'));
-  const tagBar = tags.length ? `<div class="tag-filter" role="group" aria-label="Filtrer par type">
-      <span class="muted">Types :</span>${tags.map(t => `<button type="button" class="tag-chip ${sel.includes(t)?'on':''}" data-act="filterTag" data-tag="${esc(t)}" aria-pressed="${sel.includes(t)}">${esc(t)} <span class="n">${counts.get(t)}</span></button>`).join('')}
+  // Types : un menu compact (cases à cocher) au lieu de toute la liste ; les types choisis restent visibles à côté
+  const tagBar = tags.length ? `<div class="tag-filter">
+      <details class="tag-dd" ${S.tagDdOpen ? 'open' : ''}><summary class="sel">${sel.length ? `Types (${sel.length})` : 'Tous les types'}</summary>
+        <div class="tag-dd-list" role="group" aria-label="Filtrer par type">${tags.map(t => `<button type="button" class="ac-item ${sel.includes(t)?'on':''}" data-act="filterTag" data-tag="${esc(t)}" aria-pressed="${sel.includes(t)}"><span class="pp-box" aria-hidden="true">${sel.includes(t)?'✓':''}</span>${esc(t)} <span class="n">${counts.get(t)}</span></button>`).join('')}</div></details>
+      ${sel.map(t => `<button type="button" class="tag-chip on" data-act="filterTag" data-tag="${esc(t)}" aria-label="Retirer le filtre ${esc(t)}">${esc(t)} ✕</button>`).join('')}
       ${sel.length ? '<button type="button" class="btn sm ghost" data-act="filterTag" data-tag="">Tout afficher</button>' : ''}</div>` : '';
   return viewHead('Structures', {sub:`${rows.length} structure${rows.length>1?'s':''}${near?` à moins de ${near.km} km de ${esc(near.label)}`:''}`,
       actions:'<button class="btn primary" data-act="newStructure">Nouvelle structure</button>'}) + `

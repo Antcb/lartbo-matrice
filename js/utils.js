@@ -123,3 +123,11 @@ export function safeHtml(html){
   doc.querySelectorAll('a[href]').forEach(a => { a.target = '_blank'; a.rel = 'noopener'; });
   return doc.body.innerHTML;
 }
+
+/** Jour ouvré : une échéance qui tombe un samedi ou un dimanche passe au lundi suivant (AAAA-MM-JJ) */
+export function workDay(iso){
+  if (!iso) return iso;
+  const d = new Date(iso + 'T12:00:00'), w = d.getDay();
+  if (w === 6) d.setDate(d.getDate() + 2); else if (w === 0) d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}

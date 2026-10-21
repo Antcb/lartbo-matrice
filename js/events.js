@@ -161,3 +161,23 @@ const saveDraft = e => { const f = e.target.closest?.('form[data-logform]'); if 
   const el = f.elements; setLogDraft(f.dataset.logform, {date: el.date?.value || '', kind: el.kind.value, who: el.who.value, body: el.body.value}); };
 document.addEventListener('input', saveDraft);
 document.addEventListener('change', saveDraft);
+
+// Menu « Types » des structures : se ferme quand on clique ailleurs ou avec Échap
+document.addEventListener('toggle', e => { if (e.target.matches?.('.tag-dd')) S.tagDdOpen = e.target.open; }, true);
+const closeTagDd = () => document.querySelectorAll('.tag-dd[open]').forEach(d => { d.open = false; });
+document.addEventListener('pointerdown', e => { if (!e.target.closest?.('.tag-dd')) { S.tagDdOpen = false; closeTagDd(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.querySelector('.tag-dd[open]')) { S.tagDdOpen = false; closeTagDd(); } });
+
+// Barres de recherche : un clic dedans sélectionne tout le texte (on retape directement une nouvelle recherche).
+// Pas sur téléphone / tablette (la sélection y ouvre le menu copier-coller).
+const SEARCH_INPUT = 'input[type=search], input.search, input.pp-q, input.pm-q';
+let searchFocusAt = 0;
+document.addEventListener('focusin', e => {
+  const t = e.target; if (!t.matches?.(SEARCH_INPUT) || matchMedia('(pointer:coarse)').matches || !t.value) return;
+  searchFocusAt = Date.now(); t.select();
+});
+// le clic qui donne le focus ne doit pas annuler la sélection ; un clic suivant place le curseur normalement
+document.addEventListener('mouseup', e => {
+  const t = e.target; if (!t.matches?.(SEARCH_INPUT) || Date.now() - searchFocusAt > 400) return;
+  if (t.selectionStart === t.selectionEnd) t.select();
+});

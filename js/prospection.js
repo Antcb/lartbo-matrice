@@ -9,13 +9,13 @@ import { render } from './app.js';
 import { insert, save, sb, signedUrl } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
 import { PROSPECT_TAGS, callScript, fill, tplLabel, tplProjects } from './mail.js';
-import { suiviClosed, byId, contactMails, eventsOfStructure, linksOfStructure, logsOf, projIds, projName, prospectsOfStructure, setting, structName } from './selectors.js';
+import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, linksOfStructure, logsOf, projIds, projName, prospectsOfStructure, setting, structName } from './selectors.js';
 import { S } from './state.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { dateInput } from './ui/datefield.js';
 import { openModal } from './ui/modal.js';
 import { rtStyle, rtToolbar, wrapMail } from './ui/richtext.js';
-import { esc, firstName, fmtDate, toast, today } from './utils.js';
+import { esc, firstName, fmtDate, toast, today, workDay } from './utils.js';
 
 const RELANCE_DAYS = 10;
 const MAIL_RELANCES = 3;   // après 3 relances par mail sans réponse : relance par téléphone
@@ -88,7 +88,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
   }
   const kind = relance ? 'relance' : 'prospection';
   const contacts = linksOfStructure(st.id);
-  const active = S.db.projects.filter(x => x.active).sort((a, b) => a.name.localeCompare(b.name));
+  const active = S.db.projects.filter(x => x.active).sort(byUsage);
   let pids = relance ? projIds(p) : (S.project && byId('projects', S.project)?.active ? [S.project] : []);
   let contact = relance ? contacts.find(c => p.mail_to && [c.email, c.email_2].some(e => e && p.mail_to.toLowerCase().includes(e.toLowerCase()))) : contacts.find(c => contactMails(c));
   // tous les modèles du type : ceux des artistes cochés d'abord, puis les génériques, puis les autres (choisir un modèle coche ses artistes)
@@ -306,7 +306,8 @@ async function relanceTask(st, pids, subject, sent, p, n, sentOn=today()){
   await closeOpenRelances(st, p);
   if (suiviClosed(p)) return;   // suivi confirmé ou clos : plus de relance
   const due = new Date(sentOn + 'T12:00:00'); due.setDate(due.getDate() + RELANCE_DAYS);   // J+10 après l'envoi réel
-  const deadline = `${due.getFullYear()}-${String(due.getMonth()+1).padStart(2,'0')}-${String(due.getDate()).padStart(2,'0')}`;
+  // un samedi ou un dimanche : le lundi suivant
+  const deadline = workDay(`${due.getFullYear()}-${String(due.getMonth()+1).padStart(2,'0')}-${String(due.getDate()).padStart(2,'0')}`);
   const base = {department: 'Booking', status: 'To Do', assigned_to: S.user.email, deadline,
     structure_id: st.id, project_ids: pids, project_id: pids[0] || null, prospect_id: p?.id || null};
   if (p && n >= MAIL_RELANCES){

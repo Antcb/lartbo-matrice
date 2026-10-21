@@ -47,7 +47,7 @@ export function filterBar({year=true, project=true, years=null}={}){
 export function dropZone(owner, inner=''){
   return `<div class="dropzone" data-drop='${esc(JSON.stringify(owner))}'>${inner}
     <label class="btn sm file-btn">Ajouter un fichier<input type="file" class="file-input" data-upload-owner='${esc(JSON.stringify(owner))}' multiple></label>
-    <span class="drop-hint">ou glisse les fichiers ici</span></div>`;
+    <span class="drop-hint">ou glisse les fichiers ici${owner.prospect_id ? ' (un mail .eml s’ajoute aussi au journal)' : ''}</span></div>`;
 }
 
 /** Ligne de fichier */

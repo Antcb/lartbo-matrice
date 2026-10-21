@@ -117,6 +117,37 @@ async function readAll(make: () => any) {
   }
 }
 
+/**
+ * Factures reconnues par la synchronisation : PDF rangé dans le Drive par le script Google
+ * (compta « D - Factures de ventes / AAAA-MM » et 02_Finance de la date), nommé « F-AB-2026-10-105 KOLYBREE Acompte.pdf ».
+ * Quelques factures par passage (le reste au suivant) ; une facture déjà rangée à la main n'est pas ajoutée deux fois.
+ */
+const KIND_LABEL: Record<string, string> = { acompte: 'Acompte', solde: 'Solde' };
+async function fileInvoices(list: { p: any; x: any }[]) {
+  if (!list.length) return { done: [], errors: [] as string[], left: 0 };
+  const { data: st } = await admin.from('settings').select('key, value').in('key', ['drive_webhook_url', 'drive_webhook_secret']);
+  const set: Record<string, string> = {}; for (const r of st || []) set[r.key] = typeof r.value === 'string' ? r.value : String(r.value ?? '');
+  if (!set.drive_webhook_url) return { done: [], errors: [], left: list.length };
+  const done: string[] = [], errors: string[] = [], started = Date.now();
+  let i = 0;
+  for (; i < list.length && i < 10 && Date.now() - started < 60000; i++) {
+    const { p, x } = list[i];
+    const client = String(x.label || '').replace(/^(Facture|Avoir)\s+/i, '').replace(new RegExp('\\s*-\\s*' + x.invoice_number.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$'), '').trim();
+    const what = x.credited_invoice ? 'Avoir' : KIND_LABEL[p.kind] || String(p.label || '').trim();
+    const name = [x.invoice_number, client, what].filter(Boolean).join(' ') + '.pdf';
+    try {
+      const r = await fetch(set.drive_webhook_url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ secret: set.drive_webhook_secret, action: 'file_invoice', number: x.invoice_number, name, url: x.public_file_url, date: x.date, folder_id: p.shows?.drive_folder_id || null }) });
+      const out = await r.json().catch(() => ({ ok: false, error: 'réponse illisible du script Google' }));
+      if (!out.ok) { errors.push(`${x.invoice_number} : ${/Action inconnue/i.test(out.error || '') ? 'script Google pas à jour (Réglages › Google)' : out.error}`); if (/Action inconnue/i.test(out.error || '')) break; continue; }
+      const f = (out.files || []).find((y: any) => y.where === 'date') || (out.files || [])[0];
+      if (f?.id) await admin.from('show_payments').update({ drive_file_id: f.id }).eq('id', p.id);
+      if ((out.files || []).some((y: any) => !y.existed)) done.push(name.replace(/\.pdf$/, ''));
+    } catch (e) { errors.push(`${x.invoice_number} : ${String(e).replace(/^Error: /, '')}`); }
+  }
+  return { done, errors, left: list.length - i };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   try {
@@ -164,15 +195,16 @@ Deno.serve(async (req) => {
           linked.push(x.invoice_number);
         }
       }
-      const pays = await readAll(() => admin.from('show_payments').select('id, show_id, kind, label, invoice_number, pennylane_id, paid_at, shows(date, city, venue)')
+      const pays = await readAll(() => admin.from('show_payments').select('id, show_id, kind, label, invoice_number, pennylane_id, paid_at, drive_file_id, shows(date, city, venue, drive_folder_id)')
         .in('kind', ['acompte', 'solde', 'autre']).or('invoice_number.not.is.null,pennylane_id.not.is.null'));
-      const updated: any[] = [], pennylaneLate: any[] = [];
+      const updated: any[] = [], pennylaneLate: any[] = [], toFile: { p: any; x: any }[] = [];
       for (const p of pays || []) {
         const x = (p.pennylane_id && byId[String(p.pennylane_id)]) || (p.invoice_number && inv[norm(p.invoice_number)]); if (!x) continue;
         // numéro et lien vers la page de la facture dans Pennylane, s'ils manquent
         if ((!p.invoice_number && x.invoice_number) || !p.pennylane_id)
           await admin.from('show_payments').update({ invoice_number: p.invoice_number || x.invoice_number || null, pennylane_id: String(x.id), pennylane_url: await invoicePage(x.id) || linkOf(x) }).eq('id', p.id);
         p.invoice_number = p.invoice_number || x.invoice_number || '';
+        if (!p.drive_file_id && x.invoice_number && x.public_file_url && x.status !== 'cancelled') toFile.push({ p, x });
         const where = `${frDate((p as any).shows?.date)} ${(p as any).shows?.city || ''}`.trim();
         const isPaid = x.paid === true && x.status !== 'cancelled';
         if (isPaid && !p.paid_at) {
@@ -185,7 +217,8 @@ Deno.serve(async (req) => {
           pennylaneLate.push(`${p.invoice_number} · ${where} (payée le ${frDate(p.paid_at)} dans la Matrice)`);
         }
       }
-      return json({ ok: true, updated, pennylaneLate, linked });
+      const filed = await fileInvoices(toFile);
+      return json({ ok: true, updated, pennylaneLate, linked, filed });
     }
 
     if (body.action === 'quote') {

@@ -6,8 +6,8 @@ import { render } from './app.js';
 import { CFG } from './config.js';
 import { TEAM_NAMES } from './constants.js';
 import { LINGER_MS } from './constants.js';
-import { byId } from './selectors.js';
-import { S, TABLES, touch } from './state.js';
+import { byId, linksOfStructure } from './selectors.js';
+import { S, TABLES, localGet, localSet, touch } from './state.js';
 import { toast } from './utils.js';
 
 export const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
@@ -126,11 +126,56 @@ function summaryAfter(table, row){
 }
 export async function refreshSummary(pid, {silent = true} = {}){
   const {data, error} = await sb.functions.invoke('resume-suivi', {body: {prospect_id: pid}, headers: {'x-region': 'eu-west-3'}});   // toujours à Paris
-  if (error || !data?.summary){ if (!silent) toast('Résumé impossible : ' + (data?.error || error?.message || 'réponse vide'), true); return null; }
+  let msg = error ? (await error.context?.json?.().catch(() => null))?.error || error.message : (!data?.summary ? data?.error || 'réponse vide' : null);
+  if (msg){
+    // Gemini saturé : nouvel essai automatique un peu plus tard (même après avoir rechargé la page)
+    if (BUSY.test(msg)) { const at = queueSummary(pid); if (!silent) toast(`L’IA est saturée : nouvel essai automatique à ${hhmm(at)}`, true); render(); return null; }
+    if (/Aucune clé/.test(msg)) msg = 'Pas encore de clé IA : colle la clé Google AI Studio dans Réglages › IA.';
+    if (!silent) toast('Résumé impossible : ' + msg, true);
+    return null;
+  }
+  dropSummary(pid);
   const p = byId('prospects', pid); if (!p) return null;
-  p.summary = data.summary; touch('prospects'); render(); if (silent) toast('Résumé mis à jour par l’IA');
+  p.summary = data.summary; touch('prospects'); render(); toast(silent ? 'Résumé mis à jour par l’IA' : 'Résumé mis à jour');
   return data.summary;
 }
+
+/**
+ * Résumés en attente (IA saturée) : gardés dans le navigateur avec l'heure du prochain essai,
+ * réessayés de plus en plus tard (1, 2, 5, 10, 20, puis toutes les 30 min, 12 essais au plus).
+ */
+const BUSY = /satur|surcharg|high demand|overload|unavailable|503|429|réessaie dans quelques minutes/i;
+const WAITS = [1, 2, 5, 10, 20, 30];
+const hhmm = t => new Date(t).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'});
+const readQueue = () => { try { return JSON.parse(localGet('summaryRetry') || '{}') || {}; } catch { return {}; } };
+const writeQueue = q => localSet('summaryRetry', JSON.stringify(q));
+let RETRY_TIMER = null;
+function queueSummary(pid){
+  const q = readQueue(), n = (q[pid]?.n || 0) + 1;
+  if (n > 12){ delete q[pid]; writeQueue(q); toast('Résumé IA abandonné après plusieurs essais : clique « Mettre à jour avec l’IA » plus tard', true); return Date.now(); }
+  const at = Date.now() + WAITS[Math.min(n - 1, WAITS.length - 1)] * 60000;
+  q[pid] = {n, at}; writeQueue(q); planRetries();
+  return at;
+}
+function dropSummary(pid){ const q = readQueue(); if (q[pid]){ delete q[pid]; writeQueue(q); } }
+/** Prochain essai prévu pour ce suivi (heure), ou null */
+export const summaryRetryAt = pid => readQueue()[pid]?.at || null;
+export function planRetries(){
+  clearTimeout(RETRY_TIMER);
+  const q = readQueue(), next = Math.min(...Object.values(q).map(x => x.at));
+  if (!Number.isFinite(next)) return;
+  RETRY_TIMER = setTimeout(async () => {
+    if (!S.user){ RETRY_TIMER = setTimeout(planRetries, 30000); return; }
+    const now = Date.now();
+    for (const [pid, x] of Object.entries(readQueue())){
+      if (x.at > now) continue;
+      if (!byId('prospects', pid)){ dropSummary(pid); continue; }
+      await refreshSummary(pid);
+    }
+    planRetries();
+  }, Math.max(1000, next - Date.now()));
+}
+setTimeout(planRetries, 5000);   // essais restés en attente avant de recharger la page
 
 /** Supprime les lignes liées (tables sans cascade) */
 export async function removeWhere(table, col, val){
@@ -173,9 +218,36 @@ export async function uploadFiles(owner, files){
     const {error} = await sb.storage.from('suivi').upload(path, file, {contentType: file.type||'application/octet-stream', upsert:false});
     if (error){ toast(`${file.name} : ${error.message}`, true); continue; }
     if (await insert(table, {...owner, name:file.name, path, size:file.size, mime:file.type||null})) ok++;
+    if (owner.prospect_id) await emlToJournal(owner.prospect_id, file);
   }
   if (ok) toast(`${ok} fichier(s) ajouté(s)`);
   return ok;
+}
+
+/**
+ * Mail glissé dans un suivi (.eml) : en plus de la pièce jointe, une entrée « Mail » au journal
+ * (date du mail, interlocuteur, objet et texte, sans l'historique cité). Un mail déjà au journal n'est pas ajouté deux fois.
+ */
+async function emlToJournal(pid, file){
+  const {isEml, readEml} = await import('./eml.js');
+  if (!isEml(file)) return;
+  let m; try { m = await readEml(file); } catch { return toast(`${file.name} : mail illisible, gardé en pièce jointe`, true); }
+  const p = byId('prospects', pid); if (!p) return;
+  const dom = e => e.split('@')[1] || '';
+  const ours = e => !!e && (CFG.TEAM.includes(e) || dom(e) === dom(S.user?.email || ''));
+  const sent = ours(m.from);
+  const mail = sent ? m.to : m.from, name = sent ? m.toName : m.fromName;
+  const contacts = linksOfStructure(p.structure_id);
+  const c = contacts.find(x => [x.email, x.email_2].some(e => e && e.toLowerCase() === mail));
+  const body = `${sent ? 'Envoyé' : 'Reçu'}${m.subject ? ` — **${m.subject}**` : ''}\n\n${m.text || '(mail sans texte)'}`;
+  const date = m.date || new Date().toISOString().slice(0, 10);
+  if (S.db.prospect_logs.some(l => l.prospect_id === pid && l.date === date && l.body === body)) return;
+  const row = await insert('prospect_logs', {prospect_id: pid, date, kind: 'Mail', contact_name: c?.display_name || name || mail || null,
+    contact_id: c?.id || null, body, author: S.user?.email});
+  if (row){
+    toast('Mail ajouté au journal');
+    if (!p.last_contact || date > p.last_contact) await save('prospects', pid, {last_contact: date}, {rerender: false});
+  }
 }
 
 /** Ouvre un fichier du stockage privé (lien temporaire) */
