@@ -123,8 +123,10 @@ export const BUDGET_ACTIONS = {
       const out = await pennylane('sync', {});
       const {refreshShowSide} = await import('./data.js');
       for (const sid of new Set(out.updated.map(u => S.db.show_payments.find(p => p.id === u.id)?.show_id).filter(Boolean))) await refreshShowSide(sid);
+      // factures d'acompte / de solde faites depuis le devis : leur numéro vient d'être repris
+      if (out.linked?.length){ const {fetchAll} = await import('./data.js'); S.db.show_payments = await fetchAll('show_payments'); touch('show_payments'); }
       render();
-      const lines = [out.updated.length ? `${out.updated.length} facture(s) marquée(s) payée(s) :\n- ` + out.updated.map(u => u.label).join('\n- ') : 'Rien de nouveau : la Matrice est à jour.',
+      const lines = [out.linked?.length ? `${out.linked.length} facture(s) faite(s) depuis le devis, numéro repris : ${out.linked.filter(Boolean).join(', ')}\n` : '', out.updated.length ? `${out.updated.length} facture(s) marquée(s) payée(s) :\n- ` + out.updated.map(u => u.label).join('\n- ') : out.linked?.length ? '' : 'Rien de nouveau : la Matrice est à jour.',
         out.pennylaneLate.length ? `\nPayées dans la Matrice mais pas encore dans Pennylane (à mettre à jour dans Pennylane) :\n- ` + out.pennylaneLate.join('\n- ') : ''];
       alert(lines.join('\n'));
     } catch (err) { toast(err.message, true); }
