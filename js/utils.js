@@ -116,18 +116,28 @@ export function firstName(c){
 
 /** Nettoyeur de HTML dédié (DOMPurify, instance propre à la Matrice : ses réglages ne touchent rien d'autre) */
 const purifier = createDOMPurify(window);
-const SAFE_URL = /^(?:https?:|mailto:|tel:|cid:|#)/i;
+// Liens et images : adresse relative, ou protocole sûr (les caractères invisibles sont ignorés pour la vérification)
+const SAFE_SCHEME = /^(?:https?|mailto|tel|cid):/i;
+const URL_ATTRS = new Set(['href', 'src', 'xlink:href', 'action', 'formaction', 'poster', 'cite', 'longdesc', 'srcset']);
+purifier.addHook('uponSanitizeAttribute', (node, data) => {
+  if (!URL_ATTRS.has(data.attrName)) return;
+  const v = String(data.attrValue || '').replace(/[\s\u0000-\u001f\u007f-\u009f]+/g, '');
+  const scheme = /^[a-z][a-z0-9+.-]*:/i.test(v);
+  const imageData = data.attrName === 'src' && node.tagName === 'IMG' && /^data:image\//i.test(v);
+  if (scheme && !SAFE_SCHEME.test(v) && !imageData) data.keepAttr = false;
+});
 purifier.addHook('afterSanitizeAttributes', node => {
   // liens : ouverts dans un autre onglet, sans accès à la Matrice
   if (node.tagName === 'A' && node.hasAttribute('href')){ node.setAttribute('target', '_blank'); node.setAttribute('rel', 'noopener noreferrer'); }
   // mise en forme : un mail ne peut pas se superposer à l'application
   if (node.style && /^(fixed|absolute|sticky)$/i.test(node.style.position)) node.style.removeProperty('position');
 });
+// Réglages : seulement des interdictions ajoutées aux règles par défaut de DOMPurify, pour garder la mise en page des mails
+// (largeur, alignement, couleurs, fusion de cellules…)
 const PURIFY = {
   USE_PROFILES: {html: true},                 // HTML seulement : ni SVG ni MathML
   FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'option', 'iframe', 'frame', 'object', 'embed', 'link', 'meta', 'base', 'template'],
-  FORBID_ATTR: ['srcdoc', 'formaction', 'action', 'ping', 'background'],
-  ALLOWED_URI_REGEXP: SAFE_URL,               // liens et images : https, http, mailto, tel, cid (+ images data: d'origine)
+  FORBID_ATTR: ['srcdoc', 'formaction', 'action', 'ping'],
   ALLOW_DATA_ATTR: false,
 };
 

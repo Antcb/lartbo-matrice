@@ -53,6 +53,13 @@ const LEGITIMES = [
   ['<img src="https://example.com/logo.png" alt="logo">', 'img[src="https://example.com/logo.png"]'],
   ['<ul><li>Point 1</li></ul>', 'li'],
   ['<span style="color:#283c63">Signature</span>', 'span[style]'],
+  ['<a href="/acces">accès</a>', 'a[href="/acces"]'],
+  ['<a href="#bas">bas</a>', 'a[href="#bas"]'],
+  ['<a href="mailto:camille@example.com">mail</a>', 'a[href="mailto:camille@example.com"]'],
+  ['<a href="tel:+33100000000">tél.</a>', 'a[href="tel:+33100000000"]'],
+  ['<table width="600" align="center"><tr><td colspan="2" valign="top">x</td></tr></table>', 'td[colspan="2"][valign="top"]'],
+  ['<font color="#283c63" face="Arial">x</font>', 'font[color][face]'],
+  ['<img src="cid:logo@example.com" width="80">', 'img[src="cid:logo@example.com"][width="80"]'],
 ];
 
 test(`safeHtml neutralise ${PIEGES.length} entrées piégées`, async ({ page }) => {
@@ -67,7 +74,8 @@ test(`safeHtml neutralise ${PIEGES.length} entrées piégées`, async ({ page })
       box.querySelectorAll('#clic,#lien,#envoi').forEach(el => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
       const bad = [...box.querySelectorAll('*')].flatMap(el => [...el.attributes]
         .filter(a => /^on/i.test(a.name) || /^(srcdoc|formaction|xlink:href)$/i.test(a.name)
-          || (/^(href|src|action)$/i.test(a.name) && !/^(https?:|mailto:|tel:|cid:|#|data:image\/)/i.test(a.value.replace(/[\s\u0000-\u001f]/g, ''))))
+          // adresse avec un protocole autre que https, http, mailto, tel, cid (ou image data:) : interdite ; adresse relative : permise
+          || (/^(href|src|action)$/i.test(a.name) && (v => /^[a-z][a-z0-9+.-]*:/i.test(v) && !/^(https?:|mailto:|tel:|cid:|data:image\/)/i.test(v))(a.value.replace(/[\s\u0000-\u001f]/g, ''))))
         .map(a => `${el.tagName.toLowerCase()}[${a.name}=${a.value.slice(0, 30)}]`));
       const fixed = [...box.querySelectorAll('[style]')].filter(el => /fixed|absolute/.test(el.style.position)).length;
       out.push({ p, scripts: box.querySelectorAll('script,iframe,object,embed,form,style,svg,math,base,meta,template,input,button').length, bad, fixed });
@@ -124,7 +132,11 @@ test(`les ${MAILS.length} mails représentatifs gardent leur contenu`, async ({ 
       liens: [...box.querySelectorAll('a[href]')].map(a => a.getAttribute('href')),
       images: [...box.querySelectorAll('img[src]')].map(i => i.getAttribute('src').slice(0, 40)),
       cellules: box.querySelectorAll('td').length, puces: box.querySelectorAll('li').length, gras: box.querySelectorAll('b,strong').length,
-      citations: box.querySelectorAll('blockquote').length, styles: box.querySelectorAll('[style]').length }; };
+      citations: box.querySelectorAll('blockquote').length, styles: box.querySelectorAll('[style]').length,
+      // attributs de mise en page : leur valeur doit rester identique
+      mise_en_page: [...box.querySelectorAll('*')].flatMap(el => ['width', 'height', 'align', 'valign', 'colspan', 'rowspan', 'bgcolor', 'dir', 'lang',
+        'color', 'face', 'size', 'start', 'type', 'border', 'cellpadding', 'cellspacing', 'nowrap', 'class']
+        .filter(a => el.hasAttribute(a)).map(a => `${el.tagName.toLowerCase()}.${a}=${el.getAttribute(a)}`)) }; };
     return M.map(([f, html]) => ({ f, avant: resume(ancien(html)), apres: resume(safeHtml(html)) }));
   }, MAILS);
   for (const { f, avant, apres } of r) expect(apres, f).toEqual(avant);
