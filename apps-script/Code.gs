@@ -16,6 +16,7 @@
  * 7. "link_folders" : rattache les dossiers de dates déjà existants ;
  *    "folder_path" : chemin du dossier (pour le Finder).
  * 8. "file_piece" : range une pièce du budget dans 02_Finance du dossier de la date (doublons signalés).
+ *    "file_invoice" : range une facture de vente Pennylane (compta « D - Factures de ventes / AAAA-MM » + 02_Finance de la date).
  * 9. "prospect_mail" / "prospect_reply" / "prospect_status" : prospection envoyée depuis production@ (Chloé).
  *    Nécessite le service « Gmail API » (Services › + › Gmail API) pour les relances dans le même fil.
  * 10. "move_items" : déplace des fichiers / dossiers (rangement du dossier LARTBOTRICE) sans changer leur ID.
@@ -60,6 +61,7 @@ function doPost(e) {
     else if (action === 'rename_audit') out = renameAudit();
     else if (action === 'rename_apply') out = renameApply();
     else if (action === 'file_piece') out = filePiece_(body);
+    else if (action === 'file_invoice') out = fileInvoice_(body);
     else if (action === 'prospect_mail') out = pMail_(body);
     else if (action === 'prospect_reply') out = pReply_(body);
     else if (action === 'prospect_status') out = pStatus_(body.thread_id);
@@ -336,9 +338,9 @@ function rhSheet_(b) {
  *     E - Sociale / AAAA-MM                      (bulletin de paie, mois du travail)
  *     B - Notes de Frais / AAAA-MM / NOM Prénom  (note de frais, dossier type copié depuis le modèle « NOM Prénom »)
  */
-function financeFolder_(d, e) {
+/** Dossier de l'exercice (octobre → septembre) d'un mois AAAA-MM, créé depuis « Template 20XX:20XX » s'il manque */
+function financeYear_(ym) {
   var root = DriveApp.getFolderById(setting_('finance_folder_id') || '1EoWoCI8NdJ0TKUjpF8N35_gSKAYJsK_3');
-  var ym = String(d.when || d.at || '').slice(0, 7);
   if (!/^\d{4}-\d{2}$/.test(ym)) throw new Error('date du document inconnue');
   var y = Number(ym.slice(0, 4)), start = Number(ym.slice(5, 7)) >= 10 ? y : y - 1;
   var year = childFolder_(root, start + ':' + (start + 1), false) || childFolder_(root, start + '/' + (start + 1), false);
@@ -348,6 +350,12 @@ function financeFolder_(d, e) {
     var tpl = childFolder_(root, 'Template 20XX:20XX', false) || childFolder_(root, 'Template 20XX/20XX', false);
     if (tpl) copyContents_(tpl, year);
   }
+  return year;
+}
+
+function financeFolder_(d, e) {
+  var ym = String(d.when || d.at || '').slice(0, 7);
+  var year = financeYear_(ym);
   if (d.kind === 'bds') return childFolder_(childFolder_(year, 'E - Sociale', true), ym, true);
   var month = childFolder_(childFolder_(year, 'B - Notes de Frais', true), ym, true);
   var name = rhName_(e), mine = childFolder_(month, name, false);
@@ -476,6 +484,46 @@ function filePiece_(b) {
   // l'ancien fichier part à la corbeille seulement une fois le nouveau bien enregistré
   if (dup && b.decision === 'replace') dup.setTrashed(true);
   return { ok: true, file_id: file.getId(), url: file.getUrl(), name: name, replaced: dup && b.decision === 'replace' ? dup.getName() : null };
+}
+
+/**
+ * Facture de vente Pennylane reconnue par la synchronisation : rangée
+ *   1. dans la compta : 01_Finance / <exercice> / D - Factures de ventes / AAAA-MM (mois de la facture),
+ *   2. dans 02_Finance du dossier de la date (si la date a un dossier).
+ * Nom : « F-AB-2026-10-105 KOLYBREE Acompte.pdf ». Une facture déjà présente (même numéro en début de nom) n'est pas ajoutée.
+ * b = { number, name, url (PDF public Pennylane), date (AAAA-MM-JJ), folder_id (dossier de la date, facultatif) }
+ */
+function fileInvoice_(b) {
+  if (!b.number || !b.url) throw new Error('Facture incomplète');
+  var name = String(b.name || b.number).replace(/[\\/:*?"<>|]+/g, '-');
+  if (!/\.pdf$/i.test(name)) name += '.pdf';
+  var targets = [], blob = null, out = { ok: true, files: [] };
+  var sales = childFolder_(childFolder_(financeYear_(String(b.date || '').slice(0, 7)), 'D - Factures de ventes', true), String(b.date).slice(0, 7), true);
+  targets.push({ where: 'compta', folder: sales, look: [sales] });
+  if (b.folder_id) {
+    try {
+      var root = DriveApp.getFolderById(b.folder_id);
+      var fin = childFolder_(root, '02_Finance', false) || childFolder_(root, 'Finance', false) || childFolder_(root, '02_Finance', true);
+      targets.push({ where: 'date', folder: fin, look: [fin, root] });
+    } catch (e) { out.date_error = String(e); }
+  }
+  var re = new RegExp('^' + String(b.number).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![0-9])', 'i');
+  targets.forEach(function (t) {
+    var found = null;
+    t.look.forEach(function (f) {
+      var it = f.getFiles();
+      while (!found && it.hasNext()) { var x = it.next(); if (!x.isTrashed() && re.test(x.getName())) found = x; }
+    });
+    if (found) { out.files.push({ where: t.where, id: found.getId(), name: found.getName(), existed: true }); return; }
+    if (!blob) {
+      var res = UrlFetchApp.fetch(b.url, { muteHttpExceptions: true, followRedirects: true });
+      if (res.getResponseCode() >= 300) throw new Error('PDF Pennylane introuvable (' + res.getResponseCode() + ')');
+      blob = res.getBlob();
+    }
+    var file = t.folder.createFile(blob.copyBlob().setName(name).setContentType('application/pdf'));
+    out.files.push({ where: t.where, id: file.getId(), name: name, existed: false });
+  });
+  return out;
 }
 
 function digest_(bytes) {
@@ -613,16 +661,22 @@ function childFolder_(parent, name, createIfMissing) {
 }
 
 /** Copie récursive (Drive ne sait pas copier un dossier directement). */
+/**
+ * Copie le modèle (fichiers puis sous-dossiers), sans ce qui est à la corbeille.
+ * Un dossier d'année du modèle (ex. « 2026 » dans 032_Production) prend l'année en cours.
+ */
 function copyContents_(src, dest) {
   var files = src.getFiles();
   while (files.hasNext()) {
     var f = files.next();
-    f.makeCopy(f.getName(), dest);
+    if (!f.isTrashed()) f.makeCopy(f.getName(), dest);
   }
-  var folders = src.getFolders();
+  var folders = src.getFolders(), year = String(new Date().getFullYear());
   while (folders.hasNext()) {
     var sub = folders.next();
-    copyContents_(sub, dest.createFolder(sub.getName()));
+    if (sub.isTrashed()) continue;
+    var name = /^20\d\d$/.test(sub.getName()) ? year : sub.getName();
+    copyContents_(sub, childFolder_(dest, name, true));
   }
 }
 

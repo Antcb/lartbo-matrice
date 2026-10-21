@@ -6,7 +6,7 @@ import { askConfirmation, becameConfirmed, sendConfirmation, validateTerms } fro
 import { go, render } from './app.js';
 import { BILL_KINDS, billPct, paymentsOf, payVat } from './calc.js';
 import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
-import { insert, openStored, refreshShowSide, remove, removeWhere, save, saveLinger, sb } from './data.js';
+import { insert, openStored, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb } from './data.js';
 import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, logsOf, projIds, projNames, setting, showsFiltered, structName } from './selectors.js';
 import { CFG } from './config.js';
@@ -212,7 +212,9 @@ export const ACTIONS = {
   // filtre par étiquette : clic = ajoute / retire ; depuis une fiche ou une ligne = uniquement cette étiquette
   filterTag: (t, e) => { e?.stopPropagation(); const tg = t.dataset.tag; const cur = S.structTags || [];
     S.structTags = !tg ? [] : t.dataset.only ? [tg] : cur.includes(tg) ? cur.filter(x => x !== tg) : [...cur, tg];
-    S.view = 'structures'; S.structurePage = null; render(); window.scrollTo(0, 0); },
+    // choisi dans le menu « Types » : le menu reste ouvert pour en cocher d'autres
+    const inMenu = !!t.closest?.('.tag-dd'); S.tagDdOpen = inMenu && !!tg;
+    S.view = 'structures'; S.structurePage = null; render(); if (!inMenu) window.scrollTo(0, 0); },
   newStructure: () => editStructure(null), editStructure: t => editStructure(t.dataset.id),
   openStructure: t => { if ($('#modal').open) $('#modal').close(); S.view='structures'; S.structurePage=t.dataset.id; S.tab.structure = 'home'; /* toujours sur l'Accueil */ S.focusProspect=null; render(); window.scrollTo(0,0); },
   closeStructure: () => { S.structurePage=null; render(); },
@@ -244,11 +246,8 @@ export const ACTIONS = {
     if (await remove('prospects', t.dataset.id)){ S.db.prospect_logs=S.db.prospect_logs.filter(l=>l.prospect_id!==t.dataset.id); S.db.prospect_files=S.db.prospect_files.filter(f=>f.prospect_id!==t.dataset.id); touch('prospect_logs'); touch('prospect_files'); if (S.suiviPage===t.dataset.id) S.suiviPage=null; render(); } },
   aiSummary: async t => {
     const id = t.dataset.id; t.disabled = true; t.textContent = 'Rédaction en cours…';
-    const {data, error} = await sb.functions.invoke('resume-suivi', {body:{prospect_id:id}, headers:{'x-region':'eu-west-3'}});   // toujours à Paris (règles européennes de Google)
-    let msg = error ? (await error.context?.json?.().catch(()=>null))?.error || error.message : data?.error;
-    if (msg && /Aucune clé/.test(msg)) msg = "Pas encore de clé IA : colle la clé Google AI Studio dans Réglages › IA.";
-    if (msg){ t.disabled=false; t.textContent="Mettre à jour avec l'IA"; return toast(msg, true); }
-    byId('prospects', id).summary = data.summary; render(); toast('Résumé mis à jour');
+    // IA saturée : refreshSummary programme un nouvel essai automatique
+    if (!await refreshSummary(id, {silent: false})){ t.disabled = false; t.textContent = "Mettre à jour avec l'IA"; }
   },
   copyForAi: async t => {
     const p = byId('prospects', t.dataset.id);

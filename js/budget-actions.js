@@ -126,8 +126,12 @@ export const BUDGET_ACTIONS = {
       // factures d'acompte / de solde faites depuis le devis : leur numéro vient d'être repris
       if (out.linked?.length) await refreshFor('show_payments', 'show_id', S.db.shows.filter(x => x.pennylane_quote_id).map(x => x.id));
       render();
-      const lines = [out.linked?.length ? `${out.linked.length} facture(s) faite(s) depuis le devis, numéro repris : ${out.linked.filter(Boolean).join(', ')}\n` : '', out.updated.length ? `${out.updated.length} facture(s) marquée(s) payée(s) :\n- ` + out.updated.map(u => u.label).join('\n- ') : out.linked?.length ? '' : 'Rien de nouveau : la Matrice est à jour.',
-        out.pennylaneLate.length ? `\nPayées dans la Matrice mais pas encore dans Pennylane (à mettre à jour dans Pennylane) :\n- ` + out.pennylaneLate.join('\n- ') : ''];
+      const lines = [out.linked?.length ? `${out.linked.length} facture(s) faite(s) depuis le devis, numéro repris : ${out.linked.filter(Boolean).join(', ')}\n` : '', out.updated.length ? `${out.updated.length} facture(s) marquée(s) payée(s) :\n- ` + out.updated.map(u => u.label).join('\n- ') : (out.linked?.length || out.filed?.done?.length) ? '' : 'Rien de nouveau : la Matrice est à jour.',
+        out.pennylaneLate.length ? `\nPayées dans la Matrice mais pas encore dans Pennylane (à mettre à jour dans Pennylane) :\n- ` + out.pennylaneLate.join('\n- ') : '',
+        // PDF des factures rangés dans le Drive (compta + dossier de la date)
+        out.filed?.done?.length ? `\n${out.filed.done.length} facture(s) rangée(s) dans le Drive (compta › D - Factures de ventes et 02_Finance de la date) :\n- ` + out.filed.done.join('\n- ') : '',
+        out.filed?.left ? `\nEncore ${out.filed.left} facture(s) à ranger dans le Drive : relance la synchronisation.` : '',
+        out.filed?.errors?.length ? `\nRangement Drive impossible :\n- ` + out.filed.errors.join('\n- ') : ''];
       alert(lines.join('\n'));
     } catch (err) { toast(err.message, true); }
     t.disabled = false;

@@ -4,7 +4,7 @@
  */
 import { render } from '../app.js';
 import { save } from '../data.js';
-import { byId, projIds } from '../selectors.js';
+import { byId, byUsage, projIds } from '../selectors.js';
 import { S } from '../state.js';
 import { esc, hayOf, norm } from '../utils.js';
 
@@ -23,7 +23,7 @@ function draw(){
   const ids = projIds(byId(table, id));
   const words = norm(q).split(/\s+/).filter(Boolean);
   const ok = p => !words.length || words.every(w => hayOf(p.name).includes(w));
-  const rows = S.db.projects.filter(p => (p.active || ids.includes(p.id)) && ok(p)).sort((a, b) => a.name.localeCompare(b.name));
+  const rows = S.db.projects.filter(p => (p.active || ids.includes(p.id)) && ok(p)).sort(byUsage);
   list.querySelector('.pm-items').innerHTML = rows.map(p => `<label class="ac-item pm-item"><input type="checkbox" data-pm="${p.id}" ${ids.includes(p.id) ? 'checked' : ''}> ${esc(p.name)}</label>`).join('')
     || '<div class="ac-empty">Aucun artiste</div>';
 }

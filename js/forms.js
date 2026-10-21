@@ -14,7 +14,7 @@ import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow } from './ui/bits.js';
 import { hiddenFields, openModal } from './ui/modal.js';
-import { $, downloadCSV, esc, fmtDate, norm, toast, today } from './utils.js';
+import { $, downloadCSV, esc, fmtDate, norm, toast, today, workDay } from './utils.js';
 import { driveHTML } from './views/production.js';
 import { cancelAutoRelances, closeNoAnswer } from './prospection.js';
 import { askConfirmation, becameConfirmed } from './confirm-flow.js';
@@ -160,7 +160,8 @@ export const driveId = s => { const m = String(s).match(/folders\/([\w-]{10,})/)
 /* ------------------------------------------------------------------ Tâches */
 /** Tâche Booking : à réaliser sous 10 jours par défaut */
 const BOOKING_DAYS = 10;
-const inDays = n => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+// échéance à J+n, décalée au lundi si elle tombe un samedi ou un dimanche
+const inDays = n => { const d = new Date(); d.setDate(d.getDate() + n); return workDay(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`); };
 
 /** Suivis proposés pour une tâche : ceux de sa structure d'abord, puis les autres suivis ouverts */
 function suiviOptions(t){

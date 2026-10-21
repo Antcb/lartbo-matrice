@@ -128,10 +128,19 @@ export function linksOfStructure(id){ return (byCol('contact_structures','struct
 
 export const optsOf = (t, label='name') => S.db[t].slice().sort((a,b)=>String(a[label]).localeCompare(String(b[label]))).map(r=>[r.id, r[label]]);
 
-/** Projets triés : actifs d'abord. onlyActive : seulement les actifs (+ ceux déjà choisis) */
+/** Utilisation de chaque artiste (dates + tâches + suivis) : les plus utilisés apparaissent en premier dans les choix */
+export const projUsage = () => cached('proj.usage', ['shows', 'tasks', 'prospects'], () => {
+  const m = new Map();
+  for (const t of ['shows', 'tasks', 'prospects']) for (const r of S.db[t] || []) for (const id of projIds(r)) m.set(id, (m.get(id) || 0) + 1);
+  return m;
+});
+/** Tri des artistes : les plus utilisés d'abord, puis par nom */
+export const byUsage = (a, b) => { const u = projUsage(); return ((u.get(b.id) || 0) - (u.get(a.id) || 0)) || a.name.localeCompare(b.name); };
+
+/** Projets triés : actifs d'abord, puis les plus utilisés. onlyActive : seulement les actifs (+ ceux déjà choisis) */
 export function projectOptions(onlyActive=false, keep=[]){
   return S.db.projects.slice().filter(p => !onlyActive || p.active || keep.includes(p.id))
-    .sort((a,b)=>(b.active-a.active)||a.name.localeCompare(b.name));
+    .sort((a,b)=>(b.active-a.active)||byUsage(a, b));
 }
 
 /** Nombre de notifications non lues pour l'utilisateur connecté */
