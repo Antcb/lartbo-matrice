@@ -1,0 +1,15 @@
+{
+  "name": "matrice-tests",
+  "private": true,
+  "type": "module",
+  "description": "Tests automatiques de la Matrice (aucune connexion à la production, aucune donnée réelle)",
+  "scripts": {
+    "test": "node static/check.mjs && playwright test",
+    "test:static": "node static/check.mjs",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.0",
+    "leaflet": "1.9.4"
+  }
+}

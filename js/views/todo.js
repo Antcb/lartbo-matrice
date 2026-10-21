@@ -1,0 +1,99 @@
+/**
+ * Onglet To Do et tableaux de tâches réutilisés ailleurs (structure, projet).
+ * Une tâche cochée reste visible 5 s (bouton Annuler) avant de disparaître.
+ */
+import { CFG } from '../config.js';
+import { TASK_STATUS, TEAM_NAMES } from '../constants.js';
+import { lingering } from '../data.js';
+import { suiviClosed, projFilterOk, deptColor, deptNames, attachmentsOf, isDone, projIds, projNames, prospectsOfStructure, showLabel, byId, structName, taskSort, teamName, urgency } from '../selectors.js';
+import { S } from '../state.js';
+import { trace } from '../diag.js';
+import { deptBadge, inactiveToggle, projPicker, viewHead } from '../ui/bits.js';
+import { cAc, cIn, cSel, projChips } from '../ui/cells.js';
+import { daysUntil, esc, fmtDate, matches } from '../utils.js';
+
+/**
+ * Accès direct depuis une tâche : sa structure, son suivi (celui de la tâche, sinon le suivi ouvert le plus récent
+ * de la structure pour les mêmes artistes) ; relance téléphone : « Pas de réponse : clore le suivi »
+ */
+export function taskSuiviBtns(t, {structure=true}={}){
+  let p = t.prospect_id ? byId('prospects', t.prospect_id) : null;
+  const stId = t.structure_id || p?.structure_id || byId('shows', t.show_id)?.structure_id;
+  if (!p && stId){
+    const pids = projIds(t);
+    // seulement un suivi des artistes de la tâche (sinon aucun bouton plutôt qu'un mauvais suivi)
+    p = prospectsOfStructure(stId).filter(x => !suiviClosed(x) && (!pids.length || pids.some(id => projIds(x).includes(id))))
+      .sort((a, b) => (b.last_contact || '').localeCompare(a.last_contact || ''))[0] || null;
+  }
+  return (structure && stId && !(S.view === "structures" && S.structurePage === stId) ? `<button class="btn sm ghost" data-act="openStructure" data-id="${stId}" title="Ouvrir la fiche de ${esc(structName(stId))}">Structure ↗</button>` : '')
+    + (p ? `<button class="btn sm ghost" data-act="openSuivi" data-id="${p.id}" title="Ouvrir le suivi${suiviClosed(p)?' (clos)':''}">Suivi ↗</button>` : '')
+    + (p && t.prospect_id === p.id && t.auto_kind === 'relance_tel' && !isDone(t) && !suiviClosed(p) ? `<button class="btn sm ghost danger" data-act="noAnswerClose" data-id="${t.id}">Pas de réponse : clore le suivi</button>` : '');
+}
+
+export function taskSection(all){
+  const done = all.filter(t => isDone(t) && !lingering(t.id)), open = all.filter(t => !isDone(t) || lingering(t.id));
+  const shown = (S.showDoneTasks ? all : open).slice().sort(taskSort);
+  return taskTable(shown, open.length ? null : (done.length ? 'Tout est fait.' : null))
+    + (done.length ? `<button class="btn toggle-more" data-act="toggleDoneTasks" aria-pressed="${!!S.showDoneTasks}">${S.showDoneTasks?'Masquer':'Afficher'} les tâches terminées (${done.length})</button>` : '');
+}
+
+export function taskTable(tasks, emptyMsg){
+  if (!tasks.length) return `<div class="empty panel">${emptyMsg || 'Rien à faire ici. Ajoute une tâche avec « Nouvelle tâche ».'}</div>`;
+  const team = CFG.TEAM.map(e=>[e, TEAM_NAMES[e]||e]);
+  return `<div class="tbl-wrap"><table><thead><tr><th></th><th>Tâche</th><th>Pôle</th><th>Échéance</th><th>Pour</th><th>Artistes</th><th>Lié à (structure, date)</th></tr></thead><tbody>
+  ${tasks.map(t=>{ const u=urgency(t), nf = attachmentsOf('task_id', t.id).length; const leaving = lingering(t.id) && isDone(t);
+    return `<tr class="${isDone(t) && !leaving ? 'task-done' : ''} ${leaving?'leaving':''}">
+      <td><input type="checkbox" data-act="toggleTask" data-id="${t.id}" ${t.status==='Done'?'checked':''} aria-label="Marquer comme faite"></td>
+      <td class="full-cell" style="min-width:260px"><div class="task-title">${cIn('tasks',t.id,'title',t.title,'text','aria-label="Nom de la tâche"')}
+        <button class="btn sm ghost" data-act="editTask" data-id="${t.id}" title="Notes, pièces jointes, statut…">Détails${nf?` · ${nf} 📎`:''}</button>${taskSuiviBtns(t)}</div>
+        ${t.notes?`<div class="task-notes">${esc(t.notes.length>160?t.notes.slice(0,160)+'…':t.notes)}</div>`:''}</td>
+      <td><select class="dept-sel" data-t="tasks" data-id="${t.id}" data-f="department" style="--c:${deptColor(t.department)}" aria-label="Pôle"><option value="">Pôle ?</option>${deptNames().concat(t.department && !deptNames().includes(t.department) ? [t.department] : []).map(d=>`<option ${d===t.department?'selected':''}>${esc(d)}</option>`).join('')}</select></td>
+      <td class="due-cell">${cIn('tasks',t.id,'deadline',t.deadline,'date')}${t.status==='Done' && t.done_at ? `<span class="muted nowrap">Faite le ${fmtDate(t.done_at.slice(0,10))}</span>` : u?`<span class="urg ${u.cls}">${esc(u.label)}</span>`:''}</td>
+      <td>${cSel('tasks',t.id,'assigned_to',t.assigned_to,team)}</td>
+      <td style="min-width:200px">${projChips('tasks', t)}</td>
+      <td class="link-cell">${cAc('structures','tasks',t.id,'structure_id',t.structure_id,{placeholder:'Structure…', create:true})}${cAc('shows','tasks',t.id,'show_id',t.show_id,{placeholder:'Date…'})}</td></tr>`;}).join('')}
+  </tbody></table></div>`;
+}
+
+export function viewTodo(){
+  const f = S.todoFilter || 'open';
+  const dept = S.todoDept || '';
+  let tasks = S.db.tasks.filter(t => projFilterOk(projIds(t)));
+  const open = t => !isDone(t) || lingering(t.id);
+  if (f==='open') tasks = tasks.filter(open);
+  if (f==='mine') tasks = tasks.filter(t=>open(t) && t.assigned_to===S.user.email);
+  // Pour qui : tout le monde, moi, ou une autre personne de l'équipe
+  const who = S.todoWho || '';
+  if (who) tasks = tasks.filter(t => t.assigned_to === (who === 'me' ? S.user.email : who));
+  if (f==='late') tasks = tasks.filter(t=>{ const d=daysUntil(t.deadline); return d!=null && d<=7 && open(t); });
+  if (f==='done'){ const since = new Date(Date.now() - 30*864e5).toISOString(); tasks = tasks.filter(t => t.status==='Done' && (t.done_at||t.updated_at||'') >= since); }
+  if (f === 'done') trace('todo terminées', {all: S.db.tasks.length, done: S.db.tasks.filter(t => t.status === 'Done').length, shown: tasks.length, who, dept, projects: S.projects});
+  const byDept = d => tasks.filter(t => (t.department||'') === d).length;
+  const total = tasks.length;
+  if (dept) tasks = tasks.filter(t => (t.department||'') === (dept==='-' ? '' : dept));
+  const q = S.search.todo || '';
+  if (q) tasks = tasks.filter(t => matches(`${t.title} ${t.notes||''} ${projNames(t)} ${structName(t.structure_id)} ${t.department||''} ${showLabel(byId('shows', t.show_id))}`, q));
+  if (f==='done') tasks.sort((a,b)=>(b.done_at||b.updated_at||'').localeCompare(a.done_at||a.updated_at||'')); else tasks.sort(taskSort);
+  // filtres en menus déroulants (une seule ligne, lisible sur téléphone)
+  const opt = (k, l, cur) => `<option value="${esc(k)}" ${cur===k?'selected':''}>${esc(l)}</option>`;
+  const who_ = [['', 'Toute l’équipe'], ['me', 'Moi'], ...CFG.TEAM.filter(e => e !== S.user.email).map(e => [e, TEAM_NAMES[e] || e])];
+  const depts = [['', `Tous les pôles (${total})`], ...deptNames().map(d => [d, `${d} (${byDept(d)})`]), ['-', `Sans pôle (${byDept('')})`]];
+  return viewHead('To Do', {sub:`${tasks.length} tâche${tasks.length>1?'s':''}`,
+      filters:`<label class="fsel"><span>Afficher</span><select data-todo-sel="f" aria-label="Afficher">${opt('open','À faire',f)}${opt('late','Urgentes (≤ 7 j)',f)}${opt('done','Terminées (30 j)',f)}</select></label>
+        <label class="fsel"><span>Pour</span><select data-todo-sel="who" aria-label="Pour qui">${who_.map(([k,l]) => opt(k,l,who)).join('')}</select></label>
+        <label class="fsel"><span>Pôle</span><select data-todo-sel="dept" aria-label="Pôle">${depts.map(([k,l]) => opt(k,l,dept)).join('')}</select></label>
+        ${projPicker(S.projects, {attrs:'id="f-project" aria-label="Artiste"', multi:true}) + inactiveToggle()}
+        <input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-taches" placeholder="Rechercher une tâche" data-search="todo" value="${esc(q)}">`,
+      actions:'<button class="btn primary" data-act="newTask">Nouvelle tâche</button>'})
+    + activeFilters(f, who, dept, q)
+    + taskTable(tasks, f === 'done' ? 'Aucune tâche terminée ces 30 derniers jours avec ces filtres.' : null);
+}
+
+/** Filtres en cours (personne, pôle, artistes, recherche) : rappelés au-dessus de la liste, avec « Tout afficher » */
+function activeFilters(f, who, dept, q){
+  const on = [who && `pour ${who === 'me' ? 'moi' : esc(TEAM_NAMES[who] || who)}`, dept && `pôle ${dept === '-' ? 'sans pôle' : esc(dept)}`,
+    S.projects.length && `${S.projects.length} artiste${S.projects.length > 1 ? 's' : ''}`, q && `recherche « ${esc(q)} »`].filter(Boolean);
+  return on.length ? `<p class="filter-note">Filtres en cours : ${on.join(' · ')} <button class="btn sm ghost" data-act="resetTodoFilters">Tout afficher</button></p>` : '';
+}
+
+export { teamName, TASK_STATUS };
