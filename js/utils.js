@@ -1,6 +1,7 @@
 /**
  * Petits outils : formats (€, dates), échappement HTML, messages, recherche sans accents, export CSV.
  */
+import createDOMPurify from '../assets/vendor/dompurify-3.4.16/purify.es.js';
 export const $ = (sel, root=document) => root.querySelector(sel);
 
 export const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
@@ -113,15 +114,26 @@ export function firstName(c){
   return names.length > 1 ? names.slice(0, -1).join(', ') + ' et ' + names.at(-1) : names[0] || '';
 }
 
-/** HTML d'un mail affiché dans la page : sans script, sans gestionnaire d'évènement, liens ouverts à part */
+/** Nettoyeur de HTML dédié (DOMPurify, instance propre à la Matrice : ses réglages ne touchent rien d'autre) */
+const purifier = createDOMPurify(window);
+const SAFE_URL = /^(?:https?:|mailto:|tel:|cid:|#)/i;
+purifier.addHook('afterSanitizeAttributes', node => {
+  // liens : ouverts dans un autre onglet, sans accès à la Matrice
+  if (node.tagName === 'A' && node.hasAttribute('href')){ node.setAttribute('target', '_blank'); node.setAttribute('rel', 'noopener noreferrer'); }
+  // mise en forme : un mail ne peut pas se superposer à l'application
+  if (node.style && /^(fixed|absolute|sticky)$/i.test(node.style.position)) node.style.removeProperty('position');
+});
+const PURIFY = {
+  USE_PROFILES: {html: true},                 // HTML seulement : ni SVG ni MathML
+  FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'option', 'iframe', 'frame', 'object', 'embed', 'link', 'meta', 'base', 'template'],
+  FORBID_ATTR: ['srcdoc', 'formaction', 'action', 'ping', 'background'],
+  ALLOWED_URI_REGEXP: SAFE_URL,               // liens et images : https, http, mailto, tel, cid (+ images data: d'origine)
+  ALLOW_DATA_ATTR: false,
+};
+
+/** HTML d'un mail affiché dans la page : nettoyé par DOMPurify (aucun script, aucun lien dangereux), liens ouverts à part */
 export function safeHtml(html){
-  const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
-  doc.querySelectorAll('script,style,iframe,object,embed,link,meta,form').forEach(n => n.remove());
-  doc.querySelectorAll('*').forEach(n => [...n.attributes].forEach(a => {
-    if (/^on/i.test(a.name) || (/^(href|src)$/i.test(a.name) && /^\s*javascript:/i.test(a.value))) n.removeAttribute(a.name);
-  }));
-  doc.querySelectorAll('a[href]').forEach(a => { a.target = '_blank'; a.rel = 'noopener'; });
-  return doc.body.innerHTML;
+  return purifier.sanitize(String(html || ''), PURIFY);
 }
 
 /** Jour ouvré : une échéance qui tombe un samedi ou un dimanche passe au lundi suivant (AAAA-MM-JJ) */
