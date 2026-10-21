@@ -70,7 +70,8 @@ function prodRow(s){
 
 function prodBody(s, booking, steps, pays, late){
   const key = 'prod:' + s.id;
-  const tabs = [['conditions', 'Conditions'], ['factures', 'Factures', pays.length], ...(booking ? [] : [['budget', 'Budget']]), ['suivi', 'Suivi admin', late.size ? '⚠︎' : '']];
+  // dans l'ordre du travail : conditions, suivi administratif (contrat…), factures, puis budget
+  const tabs = [['conditions', 'Conditions'], ['suivi', 'Suivi admin', late.size ? '⚠︎' : ''], ['factures', 'Factures', pays.length], ...(booking ? [] : [['budget', 'Budget']])];
   const cur = tabs.some(([k]) => k === S.tab[key]) ? S.tab[key] : 'conditions';
   const body = {conditions: () => conditionsTab(s, booking), factures: () => billingTab(s, booking, pays, late),
     budget: () => isProductionShow(s) ? productionBudgetHTML(s) : showBudgetHTML(s), suivi: () => suiviTab(s, booking, steps, late)}[cur]();

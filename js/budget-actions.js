@@ -88,9 +88,13 @@ export const BUDGET_ACTIONS = {
         payer: 'compte', auto: first ? 'solde_artiste' : null, sort: nextSort(s.id)});
       return render();
     }
-    await insert('budget_lines', {project_id, show_id: s?.id || null, category: cat, label: cat === 'Staff' ? 'Cachet' : null, payer: isProductionShow(s) ? 'artbo' : 'compte', sort: s ? nextSort(s.id) : 0, doc_date: s ? null : today()});
+    const row = await insert('budget_lines', {project_id, show_id: s?.id || null, category: cat, label: cat === 'Staff' ? 'Cachet' : null, payer: isProductionShow(s) ? 'artbo' : 'compte', sort: s ? nextSort(s.id) : 0, doc_date: s ? null : today()});
     if (s && cat === 'Staff') await syncMovinmotionLine(s.id);
     render();
+    // la nouvelle ligne est rangée dans sa catégorie : on l'amène à l'écran, curseur dans le libellé
+    const tr = row && document.querySelector(`tr[data-budget-line="${row.id}"]`);
+    if (tr){ tr.scrollIntoView({block: 'center', behavior: 'smooth'}); tr.classList.add('just-added'); setTimeout(() => tr.classList.remove('just-added'), 2000);
+      tr.querySelector(cat === 'Staff' ? '[data-f="supplier"]' : '[data-f="label"]')?.focus({preventScroll: true}); }
   },
   exportArtistBudget: t => exportArtistBudget(t.dataset.id),
   delBudgetLine: async t => { if (confirm('Supprimer cette ligne du budget ?') && await remove('budget_lines', t.dataset.id)) render(); },

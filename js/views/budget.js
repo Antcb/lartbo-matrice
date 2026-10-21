@@ -2,7 +2,7 @@
  * Budget dans l'onglet Production : le budget de chaque date (prévu / réel, pièces, qui paie)
  * et la vue d'ensemble d'un artiste (compte dédié, toutes les dates, frais hors date).
  */
-import { accountMoves, accountOf, availableForArtist, commissionAmount, commissionOf, isFree, isSolde, lineForecast, lineStatus, linesOf, offLinesOf, payerLabel, payslipCost, prodShowsOf, showBudget } from '../budget.js';
+import { accountMoves, accountOf, availableForArtist, commissionAmount, commissionOf, isFree, isSolde, lineForecast, lineStatus, lineValue, linesOf, offLinesOf, payerLabel, payslipCost, prodShowsOf, showBudget } from '../budget.js';
 import { BUDGET_CATS, PAYERS } from '../constants.js';
 import { payAmount, paymentsOf } from '../calc.js';
 import { byId } from '../selectors.js';
@@ -21,7 +21,7 @@ function lineRow(l, project, {qtyAll = false} = {}){
   const hasQty = staff && l.forecast == null;
   const prev = staff && hasQty
     ? `<span class="qty-line">${cIn('budget_lines', l.id, 'qty', l.qty, 'number', `class="narrow" title="${qtyAll ? 'Quantité' : 'Nombre de bulletins'}" placeholder="${qtyAll ? 'qté' : 'nb'}"`)}<span class="x">×</span>${cIn('budget_lines', l.id, 'unit_cost', l.unit_cost, 'number', `class="narrow2" title="${qtyAll ? 'Prix unitaire HT' : 'Coût employeur d’un bulletin'}" placeholder="${qtyAll ? 'P.U.' : 'coût'}"`)}<b>${eur2(fc ?? 0)}</b></span>`
-    : `<input type="number" step="any" data-t="budget_lines" data-id="${l.id}" data-f="forecast" value="${l.forecast??''}" placeholder="${fc==null?'à saisir':fc}" class="${l.forecast!=null?'override':''}" title="${auto?'Vide = calcul automatique':'Montant prévu HT'}">`;
+    : `<input type="number" step="any" data-t="budget_lines" data-id="${l.id}" data-f="forecast" value="${l.forecast??''}" placeholder="${fc==null?'à saisir':fc}" class="${auto && l.forecast!=null?'override':''}" title="${auto ? (l.forecast!=null ? 'Montant saisi à la main à la place du calcul automatique (efface-le pour revenir au calcul)' : 'Vide = calcul automatique') : 'Montant prévu HT'}">`;
   const calc = l.auto==='movinmotion' ? 'bulletins × coût Movinmotion' : l.auto==='cnm' ? '% du cachet (entrée gratuite)' : '';
   return `<tr data-budget-line="${l.id}" class="${st==='paid'?'is-paid':st==='doc'?'has-doc':''}" title="${st==='paid'?'Payé':st==='doc'?'Pièce reçue, pas encore payée':'Prévu'}">
     <td>${cSel('budget_lines', l.id, 'category', l.category, BUDGET_CATS)}</td>
@@ -31,9 +31,21 @@ function lineRow(l, project, {qtyAll = false} = {}){
     <td class="num">${prev}</td>
     <td class="num"><input type="number" step="any" data-t="budget_lines" data-id="${l.id}" data-f="amount" value="${l.amount??''}" placeholder="—" title="${staff?'Coût total (bulletin)':'Montant réel HT (pièce)'}"></td>
     <td class="nowrap">${l.file_path ? `<button class="btn icon sm" data-act="openBudgetFile" data-id="${l.id}" title="${esc(l.file_name||'Pièce')}" aria-label="Ouvrir la pièce">📎</button>` : ''}${l.drive_file_id ? `<a class="btn icon sm" href="https://drive.google.com/file/d/${esc(l.drive_file_id)}/view" target="_blank" rel="noopener" title="Rangée dans le Drive de la date" aria-label="Ouvrir dans le Drive">▲</a>` : ''}${cIn('budget_lines', l.id, 'doc_number', l.doc_number, 'text', 'placeholder="N° pièce" class="doc-no"')}</td>
-    <td class="${l.paid_at?'done-cell':''}">${cIn('budget_lines', l.id, 'paid_at', l.paid_at, 'date')}${(l.payer || 'compte') !== 'compte' && l.paid_at ? `<div class="reimb ${l.reimbursed_at?'done-cell':''}" title="Avance remboursée par ${esc(payerLabel('compte', project))} le"><span class="muted">remb.</span>${cIn('budget_lines', l.id, 'reimbursed_at', l.reimbursed_at, 'date')}</div>` : ''}</td>
+    <td class="${l.paid_at?'done-cell':''}">${cIn('budget_lines', l.id, 'paid_at', l.paid_at, 'date')}${['artbo', 'autre'].includes(l.payer) && l.paid_at ? `<div class="reimb ${l.reimbursed_at?'done-cell':''}" title="${esc(payerLabel(l.payer, project))} a avancé cette dépense : date à laquelle ${esc(payerLabel('compte', project))} l’a remboursée"><span class="muted">remboursé à ${esc(payerLabel(l.payer, project))} le</span>${cIn('budget_lines', l.id, 'reimbursed_at', l.reimbursed_at, 'date')}</div>` : ''}</td>
     <td><button class="btn icon sm ghost danger" data-act="delBudgetLine" data-id="${l.id}" aria-label="Supprimer la ligne">✕</button></td>
   </tr>`;
+}
+
+/**
+ * Lignes rangées par catégorie (dans l'ordre des catégories du budget), avec un sous-total par catégorie ;
+ * une ligne qui change de catégorie va d'elle-même au bon endroit. Dans une catégorie : l'ordre d'ajout.
+ */
+function byCategory(lines, project){
+  const order = c => { const i = BUDGET_CATS.indexOf(c || 'Autres'); return i < 0 ? BUDGET_CATS.length : i; };
+  const groups = new Map();
+  for (const l of lines.slice().sort((a, b) => order(a.category) - order(b.category))) { const c = l.category || 'Autres'; if (!groups.has(c)) groups.set(c, []); groups.get(c).push(l); }
+  return [...groups].map(([c, ls]) => { const f = ls.reduce((t, l) => t + (lineForecast(l) ?? (Number(l.amount) || 0)), 0), r = ls.reduce((t, l) => t + lineValue(l), 0);
+    return `<tr class="cat-row"><td colspan="9"><b>${esc(c)}</b> <span class="muted">· prévu ${eur2(f)} · à jour ${eur2(r)}</span></td></tr>` + ls.map(l => lineRow(l, project)).join(''); }).join('');
 }
 
 const HEAD = '<thead><tr><th>Catégorie</th><th>Libellé</th><th>Fournisseur</th><th>Payé par</th><th class="num col-prev">Prévu HT</th><th class="num col-real">Réel HT</th><th>Pièce</th><th>Payé le</th><th></th></tr></thead>';
@@ -44,20 +56,26 @@ function dropZone(attrs, text){
     <span class="drop-hint">${text}</span></div>`;
 }
 
-/** Résumé lisible : prévu / réel / écart, ligne par ligne */
+/**
+ * Résumé lisible : prévu / réel / écart. Une seule logique sur toutes les lignes :
+ *  - « Réel » = ce qu'on sait aujourd'hui : le montant réel quand il est connu, sinon le prévu (encore estimé) ;
+ *  - « Écart » = seulement ce qui a vraiment changé (réel connu − son prévu) ;
+ *  - le reste pour l'artiste se calcule avec les mêmes chiffres, donc il tombe juste avec les lignes du dessus.
+ */
 function summaryTable(s, b, com, p){
-  const realExp = b.lines.filter(l => !isSolde(l) && l.amount != null).reduce((t, l) => t + Number(l.amount), 0);
-  const known = b.lines.filter(l => !isSolde(l)).length, withDoc = b.lines.filter(l => !isSolde(l) && l.amount != null).length;
+  const exp = b.lines.filter(l => !isSolde(l)), real = exp.filter(l => l.amount != null), est = exp.filter(l => l.amount == null);
+  const realSum = real.reduce((t, l) => t + Number(l.amount), 0), estSum = est.reduce((t, l) => t + (lineForecast(l) || 0), 0);
+  const expNow = r2(realSum + estSum), expGap = r2(real.reduce((t, l) => t + Number(l.amount) - (lineForecast(l) ?? Number(l.amount)), 0));
   const cashed = paymentsOf(s.id).filter(x => ['acompte', 'solde'].includes(x.kind) && x.paid_at).reduce((t, x) => t + (payAmount(x) || 0), 0);
-  const row = (label, f, r, help = '', strong = false) => { const gap = r == null ? null : r - f;
-    return `<tr class="${strong ? 'bill-total' : ''}"><td>${strong ? `<b>${label}</b>` : label}${help ? `<div class="muted tiny">${help}</div>` : ''}</td>
-      <td class="num nowrap">${strong ? `<b>${eur2(f)}</b>` : eur2(f)}</td><td class="num nowrap">${r == null ? '<span class="muted">—</span>' : strong ? `<b>${eur2(r)}</b>` : eur2(r)}</td>
-      <td class="num nowrap ${gap == null || Math.abs(gap) < 0.01 ? 'muted' : gap > 0 === label.startsWith('Dépenses') ? 'neg' : 'pos'}">${gap == null ? '' : (gap > 0 ? '+' : '') + eur2(gap)}</td></tr>`; };
-  return `<div class="tbl-wrap"><table class="budget-sum"><thead><tr><th></th><th class="num">Prévu</th><th class="num">Réel</th><th class="num">Écart</th></tr></thead><tbody>
-    ${row('Cachet HT', b.fee, cashed || null, cashed ? 'réel : acomptes et solde déjà payés' : 'rien d’encaissé pour l’instant')}
-    ${row('Commission L’ArtBo', b.com, com?.paid_at ? b.com : null, com?.paid_at ? 'virée' : 'pas encore virée')}
-    ${row('Dépenses', b.forecastExp, withDoc ? realExp : null, `${withDoc}/${known} ligne${known > 1 ? 's' : ''} avec un montant réel`)}
-    ${row('Reste pour l’artiste' + (p?.artist_payee ? ` (${esc(p.artist_payee)})` : ''), b.fee - b.com - b.forecastExp, withDoc ? b.fee - b.com - realExp - (known - withDoc ? b.lines.filter(l => !isSolde(l) && l.amount == null).reduce((t, l) => t + (lineForecast(l) || 0), 0) : 0) : null, 'cachet − commission − dépenses (réel quand connu)', true)}
+  const gapCell = (g, cost) => `<td class="num nowrap ${Math.abs(g) < 0.01 ? 'muted' : (g > 0) === cost ? 'neg' : 'pos'}">${Math.abs(g) < 0.01 ? eur2(0) : (g > 0 ? '+' : '') + eur2(g)}</td>`;
+  const row = (label, f, r, gap, help, {cost = false, strong = false} = {}) => `<tr class="${strong ? 'bill-total' : ''}"><td>${strong ? `<b>${label}</b>` : label}${help ? `<div class="muted tiny">${help}</div>` : ''}</td>
+      <td class="num nowrap">${strong ? `<b>${eur2(f)}</b>` : eur2(f)}</td><td class="num nowrap">${strong ? `<b>${eur2(r)}</b>` : eur2(r)}</td>${gapCell(gap, cost)}</tr>`;
+  const resteF = r2(b.fee - b.com - b.forecastExp), resteR = r2(b.fee - b.com - expNow);
+  return `<div class="tbl-wrap"><table class="budget-sum"><thead><tr><th></th><th class="num">Prévu</th><th class="num" title="Montant réel quand il est connu, sinon le prévu">Réel / à jour</th><th class="num">Écart</th></tr></thead><tbody>
+    ${row('Cachet HT', b.fee, b.fee, 0, cashed >= b.fee - 0.01 && b.fee ? 'entièrement encaissé' : `encaissé : ${eur2(cashed)} sur ${eur2(b.fee)}`)}
+    ${row('Commission L’ArtBo', b.com, b.com, 0, com?.paid_at ? `virée le ${fmtDate(com.paid_at)}` : 'pas encore virée', {cost: true})}
+    ${row('Dépenses', b.forecastExp, expNow, expGap, !exp.length ? 'aucune ligne' : est.length ? `${eur2(realSum)} réels (${real.length} ligne${real.length > 1 ? 's' : ''}) + ${eur2(estSum)} encore au prévu (${est.length} ligne${est.length > 1 ? 's' : ''})` : 'toutes les lignes ont leur montant réel', {cost: true})}
+    ${row('Reste pour l’artiste' + (p?.artist_payee ? ` (${esc(p.artist_payee)})` : ''), resteF, resteR, r2(resteR - resteF), est.length ? `cachet − commission − dépenses · encore provisoire : ${est.length} dépense${est.length > 1 ? 's' : ''} au prévu` : 'cachet − commission − dépenses · définitif', {strong: true})}
   </tbody></table></div>
   <p class="muted" style="font-size:12px;margin:6px 0 12px">Pièces reçues : ${b.docsIn}/${b.docsAll} · ${b.paid} payées.</p>`;
 }
@@ -111,7 +129,7 @@ export function showBudgetHTML(s){
   return `<div class="prod-budget">
 
     ${summaryTable(s, b, com, p)}
-    <div class="tbl-wrap"><table class="budget-table">${HEAD}<tbody>${comRow}${b.lines.filter(l => !isSolde(l)).map(l => lineRow(l, p)).join('')}</tbody></table></div>
+    <div class="tbl-wrap"><table class="budget-table">${HEAD}<tbody>${comRow}${byCategory(b.lines.filter(l => !isSolde(l)), p)}</tbody></table></div>
     <div class="vh-actions mt">
       <button class="btn sm" data-act="addBudgetLine" data-show="${s.id}">Ajouter une dépense</button>
       <button class="btn sm" data-act="addBudgetLine" data-show="${s.id}" data-cat="Staff">Ajouter un salarié</button>
@@ -120,7 +138,7 @@ export function showBudgetHTML(s){
     </div>
     ${dropZone(`data-budget-drop='${JSON.stringify({show_id:s.id})}'`, 'Glisse ici une facture, un bulletin ou une note de frais (ou sur une ligne précise) : l’IA la lit, met la ligne à jour, la marque payée et la range dans le Drive de la date (02_Finance).')}
     ${artistBlock(s, b, p)}
-    <p class="muted small mt-sm">Montants HT ; salaires en coût total. Ligne verte : payée ; jaune : pièce reçue, pas encore payée.</p>
+    <p class="muted small mt-sm">Montants HT ; salaires en coût total. Ligne verte : payée ; jaune : pièce reçue, pas encore payée. Prévu en orange : montant tapé à la place du calcul automatique (Movinmotion, CNM) ; efface-le pour revenir au calcul.</p>
   </div>`;
 }
 

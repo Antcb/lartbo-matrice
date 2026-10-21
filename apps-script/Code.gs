@@ -637,18 +637,48 @@ function artistFolder_(project, p) {
 }
 
 /** Dossier Drive d'un artiste : retrouvé s'il existe déjà (même nom), sinon créé à partir du modèle, puis lié au projet */
+/**
+ * Dossier Drive d'un nouvel artiste : copie du « Modèle dossier artiste » dans le dossier des artistes.
+ * Toute l'arborescence est créée d'abord (rapide), puis les fichiers. Le dossier est relié au projet dès sa création.
+ * Si le temps manque (Google coupe un appel au bout de 6 min), on s'arrête proprement à ~4 min avec done:false :
+ * la Matrice rappelle aussitôt et la copie reprend là où elle en était (rien n'est copié deux fois).
+ * Un dossier du même nom déjà présent mais non relié est complété seulement s'il ne contient que des éléments du modèle
+ * (copie interrompue) ; un vrai dossier d'artiste existant est juste relié, sans y toucher.
+ */
 function createArtistFolder_(projectId) {
   var p = props_();
   var project = sb_('GET', 'projects?id=eq.' + projectId + '&select=id,name,drive_artist_folder_id')[0];
   if (!project) throw new Error('Projet introuvable');
-  try { var f0 = artistFolder_(project, p); return { ok: true, folder_id: f0.getId(), created: false, url: f0.getUrl() }; } catch (e) { /* pas encore de dossier */ }
-  var root = DriveApp.getFolderById(p.ARTISTS_ROOT_ID);
-  var folder = root.createFolder(project.name.replace(/\s*•.*$/, '').trim());
-  var tpl = setting_('artist_template_folder_id') || '1zkLE9As6YpsFbYHtpkpDBmNt2ooW-K7s';
-  try { copyContents_(DriveApp.getFolderById(tpl), folder); }
-  catch (e) { folder.setTrashed(true); throw e; }   // pas de dossier à moitié rempli
-  sb_('PATCH', 'projects?id=eq.' + project.id, { drive_artist_folder_id: folder.getId() });
-  return { ok: true, folder_id: folder.getId(), created: true, url: folder.getUrl() };
+  var tpl = DriveApp.getFolderById(setting_('artist_template_folder_id') || '1zkLE9As6YpsFbYHtpkpDBmNt2ooW-K7s');
+  var sp = PropertiesService.getScriptProperties(), key = 'artist_copy_' + project.id;
+  var folder = null, created = false, resume = !!sp.getProperty(key);
+  if (project.drive_artist_folder_id) {
+    try { folder = DriveApp.getFolderById(project.drive_artist_folder_id); if (folder.isTrashed()) folder = null; } catch (ignore) { folder = null; }
+  }
+  if (!folder) {
+    var root = DriveApp.getFolderById(p.ARTISTS_ROOT_ID), name = project.name.replace(/\s*•.*$/, '').trim();
+    folder = childFolder_(root, project.name, false) || childFolder_(root, name, false);
+    if (folder) resume = resume || onlyTemplateItems_(folder, tpl);   // copie interrompue : on la termine
+    else { folder = root.createFolder(name); created = true; resume = true; }
+    sb_('PATCH', 'projects?id=eq.' + project.id, { drive_artist_folder_id: folder.getId() });
+  }
+  if (!resume) return { ok: true, folder_id: folder.getId(), created: false, done: true, url: folder.getUrl() };
+  sp.setProperty(key, 'en cours');
+  var done = copyContents_(tpl, folder, Date.now() + 240000);
+  if (done) sp.deleteProperty(key);
+  return { ok: true, folder_id: folder.getId(), created: created, done: done, url: folder.getUrl() };
+}
+
+/** Le dossier ne contient que des dossiers / fichiers portant un nom du modèle (ou rien) : c'est une copie du modèle */
+function onlyTemplateItems_(folder, tpl) {
+  var names = {}, it = tpl.getFolders();
+  while (it.hasNext()) names[it.next().getName()] = true;
+  it = tpl.getFiles(); while (it.hasNext()) names[it.next().getName()] = true;
+  var mine = folder.getFolders();
+  while (mine.hasNext()) { var f = mine.next(); if (!f.isTrashed() && !names[f.getName()]) return false; }
+  mine = folder.getFiles();
+  while (mine.hasNext()) { var x = mine.next(); if (!x.isTrashed() && !names[x.getName()]) return false; }
+  return true;
 }
 
 function childFolder_(parent, name, createIfMissing) {
@@ -660,24 +690,35 @@ function childFolder_(parent, name, createIfMissing) {
   return createIfMissing ? parent.createFolder(name) : null;
 }
 
-/** Copie récursive (Drive ne sait pas copier un dossier directement). */
 /**
- * Copie le modèle (fichiers puis sous-dossiers), sans ce qui est à la corbeille.
+ * Copie le contenu d'un dossier modèle dans dest : d'abord toute l'arborescence, ensuite les fichiers.
+ * Sans ce qui est à la corbeille ; un dossier ou un fichier déjà présent (même nom) n'est pas recopié (reprise possible).
  * Un dossier d'année du modèle (ex. « 2026 » dans 032_Production) prend l'année en cours.
+ * deadline (ms) facultatif : renvoie false si le temps est écoulé avant la fin (à relancer), true si tout est copié.
  */
-function copyContents_(src, dest) {
-  var files = src.getFiles();
-  while (files.hasNext()) {
-    var f = files.next();
-    if (!f.isTrashed()) f.makeCopy(f.getName(), dest);
+function copyContents_(src, dest, deadline) {
+  var end = deadline || Infinity;
+  return copyTree_(src, dest, false, end) && copyTree_(src, dest, true, end);
+}
+function copyTree_(src, dest, withFiles, end) {
+  if (Date.now() > end) return false;
+  if (withFiles) {
+    var files = src.getFiles();
+    while (files.hasNext()) {
+      var f = files.next();
+      if (f.isTrashed() || dest.getFilesByName(f.getName()).hasNext()) continue;
+      if (Date.now() > end) return false;
+      f.makeCopy(f.getName(), dest);
+    }
   }
   var folders = src.getFolders(), year = String(new Date().getFullYear());
   while (folders.hasNext()) {
     var sub = folders.next();
     if (sub.isTrashed()) continue;
     var name = /^20\d\d$/.test(sub.getName()) ? year : sub.getName();
-    copyContents_(sub, childFolder_(dest, name, true));
+    if (!copyTree_(sub, childFolder_(dest, name, true), withFiles, end)) return false;
   }
+  return true;
 }
 
 /** Clé secrète Supabase : ancienne clé « service_role » (eyJ…) ou nouvelle clé secrète (sb_secret_…) */
