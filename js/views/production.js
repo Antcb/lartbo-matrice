@@ -187,7 +187,7 @@ function billingTab(s, booking, pays, late){
           <td class="${late.has(p.kind)&&!p.sent_at?'late-cell':''}">${cIn('show_payments',p.id,'sent_at',p.sent_at,'date')}</td>
           <td title="Date de la dernière relance">${cIn('show_payments',p.id,'reminded_at',p.reminded_at,'date')}</td>
           <td class="${p.paid_at?'done-cell':''}">${cIn('show_payments',p.id,'paid_at',p.paid_at,'date')}</td>
-          <td>${pennylaneCell(p)}</td>`}
+          <td>${pennylaneCell(p, s)}</td>`}
           <td><button class="btn icon sm ghost danger" data-act="delPay" data-id="${p.id}" aria-label="Supprimer la ligne">✕</button></td></tr>`;}).join('')}
         </tbody>${booking ? '' : billFoot(s)}</table></div>
       <div class="vh-actions mt">
@@ -231,10 +231,21 @@ function payeeCell(s, p, booking){
   return cSel('show_payments', p.id, 'payee', p.payee || (proj?.account_name ? 'compte' : 'artbo'), ['compte','artbo','artiste','autre'].map(c => [c, payerLabel(c, proj)]), false);
 }
 
-/** Brouillon de facture Pennylane d'une ligne */
-function pennylaneCell(p){
+/**
+ * Facture Pennylane d'une ligne.
+ * Acompte et solde : comme dans Pennylane, ils se font DEPUIS LE DEVIS (facture d'acompte, puis facture de solde qui déduit l'acompte) ;
+ * la Matrice crée le devis, puis « Synchroniser Pennylane » reprend tout seul le numéro et le paiement de chaque facture.
+ * Commission et autres lignes : brouillon de facture créé directement.
+ */
+function pennylaneCell(p, s){
   if (!['acompte','solde','artbo','autre'].includes(p.kind)) return '';
-  if (p.pennylane_id) return p.pennylane_url ? `<a class="btn sm ghost" href="${esc(p.pennylane_url)}" target="_blank" rel="noopener">Brouillon ↗</a>` : '<span class="ok-badge">Brouillon créé</span>';
+  if (p.pennylane_id) return p.pennylane_url ? `<a class="btn sm ghost" href="${esc(p.pennylane_url)}" target="_blank" rel="noopener">Facture ↗</a>` : '<span class="ok-badge">Facture créée</span>';
+  if (['acompte','solde'].includes(p.kind)){
+    if (p.invoice_number) return '';
+    return s?.pennylane_quote_id
+      ? `<a class="btn sm ghost" href="https://app.pennylane.com/" target="_blank" rel="noopener" title="Dans Pennylane, ouvre le devis de cette date puis « Créer une facture d’acompte » (ou la facture de solde). Le numéro revient ici avec « Synchroniser Pennylane ».">Facturer depuis le devis ↗</a>`
+      : `<button class="btn sm" data-act="pennylaneQuote" data-id="${p.show_id}" title="L’acompte et le solde se facturent depuis le devis Pennylane">Créer le devis</button>`;
+  }
   return `<button class="btn sm" data-act="pennylaneInvoice" data-id="${p.id}" title="Crée la facture en brouillon dans Pennylane">Créer</button>`;
 }
 

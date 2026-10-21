@@ -129,6 +129,27 @@ Deno.serve(async (req) => {
         if (!page.has_more) break; cursor = page.next_cursor;
       }
       // factures créées depuis la Matrice : reconnues par leur identifiant Pennylane (le numéro n'est connu qu'une fois finalisées)
+      // factures faites dans Pennylane depuis le devis créé par la Matrice (acompte puis solde) : reconnues par leur devis et leur montant HT
+      const byQuote: Record<string, any[]> = {};
+      for (const x of Object.values(byId)) if (x.quote?.id && x.status !== 'cancelled') (byQuote[String(x.quote.id)] ||= []).push(x);
+      const linked: any[] = [];
+      if (Object.keys(byQuote).length) {
+        const { data: open } = await admin.from('show_payments').select('id, show_id, kind, pct, amount, sort, invoice_number, pennylane_id, shows!inner(fee_ht, pennylane_quote_id)')
+          .in('kind', ['acompte', 'solde']).is('invoice_number', null).is('pennylane_id', null).not('shows.pennylane_quote_id', 'is', null);
+        const { data: taken } = await admin.from('show_payments').select('pennylane_id, invoice_number').or('invoice_number.not.is.null,pennylane_id.not.is.null');
+        const used = new Set<string>(); for (const t of taken || []) { if (t.pennylane_id) used.add('id:' + t.pennylane_id); if (t.invoice_number) used.add('n:' + norm(t.invoice_number)); }
+        const order = (a: any, b: any) => (a.kind === b.kind ? (a.sort || 0) - (b.sort || 0) : a.kind === 'acompte' ? -1 : 1);
+        for (const p of (open || []).sort(order)) {
+          const sh = (p as any).shows, fee = Number(sh.fee_ht) || 0;
+          const want = p.amount != null ? Number(p.amount) : p.pct != null ? Math.round(fee * Number(p.pct)) / 100 : null; if (!want) continue;
+          const cands = (byQuote[String(sh.pennylane_quote_id)] || []).sort((a, b) => Number(a.id) - Number(b.id));
+          const x = cands.find(c => !used.has('id:' + c.id) && !(c.invoice_number && used.has('n:' + norm(c.invoice_number))) && Math.abs(Number(c.currency_amount_before_tax) - want) < 0.05);
+          if (!x) continue;
+          used.add('id:' + x.id); if (x.invoice_number) used.add('n:' + norm(x.invoice_number));
+          await admin.from('show_payments').update({ pennylane_id: String(x.id), pennylane_url: linkOf(x), invoice_number: x.invoice_number || null }).eq('id', p.id);
+          linked.push(x.invoice_number);
+        }
+      }
       const { data: pays } = await admin.from('show_payments').select('id, show_id, kind, label, invoice_number, pennylane_id, paid_at, shows(date, city, venue)')
         .in('kind', ['acompte', 'solde', 'autre']).or('invoice_number.not.is.null,pennylane_id.not.is.null');
       const updated: any[] = [], pennylaneLate: any[] = [];
@@ -148,7 +169,7 @@ Deno.serve(async (req) => {
           pennylaneLate.push(`${p.invoice_number} · ${where} (payée le ${frDate(p.paid_at)} dans la Matrice)`);
         }
       }
-      return json({ ok: true, updated, pennylaneLate });
+      return json({ ok: true, updated, pennylaneLate, linked });
     }
 
     if (body.action === 'quote') {
@@ -194,6 +215,9 @@ Deno.serve(async (req) => {
         line = { ...(prod ? { product_id: prod.id } : {}), label: prod?.label || 'Commission • Booking', quantity: 1, unit: 'no_unit', raw_currency_unit_price: money(amount),
           vat_rate: vatCode(p.vat_rate ?? 20, st?.admin?.country || st?.country || 'France'),
           description: `Commission booking pour ${artist} • Concert le ${frDate(s.date)} • ${[s.city, s.venue].filter(Boolean).join(' • ')}` };
+      } else if (p.kind === 'acompte' || p.kind === 'solde') {
+        // comme dans Pennylane : acompte et solde se font depuis le devis (le solde déduit l'acompte), pas en facture isolée
+        return json({ error: 'L’acompte et le solde se facturent depuis le devis Pennylane (bouton « Facturer depuis le devis »)' }, 400);
       } else {
         if (!s.structure_id) return json({ error: 'La date n’a pas de structure (organisateur)' }, 400);
         st = (await admin.from('structures').select('*').eq('id', s.structure_id).single()).data;
