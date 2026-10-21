@@ -17,6 +17,8 @@ export async function loadAll(){
   TABLES.forEach((t,i) => { S.db[t] = res[i]; touch(t); });
   // espace de test : l'équipe = les comptes de la table app_users du projet de test
   if (!CFG.TEAM){ const {data} = await sb.from('app_users').select('*'); CFG.TEAM = (data || []).map(u => u.email); (data || []).forEach(u => { if (u.display_name) TEAM_NAMES[u.email] = u.display_name; }); }
+  // résumés IA restés en attente (IA saturée) : réessayés une fois les suivis chargés
+  S.dataLoaded = true; planRetries();
 }
 
 export async function fetchAll(table){
@@ -128,8 +130,9 @@ export async function refreshSummary(pid, {silent = true} = {}){
   const {data, error} = await sb.functions.invoke('resume-suivi', {body: {prospect_id: pid}, headers: {'x-region': 'eu-west-3'}});   // toujours à Paris
   let msg = error ? (await error.context?.json?.().catch(() => null))?.error || error.message : (!data?.summary ? data?.error || 'réponse vide' : null);
   if (msg){
-    // Gemini saturé : nouvel essai automatique un peu plus tard (même après avoir rechargé la page)
+    // Gemini saturé (ou réseau coupé) : nouvel essai automatique un peu plus tard (même après avoir rechargé la page)
     if (BUSY.test(msg)) { const at = queueSummary(pid); if (!silent) toast(`L’IA est saturée : nouvel essai automatique à ${hhmm(at)}`, true); render(); return null; }
+    dropSummary(pid);   // erreur durable (clé absente, suivi introuvable…) : pas de nouvel essai automatique
     if (/Aucune clé/.test(msg)) msg = 'Pas encore de clé IA : colle la clé Google AI Studio dans Réglages › IA.';
     if (!silent) toast('Résumé impossible : ' + msg, true);
     return null;
@@ -144,7 +147,7 @@ export async function refreshSummary(pid, {silent = true} = {}){
  * Résumés en attente (IA saturée) : gardés dans le navigateur avec l'heure du prochain essai,
  * réessayés de plus en plus tard (1, 2, 5, 10, 20, puis toutes les 30 min, 12 essais au plus).
  */
-const BUSY = /satur|surcharg|high demand|overload|unavailable|503|429|réessaie dans quelques minutes/i;
+const BUSY = /satur|surcharg|high demand|overload|unavailable|503|429|réessaie dans quelques minutes|failed to (send|fetch)|networkerror|load failed/i;
 const WAITS = [1, 2, 5, 10, 20, 30];
 const hhmm = t => new Date(t).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'});
 const readQueue = () => { try { return JSON.parse(localGet('summaryRetry') || '{}') || {}; } catch { return {}; } };
@@ -165,7 +168,7 @@ export function planRetries(){
   const q = readQueue(), next = Math.min(...Object.values(q).map(x => x.at));
   if (!Number.isFinite(next)) return;
   RETRY_TIMER = setTimeout(async () => {
-    if (!S.user){ RETRY_TIMER = setTimeout(planRetries, 30000); return; }
+    if (!S.user || !S.dataLoaded){ RETRY_TIMER = setTimeout(planRetries, 30000); return; }
     const now = Date.now();
     for (const [pid, x] of Object.entries(readQueue())){
       if (x.at > now) continue;
@@ -175,8 +178,6 @@ export function planRetries(){
     planRetries();
   }, Math.max(1000, next - Date.now()));
 }
-setTimeout(planRetries, 5000);   // essais restés en attente avant de recharger la page
-
 /** Supprime les lignes liées (tables sans cascade) */
 export async function removeWhere(table, col, val){
   const {error} = await sb.from(table).delete().eq(col, val);

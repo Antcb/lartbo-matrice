@@ -130,6 +130,8 @@ async function fileInvoices(list: { p: any; x: any }[]) {
   if (!set.drive_webhook_url) return { done: [], errors: [], left: list.length };
   const done: string[] = [], errors: string[] = [], started = Date.now();
   let i = 0;
+  // d'abord les factures jamais rangées
+  list.sort((a, b) => (a.p.drive_file_id ? 1 : 0) - (b.p.drive_file_id ? 1 : 0));
   for (; i < list.length && i < 10 && Date.now() - started < 60000; i++) {
     const { p, x } = list[i];
     const client = String(x.label || '').replace(/^(Facture|Avoir)\s+/i, '').replace(new RegExp('\\s*-\\s*' + x.invoice_number.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$'), '').trim();
@@ -140,8 +142,11 @@ async function fileInvoices(list: { p: any; x: any }[]) {
         body: JSON.stringify({ secret: set.drive_webhook_secret, action: 'file_invoice', number: x.invoice_number, name, url: x.public_file_url, date: x.date, folder_id: p.shows?.drive_folder_id || null }) });
       const out = await r.json().catch(() => ({ ok: false, error: 'réponse illisible du script Google' }));
       if (!out.ok) { errors.push(`${x.invoice_number} : ${/Action inconnue/i.test(out.error || '') ? 'script Google pas à jour (Réglages › Google)' : out.error}`); if (/Action inconnue/i.test(out.error || '')) break; continue; }
-      const f = (out.files || []).find((y: any) => y.where === 'date') || (out.files || [])[0];
-      if (f?.id) await admin.from('show_payments').update({ drive_file_id: f.id }).eq('id', p.id);
+      // rangée partout où il faut ? sinon on réessaiera au prochain passage
+      const inDate = (out.files || []).find((y: any) => y.where === 'date'), inCompta = (out.files || []).find((y: any) => y.where === 'compta');
+      if (out.date_error) errors.push(`${x.invoice_number} : dossier de la date inaccessible (${String(out.date_error).replace(/^(Exception|Error): /, '')})`);
+      const mark = inDate?.id && inCompta?.id ? inDate.id : !p.shows?.drive_folder_id && inCompta?.id ? 'compta:' + inCompta.id : null;
+      if (mark) await admin.from('show_payments').update({ drive_file_id: mark }).eq('id', p.id);
       if ((out.files || []).some((y: any) => !y.existed)) done.push(name.replace(/\.pdf$/, ''));
     } catch (e) { errors.push(`${x.invoice_number} : ${String(e).replace(/^Error: /, '')}`); }
   }
@@ -204,7 +209,9 @@ Deno.serve(async (req) => {
         if ((!p.invoice_number && x.invoice_number) || !p.pennylane_id)
           await admin.from('show_payments').update({ invoice_number: p.invoice_number || x.invoice_number || null, pennylane_id: String(x.id), pennylane_url: await invoicePage(x.id) || linkOf(x) }).eq('id', p.id);
         p.invoice_number = p.invoice_number || x.invoice_number || '';
-        if (!p.drive_file_id && x.invoice_number && x.public_file_url && x.status !== 'cancelled') toFile.push({ p, x });
+        // à ranger : jamais rangée, ou rangée seulement en compta alors que la date a maintenant un dossier
+        const filedAll = p.drive_file_id && !(String(p.drive_file_id).startsWith('compta:') && p.shows?.drive_folder_id);
+        if (!filedAll && x.invoice_number && x.public_file_url && x.status !== 'cancelled') toFile.push({ p, x });
         const where = `${frDate((p as any).shows?.date)} ${(p as any).shows?.city || ''}`.trim();
         const isPaid = x.paid === true && x.status !== 'cancelled';
         if (isPaid && !p.paid_at) {
