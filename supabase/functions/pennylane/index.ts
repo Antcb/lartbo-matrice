@@ -102,6 +102,15 @@ async function create(kind: 'quotes' | 'customer_invoices', body: any) {
   }
 }
 const linkOf = (o: any) => o?.public_file_url || null;
+/** Toutes les lignes d'une requête, page par page (Supabase rend 1 000 lignes au plus par lecture) */
+async function readAll(make: () => any) {
+  const out: any[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await make().order('id', { ascending: true }).range(from, from + 999);
+    if (error) throw new Error(error.message);
+    out.push(...(data || [])); if (!data || data.length < 1000) return out;
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -134,9 +143,9 @@ Deno.serve(async (req) => {
       for (const x of Object.values(byId)) if (x.quote?.id && x.status !== 'cancelled') (byQuote[String(x.quote.id)] ||= []).push(x);
       const linked: any[] = [];
       if (Object.keys(byQuote).length) {
-        const { data: open } = await admin.from('show_payments').select('id, show_id, kind, pct, amount, sort, invoice_number, pennylane_id, shows!inner(fee_ht, pennylane_quote_id)')
-          .in('kind', ['acompte', 'solde']).is('invoice_number', null).is('pennylane_id', null).not('shows.pennylane_quote_id', 'is', null);
-        const { data: taken } = await admin.from('show_payments').select('pennylane_id, invoice_number').or('invoice_number.not.is.null,pennylane_id.not.is.null');
+        const open = await readAll(() => admin.from('show_payments').select('id, show_id, kind, pct, amount, sort, invoice_number, pennylane_id, shows!inner(fee_ht, pennylane_quote_id)')
+          .in('kind', ['acompte', 'solde']).is('invoice_number', null).is('pennylane_id', null).not('shows.pennylane_quote_id', 'is', null));
+        const taken = await readAll(() => admin.from('show_payments').select('id, pennylane_id, invoice_number').or('invoice_number.not.is.null,pennylane_id.not.is.null'));
         const used = new Set<string>(); for (const t of taken || []) { if (t.pennylane_id) used.add('id:' + t.pennylane_id); if (t.invoice_number) used.add('n:' + norm(t.invoice_number)); }
         const order = (a: any, b: any) => (a.kind === b.kind ? (a.sort || 0) - (b.sort || 0) : a.kind === 'acompte' ? -1 : 1);
         for (const p of (open || []).sort(order)) {
@@ -150,8 +159,8 @@ Deno.serve(async (req) => {
           linked.push(x.invoice_number);
         }
       }
-      const { data: pays } = await admin.from('show_payments').select('id, show_id, kind, label, invoice_number, pennylane_id, paid_at, shows(date, city, venue)')
-        .in('kind', ['acompte', 'solde', 'autre']).or('invoice_number.not.is.null,pennylane_id.not.is.null');
+      const pays = await readAll(() => admin.from('show_payments').select('id, show_id, kind, label, invoice_number, pennylane_id, paid_at, shows(date, city, venue)')
+        .in('kind', ['acompte', 'solde', 'autre']).or('invoice_number.not.is.null,pennylane_id.not.is.null'));
       const updated: any[] = [], pennylaneLate: any[] = [];
       for (const p of pays || []) {
         const x = (p.pennylane_id && byId[String(p.pennylane_id)]) || (p.invoice_number && inv[norm(p.invoice_number)]); if (!x) continue;
