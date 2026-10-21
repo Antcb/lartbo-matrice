@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.39.1 — 21/10/2026
+- Résumé IA : abandon sur erreur durable, essais après chargement ; factures : rangement complet ou nouvel essai
+
+
 ## 1.39.0 — 21/10/2026
 - Artistes les plus utilisés en premier, mail .eml au journal, menu Types compact, en-têtes alignés, recherche structures par nom d'abord, factures Pennylane rangées dans le Drive, relances J+10 au lundi, recherche sélectionnée au clic, résumé IA réessayé automatiquement
 
