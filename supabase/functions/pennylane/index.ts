@@ -102,6 +102,11 @@ async function create(kind: 'quotes' | 'customer_invoices', body: any) {
   }
 }
 const linkOf = (o: any) => o?.public_file_url || null;
+/** Pages de l'application Pennylane (et pas le PDF) : devis et factures s'ouvrent directement, prêts à être modifiés */
+let COMPANY: string | null = null;
+async function company() { if (!COMPANY) { try { const me = await pl('GET', '/me'); COMPANY = me?.company?.id ? String(me.company.id) : null; } catch (_) { /* */ } } return COMPANY; }
+const quotePage = async (id: any) => { const c = await company(); return c ? `https://app.pennylane.com/companies/${c}/clients/customer_estimates?estimate_id=${id}` : null; };
+const invoicePage = async (id: any) => { const c = await company(); return c ? `https://app.pennylane.com/companies/${c}/clients/customer_invoices?invoice_id=${id}&subtab=all` : null; };
 /** Toutes les lignes d'une requête, page par page (Supabase rend 1 000 lignes au plus par lecture) */
 async function readAll(make: () => any) {
   const out: any[] = [];
@@ -155,7 +160,7 @@ Deno.serve(async (req) => {
           const x = cands.find(c => !used.has('id:' + c.id) && !(c.invoice_number && used.has('n:' + norm(c.invoice_number))) && Math.abs(Number(c.currency_amount_before_tax) - want) < 0.05);
           if (!x) continue;
           used.add('id:' + x.id); if (x.invoice_number) used.add('n:' + norm(x.invoice_number));
-          await admin.from('show_payments').update({ pennylane_id: String(x.id), pennylane_url: linkOf(x), invoice_number: x.invoice_number || null }).eq('id', p.id);
+          await admin.from('show_payments').update({ pennylane_id: String(x.id), pennylane_url: await invoicePage(x.id) || linkOf(x), invoice_number: x.invoice_number || null }).eq('id', p.id);
           linked.push(x.invoice_number);
         }
       }
@@ -164,7 +169,9 @@ Deno.serve(async (req) => {
       const updated: any[] = [], pennylaneLate: any[] = [];
       for (const p of pays || []) {
         const x = (p.pennylane_id && byId[String(p.pennylane_id)]) || (p.invoice_number && inv[norm(p.invoice_number)]); if (!x) continue;
-        if (!p.invoice_number && x.invoice_number) await admin.from('show_payments').update({ invoice_number: x.invoice_number }).eq('id', p.id);
+        // numéro et lien vers la page de la facture dans Pennylane, s'ils manquent
+        if ((!p.invoice_number && x.invoice_number) || !p.pennylane_id)
+          await admin.from('show_payments').update({ invoice_number: p.invoice_number || x.invoice_number || null, pennylane_id: String(x.id), pennylane_url: await invoicePage(x.id) || linkOf(x) }).eq('id', p.id);
         p.invoice_number = p.invoice_number || x.invoice_number || '';
         const where = `${frDate((p as any).shows?.date)} ${(p as any).shows?.city || ''}`.trim();
         const isPaid = x.paid === true && x.status !== 'cancelled';
@@ -199,7 +206,7 @@ Deno.serve(async (req) => {
         invoice_lines: [{ ...(prod ? { product_id: prod.id } : {}), label: prod?.label || 'Production de Spectacles • ' + CONTRACT_LABEL[k], quantity: 1, unit: 'no_unit',
           raw_currency_unit_price: money(fee), vat_rate: vatCode(s.vat_rate ?? 5.5, country) }],
       });
-      return json({ ok: true, id: q.id, number: q.quote_number || null, url: linkOf(q), headers });
+      return json({ ok: true, id: q.id, number: q.quote_number || null, url: await quotePage(q.id) || linkOf(q), headers });
     }
 
     if (body.action === 'invoice') {
@@ -246,7 +253,7 @@ Deno.serve(async (req) => {
         ...(tpl.invoice ? { customer_invoice_template_id: tpl.invoice } : {}),
         custom_header_fields: headerFields, invoice_lines: [line],
       });
-      return json({ ok: true, id: inv.id, number: inv.invoice_number || null, url: linkOf(inv), headers });
+      return json({ ok: true, id: inv.id, number: inv.invoice_number || null, url: await invoicePage(inv.id) || linkOf(inv), headers });
     }
     return json({ error: 'Action inconnue' }, 400);
   } catch (err) {

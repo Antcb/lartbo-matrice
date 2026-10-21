@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.38.2 — 21/10/2026
+- Pennylane : « Facturer depuis le devis » et « Facture ↗ » ouvrent directement la page du devis / de la facture
+
+
 ## 1.38.1 — 21/10/2026
 - Relecture : synchro Pennylane lit toutes les pages ; paiements rechargés sans perdre les changements en direct
 
