@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.40.0 — 21/10/2026
+- Budget : résumé prévu / à jour cohérent, lignes rangées par catégorie, orange réservé aux calculs remplacés, remboursement d'avance lisible ; onglets Production dans l'ordre du travail ; dossier artiste : copie complète en plusieurs fois
+
+
 ## 1.39.2 — 21/10/2026
 - Résumé IA : un seul passage d'essais à la fois
 

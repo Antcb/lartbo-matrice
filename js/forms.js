@@ -147,7 +147,10 @@ export async function createArtistFolder(projectId){
   document.querySelectorAll('.toast').forEach(x => x.remove()); document.body.appendChild(t);
   S.folderPending = projectId; render();
   try {
-    const out = await callScript('artist_folder', {project_id: projectId});
+    // Google coupe un appel au bout de 6 min : le script s'arrête avant (done:false) et on le relance, la copie reprend où elle en était
+    let out = await callScript('artist_folder', {project_id: projectId});
+    for (let i = 0; out.done === false && i < 8; i++){ t.textContent = 'Copie du modèle dans le dossier de l’artiste… (suite, tu peux continuer)'; out = await callScript('artist_folder', {project_id: projectId}); }
+    if (out.done === false) throw new Error('la copie du modèle n’est pas terminée : reclique sur « Créer le dossier Drive » pour la finir');
     const p = byId('projects', projectId); if (p) p.drive_artist_folder_id = out.folder_id;
     S.folderPending = null; touch('projects'); render();
     toast(out.created ? 'Dossier Drive de l’artiste créé' : 'Dossier Drive de l’artiste retrouvé et relié', false, out.url ? {label: 'Ouvrir', fn: () => window.open(out.url, '_blank')} : null);
