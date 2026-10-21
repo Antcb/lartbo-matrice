@@ -3,6 +3,8 @@
 Plan établi le 22/10/2026 à partir de `CLAUDE.md`, `CONVENTIONS.md`, `DESIGN_SYSTEM.md`, `QA_CHECKLIST.md` (branche `docs/referentiel`), de l'audit du code, des analyses Greptile antérieures (PR n°1 ; la question du 21/10 à 21 h 51 UTC sur les zones à risque de régression est restée **sans réponse** — non vérifié par Greptile) et d'une lecture seule de Supabase (projets `Lartbo-matrice` et `Lartbo-matrice-test`).
 **Statut : proposition, en attente de validation d'Anthony. Aucun lot n'est commencé.**
 
+> **Mise à jour du 22/10/2026** : les fiches S0, F1 et S1 à S7 sont remplacées par l'annexe détaillée [`PLAN_SECURITE.md`](PLAN_SECURITE.md) (constat sur les secrets, nouvel ordre, vérifications de Q19).
+
 Règles qui s'appliquent à chaque lot : `CLAUDE.md` (dont §8, autorisation Q0), tests avant intégration, `QA_CHECKLIST.md` adaptée, revue Greptile à 0 remarque, une branche par lot, **aucune fusion dans `main` sans l'accord d'Anthony**, aucune donnée historique supprimée, aucune table ou fonction supprimée sans autorisation spécifique.
 
 ---
