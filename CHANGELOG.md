@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.39.2 — 21/10/2026
+- Résumé IA : un seul passage d'essais à la fois
+
+
 ## 1.39.1 — 21/10/2026
 - Résumé IA : abandon sur erreur durable, essais après chargement ; factures : rangement complet ou nouvel essai
 

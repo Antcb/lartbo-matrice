@@ -152,7 +152,7 @@ const WAITS = [1, 2, 5, 10, 20, 30];
 const hhmm = t => new Date(t).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'});
 const readQueue = () => { try { return JSON.parse(localGet('summaryRetry') || '{}') || {}; } catch { return {}; } };
 const writeQueue = q => localSet('summaryRetry', JSON.stringify(q));
-let RETRY_TIMER = null;
+let RETRY_TIMER = null, RETRYING = false;   // un seul passage d'essais à la fois
 function queueSummary(pid){
   const q = readQueue(), n = (q[pid]?.n || 0) + 1;
   if (n > 12){ delete q[pid]; writeQueue(q); toast('Résumé IA abandonné après plusieurs essais : clique « Mettre à jour avec l’IA » plus tard', true); return Date.now(); }
@@ -164,17 +164,21 @@ function dropSummary(pid){ const q = readQueue(); if (q[pid]){ delete q[pid]; wr
 /** Prochain essai prévu pour ce suivi (heure), ou null */
 export const summaryRetryAt = pid => readQueue()[pid]?.at || null;
 export function planRetries(){
+  if (RETRYING) return;   // le passage en cours reprogramme lui-même la suite
   clearTimeout(RETRY_TIMER);
   const q = readQueue(), next = Math.min(...Object.values(q).map(x => x.at));
   if (!Number.isFinite(next)) return;
   RETRY_TIMER = setTimeout(async () => {
     if (!S.user || !S.dataLoaded){ RETRY_TIMER = setTimeout(planRetries, 30000); return; }
     const now = Date.now();
-    for (const [pid, x] of Object.entries(readQueue())){
-      if (x.at > now) continue;
-      if (!byId('prospects', pid)){ dropSummary(pid); continue; }
-      await refreshSummary(pid);
-    }
+    RETRYING = true;
+    try {
+      for (const [pid, x] of Object.entries(readQueue())){
+        if (x.at > now) continue;
+        if (!byId('prospects', pid)){ dropSummary(pid); continue; }
+        await refreshSummary(pid);
+      }
+    } finally { RETRYING = false; }
     planRetries();
   }, Math.max(1000, next - Date.now()));
 }
