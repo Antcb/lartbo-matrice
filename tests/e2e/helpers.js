@@ -18,7 +18,11 @@ export async function preparePage(page, { session = true } = {}) {
   page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
   page.on('dialog', d => { errors.push('fenêtre native : ' + d.type() + ' — ' + d.message()); d.dismiss().catch(() => {}); });
   if (!session) await page.addInitScript(() => { window.__NO_SESSION = true; });
-  await page.route('**/*', route => {
+  // Blocage au niveau du navigateur entier (onglets ouverts par un lien compris), y compris les WebSockets
+  const context = page.context();
+  context.on('page', p => p.on('request', r => { if (FORBIDDEN.test(r.url())) external.push('nouvel onglet : ' + r.url().replace(/[?#].*$/, '')); }));
+  await context.routeWebSocket(/.*/, ws => { external.push('websocket : ' + ws.url().replace(/[?#].*$/, '')); ws.close(); });
+  await context.route('**/*', route => {
     const u = route.request().url();
     if (u.startsWith('http://127.0.0.1:4173/')) return route.continue();
     if (/supabase-js/.test(u)) return route.fulfill({ body: MOCK, contentType: 'text/javascript' });

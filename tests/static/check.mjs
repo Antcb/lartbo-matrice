@@ -1,14 +1,14 @@
 // Contrôles sans navigateur (quelques secondes) :
-//  1. syntaxe de chaque fichier JavaScript ;
+//  1. syntaxe de chaque fichier JavaScript (analyse par acorn) ;
 //  2. chaque nom importé existe bien dans le module visé ;
 //  3. carte d'import (index.html) complète et à la version de js/config.js ;
 //  4. le nombre de fenêtres natives (alert / confirm / prompt) n'augmente pas (référence : baselines/fenetres-natives.json) ;
-//  5. aucun secret écrit dans les fichiers du dépôt.
+//  5. aucun secret écrit dans les fichiers du dépôt (tous les fichiers suivis par Git, tests compris).
 // Usage : node static/check.mjs            (contrôle)
 //         node static/check.mjs --baseline (réécrit la référence des fenêtres natives, seulement si leur nombre a BAISSÉ)
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { parse, tokenizer } from 'acorn';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,34 +23,43 @@ const JS = walk(join(ROOT, 'js'), p => p.endsWith('.js')).sort();
 const problems = [];
 const fail = (cat, msg) => problems.push(`[${cat}] ${msg}`);
 
-// 1. Syntaxe (chaque fichier est vérifié comme module ES par Node)
-const tmp = mkdtempSync(join(tmpdir(), 'matrice-'));
+// 1. Syntaxe et 2. imports : analyse réelle du code (acorn), pas d'expressions régulières
+const parsed = new Map();
 for (const f of JS) {
-  const copy = join(tmp, rel(f).replace(/\//g, '__') + '.mjs');
-  writeFileSync(copy, readFileSync(f));
-  try { execFileSync(process.execPath, ['--check', copy], { stdio: 'pipe' }); }
-  catch (e) { fail('syntaxe', `${rel(f)} : ${String(e.stderr).split('\n').find(l => /Error/.test(l)) || 'erreur'}`); }
+  try { parsed.set(resolve(f), { ast: parse(readFileSync(f, 'utf8'), { ecmaVersion: 'latest', sourceType: 'module' }), src: readFileSync(f, 'utf8') }); }
+  catch (e) { fail('syntaxe', `${rel(f)} : ${e.message}`); }
 }
-rmSync(tmp, { recursive: true, force: true });
-
-// 2. Imports nommés présents dans le module visé
 const exportsOf = new Map();
-const namesExported = src => {
-  const out = new Set();
-  for (const m of src.matchAll(/export\s+(?:async\s+)?(?:function\*?|const|let|var|class)\s+([\w$]+)/g)) out.add(m[1]);
-  for (const m of src.matchAll(/export\s*\{([^}]*)\}/g)) m[1].split(',').map(s => s.trim().split(/\s+as\s+/).pop()).filter(Boolean).forEach(n => out.add(n));
-  if (/export\s+default\b/.test(src)) out.add('default');
-  return out;
+const namesExported = (file, seen = new Set()) => {
+  if (exportsOf.has(file)) return exportsOf.get(file);
+  if (seen.has(file)) return new Set(); seen.add(file);
+  const out = new Set(), m = parsed.get(file);
+  if (!m) return out;
+  for (const n of m.ast.body) {
+    if (n.type === 'ExportNamedDeclaration') {
+      if (n.declaration?.id) out.add(n.declaration.id.name);
+      n.declaration?.declarations?.forEach(d => d.id.type === 'Identifier' && out.add(d.id.name));
+      n.specifiers.forEach(s => out.add(s.exported.name ?? s.exported.value));
+    }
+    if (n.type === 'ExportDefaultDeclaration') out.add('default');
+    if (n.type === 'ExportAllDeclaration') {
+      if (n.exported) out.add(n.exported.name);
+      else namesExported(resolve(dirname(file), n.source.value.replace(/\?.*$/, '')), seen).forEach(x => x !== 'default' && out.add(x));
+    }
+  }
+  exportsOf.set(file, out); return out;
 };
-for (const f of JS) exportsOf.set(resolve(f), namesExported(readFileSync(f, 'utf8')));
-for (const f of JS) {
-  const src = readFileSync(f, 'utf8');
-  for (const m of src.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"](\.{1,2}\/[^'"]+)['"]/g)) {
-    const target = resolve(dirname(f), m[2].replace(/\?.*$/, ''));
-    const ex = exportsOf.get(target);
-    if (!ex) { fail('imports', `${rel(f)} importe un fichier introuvable : ${m[2]}`); continue; }
-    for (const n of m[1].split(',').map(s => s.trim().split(/\s+as\s+/)[0]).filter(Boolean))
-      if (!ex.has(n)) fail('imports', `${rel(f)} importe « ${n} » que ${rel(target)} n'exporte pas`);
+for (const [file, { ast }] of parsed) {
+  for (const n of ast.body) {
+    if (n.type !== 'ImportDeclaration' || !/^\.{1,2}\//.test(n.source.value)) continue;
+    const target = resolve(dirname(file), n.source.value.replace(/\?.*$/, ''));
+    if (!/\.js$/.test(target) || !target.startsWith(join(ROOT, 'js'))) continue;   // bibliothèques copiées (assets/vendor) : hors contrôle
+    if (!parsed.has(target)) { fail('imports', `${rel(file)} importe un fichier introuvable : ${n.source.value}`); continue; }
+    const ex = namesExported(target);
+    for (const s of n.specifiers) {
+      const name = s.type === 'ImportDefaultSpecifier' ? 'default' : s.type === 'ImportSpecifier' ? (s.imported.name ?? s.imported.value) : null;
+      if (name && !ex.has(name)) fail('imports', `${rel(file)} importe « ${name} » que ${rel(target)} n'exporte pas`);
+    }
   }
 }
 
@@ -70,9 +79,20 @@ for (const page of ['index.html', 'fiche.html', 'rh.html', 'artiste.html']) {
 }
 
 // 4. Fenêtres natives : interdites (CONVENTIONS §4.5). Le nombre actuel est toléré, il ne doit jamais augmenter.
+// Comptage sur les jetons du code (chaînes, gabarits et commentaires ignorés) : alert( / window.confirm( / self['prompt'](…
+const NATIVE = new Set(['alert', 'confirm', 'prompt']), GLOBAL = new Set(['window', 'globalThis', 'self', 'top', 'parent']);
 const countNative = src => {
-  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
-  return (code.match(/(?<![\w$.])(?:window\.)?(?:alert|confirm|prompt)\s*\(/g) || []).length;
+  const tk = [...tokenizer(src, { ecmaVersion: 'latest', sourceType: 'module' })];
+  let n = 0;
+  for (let i = 0; i < tk.length; i++) {
+    const t0 = tk[i], next = tk[i + 1], prev = tk[i - 1], prev2 = tk[i - 2];
+    const isName = t0.type.label === 'name' && NATIVE.has(t0.value);
+    if (isName && next?.type.label === '(' && (prev?.type.label !== '.' || (prev2?.type.label === 'name' && GLOBAL.has(prev2.value)))) n++;
+    // window['confirm'](…) / window["alert"](…)
+    if (t0.type.label === 'string' && NATIVE.has(t0.value) && prev?.type.label === '[' && prev2?.type.label === 'name' && GLOBAL.has(prev2.value)
+        && tk[i + 1]?.type.label === ']' && tk[i + 2]?.type.label === '(') n++;
+  }
+  return n;
 };
 const now = {};
 for (const f of JS) { const n = countNative(readFileSync(f, 'utf8')); if (n) now[rel(f)] = n; }
@@ -98,7 +118,10 @@ const SECRET = [
   [/\bsk-ant-[A-Za-z0-9_-]{20,}/, 'clé Anthropic'],
   [/\bAIza[0-9A-Za-z_-]{35}\b/, 'clé Google'],
 ];
-const scanned = walk(ROOT, p => /\.(js|mjs|gs|ts|html|json|md|sql|py|yml|yaml|txt|css)$/.test(p) && !rel(p).startsWith('tests/'));
+let files;
+try { files = execFileSync('git', ['ls-files', '-co', '--exclude-standard'], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean).map(f => join(ROOT, f)); }
+catch { files = walk(ROOT, () => true); }
+const scanned = files.filter(p => { try { const s = statSync(p); return s.isFile() && s.size < 2_000_000 && !/\.(png|jpe?g|gif|ico|pdf|woff2?|zip|gz)$/i.test(p); } catch { return false; } });
 for (const f of scanned) {
   const src = readFileSync(f, 'utf8');
   for (const [re, label] of SECRET) if (re.test(src)) fail('secrets', `${rel(f)} contient ce qui ressemble à une ${label} (valeur non affichée)`);

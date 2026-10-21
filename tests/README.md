@@ -2,7 +2,8 @@
 
 Tout tourne **en local** : la base Supabase est remplacée par une fausse base en mémoire
 (`fixtures/mock-supabase.js`, données fictives), et toute requête vers un service réel
-(Supabase, Google, Brevo, Pennylane…) est bloquée et fait échouer le test. Aucun secret n'est utilisé.
+(Supabase, Google, Brevo, Pennylane…), y compris depuis un onglet ouvert par un lien ou par WebSocket,
+est bloquée et fait échouer le test (un test vérifie ce garde-fou lui-même). Aucun secret n'est utilisé.
 
 ## Lancer
 ```
@@ -17,7 +18,7 @@ de fusion vers `main` (`.github/workflows/tests.yml`). En cas d'échec, le rappo
 ## Contenu
 | Fichier | Vérifie |
 |---|---|
-| `static/check.mjs` | syntaxe de chaque module, imports nommés existants, carte d'import à la version de `js/config.js`, **nombre de fenêtres natives qui n'augmente pas**, aucun secret écrit dans le dépôt |
+| `static/check.mjs` | analyse du code par acorn : syntaxe de chaque module, imports nommés existants, carte d'import à la version de `js/config.js`, **nombre de fenêtres natives qui n'augmente pas**, aucun secret dans les fichiers suivis par Git (tests compris) |
 | `e2e/demarrage.spec.js` | démarrage, chaque onglet sur ordinateur et téléphone (sans erreur, sans « NaN » ni « undefined »), écran de connexion |
 | `e2e/modules.spec.js` | chargement de chaque module dans la page |
 | `e2e/parcours.spec.js` | terminer une tâche, confirmer une date, filtre par artiste |

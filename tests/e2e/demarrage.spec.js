@@ -30,3 +30,18 @@ test('sans session, l’écran de connexion s’affiche', async ({ page }) => {
   await expect(page.locator('#login-pw')).toBeVisible();
   expectClean(ctx);
 });
+
+test('le garde-fou réseau détecte tout appel à un service réel (page, nouvel onglet, WebSocket)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.evaluate(() => {
+    fetch('https://exemple-interdit.supabase.co/rest/v1/x').catch(() => {});
+    const a = Object.assign(document.createElement('a'), { href: 'https://script.google.com/macros/s/exemple/exec', target: '_blank', id: 'lien-test', textContent: 'lien de test' });
+    a.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:#fff';
+    document.body.appendChild(a);
+    try { new WebSocket('wss://exemple-interdit.supabase.co/realtime'); } catch {}
+  });
+  await page.locator('#lien-test').click();
+  await expect.poll(() => ctx.external.length).toBeGreaterThanOrEqual(3);
+  expect(ctx.external.join(' ')).toMatch(/https:\/\/script\.google\.com/);
+  expect(ctx.external.join(' ')).toMatch(/websocket : wss:\/\/exemple-interdit/);
+});
