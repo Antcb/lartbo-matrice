@@ -77,7 +77,7 @@ rh.html               questionnaire salarié : fiche + pièces (lien unique par 
 
 ## Publier une mise à jour
 
-1. Faire la modification.
+1. Faire la modification, puis lancer les tests automatiques (`cd tests && npm ci && npm test`, voir [`tests/README.md`](tests/README.md)). Ils tournent aussi sur GitHub à chaque push sur une branche de développement et à chaque demande de fusion vers `main`.
 2. Incrémenter la version et noter ce qui change :
    ```
    python3 tools/bump_version.py patch "Correction …"      # 1.6.0 → 1.6.1
