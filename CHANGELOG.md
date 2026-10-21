@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.38.1 — 21/10/2026
+- Relecture : synchro Pennylane lit toutes les pages ; paiements rechargés sans perdre les changements en direct
+
+
 ## 1.38.0 — 21/10/2026
 - Pennylane : acompte et solde facturés depuis le devis (comme avant) ; la synchro reprend seule leur numéro et leur paiement
 
