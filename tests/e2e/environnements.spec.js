@@ -188,6 +188,8 @@ test('7. les données du navigateur de la production restent intactes (anciennes
     'artbo.logdraft.pr-1': JSON.stringify({ body: 'ANCIEN JOURNAL PROD' }),
     'fiche-brouillon-jeton-fiche-test-0001': JSON.stringify({ city_admin: 'ANCIENNE SAISIE ORGANISATEUR' }),
     'artiste.jeton-artiste-test-0001': JSON.stringify({ bio: 'ANCIENNE SAISIE ARTISTE' }),
+    // session de connexion de la bibliothèque Supabase (valeur fictive) : jamais touchée par l'application
+    'sb-ypvvjoqhzddzbmerypdc-auth-token': JSON.stringify({ fictif: true }),
   };
   await page.evaluate(o => { localStorage.clear(); Object.entries(o).forEach(([k, v]) => localStorage.setItem(k, v)); }, OLD);
   await openEnv(page, 'prod');
@@ -277,5 +279,29 @@ test('4 ter. brouillon d’une page publique : séparé entre lien de test et vr
   await expect(page.locator(`#fiche-form [name="${name}"]`)).not.toHaveValue(MARK);
   await page.goto('/fiche.html?t=jeton-fiche-test-0001&test');
   await expect(page.locator(`#fiche-form [name="${name}"]`)).toHaveValue(MARK);
+  expectClean(ctx);
+});
+
+// GitHub Pages peut servir une page publique sous d'autres adresses (sans « .html », majuscules selon le serveur…) :
+// on simule ce serveur en renvoyant le vrai fiche.html / artiste.html / rh.html à ces adresses. Le marqueur de la page
+// (<body class="fiche-page">) suffit : quelle que soit l'adresse, le navigateur resté en test n'influence jamais la page.
+test('4 quater. adresses servies autrement par le site (sans .html, majuscules, barre finale) : bon environnement', async ({ page }) => {
+  const { readFileSync } = await import('node:fs');
+  const ctx = await openApp(page);
+  const VARIANTES = [['/fiche', 'fiche.html'], ['/FICHE.html', 'fiche.html'], ['/fiche/', 'fiche.html'], ['/Artiste', 'artiste.html'], ['/rh', 'rh.html']];
+  for (const [path, file] of VARIANTES) {
+    await page.route(u => new URL(u).pathname === path, r => r.fulfill({ contentType: 'text/html', body: readFileSync(new URL('../../' + file, import.meta.url), 'utf8')
+      .replace(/(href|src)="(?!https?:|\/)/g, '$1="/') }));
+  }
+  for (const [path] of VARIANTES) {
+    await openEnv(page, 'test');
+    await page.goto(`${path}?t=jeton-inconnu`);
+    await expect.poll(() => page.evaluate(() => window.__clientUrls), { message: path }).toEqual([expect.stringContaining(PROD)]);
+    expect(await page.evaluate(() => localStorage.getItem('artbo.env')), path).toBe('test');
+    await page.evaluate(() => localStorage.removeItem('artbo.env'));
+    await page.goto(`${path}?t=jeton-inconnu&test`);
+    await expect.poll(() => page.evaluate(() => window.__clientUrls), { message: path }).toEqual([expect.stringContaining(TEST)]);
+    expect(await page.evaluate(() => localStorage.getItem('artbo.env')), path).toBeNull();
+  }
   expectClean(ctx);
 });
