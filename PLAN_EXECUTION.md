@@ -5,7 +5,7 @@ Plan établi le 22/10/2026 à partir de `CLAUDE.md`, `CONVENTIONS.md`, `DESIGN_S
 
 > **Mise à jour du 22/10/2026** : les fiches S0, F1 et S1 à S7 sont remplacées par l'annexe détaillée [`PLAN_SECURITE.md`](PLAN_SECURITE.md) (constat sur les secrets, nouvel ordre, vérifications de Q19).
 
-Règles qui s'appliquent à chaque lot : `CLAUDE.md` (dont §8, autorisation Q0), tests avant intégration, `QA_CHECKLIST.md` adaptée, revue Greptile à 0 remarque, une branche par lot, **aucune fusion dans `main` sans l'accord d'Anthony**, aucune donnée historique supprimée, aucune table ou fonction supprimée sans autorisation spécifique.
+Règles qui s'appliquent à chaque lot : `CLAUDE.md` (dont §8, autorisation Q0), tests avant intégration, `QA_CHECKLIST.md` adaptée, relecture indépendante sans bloquant (`CLAUDE.md` §6), une branche par lot, **aucune fusion dans `main` sans l'accord d'Anthony**, aucune donnée historique supprimée, aucune table ou fonction supprimée sans autorisation spécifique.
 
 ---
 
@@ -558,7 +558,7 @@ Format de chaque lot : priorité · problèmes corrigés · fichiers · Supabase
 2. Suite de tests (`tests/`) verte, avec les nouveaux tests du lot ; `pageerror` vide.
 3. `QA_CHECKLIST.md` remplie : aucun **É** non accepté par Anthony ; chaque **NV** expliqué.
 4. Modifications Supabase appliquées et vérifiées **d'abord sur le projet de test**, sauvegarde de production vérifiée (S1) et lignes concernées exportées avant toute opération sensible.
-5. Revue Greptile à **0 remarque** (ou réfutation écrite).
+5. Relecture indépendante : **aucun bloquant** (ou réfutation écrite) — `CLAUDE.md` §6.
 6. Captures avant/après pour tout changement visible (ordinateur, tablette, téléphone).
 7. Compte rendu remis à Anthony (changements, interventions manuelles, É/NV).
 8. **Accord explicite d'Anthony**, puis fusion, `bump_version.py`, mise en ligne ; vérification en production des points sans risque ; documents du référentiel mis à jour (passage des éléments « à créer » / [CORRECTION] en [EN PLACE]).

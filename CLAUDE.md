@@ -40,7 +40,7 @@ Les règles marquées **[DÉCIDÉ Qn]** ont été arbitrées par Anthony (Q0 à 
 ## 5. Publier une modification (procédure obligatoire)
 La branche `main` est protégée (règle GitHub) : **aucun push direct**, passage obligatoire par une demande de fusion (Pull Request), tests automatiques au vert, branche à jour avec `main`, historique linéaire, aucun push forcé ni suppression, aucune exception. Toute fusion dans `main` = mise en ligne GitHub Pages.
 
-1. **Branche dédiée** par lot (`dev/<lot>-<sujet>`), créée depuis `main` à jour. Jamais de travail directement sur `main`.
+1. **Branche dédiée** par lot (`dev/<lot>-<sujet>`), créée depuis `main` à jour, pour les seules modifications autorisées. Jamais de travail directement sur `main`. Relire d'abord les quatre documents de référence (`CLAUDE.md`, `CONVENTIONS.md`, `DESIGN_SYSTEM.md`, `QA_CHECKLIST.md`).
 2. **Tests avant intégration** : `cd tests && npm ci && npm test` (contrôles statiques + navigateur) avec un nouveau test pour toute correction (`CONVENTIONS.md` §9), puis contrôles de `QA_CHECKLIST.md` adaptés aux parties modifiées et à leurs régressions transversales. Les tests ne doivent jamais utiliser de secret ni de donnée réelle.
 3. **Version** : `python3 tools/bump_version.py patch|minor "description en français"` pour toute modification de l'application (pas pour une modification limitée aux tests ou à la documentation) — **jamais** de modification manuelle de `APP_VERSION`, du `CHANGELOG.md` ou des `?v=`. Tout nouveau module JS impose de relancer le script (carte d'import).
 4. **Commit** (`vX.Y.Z : …` en français) puis push de la **branche** ; vérifier que le contrôle GitHub Actions `tests` est au vert sur le commit exact.
@@ -52,10 +52,14 @@ La branche `main` est protégée (règle GitHub) : **aucun push direct**, passag
 10. **Après la fusion** : GitHub réécrit les identifiants de commit (méthode « rebase ») — vérifier que le **contenu** publié est identique au commit relu (`git rev-parse <commit>^{tree}` identique à `main^{tree}`), que les tests ont tourné sur `main` et que GitHub Pages a publié sans erreur ; signaler toute anomalie avant toute autre intervention.
 
 ## 6. Relecture indépendante
-- Toute modification destinée à `main` est relue par un **agent qui n'a pas participé au développement** (relecture gratuite ; Greptile n'est plus utilisé, crédits d'essai épuisés le 21/10/2026).
-- Le relecteur travaille sur une **copie propre du commit exact**, sans rien modifier, sans accès aux services de production, et rend un verdict « bloquants : aucun » ou une liste avec preuves.
-- Après correction, nouvelle relecture sur le nouveau commit exact.
-- Si la relecture n'a pas pu être faite : l'écrire dans le compte rendu (« relecture non obtenue ») ; pas de demande de fusion dans ce cas.
+Greptile n'est plus utilisé (crédits d'essai épuisés le 21/10/2026). Contrôle QA : `QA_CHECKLIST.md` section Q.
+- **Qui** : un agent de relecture **distinct** (une autre instance de Claude, lancée sans l'historique du développement), qui n'a écrit aucune ligne du lot. Ce n'est pas une auto-évaluation par l'agent développeur, mais ce n'est pas non plus une personne ni un outil d'un autre éditeur : même famille de modèle, consignes rédigées par l'agent développeur. Ces limites figurent dans chaque compte rendu.
+- **Déclenchement** : par l'agent développeur à la fin du lot, avant toute demande de fusion, avec le commit exact, le périmètre, les règles du référentiel et les interdits (aucune modification, aucun accès aux services de production).
+- **Examen** : sur une **copie propre du commit exact** : différences avec `main`, exécution des tests, essais de contournement et de régression propres au relecteur, sécurité, impacts transversaux, conformité au référentiel. Verdict « bloquants : aucun » ou liste avec preuves (fichier:ligne, commande, résultat), plus les points facultatifs et ce qui n'a pas été vérifié.
+- **Traitement des remarques** : chaque remarque est corrigée, ou réfutée avec justification écrite, dans le compte rendu à Anthony.
+- **Vérification des corrections** : le **même relecteur** relance ses essais sur le **nouveau commit exact** ; on répète jusqu'à « bloquants : aucun ». Les tests automatiques (`tests`) doivent aussi être au vert sur ce commit.
+- Si la relecture n'a pas pu être faite : l'écrire (« relecture non obtenue ») ; **pas de demande de fusion** dans ce cas.
+- **Complément proposé, non activé** : analyse automatique de sécurité CodeQL de GitHub (gratuite pour un dépôt public), à activer sur décision d'Anthony.
 
 ## 7. Interdits
 - Supprimer ou réécrire en masse des données Supabase, lancer une migration destructive (`drop`, suppression de colonne, `delete` massif) sans accord explicite.

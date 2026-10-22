@@ -2,6 +2,8 @@
 
 Annexe de `PLAN_EXECUTION.md`, établie le 22/10/2026 à la demande d'Anthony. **Elle remplace les fiches S0, F1 et S1 à S7 de `PLAN_EXECUTION.md`.**
 Statut : **proposition, aucun lot autorisé.** Toutes les vérifications ci-dessous ont été faites **en lecture seule** : aucune modification de l'application, de Supabase ni des scripts Google.
+
+> **État au 22/10/2026** : **S1** terminé (vérifications manuelles d'Anthony comprises), **F1-a** et **S5-a** terminés et en production (v1.40.1), tests aussi exécutés à chaque push sur `main`. Principes validés, non développés : **F11** (fenêtre « Modifier » d'un échange : seuls les champs réellement modifiés sont enregistrés, le contenu d'un mail n'est jamais réécrit s'il n'a pas été modifié) et **S1-b** (seconde copie mensuelle chiffrée, indépendante de GitHub ; architecture à valider : restauration complète, fichiers modifiés ou supprimés, limites de Google Apps Script, conservation de la clé privée, restauration sans compte GitHub). Secret du script de prospection : migration et rotation dans S3-b / S3-c.
 Aucune valeur de secret n'apparaît dans ce document. Les comparaisons avec l'historique Git ont été faites par empreinte (hachage), sans afficher les valeurs.
 
 ---
@@ -335,6 +337,6 @@ Restent **non vérifiés** avant B13 : le test de concurrence réel, la tenue de
 1. Tests de `tests/` au vert, avec les nouveaux tests du lot.
 2. Lots touchant Supabase : appliqués **d'abord sur la recette (S0)** ; sauvegarde vérifiée (S1) ; export des lignes concernées.
 3. `QA_CHECKLIST.md` (sections S, E et celles touchées) remplie : aucun **É** non accepté, chaque **NV** expliqué.
-4. Revue Greptile à 0 remarque, ou réfutation écrite.
+4. Relecture indépendante sans bloquant (`CLAUDE.md` §6), ou réfutation écrite.
 5. Aucune valeur de secret dans le code, les commits, les journaux ni les comptes rendus. Contrôle par empreinte avant chaque push des lots S2 et S3.
 6. Accord explicite d'Anthony, puis fusion, `bump_version.py`, mise en ligne, et vérification en production.
