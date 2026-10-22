@@ -5,6 +5,7 @@
  */
 import { DEFAULT_DEPARTMENTS, PRIORITY_LABEL, TEAM_NAMES, isOff } from './constants.js';
 import { lingering } from './data.js';
+import { ENV } from './config.js';
 import { S } from './state.js';
 import { daysUntil, fmtDate } from './utils.js';
 
@@ -27,6 +28,16 @@ export const structName = id => byId('structures', id)?.name || '';
 export const teamName = email => TEAM_NAMES[email] || (email ? email.split('@')[0] : '');
 
 export function setting(k){ const s = S.db.settings.find(x=>x.key===k); return s ? s.value : null; }
+
+/** Lien d'une page publique (fiche, artiste, salarié). En test, « &test » est ajouté : le lien ouvre la base de test (jamais
+ *  la vraie fiche) et se reconnaît. Même règle pour le lien {{lien_fiche}} des mails (fonction SQL mail_vars, complété
+ *  dans js/mail.js mailVars). */
+export function publicLink(page, token, extra = ''){
+  const base = setting('site_url') || location.origin + location.pathname.replace(/[^/]*$/, '');
+  return base + page + '.html?t=' + token + extra + (ENV === 'test' ? '&test' : '');
+}
+/** Texte d'un message « lien copié » : précise « de test » dans l'espace de test */
+export const linkLabel = what => ENV === 'test' ? `${what} (lien de TEST)` : what;
 
 /** Dates du projet et de l'année choisis (filtres de la vue) */
 /**

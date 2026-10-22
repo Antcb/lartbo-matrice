@@ -1,15 +1,20 @@
 /**
  * Réglages : adresse et clé publique Supabase, équipe autorisée, numéro de version.
  */
-export const APP_VERSION = '1.40.2';   // ← incrémenté par tools/bump_version.py (voir CHANGELOG.md)
+export const APP_VERSION = '1.40.3';   // ← incrémenté par tools/bump_version.py (voir CHANGELOG.md)
 
 /**
- * Espace de test : …/lartbo-matrice/?test bascule ce navigateur sur une copie séparée de la Matrice
- * (projet Supabase « Lartbo-matrice-test ») ; …/?prod revient à la vraie. Rien de ce qui est fait en test ne touche la vraie Matrice.
+ * Espace de test : …/lartbo-matrice/?test bascule l'application de ce navigateur sur le projet Supabase « Lartbo-matrice-test »
+ * (base séparée) ; …/?prod revient à la vraie Matrice. Les données gardées dans le navigateur (brouillons, file des résumés IA,
+ * préférences) sont séparées entre les deux (js/storage.js). Limites connues : voir le bandeau de l'espace de test.
+ * Pages publiques (fiche.html, artiste.html, rh.html) : l'environnement vient UNIQUEMENT de leur propre lien (« test » dans
+ * l'adresse) ; le choix gardé par le navigateur est ignoré et jamais modifié, pour qu'un vrai lien ouvre toujours la vraie Matrice.
  */
+export const PUBLIC_PAGE = /(^|\/)(fiche|artiste|rh)\.html$/.test(location.pathname);
 export const ENV = (() => {
   try {
     const q = new URLSearchParams(location.search);
+    if (PUBLIC_PAGE) return q.has('test') ? 'test' : 'prod';
     if (q.has('test')) localStorage.setItem('artbo.env', 'test');
     if (q.has('prod')) localStorage.removeItem('artbo.env');
     return localStorage.getItem('artbo.env') === 'test' ? 'test' : 'prod';

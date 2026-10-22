@@ -8,7 +8,7 @@ import { BILL_KINDS, billPct, paymentsOf, payVat } from './calc.js';
 import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
 import { insert, openStored, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb } from './data.js';
 import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
-import { departments, attachmentsOf, byId, filesOf, logsOf, projIds, projNames, setting, showsFiltered, structName } from './selectors.js';
+import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showsFiltered, structName } from './selectors.js';
 import { CFG } from './config.js';
 import { propagateCommission } from './commission.js';
 import { S, localSet, setProjects, touch } from './state.js';
@@ -92,11 +92,11 @@ export const ACTIONS = {
   editTemplate: t => editTemplate(t.dataset.id),
   newTemplate: t => editTemplate(null, {...(t.dataset.project ? {project_id: t.dataset.project, project_ids: [t.dataset.project]} : {}), ...(t.dataset.kind ? {kind: t.dataset.kind} : {})}),
   copyFiche: async t => { const s = byId('shows', t.dataset.id);
-    const link = (setting('site_url') || location.origin + location.pathname.replace(/[^/]*$/, '')) + 'fiche.html?t=' + s.fiche_token;
-    try { await navigator.clipboard.writeText(link); toast('Lien de la fiche copié'); } catch { prompt('Lien de la fiche :', link); } },
+    const link = publicLink('fiche', s.fiche_token);
+    try { await navigator.clipboard.writeText(link); toast(linkLabel('Lien de la fiche copié')); } catch { prompt('Lien de la fiche :', link); } },
   copyArtistLink: async t => { const p = byId('projects', t.dataset.id); if (!p?.artist_token) return toast('Lien pas encore prêt : recharge la page', true);
     const {artistLink} = await import('./views/projects.js'); const link = artistLink(p);
-    try { await navigator.clipboard.writeText(link); toast('Lien de la fiche artiste copié'); } catch { prompt('Lien de la fiche artiste :', link); } },
+    try { await navigator.clipboard.writeText(link); toast(linkLabel('Lien de la fiche artiste copié')); } catch { prompt('Lien de la fiche artiste :', link); } },
   validateFiche: t => validateFiche(t.dataset.id),
   genContract: t => generateContract(t.dataset.id),
   contractPdf: t => exportContractPdf(t.dataset.id),
