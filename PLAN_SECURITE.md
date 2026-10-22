@@ -287,24 +287,25 @@ Aucune valeur de secret n'apparaît dans ce document. Les comparaisons avec l'hi
 - **Modifications** :
   - authentification vérifiée **avant** toute lecture du corps de la requête ou des réglages ;
   - avant authentification : réponse générique (« Requête refusée » / « Erreur interne ») ;
-  - après authentification : messages métier en français conservés ; erreur inattendue → « Erreur interne (réf. …) », détail écrit dans les journaux Supabase (`console.error`) seulement.
+  - après authentification : messages métier en français conservés ; erreur inattendue → « Erreur interne (réf. …) », détail écrit dans les journaux Supabase (`console.error`) seulement ;
+  - **clé Gemini passée dans l'en-tête `x-goog-api-key` au lieu de l'adresse** (`lire-piece` l.42 et 63, `resume-suivi` l.36 et 57) : aujourd'hui, une erreur réseau de Deno recopie l'adresse complète, clé comprise, dans le message renvoyé au navigateur de l'équipe (relevé par la relecture indépendante ; aucune trace trouvée en base au 22/10/2026 : `client_errors`, suivis, journaux, notifications vérifiés).
 - **Supabase** : redéploiement des fonctions concernées, **d'abord sur le projet de test** (S0).
 - **Dépendances** : S0, F1-a ; après S2 et S3-a (mêmes fichiers pour `backup-export` et `brevo-sync`).
 - **Risques** : messages moins détaillés pour l'équipe sur une erreur imprévue (diagnostic par les journaux Supabase) ; sauvegarde quotidienne (`backup-export`) à vérifier le lendemain.
 - **Tests** : appel sans session, avec corps invalide, avec session hors équipe → réponse générique ; appel de l'équipe → messages métier inchangés ; sauvegarde de la nuit suivante réussie.
 - **Intervention d'Anthony** : aucune.
-- **Validation** : alertes CodeQL n°1 à 5 fermées par correction (pas par rejet manuel) ; fonctions en ligne identiques au dépôt.
+- **Validation** : alertes CodeQL n°1 à 5 fermées par correction (pas par rejet manuel) ; aucune clé dans une adresse appelée par une fonction serveur ; fonctions en ligne identiques au dépôt.
 
 ### S9 — Bibliothèques externes copiées localement (alerte CodeQL n°6)
 - **Objectif** : ne plus exécuter de code chargé depuis un service tiers (cdnjs, jsDelivr) sur les pages de la Matrice.
-- **Fichiers** : `index.html`, `fiche.html`, `rh.html`, `artiste.html` ; nouveaux dossiers `assets/vendor/supabase-js-2.45.4/` et `assets/vendor/leaflet-1.9.4/` (script, feuille de style, images des marqueurs, licences) ; `tests/e2e/helpers.js` (la fausse base doit remplacer le fichier local).
+- **Fichiers** : `index.html`, `fiche.html`, `rh.html`, `artiste.html`, **`js/exports.js`** (ExcelJS 4.4.0 chargé depuis cdnjs au moment d'un export) ; nouveaux dossiers `assets/vendor/supabase-js-2.45.4/`, `assets/vendor/leaflet-1.9.4/` (script, feuille de style, images des marqueurs, licences) et `assets/vendor/exceljs-4.4.0/` ; `tests/e2e/helpers.js` (la fausse base doit remplacer le fichier local).
 - **Modifications** : mêmes versions qu'aujourd'hui (aucun changement de comportement), provenance vérifiée comme pour DOMPurify (paquet npm officiel + empreintes notées). Les polices Google restent externes (feuille de style seulement, pas de script).
 - **Supabase** : aucune.
 - **Dépendances** : F1-a ; aucune autre. Peut passer avant S0.
 - **Risques** : carte sans icônes si les images de Leaflet manquent ; page publique cassée si un chemin est faux → tests des 4 pages et contrôle visuel de la carte.
-- **Tests** : suite complète ; nouveau contrôle statique : aucun `<script src="http…">` dans les pages HTML.
+- **Tests** : suite complète, dont un export Excel ; nouveau contrôle statique : aucune adresse de script externe (`http…`) ni dans les pages HTML ni dans `js/` (balises et chargements dynamiques).
 - **Intervention d'Anthony** : contrôle visuel de la carte (onglet Booking) après mise en ligne.
-- **Validation** : alerte CodeQL n°6 fermée par correction ; aucune requête vers cdnjs ou jsDelivr au chargement.
+- **Validation** : alerte CodeQL n°6 fermée par correction ; aucune requête vers cdnjs ou jsDelivr, ni au chargement ni lors d'un export.
 
 ## 4. Suppression différée (Q19) : vérifications avant de figer l'architecture
 
@@ -378,11 +379,11 @@ Analyse faite à partir du code (`main` = v1.40.1) ; les détails des alertes ne
 |---|---|---|---|---|---|
 | n°1 `backup-export` (stack trace) | `catch` renvoie `err.message` (pas la pile) ; l'appel exige le code de sauvegarde ; message accessible avant contrôle seulement si la lecture du code secret échoue | **limité** : messages techniques (noms de tables, erreurs Postgres) à un appelant déjà autorisé | message générique, détail dans les journaux | S2 (même fichier) | basse |
 | n°2 `brevo-sync` | lecture des réglages **avant** le contrôle du code d'accès ; une panne renverrait l'erreur à n'importe qui ; après contrôle, erreurs Brevo renvoyées | **limité** | contrôle d'accès d'abord, message générique avant contrôle | S3-a | basse |
-| n°3 `lire-piece` | corps de la requête lu **avant** `is_team()` : un appel anonyme mal formé reçoit l'erreur de lecture JSON | **faible** (aucune donnée, seulement l'erreur de format) | contrôle d'abord, message générique | S8 | basse |
-| n°4 `resume-suivi` | même schéma que n°3 | **faible** | idem | S8 | basse |
+| n°3 `lire-piece` | corps de la requête lu **avant** `is_team()` : un appel anonyme mal formé reçoit l'erreur de lecture JSON ; **de plus**, la clé Gemini est dans l'adresse appelée et une erreur réseau la recopierait dans le message renvoyé à l'équipe | **limité** pour l'appel anonyme ; **réel mais restreint à l'équipe** pour la clé (aucune trace en base) | contrôle d'abord, message générique, clé en en-tête | S8 | **moyenne** |
+| n°4 `resume-suivi` | même schéma que n°3, clé Gemini comprise | idem n°3 | idem | S8 | **moyenne** |
 | n°5 `pennylane` | contrôle `is_team()` en premier ; seuls des membres de l'équipe reçoivent les erreurs | **très faible** (équipe seulement) | erreur inattendue → message générique + journal | S8 | basse |
-| n°6 `index.html` (source non fiable) | Supabase JS (jsDelivr) et Leaflet (cdnjs) chargés **sans empreinte d'intégrité** sur les 4 pages ; versions figées | **réel mais improbable** : une compromission du service tiers exécuterait du code avec la session de l'équipe (données, secrets en mémoire) | copie locale vérifiée (comme DOMPurify) | **S9** (nouveau) | moyenne |
+| n°6 `index.html` (source non fiable) | Supabase JS (jsDelivr, 4 pages), Leaflet (cdnjs, `index.html`) et ExcelJS (cdnjs, au moment d'un export, `js/exports.js`) chargés **sans empreinte d'intégrité** ; versions figées | **réel mais improbable** : une compromission du service tiers exécuterait du code avec la session de l'équipe (données, secrets en mémoire) | copie locale vérifiée (comme DOMPurify) | **S9** (nouveau) | moyenne |
 
-**Urgence** : aucune alerte n'exige d'intervention immédiate. Aucune pile d'appels n'est renvoyée (seulement des messages), et les cas exposés à un appel anonyme ne révèlent pas de donnée. L'alerte n°6 est la plus sérieuse : elle ne dépend pas d'une faille du code mais d'un tiers ; S9 est proposé en premier lot de code.
+**Urgence** : aucune alerte n'exige d'intervention immédiate. Aucune pile d'appels n'est renvoyée (seulement des messages) ; les cas exposés à un appel anonyme ne révèlent pas de donnée ; la clé Gemini ne pourrait apparaître que chez l'équipe connectée, en cas d'erreur réseau, et aucune trace n'a été trouvée. L'alerte n°6 est la plus sérieuse : elle ne dépend pas d'une faille du code mais d'un tiers ; S9 est proposé en premier lot de code.
 
 **Effet sur le fonctionnement actuel** : S9 ne change aucune version de bibliothèque (risque : chemins, images de la carte) ; S8 garde les messages métier de l'équipe (risque : erreurs imprévues moins détaillées à l'écran, détail dans les journaux).
