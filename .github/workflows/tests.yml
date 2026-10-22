@@ -1,9 +1,9 @@
-# Tests automatiques de la Matrice : à chaque push sur une branche de développement
+# Tests automatiques de la Matrice : à chaque push (branches de développement et main)
 # et à chaque demande de fusion vers main. Aucune connexion à la production, aucun secret.
 name: Tests
 on:
   push:
-    branches-ignore: [main]
+    branches: ['**']
   pull_request:
     branches: [main]
   workflow_dispatch: {}

@@ -13,7 +13,7 @@ npm ci            # une seule fois
 npm test          # contrôles statiques + tests navigateur (≈ 30 s)
 npm run test:static
 ```
-Sur GitHub, les mêmes tests tournent à chaque push sur une branche de développement et à chaque demande
+Sur GitHub, les mêmes tests tournent à chaque push (branches de développement et `main`) et à chaque demande
 de fusion vers `main` (`.github/workflows/tests.yml`). En cas d'échec, le rapport est joint à l'exécution.
 
 ## Contenu
