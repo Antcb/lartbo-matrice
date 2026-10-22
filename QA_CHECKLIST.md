@@ -215,4 +215,5 @@ Procédure complète : `CLAUDE.md` §6. Greptile n'est plus utilisé (crédits d
 | GR4 | Après correction : **nouvelle relecture sur le nouveau commit exact**, jusqu'à « bloquants : aucun ». Si la relecture n'a pas pu être faite : **NV** (« relecture non obtenue »), jamais V, et pas de demande de fusion. |
 | GR5 | Contrôle GitHub Actions `tests` au vert sur le commit exact ; branche à jour avec `main`. |
 | GR6 | Demande de fusion (Pull Request) ouverte après le compte rendu ; fusion seulement après l'accord explicite d'Anthony. |
-| GR7 | Après fusion : contenu de `main` identique au commit relu (`git rev-parse <commit>^{tree}` = `main^{tree}`), tests sur `main` au vert, GitHub Pages publié sans erreur. |
+| GR7 | Analyse CodeQL : aucune alerte nouvelle introduite par le lot ; alertes existantes concernées traitées ou expliquées dans le compte rendu. |
+| GR8 | Après fusion : contenu de `main` identique au commit relu (`git rev-parse <commit>^{tree}` = `main^{tree}`), tests sur `main` au vert, GitHub Pages publié sans erreur. |

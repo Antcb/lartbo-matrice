@@ -59,7 +59,7 @@ Greptile n'est plus utilisé (crédits d'essai épuisés le 21/10/2026). Contrô
 - **Traitement des remarques** : chaque remarque est corrigée, ou réfutée avec justification écrite, dans le compte rendu à Anthony.
 - **Vérification des corrections** : le **même relecteur** relance ses essais sur le **nouveau commit exact** ; on répète jusqu'à « bloquants : aucun ». Les tests automatiques (`tests`) doivent aussi être au vert sur ce commit.
 - Si la relecture n'a pas pu être faite : l'écrire (« relecture non obtenue ») ; **pas de demande de fusion** dans ce cas.
-- **Complément proposé, non activé** : analyse automatique de sécurité CodeQL de GitHub (gratuite pour un dépôt public), à activer sur décision d'Anthony.
+- **Complément automatique** : analyse de sécurité **CodeQL** de GitHub, activée par Anthony le 22/10/2026. Toute alerte nouvelle ou modifiée par un lot est analysée dans le compte rendu (réelle, limitée ou faux positif) ; une alerte n'est fermée que par une correction, ou par un rejet justifié validé par Anthony.
 
 ## 7. Interdits
 - Supprimer ou réécrire en masse des données Supabase, lancer une migration destructive (`drop`, suppression de colonne, `delete` massif) sans accord explicite.

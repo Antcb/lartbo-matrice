@@ -41,6 +41,8 @@ Durée : non estimée en jours ; chaque lot est conçu pour être livré et vali
 
 ---
 
+> **Ajout du 22/10/2026** : alertes CodeQL analysées dans `PLAN_SECURITE.md` §7 ; nouveaux lots **S8** (messages d'erreur des fonctions serveur) et **S9** (bibliothèques externes copiées localement, proposé comme premier lot de code après l'intégration du référentiel).
+
 ## 3. Dépendances techniques importantes
 
 - **S0 (recette à jour)** est requis par tout lot qui touche Supabase.
