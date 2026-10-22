@@ -128,8 +128,8 @@ purifier.addHook('uponSanitizeAttribute', (node, data) => {
 });
 purifier.addHook('afterSanitizeAttributes', node => {
   // liens : ouverts dans un autre onglet, sans accès à la Matrice
-  if (node.tagName === 'A' && node.hasAttribute('href')){ node.setAttribute('target', '_blank'); node.setAttribute('rel', 'noopener noreferrer'); }
-  // mise en forme : un mail ne peut pas se superposer à l'application
+  if ((node.tagName === 'A' || node.tagName === 'AREA') && node.hasAttribute('href')){ node.setAttribute('target', '_blank'); node.setAttribute('rel', 'noopener noreferrer'); }
+  // mise en forme : un mail ne peut pas se superposer à l'application (le bloc .log-mail le contient aussi : contain:paint)
   if (node.style && /^(fixed|absolute|sticky)$/i.test(node.style.position)) node.style.removeProperty('position');
 });
 // Réglages : seulement des interdictions ajoutées aux règles par défaut de DOMPurify, pour garder la mise en page des mails

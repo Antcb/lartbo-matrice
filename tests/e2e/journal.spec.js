@@ -49,3 +49,23 @@ test('changer seulement la date ne réenregistre pas le mail (à corriger, lot d
   expect(ecrit.flat(), 'le contenu du mail ne doit pas faire partie de l’enregistrement').not.toContain('body_html');
   expectClean(ctx);
 });
+
+test('un mail ne peut pas recouvrir l’application (classes, variables CSS, dialog)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.evaluate(async () => {
+    const { S, touch } = await import('./js/state.js');
+    const voile = 'width:100vw;height:100vh;top:0;left:0;z-index:99999;background:red';
+    S.db.prospect_logs.find(l => l.id === 'lg-2').body_html =
+      `<div class="toast" style="${voile}">A</div><div style="--p:fixed;position:var(--p);${voile}">B</div><dialog open style="${voile}">C</dialog><div class="ac-list" style="${voile}">D</div>`;
+    touch('prospect_logs');
+  });
+  await ouvrirSuivi(page);
+  const fuite = await page.evaluate(() => {
+    const box = document.querySelector('.log-mail').getBoundingClientRect();
+    const pts = [[5, 5], [innerWidth - 5, 5], [innerWidth / 2, 20], [5, innerHeight - 5], [innerWidth - 5, innerHeight - 5]]
+      .filter(([x, y]) => x < box.left || x > box.right || y < box.top || y > box.bottom);
+    return pts.filter(([x, y]) => document.elementFromPoint(x, y)?.closest('.log-mail')).map(p => p.join(','));
+  });
+  expect(fuite, 'points de l’écran hors du bloc recouverts par le mail').toEqual([]);
+  expectClean(ctx);
+});
