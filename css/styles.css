@@ -545,7 +545,7 @@ input[type=range]{accent-color:var(--brand);flex:1;min-width:120px}
 .mail-grid{display:grid;grid-template-columns:110px 1fr;gap:8px 12px;align-items:center;margin:10px 0}
 .mail-grid>label{font-weight:600;font-size:13px;color:var(--muted)}
 .mail-to{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.mail-preview{border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;background:#fff;min-height:220px;max-height:52vh;overflow:auto;font-size:14px;line-height:1.45}
+.mail-preview{border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;background:#fff;min-height:220px;max-height:52vh;overflow:auto;font-size:14px;line-height:1.45;isolation:isolate;contain:paint}
 .mail-preview:focus{outline:2px solid var(--brand-2);outline-offset:1px}
 .conf-check{background:var(--soft);border-radius:var(--r);padding:10px 12px;font-size:13px;display:grid;gap:4px;margin-bottom:6px}
 .conf-check.warn{background:#FFF6E0}

@@ -50,7 +50,7 @@ test('changer seulement la date ne réenregistre pas le mail (à corriger, lot d
   expectClean(ctx);
 });
 
-test('un mail ne peut pas recouvrir l’application (classes, variables CSS, dialog)', async ({ page }) => {
+for (const ou of ['journal', 'fenêtre « Modifier »']) test(`un mail ne peut pas recouvrir l’application — ${ou} (classes, variables CSS, dialog)`, async ({ page }) => {
   const ctx = await openApp(page);
   await page.evaluate(async () => {
     const { S, touch } = await import('./js/state.js');
@@ -60,12 +60,14 @@ test('un mail ne peut pas recouvrir l’application (classes, variables CSS, dia
     touch('prospect_logs');
   });
   await ouvrirSuivi(page);
-  const fuite = await page.evaluate(() => {
-    const box = document.querySelector('.log-mail').getBoundingClientRect();
+  const sel = ou === 'journal' ? '.log-mail' : '#modal #log-html';
+  if (ou !== 'journal') await page.locator('[data-act="editLog"][data-id="lg-2"]').click();
+  const fuite = await page.evaluate(sel => {
+    const box = document.querySelector(sel).getBoundingClientRect();
     const pts = [[5, 5], [innerWidth - 5, 5], [innerWidth / 2, 20], [5, innerHeight - 5], [innerWidth - 5, innerHeight - 5]]
       .filter(([x, y]) => x < box.left || x > box.right || y < box.top || y > box.bottom);
-    return pts.filter(([x, y]) => document.elementFromPoint(x, y)?.closest('.log-mail')).map(p => p.join(','));
-  });
+    return pts.filter(([x, y]) => document.elementFromPoint(x, y)?.closest(sel)).map(p => p.join(','));
+  }, sel);
   expect(fuite, 'points de l’écran hors du bloc recouverts par le mail').toEqual([]);
   expectClean(ctx);
 });
