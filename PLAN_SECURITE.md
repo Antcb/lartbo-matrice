@@ -29,7 +29,7 @@ Aucune valeur de secret n'apparaît dans ce document. Les comparaisons avec l'hi
 **Conclusion : aucun accès possible pour une personne non autorisée par les voies normales.** Le risque est réel mais **indirect**.
 
 ### 1.3 Expositions résiduelles (à traiter)
-1. **Injection dans un mail importé (principal risque).** Le texte des mails importés (`.eml` reçus de l'extérieur) est affiché dans le journal par `safeHtml`. Ce nettoyage laisse passer deux formes de lien piégé (lien SVG `xlink:href`, et lien `javascript:` coupé par un caractère invisible). Si Anthony ou Chloé cliquent sur un tel lien, un code pourrait lire en mémoire la clé Brevo et le code des scripts, puis les envoyer à l'extérieur. Il faut un clic, et ce n'est pas observé à ce jour, mais c'est la seule voie réaliste. → **S5-a, en premier.**
+1. **Nettoyage du HTML des mails (risque faible, corrigé par S5-a).** *Corrigé le 22/10/2026 après audit du code.* Le premier diagnostic présentait les mails importés comme la voie principale de fuite : **c'est inexact**. Un mail importé (`.eml`) est converti en **texte brut** avant d'être enregistré (`js/eml.js`) et s'affiche comme du texte échappé. Le HTML affiché dans le journal (`prospect_logs.body_html`) ne vient que des mails **rédigés dans la Matrice** (modèles de l'équipe, valeurs échappées par `fill`) et de ce qui est collé dans l'éditeur (nettoyé en partie par le navigateur). Le défaut de l'ancien `safeHtml` est réel (un lien piégé s'exécutait au clic, vérifié par test), mais il n'est **pas exploitable depuis l'extérieur** par un mail reçu. S5-a reste utile (défense en profondeur), sans être prioritaire. → **S5-a**.
 2. **Navigateurs de l'équipe** : les secrets sont dans la mémoire de la page et affichés dans Réglages (code des scripts en clair, bouton « copier »). Une extension de navigateur malveillante ou un poste partagé peuvent les lire. → S2, S3.
 3. **Dépôt de sauvegarde privé** : `backup-export` exporte la table `settings`, donc les trois secrets se trouvent dans `lartbo-matrice-backup`. **Non vérifié** : qui a accès à ce dépôt. → S1.
 4. **Script de prospection** : le secret est écrit en clair dans le code de `Prospection.gs` (copié depuis Réglages), alors que `Code.gs` le range déjà dans les propriétés du script. → S3-b.
@@ -40,8 +40,8 @@ Aucune valeur de secret n'apparaît dans ce document. Les comparaisons avec l'hi
 - **Gestes immédiats sans développement (Anthony)** :
   1. vérifier qui a accès au dépôt privé `lartbo-matrice-backup` (seul Anthony, idéalement) ;
   2. dans Brevo, vérifier l'historique d'activité de la clé API et la liste des IP autorisées, puis activer la restriction d'IP si l'offre le permet (**à vérifier**) ;
-  3. ne pas ouvrir les liens des mails importés depuis le journal tant que S5-a n'est pas en ligne.
-- **Premier lot de code recommandé : S5-a**, qui ferme la seule voie d'exfiltration réaliste. Il est petit et ne touche ni Supabase ni les scripts.
+  3. ~~ne pas ouvrir les liens des mails importés~~ : consigne retirée le 22/10/2026, inutile (voir 1.3, point 1).
+- **Premier lot de code** : S5-a reste proposé tôt parce qu'il est petit et sans risque, pas parce qu'il fermerait une voie d'exfiltration réaliste.
 
 ---
 
@@ -64,7 +64,7 @@ Aucune valeur de secret n'apparaît dans ce document. Les comparaisons avec l'hi
 | continu | **F1-b…** enrichissement des tests | `tests/` | aucune |
 
 **Écarts par rapport au plan initial :**
-- S5 est coupé en deux et S5-a passe en tête, car c'est la vraie voie d'exposition.
+- S5 est coupé en deux et S5-a passe en tête : petit lot sans risque, déjà prêt (le premier diagnostic le présentait à tort comme la voie principale d'exposition, voir 1.3).
 - S0 vient après S5-a, car S5-a ne touche pas Supabase : il n'attend pas la recette.
 - F1 est coupé en deux : un socle minimal tout de suite (F1-a), puis un enrichissement lot par lot. Les tests ne retardent donc pas les correctifs.
 
@@ -113,19 +113,19 @@ Aucune valeur de secret n'apparaît dans ce document. Les comparaisons avec l'hi
   - tests SQL sur la recette (déclencheurs, rappels).
 
 ### S5-a — Nettoyage HTML renforcé (premier correctif)
-- **Objectif** : empêcher qu'un mail importé exécute du code dans la Matrice.
+- **Objectif** : empêcher que le HTML d'un mail affiché dans le journal exécute du code (défense en profondeur ; les `.eml` importés sont stockés en texte brut, voir 1.3).
 - **Fichiers et services** : `js/utils.js` (`safeHtml`), avec vérification de ses appelants (`js/views/suivi.js` journal, aperçus de mail).
 - **Modifications** :
-  - nettoyage par **liste d'éléments et d'attributs autorisés** au lieu d'une liste d'interdits ;
-  - liens limités à `https:`, `http:`, `mailto:`, `tel:` après normalisation (caractères invisibles retirés) ;
-  - suppression de `svg`, `math`, `xlink:href`, `srcdoc`, `formaction` ;
-  - images limitées à `https:` et `cid:`.
-  - Pas de bibliothèque externe, sauf accord (une bibliothèque libre comme DOMPurify est une option).
-- **Risques** : mise en forme d'anciens mails un peu appauvrie (couleurs ou tableaux complexes) ; images intégrées en `data:` qui ne s'affichent plus.
+  - **DOMPurify 3.4.16** (décision d'Anthony du 22/10/2026), copié dans `assets/vendor/`, provenance vérifiée (npm et GitHub officiels) ;
+  - HTML seulement (ni SVG ni MathML), formulaires, cadres et `<style>` retirés ;
+  - adresses limitées à `https:`, `http:`, `mailto:`, `tel:`, `cid:` ou relatives, caractères invisibles ignorés ; images `data:image/` permises ;
+  - attributs de mise en page conservés (largeur, alignement, couleurs, fusion de cellules) ;
+  - liens ouverts dans un nouvel onglet (`noopener noreferrer`), positionnement fixe retiré, bloc du mail isolé.
+- **Risques** : faibles. L'affichage ne modifie aucun mail stocké (vérifié par test) ; seule l'édition d'un échange réenregistre le mail, comportement antérieur à S5-a, traité dans un lot dédié.
 - **Dépendances** : F1-a (tests unitaires de `safeHtml`).
-- **Tests** : une trentaine d'entrées piégées connues (aucune ne s'exécute) ; affichage de 10 mails réels du journal avant/après, par captures comparées.
-- **Intervention d'Anthony** : valider les captures. Choisir entre notre propre liste et DOMPurify.
-- **Validation** : aucune entrée piégée ne s'exécute ; les mails réels restent lisibles ; revue Greptile à 0 remarque.
+- **Tests** : 34 entrées piégées (aucune ne s'exécute), 30 contournements essayés par la relecture indépendante, 5 mails représentatifs fictifs comparés à l'ancien nettoyage (texte, liens, images, mise en page), journal et fenêtre « Modifier » sans écriture en base. Les mails réels n'ont pas été utilisés (aucune donnée réelle dans les tests).
+- **Intervention d'Anthony** : autoriser la fusion ; contrôler à l'écran quelques mails réels du journal après mise en ligne.
+- **Validation** : aucune entrée piégée ne s'exécute ; les mails restent lisibles ; relecture indépendante sans bloquant (Greptile indisponible : crédits d'essai épuisés).
 
 ### S0 — Remettre l'environnement de recette à niveau
 - **Objectif** : pouvoir tester toute modification Supabase **sans toucher la production**.
@@ -327,7 +327,7 @@ Restent **non vérifiés** avant B13 : le test de concurrence réel, la tenue de
 | **S3-c** | Quelques minutes d'actions Google en échec | heure creuse, en présence d'Anthony |
 | **S4** | Page publique cassée si une fonction perd ses droits | liste croisée des fonctions publiques ; contrôle immédiat des 3 pages |
 | **S2 / S3-a** (étape de retrait) | Synchronisation Brevo coupée | retrait seulement après 48 h de bon fonctionnement par le coffre |
-| **S5-a** | Anciens mails moins bien affichés | captures avant/après validées |
+| **S5-a** | Anciens mails moins bien affichés | mise en page comparée à l'ancien nettoyage par test ; contrôle visuel après mise en ligne |
 
 ---
 
