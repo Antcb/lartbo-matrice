@@ -40,8 +40,19 @@ test('le garde-fou réseau détecte tout appel à un service réel (page, nouvel
     document.body.appendChild(a);
     try { new WebSocket('wss://exemple-interdit.supabase.co/realtime'); } catch {}
   });
+  const shared = await page.evaluate(() => { try { new SharedWorker('data:text/javascript,1'); return 'créé'; } catch (e) { return 'refusé'; } });
+  expect(shared, 'SharedWorker').toBe('refusé');
   await page.locator('#lien-test').click();
   await expect.poll(() => ctx.external.length).toBeGreaterThanOrEqual(3);
   expect(ctx.external.join(' ')).toMatch(/https:\/\/script\.google\.com/);
   expect(ctx.external.join(' ')).toMatch(/websocket : wss:\/\/exemple-interdit/);
+});
+
+test('seconde barrière : aucun domaine extérieur joignable, même hors du routage des tests', async ({ browser }) => {
+  const c = await browser.newContext(), p = await c.newPage();   // contexte SANS routage
+  for (const u of ['https://example.com/', 'https://exemple-interdit.supabase.co/rest/v1/', 'http://example.com/']) {
+    const r = await p.goto(u).then(() => 'joint', e => (e.message.match(/net::\w+/) || ['erreur'])[0]);
+    expect(r, u).toBe('net::ERR_NAME_NOT_RESOLVED');
+  }
+  await c.close();
 });

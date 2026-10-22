@@ -15,15 +15,20 @@ export default defineConfig({
     locale: 'fr-FR',
     timezoneId: 'Europe/Paris',
     trace: 'retain-on-failure',
-    // Seconde barrière, au niveau du navigateur : aucun nom de domaine extérieur ne peut être résolu.
-    // Même si une requête échappait au routage des tests, elle ne pourrait atteindre aucun service réel.
-    launchOptions: { args: ['--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1'] },
+    // Seconde barrière, au niveau du navigateur : aucun nom de domaine extérieur ne peut être résolu, et aucun
+    // proxy n'est utilisé (sinon le proxy résoudrait les noms à la place du navigateur). Même si une requête
+    // échappait au routage des tests, elle ne pourrait atteindre aucun service réel.
+    launchOptions: {
+      args: ['--no-proxy-server', '--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1'],
+      env: { ...process.env, HTTPS_PROXY: '', https_proxy: '', HTTP_PROXY: '', http_proxy: '', ALL_PROXY: '', all_proxy: '' },
+    },
+    serviceWorkers: 'block',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } }],
   webServer: {
     command: 'node serve.mjs',
     url: 'http://127.0.0.1:4173/index.html',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,   // toujours un serveur neuf : jamais le code d'une autre copie du dépôt
     timeout: 20_000,
   },
 });

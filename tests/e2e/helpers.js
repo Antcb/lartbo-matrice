@@ -18,6 +18,8 @@ export async function preparePage(page, { session = true } = {}) {
   page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
   page.on('dialog', d => { errors.push('fenêtre native : ' + d.type() + ' — ' + d.message()); d.dismiss().catch(() => {}); });
   if (!session) await page.addInitScript(() => { window.__NO_SESSION = true; });
+  // Les SharedWorker échappent au routage de Playwright : interdits dans les tests (l'application n'en utilise pas)
+  await page.addInitScript(() => { window.SharedWorker = function () { throw new Error('SharedWorker interdit pendant les tests'); }; });
   // Blocage au niveau du navigateur entier (onglets ouverts par un lien compris), y compris les WebSockets
   const context = page.context();
   context.on('page', p => p.on('request', r => { if (FORBIDDEN.test(r.url())) external.push('nouvel onglet : ' + r.url().replace(/[?#].*$/, '')); }));
