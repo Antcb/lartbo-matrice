@@ -31,7 +31,7 @@ Contrôles : V n · É n · NA n · NV n
 |---|---|
 | A1 | Sections concernées des trois documents relues. |
 | A2 | Toutes les occurrences de la logique modifiée recherchées (vues, fenêtres, tableaux, pages publiques, SQL, fonctions edge, Apps Script) et traitées de la même façon. |
-| A3 | Greptile interrogé sur l'impact si la modification touche plus d'un module (sinon NA). |
+| A3 | Si la modification touche plus d'un module : impacts analysés par la relecture indépendante (section Q), sinon NA. |
 | A4 | Les décisions Q0–Q38 concernées sont respectées ; aucune règle métier nouvelle n'a été inventée ; toute ambiguïté a été posée à Anthony avant de coder. |
 | A5 | Correction faite au titre de Q0 (bug évident) : les 5 conditions de `CLAUDE.md` §8 sont remplies (règles métier, données historiques, pas de suppression/migration destructive, impacts vérifiés, tests). |
 
@@ -191,7 +191,7 @@ Contrôles : V n · É n · NA n · NV n
 ## Z. Régressions transversales
 | ID | Contrôle |
 |---|---|
-| Z1 | Fonctions modifiées : tous leurs appelants listés (grep ou Greptile) et vérifiés. |
+| Z1 | Fonctions modifiées : tous leurs appelants listés (recherche dans le code) et vérifiés. |
 | Z2 | Composant partagé modifié : vérifié dans l'app **et** les pages publiques qui l'utilisent. |
 | Z3 | Au moins un cas booking, un cas production, un artiste inactif et une date passée vérifiés. |
 | Z4 | Écrans qui affichent les mêmes données (liste, fiche, fenêtre, export, mail) : résultat identique. |
@@ -202,11 +202,17 @@ Contrôles : V n · É n · NA n · NV n
 | V1 | `python3 tools/bump_version.py patch\|minor "…"` lancé (aucune modification manuelle de la version, du CHANGELOG ou des `?v=`). |
 | V2 | Entrée du CHANGELOG en français, compréhensible par Anthony. |
 | V3 | Nouveau module JS : présent dans la carte d'import des 4 pages HTML. |
-| V4 | Commit `vX.Y.Z : …` poussé sur `main` ; la nouvelle version s'affiche dans l'app. Documentation ou travail exploratoire : branche dédiée, pas de fusion sans accord. |
+| V4 | Commit `vX.Y.Z : …` sur une **branche dédiée**, jamais de push direct sur `main` ; fusion par demande de fusion (Pull Request) après accord d'Anthony ; après fusion, la nouvelle version s'affiche dans l'app et le contenu de `main` est identique au commit relu (`CLAUDE.md` §5). |
 
-## Q. Revue Greptile
+## Q. Relecture indépendante et demande de fusion
+Procédure complète : `CLAUDE.md` §6. Greptile n'est plus utilisé (crédits d'essai épuisés le 21/10/2026).
+
 | ID | Contrôle |
 |---|---|
-| GR1 | Arbre de `main` poussé sur `review/full` et revue demandée sur la PR n°1. |
-| GR2 | Toutes les remarques traitées : corrigées, ou réfutées avec justification écrite. |
-| GR3 | Nouvelle revue jusqu'à **0 remarque** ; si Greptile ne répond pas : **NV** (« revue Greptile non obtenue »), jamais V. |
+| GR1 | Relecture demandée à un agent **distinct**, qui n'a pas participé au développement, sur une **copie propre du commit exact** (identifiant noté dans le compte rendu). |
+| GR2 | Le relecteur a exécuté lui-même les tests et ses propres essais (contournements, régressions) ; son rapport donne des preuves (fichier:ligne, commande, résultat). |
+| GR3 | Toutes les remarques traitées : corrigées, ou réfutées avec justification écrite dans le compte rendu. |
+| GR4 | Après correction : **nouvelle relecture sur le nouveau commit exact**, jusqu'à « bloquants : aucun ». Si la relecture n'a pas pu être faite : **NV** (« relecture non obtenue »), jamais V, et pas de demande de fusion. |
+| GR5 | Contrôle GitHub Actions `tests` au vert sur le commit exact ; branche à jour avec `main`. |
+| GR6 | Demande de fusion (Pull Request) ouverte après le compte rendu ; fusion seulement après l'accord explicite d'Anthony. |
+| GR7 | Après fusion : contenu de `main` identique au commit relu (`git rev-parse <commit>^{tree}` = `main^{tree}`), tests sur `main` au vert, GitHub Pages publié sans erreur. |
