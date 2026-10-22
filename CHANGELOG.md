@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.40.1 — 22/10/2026
+- Mails du journal : nettoyage du HTML par DOMPurify 3.4.16 (liens et attributs dangereux neutralisés, mise en page conservée)
+
+
 ## 1.40.0 — 21/10/2026
 - Budget : résumé prévu / à jour cohérent, lignes rangées par catégorie, orange réservé aux calculs remplacés, remboursement d'avance lisible ; onglets Production dans l'ordre du travail ; dossier artiste : copie complète en plusieurs fois
 

@@ -45,7 +45,13 @@
       { id: 'pa-4', show_id: 'sh-1', kind: 'partner', label: 'Commission partenaire', sort: 40 },
     ],
     prospects: [{ id: 'pr-1', name: 'Suivi', project_id: ART, structure_id: 'st-1', status: 'Interest', summary: '- Échange fictif' }],
-    prospect_logs: [{ id: 'lg-1', prospect_id: 'pr-1', date: iso(-3), kind: 'Appel', contact_name: 'Camille', body: '- Note de test' }],
+    prospect_logs: [
+      { id: 'lg-1', prospect_id: 'pr-1', date: iso(-3), kind: 'Appel', contact_name: 'Camille', body: '- Note de test' },
+      // mail envoyé depuis la Matrice (contenu HTML conservé), avec un lien et un tableau
+      { id: 'lg-2', prospect_id: 'pr-1', date: iso(-1), kind: 'Mail', contact_name: 'camille@example.com',
+        body: '**Confirmation envoyée** · Salle Exemple\n**Objet :** Confirmation Artiste Alpha\n\nBonjour Camille',
+        body_html: '<div>Bonjour <b>Camille</b>,</div><table width="400" align="center"><tr><td colspan="2">Cachet : 4 000 € HT</td></tr></table><div><a href="https://example.com/fiche">Fiche de renseignements</a></div>' },
+    ],
     prospect_files: [], budget_lines: [], structure_events: [], project_logs: [], project_members: [], attachments: [],
     notifications: [{ id: 'nt-1', title: 'Notification de test', body: 'Artiste Alpha', created_at: new Date().toISOString(), read_by: [], show_id: 'sh-1' }],
     employees: [{ id: 'em-1', last_name: 'EXEMPLE', first_name: 'Dominique', email: 'dominique@example.com', active: true, info: {}, docs: [], form_token: 'jeton-rh-test-00000001' }],
