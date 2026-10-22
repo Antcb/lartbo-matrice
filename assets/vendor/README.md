@@ -15,8 +15,8 @@ les fichiers copiés sont **identiques octet pour octet** aux fichiers du paquet
 | `dompurify-3.4.16/` | `dompurify@3.4.16` | voir `dompurify-3.4.16/README.md` | `dist/purify.es.mjs` → `purify.es.js` (ligne `sourceMappingURL` retirée) | `js/utils.js` |
 
 Versions : **identiques** à celles chargées auparavant depuis jsDelivr et cdnjs. Seule différence de forme : jsDelivr servait
-`supabase.min.js`, une version re-minifiée automatiquement par jsDelivr du fichier `supabase.js` du paquet ; on utilise ici le fichier d'origine
-du paquet (déjà compacté par Supabase). Même remarque pour `leaflet.min.js` / `leaflet.min.css` de cdnjs.
+`supabase.min.js` et cdnjs `leaflet.min.js` / `leaflet.min.css`, fichiers produits par ces services à partir des mêmes versions ; on utilise ici les fichiers d'origine
+des paquets. **Non comparé octet pour octet** avec les anciens fichiers des CDN (inaccessibles depuis l'environnement de vérification) : l'équivalence est vérifiée par les tests (carte, export Excel, client Supabase, application complète).
 
 Dépendances : les fichiers copiés sont des **paquets complets** (dépendances incluses à la publication) : Supabase JS 2.45.4 contient auth-js 2.65.0, postgrest-js 1.16.1, realtime-js 2.10.2, storage-js 2.7.0, functions-js 2.4.1 (versions figées par le paquet) ; ExcelJS 4.4.0 contient ses propres dépendances (jszip, dayjs…) telles que publiées ; Leaflet n'a aucune dépendance. Aucun fichier supplémentaire n'est chargé, sauf `591.supabase.js` (jamais dans un navigateur).
 
