@@ -14,12 +14,12 @@ Les règles marquées **[DÉCIDÉ Qn]** ont été arbitrées par Anthony (Q0 à 
 ## 1. Communication avec Anthony
 - Toujours en **français**, court et structuré (il lit souvent sur téléphone).
 - **En cas de doute sur une logique métier ou sur sa portée : demander avant de coder.** Ne jamais trancher seul une règle ambiguë ni inventer une règle métier.
-- Signaler explicitement **tout contrôle non réalisé** (« non vérifié : … ») — ne jamais présenter comme vérifié ce qui ne l'a pas été (rendu non ouvert dans un navigateur, script Google non redéployé, test non lancé, Greptile sans réponse).
+- Signaler explicitement **tout contrôle non réalisé** (« non vérifié : … ») — ne jamais présenter comme vérifié ce qui ne l'a pas été (rendu non ouvert dans un navigateur, script Google non redéployé, test non lancé, relecture non obtenue).
 
 ## 2. Avant de modifier
 1. Lire les sections concernées des trois documents.
 2. **Vérifier les impacts transversaux** : chercher toutes les occurrences de la même logique (vues, fenêtres, tableaux, pages publiques, SQL, fonctions edge, Apps Script). Une règle s'applique **partout**, jamais seulement à l'écran signalé.
-3. Pour les dépendances et l'impact d'une modification non triviale : **interroger Greptile** (§6) et confronter sa réponse au code.
+3. Pour les dépendances et l'impact d'une modification non triviale : faire analyser par la **relecture indépendante** (§6) et confronter sa réponse au code.
 4. **Réutiliser** les composants et fonctions existants (`DESIGN_SYSTEM.md` §9, `CONVENTIONS.md` §8.2). Interdit de recréer une fonction ou un composant qui existe (date, montant, arrondi, échappement, toast, fenêtre, appel Apps Script…).
 5. **Respecter les règles métier** de `CONVENTIONS.md` §6 (commission, acompte/solde, cachet, compte d'encaissement, modes, rappels, pôles, dépenses réelles).
 
@@ -38,23 +38,24 @@ Les règles marquées **[DÉCIDÉ Qn]** ont été arbitrées par Anthony (Q0 à 
 - **Fonctions edge** (`supabase/functions/*`) : déployées avec le contenu complet du fichier ; vérifier ensuite que la version en ligne est identique au dépôt.
 
 ## 5. Publier une modification (procédure obligatoire)
-1. **Tests avant intégration** : tests automatiques du dossier `tests/` concernés + nouveau test pour toute correction (`CONVENTIONS.md` §9), puis contrôles de `QA_CHECKLIST.md` adaptés aux parties modifiées et à leurs régressions transversales.
-2. `python3 tools/bump_version.py patch|minor "description en français"` — **jamais** de modification manuelle de `APP_VERSION`, du `CHANGELOG.md` ou des `?v=`. Tout nouveau module JS impose de relancer le script (carte d'import).
-3. Commit (`vX.Y.Z : …` en français) puis push sur `main` (= mise en ligne GitHub Pages). Un travail de documentation ou exploratoire se fait sur une branche dédiée, non fusionnée sans accord.
-4. Migration SQL : fichier `supabase/migrations/AAAA-MM-JJ_vX.Y_sujet.sql` **et** application par le mécanisme de migrations (`CONVENTIONS.md` §7.5), après les vérifications d'opération sensible (§7.6).
-5. **Revue Greptile jusqu'à 0 remarque** (§6). Chaque remarque est corrigée ou réfutée avec justification écrite.
-6. Compte rendu : ce qui a changé, ce qui reste à faire par Anthony (script Google…), les contrôles **É** et **NV** de la checklist.
+La branche `main` est protégée (règle GitHub) : **aucun push direct**, passage obligatoire par une demande de fusion (Pull Request), tests automatiques au vert, branche à jour avec `main`, historique linéaire, aucun push forcé ni suppression, aucune exception. Toute fusion dans `main` = mise en ligne GitHub Pages.
 
-## 6. Greptile
-- Revue de code : pousser l'arbre de `main` sur la branche `review/full` (PR n°1) puis commenter la PR :
-  ```
-  T=$(git rev-parse main^{tree}); git fetch -q origin review/full:refs/remotes/origin/review/full
-  C=$(git commit-tree $T -p origin/review/full -m "vX.Y.Z"); git push -q origin $C:refs/heads/review/full
-  gh api repos/Antcb/lartbo-matrice/issues/1/comments -f body="@greptileai relis la vX.Y.Z (…)"
-  ```
-  puis lire les commentaires de revue de la PR créés après la demande.
-- Analyse de dépendances : question en commentaire de la PR n°1 (« Question d'analyse, pas de relecture de diff : … »).
-- Si Greptile ne répond pas : l'écrire dans le compte rendu (« revue Greptile non obtenue »).
+1. **Branche dédiée** par lot (`dev/<lot>-<sujet>`), créée depuis `main` à jour. Jamais de travail directement sur `main`.
+2. **Tests avant intégration** : `cd tests && npm ci && npm test` (contrôles statiques + navigateur) avec un nouveau test pour toute correction (`CONVENTIONS.md` §9), puis contrôles de `QA_CHECKLIST.md` adaptés aux parties modifiées et à leurs régressions transversales. Les tests ne doivent jamais utiliser de secret ni de donnée réelle.
+3. **Version** : `python3 tools/bump_version.py patch|minor "description en français"` pour toute modification de l'application (pas pour une modification limitée aux tests ou à la documentation) — **jamais** de modification manuelle de `APP_VERSION`, du `CHANGELOG.md` ou des `?v=`. Tout nouveau module JS impose de relancer le script (carte d'import).
+4. **Commit** (`vX.Y.Z : …` en français) puis push de la **branche** ; vérifier que le contrôle GitHub Actions `tests` est au vert sur le commit exact.
+5. Migration SQL : fichier `supabase/migrations/AAAA-MM-JJ_vX.Y_sujet.sql` **et** application par le mécanisme de migrations (`CONVENTIONS.md` §7.5), après les vérifications d'opération sensible (§7.6), d'abord sur le projet de test.
+6. **Relecture indépendante** jusqu'à « aucun bloquant » (§6). Chaque remarque est corrigée ou réfutée avec justification écrite.
+7. **Compte rendu à Anthony** : commit exact, différences avec `main`, tests, relecture, ce qui reste à faire par Anthony (script Google…), contrôles **É** et **NV** de la checklist.
+8. **Demande de fusion** (Pull Request vers `main`) ouverte seulement **après** ce compte rendu ; méthode de fusion : « Rebase and merge ».
+9. **Fusion par Anthony** (ou par Claude **uniquement** sur autorisation explicite d'Anthony pour cette demande précise). Avant la fusion : la demande contient exactement le commit testé et relu, le contrôle `tests` est au vert, la branche est à jour avec `main`.
+10. **Après la fusion** : GitHub réécrit les identifiants de commit (méthode « rebase ») — vérifier que le **contenu** publié est identique au commit relu (`git rev-parse <commit>^{tree}` identique à `main^{tree}`), que les tests ont tourné sur `main` et que GitHub Pages a publié sans erreur ; signaler toute anomalie avant toute autre intervention.
+
+## 6. Relecture indépendante
+- Toute modification destinée à `main` est relue par un **agent qui n'a pas participé au développement** (relecture gratuite ; Greptile n'est plus utilisé, crédits d'essai épuisés le 21/10/2026).
+- Le relecteur travaille sur une **copie propre du commit exact**, sans rien modifier, sans accès aux services de production, et rend un verdict « bloquants : aucun » ou une liste avec preuves.
+- Après correction, nouvelle relecture sur le nouveau commit exact.
+- Si la relecture n'a pas pu être faite : l'écrire dans le compte rendu (« relecture non obtenue ») ; pas de demande de fusion dans ce cas.
 
 ## 7. Interdits
 - Supprimer ou réécrire en masse des données Supabase, lancer une migration destructive (`drop`, suppression de colonne, `delete` massif) sans accord explicite.
