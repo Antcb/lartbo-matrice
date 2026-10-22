@@ -305,3 +305,16 @@ test('4 quater. adresses servies autrement par le site (sans .html, majuscules, 
   }
   expectClean(ctx);
 });
+
+// Après la régénération des jetons du projet de test (décision D1-b) : un jeton de test est inconnu en production.
+// Un lien de test dont on retire « test » ouvre alors la page de production, qui refuse le jeton : aucune lecture, aucun envoi.
+test('5 bis. lien de test sans « test » : la production refuse le jeton, aucune fiche lisible ni modifiable', async ({ page }) => {
+  const ctx = await preparePage(page, { session: false });
+  await page.goto('/fiche.html?t=jeton-du-projet-de-test-0001');   // jeton propre au test (inconnu de la production)
+  await expect(page.locator('body')).toContainText('n’est pas valide');
+  await expect(page.locator('#fiche-form')).toHaveCount(0);
+  const calls = await page.evaluate(() => window.__calls);
+  expect(calls.filter(c => c.rpc === 'fiche_get').map(c => c.url)).toEqual([expect.stringContaining(PROD)]);
+  expect(calls.filter(c => c.rpc === 'fiche_submit')).toEqual([]);
+  expectClean(ctx);
+});
