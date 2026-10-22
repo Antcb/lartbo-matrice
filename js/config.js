@@ -10,7 +10,13 @@ export const APP_VERSION = '1.40.3';   // ← incrémenté par tools/bump_versio
  * Pages publiques (fiche.html, artiste.html, rh.html) : l'environnement vient UNIQUEMENT de leur propre lien (« test » dans
  * l'adresse) ; le choix gardé par le navigateur est ignoré et jamais modifié, pour qu'un vrai lien ouvre toujours la vraie Matrice.
  */
-export const PUBLIC_PAGE = /(^|\/)(fiche|artiste|rh)\.html$/.test(location.pathname);
+// Page publique reconnue par le marqueur que la page porte elle-même (<body class="fiche-page">), et en plus par son adresse
+// décodée (majuscules, adresse sans « .html » servie par GitHub Pages, caractères encodés) : jamais contournable par l'adresse seule.
+export const PUBLIC_PAGE = (() => {
+  if (document.body?.classList.contains('fiche-page')) return true;
+  let p = location.pathname; try { p = decodeURIComponent(p); } catch { /* adresse mal encodée : prise telle quelle */ }
+  return /(^|\/)(fiche|artiste|rh)(\.html?)?\/?$/i.test(p);
+})();
 export const ENV = (() => {
   try {
     const q = new URLSearchParams(location.search);

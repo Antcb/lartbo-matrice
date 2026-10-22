@@ -145,9 +145,16 @@ for (const f of JS) if (EXT_SCRIPT_JS.test(readFileSync(f, 'utf8'))) fail('bibli
 // 7. Stockage du navigateur (lot S0-R8) : production et test ne doivent jamais partager de données gardées dans le navigateur.
 // Seuls js/storage.js (clés séparées par environnement) et js/config.js (clé artbo.env) y accèdent directement.
 // Analyse des jetons du code (commentaires et textes ignorés), plus les scripts écrits dans les pages HTML.
-const STORE = new Set(['localStorage', 'sessionStorage', 'indexedDB']), STORE_OK = new Set(['js/storage.js', 'js/config.js']);
-const storeUses = src => [...tokenizer(src, { ecmaVersion: 'latest', sourceType: 'module' })]
-  .filter(t => (t.type.label === 'name' && STORE.has(t.value)) || (t.type.label === 'string' && STORE.has(t.value))).length;
+// Aussi : cookies, Cache API, navigator.storage, et les noms écrits dans un texte ou un gabarit (window[`localStorage`]).
+// Exception connue, hors js/ : la bibliothèque Supabase (assets/vendor) range la session sous une clé propre à chaque projet.
+const STORE = new Set(['localStorage', 'sessionStorage', 'indexedDB', 'caches']), STORE_OK = new Set(['js/storage.js', 'js/config.js']);
+const STORE_TXT = /\b(localStorage|sessionStorage|indexedDB)\b/;
+const storeUses = src => {
+  const tk = [...tokenizer(src, { ecmaVersion: 'latest', sourceType: 'module' })];
+  return tk.filter((t, i) => (t.type.label === 'name' && STORE.has(t.value) && !(t.value === 'caches' && tk[i - 1]?.type.label === '.'))
+    || ((t.type.label === 'string' || t.type.label === 'template') && STORE_TXT.test(t.value))
+    || (t.type.label === 'name' && ((t.value === 'cookie' && tk[i - 2]?.value === 'document') || (t.value === 'storage' && tk[i - 2]?.value === 'navigator')) && tk[i - 1]?.type.label === '.')).length;
+};
 for (const f of JS) if (!STORE_OK.has(rel(f)) && storeUses(readFileSync(f, 'utf8')))
   fail('stockage', `${rel(f)} accède directement au stockage du navigateur : passer par js/storage.js (séparation production / test)`);
 for (const page of readdirSync(ROOT).filter(f => f.endsWith('.html'))) {
