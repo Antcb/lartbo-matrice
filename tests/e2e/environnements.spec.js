@@ -288,7 +288,8 @@ test('4 ter. brouillon d’une page publique : séparé entre lien de test et vr
 test('4 quater. adresses servies autrement par le site (sans .html, majuscules, barre finale) : bon environnement', async ({ page }) => {
   const { readFileSync } = await import('node:fs');
   const ctx = await openApp(page);
-  const VARIANTES = [['/fiche', 'fiche.html'], ['/FICHE.html', 'fiche.html'], ['/fiche/', 'fiche.html'], ['/Artiste', 'artiste.html'], ['/rh', 'rh.html']];
+  const VARIANTES = [['/fiche', 'fiche.html'], ['/FICHE.html', 'fiche.html'], ['/fiche/', 'fiche.html'], ['/Artiste', 'artiste.html'], ['/rh', 'rh.html'],
+    ['/formulaire-organisateur', 'fiche.html']];   // adresse que seule la marque de la page permet de reconnaître
   for (const [path, file] of VARIANTES) {
     await page.route(u => new URL(u).pathname === path, r => r.fulfill({ contentType: 'text/html', body: readFileSync(new URL('../../' + file, import.meta.url), 'utf8')
       .replace(/(href|src)="(?!https?:|\/)/g, '$1="/') }));
