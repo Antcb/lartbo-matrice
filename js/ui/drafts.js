@@ -5,12 +5,21 @@
  *  - Fenêtres (fiches, tâches, échanges, mails…) : automatique, une clé par fenêtre et par fiche.
  * Le brouillon disparaît une fois le formulaire enregistré (clearDraft) ou avec « Effacer le brouillon ».
  */
-import { localGet, localSet } from '../state.js';
+import { ENV } from '../config.js';
+import { localDel, localGet, localSet } from '../state.js';
 
 const KEY = k => 'draft.' + k;
-export function getDraft(k){ try { return JSON.parse(localGet(KEY(k)) || 'null'); } catch { return null; } }
-export function setDraft(k, d){ localSet(KEY(k), JSON.stringify(d)); }
-export function clearDraft(k){ try { localStorage.removeItem('artbo.' + KEY(k)); } catch { /* navigateur sans stockage */ } }
+/** Brouillon de cet environnement (clés séparées entre production et test, js/storage.js). Contrôle en plus : un brouillon
+ *  marqué d'un autre environnement est effacé, jamais appliqué ; un ancien brouillon sans marque est celui de la production. */
+export function getDraft(k){
+  let d = null; try { d = JSON.parse(localGet(KEY(k)) || 'null'); } catch { return null; }
+  if (!d || typeof d !== 'object') return null;
+  const {env, ...rest} = d;
+  if ((env || 'prod') !== ENV){ clearDraft(k); return null; }
+  return rest;
+}
+export function setDraft(k, d){ localSet(KEY(k), JSON.stringify({...d, env: ENV})); }
+export function clearDraft(k){ localDel(KEY(k)); }
 
 /** Valeurs tapées d'un formulaire : champs texte, listes, cases, zones de texte mis en forme */
 function snapshot(form){

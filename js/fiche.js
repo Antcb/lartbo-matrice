@@ -6,6 +6,8 @@
  * ou les acomptes, la fiche est à jour sans renvoyer de lien.
  */
 import { CFG } from './config.js';
+import { localDel, localGet, localSet } from './storage.js';
+import './ui/testbanner.js';
 import './ui/autogrow.js';
 import { FICHE_SECTIONS, ficheDefaults, ficheKind, fieldOn } from './fiche-fields.js';
 
@@ -68,7 +70,7 @@ function input(f, v, locked, kind, values){
 
 function draw(d){
   let saved = {};
-  try { saved = JSON.parse(localStorage.getItem(DRAFT) || '{}'); } catch {}
+  try { saved = JSON.parse(localGet(DRAFT, {page: true}) || '{}'); } catch {}
   const admin = d.structure?.admin || {}, fiche = d.fiche || {}, sent = fiche.admin || {}, defs = ficheDefaults(d);
   const kind = ficheKind(d.contract_type);
   const val = f => saved[f.k] ?? (f.src === 'admin' ? (sent[f.k] ?? admin[f.k]) : fiche[f.k]) ?? defs[f.k] ?? f.def ?? '';
@@ -82,7 +84,7 @@ function draw(d){
       ${locked ? '' : `<div class="fiche-actions"><p class="help"><span class="req">*</span> champs nécessaires au contrat</p><button class="btn primary" type="submit">${d.submitted_at ? 'Renvoyer la fiche' : 'Envoyer la fiche'}</button></div>`}
     </form>`;
   const form = document.getElementById('fiche-form');
-  form.addEventListener('input', () => { try { localStorage.setItem(DRAFT, JSON.stringify(read(form))); } catch {} });
+  form.addEventListener('input', () => { localSet(DRAFT, JSON.stringify(read(form)), {page: true}); });
   form.addEventListener('change', e => {   // champ affiché selon une autre réponse (ex. TVA intracommunautaire si « Oui »)
     form.querySelectorAll(`[data-if="${e.target.name}"]`).forEach(w => { w.hidden = e.target.value !== w.dataset.eq; });
   });
@@ -98,7 +100,7 @@ function draw(d){
     const {error} = await sb.rpc('fiche_submit', {p_token: token, p_admin: adm, p_fiche: fi});
     btn.disabled = false;
     if (error){ btn.textContent = 'Envoyer la fiche'; return note(error.message || 'Envoi impossible, réessaie.', true); }
-    try { localStorage.removeItem(DRAFT); } catch {}
+    localDel(DRAFT, {page: true});
     root.innerHTML = conditions(d) + `<div class="panel pad fiche-ok"><h2>Merci !</h2><p>Ta fiche est bien enregistrée. Notre équipe la vérifie, puis nous préparons le contrat et revenons vers toi rapidement.</p><p><a href="${esc(location.href)}">Revoir ou corriger la fiche</a></p></div>`;
     window.scrollTo(0, 0);
   });

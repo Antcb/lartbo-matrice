@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.40.3 — 22/10/2026
+- S0-R8 : brouillons, file des résumés IA et préférences séparés entre la vraie Matrice et l'espace de test ; pages publiques dans l'environnement de leur propre lien ; liens créés en test marqués « test » ; messages de l'espace de test corrigés
+
+
 ## 1.40.2 — 22/10/2026
 - Bibliothèques (Supabase JS 2.45.4, Leaflet 1.9.4, ExcelJS 4.4.0) chargées depuis des copies locales vérifiées au lieu de services tiers, mêmes versions
 

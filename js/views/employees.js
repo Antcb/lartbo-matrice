@@ -8,7 +8,7 @@ import { render } from '../app.js';
 import { insert, remove, save, sb } from '../data.js';
 import { callScript } from '../mail.js';
 import { RH_DOCS, RH_FIELDS, RH_PARTS, RH_SECTIONS, RH_TEAM_FIELDS, fullName } from '../rh-fields.js';
-import { byId, setting } from '../selectors.js';
+import { byId, linkLabel, publicLink, setting } from '../selectors.js';
 import { S } from '../state.js';
 import { viewHead } from '../ui/bits.js';
 import { openModal } from '../ui/modal.js';
@@ -99,14 +99,14 @@ function docsHTML(e){
 
 // ─────────────── Actions ───────────────
 
-const formLink = (e, part) => (setting('site_url') || location.origin + location.pathname.replace(/[^/]*$/, '')) + 'rh.html?t=' + e.form_token + (part === 'main' ? '&p=main' : '');
+const formLink = (e, part) => publicLink('rh', e.form_token, part === 'main' ? '&p=main' : '');
 
 export const EMP_ACTIONS = {
   newEmployee: () => editEmployee(null),
   openEmployee: (t, ev) => { if (ev.target.closest('[data-stop]')) return; editEmployee(t.dataset.id); },
   toggleInactiveEmployees: () => { S.showInactiveEmployees = !S.showInactiveEmployees; render(); },
   rhCopyLink: async t => { const link = formLink(byId('employees', t.dataset.id), t.dataset.part);
-    try { await navigator.clipboard.writeText(link); toast('Lien du questionnaire copié'); } catch { prompt('Lien du questionnaire :', link); } },
+    try { await navigator.clipboard.writeText(link); toast(linkLabel('Lien du questionnaire copié')); } catch { prompt('Lien du questionnaire :', link); } },
   rhSendForm: async t => {
     const e = byId('employees', t.dataset.id);
     if (!e.email) return toast('Ajoute d’abord son mail', true);
