@@ -10,7 +10,6 @@
   },
   "devDependencies": {
     "@playwright/test": "1.56.0",
-    "acorn": "8.14.0",
-    "leaflet": "1.9.4"
+    "acorn": "8.14.0"
   }
 }

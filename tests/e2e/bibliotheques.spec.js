@@ -3,7 +3,7 @@
 import { test, expect } from '@playwright/test';
 import { openApp, expectClean } from './helpers.js';
 
-const CDN = /cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|unpkg\.com/i;
+const CDN = /cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|unpkg\.com|esm\.sh|skypack\.dev/i;
 const suivreCdn = page => { const vus = []; page.context().on('request', r => { if (CDN.test(r.url())) vus.push(r.url()); }); return vus; };
 
 test('la carte (Leaflet local) s’affiche avec ses points, sans CDN', async ({ page }) => {

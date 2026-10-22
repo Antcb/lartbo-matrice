@@ -1,16 +1,13 @@
 // Outils communs : ouverture d'une page avec la fausse base, blocage de tout accès extérieur,
 // relevé des erreurs JavaScript et des tentatives de connexion à un service réel.
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { expect } from '@playwright/test';
 
-const require = createRequire(import.meta.url);
 const MOCK = readFileSync(new URL('../fixtures/mock-supabase.js', import.meta.url), 'utf8');
-const LEAFLET_JS = readFileSync(require.resolve('leaflet/dist/leaflet.js'), 'utf8');
-const LEAFLET_CSS = readFileSync(require.resolve('leaflet/dist/leaflet.css'), 'utf8');
 
 // Services réels qui ne doivent JAMAIS être contactés pendant les tests
-const FORBIDDEN = /supabase\.co|script\.google\.com|(?<!fonts\.)googleapis\.com|brevo\.com|sendinblue|pennylane\.com|notion\.(so|com)|anthropic\.com/i;
+const FORBIDDEN = /supabase\.co|script\.google\.com|(?<!fonts\.)googleapis\.com|brevo\.com|sendinblue|pennylane\.com|notion\.(so|com)|anthropic\.com|cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|unpkg\.com|esm\.sh|skypack\.dev/i;
+// (les CDN de bibliothèques sont interdits depuis le lot S9 : bibliothèques copiées dans assets/vendor)
 
 export async function preparePage(page, { session = true } = {}) {
   const errors = [], external = [];
@@ -29,9 +26,6 @@ export async function preparePage(page, { session = true } = {}) {
     // Supabase JS (copie locale assets/vendor) : remplacé par la fausse base, comme l'ancienne adresse jsDelivr
     if (/\/assets\/vendor\/supabase-js-[^/]+\/supabase\.js/.test(u)) return route.fulfill({ body: MOCK, contentType: 'text/javascript' });
     if (u.startsWith('http://127.0.0.1:4173/')) return route.continue();
-    if (/supabase-js/.test(u)) return route.fulfill({ body: MOCK, contentType: 'text/javascript' });
-    if (/leaflet[^/]*\.js/.test(u)) return route.fulfill({ body: LEAFLET_JS, contentType: 'text/javascript' });
-    if (/leaflet[^/]*\.css/.test(u)) return route.fulfill({ body: LEAFLET_CSS, contentType: 'text/css' });
     if (FORBIDDEN.test(u)) external.push(u.replace(/[?#].*$/, ''));
     return route.fulfill({ status: 204, body: '' });   // polices, tuiles de carte, géocodage… : neutralisés
   });
