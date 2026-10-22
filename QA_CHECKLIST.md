@@ -1,6 +1,6 @@
 # QA_CHECKLIST.md — Contrôles obligatoires après chaque développement
 
-À remplir pour **chaque** développement, avant le push sur `main`, et à joindre au compte rendu à Anthony.
+À remplir pour **chaque** développement, avant la demande de fusion vers `main`, et à joindre au compte rendu à Anthony.
 Règles de référence : [`CONVENTIONS.md`](CONVENTIONS.md) (« C § ») et [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) (« DS § ») ; décisions Q0–Q38 (21/10/2026).
 
 **Adapter les contrôles aux parties réellement modifiées** : une section entière peut être NA si le développement ne la touche pas — mais les contrôles de **régressions transversales** (section Z) et les tests (section T) ne sont jamais tous NA.

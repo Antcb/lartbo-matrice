@@ -1,6 +1,6 @@
 # PLAN_EXECUTION.md — Mise en conformité de la Matrice avec le référentiel
 
-Plan établi le 22/10/2026 à partir de `CLAUDE.md`, `CONVENTIONS.md`, `DESIGN_SYSTEM.md`, `QA_CHECKLIST.md` (branche `docs/referentiel`), de l'audit du code, des analyses Greptile antérieures (PR n°1 ; la question du 21/10 à 21 h 51 UTC sur les zones à risque de régression est restée **sans réponse** — non vérifié par Greptile) et d'une lecture seule de Supabase (projets `Lartbo-matrice` et `Lartbo-matrice-test`).
+Plan établi le 22/10/2026 à partir de `CLAUDE.md`, `CONVENTIONS.md`, `DESIGN_SYSTEM.md`, `QA_CHECKLIST.md` (intégrés à `main` avec ce plan), de l'audit du code, des analyses Greptile antérieures (PR n°1 ; la question du 21/10 à 21 h 51 UTC sur les zones à risque de régression est restée **sans réponse** — non vérifié par Greptile) et d'une lecture seule de Supabase (projets `Lartbo-matrice` et `Lartbo-matrice-test`).
 **Statut : proposition, en attente de validation d'Anthony. Aucun lot n'est commencé.**
 
 > **Mise à jour du 22/10/2026** : les fiches S0, F1 et S1 à S7 sont remplacées par l'annexe détaillée [`PLAN_SECURITE.md`](PLAN_SECURITE.md) (constat sur les secrets, nouvel ordre, vérifications de Q19).
@@ -20,7 +20,7 @@ Règles qui s'appliquent à chaque lot : `CLAUDE.md` (dont §8, autorisation Q0)
 | 5 | **Encaissements sans compte** : 225 lignes, affichées « L'ArtBo » mais comptées sur le compte dédié. | Haute | B5, B6 |
 | 6 | **Changement de mode d'un artiste** : modifie toutes les dates, y compris passées et facturées. | Haute | B7 |
 | 7 | **Suppressions** : immédiates, sans annulation, fichiers orphelins ; la règle décidée (attente de 5 s gérée par le serveur) demande une nouvelle architecture. | Moyenne | B13, B14 |
-| 8 | **Fenêtres natives** (~37 `confirm`/`prompt`/`alert`), dont un « Annuler » qui supprime quand même et un mot de passe saisi en clair. | Moyenne | B11, B12 |
+| 8 | **Fenêtres natives** (43 `confirm`/`prompt`/`alert` au comptage automatique du 22/10/2026, référence `tests/baselines/fenetres-natives.json`), dont un « Annuler » qui supprime quand même et un mot de passe saisi en clair. | Moyenne | B11, B12 |
 | 9 | **Dates en heure universelle** à plusieurs endroits (Pennylane, mails après minuit, notifications) ; rappels différents entre l'app et le serveur. | Moyenne | F4, F9 |
 | 10 | **Cycle d'imports de 41 modules** et rendu global : toute modification de `data.js`, `app.js` ou de la navigation peut casser des écrans éloignés. | Moyenne (risque) | F6 |
 | 11 | **Base** : 13 migrations enregistrées sur 30, `schema.sql` périmé, clés étrangères manquantes, fonctions sans `search_path`, fonction edge `pl-probe` déployée mais absente du dépôt. | Moyenne | S4, F7, F8 |
@@ -495,7 +495,7 @@ Format de chaque lot : priorité · problèmes corrigés · fichiers · Supabase
 - **Fichiers** : `css/styles.css`, `css/fiche.css`, JS cités. **Dépendances** : D1. **Risques** : contraste des lignes payées / pièce reçue. **Tests** : captures avant/après de Budget, Production, To Do. **Autorisation** : captures validées. **Fin** : QA D7.
 
 #### D3 — Titres des sections
-- **Corrige** : blocs Contacts, Tâches, Journal en petit gris (Q32) ; variantes de titres.
+- **Corrige** : blocs Contacts, Tâches, Journal aujourd'hui affichés en petit gris, à passer en titres de section principale (Q32) ; variantes de titres.
 - **Fichiers** : `js/views/suivi.js`, `js/views/projects.js`, `js/views/structures.js`, `css/styles.css`. **Dépendances** : F1. **Risques** : hauteur des pages. **Tests** : captures. **Autorisation** : captures validées. **Fin** : QA D4.
 
 #### D4 — Sélections
@@ -561,4 +561,4 @@ Format de chaque lot : priorité · problèmes corrigés · fichiers · Supabase
 5. Relecture indépendante : **aucun bloquant** (ou réfutation écrite) — `CLAUDE.md` §6.
 6. Captures avant/après pour tout changement visible (ordinateur, tablette, téléphone).
 7. Compte rendu remis à Anthony (changements, interventions manuelles, É/NV).
-8. **Accord explicite d'Anthony**, puis fusion, `bump_version.py`, mise en ligne ; vérification en production des points sans risque ; documents du référentiel mis à jour (passage des éléments « à créer » / [CORRECTION] en [EN PLACE]).
+8. `bump_version.py` lancé **sur la branche** avant le compte rendu ; **accord explicite d'Anthony**, puis fusion de la demande de fusion (mise en ligne) — jamais de commit direct sur `main` (`CLAUDE.md` §5) ; vérification en production des points sans risque ; documents du référentiel mis à jour (passage des éléments « à créer » / [CORRECTION] en [EN PLACE]).
