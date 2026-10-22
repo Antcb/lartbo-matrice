@@ -15,7 +15,7 @@ function loadExcel(){
   if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
   return EXCEL ||= new Promise((ok, ko) => {
     const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+    s.src = 'assets/vendor/exceljs-4.4.0/exceljs.min.js';   // copie locale vérifiée (assets/vendor/README.md)
     s.onload = () => ok(window.ExcelJS); s.onerror = () => { EXCEL = null; ko(new Error('Module Excel indisponible (connexion ?)')); };
     document.head.appendChild(s);
   });

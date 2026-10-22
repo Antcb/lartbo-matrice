@@ -127,6 +127,17 @@ for (const f of scanned) {
   for (const [re, label] of SECRET) if (re.test(src)) fail('secrets', `${rel(f)} contient ce qui ressemble à une ${label} (valeur non affichée)`);
 }
 
+// 6. Bibliothèques : aucun script chargé depuis un service tiers (copies locales vérifiées dans assets/vendor, lot S9)
+const EXT_SCRIPT_HTML = /<script[^>]+src=["']\s*(?:https?:)?\/\//i;
+const EXT_STYLE_HTML = /<link[^>]+rel=["']stylesheet["'][^>]+href=["']\s*(?:https?:)?\/\/(?!fonts\.googleapis\.com\/)/i;
+const EXT_SCRIPT_JS = /(?:\.src\s*=|import\s*\(|importScripts\s*\()\s*["'`]\s*(?:https?:)?\/\//i;
+for (const page of ['index.html', 'fiche.html', 'rh.html', 'artiste.html']) {
+  const html = readFileSync(join(ROOT, page), 'utf8');
+  if (EXT_SCRIPT_HTML.test(html)) fail('bibliothèques', `${page} charge un script depuis un service tiers (utiliser assets/vendor)`);
+  if (EXT_STYLE_HTML.test(html)) fail('bibliothèques', `${page} charge une feuille de style depuis un service tiers (seules les polices Google sont admises)`);
+}
+for (const f of JS) if (EXT_SCRIPT_JS.test(readFileSync(f, 'utf8'))) fail('bibliothèques', `${rel(f)} charge un script depuis un service tiers (utiliser assets/vendor)`);
+
 // Bilan
 console.log(`Contrôles statiques : ${JS.length} modules, version ${version}, ${total(now)} fenêtre(s) native(s) tolérée(s), ${scanned.length} fichiers examinés pour les secrets.`);
 if (problems.length) { console.error(`\n${problems.length} problème(s) :\n` + problems.map(p => ' - ' + p).join('\n')); process.exit(1); }

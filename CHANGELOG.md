@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.40.2 — 22/10/2026
+- Bibliothèques (Supabase JS 2.45.4, Leaflet 1.9.4, ExcelJS 4.4.0) chargées depuis des copies locales vérifiées au lieu de services tiers, mêmes versions
+
+
 ## 1.40.1 — 22/10/2026
 - Mails du journal : nettoyage du HTML par DOMPurify 3.4.16 (liens et attributs dangereux neutralisés, mise en page conservée)
 
