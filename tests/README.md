@@ -3,7 +3,8 @@
 Tout tourne **en local** : la base Supabase est remplacée par une fausse base en mémoire
 (`fixtures/mock-supabase.js`, données fictives), et toute requête vers un service réel
 (Supabase, Google, Brevo, Pennylane…), y compris depuis un onglet ouvert par un lien ou par WebSocket,
-est bloquée et fait échouer le test (un test vérifie ce garde-fou lui-même). Aucun secret n'est utilisé.
+est bloquée et fait échouer le test (un test vérifie ce garde-fou lui-même). Seconde barrière : le navigateur de test
+ne peut résoudre aucun nom de domaine extérieur (`playwright.config.js`). Aucun secret n'est utilisé.
 
 ## Lancer
 ```

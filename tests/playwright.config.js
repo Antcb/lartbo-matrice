@@ -15,6 +15,9 @@ export default defineConfig({
     locale: 'fr-FR',
     timezoneId: 'Europe/Paris',
     trace: 'retain-on-failure',
+    // Seconde barrière, au niveau du navigateur : aucun nom de domaine extérieur ne peut être résolu.
+    // Même si une requête échappait au routage des tests, elle ne pourrait atteindre aucun service réel.
+    launchOptions: { args: ['--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1'] },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } }],
   webServer: {
