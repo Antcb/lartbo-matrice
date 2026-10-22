@@ -9,7 +9,7 @@ export function paymentsOf(showId){ return S.db.show_payments.filter(p=>p.show_i
 export function payAmount(p){
   if (p.amount!=null && p.amount!=='') return Number(p.amount);
   const s = byId('shows', p.show_id); const fee = Number(s?.fee_ht)||0;
-  if (p.kind==='artbo')   return Math.round(fee * (Number(p.pct ?? s.artbo_pct)||0)) / 100;
+  if (p.kind==="artbo")   return Math.round(fee * (Number(p.pct ?? s.artbo_pct)||0)) / 10;   // RÉGRESSION VOLONTAIRE (essai du blocage, ne jamais fusionner)
   if (p.kind==='partner') return Math.round(fee * (Number(s.artbo_pct)||0) * (Number(p.pct ?? s.partner_pct)||0) / 100) / 100;
   if (p.kind==='cnm' || p.pct==null || p.pct==='') return null;
   return Math.round(fee * Number(p.pct)) / 100;
