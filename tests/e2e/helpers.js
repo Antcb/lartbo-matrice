@@ -26,6 +26,8 @@ export async function preparePage(page, { session = true } = {}) {
   await context.routeWebSocket(/.*/, ws => { external.push('websocket : ' + ws.url().replace(/[?#].*$/, '')); ws.close(); });
   await context.route('**/*', route => {
     const u = route.request().url();
+    // Supabase JS (copie locale assets/vendor) : remplacé par la fausse base, comme l'ancienne adresse jsDelivr
+    if (/\/assets\/vendor\/supabase-js-[^/]+\/supabase\.js/.test(u)) return route.fulfill({ body: MOCK, contentType: 'text/javascript' });
     if (u.startsWith('http://127.0.0.1:4173/')) return route.continue();
     if (/supabase-js/.test(u)) return route.fulfill({ body: MOCK, contentType: 'text/javascript' });
     if (/leaflet[^/]*\.js/.test(u)) return route.fulfill({ body: LEAFLET_JS, contentType: 'text/javascript' });
