@@ -32,3 +32,4 @@ de fusion vers `main` (`.github/workflows/tests.yml`). En cas d'échec, le rappo
 - Fenêtres natives : la référence `baselines/fenetres-natives.json` ne peut que baisser
   (`node static/check.mjs --baseline` refuse une hausse).
 - Jamais de donnée réelle ni de secret dans `fixtures/`.
+
