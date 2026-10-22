@@ -106,7 +106,7 @@ export const EMP_ACTIONS = {
   openEmployee: (t, ev) => { if (ev.target.closest('[data-stop]')) return; editEmployee(t.dataset.id); },
   toggleInactiveEmployees: () => { S.showInactiveEmployees = !S.showInactiveEmployees; render(); },
   rhCopyLink: async t => { const link = formLink(byId('employees', t.dataset.id), t.dataset.part);
-    try { await navigator.clipboard.writeText(link); toast(linkLabel('Lien du questionnaire copié')); } catch { prompt('Lien du questionnaire :', link); } },
+    try { await navigator.clipboard.writeText(link); toast(linkLabel('Lien du questionnaire copié')); } catch { prompt(linkLabel('Lien du questionnaire') + ' :', link); } },
   rhSendForm: async t => {
     const e = byId('employees', t.dataset.id);
     if (!e.email) return toast('Ajoute d’abord son mail', true);

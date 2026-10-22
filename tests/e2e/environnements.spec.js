@@ -78,6 +78,11 @@ test('2. un brouillon de production n’apparaît pas en test, et inversement ; 
   await page.evaluate(() => import('./js/views/suivi.js').then(m => m.setLogDraft('pr-1', { body: 'JOURNAL TEST' })));
   await openEnv(page, 'prod');
   expect(await page.evaluate(() => import('./js/views/suivi.js').then(m => m.hasLogDraft('pr-1')))).toBe(false);
+  expect(await page.evaluate(() => localStorage.getItem('artbo-test.logdraft.pr-1'))).toContain('"env":"test"');
+  // brouillon de journal marqué « test » glissé sous la clé de production : effacé, jamais repris
+  await page.evaluate(() => localStorage.setItem('artbo.logdraft.pr-2', JSON.stringify({ body: 'X', env: 'test' })));
+  expect(await page.evaluate(() => import('./js/views/suivi.js').then(m => m.hasLogDraft('pr-2')))).toBe(false);
+  expect(await page.evaluate(() => localStorage.getItem('artbo.logdraft.pr-2'))).toBeNull();
   // contrôle en plus : un brouillon marqué « test » glissé sous une clé de production est effacé, jamais appliqué
   await page.evaluate(m => localStorage.setItem('artbo.draft.modal.1.Tâche.tk-1', JSON.stringify({ f: { title: m }, h: {}, env: 'test' })), MARK);
   await openTask(page);
@@ -107,6 +112,7 @@ test('3. un résumé IA mis en attente en test ne déclenche rien en production'
   await openEnv(page, 'prod');
   await page.waitForTimeout(1500);
   expect(await page.evaluate(() => window.__calls.filter(c => c.fn === 'resume-suivi'))).toEqual([]);
+  await expect(page.locator('.toast').last()).toContainText('résumé IA en attente');
   expectClean(ctx);
 });
 
@@ -242,5 +248,34 @@ test('6 bis. page de connexion en test : message exact', async ({ page }) => {
   await expect(page.locator('body')).not.toContainText('${');
   await page.goto('/index.html?prod');
   await expect(page.locator('.test-note')).toHaveCount(0);
+  expectClean(ctx);
+});
+
+test('4 bis. une adresse déguisée de page publique ne contourne pas la règle (adresse encodée)', async ({ page }) => {
+  const ctx = await openApp(page);
+  for (const path of ['/fich%65.html', '/fiche%2Ehtml']) {
+    await openEnv(page, 'test');
+    await page.goto(`${path}?t=jeton-fiche-test-0001`);
+    await expect.poll(() => page.evaluate(() => window.__clientUrls), { message: path }).toEqual([expect.stringContaining(PROD)]);
+    await page.evaluate(() => localStorage.removeItem('artbo.env'));
+    await page.goto(`${path}?t=jeton-fiche-test-0001&test`);
+    await expect.poll(() => page.evaluate(() => window.__clientUrls), { message: path }).toEqual([expect.stringContaining(TEST)]);
+    expect(await page.evaluate(() => localStorage.getItem('artbo.env')), path).toBeNull();
+  }
+  expectClean(ctx);
+});
+
+test('4 ter. brouillon d’une page publique : séparé entre lien de test et vrai lien', async ({ page }) => {
+  const ctx = await preparePage(page, { session: false });
+  await page.goto('/fiche.html?t=jeton-fiche-test-0001&test');
+  await expect(page.locator('#fiche-form')).toBeVisible();
+  const input = page.locator('#fiche-form input[name]:not([type=radio]):not([disabled])').first();
+  const name = await input.getAttribute('name');
+  await input.fill(MARK);
+  expect(await page.evaluate(() => Object.keys(localStorage))).toEqual(['artbo-test.page.fiche-brouillon-jeton-fiche-test-0001']);
+  await page.goto('/fiche.html?t=jeton-fiche-test-0001');
+  await expect(page.locator(`#fiche-form [name="${name}"]`)).not.toHaveValue(MARK);
+  await page.goto('/fiche.html?t=jeton-fiche-test-0001&test');
+  await expect(page.locator(`#fiche-form [name="${name}"]`)).toHaveValue(MARK);
   expectClean(ctx);
 });

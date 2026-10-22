@@ -155,7 +155,10 @@ const hhmm = t => new Date(t).toLocaleTimeString('fr-FR', {hour: '2-digit', minu
 const readQueue = () => {
   let q = {}; try { q = JSON.parse(localGet('summaryRetry') || '{}') || {}; } catch { return {}; }
   const ok = Object.fromEntries(Object.entries(q).filter(([, x]) => x && x.env === ENV));
-  if (Object.keys(ok).length !== Object.keys(q).length) writeQueue(ok);
+  if (Object.keys(ok).length !== Object.keys(q).length){
+    writeQueue(ok);
+    toast('Un résumé IA en attente (ancienne version ou espace de test) a été annulé : clique « Mettre à jour avec l’IA » sur le suivi pour le relancer', true);
+  }
   return ok;
 };
 const writeQueue = q => localSet('summaryRetry', JSON.stringify(q));
