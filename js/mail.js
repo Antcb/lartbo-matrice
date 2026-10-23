@@ -7,7 +7,6 @@
  * (réglage drive_webhook_url) ; sans lui, on copie le mail pour le coller dans Gmail.
  */
 import { billPct } from './calc.js';
-import { ENV } from './config.js';
 import { insert, remove, save, sb } from './data.js';
 import { byId, contactMails, linksOfStructure, projectOptions, setting } from './selectors.js';
 import { S } from './state.js';
@@ -69,9 +68,6 @@ export function fill(text, vars, html){
 export async function mailVars(showId, contactId){
   const {data, error} = await sb.rpc('mail_vars', {p_show: showId, p_contact: contactId || null});
   if (error){ toast('Balises : ' + error.message, true); return {}; }
-  // Espace de test : le lien de fiche fabriqué par la fonction SQL mail_vars (inchangée, identique en production) reçoit « &test »,
-  // comme les liens copiés (selectors.js publicLink) : il ouvre la base de test, jamais la vraie fiche.
-  if (ENV === 'test' && data?.lien_fiche) data.lien_fiche += (String(data.lien_fiche).includes('?') ? '&' : '?') + 'test';
   return data || {};
 }
 

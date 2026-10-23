@@ -10,8 +10,7 @@ import { LOG_ICON, LOG_KINDS, PROSPECT, PROSPECT_LABEL, PROSPECT_OPTS, isOff, st
 import { lingering, summaryRetryAt } from '../data.js';
 import { distKm, routeCached, route } from '../geo.js';
 import { suiviClosed, projFilterOk, byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, projIds, projName, projNames, projectOptions, showCoords, showsOfProject, structName } from '../selectors.js';
-import { ENV } from '../config.js';
-import { S, localDel, localGet, localSet } from '../state.js';
+import { S, localGet, localSet } from '../state.js';
 import { inactiveToggle, dropZone, fileRow, fold, projPicker, stSelect, pstBadge, stBadge, tabsBar, curTab, viewHead } from '../ui/bits.js';
 import { cAc, cIn, cSel, projChips } from '../ui/cells.js';
 import { acInput } from '../ui/autocomplete.js';
@@ -118,18 +117,8 @@ function logBody(l){
   return `<div class="md">${md(head)}</div><div class="log-mail">${safeHtml(l.body_html)}</div>`;
 }
 
-// Brouillon du journal : clés séparées par environnement (js/storage.js) ; en plus, un brouillon marqué d'un autre environnement
-// est effacé, jamais repris (un ancien brouillon sans marque est celui de la production), comme ui/drafts.js.
-export function logDraft(pid){
-  S.logDrafts ||= {};
-  if (!S.logDrafts[pid]){
-    let d = {}; try { d = JSON.parse(localGet('logdraft.'+pid) || '{}') || {}; } catch(e){ d = {}; }
-    const {env, ...rest} = d;
-    if ((env || 'prod') !== ENV){ localDel('logdraft.'+pid); S.logDrafts[pid] = {}; } else S.logDrafts[pid] = rest;
-  }
-  return S.logDrafts[pid];
-}
-export function setLogDraft(pid, d){ S.logDrafts ||= {}; S.logDrafts[pid] = d; localSet('logdraft.'+pid, JSON.stringify({...d, env: ENV})); }
+export function logDraft(pid){ S.logDrafts ||= {}; if (!S.logDrafts[pid]) { try { S.logDrafts[pid] = JSON.parse(localGet('logdraft.'+pid) || '{}'); } catch(e){ S.logDrafts[pid] = {}; } } return S.logDrafts[pid]; }
+export function setLogDraft(pid, d){ S.logDrafts ||= {}; S.logDrafts[pid] = d; localSet('logdraft.'+pid, JSON.stringify(d)); }
 export const hasLogDraft = pid => { const d = logDraft(pid); return !!((d.body||'').trim() || (d.who||'').trim()); };
 
 /** Tâches d'un suivi : même structure (et même artiste si la tâche en a un) ; terminées masquées sauf pendant 5 s */

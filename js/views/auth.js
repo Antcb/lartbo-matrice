@@ -8,10 +8,9 @@ import { startRealtime } from '../realtime.js';
 import { bootTrace } from '../diag.js';
 import { S } from '../state.js';
 import { $ } from '../utils.js';
-import { TEST_APP_NOTICE } from '../ui/testbanner.js';
 
 export function loginHTML(){
-  return `<div class="panel login"><img src="assets/logo.png" alt="L'ArtBoristerie Productions" width="220" height="83"><p>Booking et production</p>${ENV === 'test' ? `<p class="test-note">${TEST_APP_NOTICE} <a href="?prod">Revenir à la vraie Matrice</a></p>` : ''}
+  return `<div class="panel login"><img src="assets/logo.png" alt="L'ArtBoristerie Productions" width="220" height="83"><p>Booking et production</p>${ENV === 'test' ? '<p class="test-note">Espace de test : une copie de la Matrice, sans effet sur la vraie. <a href="?prod">Revenir à la vraie Matrice</a></p>' : ''}
     <form id="login-form">
       <input type="email" id="login-email" placeholder="prenom@lartboristerie.com" required autocomplete="email">
       <input type="password" id="login-pw" placeholder="Mot de passe" required autocomplete="current-password">

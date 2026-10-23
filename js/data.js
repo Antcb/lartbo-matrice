@@ -3,7 +3,7 @@
  * Toute modification passe par save / insert / remove, qui tiennent les index à jour (touch).
  */
 import { render } from './app.js';
-import { CFG, ENV } from './config.js';
+import { CFG } from './config.js';
 import { TEAM_NAMES } from './constants.js';
 import { LINGER_MS } from './constants.js';
 import { byId, linksOfStructure } from './selectors.js';
@@ -150,24 +150,14 @@ export async function refreshSummary(pid, {silent = true} = {}){
 const BUSY = /satur|surcharg|high demand|overload|unavailable|503|429|réessaie dans quelques minutes|failed to (send|fetch)|networkerror|load failed/i;
 const WAITS = [1, 2, 5, 10, 20, 30];
 const hhmm = t => new Date(t).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'});
-// File séparée par environnement (js/storage.js) ; en plus, chaque entrée porte son environnement : une entrée d'un autre
-// environnement, ou ancienne sans marque, est jetée sans être exécutée (un résumé du test ne part jamais en production).
-const readQueue = () => {
-  let q = {}; try { q = JSON.parse(localGet('summaryRetry') || '{}') || {}; } catch { return {}; }
-  const ok = Object.fromEntries(Object.entries(q).filter(([, x]) => x && x.env === ENV));
-  if (Object.keys(ok).length !== Object.keys(q).length){
-    writeQueue(ok);
-    toast('Un résumé IA en attente (ancienne version ou espace de test) a été annulé : clique « Mettre à jour avec l’IA » sur le suivi pour le relancer', true);
-  }
-  return ok;
-};
+const readQueue = () => { try { return JSON.parse(localGet('summaryRetry') || '{}') || {}; } catch { return {}; } };
 const writeQueue = q => localSet('summaryRetry', JSON.stringify(q));
 let RETRY_TIMER = null, RETRYING = false;   // un seul passage d'essais à la fois
 function queueSummary(pid){
   const q = readQueue(), n = (q[pid]?.n || 0) + 1;
   if (n > 12){ delete q[pid]; writeQueue(q); toast('Résumé IA abandonné après plusieurs essais : clique « Mettre à jour avec l’IA » plus tard', true); return Date.now(); }
   const at = Date.now() + WAITS[Math.min(n - 1, WAITS.length - 1)] * 60000;
-  q[pid] = {n, at, env: ENV}; writeQueue(q); planRetries();
+  q[pid] = {n, at}; writeQueue(q); planRetries();
   return at;
 }
 function dropSummary(pid){ const q = readQueue(); if (q[pid]){ delete q[pid]; writeQueue(q); } }

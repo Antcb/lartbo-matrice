@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.40.4 — 23/10/2026
+- Retour arrière de la 1.40.3 (S0-R8) : stockage du navigateur, pages publiques et liens reviennent au fonctionnement de la 1.40.2 (aucune donnée touchée)
+
+
 ## 1.40.3 — 22/10/2026
 - S0-R8 : brouillons, file des résumés IA et préférences séparés entre la vraie Matrice et l'espace de test ; pages publiques dans l'environnement de leur propre lien ; liens créés en test marqués « test » ; messages de l'espace de test corrigés
 

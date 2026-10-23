@@ -122,7 +122,6 @@ Une valeur par défaut est lue **à un seul endroit** — un réglage (`setting(
 ### 3.5 Enregistrement et brouillons [EN PLACE]
 - `save(table, id, patch)` (`js/data.js`) : mise à jour immédiate à l'écran ; si Supabase refuse, retour à l'ancienne valeur + message.
 - Fenêtre : « Enregistrer » / « Annuler » ; la fermer sans enregistrer garde un brouillon (`js/ui/drafts.js`) restauré à la réouverture.
-- [EN PLACE, lot S0-R8] **Stockage du navigateur séparé par environnement** : brouillons, file des résumés IA et préférences passent **uniquement** par `js/storage.js` (`localGet`, `localSet`, `localDel`) ; production : clés historiques inchangées ; test : clés `artbo-test.…`. Accès direct à `localStorage` / `sessionStorage` / `indexedDB` interdit ailleurs (sauf `js/config.js` pour `artbo.env`), contrôlé par `tests/static/check.mjs`. Pages publiques (reconnues par `<body class="fiche-page">`) : environnement tiré **de leur seul lien** (`test` dans l'adresse), jamais du navigateur. Exception connue : la bibliothèque Supabase (`assets/vendor`) garde la session de connexion sous une clé propre à chaque projet (`sb-<projet>-auth-token`), donc déjà séparée.
 - [CORRECTION] La clé de brouillon (titre de fenêtre + id) fait partager le même brouillon à toutes les « Nouvelle tâche » (peut écraser un pré-remplissage) et rend orphelin le brouillon d'un lieu renommé ; trois mécanismes de brouillon coexistent (drafts.js, `logdraft.*`, pages publiques).
 
 ### 3.6 Messages d'erreur [NOUVELLE]
@@ -357,8 +356,6 @@ Voir `README.md` « Organisation du code » et « Où modifier quoi ». Rendu co
 | Recherche | `norm`, `hayOf`, `matches` | `js/utils.js` |
 | Prénom pour un mail | `firstName` | `js/utils.js` |
 | Lien | `url` | `js/utils.js` |
-| Lien d'une page publique (fiche, artiste, salarié ; « &test » en test) | `publicLink`, `linkLabel` | `js/selectors.js` |
-| Stockage du navigateur (séparé production / test) | `localGet`, `localSet`, `localDel` | `js/storage.js` |
 | CSV | `downloadCSV`, `parseCSV` | `js/utils.js` |
 | Réglage | `setting(k)` | `js/selectors.js` |
 | Lectures | `byId`, `projIds`, `projNames`, `linksOfStructure`, `paymentsOf`… | `js/selectors.js`, `js/calc.js` |
@@ -386,7 +383,6 @@ Une règle présente des deux côtés est modifiée **dans la même version** de
 | Ligne Movinmotion | `budget-template.js`, `syncMovinmotionLine` | SQL `ensure_movinmotion` |
 | Date longue, euros | (fonction unique à créer), `eur` | SQL `fr_date`, `fr_eur` |
 | Prénom de contact | `firstName` | SQL `contact_first_name` |
-| Lien de page publique (« &test » dans l'espace de test) | `publicLink` (`selectors.js`), `mailVars` (`mail.js`) | SQL `mail_vars` (`{{lien_fiche}}`, sans « &test » : complété côté JS ; fonction SQL inchangée, décision du 22/10/2026) |
 | Mails / téléphones | (contrôle unique à créer) | SQL `contacts_clean`, `clean_phone`, `clean_email` |
 | Choix et remplissage des modèles de mail | `js/mail.js` | `apps-script/Code.gs` (`applies_`, `pickTemplate_`, `fill_`) |
 | Nom du lieu sans code, département | `contract.js` (`deptOf`) | `Code.gs` (`dept_`, `cpDept_`) ; SQL `mail_vars` (regex différente) |

@@ -5,7 +5,6 @@
  * Les numéros sensibles déjà connus ne sont jamais réaffichés (seulement « déjà renseigné »).
  */
 import { CFG } from './config.js';
-import './ui/testbanner.js';
 import './ui/dropfiles.js';
 import './ui/filepick.js';
 import './ui/autogrow.js';

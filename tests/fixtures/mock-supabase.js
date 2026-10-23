@@ -68,11 +68,11 @@
   const clone = v => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
   const CONFIRMED = ['Confirmée Salle', 'Confirmée Festival'];
 
-  function builder(table, url) {
+  function builder(table) {
     const st = { op: 'select', filters: [], single: false, patch: null, range: null };
     const match = r => st.filters.every(([c, v, how]) => how === 'in' ? v.includes(r[c]) : how === 'neq' ? r[c] !== v : (v === null ? r[c] == null : r[c] === v));
     const exec = () => {
-      window.__calls.push({ table, op: st.op, patch: st.patch, filters: st.filters, url: url || null });
+      window.__calls.push({ table, op: st.op, patch: st.patch, filters: st.filters });
       const rows = DB[table];
       if (st.op === 'select') { let d = rows.filter(match); if (st.range) d = d.slice(st.range[0], st.range[1] + 1); return { data: clone(st.single ? d[0] : d), error: null }; }
       if (st.op === 'update') {
@@ -109,8 +109,7 @@
 
   const RPC = {
     is_team: () => true,
-    mail_vars: () => ({ artiste: 'Artiste Alpha', date: 'mardi 1er juin 2027', ville: 'Bourg-Test', lieu: 'Festival Fictif', cachet_ht: '6 000 €', contact: 'Camille',
-      lien_fiche: 'https://exemple.invalid/fiche.html?t=jeton-fiche-test-0001' }),
+    mail_vars: () => ({ artiste: 'Artiste Alpha', date: 'mardi 1er juin 2027', ville: 'Bourg-Test', lieu: 'Festival Fictif', cachet_ht: '6 000 €', contact: 'Camille' }),
     fiche_get: a => a.p_token === 'jeton-fiche-test-0001' ? { artist: 'Artiste Alpha', date: inYear('06-15'), date_label: 'date de test', venue: 'Festival Fictif', city: 'Bourg-Test',
       contract_type: 'Cession', fee_ht: 6000, vat: 5.5, fee_ttc: 6330, acompte_pct: 50, payments: [{ label: 'Acompte', kind: 'acompte', pct: 50, ht: 3000 }, { label: 'Solde', kind: 'solde', pct: 50, ht: 3000 }],
       structure: { name: 'Festival Fictif' }, fiche: {}, submitted_at: null, locked: false } : null,
@@ -119,16 +118,11 @@
   };
 
   window.supabase = {
-    // Adresse du projet demandée par la page (production ou test) : relevée, jamais contactée (lot S0-R8)
-    createClient(url) {
-      (window.__clientUrls ||= []).push(String(url));
+    createClient() {
       return {
-        from: table => builder(table, String(url)),
-        rpc: async (name, args) => { window.__calls.push({ rpc: name, args, url: String(url) }); const f = RPC[name]; return { data: f ? clone(f(args || {})) : null, error: null }; },
-        // window.__FN_ERROR = { nom: 'message' } : la fonction serveur répond par cette erreur (essais de la file des résumés IA)
-        functions: { invoke: async (name, o) => { window.__calls.push({ fn: name, body: o && o.body, url: String(url) });
-          const err = window.__FN_ERROR && window.__FN_ERROR[name];
-          return err ? { data: null, error: { message: err } } : { data: { ok: true }, error: null }; } },
+        from: builder,
+        rpc: async (name, args) => { window.__calls.push({ rpc: name, args }); const f = RPC[name]; return { data: f ? clone(f(args || {})) : null, error: null }; },
+        functions: { invoke: async (name, o) => { window.__calls.push({ fn: name, body: o && o.body }); return { data: { ok: true }, error: null }; } },
         storage: { from: () => ({ upload: async () => ({ data: {}, error: null }), remove: async () => ({ data: [], error: null }),
           createSignedUrl: async () => ({ data: { signedUrl: 'about:blank' }, error: null }), createSignedUrls: async p => ({ data: p.map(() => ({ signedUrl: 'about:blank' })), error: null }) }) },
         channel: () => { const c = { on: () => c, subscribe: () => c, unsubscribe: async () => 'ok' }; return c; },

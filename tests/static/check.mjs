@@ -3,9 +3,7 @@
 //  2. chaque nom importé existe bien dans le module visé ;
 //  3. carte d'import (index.html) complète et à la version de js/config.js ;
 //  4. le nombre de fenêtres natives (alert / confirm / prompt) n'augmente pas (référence : baselines/fenetres-natives.json) ;
-//  5. aucun secret écrit dans les fichiers du dépôt (tous les fichiers suivis par Git, tests compris) ;
-//  6. aucune bibliothèque chargée depuis un service tiers ;
-//  7. aucun accès direct au stockage du navigateur hors js/storage.js et js/config.js (séparation production / test).
+//  5. aucun secret écrit dans les fichiers du dépôt (tous les fichiers suivis par Git, tests compris).
 // Usage : node static/check.mjs            (contrôle)
 //         node static/check.mjs --baseline (réécrit la référence des fenêtres natives, seulement si leur nombre a BAISSÉ)
 import { execFileSync } from 'node:child_process';
@@ -141,28 +139,6 @@ for (const page of ['index.html', 'fiche.html', 'rh.html', 'artiste.html']) {
   if (EXT_IMPORT_HTML.test(html)) fail('bibliothèques', `${page} importe un module depuis un service tiers (utiliser assets/vendor)`);
 }
 for (const f of JS) if (EXT_SCRIPT_JS.test(readFileSync(f, 'utf8'))) fail('bibliothèques', `${rel(f)} charge un script depuis un service tiers (utiliser assets/vendor)`);
-
-// 7. Stockage du navigateur (lot S0-R8) : production et test ne doivent jamais partager de données gardées dans le navigateur.
-// Seuls js/storage.js (clés séparées par environnement) et js/config.js (clé artbo.env) y accèdent directement.
-// Analyse des jetons du code (commentaires et textes ignorés), plus les scripts écrits dans les pages HTML.
-// Aussi : cookies, Cache API, navigator.storage, et les noms écrits dans un texte ou un gabarit (window[`localStorage`]).
-// Exception connue, hors js/ : la bibliothèque Supabase (assets/vendor) range la session sous une clé propre à chaque projet.
-const STORE = new Set(['localStorage', 'sessionStorage', 'indexedDB', 'caches']), STORE_OK = new Set(['js/storage.js', 'js/config.js']);
-const STORE_TXT = /\b(localStorage|sessionStorage|indexedDB)\b/;
-const storeUses = src => {
-  const tk = [...tokenizer(src, { ecmaVersion: 'latest', sourceType: 'module' })];
-  return tk.filter((t, i) => (t.type.label === 'name' && STORE.has(t.value) && !(t.value === 'caches' && tk[i - 1]?.type.label === '.'))
-    || ((t.type.label === 'string' || t.type.label === 'template') && STORE_TXT.test(t.value))
-    || (t.type.label === 'name' && ((t.value === 'cookie' && tk[i - 2]?.value === 'document') || (t.value === 'storage' && tk[i - 2]?.value === 'navigator')) && tk[i - 1]?.type.label === '.')).length;
-};
-for (const f of JS) if (!STORE_OK.has(rel(f)) && storeUses(readFileSync(f, 'utf8')))
-  fail('stockage', `${rel(f)} accède directement au stockage du navigateur : passer par js/storage.js (séparation production / test)`);
-for (const page of readdirSync(ROOT).filter(f => f.endsWith('.html'))) {
-  const html = readFileSync(join(ROOT, page), 'utf8');
-  for (const m of html.matchAll(/<script(?![^>]*\bsrc=)(?![^>]*type=["']importmap)[^>]*>([\s\S]*?)<\/script>/gi))
-    if (/\b(localStorage|sessionStorage|indexedDB)\b/.test(m[1])) fail('stockage', `${page} : un script de la page accède directement au stockage du navigateur (passer par js/storage.js)`);
-  if (/\son\w+\s*=\s*["'][^"']*\b(localStorage|sessionStorage|indexedDB)\b/i.test(html)) fail('stockage', `${page} : un attribut d'événement accède au stockage du navigateur`);
-}
 
 // Bilan
 console.log(`Contrôles statiques : ${JS.length} modules, version ${version}, ${total(now)} fenêtre(s) native(s) tolérée(s), ${scanned.length} fichiers examinés pour les secrets.`);

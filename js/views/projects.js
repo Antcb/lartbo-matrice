@@ -7,10 +7,11 @@ import { ARTIST_DOCS, ARTIST_SECTIONS, PHOTO_CREDITS } from '../artist-fields.js
 import { templateForm } from '../budget-template.js';
 import { ALL_FIELDS as AF_FIELDS, ficheText, fieldText, input as afInput, listClick, migrateInfo, read as afRead } from '../artist-form.js';
 import { netArtbo } from '../calc.js';
+import { ENV } from '../config.js';
 import { templatesList, tplProjects } from '../mail.js';
 import { CONFIRMED_PROD, LOG_ICON, stClass } from '../constants.js';
 import { save, sb, signedCached, signedUrl } from '../data.js';
-import { defaultCommission, projectCommission, publicLink, setting, suiviClosed, attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, structName, tasksOfProject } from '../selectors.js';
+import { defaultCommission, projectCommission, setting, suiviClosed, attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, structName, tasksOfProject } from '../selectors.js';
 import { S, touch } from '../state.js';
 import { curTab, dropZone, fileRow, fold, pstBadge, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cAc, cIn } from '../ui/cells.js';
@@ -258,4 +259,4 @@ document.addEventListener('click', async e => {
     const txt = ficheText(fm ? afRead(fm) : (p?.artist_info || {}), p?.name || '');
     try { await navigator.clipboard.writeText(txt); toast('Fiche copiée : colle-la où tu veux'); } catch { prompt('Fiche :', txt); } }
 });
-export const artistLink = p => publicLink('artiste', p.artist_token);   // en test : « &test », le lien ouvre la base de test
+export const artistLink = p => (setting('site_url') || location.origin + location.pathname.replace(/[^/]*$/, '')) + 'artiste.html?t=' + p.artist_token + (ENV === 'test' ? '&test' : '');   // espace de test : le lien ouvre la base de test

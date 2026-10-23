@@ -5,8 +5,6 @@
  * Il peut revenir sur le même lien pour compléter ou corriger : ses réponses sont reprises.
  */
 import { CFG } from './config.js';
-import { localDel, localGet, localSet } from './storage.js';
-import './ui/testbanner.js';
 import './ui/dropfiles.js';
 import './ui/filepick.js';
 import './ui/autogrow.js';
@@ -25,7 +23,7 @@ async function load(){
   const {data, error} = await sb.rpc('artist_get', {p_token: token});
   if (error) return fail('La fiche ne peut pas être chargée pour le moment. Réessaie dans quelques minutes.');
   if (!data) return fail('Ce lien n’est pas valide. Écris-nous à production@lartboristerie.com.');
-  let draft = {}; try { draft = JSON.parse(localGet(DRAFT, {page: true}) || '{}'); } catch {}
+  let draft = {}; try { draft = JSON.parse(localStorage.getItem(DRAFT) || '{}'); } catch {}
   // ancienne version de la fiche : la structure administrative était une ligne de « l'équipe pro » → reprise dans ses nouveaux champs
   const values = migrateInfo({...(data.info || {}), ...draft});
   draw(data, values);
@@ -66,7 +64,7 @@ function draw(d, values){
     const c = form.querySelector(`[data-count-for="${t.name}"]`); if (c){ c.textContent = `${n} / ${max} mots`; c.classList.toggle('over', n > max); } });
   count();
   // la zone de texte (présentation, stratégie…) grandit avec le texte
-  const keep = () => { localSet(DRAFT, JSON.stringify(read(form)), {page: true}); };
+  const keep = () => { try { localStorage.setItem(DRAFT, JSON.stringify(read(form))); } catch {} };
   form.addEventListener('input', () => { count(); keep(); });
   form.addEventListener('change', keep);
   wireLists(form, keep);
@@ -120,7 +118,7 @@ function draw(d, values){
     const {error} = await sb.rpc('artist_submit', {p_token: token, p_info: info, p_docs: docs});
     btn.disabled = false; btn.textContent = 'Envoyer la fiche';
     if (error) return note(error.message || 'Envoi impossible, réessaie.', true);
-    localDel(DRAFT, {page: true});
+    try { localStorage.removeItem(DRAFT); } catch {}
     root.innerHTML = `<div class="panel pad fiche-ok"><h2>Merci !</h2><p>${docs.length ? `Ta fiche et ${docs.length > 1 ? `tes ${docs.length} fichiers sont bien enregistrés` : 'ton fichier sont bien enregistrés'}` : 'Ta fiche est bien enregistrée'}. Les fichiers arrivent dans ton dossier chez nous dans quelques minutes.</p><p><a href="${esc(location.href)}">Revenir à la fiche</a></p></div>`;
     window.scrollTo(0, 0);
   });
