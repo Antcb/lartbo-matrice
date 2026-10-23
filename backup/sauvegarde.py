@@ -39,6 +39,7 @@ for f in export["files"]:
     new += 1
 
 summary = [f"Sauvegarde du {export['exported_at']}", ""] + [f"{t}: {n}" for t, n in counts.items()] + \
-          ["", f"pièces jointes : {len(export['files'])} (dont {new} nouvelles)"]
+          ["", f"pièces jointes : {len(export['files'])} (dont {new} nouvelles)",
+           f"fichiers référencés introuvables dans le stockage : {len(export.get('missing', []))}"]
 (root / "derniere-sauvegarde.txt").write_text("\n".join(summary) + "\n", encoding="utf-8")
 print("\n".join(summary))

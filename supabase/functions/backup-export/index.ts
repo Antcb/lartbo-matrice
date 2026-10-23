@@ -13,6 +13,21 @@ const TABLES = ['app_users', 'settings', 'partners', 'projects', 'structures', '
 const ORDER: Record<string, string[]> = { app_users: ['email'], settings: ['key'], contact_structures: ['contact_id', 'structure_id'] };
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });
 
+// Tous les fichiers d'un espace de stockage (parcours des dossiers), avec leur taille
+async function listAll(bucket: string, prefix = ''): Promise<{ path: string; size: number }[]> {
+  const out: { path: string; size: number }[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await sb.storage.from(bucket).list(prefix, { limit: 1000, offset, sortBy: { column: 'name', order: 'asc' } });
+    if (error) throw new Error(bucket + '/' + prefix + ' : ' + error.message);
+    for (const e of data) {
+      const path = prefix ? prefix + '/' + e.name : e.name;
+      if (e.id === null) out.push(...await listAll(bucket, path));   // dossier
+      else out.push({ path, size: Number((e.metadata as any)?.size) || 0 });
+    }
+    if (data.length < 1000) return out;
+  }
+}
+
 async function all(table: string) {
   const rows: unknown[] = [];
   for (let from = 0; ; from += 1000) {
@@ -47,7 +62,13 @@ Deno.serve(async (req) => {
       .concat(T.employees.flatMap((e) => (e.docs || []).filter((d: any) => d?.path && !d.file_id).map((d: any) => ({ bucket: 'rh', path: d.path, size: 0 }))))
       // fichiers envoyés par les artistes (fiche artiste) pas encore rangés dans le Drive (« artiste »)
       .concat(T.projects.flatMap((p) => (p.artist_docs || []).filter((d: any) => d?.path && !d.file_id).map((d: any) => ({ bucket: 'artiste', path: d.path, size: 0 }))));
+    // B1 : aussi les fichiers stockés que plus aucune ligne ne référence (« suivi » et « rh » ; « artiste » est rangé dans le Drive)
+    for (const bucket of ['suivi', 'rh']) {
+      const known = new Set(files.filter((f) => f.bucket === bucket).map((f) => f.path));
+      for (const f of await listAll(bucket)) if (!known.has(f.path)) files.push({ bucket, path: f.path, size: f.size });
+    }
     const out: { bucket: string; path: string; url: string; size: number }[] = [];
+    const missing: string[] = [];   // fichier référencé mais introuvable : signalé au lieu d'être ignoré
     for (const bucket of ['suivi', 'rh', 'artiste']) {
       const list = [...new Map(files.filter((f) => f.bucket === bucket).map((f) => [f.path, f])).values()];
       for (let i = 0; i < list.length; i += 100) {
@@ -55,10 +76,11 @@ Deno.serve(async (req) => {
         const { data, error } = await sb.storage.from(bucket).createSignedUrls(chunk.map((f) => f.path), 7200);
         if (error) throw error;
         // chemin d'origine pour « suivi » (compatible avec les sauvegardes existantes), préfixé pour « rh » et « artiste »
-        data.forEach((d, j) => d.signedUrl && out.push({ bucket, path: (bucket === 'suivi' ? '' : bucket + '/') + chunk[j].path, url: d.signedUrl, size: chunk[j].size }));
+        data.forEach((d, j) => d.signedUrl ? out.push({ bucket, path: (bucket === 'suivi' ? '' : bucket + '/') + chunk[j].path, url: d.signedUrl, size: chunk[j].size })
+          : missing.push(bucket + '/' + chunk[j].path));
       }
     }
-    return json({ exported_at: new Date().toISOString(), tables, files: out });
+    return json({ exported_at: new Date().toISOString(), tables, files: out, missing });
   } catch (err) {
     return json({ error: String((err as any)?.message || err) }, 500);
   }
