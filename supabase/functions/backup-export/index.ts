@@ -1,5 +1,7 @@
 // Export complet pour la sauvegarde quotidienne (dépôt privé lartbo-matrice-backup).
-// Appel : POST { secret } → { tables: { nom: [lignes] }, files: [{ bucket, path, url, size }] }
+// Appel : POST { secret } → { tables: { nom: [lignes] }, files: [{ bucket, path, url, size }], missing: ['espace/chemin'] }
+// missing : fichiers référencés introuvables dans le stockage (signalés au lieu d'être ignorés).
+// Les réglages des intégrations (adresses et codes des scripts Google et de Brevo) ne sont jamais exportés.
 // Les liens des fichiers sont temporaires (2 h) ; le secret est dans private.import_secrets ('backup_secret').
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 
@@ -11,22 +13,10 @@ const TABLES = ['app_users', 'settings', 'partners', 'projects', 'structures', '
   'structure_events', 'project_logs', 'project_members', 'attachments', 'notifications', 'mail_templates', 'employees', 'budget_lines'];
 // colonne(s) de tri pour lire les grandes tables page par page
 const ORDER: Record<string, string[]> = { app_users: ['email'], settings: ['key'], contact_structures: ['contact_id', 'structure_id'] };
+// Réglages des intégrations (scripts Google, Brevo) : même liste que outils/neutraliser.sql du dépôt de sauvegarde
+const INTEGRATION_KEYS = new Set(['drive_webhook_url', 'drive_webhook_secret', 'prospect_script_url', 'prospect_from', 'rename_sheet_url',
+  'brevo_api_key', 'brevo_hook_secret', 'brevo_list_id', 'functions_base_url']);
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });
-
-// Tous les fichiers d'un espace de stockage (parcours des dossiers), avec leur taille
-async function listAll(bucket: string, prefix = ''): Promise<{ path: string; size: number }[]> {
-  const out: { path: string; size: number }[] = [];
-  for (let offset = 0; ; offset += 1000) {
-    const { data, error } = await sb.storage.from(bucket).list(prefix, { limit: 1000, offset, sortBy: { column: 'name', order: 'asc' } });
-    if (error) throw new Error(bucket + '/' + prefix + ' : ' + error.message);
-    for (const e of data) {
-      const path = prefix ? prefix + '/' + e.name : e.name;
-      if (e.id === null) out.push(...await listAll(bucket, path));   // dossier
-      else out.push({ path, size: Number((e.metadata as any)?.size) || 0 });
-    }
-    if (data.length < 1000) return out;
-  }
-}
 
 async function all(table: string) {
   const rows: unknown[] = [];
@@ -48,6 +38,8 @@ Deno.serve(async (req) => {
 
     const tables: Record<string, unknown[]> = {};
     for (const t of TABLES) tables[t] = await all(t);
+    // B1 : adresses et codes des intégrations jamais exportés (ils se ressaisissent à la restauration)
+    tables.settings = (tables.settings as any[]).filter((r) => !INTEGRATION_KEYS.has(r.key));
 
     // Tous les fichiers stockés, avec leur espace de stockage : pièces des suivis, tâches, projets, budgets, encaissements,
     // pièces jointes des modèles de mail (« suivi ») et pièces des salariés pas encore rangées dans le Drive (« rh »)
@@ -62,11 +54,6 @@ Deno.serve(async (req) => {
       .concat(T.employees.flatMap((e) => (e.docs || []).filter((d: any) => d?.path && !d.file_id).map((d: any) => ({ bucket: 'rh', path: d.path, size: 0 }))))
       // fichiers envoyés par les artistes (fiche artiste) pas encore rangés dans le Drive (« artiste »)
       .concat(T.projects.flatMap((p) => (p.artist_docs || []).filter((d: any) => d?.path && !d.file_id).map((d: any) => ({ bucket: 'artiste', path: d.path, size: 0 }))));
-    // B1 : aussi les fichiers stockés que plus aucune ligne ne référence (« suivi » et « rh » ; « artiste » est rangé dans le Drive)
-    for (const bucket of ['suivi', 'rh']) {
-      const known = new Set(files.filter((f) => f.bucket === bucket).map((f) => f.path));
-      for (const f of await listAll(bucket)) if (!known.has(f.path)) files.push({ bucket, path: f.path, size: f.size });
-    }
     const out: { bucket: string; path: string; url: string; size: number }[] = [];
     const missing: string[] = [];   // fichier référencé mais introuvable : signalé au lieu d'être ignoré
     for (const bucket of ['suivi', 'rh', 'artiste']) {

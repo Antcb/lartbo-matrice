@@ -23,6 +23,10 @@ if "tables" not in export:
 data_dir = root / "donnees"
 data_dir.mkdir(exist_ok=True)
 counts = {}
+# B1 : adresses et codes des intégrations jamais écrits dans le dépôt (ils se ressaisissent à la restauration)
+SECRETS = {"drive_webhook_url", "drive_webhook_secret", "prospect_script_url", "prospect_from", "rename_sheet_url",
+           "brevo_api_key", "brevo_hook_secret", "brevo_list_id", "functions_base_url"}
+export["tables"]["settings"] = [r for r in export["tables"].get("settings", []) if r.get("key") not in SECRETS]
 for table, rows in export["tables"].items():
     counts[table] = len(rows)
     lines = ",\n".join(json.dumps(row, ensure_ascii=False, sort_keys=True) for row in rows)
