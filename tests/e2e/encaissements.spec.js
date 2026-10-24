@@ -230,6 +230,30 @@ test('A2 points 4 et 5 : date annulée, avance L’ArtBo à rembourser ; budget 
   expectClean(ctx);
 });
 
+test('A2 point 1 : date passée en booking, « Rattacher » ne propose que les factures émises visibles ; une facture qui a sa pièce ne la perd jamais', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [BOOKING], show_payments: [
+    { id: 'k-a', show_id: 'e-3', kind: 'acompte', label: 'Acompte jamais facturé', pct: 50, sort: 1 },
+    { id: 'k-s', show_id: 'e-3', kind: 'solde', label: 'Solde émis', pct: 50, invoice_number: 'F-70', sort: 2 },
+    { id: 'k-x', show_id: 'e-3', kind: 'solde', label: 'Solde émis avec pièce', pct: 0, invoice_number: 'F-71', file_path: 'budget/e-3/ancienne.pdf', file_name: 'ancienne.pdf', sort: 3 },
+  ], attachments: [{ id: 'att-1', project_id: 'art-b', name: 'V-1.pdf', path: 'budget/e-3/V-1.pdf' }] });
+  // même numéro qu'une facture qui a déjà sa pièce : rien n'est remplacé, la nouvelle pièce est gardée à part
+  expect(await page.evaluate(async () => (await import('./js/budget-actions.js')).applyPiece({
+    doc: { type: 'facture_emise', numero: 'F-71', montant_ht: 0 }, path: 'budget/e-3/nouvelle.pdf', name: 'nouvelle.pdf', show_id: 'e-3', project_id: 'art-b', line: null }))).toBeNull();
+  expect(await dbPay(page, 'k-x')).toMatchObject({ file_path: 'budget/e-3/ancienne.pdf', file_name: 'ancienne.pdf' });
+  await openFactures(page, 'e-3');
+  await expect(page.locator('[data-act="attachPiece"]')).toHaveCount(2);
+  await page.locator('.file-row', { hasText: 'V-1.pdf' }).locator('[data-act="attachPiece"]').click();
+  // « — » + le seul solde émis sans pièce : jamais la ligne masquée jamais facturée
+  await expect(page.locator('#modal select[name="pay"] option')).toHaveText(['—', /^Solde émis · /]);
+  await page.locator('#modal select[name="pay"]').selectOption('k-s');
+  await page.locator('#modal button[type=submit]').click();
+  await expect(page.locator('#modal')).not.toBeVisible();
+  expect(await dbPay(page, 'k-s')).toMatchObject({ file_name: 'V-1.pdf', invoice_number: 'F-70' });
+  expect((await dbPay(page, 'k-a')).file_path ?? null).toBeNull();
+  expectClean(ctx);
+});
+
 test('A2-F : marquer payé un encaissement sans compte demande le compte ; « Annuler » le laisse « Non renseigné »', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, { shows: [PROD, BOOKING], show_payments: [

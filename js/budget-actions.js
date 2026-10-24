@@ -155,8 +155,8 @@ export const BUDGET_ACTIONS = {
   // pièce gardée « à rattacher » : l'utilisateur choisit la ligne (jamais une ligne qui a déjà sa pièce)
   attachPiece: async t => {
     const a = byId('attachments', t.dataset.id), s = byId('shows', t.dataset.show); if (!a || !s) return;
-    const lines = paymentsOf(s.id).filter(p => ['acompte','solde','autre'].includes(p.kind) && !p.file_path);
-    if (!lines.length) return toast('Aucune ligne d’acompte, de solde ou autre sans pièce sur cette date : ajoute la ligne d’abord.', true);
+    const lines = attachableLines(s).filter(p => !p.file_path);
+    if (!lines.length) return toast(s.prod_mode === 'booking' ? 'Date en booking : aucune facture émise sans pièce à laquelle rattacher ce document.' : 'Aucune ligne d’acompte, de solde ou autre sans pièce sur cette date : ajoute la ligne d’abord.', true);
     await openModal({title: 'Rattacher la pièce', saveLabel: 'Rattacher',
       extraTop: `<p class="help full">Pièce : <b>${esc(a.name)}</b><br>Le montant, le % et la date de paiement de la ligne ne changent pas.</p>`,
       fields: [{k: 'pay', label: 'Ligne', type: 'select', full: true, options: lines.map(p => [p.id, `${p.label || p.kind} · ${eur2(payAmount(p) || 0)} HT${p.invoice_number ? ' · ' + p.invoice_number : ''}`])},
@@ -244,6 +244,11 @@ function askDuplicate(dup, name){
 const isOurs = n => /artboristerie/i.test(n || '');
 const cleanDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : null;
 
+/** Lignes auxquelles une facture de vente peut être rattachée : celles affichées dans l'onglet Factures
+ *  (date en booking : seulement les factures déjà émises, les lignes jamais facturées restent masquées et intouchées) */
+const attachableLines = s => !s ? [] : paymentsOf(s.id).filter(p => ['acompte','solde','autre'].includes(p.kind)
+  && (s.prod_mode !== 'booking' || (['acompte','solde'].includes(p.kind) && isInvoiced(p))));
+
 /**
  * Ligne d'acompte / de solde d'une facture de vente lue par l'IA. Seules correspondances sûres :
  *  1. le même numéro de facture ;
@@ -254,7 +259,8 @@ const cleanDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : null;
  */
 export function matchSale(pays, d, ht){
   const byNum = d.numero && pays.find(p => p.invoice_number && norm(p.invoice_number) === norm(d.numero));
-  if (byNum) return {pay: byNum};
+  // la facture a déjà sa pièce : jamais remplacée sans trace, la nouvelle est gardée à part
+  if (byNum) return byNum.file_path ? {why: `la facture ${byNum.invoice_number} a déjà sa pièce (${byNum.file_name || 'fichier'})`} : {pay: byNum};
   const free = p => !isInvoiced(p) && !p.file_path, near = p => Math.abs((payAmount(p) || 0) - ht) < 1;
   const kind = ['acompte', 'solde'].includes(d.acompte_ou_solde) ? d.acompte_ou_solde : null;
   if (kind){
@@ -274,7 +280,7 @@ export async function applyPiece({doc, path, name, show_id, project_id, line}){
   const ht = d.montant_ht != null ? Number(d.montant_ht) : null, ttc = d.montant_ttc != null ? Number(d.montant_ttc) : null;
   // Facture émise par L'ArtBo à l'organisateur : acompte / solde reçu
   if (show_id && (d.type === 'facture_emise' || isOurs(d.emetteur) && !isOurs(d.destinataire))){
-    const pays = paymentsOf(show_id).filter(p => ['acompte','solde','autre'].includes(p.kind));
+    const pays = attachableLines(byId('shows', show_id));
     const {pay, why} = matchSale(pays, d, ht);
     if (pay){
       // facture émise : jamais de montant réécrit (§6.4) ; un écart avec la pièce est seulement signalé
