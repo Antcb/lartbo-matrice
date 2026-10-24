@@ -276,3 +276,22 @@ test('relecture ter : refus du garde-fou → aucun message de réussite, la fich
   await opened;
   expectClean(ctx);
 });
+
+// ---- Point 2 d'Anthony (24/10) : une facture émise ne se déverrouille pas en effaçant ce qui la rend émise ----
+
+test('déverrouillage impossible : numéro, dates et identifiant Pennylane ne s’effacent pas (modifiables, jamais vidés)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, [{ id: 'u-a', show_id: 'v-1', kind: 'acompte', label: 'Acompte', pct: 50, invoice_number: 'F-501', sent_at: '2026-05-01', pennylane_id: '777', paid_at: '2026-05-10', sort: 1 }]);
+  const r = await page.evaluate(async () => {
+    const { save } = await import('./js/data.js'); const ok = async p => !!(await save('show_payments', 'u-a', p, { rerender: false }));
+    return {
+      numeroVide: await ok({ invoice_number: null }), numeroBlanc: await ok({ invoice_number: '  ' }), envoiVide: await ok({ sent_at: null }),
+      payeVide: await ok({ paid_at: null }), pennylaneVide: await ok({ pennylane_id: '' }), tousVides: await ok({ invoice_number: null, sent_at: null, pennylane_id: null, paid_at: null }),
+      numeroCorrige: await ok({ invoice_number: 'F-501b' }), envoiCorrige: await ok({ sent_at: '2026-05-02' }), libelle: await ok({ label: 'Acompte 1', payee: 'compte' }),
+    };
+  });
+  expect(r).toEqual({ numeroVide: false, numeroBlanc: false, envoiVide: false, payeVide: false, pennylaneVide: false, tousVides: false,
+    numeroCorrige: true, envoiCorrige: true, libelle: true });
+  expect(await dbPay(page, 'u-a')).toMatchObject({ invoice_number: 'F-501b', sent_at: '2026-05-02', pennylane_id: '777', paid_at: '2026-05-10', pct: 50 });
+  expectClean(ctx);
+});

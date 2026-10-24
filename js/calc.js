@@ -40,6 +40,9 @@ export const ttc = (ht, rate) => ht==null ? null : Math.round(ht * (1 + (Number(
 /** Facture émise (CONVENTIONS §6.3–6.4, Q4) : envoyée, payée, numérotée ou liée à Pennylane.
  *  Une facture émise n'est jamais modifiée automatiquement ni silencieusement. SEULE définition à utiliser. */
 export const isInvoiced = p => !!(p && (p.sent_at || p.paid_at || p.invoice_number || p.pennylane_id));
+/** Ce qui rend une facture « émise » : une fois rempli, aucun de ces champs ne s'efface (sinon la facture se déverrouillerait).
+ *  Même règle côté base : déclencheur show_payments_emitted_guard (supabase/migrations/2026-10-24_v1.40_factures_emises.sql). */
+export const EMITTED_FIELDS = ['sent_at', 'paid_at', 'invoice_number', 'pennylane_id'];
 /** Solde déjà facturé : les acomptes de la date ne peuvent plus changer (§6.4) */
 export const soldeInvoiced = showId => paymentsOf(showId).some(p => p.kind === 'solde' && isInvoiced(p));
 /** Pourquoi une ligne de facturation ne peut plus changer ('' = modifiable) */
@@ -65,7 +68,12 @@ export function changeBlocked(table, id, patch){
   if (!patch) return '';
   if (table === 'show_payments'){
     const row = byId('show_payments', id);
-    if (!row || !['amount', 'pct', 'vat_rate'].some(k => k in patch && !sameVal(patch[k], row[k]))) return '';
+    if (!row) return '';
+    const blank = v => v == null || String(v).trim() === '';
+    // facture émise : ni numéro, ni date d'envoi, ni date de paiement, ni identifiant Pennylane ne s'efface (pas de déverrouillage)
+    if (isInvoiced(row) && EMITTED_FIELDS.some(k => k in patch && !blank(row[k]) && blank(patch[k])))
+      return 'Facture déjà émise : son numéro, sa date d’envoi, sa date de paiement et son identifiant Pennylane ne s’effacent pas (une régularisation se décide à part).';
+    if (!['amount', 'pct', 'vat_rate', 'show_id', 'kind'].some(k => k in patch && !sameVal(patch[k], row[k]))) return '';
     return billLockReason(row);
   }
   if (table === 'shows' && ['fee_ht', 'vat_rate', 'artbo_pct', 'partner_pct', 'prod_mode'].some(k => k in patch)){   // prod_mode : TVA de la commission

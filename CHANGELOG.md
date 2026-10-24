@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.40.6 — 24/10/2026
+- Facture émise : son numéro, ses dates d’envoi et de paiement et son identifiant Pennylane ne s’effacent plus (pas de déverrouillage) ; protection doublée côté base (déclencheur) ; le mode d’une date facturée ne suit plus automatiquement l’artiste
+
+
 ## 1.40.5 — 24/10/2026
 - Facture émise (envoyée, payée, numérotée ou dans Pennylane) verrouillée par un garde-fou unique : ni montant, ni %, ni TVA, ni cachet, ni mode booking/production qui la modifierait, ni suppression de la ligne ou de sa date (refus avec message) ; acompte saisi en euros conservé ; changement de cachet : question conserver / recalculer depuis le tableau, la fiche de la date et « Valider les conditions »
 
