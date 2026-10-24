@@ -1,7 +1,7 @@
--- v1.40.7 (V1-A lot A2) — PRÉPARÉE, NON APPLIQUÉE : à appliquer seulement sur autorisation explicite d'Anthony.
+-- v1.40.8 (V1-A lot A2) — PRÉPARÉE, NON APPLIQUÉE : à appliquer seulement sur autorisation explicite d'Anthony.
 -- Relances : une facture d'acompte / de solde déjà envoyée et impayée est relancée aussi sur une date booking
 -- (décision d'Anthony du 24/10/2026). Une ligne jamais facturée n'a pas de date d'envoi : elle ne génère aucune relance.
--- Règle écrite deux fois (CONVENTIONS §8.4) : côté application js/reminders.js (paidCheck), déjà dans v1.40.7.
+-- Règle écrite deux fois (CONVENTIONS §8.4) : côté application js/reminders.js (paidCheck), depuis v1.40.8.
 -- Seul changement par rapport à v1.39 (texte identique à la production, vérifié le 24/10/2026) :
 --   « acompte_paye » et « solde_paye » ne sont plus limités à « mode <> 'booking' ».
 -- Effet estimé au 24/10/2026 (lecture seule) : 1 rappel « Paiement du solde à vérifier » sur une date booking.
