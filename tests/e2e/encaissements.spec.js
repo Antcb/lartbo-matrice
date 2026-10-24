@@ -158,6 +158,75 @@ test('A2-D : deux pièces d’acompte successives ne réécrivent jamais une fac
   expect(await dbPay(page, 'q-2')).toMatchObject({ invoice_number: 'F-002' });
   expect(await dbPay(page, 'q-s')).toMatchObject({ invoice_number: 'F-PL' });
   expect(await page.evaluate(() => window.__DB.budget_lines.length), 'jamais enregistrée comme une dépense').toBe(lignes);
+  expect(await page.evaluate(() => window.__DB.attachments.map(a => a.name)), 'pièces gardées « à rattacher »').toEqual(['F-003.pdf', 'F-004.pdf']);
+  expectClean(ctx);
+});
+
+test('A2 point 6 : un montant seul ne rattache jamais à une ligne d’un autre type ; pièce gardée, listée, rattachée à la main', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [PROD], show_payments: [
+    { id: 'm-a', show_id: 'e-1', kind: 'acompte', label: 'Acompte', pct: 30, sort: 1 },     // 3 000 €
+    { id: 'm-s', show_id: 'e-1', kind: 'solde', label: 'Solde', pct: 50, sort: 2 },         // 5 000 €
+    { id: 'm-o', show_id: 'e-1', kind: 'autre', label: 'Défraiement', amount: 5000, sort: 3 },
+  ] });
+  const piece = (doc, n) => page.evaluate(async ([d, nom]) => (await import('./js/budget-actions.js')).applyPiece({
+    doc: { type: 'facture_emise', ...d }, path: `budget/e-1/${nom}`, name: nom, show_id: 'e-1', project_id: 'art-a', line: null }), [doc, n]);
+  // pièce « acompte » de 5 000 € : le solde de 5 000 € n'est pas une correspondance sûre
+  expect(await piece({ numero: 'F-10', montant_ht: 5000, acompte_ou_solde: 'acompte' }, 'F-10.pdf')).toBeNull();
+  // sans type lu : deux lignes libres de 5 000 € → ambigu
+  expect(await piece({ numero: 'F-11', montant_ht: 5000 }, 'F-11.pdf')).toBeNull();
+  // sans type lu : une seule ligne libre de 3 000 € → sûre
+  expect(await piece({ numero: 'F-12', montant_ht: 3000 }, 'F-12.pdf')).toEqual({ table: 'show_payments', id: 'm-a' });
+  for (const id of ['m-s', 'm-o']) expect((await dbPay(page, id)).file_path ?? null, id).toBeNull();
+  expect(await dbPay(page, 'm-a')).toMatchObject({ invoice_number: 'F-12', file_name: 'F-12.pdf' });
+  // les deux pièces non rattachées sont listées dans l'onglet Factures et signalées dans l'en-tête de la date
+  await openFactures(page, 'e-1');
+  await expect(page.locator('.warn-badge', { hasText: '2 pièces à rattacher' })).toBeVisible();
+  await expect(page.locator('[data-act="attachPiece"]')).toHaveCount(2);
+  // rattachement à la main : seulement les lignes sans pièce ; ni montant ni paiement changés
+  await page.locator('.file-row', { hasText: 'F-10.pdf' }).locator('[data-act="attachPiece"]').click();
+  await expect(page.locator('#modal select[name="pay"] option')).toHaveCount(3);   // « — » + les 2 lignes sans pièce
+  await page.locator('#modal select[name="pay"]').selectOption('m-s');
+  await page.locator('#modal input[name="invoice_number"]').fill('F-10');
+  await page.locator('#modal button[type=submit]').click();
+  await expect(page.locator('#modal')).not.toBeVisible();
+  expect(await dbPay(page, 'm-s')).toMatchObject({ file_path: 'budget/e-1/F-10.pdf', file_name: 'F-10.pdf', invoice_number: 'F-10', pct: 50 });
+  expect((await dbPay(page, 'm-s')).paid_at ?? null).toBeNull();
+  expect((await dbPay(page, 'm-s')).amount ?? null).toBeNull();
+  await expect(page.locator('.warn-badge', { hasText: '1 pièce à rattacher' })).toBeVisible();
+  // aucune pièce supprimée : l'enregistrement reste, il n'est plus listé
+  expect(await page.evaluate(() => window.__DB.attachments.length)).toBe(2);
+  expectClean(ctx);
+});
+
+test('A2 point 3 : une facture envoyée et impayée est relancée même sur une date booking ; une ligne jamais facturée, non', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [BOOKING], show_payments: [
+    { id: 'r-a', show_id: 'e-3', kind: 'acompte', label: 'Acompte', pct: 50, sort: 1 },                                       // jamais facturé
+    { id: 'r-s', show_id: 'e-3', kind: 'solde', label: 'Solde', pct: 50, invoice_number: 'F-90', sent_at: '2026-01-05', sort: 2 }, // envoyé, impayé
+  ] });
+  const r = await page.evaluate(async () => (await import('./js/reminders.js')).remindersOf((await import('./js/selectors.js')).byId('shows', 'e-3')).map(x => [x.step, x.title, x.due]));
+  expect(r).toEqual([['solde', 'Paiement du solde à vérifier', '2026-01-15']]);
+  // payé : plus de relance
+  await page.evaluate(async () => (await import('./js/data.js')).save('show_payments', 'r-s', { paid_at: '2026-01-20' }));
+  expect(await page.evaluate(async () => (await import('./js/reminders.js')).remindersOf((await import('./js/selectors.js')).byId('shows', 'e-3')).length)).toBe(0);
+  expectClean(ctx);
+});
+
+test('A2 points 4 et 5 : date annulée, avance L’ArtBo à rembourser ; budget de la date : « dont X € — compte non renseigné »', async ({ page }) => {
+  const ctx = await openApp(page);
+  const avant = await page.evaluate(async () => { const a = (await import('./js/budget.js')).accountOf('art-a'); return { outTodo: a.outTodo, adv: a.artboAdvance }; });
+  await seed(page, { shows: [PROD, ANNULEE], show_payments: [
+    { id: 'u-a', show_id: 'e-1', kind: 'acompte', label: 'Acompte', pct: 30, payee: 'compte', paid_at: `${Y}-10-01`, sort: 1 },
+    { id: 'u-s', show_id: 'e-1', kind: 'solde', label: 'Solde', pct: 70, paid_at: `${Y}-10-05`, sort: 2 },
+  ], budget_lines: [
+    { id: 'u-l', project_id: 'art-a', show_id: 'e-2', category: 'Transport', label: 'Train avancé', amount: 700, payer: 'artbo', paid_at: `${Y}-09-02` },
+  ] });
+  const a = await page.evaluate(async () => { const a = (await import('./js/budget.js')).accountOf('art-a'); return { outTodo: a.outTodo, adv: a.artboAdvance }; });
+  expect(a.outTodo - avant.outTodo, 'avance non remboursée : toujours à rembourser').toBe(700);
+  expect(a.adv - avant.adv).toBe(700);
+  const html = await page.evaluate(async () => (await import('./js/views/budget.js')).showBudgetHTML((await import('./js/selectors.js')).byId('shows', 'e-1')));
+  expect(html.replace(/\s+/g, ' ')).toMatch(/entièrement encaissé · dont 7 000,00 € — compte non renseigné/);
   expectClean(ctx);
 });
 

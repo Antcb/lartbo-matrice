@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.40.8 — 24/10/2026
+- A2 (arbitrages du 24/10) : facture de vente sans correspondance sûre gardée dans « Pièces à rattacher » puis rattachée à la main ; un montant seul ne rattache plus à une ligne d'un autre type ; facture envoyée impayée relancée aussi en booking (migration serveur préparée, non appliquée) ; budget de la date : « dont X € — compte non renseigné »
+
+
 ## 1.40.7 — 24/10/2026
 - V1-A lot A2 : encaissements sans compte « Non renseigné » (hors solde des comptes, compte demandé au paiement), lignes booking jamais facturées hors « Reste à encaisser », factures émises sur date booking visibles et signalées, date annulée : mouvements faits gardés dans le compte, pièce rattachée sans date de paiement inventée
 
