@@ -8,7 +8,7 @@
  */
 import { render } from './app.js';
 import { applyTemplate } from './budget-template.js';
-import { billPct, paymentsOf } from './calc.js';
+import { billPct, isInvoiced, paymentsOf, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, CONTRACTS } from './constants.js';
 import { insert, refreshShowSide, remove, save } from './data.js';
 import { isBookingOnly, prepareMail } from './mail.js';
@@ -62,18 +62,20 @@ export async function validateTerms(showId){
   await refreshShowSide(showId);
   const booking = isBookingOnly(s);
   const acs = acomptesOf(showId);
-  const locked = p => !!(p.sent_at || p.paid_at);
+  const locked = isInvoiced;                       // facture émise : envoyée, payée, numérotée ou dans Pennylane (§6.4)
+  const soldeLock = !booking && soldeInvoiced(showId);   // solde facturé : plus aucun acompte ne change (§6.4)
   const def = Number(setting('default_acompte_pct') ?? 50) || 50;
   const pcts = acs.length ? acs.map(p => ({v: r2(billPct(p) ?? 0), due: p.due_label || ''})) : [{v: def, due: ''}];
   // chaque acompte : son % et son échéance (le 1er : à la signature du contrat, sauf autre choix)
   const acRows = (list) => list.map(({v, due}, i) => `<div class="terms-ac"><span>Acompte ${list.length > 1 ? i + 1 : ''}</span>
-      <input type="number" step="any" inputmode="decimal" class="narrow" data-terms-ac="${i}" value="${v}" ${acs[i] && locked(acs[i]) ? 'disabled title="Facture déjà envoyée"' : ''} aria-label="% de l’acompte ${i + 1}"> %
+      <input type="number" step="any" inputmode="decimal" class="narrow" data-terms-ac="${i}" value="${v}" ${soldeLock ? 'disabled title="Solde déjà facturé : les acomptes ne changent plus"' : acs[i] && locked(acs[i]) ? 'disabled title="Facture déjà émise : elle ne se modifie plus"' : ''} aria-label="% de l’acompte ${i + 1}"> %
       <input type="text" class="terms-due" data-terms-due="${i}" value="${esc(due || (i === 0 ? DUE_FIRST : ''))}" placeholder="${i === 0 ? DUE_FIRST : 'ex. le 15 janvier 2027'}" aria-label="Échéance de l’acompte ${i + 1}">
       <span class="muted terms-eur" data-terms-eur="${i}"></span></div>`).join('');
   const extra = booking ? `<p class="mode-note">Booking uniquement : pas d’acompte ni de solde, seulement la facture de commission. L’organisateur et l’artiste font leur contrat entre eux.</p>`
     : `<div class="field full"><label>Acomptes</label>
       <div class="terms-acs">
-        <label class="terms-n">Nombre d’acomptes <select id="terms-n">${[0, 1, 2, 3].map(n => `<option ${n === (acs.length || 1) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        ${soldeLock ? '<p class="mode-note">Le solde est déjà facturé : les acomptes ne peuvent plus changer (seules les échéances se modifient).</p>' : ''}
+        <label class="terms-n">Nombre d’acomptes <select id="terms-n" ${soldeLock ? 'disabled' : ''}>${[0, 1, 2, 3].map(n => `<option ${n === (acs.length || 1) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <div id="terms-list">${acRows(pcts)}</div>
         <div class="terms-solde" id="terms-solde"></div>
       </div>
@@ -105,7 +107,7 @@ export async function validateTerms(showId){
       const sum = list.reduce((a, b) => a + b, 0) + lockedExtra + soldeLocked;
       if (sum > 100.001){ toast(`Les factures dépasseraient 100 % du cachet (${String(r2(sum)).replace('.', ',')} % avec celles déjà envoyées)`, true); return false; }
       if (!(await save('shows', s.id, {...v, terms_validated_at: new Date().toISOString()}, {rerender: false}))) return false;
-      if (!booking && !(await syncAcomptes(s.id, rows))){ toast('Les acomptes n’ont pas pu être enregistrés : vérifie l’onglet Factures', true); return false; }
+      if (!booking && !(await syncAcomptes(s.id, rows, {duesOnly: soldeLock}))){ toast('Les acomptes n’ont pas pu être enregistrés : vérifie l’onglet Factures', true); return false; }
       toast('Conditions validées');
       return true;
     }});
@@ -129,24 +131,33 @@ export async function validateTerms(showId){
   return !!(await p);
 }
 
-/** Lignes d'acompte = la liste validée (une facture déjà envoyée ou payée n'est jamais touchée), solde = le reste */
-async function syncAcomptes(showId, rows){
+/** Lignes d'acompte = la liste validée (une facture émise n'est jamais touchée, §6.4), solde = le reste.
+ *  Un montant saisi en euros est conservé tant que son % n'a pas été changé (Q22 : la précision n'est jamais perdue).
+ *  duesOnly : solde déjà facturé, seules les échéances changent. */
+async function syncAcomptes(showId, rows, {duesOnly = false} = {}){
   const acs = acomptesOf(showId), list = rows.map(r => r.pct), dues = rows.map(r => r.due || null);
+  if (duesOnly){
+    for (let i = 0; i < Math.min(acs.length, dues.length); i++)
+      if ((acs[i].due_label || null) !== dues[i] && !(await save('show_payments', acs[i].id, {due_label: dues[i]}, {rerender: false}))) return false;
+    render();
+    return true;
+  }
   let sort = Math.max(0, ...paymentsOf(showId).filter(p => p.kind !== 'solde').map(p => p.sort || 0));
   for (let i = 0; i < Math.max(list.length, acs.length); i++){
     const p = acs[i];
     const label = list.length > 1 ? `Acompte ${i + 1}` : 'Acompte';
     if (i < list.length){
       if (!p){ if (!(await insert('show_payments', {show_id: showId, kind: 'acompte', label, pct: list[i], due_label: dues[i], sort: ++sort}))) return false; }
-      else if (!p.sent_at && !p.paid_at){
+      else if (!isInvoiced(p)){
         // le nom suit le nombre d'acomptes (Acompte / Acompte 1, 2…), sauf un nom choisi à la main
         const patch = {};
-        if (Number(p.pct) !== list[i] || p.amount != null) Object.assign(patch, {pct: list[i], amount: null});
+        // % changé dans la fenêtre : il remplace l'ancienne valeur. % inchangé : rien ne bouge (un montant en euros reste tel quel)
+        if (r2(billPct(p) ?? 0) !== r2(list[i])) Object.assign(patch, {pct: list[i], amount: null});
         if ((p.due_label || null) !== dues[i]) patch.due_label = dues[i];
         if (!p.label || /^acompte( \d+)?$/i.test(p.label.trim())) if (p.label !== label) patch.label = label;
         if (Object.keys(patch).length && !(await save('show_payments', p.id, patch, {rerender: false}))) return false;
       } else if ((p.due_label || null) !== dues[i] && !(await save('show_payments', p.id, {due_label: dues[i]}, {rerender: false}))) return false;   // facture partie : seule l'échéance change
-    } else if (p && !p.sent_at && !p.paid_at && !(await remove('show_payments', p.id))) return false;
+    } else if (p && !isInvoiced(p) && !(await remove('show_payments', p.id))) return false;
   }
   if (!paymentsOf(showId).some(p => p.kind === 'solde') && !(await insert('show_payments', {show_id: showId, kind: 'solde', label: 'Solde', pct: 100, sort: 100}))) return false;
   await rebalanceSolde(showId);

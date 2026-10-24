@@ -37,6 +37,19 @@ export const selfPaidCommission = p => p.kind === 'artbo' && byId('shows', p.sho
 export const payVat = p => selfPaidCommission(p) ? 0 : p.vat_rate ?? (['artbo','partner'].includes(p.kind) ? 20 : showVat(byId('shows', p.show_id)));
 export const ttc = (ht, rate) => ht==null ? null : Math.round(ht * (1 + (Number(rate)||0)/100) * 100) / 100;
 
+/** Facture émise (CONVENTIONS §6.3–6.4, Q4) : envoyée, payée, numérotée ou liée à Pennylane.
+ *  Une facture émise n'est jamais modifiée automatiquement ni silencieusement. SEULE définition à utiliser. */
+export const isInvoiced = p => !!(p && (p.sent_at || p.paid_at || p.invoice_number || p.pennylane_id));
+/** Solde déjà facturé : les acomptes de la date ne peuvent plus changer (§6.4) */
+export const soldeInvoiced = showId => paymentsOf(showId).some(p => p.kind === 'solde' && isInvoiced(p));
+/** Pourquoi une ligne de facturation ne peut plus changer ('' = modifiable) */
+export function billLockReason(p){
+  if (!p) return '';
+  if (isInvoiced(p)) return 'Facture déjà émise (envoyée, numérotée, dans Pennylane ou payée) : elle ne se modifie plus.';
+  if (p.kind === 'acompte' && soldeInvoiced(p.show_id)) return 'Le solde de cette date est déjà facturé : les acomptes ne peuvent plus changer.';
+  return '';
+}
+
 /** Lignes qui facturent le cachet (acomptes, solde) : ensemble, 100 % du cachet au plus. Commissions, taxe CNM et « autres » à part. */
 export const BILL_KINDS = ['acompte', 'solde'];
 const r2 = n => Math.round(n * 100) / 100;

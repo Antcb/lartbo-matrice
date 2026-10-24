@@ -4,7 +4,7 @@
  */
 import { askConfirmation, becameConfirmed, sendConfirmation, validateTerms } from './confirm-flow.js';
 import { go, render } from './app.js';
-import { BILL_KINDS, billPct, paymentsOf, payVat } from './calc.js';
+import { BILL_KINDS, billLockReason, billPct, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
 import { insert, openStored, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb } from './data.js';
 import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
@@ -16,7 +16,7 @@ import { MODALS, openModal } from './ui/modal.js';
 import { modalSaved } from './ui/drafts.js';
 import { applyAcompte, saveDepartments } from './views/settings.js';
 import { hasLogDraft, setLogDraft } from './views/suivi.js';
-import { $, esc, fmtDate, safeHtml, toast, today } from './utils.js';
+import { $, esc, eur2, fmtDate, safeHtml, toast, today } from './utils.js';
 import { rtStyle, rtToolbar } from './ui/richtext.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
@@ -154,12 +154,14 @@ export const ACTIONS = {
     catch (err) { toast(err.message, true); } },
   addPay: async t => {
     const kind = t.dataset.kind, showId = t.dataset.id;
+    if (kind === 'acompte' && soldeInvoiced(showId)){ toast('Le solde de cette date est déjà facturé : aucun acompte ne peut être ajouté.', true); return; }
     const n = paymentsOf(showId).filter(p=>p.kind===kind).length;
     const sort = Math.max(0,...paymentsOf(showId).map(p=>p.sort||0)) + 1;
     await insert('show_payments', {show_id:showId, kind, label: PAY_KINDS[kind] + (n?` ${n+1}`:''), pct: kind==='cnm'?Number(setting('default_cnm_pct'))||null:null, sort});
     render();
   },
   delPay: async t => { const p = byId('show_payments', t.dataset.id);
+    if (p && isInvoiced(p)){ toast('Facture déjà émise (envoyée, numérotée, dans Pennylane ou payée) : elle ne se supprime pas.', true); return; }
     if (confirm('Supprimer cette ligne de facturation ?') && await remove('show_payments', t.dataset.id)){ if (p && p.kind !== 'solde') await rebalanceSolde(p.show_id); render(); } },
 
   // Tâches
@@ -341,12 +343,12 @@ export { go };
 
 // Facturation : % ↔ HT liés, solde = 100 % − les autres lignes, jamais plus de 100 % du cachet
 const r2 = n => Math.round(n * 100) / 100;
-const othersPct = (pay, withSolde) => paymentsOf(pay.show_id).filter(p => BILL_KINDS.includes(p.kind) && p.id !== pay.id && (withSolde || p.kind !== 'solde' || p.sent_at || p.paid_at))
+const othersPct = (pay, withSolde) => paymentsOf(pay.show_id).filter(p => BILL_KINDS.includes(p.kind) && p.id !== pay.id && (withSolde || p.kind !== 'solde' || isInvoiced(p)))
   .reduce((t, p) => t + (billPct(p) || 0), 0);
 /** Remet le solde à « ce qui reste » (s'il n'est pas encore envoyé) */
 export async function rebalanceSolde(showId){
   const all = paymentsOf(showId), solde = all.find(p => p.kind === 'solde');
-  if (!solde || solde.sent_at || solde.paid_at) return;
+  if (!solde || isInvoiced(solde)) return;   // facture émise : jamais recalculée (§6.4)
   const pct = Math.max(0, r2(100 - othersPct(solde, false)));
   if (Number(solde.pct) !== pct || solde.amount != null) await save('show_payments', solde.id, {pct, amount: null}, {rerender:false});
 }
@@ -362,8 +364,15 @@ ACTIONS['change:projects.default_artbo_pct'] = async (t, v) => {
   await propagateCommission(t.dataset.id);
   render();
 };
+/** Facture émise (ou acompte d'un solde facturé) : la modification est refusée avec un message, la valeur revient */
+function billBlocked(pay){
+  const why = billLockReason(pay);
+  if (why){ toast(why, true); render(); }
+  return !!why;
+}
 ACTIONS['change:show_payments.pct'] = async (t, v) => {
   const pay = byId('show_payments', t.dataset.id);
+  if (billBlocked(pay)) return;
   if (v != null && await setBill(pay, v)){ render(); return; }
   await save('show_payments', pay.id, {pct: v, amount: null}, {rerender:false});   // le HT suit le %
   if (pay.kind !== 'solde') await rebalanceSolde(pay.show_id);
@@ -371,6 +380,7 @@ ACTIONS['change:show_payments.pct'] = async (t, v) => {
 };
 ACTIONS['change:show_payments.amount'] = async (t, v) => {
   const pay = byId('show_payments', t.dataset.id), fee = Number(byId('shows', pay.show_id)?.fee_ht) || 0;
+  if (billBlocked(pay)) return;
   if (!BILL_KINDS.includes(pay.kind) || !fee){ await save('show_payments', pay.id, {amount: v}); return; }
   if (v == null){ await save('show_payments', pay.id, {amount: null}, {rerender:false}); if (pay.kind !== 'solde') await rebalanceSolde(pay.show_id); render(); return; }
   const pct = v / fee * 100;                                                        // le % suit le HT
@@ -382,12 +392,28 @@ ACTIONS['change:show_payments.amount'] = async (t, v) => {
 // TTC saisi → HT (selon la TVA de la ligne)
 ACTIONS['change:show_payments.amount_ttc'] = async (t, v) => {
   const pay = byId('show_payments', t.dataset.id);
+  if (billBlocked(pay)) return;
   return ACTIONS['change:show_payments.amount']({dataset: {id: pay.id}}, v == null ? null : r2(v / (1 + payVat(pay) / 100)));
 };
-// Cachet modifié : les factures pas encore envoyées suivent leur %
+// TVA d'une ligne : elle change le TTC facturé, donc verrouillée sur une facture émise
+ACTIONS['change:show_payments.vat_rate'] = async (t, v) => {
+  const pay = byId('show_payments', t.dataset.id);
+  if (billBlocked(pay)) return;
+  await save('show_payments', pay.id, {vat_rate: v});
+};
+// Cachet modifié (§6.5, Q5) : les lignes non émises en % suivent toutes seules ; un montant saisi à la main n'est jamais
+// écrasé sans le demander ; une facture émise ne bouge jamais.
 ACTIONS['change:shows.fee_ht'] = async (t, v) => {
-  await save('shows', t.dataset.id, {fee_ht: v}, {rerender:false});
-  for (const p of paymentsOf(t.dataset.id).filter(p => BILL_KINDS.includes(p.kind) && p.amount != null && p.pct != null && !p.sent_at && !p.paid_at))
-    await save('show_payments', p.id, {amount: null}, {rerender:false});
+  if (!(await save('shows', t.dataset.id, {fee_ht: v}, {rerender:false}))) return;
+  const manual = paymentsOf(t.dataset.id).filter(p => BILL_KINDS.includes(p.kind) && p.amount != null && p.amount !== '' && p.pct != null && p.pct !== '' && !isInvoiced(p));
+  if (manual.length && v){
+    const rows = manual.map(p => `<li>${esc(p.label || p.kind)} : <b>${eur2(payAmount(p))}</b> saisi à la main → ${eur2(Math.round(v * Number(p.pct)) / 100)} sur le nouveau cachet</li>`).join('');
+    const recalc = await openModal({title: 'Cachet modifié', fields: [], saveLabel: 'Recalculer sur le nouveau cachet',
+      footExtra: '<button type="button" class="btn" data-act="closeModal" data-level="1">Conserver les montants saisis</button>',
+      extra: `<p>Des montants ont été saisis à la main sur des factures pas encore émises :</p><ul>${rows}</ul><p class="muted">Rien n’est changé sans ton choix.</p>`,
+      onSave: () => true});
+    if (recalc) for (const p of manual) await save('show_payments', p.id, {amount: null}, {rerender:false});
+    await rebalanceSolde(t.dataset.id);   // le solde (pas encore émis) reprend ce qui reste du nouveau cachet
+  }
   render();
 };
