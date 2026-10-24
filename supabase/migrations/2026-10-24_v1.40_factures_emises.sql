@@ -10,7 +10,7 @@
 -- Aucune donnée existante n'est modifiée. Retour arrière : voir la fin du fichier.
 
 create or replace function public.show_payments_emitted_guard() returns trigger
-language plpgsql set search_path = '' as $$
+language plpgsql set search_path = public as $$   -- §7.3
 declare
   emitted boolean := old.sent_at is not null or old.paid_at is not null
                      or nullif(btrim(old.invoice_number), '') is not null or nullif(btrim(old.pennylane_id), '') is not null;
@@ -36,8 +36,11 @@ end $$;
 drop trigger if exists show_payments_emitted_guard on public.show_payments;
 create trigger show_payments_emitted_guard before update or delete on public.show_payments
   for each row execute function public.show_payments_emitted_guard();
+revoke execute on function public.show_payments_emitted_guard() from public, anon, authenticated;   -- §7.3 (un déclencheur ne vérifie pas ce droit)
 
--- Mode de l'artiste changé : seules les dates non manuelles SANS facture émise suivent (§6.7)
+-- Mode de l'artiste changé : seules les dates non manuelles SANS facture émise suivent (§6.7).
+-- Les deux fonctions de mode gardent exactement les attributs de leur version en production (relevés le 24/10/2026 :
+-- plpgsql, sans SECURITY DEFINER ni search_path) ; seule la condition « not exists … » est ajoutée.
 create or replace function public.project_mode_to_shows() returns trigger
 language plpgsql as $function$
 begin
