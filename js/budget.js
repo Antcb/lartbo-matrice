@@ -75,7 +75,19 @@ export function showBudget(s){
 /** Dates d'un projet qui passent par le compte dédié (production, confirmées), toutes années */
 export const prodShowsOf = projectId => showsOfProject(projectId).filter(s => CONFIRMED_PROD.includes(s.status) && isProdShow(s)).sort((a,b) => (a.date||'').localeCompare(b.date||''));
 
-const payee = p => p.payee || 'compte';
+/** Mouvement réel d'une date (encaissement, paiement, remboursement) : il reste compté même si la date est annulée (audit A-05) */
+const hasRealMove = s => paymentsOf(s.id).some(p => p.paid_at) || S.db.budget_lines.some(l => l.show_id === s.id && (l.paid_at || l.reimbursed_at));
+/** Dates du compte dédié : confirmées en production, plus les dates non confirmées qui ont un mouvement réel (seuls leurs mouvements faits comptent) */
+const accountShowsOf = projectId => showsOfProject(projectId).filter(s => isProdShow(s) && (CONFIRMED_PROD.includes(s.status) || hasRealMove(s)))
+  .sort((a,b) => (a.date||'').localeCompare(b.date||''));
+const confirmed = s => CONFIRMED_PROD.includes(s?.status);
+
+/** Compte d'encaissement d'un acompte / solde : vide = « Non renseigné », jamais un compte supposé (CONVENTIONS §6.6, Q6) */
+const payee = p => p.payee || null;
+const isOwnProdShow = s => /^(Production|Co-Production)$/.test(s?.contract_type || '');
+/** Ligne de budget qui passe par le compte dédié : hors date, ou date du compte (confirmée, ou avec un mouvement réel) */
+const accountLineOk = l => { if (!l.show_id) return true; const sh = byId('shows', l.show_id);
+  return isProdShow(sh) && !isOwnProdShow(sh) && (confirmed(sh) || l.paid_at || l.reimbursed_at); };
 
 /**
  * Compte dédié : solde réel (ce qui est arrivé − ce qui est parti) et prévu en fin de tournée.
@@ -84,21 +96,30 @@ const payee = p => p.payee || 'compte';
  */
 export function accountOf(projectId){
   const p = byId('projects', projectId);
-  const a = {opening: Number(p?.account_opening)||0, inDone:0, inTodo:0, outDone:0, outTodo:0, artboAdvance:0, byCat:{}};
+  const a = {opening: Number(p?.account_opening)||0, inDone:0, inTodo:0, outDone:0, outTodo:0, artboAdvance:0, byCat:{},
+    unassignedDone:0, unassignedTodo:0};   // encaissements « compte non renseigné » : hors solde du compte, montrés à part (§6.6)
   // une date que L'ArtBo produit (contrat Production / Co-Production) a son propre budget : hors compte dédié de l'artiste
   const isOwnProd = s => /^(Production|Co-Production)$/.test(s?.contract_type || '');
-  for (const s of prodShowsOf(projectId).filter(x => !isOwnProd(x))){
+  for (const s of accountShowsOf(projectId).filter(x => !isOwnProd(x))){
+    const conf = confirmed(s);   // date non confirmée (annulée…) : seuls ses mouvements FAITS comptent
     for (const pay of paymentsOf(s.id)){
       const v = payAmount(pay) || 0;
-      if (['acompte','solde','autre'].includes(pay.kind) && payee(pay) === 'compte') pay.paid_at ? a.inDone += v : a.inTodo += v;
+      if (!conf && !pay.paid_at) continue;
+      if (['acompte','solde','autre'].includes(pay.kind)){
+        const who = payee(pay);
+        if (who === 'compte') pay.paid_at ? a.inDone += v : a.inTodo += v;
+        else if (!who) pay.paid_at ? a.unassignedDone += v : a.unassignedTodo += v;
+      }
       if (pay.kind === 'artbo') pay.paid_at ? a.outDone += v : a.outTodo += v;
     }
-    a.byCat['Commission'] = (a.byCat['Commission']||0) + commissionAmount(s);
+    if (conf) a.byCat['Commission'] = (a.byCat['Commission']||0) + commissionAmount(s);
   }
-  const lines = S.db.budget_lines.filter(l => l.project_id === projectId && (!l.show_id || isProdShow(byId('shows', l.show_id)) && CONFIRMED_PROD.includes(byId('shows', l.show_id)?.status) && !isOwnProd(byId('shows', l.show_id))));
+  const lines = S.db.budget_lines.filter(l => l.project_id === projectId && accountLineOk(l));
   for (const l of lines){
     const v = lineValue(l);
-    a.byCat[l.category || 'Autres'] = (a.byCat[l.category || 'Autres']||0) + v;
+    const conf = !l.show_id || confirmed(byId('shows', l.show_id));
+    if (!conf && !(l.paid_at || l.reimbursed_at)) continue;
+    if (conf) a.byCat[l.category || 'Autres'] = (a.byCat[l.category || 'Autres']||0) + v;
     // payé par le compte, ou avancé par L'ArtBo / une personne puis remboursé par le compte
     const payer = l.payer || 'compte';
     if (payer === 'compte') l.paid_at ? a.outDone += v : a.outTodo += v;
@@ -122,15 +143,15 @@ export function accountMoves(projectId){
   const p = byId('projects', projectId), moves = [];
   const isOwnProd = s => /^(Production|Co-Production)$/.test(s?.contract_type || '');
   const where = s => s ? `${s.venue || '?'} (${String(s.date || '').split('-').reverse().join('/')})` : 'hors date';
-  for (const s of prodShowsOf(projectId).filter(x => !isOwnProd(x))){
+  for (const s of accountShowsOf(projectId).filter(x => !isOwnProd(x))){
     for (const pay of paymentsOf(s.id)){
-      const v = payAmount(pay) || 0; if (!pay.paid_at || !v) continue;
+      const v = payAmount(pay) || 0; if (!pay.paid_at || !v) continue;   // payee vide : « Non renseigné », pas un mouvement du compte
       if (['acompte','solde','autre'].includes(pay.kind) && payee(pay) === 'compte')
         moves.push({date: pay.paid_at, label: `${pay.label || pay.kind} — ${where(s)}`, amount: v, calc: pay.amount == null || pay.amount === ''});
       if (pay.kind === 'artbo') moves.push({date: pay.paid_at, label: `Commission L'ArtBo — ${where(s)}`, amount: -v, calc: pay.amount == null || pay.amount === ''});
     }
   }
-  const lines = S.db.budget_lines.filter(l => l.project_id === projectId && (!l.show_id || isProdShow(byId('shows', l.show_id)) && CONFIRMED_PROD.includes(byId('shows', l.show_id)?.status) && !isOwnProd(byId('shows', l.show_id))));
+  const lines = S.db.budget_lines.filter(l => l.project_id === projectId && accountLineOk(l));
   for (const l of lines){
     const payer = l.payer || 'compte', date = payer === 'compte' ? l.paid_at : (payer === 'artbo' || payer === 'autre') ? l.reimbursed_at : null;
     const v = lineValue(l); if (!date || !v) continue;

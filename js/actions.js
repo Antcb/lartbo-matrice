@@ -11,6 +11,7 @@ import { createArtistFolder, editContact, editProject, editProspect, editShow, e
 import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showsFiltered, structName } from './selectors.js';
 import { CFG } from './config.js';
 import { propagateCommission } from './commission.js';
+import { payerLabel } from './budget.js';
 import { S, localSet, setProjects, touch } from './state.js';
 import { MODALS, openModal } from './ui/modal.js';
 import { modalSaved } from './ui/drafts.js';
@@ -397,6 +398,21 @@ ACTIONS['change:show_payments.amount_ttc'] = async (t, v) => {
   const pay = byId('show_payments', t.dataset.id);
   if (billBlocked(pay)) return;
   return ACTIONS['change:show_payments.amount']({dataset: {id: pay.id}}, v == null ? null : r2(v / (1 + payVat(pay) / 100)));
+};
+// Acompte / solde marqué payé sans compte d'encaissement : on demande le compte (CONVENTIONS §6.6, Q6) ; « Annuler » le laisse
+// « Non renseigné » (compté dans la date et l'artiste, dans aucun compte), il réintègre le bon compte dès qu'il est choisi.
+ACTIONS['change:show_payments.paid_at'] = async (t, v) => {
+  const pay = byId('show_payments', t.dataset.id);
+  if (!(await save('show_payments', pay.id, {paid_at: v}, {rerender: false}))) { render(); return; }
+  render();
+  const s = byId('shows', pay.show_id), proj = byId('projects', s?.project_id);
+  if (v && ['acompte','solde','autre'].includes(pay.kind) && !pay.payee && s && s.prod_mode !== 'booking'){
+    await openModal({title: 'Sur quel compte ce paiement est-il arrivé ?', saveLabel: 'Enregistrer le compte',
+      extraTop: `<p class="help full">${esc(pay.label || pay.kind)} · ${esc(s.venue || '')} : payé le ${fmtDate(v)}. Sur quel compte l’argent est-il arrivé ?<br>Sans choix, il reste « Non renseigné » : compté dans la date et l’artiste, mais dans aucun compte (« Annuler »).</p>`,
+      fields: [{k: 'payee', label: 'Arrive sur', type: 'select', options: ['compte','artbo','artiste','autre'].map(c => [c, payerLabel(c, proj)])}],
+      // aucun compte présélectionné (jamais de compte supposé) ; « — » enregistré = reste « Non renseigné »
+      onSave: async x => x.payee ? ((await save('show_payments', pay.id, {payee: x.payee}, {rerender: false})) ? true : false) : true});
+  }
 };
 // TVA d'une ligne : elle change le TTC facturé, donc verrouillée sur une facture émise
 ACTIONS['change:show_payments.vat_rate'] = async (t, v) => {

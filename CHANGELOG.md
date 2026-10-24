@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.40.7 — 24/10/2026
+- V1-A lot A2 : encaissements sans compte « Non renseigné » (hors solde des comptes, compte demandé au paiement), lignes booking jamais facturées hors « Reste à encaisser », factures émises sur date booking visibles et signalées, date annulée : mouvements faits gardés dans le compte, pièce rattachée sans date de paiement inventée
+
+
 ## 1.40.6 — 24/10/2026
 - Facture émise : son numéro, ses dates d’envoi et de paiement et son identifiant Pennylane ne s’effacent plus (pas de déverrouillage) ; protection doublée côté base (déclencheur) ; le mode d’une date facturée ne suit plus automatiquement l’artiste
 
