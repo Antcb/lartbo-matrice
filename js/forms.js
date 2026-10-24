@@ -66,7 +66,7 @@ export function editShow(id, projectId, prefill={}){
       const before = s.status, wasOff = isOff(before), nowOff = isOff(v.status), oldFee = s.fee_ht;
       let showId = id, ok = true;
       if (id){
-        if (nowOff && !wasOff){ await saveLinger('shows', id, v, `Date passée en « ${v.status} »`); }
+        if (nowOff && !wasOff){ ok = !!(await saveLinger('shows', id, v, `Date passée en « ${v.status} »`)); }
         else ok = !!(await save('shows', id, v, {rerender:false}));
       } else showId = (await insert('shows', v))?.id;
       if (!ok || !showId) return false;
