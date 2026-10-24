@@ -39,6 +39,16 @@ test('fiche.html : date booking → « Échéancier prévu au contrat » sans mo
   await expect(echeances(page)).not.toContainText('HT');
   await expect(echeances(page)).not.toContainText('2 400');
   await expect(page.locator('.fiche-dl')).toContainText('8 000');   // le montant de la cession reste affiché
+  await expect(page.locator('.fiche-engage')).not.toContainText('acompte');   // aucun acompte « demandé » par L'ArtBo
+  expectClean(ctx);
+});
+test('fiche.html : date booking sans échéancier → aucun acompte annoncé (jamais la valeur par défaut)', async ({ page }) => {
+  const ctx = await preparePage(page, { session: false });
+  await page.goto('/fiche.html?t=jeton-fiche-booking-vide');
+  await expect(page.locator('.fiche-engage')).toBeVisible();
+  await expect(page.locator('.fiche-engage')).not.toContainText(/acompte/i);
+  await expect(page.locator('body')).not.toContainText('50 %');
+  await expect(page.locator('.fiche-dl dt', { hasText: /Paiement|Échéancier/ })).toHaveCount(0);
   expectClean(ctx);
 });
 for (const [token, why] of [['jeton-fiche-prodmode-01', 'date en production'], ['jeton-fiche-test-0001', 'serveur sans « prod_mode »']]) {

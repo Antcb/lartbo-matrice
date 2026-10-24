@@ -5,7 +5,8 @@
 -- La page reste compatible avec le serveur actuel : sans « prod_mode », elle s'affiche comme aujourd'hui.
 -- Seul changement : une clé ajoutée au résultat de fiche_get. Aucune donnée modifiée, aucune suppression, droits inchangés
 -- (create or replace garde les droits existants). Texte de départ relevé en production le 25/10/2026
--- (md5 de pg_get_functiondef = 7be275838458bffc9d9e326bcc839a8a) ; le script s'arrête si le texte attendu n'y est pas.
+-- (md5 de pg_get_functiondef = 7be275838458bffc9d9e326bcc839a8a, pour information : le script ne le vérifie pas,
+-- il s'arrête si le passage attendu n'est pas dans la fonction).
 -- Retour arrière : réexécuter la même opération en retirant « 'prod_mode', coalesce(s.prod_mode, 'production'), ».
 
 do $mig$
