@@ -3,7 +3,7 @@
  * Chaque date se déplie : suivi admin, commissions, dossier Drive, facturation.
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
-import { BILL_KINDS, billLockReason, billPct, billingOf, netArtbo, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
+import { BILL_KINDS, billLockReason, billPct, billingOf, isInvoiced, netArtbo, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
 import { byId, projName, setting, showsFiltered, structName } from '../selectors.js';
 import { lateSteps, remindersOf } from '../reminders.js';
@@ -24,7 +24,8 @@ export function viewProduction(){
   shows.forEach(s => paymentsOf(s.id).forEach(p => {
     const a = payAmount(p)||0;
     if (p.kind==='artbo') artbo+=a; if (p.kind==='partner') partner+=a;
-    if ((p.kind==='acompte'||p.kind==='solde') && !p.paid_at) toCollect+=a;
+    // date en booking : ses acomptes / soldes jamais facturés ne sont pas des créances (décision d'Anthony du 24/10) ; une facture émise, si
+    if ((p.kind==='acompte'||p.kind==='solde') && !p.paid_at && (s.prod_mode !== 'booking' || isInvoiced(p))) toCollect+=a;
   }));
   const late = shows.reduce((n,s)=>n+remindersOf(s).filter(r=>r.late).length, 0);
   const groups = {};
@@ -51,7 +52,8 @@ export function viewProduction(){
 function prodRow(s){
   const d = s.date ? new Date(s.date+'T12:00:00') : null;
   const booking = s.prod_mode === 'booking';
-  const pays = paymentsOf(s.id).filter(p => !booking || p.kind==='artbo');
+  // date en booking : la commission, plus toute facture d'acompte / de solde DÉJÀ émise (jamais masquée, signalée)
+  const pays = paymentsOf(s.id).filter(p => !booking || p.kind==='artbo' || (BILL_KINDS.includes(p.kind) && isInvoiced(p)));
   const steps = booking ? BOOKING_STEPS : PROD_STEPS;
   const late = lateSteps(s);
   const checks = steps.map(([k])=>({ok:!!s[k], late:late.has(k)})).concat(pays.filter(p=>p.kind!=='cnm').map(p=>({ok:!!p.paid_at, late:late.has(p.kind)})));
@@ -176,7 +178,7 @@ function billingTab(s, booking, pays, late){
         <tbody>${pays.map(p=>{ const a=payAmount(p), ov=p.amount!=null, selfPaid = !booking && p.kind==='artbo';   // production : pas de facture, L'ArtBo se verse sa commission
           const why = billLockReason(p), lock = why ? `disabled title="${esc(why)}"` : '';   // facture émise : montants verrouillés (§6.4)
           return `<tr>
-          <td>${cIn('show_payments',p.id,'label',p.label)}</td>
+          <td>${cIn('show_payments',p.id,'label',p.label)}${booking && BILL_KINDS.includes(p.kind) ? ' <span class="warn-badge" title="Cette date est en booking uniquement, mais cette facture a déjà été émise : elle reste comptée et ne se modifie pas">facture émise sur une date booking</span>' : ''}</td>
           <td class="num">${BILL_KINDS.includes(p.kind) ? `<input type="number" step="any" inputmode="decimal" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="pct" value="${pctVal(billPct(p))}" aria-label="% du cachet" ${lock}>`
             : ['cnm','autre'].includes(p.kind) ? cIn('show_payments',p.id,'pct',p.pct,'number','class="narrow"') : `<span class="muted">${payPct(p)??'—'}</span>`}</td>
           <td class="num"><input type="number" step="any" data-t="show_payments" data-id="${p.id}" data-f="amount" value="${ov?p.amount:''}" placeholder="${a==null?'à saisir':a}" ${lock || 'title="Laisse vide pour le calcul automatique"'} class="${ov?'override':''}"></td>
@@ -230,7 +232,9 @@ function payeeCell(s, p, booking){
   if (p.kind === 'artbo') return `<span class="muted nowrap">${booking ? "L'ArtBo" : esc(payerLabel('compte', proj)) + ' → L’ArtBo'}</span>`;
   if (p.kind === 'partner') return `<span class="muted nowrap">L'ArtBo → partenaire</span>`;
   if (!['acompte','solde','autre'].includes(p.kind) || booking) return '';
-  return cSel('show_payments', p.id, 'payee', p.payee || (proj?.account_name ? 'compte' : 'artbo'), ['compte','artbo','artiste','autre'].map(c => [c, payerLabel(c, proj)]), false);
+  // vide = « Non renseigné » (§6.6, Q6) : jamais de compte supposé ; à choisir, surtout une fois payé
+  const sel = cSel('show_payments', p.id, 'payee', p.payee || '', [['', 'Non renseigné'], ...['compte','artbo','artiste','autre'].map(c => [c, payerLabel(c, proj)])], false);
+  return !p.payee && p.paid_at ? `${sel} <span class="warn-badge" title="Payé, mais sans compte d’encaissement : compté dans la date et l’artiste, dans aucun compte">compte à choisir</span>` : sel;
 }
 
 /**

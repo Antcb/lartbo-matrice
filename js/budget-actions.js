@@ -135,7 +135,10 @@ export const BUDGET_ACTIONS = {
         // PDF des factures rangés dans le Drive (compta + dossier de la date)
         out.filed?.done?.length ? `\n${out.filed.done.length} facture(s) rangée(s) dans le Drive (compta › D - Factures de ventes et 02_Finance de la date) :\n- ` + out.filed.done.join('\n- ') : '',
         out.filed?.left ? `\nEncore ${out.filed.left} facture(s) à ranger dans le Drive : relance la synchronisation.` : '',
-        out.filed?.errors?.length ? `\nRangement Drive impossible :\n- ` + out.filed.errors.join('\n- ') : ''];
+        out.filed?.errors?.length ? `\nRangement Drive impossible :\n- ` + out.filed.errors.join('\n- ') : '',
+        // la synchronisation ne choisit jamais le compte (§6.6) : les encaissements payés sans compte sont signalés
+        (n => n ? `\n${n} encaissement(s) payé(s) sans compte d’encaissement : choisis « Arrive sur » dans l’onglet Factures de la date.` : '')(
+          out.updated.map(u => S.db.show_payments.find(p => p.id === u.id)).filter(p => p && ['acompte','solde','autre'].includes(p.kind) && !p.payee && byId('shows', p.show_id)?.prod_mode !== 'booking').length)];
       alert(lines.join('\n'));
     } catch (err) { toast(err.message, true); }
     t.disabled = false;
@@ -223,7 +226,8 @@ function askDuplicate(dup, name){
 const isOurs = n => /artboristerie/i.test(n || '');
 const cleanDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : null;
 
-async function applyPiece({doc, path, name, show_id, project_id, line}){
+// exportée pour les tests
+export async function applyPiece({doc, path, name, show_id, project_id, line}){
   const d = doc, date = cleanDate(d.date) || today();
   const ht = d.montant_ht != null ? Number(d.montant_ht) : null, ttc = d.montant_ttc != null ? Number(d.montant_ttc) : null;
   // Facture émise par L'ArtBo à l'organisateur : acompte / solde reçu
@@ -235,9 +239,10 @@ async function applyPiece({doc, path, name, show_id, project_id, line}){
     if (pay){
       // facture émise : jamais de montant réécrit (§6.4) ; un écart avec la pièce est seulement signalé
       const gap = ht != null && Math.abs((payAmount(pay)||0) - ht) >= 1;
-      if (!(await save('show_payments', pay.id, {invoice_number: d.numero || pay.invoice_number, paid_at: pay.paid_at || date, file_path: path, file_name: name,
+      // une facture émise n'est pas un paiement (audit A-03) : jamais de date de paiement écrite ici (Pennylane ou la saisie la donnent)
+      if (!(await save('show_payments', pay.id, {invoice_number: d.numero || pay.invoice_number, file_path: path, file_name: name,
         ...(gap && !isInvoiced(pay) ? {amount: ht} : {})}, {rerender:false}))) return null;
-      toast(`${pay.label || 'Encaissement'} : facture ${d.numero || ''} rattachée et marquée reçue` + (gap && isInvoiced(pay) ? ` — montant de la pièce (${eur2(ht)} HT) différent de la facture (${eur2(payAmount(pay))} HT) : à vérifier, rien n’a été changé` : ''), gap && isInvoiced(pay));
+      toast(`${pay.label || 'Encaissement'} : facture ${d.numero || ''} rattachée (le paiement se note à réception)` + (gap && isInvoiced(pay) ? ` — montant de la pièce (${eur2(ht)} HT) différent de la facture (${eur2(payAmount(pay))} HT) : à vérifier, rien n’a été changé` : ''), gap && isInvoiced(pay));
       return {table: 'show_payments', id: pay.id};
     }
   }

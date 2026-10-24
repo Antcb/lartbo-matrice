@@ -168,6 +168,7 @@ export function projectBudgetHTML(projectId){
       <div class="stat"><b>${eur2(a.outTodo)}</b><span>Encore à payer par le compte</span></div>
       <div class="stat"><b>${eur2(a.end)}</b><span>Solde prévu en fin de tournée</span></div>
       ${a.artboAdvance ? `<div class="stat"><b style="color:var(--warn)">${eur2(a.artboAdvance)}</b><span>Avancé par L'ArtBo, pas encore remboursé par le compte</span></div>` : ''}
+      ${a.unassignedDone || a.unassignedTodo ? `<div class="stat" title="Acomptes et soldes dont le compte d’encaissement (« Arrive sur ») n’est pas renseigné : comptés dans les dates et l’artiste, mais dans aucun compte tant qu’il n’est pas choisi (onglet Factures de la date)"><b>${eur2(a.unassignedDone)}</b><span>Compte non renseigné : encaissé${a.unassignedTodo ? ` · ${eur2(a.unassignedTodo)} à recevoir` : ''}</span></div>` : ''}
     </div>
     ${(() => { const mv = accountMoves(projectId); return mv.length ? `<details class="acc-moves"><summary>Détail des ${mv.length} mouvements du compte (à pointer avec le relevé de la banque)</summary>
       <div class="tbl-wrap"><table class="budget-table"><thead><tr><th>Date</th><th>Mouvement</th><th class="num">Entrée</th><th class="num">Sortie</th><th class="num">Solde</th></tr></thead><tbody>
