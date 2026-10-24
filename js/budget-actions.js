@@ -234,8 +234,9 @@ export async function applyPiece({doc, path, name, show_id, project_id, line}){
   if (show_id && (d.type === 'facture_emise' || isOurs(d.emetteur) && !isOurs(d.destinataire))){
     const pays = paymentsOf(show_id).filter(p => ['acompte','solde','autre'].includes(p.kind));
     const pay = pays.find(p => d.numero && p.invoice_number && norm(p.invoice_number) === norm(d.numero))
-      || pays.find(p => d.acompte_ou_solde && p.kind === d.acompte_ou_solde && !p.paid_at)
-      || pays.find(p => ht != null && Math.abs((payAmount(p)||0) - ht) < 1 && !p.paid_at);
+      // repli : seulement une ligne libre (ni facture émise, ni pièce déjà rattachée) — jamais une facture émise réécrite (§6.4)
+      || pays.find(p => d.acompte_ou_solde && p.kind === d.acompte_ou_solde && !isInvoiced(p) && !p.file_path)
+      || pays.find(p => ht != null && Math.abs((payAmount(p)||0) - ht) < 1 && !isInvoiced(p) && !p.file_path);
     if (pay){
       // facture émise : jamais de montant réécrit (§6.4) ; un écart avec la pièce est seulement signalé
       const gap = ht != null && Math.abs((payAmount(pay)||0) - ht) >= 1;
@@ -245,6 +246,9 @@ export async function applyPiece({doc, path, name, show_id, project_id, line}){
       toast(`${pay.label || 'Encaissement'} : facture ${d.numero || ''} rattachée (le paiement se note à réception)` + (gap && isInvoiced(pay) ? ` — montant de la pièce (${eur2(ht)} HT) différent de la facture (${eur2(payAmount(pay))} HT) : à vérifier, rien n’a été changé` : ''), gap && isInvoiced(pay));
       return {table: 'show_payments', id: pay.id};
     }
+    // facture de vente sans ligne libre : jamais rattachée à une autre facture émise, ni enregistrée comme une dépense
+    toast(`Facture ${d.numero || ''} : aucun acompte ni solde libre sur cette date (déjà facturés ou avec une pièce). Rien n’a été rattaché : vérifie l’onglet Factures de la date.`, true);
+    return null;
   }
   const s = show_id ? byId('shows', show_id) : null;
   const bulletin = d.type === 'bulletin';
