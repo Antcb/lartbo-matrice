@@ -44,7 +44,8 @@ function conditions(d){
     <p class="fiche-when">${esc(d.date_label || '')}${d.date_end && d.date_end !== d.date ? ` → ${esc(d.date_end.split('-').reverse().join('/'))}` : ''} · ${esc(d.venue || '')} · ${esc(d.city || '')}${d.cp ? ` (${esc(d.cp)})` : ''}</p>
     <p class="fiche-engage">La validation de cette fiche de renseignements vous engage à contractualiser aux conditions définies ci-dessous.
       Une fois validée par le producteur, elle engage irrévocablement l’organisateur sur le montant ${cr ? 'de co-réalisation' : 'de cession'} du contrat.
-      ${acText ? `Acompte${acs.length > 1 ? 's' : ''} demandé${acs.length > 1 ? 's' : ''} : ${acText}.` : Number(d.acompte_pct) ? `À la signature du contrat, un acompte de ${pct(d.acompte_pct)} vous sera demandé.` : 'Aucun acompte n’est demandé à la signature du contrat.'}</p>
+      ${booking ? '' /* booking : L'ArtBo ne demande aucun acompte ; seules les conditions du contrat, dans l'échéancier (jamais la valeur par défaut) */
+        : acText ? `Acompte${acs.length > 1 ? 's' : ''} demandé${acs.length > 1 ? 's' : ''} : ${acText}.` : Number(d.acompte_pct) ? `À la signature du contrat, un acompte de ${pct(d.acompte_pct)} vous sera demandé.` : 'Aucun acompte n’est demandé à la signature du contrat.'}</p>
     <h2>Conditions convenues</h2>
     <dl class="fiche-dl">
       <dt>Contrat</dt><dd>${esc(d.contract_type || 'à préciser')}</dd>
