@@ -136,6 +136,31 @@ test('A2-D (A-03) : rattacher la pièce d’une facture émise ne la marque pas 
   expectClean(ctx);
 });
 
+test('A2-D : deux pièces d’acompte successives ne réécrivent jamais une facture déjà rattachée ; sans ligne libre, rien n’est écrit', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [PROD], show_payments: [
+    { id: 'q-1', show_id: 'e-1', kind: 'acompte', label: 'Acompte 1', pct: 25, sort: 1 },
+    { id: 'q-2', show_id: 'e-1', kind: 'acompte', label: 'Acompte 2', pct: 25, sort: 2 },
+    { id: 'q-s', show_id: 'e-1', kind: 'solde', label: 'Solde', pct: 50, invoice_number: 'F-PL', pennylane_id: '77', sort: 3 },
+  ] });
+  const piece = (numero, ht, quoi) => page.evaluate(async ([n, h, k]) => (await import('./js/budget-actions.js')).applyPiece({
+    doc: { type: 'facture_emise', numero: n, montant_ht: h, acompte_ou_solde: k }, path: `essai/${n}.pdf`, name: `${n}.pdf`, show_id: 'e-1', project_id: 'art-a', line: null }),
+    [numero, ht, quoi]);
+  await piece('F-001', 2500, 'acompte');
+  await piece('F-002', 2500, 'acompte');
+  expect(await dbPay(page, 'q-1')).toMatchObject({ invoice_number: 'F-001', file_name: 'F-001.pdf' });
+  expect(await dbPay(page, 'q-2')).toMatchObject({ invoice_number: 'F-002', file_name: 'F-002.pdf' });
+  // 3e pièce d'acompte, et une pièce de solde dont le numéro diffère de la facture Pennylane : aucune ligne libre
+  const lignes = await page.evaluate(() => window.__DB.budget_lines.length);
+  expect(await piece('F-003', 2500, 'acompte')).toBeNull();
+  expect(await piece('F-004', 5000, 'solde')).toBeNull();
+  expect(await dbPay(page, 'q-1')).toMatchObject({ invoice_number: 'F-001' });
+  expect(await dbPay(page, 'q-2')).toMatchObject({ invoice_number: 'F-002' });
+  expect(await dbPay(page, 'q-s')).toMatchObject({ invoice_number: 'F-PL' });
+  expect(await page.evaluate(() => window.__DB.budget_lines.length), 'jamais enregistrée comme une dépense').toBe(lignes);
+  expectClean(ctx);
+});
+
 test('A2-F : marquer payé un encaissement sans compte demande le compte ; « Annuler » le laisse « Non renseigné »', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, { shows: [PROD, BOOKING], show_payments: [
