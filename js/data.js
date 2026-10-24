@@ -30,7 +30,13 @@ export async function fetchAll(table){
   }
 }
 
+let saveGuard = null;
+/** Garde-fou appelé avant chaque enregistrement (installé par actions.js : calc.changeBlocked) ; message = refus */
+export const setSaveGuard = f => { saveGuard = f; };
+
 export async function save(table, id, patch, {rerender=true}={}){
+  const why = saveGuard ? saveGuard(table, id, patch) : '';
+  if (why){ toast(why, true); render(); return null; }   // refus : rien n'est écrit, l'affichage revient à la valeur enregistrée
   const row = byId(table, id); const before = row ? {...row} : null;
   if (row) Object.assign(row, patch);
   touch(table);

@@ -17,7 +17,7 @@ import { hiddenFields, openModal } from './ui/modal.js';
 import { $, downloadCSV, esc, fmtDate, norm, toast, today, workDay } from './utils.js';
 import { driveHTML } from './views/production.js';
 import { cancelAutoRelances, closeNoAnswer } from './prospection.js';
-import { askConfirmation, becameConfirmed } from './confirm-flow.js';
+import { afterFeeChange, askConfirmation, becameConfirmed } from './confirm-flow.js';
 
 const team = () => CFG.TEAM.map(e=>[e, TEAM_NAMES[e]||e]);
 const activeProjects = keep => projectOptions(true, keep).map(x=>[x.id, x.name]);
@@ -63,13 +63,14 @@ export function editShow(id, projectId, prefill={}){
         if (st && st.lat!=null && (!v.city || v.city===st.city)){ v.lat=st.lat; v.lng=st.lng; v.department = v.department || st.department_code; }
         else if (v.lat==null || v.city!==s.city){ v.lat=null; v.lng=null; await fillCoords(v, [v.city, v.department && /^\d/.test(v.department) ? 'France' : ''].filter(Boolean).join(', ')); }
       }
-      const before = s.status, wasOff = isOff(before), nowOff = isOff(v.status);
+      const before = s.status, wasOff = isOff(before), nowOff = isOff(v.status), oldFee = s.fee_ht;
       let showId = id, ok = true;
       if (id){
         if (nowOff && !wasOff){ await saveLinger('shows', id, v, `Date passée en « ${v.status} »`); }
         else ok = !!(await save('shows', id, v, {rerender:false}));
       } else showId = (await insert('shows', v))?.id;
       if (!ok || !showId) return false;
+      if (id && Number(v.fee_ht) !== Number(oldFee)) await afterFeeChange(id, {level: 2});   // cachet changé : même règle partout (§6.5, Q5)
       // date qui passe en confirmée : envoyer la confirmation maintenant ? (une fois cette fenêtre fermée)
       if (becameConfirmed(before, v.status)) setTimeout(() => askConfirmation(showId), 80);
     }
