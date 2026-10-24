@@ -19,5 +19,5 @@ export async function propagateCommission(projectId){
   let ok = 0; for (const s of list) if (await save('shows', s.id, {artbo_pct: v}, {rerender: false})) ok++;
   render();
   if (ok === list.length) toast(`Commission à ${String(v).replace('.', ',')} % sur ${ok} date${ok > 1 ? 's' : ''} de ${name}`);
-  else toast(`Commission changée sur ${ok} date${ok > 1 ? 's' : ''} sur ${list.length} : réessaie pour les autres`, true);
+  else toast(`Commission changée sur ${ok} date${ok > 1 ? 's' : ''} sur ${list.length} : les autres n’ont pas changé (facture déjà émise, ou enregistrement impossible)`, true);
 }

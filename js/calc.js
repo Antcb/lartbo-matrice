@@ -53,15 +53,22 @@ export function billLockReason(p){
 const sameVal = (a, b) => (a == null || a === '' ? null : Number.isFinite(Number(a)) ? Number(a) : a) === (b == null || b === '' ? null : Number.isFinite(Number(b)) ? Number(b) : b);
 /** GARDE-FOU CENTRAL (appelé par data.save pour TOUT enregistrement) : refuse un changement qui modifierait une facture émise,
  *  directement (montant, %, TVA de la ligne) ou par la date dont son montant dépend (cachet, TVA, % de commission ou de partenaire).
+ *  patch = null : SUPPRESSION (appel de data.remove) — une ligne verrouillée, ou une date qui porte une facture émise
+ *  (la base efface en chaîne ses factures et son budget), ne se supprime pas.
  *  Renvoie le message à afficher, '' si le changement est permis. CONVENTIONS §6.3–6.5 (Q4, Q5). */
 export function changeBlocked(table, id, patch){
+  if (patch === null){
+    if (table === 'show_payments'){ const why = billLockReason(byId('show_payments', id)); return why && why.replace('ne se modifie plus', 'ne se supprime pas').replace('ne peuvent plus changer', 'ne se suppriment plus'); }
+    if (table === 'shows' && paymentsOf(id).some(isInvoiced)) return 'Cette date a des factures émises : elle ne se supprime pas (ses factures et son budget seraient effacés avec elle).';
+    return '';
+  }
   if (!patch) return '';
   if (table === 'show_payments'){
     const row = byId('show_payments', id);
     if (!row || !['amount', 'pct', 'vat_rate'].some(k => k in patch && !sameVal(patch[k], row[k]))) return '';
     return billLockReason(row);
   }
-  if (table === 'shows' && ['fee_ht', 'vat_rate', 'artbo_pct', 'partner_pct'].some(k => k in patch)){
+  if (table === 'shows' && ['fee_ht', 'vat_rate', 'artbo_pct', 'partner_pct', 'prod_mode'].some(k => k in patch)){   // prod_mode : TVA de la commission
     const s = byId('shows', id), lines = s ? paymentsOf(id).filter(isInvoiced) : [];
     if (!lines.length) return '';
     const values = () => JSON.stringify(lines.map(p => { const a = payAmount(p); return [a, ttc(a, payVat(p))]; }));
@@ -70,7 +77,7 @@ export function changeBlocked(table, id, patch){
     Object.assign(s, patch);
     const after = values();
     Object.assign(s, keep);                                   // simulation seulement : la date reste inchangée
-    if (before !== after) return 'Des factures de cette date sont déjà émises : ce changement (cachet, TVA ou %) modifierait leur montant. Il est refusé ; une régularisation se décide à part.';
+    if (before !== after) return 'Des factures de cette date sont déjà émises : ce changement (cachet, TVA, % ou mode booking / production) modifierait leur montant. Il est refusé ; une régularisation se décide à part.';
   }
   return '';
 }

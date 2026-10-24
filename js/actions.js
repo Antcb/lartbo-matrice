@@ -48,7 +48,7 @@ export const ACTIONS = {
   ...BUDGET_ACTIONS,
   employeeCard: t => editEmployee(t.dataset.id),
   closeModal: t => (t.dataset.level==='2' ? $('#modal2') : $('#modal')).close(),
-  modalDelete: async t => { const lvl = Number(t.dataset.level||1); if (confirm('Supprimer définitivement ?')){ await MODALS[lvl].onDelete(); modalSaved(MODALS[lvl].dlg); MODALS[lvl].dlg.close(); render(); } },
+  modalDelete: async t => { const lvl = Number(t.dataset.level||1); if (confirm('Supprimer définitivement ?')){ if ((await MODALS[lvl].onDelete()) === false) return; modalSaved(MODALS[lvl].dlg); MODALS[lvl].dlg.close(); render(); } },   // refus (garde-fou) : la fenêtre reste ouverte
   unlink: t => t.closest('.chip').remove(),
   subtab: t => { S.tab[t.dataset.key] = t.dataset.tab; render(); },
   fold: t => { const k = 'fold:'+t.dataset.key; S.tab[k] = t.getAttribute('aria-expanded')!=='true'; render(); },

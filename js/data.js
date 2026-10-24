@@ -113,6 +113,8 @@ export async function insert(table, values){
 }
 
 export async function remove(table, id){
+  const why = saveGuard ? saveGuard(table, id, null) : '';   // suppression : même garde-fou (facture émise, date facturée)
+  if (why){ toast(why, true); return false; }
   const before = byId(table, id);
   const {error} = await sb.from(table).delete().eq('id', id);
   if (error){ toast('Suppression impossible : '+error.message, true); return false; }
