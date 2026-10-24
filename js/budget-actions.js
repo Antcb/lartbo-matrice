@@ -152,6 +152,24 @@ export const BUDGET_ACTIONS = {
     catch (err) { toast(err.message, true); }
     t.disabled = false;
   },
+  // pièce gardée « à rattacher » : l'utilisateur choisit la ligne (jamais une ligne qui a déjà sa pièce)
+  attachPiece: async t => {
+    const a = byId('attachments', t.dataset.id), s = byId('shows', t.dataset.show); if (!a || !s) return;
+    const lines = paymentsOf(s.id).filter(p => ['acompte','solde','autre'].includes(p.kind) && !p.file_path);
+    if (!lines.length) return toast('Aucune ligne d’acompte, de solde ou autre sans pièce sur cette date : ajoute la ligne d’abord.', true);
+    await openModal({title: 'Rattacher la pièce', saveLabel: 'Rattacher',
+      extraTop: `<p class="help full">Pièce : <b>${esc(a.name)}</b><br>Le montant, le % et la date de paiement de la ligne ne changent pas.</p>`,
+      fields: [{k: 'pay', label: 'Ligne', type: 'select', full: true, options: lines.map(p => [p.id, `${p.label || p.kind} · ${eur2(payAmount(p) || 0)} HT${p.invoice_number ? ' · ' + p.invoice_number : ''}`])},
+        {k: 'invoice_number', label: 'N° de facture (si la ligne n’en a pas)', type: 'text'}],
+      onSave: async v => {
+        const pay = byId('show_payments', v.pay); if (!pay){ toast('Choisis la ligne à laquelle rattacher la pièce', true); return false; }
+        const patch = {file_path: a.path, file_name: a.name, ...(!pay.invoice_number && v.invoice_number ? {invoice_number: v.invoice_number} : {})};
+        if (!(await save('show_payments', pay.id, patch, {rerender: false}))) return false;
+        toast(`${pay.label || 'Ligne'} : pièce rattachée`);
+        fileToDrive({table: 'show_payments', id: pay.id}, s, a.path, a.name);
+        return true;
+      }});
+  },
   pennylaneInvoice: async t => {
     const p = byId('show_payments', t.dataset.id);
     t.disabled = true; toast('Création de la facture en brouillon dans Pennylane…');
@@ -226,6 +244,30 @@ function askDuplicate(dup, name){
 const isOurs = n => /artboristerie/i.test(n || '');
 const cleanDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : null;
 
+/**
+ * Ligne d'acompte / de solde d'une facture de vente lue par l'IA. Seules correspondances sûres :
+ *  1. le même numéro de facture ;
+ *  2. le type indiqué sur la pièce (acompte / solde) : une ligne libre de ce type (ni émise, ni avec pièce), du même montant
+ *     s'il est lu ; à montant égal, la première dans l'ordre (acomptes facturés dans l'ordre) ;
+ *  3. sans type lu : une seule ligne libre du même montant.
+ * Un montant seul ne rattache jamais à une ligne d'un autre type que celui de la pièce. Sinon : rien, avec la raison.
+ */
+export function matchSale(pays, d, ht){
+  const byNum = d.numero && pays.find(p => p.invoice_number && norm(p.invoice_number) === norm(d.numero));
+  if (byNum) return {pay: byNum};
+  const free = p => !isInvoiced(p) && !p.file_path, near = p => Math.abs((payAmount(p) || 0) - ht) < 1;
+  const kind = ['acompte', 'solde'].includes(d.acompte_ou_solde) ? d.acompte_ou_solde : null;
+  if (kind){
+    const c = pays.filter(p => p.kind === kind && free(p));
+    if (!c.length) return {why: `aucun ${kind} libre sur cette date (déjà facturé ou avec une pièce)`};
+    const pay = ht == null ? c[0] : c.find(near);
+    return pay ? {pay} : {why: `aucun ${kind} libre de ${eur2(ht)} HT sur cette date`};
+  }
+  if (ht == null) return {why: 'ni le type (acompte / solde) ni le montant ne sont lisibles sur la pièce'};
+  const c = pays.filter(p => free(p) && near(p));
+  return c.length === 1 ? {pay: c[0]} : {why: c.length ? `plusieurs lignes libres de ${eur2(ht)} HT : type non lisible sur la pièce` : `aucune ligne libre de ${eur2(ht)} HT sur cette date`};
+}
+
 // exportée pour les tests
 export async function applyPiece({doc, path, name, show_id, project_id, line}){
   const d = doc, date = cleanDate(d.date) || today();
@@ -233,21 +275,20 @@ export async function applyPiece({doc, path, name, show_id, project_id, line}){
   // Facture émise par L'ArtBo à l'organisateur : acompte / solde reçu
   if (show_id && (d.type === 'facture_emise' || isOurs(d.emetteur) && !isOurs(d.destinataire))){
     const pays = paymentsOf(show_id).filter(p => ['acompte','solde','autre'].includes(p.kind));
-    const pay = pays.find(p => d.numero && p.invoice_number && norm(p.invoice_number) === norm(d.numero))
-      // repli : seulement une ligne libre (ni facture émise, ni pièce déjà rattachée) — jamais une facture émise réécrite (§6.4)
-      || pays.find(p => d.acompte_ou_solde && p.kind === d.acompte_ou_solde && !isInvoiced(p) && !p.file_path)
-      || pays.find(p => ht != null && Math.abs((payAmount(p)||0) - ht) < 1 && !isInvoiced(p) && !p.file_path);
+    const {pay, why} = matchSale(pays, d, ht);
     if (pay){
       // facture émise : jamais de montant réécrit (§6.4) ; un écart avec la pièce est seulement signalé
       const gap = ht != null && Math.abs((payAmount(pay)||0) - ht) >= 1;
       // une facture émise n'est pas un paiement (audit A-03) : jamais de date de paiement écrite ici (Pennylane ou la saisie la donnent)
-      if (!(await save('show_payments', pay.id, {invoice_number: d.numero || pay.invoice_number, file_path: path, file_name: name,
-        ...(gap && !isInvoiced(pay) ? {amount: ht} : {})}, {rerender:false}))) return null;
-      toast(`${pay.label || 'Encaissement'} : facture ${d.numero || ''} rattachée (le paiement se note à réception)` + (gap && isInvoiced(pay) ? ` — montant de la pièce (${eur2(ht)} HT) différent de la facture (${eur2(payAmount(pay))} HT) : à vérifier, rien n’a été changé` : ''), gap && isInvoiced(pay));
+      if (!(await save('show_payments', pay.id, {invoice_number: d.numero || pay.invoice_number, file_path: path, file_name: name},
+        {rerender:false}))) return null;   // aucun montant réécrit : la ligne vient d'une correspondance sûre (matchSale)
+      toast(`${pay.label || 'Encaissement'} : facture ${d.numero || ''} rattachée (le paiement se note à réception)` + (gap ? ` — montant de la pièce (${eur2(ht)} HT) différent de la ligne (${eur2(payAmount(pay))} HT) : à vérifier, rien n’a été changé` : ''), gap);
       return {table: 'show_payments', id: pay.id};
     }
-    // facture de vente sans ligne libre : jamais rattachée à une autre facture émise, ni enregistrée comme une dépense
-    toast(`Facture ${d.numero || ''} : aucun acompte ni solde libre sur cette date (déjà facturés ou avec une pièce). Rien n’a été rattaché : vérifie l’onglet Factures de la date.`, true);
+    // facture de vente sans correspondance sûre : jamais rattachée au hasard, ni enregistrée comme une dépense ;
+    // la pièce reste dans la Matrice, listée « Pièces à rattacher » dans l'onglet Factures de la date (décision d'Anthony du 24/10)
+    const kept = await insert('attachments', {project_id: project_id || byId('shows', show_id)?.project_id || null, name, path});
+    toast(`Facture ${d.numero || name} : ${why}. Rien n’a été rattaché` + (kept ? ' : la pièce est gardée dans « Pièces à rattacher » (onglet Factures de la date).' : ` ; pièce gardée dans le stockage (${path}).`), true);
     return null;
   }
   const s = show_id ? byId('shows', show_id) : null;

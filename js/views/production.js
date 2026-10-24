@@ -12,7 +12,7 @@ import { filterBar, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { esc, eur2, fmtDate, matches, today } from '../utils.js';
-import { payerLabel } from '../budget.js';
+import { payerLabel, piecesToAttach } from '../budget.js';
 import { productionBudgetHTML, projectBudgetHTML, showBudgetHTML } from './budget.js';
 import { isProductionShow } from '../production-budget.js';
 
@@ -61,7 +61,7 @@ function prodRow(s){
   return `<div class="prod-row ${open?'open':''}" id="prod-${s.id}">
     <div class="prod-head" data-act="toggleProd" data-id="${s.id}" aria-expanded="${open}">
       <div class="day"><b>${d?String(d.getDate()).padStart(2,'0'):'—'}</b><span>${d?d.toLocaleDateString('fr-FR',{month:'short', year:'2-digit'}):''}</span></div>
-      <div class="what"><b>${esc(s.venue)}</b> ${booking?'<span class="badge tag">Booking seul</span>':''}${s.structure_id?` <a href="#" class="struct-link" data-act="openStructure" data-id="${s.structure_id}" title="Ouvrir la fiche de la structure">${esc(structName(s.structure_id))} ↗</a>`:''}<div class="sub">${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))} · ${esc(s.contract_type||'Contrat ?')} · ${eur2(s.fee_ht)} HT · ${eur2(ttc(s.fee_ht, showVat(s)))} TTC${billWarn(s, booking)}</div></div>
+      <div class="what"><b>${esc(s.venue)}</b> ${booking?'<span class="badge tag">Booking seul</span>':''}${s.structure_id?` <a href="#" class="struct-link" data-act="openStructure" data-id="${s.structure_id}" title="Ouvrir la fiche de la structure">${esc(structName(s.structure_id))} ↗</a>`:''}<div class="sub">${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))} · ${esc(s.contract_type||'Contrat ?')} · ${eur2(s.fee_ht)} HT · ${eur2(ttc(s.fee_ht, showVat(s)))} TTC${billWarn(s, booking)}${(n => n ? ` <span class="warn-badge" title="Factures déposées sans ligne sûre : onglet Factures">${n} pièce${n > 1 ? 's' : ''} à rattacher</span>` : '')(piecesToAttach(s).length)}</div></div>
       <div class="progress" title="${checks.filter(c=>c.ok).length}/${checks.length} étapes faites${late.size?` · ${late.size} en retard`:''}">${checks.map(c=>`<i class="${c.ok?'ok':c.late?'late':''}"></i>`).join('')}</div>
       ${stSelect(s)}
       <span class="chev" aria-hidden="true">▸</span>
@@ -203,6 +203,9 @@ function billingTab(s, booking, pays, late){
         <button class="btn sm ghost" data-act="editShow" data-id="${s.id}">Fiche complète de la date</button>
         ${s.structure_id ? `<button class="btn sm ghost" data-act="openStructure" data-id="${s.structure_id}">Fiche de la structure</button>` : ''}
       </div>
+      ${(f => f.length ? `<div class="mt"><p class="help full"><b>Pièces à rattacher</b> : factures déposées sans ligne sûre (rien n’a été rattaché automatiquement). Ouvre-les, puis rattache chacune à sa ligne.</p>
+        ${f.map(a => `<div class="file-row"><span class="file-ico" aria-hidden="true">📎</span><a href="#" data-act="openAttachment" data-id="${a.id}">${esc(a.name)}</a>
+          <button type="button" class="btn sm" data-act="attachPiece" data-id="${a.id}" data-show="${s.id}">Rattacher</button></div>`).join('')}</div>` : '')(piecesToAttach(s))}
       <p class="muted small mt-sm">Vide = calcul automatique sur le cachet HT ; un montant saisi à la main apparaît en orange. TVA par défaut : 5,5 % sur le cachet, 20 % sur les commissions. Le solde prend ce qui reste (100 % − acomptes) tant qu’il n’est pas envoyé ; acomptes + solde ne dépassent jamais 100 % du cachet (commissions et autres lignes à part).</p>
     </div>`;
 }

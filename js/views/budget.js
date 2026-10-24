@@ -66,13 +66,16 @@ function summaryTable(s, b, com, p){
   const exp = b.lines.filter(l => !isSolde(l)), real = exp.filter(l => l.amount != null), est = exp.filter(l => l.amount == null);
   const realSum = real.reduce((t, l) => t + Number(l.amount), 0), estSum = est.reduce((t, l) => t + (lineForecast(l) || 0), 0);
   const expNow = r2(realSum + estSum), expGap = r2(real.reduce((t, l) => t + Number(l.amount) - (lineForecast(l) ?? Number(l.amount)), 0));
-  const cashed = paymentsOf(s.id).filter(x => ['acompte', 'solde'].includes(x.kind) && x.paid_at).reduce((t, x) => t + (payAmount(x) || 0), 0);
+  const cashedRows = paymentsOf(s.id).filter(x => ['acompte', 'solde'].includes(x.kind) && x.paid_at);
+  const cashed = cashedRows.reduce((t, x) => t + (payAmount(x) || 0), 0);
+  // part encaissée sans compte d'encaissement (§6.6, Q6, M9) : comptée dans la date, signalée ; aucun total changé
+  const unassigned = r2(cashedRows.filter(x => !x.payee).reduce((t, x) => t + (payAmount(x) || 0), 0));
   const gapCell = (g, cost) => `<td class="num nowrap ${Math.abs(g) < 0.01 ? 'muted' : (g > 0) === cost ? 'neg' : 'pos'}">${Math.abs(g) < 0.01 ? eur2(0) : (g > 0 ? '+' : '') + eur2(g)}</td>`;
   const row = (label, f, r, gap, help, {cost = false, strong = false} = {}) => `<tr class="${strong ? 'bill-total' : ''}"><td>${strong ? `<b>${label}</b>` : label}${help ? `<div class="muted tiny">${help}</div>` : ''}</td>
       <td class="num nowrap">${strong ? `<b>${eur2(f)}</b>` : eur2(f)}</td><td class="num nowrap">${strong ? `<b>${eur2(r)}</b>` : eur2(r)}</td>${gapCell(gap, cost)}</tr>`;
   const resteF = r2(b.fee - b.com - b.forecastExp), resteR = r2(b.fee - b.com - expNow);
   return `<div class="tbl-wrap"><table class="budget-sum"><thead><tr><th></th><th class="num">Prévu</th><th class="num" title="Montant réel quand il est connu, sinon le prévu">Réel / à jour</th><th class="num">Écart</th></tr></thead><tbody>
-    ${row('Cachet HT', b.fee, b.fee, 0, cashed >= b.fee - 0.01 && b.fee ? 'entièrement encaissé' : `encaissé : ${eur2(cashed)} sur ${eur2(b.fee)}`)}
+    ${row('Cachet HT', b.fee, b.fee, 0, (cashed >= b.fee - 0.01 && b.fee ? 'entièrement encaissé' : `encaissé : ${eur2(cashed)} sur ${eur2(b.fee)}`) + (unassigned ? ` · dont ${eur2(unassigned)} — compte non renseigné` : ''))}
     ${row('Commission L’ArtBo', b.com, b.com, 0, com?.paid_at ? `virée le ${fmtDate(com.paid_at)}` : 'pas encore virée', {cost: true})}
     ${row('Dépenses', b.forecastExp, expNow, expGap, !exp.length ? 'aucune ligne' : est.length ? `${eur2(realSum)} réels (${real.length} ligne${real.length > 1 ? 's' : ''}) + ${eur2(estSum)} encore au prévu (${est.length} ligne${est.length > 1 ? 's' : ''})` : 'toutes les lignes ont leur montant réel', {cost: true})}
     ${row('Reste pour l’artiste' + (p?.artist_payee ? ` (${esc(p.artist_payee)})` : ''), resteF, resteR, r2(resteR - resteF), est.length ? `cachet − commission − dépenses · encore provisoire : ${est.length} dépense${est.length > 1 ? 's' : ''} au prévu` : 'cachet − commission − dépenses · définitif', {strong: true})}
