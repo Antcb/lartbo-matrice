@@ -378,6 +378,7 @@ Une règle présente des deux côtés est modifiée **dans la même version** de
 | Règle | JS | Autre côté |
 |---|---|---|
 | Rappels (délais, boucle technique, impayés, commission) | `js/reminders.js` | SQL `generate_reminders` |
+| Facture émise : définition, refus de modification / d'effacement / de suppression ; mode figé d'une date facturée | `js/calc.js` (`isInvoiced`, `EMITTED_FIELDS`, `changeBlocked`) | SQL déclencheur `show_payments_emitted_guard`, `project_mode_to_shows`, `show_follow_project_mode` (migration v1.40) |
 | Jour ouvré | `workDay` | SQL `workday` |
 | Montant HT d'une ligne | `payAmount` | vue `show_payments_computed`, `fiche_get`, `pennylane/index.ts` |
 | Commission par défaut | `commissionAmount`, `defaultCommission`, `projectCommission` | SQL `on_show_confirmed`, `pennylane/index.ts` |
