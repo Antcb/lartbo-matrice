@@ -223,3 +223,29 @@ test('relecture 6 : la fiche complète de la date pose la même question sur le 
   await opened;
   expectClean(ctx);
 });
+
+// ---- Seconde relecture (e547b04) ----
+
+test('relecture bis 1 : passer une date facturée de booking à production est refusé (TVA de la commission)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, [{ id: 'm-c', show_id: 'v-1', kind: 'artbo', label: 'Commission', pct: 15, invoice_number: 'F-301', sort: 1 }]);
+  const r = await page.evaluate(async () => {
+    const { S } = await import('./js/state.js'); const { save } = await import('./js/data.js');
+    const s = S.db.shows.find(x => x.id === 'v-1'); s.prod_mode = 'booking'; window.__DB.shows.find(x => x.id === 'v-1').prod_mode = 'booking';
+    return { refuse: !(await save('shows', 'v-1', { prod_mode: 'production' }, { rerender: false })), mode: window.__DB.shows.find(x => x.id === 'v-1').prod_mode };
+  });
+  expect(r).toEqual({ refuse: true, mode: 'booking' });
+  expectClean(ctx);
+});
+
+test('relecture bis 2 : une date qui porte une facture émise ne se supprime pas (ni une ligne verrouillée)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, [{ id: 'q-a', show_id: 'v-1', kind: 'acompte', label: 'Acompte', pct: 50, paid_at: '2026-04-01', sort: 1 }, { id: 'q-s', show_id: 'v-1', kind: 'solde', label: 'Solde', pct: 50, sort: 100 }]);
+  const r = await page.evaluate(async () => {
+    const { remove } = await import('./js/data.js');
+    return { date: await remove('shows', 'v-1'), ligne: await remove('show_payments', 'q-a'), libre: await remove('show_payments', 'q-s') };
+  });
+  expect(r).toEqual({ date: false, ligne: false, libre: true });
+  expect(await page.evaluate(() => window.__DB.shows.some(s => s.id === 'v-1'))).toBe(true);
+  expectClean(ctx);
+});

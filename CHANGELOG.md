@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.40.5 — 24/10/2026
+- Facture émise (envoyée, payée, numérotée ou dans Pennylane) verrouillée par un garde-fou unique : ni montant, ni %, ni TVA, ni cachet, ni mode booking/production qui la modifierait, ni suppression de la ligne ou de sa date (refus avec message) ; acompte saisi en euros conservé ; changement de cachet : question conserver / recalculer depuis le tableau, la fiche de la date et « Valider les conditions »
+
+
 ## 1.40.4 — 24/10/2026
 - Factures émises verrouillées partout (envoyée, payée, numérotée ou dans Pennylane) ; acompte saisi en euros conservé ; le cachet ne réécrit plus un montant saisi sans le demander
 
