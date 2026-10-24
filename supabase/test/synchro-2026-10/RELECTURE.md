@@ -69,7 +69,7 @@ Deux points sont à faire **avant** l'exécution, sans changer le script (voir R
 
 ## 5. Retour arrière
 
-Essayé en local : application du script, puis du retour arrière (avec les 5 définitions de `avant/` insérées), puis comparaison `pg_dump -s` avec l'état initial.
+Essayé en local : application du script, puis du retour arrière (avec les 5 définitions de `work/test_avant/` insérées), puis comparaison `pg_dump -s` avec l'état initial.
 
 Différences constatées :
 - `_push` neutralisée, comme annoncé ;
@@ -86,7 +86,7 @@ Le garde-fou du retour arrière (conditions 1 à 3) refuse en production grâce 
 
 ## Remarques (non bloquantes)
 
-- **R1 — à faire avant l'exécution.** Le retour arrière dépend de `supabase/test/synchro-2026-10/avant/*.sql`, qui se trouve dans le dossier **temporaire** de la session. Il faut copier ces 5 définitions à un endroit durable (par exemple le dépôt, `supabase/test/`) ou les relire dans le test juste avant l'exécution. Sinon, le retour arrière de ces 5 fonctions ne sera plus possible.
+- **R1 — à faire avant l'exécution.** Le retour arrière dépend de `sync_test/work/test_avant/*.sql`, qui se trouve dans le dossier **temporaire** de la session. Il faut copier ces 5 définitions à un endroit durable (par exemple le dépôt, `supabase/test/`) ou les relire dans le test juste avant l'exécution. Sinon, le retour arrière de ces 5 fonctions ne sera plus possible.
 - **R2 — à faire avant l'exécution.** Anthony doit valider l'adaptation du garde-fou S1 (`ECARTS.md` §4) et la décision n° 25 (`is_team()` reste ouverte à `anon` / `public` dans le test).
 - **R3.** Le contrôle S1 ne photographie pas les droits de la table `private.comptes_suspendus`. Le script ne les touche pas, mais une ligne de plus dans `_sync_avant` (`relacl`) rendrait la preuve complète.
 - **R4.** Les messages `raise notice` et `raise warning` (succès, blocage de connexion) risquent de ne pas s'afficher dans l'outil Supabase. Le succès se lit donc à l'**absence d'erreur**. Un `select` de confirmation après le `commit` serait plus lisible.
@@ -100,3 +100,96 @@ Le garde-fou du retour arrière (conditions 1 à 3) refuse en production grâce 
 - **Comportement exact de l'outil Supabase `execute_sql`** avec `begin` / `commit` explicites dans un envoi unique : l'atomicité est attendue, mais non observée.
 - **Lancement avec `psql`** : essayé seulement en local, avec PostgreSQL 16 au lieu de 17. Différence observée : le droit `m` (MAINTAIN) n'existe qu'en 17, ce qui est sans effet sur les contrôles.
 - **Réglages d'authentification et fonctions serveur (edge)** : non comparés.
+
+---
+
+# Seconde relecture — commit `6821d1d6d4e1e0eed3711f2aa9d73e8345fcb978` (branche `dev/s0-synchro-test`), 24/10/2026
+
+Fichier relu : `supabase/test/synchro-2026-10/synchro_test.sql` au commit exact (`git show 6821d1d:…`). Même relecteur, mêmes interdits : Supabase en lecture du catalogue seulement, essais sur un cluster local jetable (port 55499, **détruit**), aucun commit, aucun push. Le dépôt n'a pas été modifié ; ce complément est à recopier dans `supabase/test/synchro-2026-10/RELECTURE.md` par l'agent développeur (la copie du dépôt diffère de celle-ci).
+
+## Verdict : **bloquants : aucun**
+
+## 1. Ce qui a changé depuis la première relecture
+- `git diff main...6821d1d` ne touche que `supabase/test/synchro-2026-10/` (9 fichiers, aucun fichier de l'application).
+- `cf9786c:synchro_test.sql` est identique octet pour octet au script relu le 23/10 ; `6821d1d` n'y ajoute que le bloc S1 (l. 49-65) : 3 refus, levés **avant toute écriture** (juste après le garde-fou à 6 conditions).
+- Les 5 fichiers `avant/*.sql` sont identiques aux définitions utilisées pour l'essai de retour arrière du 23/10 → la remarque R1 (définitions dans un dossier temporaire) est **levée**.
+
+## 2. Refus S1 — essai local (schéma du test reconstitué, RLS et règles du test, empreinte de l'adresse remplacée)
+État relevé après chaque essai : `client_errors`, `prod_mode_manual`, nombre de déclencheurs, index de `budget_lines`, nombre de fonctions, retour de `_push`, file `pg_net`, limite de `suivi`.
+
+| Cas | Préparation | Résultat | État après |
+|---|---|---|---|
+| Témoin (aucune exécution) | — | — | absente / 0 / 10 / 2 / 66 / ancienne / 0 / null |
+| 1. Verrou retiré de `is_team()` | `is_team()` remplacée par la version de production | `Refus (S1 verrou)` (l. 65) | **identique au témoin** |
+| 2. Ligne de la testeuse supprimée | `delete from private.comptes_suspendus` | `Refus (S1 suspension)` | **identique** |
+| 3a. Blocage vide | `banned_until = null` | `Refus (S1 blocage)` | **identique** |
+| 3b. Blocage expiré | `banned_until = now() - 1 min` | `Refus (S1 blocage)` | **identique** |
+| Nominal (script complet) | — | passe tout jusqu'à 9.5, puis échec section 6 (la reconstitution n'a pas les 17 index du test) | **identique** (annulation totale, une preuve de plus) |
+| Nominal (sans le bloc 9.5) | — | « Synchronisation du test OK » | présente / 1 / 15 / 5 / 76 / « désactivé » / 0 / 52428800 |
+
+Le passage du bloc 9.5 dans le vrai test reste démontré par calcul (première relecture, §4).
+
+## 3. État réel du test aujourd'hui (lecture seule, 24/10 09:12 UTC)
+- ligne de la testeuse dans `private.comptes_suspendus` : **1** ;
+- `banned_until` : **11/11/2026**, actif (`> now()`) ;
+- verrou présent dans `is_team()` (md5 `828f25e9…`) ;
+- volumes 4/15/25/30/28/20, `pg_cron` absent, `client_errors` absente.
+
+→ Les 3 conditions sont remplies : le script passerait aujourd'hui. **À savoir : après le 11/11/2026, il refusera** (blocage expiré), sauf prolongation du blocage.
+
+## 4. `is_team()` laissée exécutable par `anon` : démonstration sur la copie locale APRÈS synchronisation
+- **Signature** : `is_team()`, **0 paramètre**. Aucune entrée possible.
+- **Résultat pour un anonyme** : `false` sans jeton, `false` avec un jeton `anon`. Elle ne renvoie `true` que si la session porte l'adresse d'un membre de l'équipe : via l'API, ces réglages viennent du jeton signé et l'anonyme ne peut pas les forger (PostgREST n'expose pas `set_config`). Ce cas n'existe donc que pour un accès SQL direct, qui donne déjà tous les droits.
+- **Lectures** : **0 ligne** sur les 23 tables de `public` et sur la vue `show_payments_computed` (`security_invoker`).
+- **Écritures** : `insert` refusé par la RLS sur `contacts`, `settings`, `budget_lines`, `client_errors`, `notifications`.
+- **`private`** : `permission denied for schema private` (`comptes_suspendus`, `import_secrets`). Dans le vrai test, `anon` n'a pas l'usage de `private` (catalogue).
+- **Équipe et testeuse inchangées** : un membre lit 30 dates et 1 ligne de budget ; la testeuse suspendue, 0 et 0.
+
+### Liste exhaustive des fonctions de `public` / `private` exécutables par `anon`
+
+Production : **24** fonctions (catalogue lu aujourd'hui). Test après synchronisation : **25**, soit **les mêmes 24 plus `is_team()`**. Aucune fonction de `private` n'est accessible (pas d'usage du schéma). Les 24 ont un md5 identique dans les deux projets : les 16 déjà présentes dans le test ont été vérifiées dans le catalogue ; les 8 nouvelles sont recopiées de la production.
+
+Appel de chaque fonction par `anon` en local, avec des valeurs piégées :
+
+| Fonctions | Ce qu'un anonyme en tire |
+|---|---|
+| `is_team()` | toujours `false` : rien |
+| `setting_text`, `setting_num` (droits de l'appelant) | `NULL`, car la RLS de `settings` bloque l'anonyme : aucun réglage lisible |
+| `artist_token_ok`, `rh_token_ok` | `false` pour un jeton inventé. Elles répondent seulement « ce jeton existe-t-il ? » ; les jetons font 32 caractères aléatoires (impossibles à deviner). Même chose qu'en production, voulu |
+| `artist_get`, `fiche_get`, `rh_get` | `NULL` avec un jeton inventé, `%` ou `null` (comparaison stricte, jeton d'au moins 16 caractères). Les pages publiques à jeton, conçues pour cela ; `rh_get` masque IBAN, n° de sécurité sociale, etc. |
+| `artist_submit`, `fiche_submit`, `rh_submit` | « Lien invalide » sans jeton valide |
+| `ensure_movinmotion` (droits de l'appelant) | rien : la RLS de `shows` cache tout, aucune ligne insérée |
+| 7 fonctions de déclencheur (`contacts_clean`, `shows_defaults`, `brevo_contact_trg`, `touch_updated_at`, `project_mode_to_shows`, `show_follow_project_mode`, `structures_place_clean`) | « trigger functions can only be called as triggers » |
+| `clean_email`, `clean_phone`, `workday`, `fr_date`, `fr_eur`, `contact_first_name` | calculs purs sur la valeur fournie, sans accès aux données |
+
+Les 11 fonctions sensibles du test (`generate_reminders`, `_push`, `import_secret`, `ai_key_status`, `set_ai_key`, `mail_vars`, `request_drive_folder`, `pennylane_status`, `set_pennylane_key`, `brevo_queue`, `ensure_production_payments`) ainsi que `artist_sync` et `artist_info_save` répondent toutes : **permission denied**.
+
+Hors périmètre, identique en production et non touché par le script :
+- `net.http_get` et `net.http_post` sont exécutables par `anon`. C'est le réglage par défaut de Supabase. Le schéma `net` n'est pas exposé par l'API.
+- Les dépôts de fichiers anonymes à jeton (`artiste`, `rh`) dans `storage` ont des empreintes de règles identiques à la production.
+
+**Conclusion** : laisser `anon` sur `is_team()` ne donne à un visiteur anonyme **aucune information et aucun contournement**.
+
+## 5. Faut-il retirer `anon` de `is_team()` ?
+- **Effet démontré** (en local, avec `revoke execute on function public.is_team() from public, anon`) : une seule différence pour un anonyme. La lecture de `budget_lines` renvoie **`permission denied for function is_team`** au lieu de 0 ligne. La cause : sa règle `budget_team` vise le rôle `public`, donc aussi `anon`. Toutes les autres tables restent à 0 ligne, car leurs règles ne visent que `authenticated`. C'est exactement le comportement de la production.
+- **Pas de casse pour l'application** :
+  - les pages publiques (`fiche.html`, `artiste.html`, `rh.html`) n'utilisent que les 6 fonctions à jeton et les dépôts de fichiers à jeton, jamais `is_team()` en anonyme ;
+  - les fonctions serveur l'appellent avec le jeton de l'utilisateur (`authenticated`) ;
+  - le verrou S1 n'est pas affaibli, car `authenticated` garde le droit.
+- **Avis du relecteur** : retirer `anon` est **préférable**, mais n'est **pas nécessaire pour la sécurité**.
+  - Avantages : identique à la production (un écart de moins, n° 25 d'`ECARTS.md`) ; une erreur visible plutôt qu'un 0 ligne silencieux si un futur écran tentait une lecture anonyme ; principe du moindre droit.
+  - Si Anthony le décide dans ce script : ajouter `revoke execute on function public.is_team() from public, anon;` et adapter le contrôle 9.1, qui compare les droits de `is_team()` avant et après. Il devrait comparer à `{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}`. Ce changement doit repasser en relecture.
+  - Sinon, le laisser tel quel est sans risque (§4).
+
+## 6. Remarques restantes (non bloquantes)
+- **R2** reste à valider par Anthony : la décision n° 25 (`is_team()`, voir §5). L'adaptation du garde-fou S1 est désormais tranchée (refus).
+- **R3, R4, R6** de la première relecture : inchangées, facultatives.
+- **Nouveau** : le script cessera de passer après le 11/11/2026 si le blocage de connexion n'est pas prolongé (comportement voulu, à connaître).
+- **Nouveau, purement cosmétique** : l'avertissement de fin sur le blocage de connexion (contrôle 9.1) ne peut plus se déclencher, puisque ce cas est désormais refusé dès le début.
+
+## 7. Non vérifié
+- Exécution réelle sur le projet de test (interdit).
+- Reconstitution locale : elle ne contient qu'un index du test au lieu de 17 et une partie seulement des colonnes réelles des vues. Les règles d'accès et les droits sont reproduits d'après le catalogue du 24/10.
+- Les fonctions à jeton chargées en local sont les définitions de production, de md5 identique à celles du test.
+- Le comportement de PostgREST (impossible de forger les réglages du jeton, schémas exposés) est raisonné d'après la configuration standard de Supabase, pas essayé.
+- Les tests automatiques du dépôt (`tests/`) n'ont pas été lancés : le lot ne touche que `supabase/test/`.
