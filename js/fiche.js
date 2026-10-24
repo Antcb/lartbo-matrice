@@ -31,7 +31,10 @@ function fail(msg){ root.innerHTML = `<div class="panel pad fiche-msg">${esc(msg
 
 function conditions(d){
   const cr = ficheKind(d.contract_type) === 'cr';
-  const pays = (d.payments || []).map(p => `<li>${esc(p.label || (p.kind === 'solde' ? 'Solde' : 'Acompte'))}${p.pct != null ? ` : ${pct(p.pct)}` : ''}${p.ht != null ? ` · ${eur(p.ht)} HT` : ''}${p.due_label ? ` · ${esc(p.due_label)}` : ''}</li>`).join('');
+  // date en booking (mode transmis par le serveur depuis la migration v1.40 ; absent avant = comportement inchangé) :
+  // L'ArtBo n'émet pas ces factures, seules les conditions du contrat sont rappelées, sans montant par ligne (décision d'Anthony du 25/10)
+  const booking = d.prod_mode === 'booking';
+  const pays = (d.payments || []).map(p => `<li>${esc(p.label || (p.kind === 'solde' ? 'Solde' : 'Acompte'))}${p.pct != null ? ` : ${pct(p.pct)}` : ''}${p.ht != null && !booking ? ` · ${eur(p.ht)} HT` : ''}${p.due_label ? ` · ${esc(p.due_label)}` : ''}</li>`).join('');
   // acomptes et leurs échéances (le 1er : à la signature du contrat, sauf autre échéance validée)
   const acs = (d.payments || []).filter(p => p.kind === 'acompte' && Number(p.pct));
   const acText = acs.length ? acs.map((p, i) => `${pct(p.pct)} ${esc(p.due_label || (i === 0 ? 'à la signature du contrat' : ''))}`.trim()).join(', puis ') : '';
@@ -48,7 +51,7 @@ function conditions(d){
       <dt>${cr ? 'Minimum garanti' : 'Montant de la cession'}</dt><dd><b>${eur(d.fee_ht)} HT</b> · ${eur(d.fee_ttc)} TTC (TVA ${pct(d.vat)})</dd>
       ${cr ? `<dt>% du résultat net après break au producteur</dt><dd>${d.cr_producer_pct != null ? pct(d.cr_producer_pct) : 'à confirmer'}</dd>
         <dt>Break</dt><dd>${d.cr_break ? `${esc(d.cr_break)} <span class="muted">(proposé, à confirmer plus bas)</span>` : 'à renseigner plus bas'}</dd>` : ''}
-      ${pays ? `<dt>Paiement</dt><dd><ul>${pays}</ul></dd>` : ''}
+      ${pays ? `<dt>${booking ? 'Échéancier prévu au contrat' : 'Paiement'}</dt><dd><ul>${pays}</ul></dd>` : ''}
       ${d.capacity ? `<dt>Jauge</dt><dd>${esc(d.capacity)} personnes</dd>` : ''}
     </dl>
     <p class="help">Ces conditions ne sont pas modifiables ici. Pour toute question : <a href="mailto:production@lartboristerie.com">production@lartboristerie.com</a>.</p>

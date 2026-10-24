@@ -254,6 +254,31 @@ test('A2 point 1 : date passée en booking, « Rattacher » ne propose que les f
   expectClean(ctx);
 });
 
+test('A2 point 1 : une date avec des pièces à rattacher ne se supprime pas ; les pièces d’une date absente restent listées et ouvrables', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [PROD, ANNULEE], show_payments: [{ id: 'z-a', show_id: 'e-1', kind: 'acompte', label: 'Acompte', pct: 50, sort: 1 }],
+    attachments: [
+      { id: 'att-p', project_id: 'art-a', name: 'garde.pdf', path: 'budget/e-1/garde.pdf' },
+      { id: 'att-x', project_id: 'art-a', name: 'annulee.pdf', path: 'budget/e-2/annulee.pdf' },          // date annulée : hors liste Production
+      { id: 'att-o', project_id: 'art-a', name: 'orpheline.pdf', path: 'budget/disparue/orpheline.pdf' }, // date supprimée hors Matrice
+    ] });
+  // suppression refusée, rien n'est effacé
+  expect(await page.evaluate(async () => (await import('./js/data.js')).remove('shows', 'e-1'))).toBeFalsy();
+  expect(await page.evaluate(() => window.__DB.shows.some(s => s.id === 'e-1'))).toBe(true);
+  expect(await page.evaluate(() => [...document.querySelectorAll('.toast, #toast')].map(e => e.textContent).join(' '))).toMatch(/1 pièce à rattacher/);
+  // une fois la pièce rattachée, la date redevient supprimable (garde levée)
+  await page.evaluate(async () => (await import('./js/data.js')).save('show_payments', 'z-a', { file_path: 'budget/e-1/garde.pdf', file_name: 'garde.pdf' }));
+  expect(await page.evaluate(async () => (await import('./js/calc.js')).changeBlocked('shows', 'e-1', null))).toBe('');
+  // vue Production : les pièces des dates absentes sont listées avec leur date, et s'ouvrent
+  await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.year = new Date().getFullYear(); (await import('./js/app.js')).go('production'); });
+  const bloc = page.locator('.panel', { hasText: 'Pièces à rattacher hors de cette liste' });
+  await expect(bloc.locator('.file-row')).toHaveCount(2);
+  await expect(bloc.locator('.file-row', { hasText: 'annulee.pdf' })).toContainText('Annulée');
+  await expect(bloc.locator('.file-row', { hasText: 'orpheline.pdf' })).toContainText('date supprimée · Artiste Alpha');
+  await expect(bloc.locator('[data-act="openAttachment"][data-id="att-o"]')).toBeVisible();
+  expectClean(ctx);
+});
+
 test('A2-F : marquer payé un encaissement sans compte demande le compte ; « Annuler » le laisse « Non renseigné »', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, { shows: [PROD, BOOKING], show_payments: [

@@ -163,10 +163,6 @@ export function accountMoves(projectId){
   return moves;
 }
 
-/** Factures de vente déposées sur une date sans ligne sûre (gardées dans « attachments ») et pas encore rattachées */
-export const piecesToAttach = s => !s ? [] : S.db.attachments.filter(a => a.path?.startsWith(`budget/${s.id}/`)
-  && !S.db.show_payments.some(p => p.file_path === a.path) && !S.db.budget_lines.some(l => l.file_path === a.path));
-
 /** Libellés des payeurs pour un projet */
 export function payerLabel(code, project){
   return ({compte: project?.account_name || 'Compte dédié', artbo: "L'ArtBo", artiste: project?.artist_payee || 'Artiste', organisateur: 'Organisateur', autre: 'Autre'})[code || 'compte'] || code;

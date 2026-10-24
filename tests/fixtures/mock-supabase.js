@@ -111,7 +111,13 @@
     is_team: () => true,
     mail_vars: () => ({ artiste: 'Artiste Alpha', date: 'mardi 1er juin 2027', ville: 'Bourg-Test', lieu: 'Festival Fictif', cachet_ht: '6 000 €', contact: 'Camille',
       lien_fiche: 'https://exemple.invalid/fiche.html?t=jeton-fiche-test-0001' }),
-    fiche_get: a => a.p_token === 'jeton-fiche-test-0001' ? { artist: 'Artiste Alpha', date: inYear('06-15'), date_label: 'date de test', venue: 'Festival Fictif', city: 'Bourg-Test',
+    // v1.40 (A2) : fiche d'une date booking / production avec le mode transmis par le serveur (migration 2026-10-25_v1.40_fiche_mode)
+    fiche_get: a => ['jeton-fiche-booking-001', 'jeton-fiche-prodmode-01'].includes(a.p_token) ? { artist: 'Artiste Bêta', date: inYear('11-10'), date_label: 'date de test',
+      venue: 'Lieu Témoin', city: 'Testville', contract_type: 'Cession', fee_ht: 8000, vat: 5.5, fee_ttc: 8440, acompte_pct: 30,
+      prod_mode: a.p_token === 'jeton-fiche-booking-001' ? 'booking' : 'production',
+      payments: [{ label: 'Acompte', kind: 'acompte', pct: 30, ht: 2400, due_label: 'à la signature' }, { label: 'Solde', kind: 'solde', pct: 70, ht: 5600, due_label: 'le soir du concert' }],
+      structure: { name: 'Lieu Témoin' }, fiche: {}, submitted_at: null, locked: false }
+    : a.p_token === 'jeton-fiche-test-0001' ? { artist: 'Artiste Alpha', date: inYear('06-15'), date_label: 'date de test', venue: 'Festival Fictif', city: 'Bourg-Test',
       contract_type: 'Cession', fee_ht: 6000, vat: 5.5, fee_ttc: 6330, acompte_pct: 50, payments: [{ label: 'Acompte', kind: 'acompte', pct: 50, ht: 3000 }, { label: 'Solde', kind: 'solde', pct: 50, ht: 3000 }],
       structure: { name: 'Festival Fictif' }, fiche: {}, submitted_at: null, locked: false } : null,
     rh_get: a => a.p_token === 'jeton-rh-test-00000001' ? { first_name: 'Dominique', last_name: 'EXEMPLE', email: 'dominique@example.com', info: {}, docs: [], submitted_at: null } : null,

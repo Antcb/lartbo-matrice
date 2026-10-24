@@ -3,7 +3,7 @@
  * Chaque date se déplie : suivi admin, commissions, dossier Drive, facturation.
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
-import { BILL_KINDS, billLockReason, billPct, billingOf, isInvoiced, netArtbo, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
+import { BILL_KINDS, billLockReason, billPct, billingOf, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
 import { byId, projName, setting, showsFiltered, structName } from '../selectors.js';
 import { lateSteps, remindersOf } from '../reminders.js';
@@ -12,7 +12,7 @@ import { filterBar, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { esc, eur2, fmtDate, matches, today } from '../utils.js';
-import { payerLabel, piecesToAttach } from '../budget.js';
+import { payerLabel } from '../budget.js';
 import { productionBudgetHTML, projectBudgetHTML, showBudgetHTML } from './budget.js';
 import { isProductionShow } from '../production-budget.js';
 
@@ -35,8 +35,14 @@ export function viewProduction(){
     sub: `${shows.length} date${shows.length>1?'s':''} confirmée${shows.length>1?'s':''}`,
     filters: filterBar() + `<input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-prod" placeholder="Artiste, ville, salle, festival, date…" data-search="production" value="${esc(q)}">`,
     actions: `<button class="btn" data-act="syncPennylane" title="Coche « Payée » les acomptes et soldes réglés dans Pennylane">Synchroniser Pennylane</button><button class="btn" data-act="expandAll">${shows.length && shows.every(s=>S.openProd.has(s.id)) ? 'Tout replier' : 'Tout déplier'}</button>`});
-  if (!all.length) return head + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
-  return head + `
+  // pièces à rattacher d'une date absente de cette liste (supprimée, annulée, autre année, filtrée) : listées ici
+  const listed = new Set(shows.map(s => s.id)), away = allPiecesToAttach().filter(a => !listed.has(pieceShowId(a)));
+  const awayHTML = away.length ? `<div class="panel pad mb"><p class="help full"><b>Pièces à rattacher hors de cette liste</b> : factures déposées sur une date qui n’apparaît pas ici. Ouvre-les pour les retrouver ; le rattachement se fait depuis l’onglet Factures de la date.</p>
+    ${away.map(a => { const sh = byId('shows', pieceShowId(a));
+      return `<div class="file-row"><span class="file-ico" aria-hidden="true">📎</span><a href="#" data-act="openAttachment" data-id="${a.id}">${esc(a.name)}</a>
+        <span class="muted small">${sh ? esc([fmtDate(sh.date), sh.venue, projName(sh.project_id), sh.status].filter(Boolean).join(' · ')) : `date supprimée · ${esc(projName(a.project_id) || 'artiste inconnu')}`}</span></div>`; }).join('')}</div>` : '';
+  if (!all.length) return head + awayHTML + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
+  return head + awayHTML + `
     <div class="stat-row">
       <div class="stat"><b>${eur2(artbo)}</b><span>Commissions L'ArtBo</span></div>
       <div class="stat"><b>${eur2(partner)}</b><span>dont partenaires</span></div>
