@@ -58,12 +58,13 @@ export async function save(table, id, patch, {rerender=true}={}){
 export async function saveLinger(table, id, patch, message, {after, onUndo} = {}){
   S.linger.set(id, Date.now() + LINGER_MS);
   const before = await save(table, id, patch);
-  if (!before) { S.linger.delete(id); return; }
+  if (!before) { S.linger.delete(id); return false; }   // refusé ou en échec : l'appelant le sait
   // suite liée (ex. relances retirées) : seulement si l'enregistrement a réussi, et défaite avec « Annuler »
   const extra = after ? await after() : null;
   const undo = {}; Object.keys(patch).forEach(k => undo[k] = before[k] ?? null);
   toast(message, false, {label:'Annuler', fn: async () => { S.linger.delete(id); await save(table, id, undo); if (onUndo) await onUndo(extra); render(); }});
   setTimeout(() => { if (S.linger.has(id) && S.linger.get(id) <= Date.now() + 50){ S.linger.delete(id); render(); } }, LINGER_MS + 100);
+  return true;
 }
 
 export const lingering = id => S.linger.has(id);

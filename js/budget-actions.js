@@ -70,7 +70,7 @@ export const BUDGET_ACTIONS = {
   toggleBookingOnly: async t => {
     const s = byId('shows', t.dataset.id), on = t.checked;
     if (on && linesOf(s.id).length && !confirm('Cette date a déjà un budget. Il sera masqué (pas supprimé) et la date sortira du solde du compte. Continuer ?')){ t.checked = false; return; }
-    await save('shows', s.id, {prod_mode: on ? 'booking' : 'production', prod_mode_manual: (on ? 'booking' : 'production') !== (byId('projects', s.project_id)?.mode || 'production')}, {rerender: false});
+    if (!(await save('shows', s.id, {prod_mode: on ? 'booking' : 'production', prod_mode_manual: (on ? 'booking' : 'production') !== (byId('projects', s.project_id)?.mode || 'production')}, {rerender: false}))){ render(); return; }   // refusé (facture émise) : le message du garde-fou reste
     // passage en production : la base ajoute l'acompte et le solde manquants (factures déjà faites gardées) ; on les recharge
     if (!on) await refreshFor('show_payments', 'show_id', s.id);
     render();

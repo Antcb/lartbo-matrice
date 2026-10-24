@@ -249,3 +249,30 @@ test('relecture bis 2 : une date qui porte une facture émise ne se supprime pas
   expect(await page.evaluate(() => window.__DB.shows.some(s => s.id === 'v-1'))).toBe(true);
   expectClean(ctx);
 });
+
+// ---- Troisième relecture (cc765a9) : un refus n'est jamais suivi d'un faux succès ----
+
+test('relecture ter : refus du garde-fou → aucun message de réussite, la fiche reste ouverte', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, [{ id: 'r-c', show_id: 'v-1', kind: 'artbo', label: 'Commission', pct: 15, invoice_number: 'F-401', sort: 1 },
+    { id: 'r-s', show_id: 'v-1', kind: 'solde', label: 'Solde', pct: 100, invoice_number: 'F-402', sort: 100 }]);
+  // case « booking uniquement » : refus, pas de « Date en production »
+  await page.evaluate(async () => {
+    const { S } = await import('./js/state.js'); S.db.shows.find(x => x.id === 'v-1').prod_mode = 'booking'; window.__DB.shows.find(x => x.id === 'v-1').prod_mode = 'booking';
+    const { BUDGET_ACTIONS } = await import('./js/budget-actions.js');
+    await BUDGET_ACTIONS.toggleBookingOnly({ dataset: { id: 'v-1' }, checked: false });
+  });
+  expect(await lastToast(page)).not.toMatch(/Date en production/);
+  expect(await page.evaluate(() => window.__DB.shows.find(x => x.id === 'v-1').prod_mode)).toBe('booking');
+  // fiche : statut « Annulée » + nouveau cachet → refus, pas de fenêtre « Cachet modifié », la fiche reste ouverte
+  const opened = page.evaluate(async () => (await import('./js/forms.js')).editShow('v-1'));
+  await page.locator('#modal [name=fee_ht]').fill('4000');
+  await page.locator('#modal #fld-status').selectOption('Annulée');
+  await page.locator('#modal button[type=submit]').click();
+  await expect(page.locator('#modal')).toBeVisible();
+  await expect(page.locator('#modal2')).not.toBeVisible();
+  expect(await page.evaluate(() => window.__DB.shows.find(x => x.id === 'v-1'))).toMatchObject({ fee_ht: 3333, status: 'Confirmée Salle' });
+  await page.keyboard.press('Escape');
+  await opened;
+  expectClean(ctx);
+});
