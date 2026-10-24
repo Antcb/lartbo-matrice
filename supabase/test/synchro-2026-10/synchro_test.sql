@@ -47,12 +47,20 @@ do $$ begin
 end $$;
 
 -- Garde-fou S1 (repris de r1/garde_synchro_suspension.sql, ADAPTÉ — voir ECARTS.md §4) :
---  * la condition « refuser tant qu'une suspension est en cours » est REMPLACÉE : ce script ne remplace pas is_team() et ne
---    touche pas la table de suspension ; il photographie le verrou ici et vérifie à la fin qu'il est strictement inchangé ;
---  * la condition « is_team() a perdu son verrou » est conservée telle quelle.
+--  * ce script ne remplace pas is_team() et ne touche pas la table de suspension ; il photographie le verrou ici et vérifie
+--    à la fin qu'il est strictement inchangé ;
+--  * il refuse de tourner si le verrou a disparu de is_team() ou si la suspension a été levée (décision d'Anthony, 24/10).
+-- Décision d'Anthony (24/10/2026) : le script REFUSE de tourner si la suspension de sécurité a été levée, sous l'une
+-- quelconque de ses trois formes (ligne de suspension, verrou dans is_team(), blocage de connexion du compte).
 do $$ begin
   if to_regclass('private.comptes_suspendus') is not null and position('comptes_suspendus' in pg_get_functiondef('public.is_team()'::regprocedure)) = 0 then
-    raise exception 'is_team() a perdu le verrou de suspension alors que la table existe : vérifier avant toute synchronisation.';
+    raise exception 'Refus (S1 verrou) : is_team() a perdu le verrou de suspension : vérifier avant toute synchronisation.';
+  end if;
+  if not exists (select 1 from private.comptes_suspendus where md5(lower(email)) = '541b1b492bd5b71a3ae333605615bff2') then
+    raise exception 'Refus (S1 suspension) : la suspension de la testeuse a été levée : la synchronisation est interdite dans cet état.';
+  end if;
+  if not exists (select 1 from auth.users where md5(lower(email)) = '541b1b492bd5b71a3ae333605615bff2' and banned_until > now()) then
+    raise exception 'Refus (S1 blocage) : le blocage de connexion de la testeuse est levé ou expiré : la synchronisation est interdite dans cet état.';
   end if;
 end $$;
 
