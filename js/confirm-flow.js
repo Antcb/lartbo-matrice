@@ -8,7 +8,7 @@
  */
 import { render } from './app.js';
 import { applyTemplate } from './budget-template.js';
-import { billPct, isInvoiced, paymentsOf, soldeInvoiced } from './calc.js';
+import { BILL_KINDS, billPct, isInvoiced, payAmount, paymentsOf, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, CONTRACTS } from './constants.js';
 import { insert, refreshShowSide, remove, save } from './data.js';
 import { isBookingOnly, prepareMail } from './mail.js';
@@ -96,7 +96,8 @@ export async function validateTerms(showId){
       if (v.fee_ht == null){ toast('Indique le cachet HT', true); return false; }
       if (!v.contract_type || v.contract_type === 'N.C'){ toast('Choisis le type de contrat', true); return false; }
       const rows = booking ? [] : [...document.querySelectorAll('#modal [data-terms-ac]')].map((inp, i) => ({pct: Number(String(inp.value).replace(',', '.')) || 0,
-        due: (document.querySelector(`#modal [data-terms-due="${i}"]`)?.value || '').trim()}));
+        due: (document.querySelector(`#modal [data-terms-due="${i}"]`)?.value || '').trim(),
+        shown: acs[i] ? pcts[i]?.v : null}));   // % affiché à l'ouverture : sert à savoir si l'utilisateur l'a changé
       const noDue = rows.findIndex((r, i) => i > 0 && !r.due);
       if (noDue >= 0){ toast(`Indique l’échéance de l’acompte ${noDue + 1} (ex. « le 15 janvier 2027 »)`, true); return false; }
       const list = rows.map(r => r.pct);
@@ -106,8 +107,10 @@ export async function validateTerms(showId){
       const solde = pays.find(p => p.kind === 'solde'), soldeLocked = solde && locked(solde) ? (billPct(solde) || 0) : 0;
       const sum = list.reduce((a, b) => a + b, 0) + lockedExtra + soldeLocked;
       if (sum > 100.001){ toast(`Les factures dépasseraient 100 % du cachet (${String(r2(sum)).replace('.', ',')} % avec celles déjà envoyées)`, true); return false; }
+      const oldFee = s.fee_ht;
       if (!(await save('shows', s.id, {...v, terms_validated_at: new Date().toISOString()}, {rerender: false}))) return false;
       if (!booking && !(await syncAcomptes(s.id, rows, {duesOnly: soldeLock}))){ toast('Les acomptes n’ont pas pu être enregistrés : vérifie l’onglet Factures', true); return false; }
+      if (!booking && Number(v.fee_ht) !== Number(oldFee)) await afterFeeChange(s.id, {level: 2});   // montants saisis : on demande (Q5)
       toast('Conditions validées');
       return true;
     }});
@@ -131,6 +134,31 @@ export async function validateTerms(showId){
   return !!(await p);
 }
 
+/**
+ * Après un changement de cachet (tableau, fiche de la date, « Valider les conditions ») — §6.5, Q5 :
+ * les lignes non émises en % suivent ; un montant saisi à la main n'est remplacé que si l'utilisateur le choisit ;
+ * une facture émise ne bouge jamais (garde-fou de data.save) ; le solde non émis reprend ce qui reste,
+ * sauf un montant de solde que l'utilisateur vient de choisir de conserver.
+ */
+export async function afterFeeChange(showId, {level = 1} = {}){
+  const fee = Number(byId('shows', showId)?.fee_ht) || 0;
+  if (!fee) return;
+  const has = v => v != null && v !== '';
+  const manual = paymentsOf(showId).filter(p => BILL_KINDS.includes(p.kind) && has(p.amount) && has(p.pct) && !isInvoiced(p));
+  let recalc = false;
+  if (manual.length){
+    const rows = manual.map(p => `<li>${esc(p.label || p.kind)} : <b>${eur2(payAmount(p))}</b> saisi à la main → ${eur2(Math.round(fee * Number(p.pct)) / 100)} sur le nouveau cachet</li>`).join('');
+    recalc = !!(await openModal({level, title: 'Cachet modifié', fields: [], saveLabel: 'Recalculer sur le nouveau cachet',
+      footExtra: `<button type="button" class="btn" data-act="closeModal" data-level="${level}">Conserver les montants saisis</button>`,
+      extra: `<p>Le nouveau cachet (${eur2(fee)} HT) est enregistré. Des montants ont été saisis à la main sur des factures pas encore émises :</p><ul>${rows}</ul>
+        <p class="muted">Rien n’est remplacé sans ton choix. En les conservant, vérifie ensuite que les factures font bien 100 % du cachet (onglet Factures).</p>`,
+      onSave: () => true}));
+    if (recalc) for (const p of manual) if (!(await save('show_payments', p.id, {amount: null}, {rerender: false}))) return;
+  }
+  const solde = paymentsOf(showId).find(p => p.kind === 'solde');
+  if (!(solde && !recalc && manual.includes(solde))) await rebalanceSolde(showId);
+}
+
 /** Lignes d'acompte = la liste validée (une facture émise n'est jamais touchée, §6.4), solde = le reste.
  *  Un montant saisi en euros est conservé tant que son % n'a pas été changé (Q22 : la précision n'est jamais perdue).
  *  duesOnly : solde déjà facturé, seules les échéances changent. */
@@ -151,8 +179,9 @@ async function syncAcomptes(showId, rows, {duesOnly = false} = {}){
       else if (!isInvoiced(p)){
         // le nom suit le nombre d'acomptes (Acompte / Acompte 1, 2…), sauf un nom choisi à la main
         const patch = {};
-        // % changé dans la fenêtre : il remplace l'ancienne valeur. % inchangé : rien ne bouge (un montant en euros reste tel quel)
-        if (r2(billPct(p) ?? 0) !== r2(list[i])) Object.assign(patch, {pct: list[i], amount: null});
+        // % changé dans la fenêtre : il remplace l'ancienne valeur. % inchangé : rien ne bouge (un montant en euros reste tel quel ;
+        // si le cachet a changé, afterFeeChange demande ensuite conserver / recalculer)
+        if (rows[i].shown == null || r2(rows[i].shown) !== r2(list[i])) Object.assign(patch, {pct: list[i], amount: null});
         if ((p.due_label || null) !== dues[i]) patch.due_label = dues[i];
         if (!p.label || /^acompte( \d+)?$/i.test(p.label.trim())) if (p.label !== label) patch.label = label;
         if (Object.keys(patch).length && !(await save('show_payments', p.id, patch, {rerender: false}))) return false;

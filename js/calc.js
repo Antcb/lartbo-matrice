@@ -50,6 +50,31 @@ export function billLockReason(p){
   return '';
 }
 
+const sameVal = (a, b) => (a == null || a === '' ? null : Number.isFinite(Number(a)) ? Number(a) : a) === (b == null || b === '' ? null : Number.isFinite(Number(b)) ? Number(b) : b);
+/** GARDE-FOU CENTRAL (appelé par data.save pour TOUT enregistrement) : refuse un changement qui modifierait une facture émise,
+ *  directement (montant, %, TVA de la ligne) ou par la date dont son montant dépend (cachet, TVA, % de commission ou de partenaire).
+ *  Renvoie le message à afficher, '' si le changement est permis. CONVENTIONS §6.3–6.5 (Q4, Q5). */
+export function changeBlocked(table, id, patch){
+  if (!patch) return '';
+  if (table === 'show_payments'){
+    const row = byId('show_payments', id);
+    if (!row || !['amount', 'pct', 'vat_rate'].some(k => k in patch && !sameVal(patch[k], row[k]))) return '';
+    return billLockReason(row);
+  }
+  if (table === 'shows' && ['fee_ht', 'vat_rate', 'artbo_pct', 'partner_pct'].some(k => k in patch)){
+    const s = byId('shows', id), lines = s ? paymentsOf(id).filter(isInvoiced) : [];
+    if (!lines.length) return '';
+    const values = () => JSON.stringify(lines.map(p => { const a = payAmount(p); return [a, ttc(a, payVat(p))]; }));
+    const before = values(), keep = {};
+    Object.keys(patch).forEach(k => { keep[k] = s[k]; });
+    Object.assign(s, patch);
+    const after = values();
+    Object.assign(s, keep);                                   // simulation seulement : la date reste inchangée
+    if (before !== after) return 'Des factures de cette date sont déjà émises : ce changement (cachet, TVA ou %) modifierait leur montant. Il est refusé ; une régularisation se décide à part.';
+  }
+  return '';
+}
+
 /** Lignes qui facturent le cachet (acomptes, solde) : ensemble, 100 % du cachet au plus. Commissions, taxe CNM et « autres » à part. */
 export const BILL_KINDS = ['acompte', 'solde'];
 const r2 = n => Math.round(n * 100) / 100;

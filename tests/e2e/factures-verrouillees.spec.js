@@ -130,3 +130,96 @@ test('Q5 : changer le cachet demande avant d’écraser un montant saisi à la m
   expect((await dbPay(page, 'c-x')).amount, 'facture émise jamais touchée').toBe(500);
   expectClean(ctx);
 });
+
+// ---- Cas relevés par la relecture indépendante (2c8ba45) ----
+
+test('relecture 1 : « Conserver » garde aussi un montant de solde saisi à la main', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, [
+    { id: 'k-a', show_id: 'v-1', kind: 'acompte', label: 'Acompte', pct: 30, sort: 1 },
+    { id: 'k-s', show_id: 'v-1', kind: 'solde', label: 'Solde', amount: 2000, pct: 60.006, sort: 100 },
+  ]);
+  const run = page.evaluate(async () => (await import('./js/actions.js')).ACTIONS['change:shows.fee_ht']({ dataset: { id: 'v-1' } }, 4000));
+  await page.getByRole('button', { name: 'Conserver les montants saisis' }).click();
+  await run;
+  expect((await dbPay(page, 'k-s')).amount).toBe(2000);
+  expectClean(ctx);
+});
+
+test('relecture 2 : cachet, TVA ou % ne peuvent plus changer le montant d’une facture émise (garde-fou central)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, [
+    { id: 'g-a', show_id: 'v-1', kind: 'acompte', label: 'Acompte', pct: 50, invoice_number: 'F-201', sort: 1 },
+    { id: 'g-s', show_id: 'v-1', kind: 'solde', label: 'Solde', pct: 50, sort: 100 },
+    { id: 'g-c', show_id: 'v-1', kind: 'artbo', label: 'Commission', sent_at: '2026-02-01', sort: 200 },
+  ]);
+  const r = await page.evaluate(async () => {
+    const { save } = await import('./js/data.js'); const { ACTIONS } = await import('./js/actions.js');
+    const out = {};
+    await ACTIONS['change:shows.fee_ht']({ dataset: { id: 'v-1' } }, 4000);
+    out.feeTable = window.__DB.shows.find(s => s.id === 'v-1').fee_ht;
+    out.feeSave = !!(await save('shows', 'v-1', { fee_ht: 5000 }, { rerender: false }));
+    out.tva = !!(await save('shows', 'v-1', { vat_rate: 20 }, { rerender: false }));
+    out.com = !!(await save('shows', 'v-1', { artbo_pct: 25 }, { rerender: false }));
+    out.memeValeur = !!(await save('shows', 'v-1', { fee_ht: 3333, venue: 'Salle Verrou' }, { rerender: false }));   // rien ne change : permis
+    out.ligne = !!(await save('show_payments', 'g-a', { amount: 999 }, { rerender: false }));
+    out.fee = window.__DB.shows.find(s => s.id === 'v-1').fee_ht; out.state = (await import('./js/selectors.js')).byId('shows', 'v-1').fee_ht;
+    return out;
+  });
+  expect(r).toEqual({ feeTable: 3333, feeSave: false, tva: false, com: false, memeValeur: true, ligne: false, fee: 3333, state: 3333 });
+  expect((await dbPay(page, 'g-a')).amount ?? null).toBeNull();
+  expectClean(ctx);
+});
+
+test('relecture 2 bis : sans facture émise, le cachet change librement', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, [{ id: 'f-a', show_id: 'v-1', kind: 'acompte', label: 'Acompte', pct: 50, sort: 1 }, { id: 'f-s', show_id: 'v-1', kind: 'solde', label: 'Solde', pct: 50, sort: 100 }]);
+  await page.evaluate(async () => (await import('./js/actions.js')).ACTIONS['change:shows.fee_ht']({ dataset: { id: 'v-1' } }, 4000));
+  expect(await page.evaluate(() => window.__DB.shows.find(s => s.id === 'v-1').fee_ht)).toBe(4000);
+  expectClean(ctx);
+});
+
+test('relecture 3 : « Valider les conditions » avec un nouveau cachet demande avant de toucher l’acompte en euros', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, [
+    { id: 'w-a', show_id: 'v-1', kind: 'acompte', label: 'Acompte', amount: 1000, pct: 30.003, sort: 1 },
+    { id: 'w-s', show_id: 'v-1', kind: 'solde', label: 'Solde', pct: 69.997, sort: 100 },
+  ]);
+  const done = page.evaluate(async () => (await import('./js/confirm-flow.js')).validateTerms('v-1'));
+  await page.locator('#modal [name=fee_ht]').fill('4000');
+  await page.locator('#modal button[type=submit]').click();
+  await expect(page.locator('#modal2 h2')).toHaveText('Cachet modifié');
+  await page.getByRole('button', { name: 'Conserver les montants saisis' }).click();
+  expect(await done).toBe(true);
+  expect((await dbPay(page, 'w-a')).amount, 'montant saisi conservé').toBe(1000);
+  expect((await dbPay(page, 'w-s')).pct, 'solde = reste du nouveau cachet').toBe(75);
+  expectClean(ctx);
+});
+
+test('relecture 4 : solde émis → un acompte ne se supprime plus depuis le tableau', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, [{ id: 'z-a', show_id: 'v-1', kind: 'acompte', label: 'Acompte', pct: 30, sort: 1 }, { id: 'z-s', show_id: 'v-1', kind: 'solde', label: 'Solde', pct: 70, sent_at: '2026-03-01', sort: 100 }]);
+  await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.openProd.add('v-1'); S.tab['prod:v-1'] = 'factures'; (await import('./js/app.js')).go('production'); });
+  await expect(page.locator('input[data-id="z-a"][data-f="pct"]')).toBeDisabled();
+  await expect(page.locator('button[data-act="delPay"][data-id="z-a"]')).toHaveCount(0);
+  await page.evaluate(async () => (await import('./js/actions.js')).ACTIONS.delPay({ dataset: { id: 'z-a' } }));
+  expect(await page.evaluate(() => window.__DB.show_payments.some(p => p.id === 'z-a'))).toBe(true);
+  expectClean(ctx);
+});
+
+test('relecture 6 : la fiche complète de la date pose la même question sur le cachet', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, [
+    { id: 'h-a', show_id: 'v-1', kind: 'acompte', label: 'Acompte', amount: 1000, pct: 30.003, sort: 1 },
+    { id: 'h-s', show_id: 'v-1', kind: 'solde', label: 'Solde', pct: 69.997, sort: 100 },
+  ]);
+  const opened = page.evaluate(async () => (await import('./js/forms.js')).editShow('v-1'));   // la promesse se résout à la fermeture
+  await page.locator('#modal [name=fee_ht]').fill('4000');
+  await page.locator('#modal button[type=submit]').click();
+  await expect(page.locator('#modal2 h2')).toHaveText('Cachet modifié');
+  await page.locator('#modal2 button[type=submit]').click();   // recalculer
+  await expect.poll(() => dbPay(page, 'h-a').then(p => p.amount ?? null)).toBeNull();
+  await expect.poll(() => dbPay(page, 'h-s').then(p => p.pct)).toBe(70);   // solde = reste, arrondi à 2 décimales (comportement existant)
+  await opened;
+  expectClean(ctx);
+});

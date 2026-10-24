@@ -2,11 +2,11 @@
  * Toutes les actions déclenchées par un clic (boutons data-act="…"),
  * et les « crochets » d'enregistrement direct (clé 'change:table.champ').
  */
-import { askConfirmation, becameConfirmed, sendConfirmation, validateTerms } from './confirm-flow.js';
+import { afterFeeChange, askConfirmation, becameConfirmed, sendConfirmation, validateTerms } from './confirm-flow.js';
 import { go, render } from './app.js';
-import { BILL_KINDS, billLockReason, billPct, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
+import { BILL_KINDS, billLockReason, billPct, changeBlocked, isInvoiced, paymentsOf, payVat, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
-import { insert, openStored, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb } from './data.js';
+import { insert, openStored, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb, setSaveGuard } from './data.js';
 import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showsFiltered, structName } from './selectors.js';
 import { CFG } from './config.js';
@@ -16,7 +16,7 @@ import { MODALS, openModal } from './ui/modal.js';
 import { modalSaved } from './ui/drafts.js';
 import { applyAcompte, saveDepartments } from './views/settings.js';
 import { hasLogDraft, setLogDraft } from './views/suivi.js';
-import { $, esc, eur2, fmtDate, safeHtml, toast, today } from './utils.js';
+import { $, esc, fmtDate, safeHtml, toast, today } from './utils.js';
 import { rtStyle, rtToolbar } from './ui/richtext.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
@@ -40,6 +40,8 @@ export async function cleanupDraft(){
   const p = byId('prospects', id); if (!p) return;
   if (!p.structure_id && !projIds(p).length && !logsOf(id).length && !filesOf(id).length && !p.summary && !p.content_md && !hasLogDraft(id)) await remove('prospects', id);
 }
+
+setSaveGuard(changeBlocked);   // aucune facture émise ne change, par aucun écran (§6.4)
 
 export const ACTIONS = {
   ...EMP_ACTIONS,
@@ -161,7 +163,8 @@ export const ACTIONS = {
     render();
   },
   delPay: async t => { const p = byId('show_payments', t.dataset.id);
-    if (p && isInvoiced(p)){ toast('Facture déjà émise (envoyée, numérotée, dans Pennylane ou payée) : elle ne se supprime pas.', true); return; }
+    const why = billLockReason(p);
+    if (why){ toast(why.replace('ne se modifie plus', 'ne se supprime pas').replace('ne peuvent plus changer', 'ne se suppriment plus'), true); return; }
     if (confirm('Supprimer cette ligne de facturation ?') && await remove('show_payments', t.dataset.id)){ if (p && p.kind !== 'solde') await rebalanceSolde(p.show_id); render(); } },
 
   // Tâches
@@ -401,19 +404,10 @@ ACTIONS['change:show_payments.vat_rate'] = async (t, v) => {
   if (billBlocked(pay)) return;
   await save('show_payments', pay.id, {vat_rate: v});
 };
-// Cachet modifié (§6.5, Q5) : les lignes non émises en % suivent toutes seules ; un montant saisi à la main n'est jamais
-// écrasé sans le demander ; une facture émise ne bouge jamais.
+// Cachet modifié depuis le tableau (§6.5, Q5) : même règle que la fiche de la date et « Valider les conditions »
 ACTIONS['change:shows.fee_ht'] = async (t, v) => {
-  if (!(await save('shows', t.dataset.id, {fee_ht: v}, {rerender:false}))) return;
-  const manual = paymentsOf(t.dataset.id).filter(p => BILL_KINDS.includes(p.kind) && p.amount != null && p.amount !== '' && p.pct != null && p.pct !== '' && !isInvoiced(p));
-  if (manual.length && v){
-    const rows = manual.map(p => `<li>${esc(p.label || p.kind)} : <b>${eur2(payAmount(p))}</b> saisi à la main → ${eur2(Math.round(v * Number(p.pct)) / 100)} sur le nouveau cachet</li>`).join('');
-    const recalc = await openModal({title: 'Cachet modifié', fields: [], saveLabel: 'Recalculer sur le nouveau cachet',
-      footExtra: '<button type="button" class="btn" data-act="closeModal" data-level="1">Conserver les montants saisis</button>',
-      extra: `<p>Des montants ont été saisis à la main sur des factures pas encore émises :</p><ul>${rows}</ul><p class="muted">Rien n’est changé sans ton choix.</p>`,
-      onSave: () => true});
-    if (recalc) for (const p of manual) await save('show_payments', p.id, {amount: null}, {rerender:false});
-    await rebalanceSolde(t.dataset.id);   // le solde (pas encore émis) reprend ce qui reste du nouveau cachet
-  }
+  const old = byId('shows', t.dataset.id)?.fee_ht;
+  if (!(await save('shows', t.dataset.id, {fee_ht: v}, {rerender:false}))) return;   // refusé si des factures émises en dépendent
+  if (Number(v) !== Number(old)) await afterFeeChange(t.dataset.id);
   render();
 };

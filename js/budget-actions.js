@@ -5,7 +5,7 @@
 import { render } from './app.js';
 import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
 import { cnmDue, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
-import { paymentsOf, payAmount } from './calc.js';
+import { isInvoiced, paymentsOf, payAmount } from './calc.js';
 import { insert, mergeRows, openStored, refreshFor, remove, save, sb } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
 import { callScript } from './mail.js';
@@ -13,7 +13,7 @@ import { applyTemplate } from './budget-template.js';
 import { exportArtistBudget } from './artist-export.js';
 import { S, touch } from './state.js';
 import { openModal } from './ui/modal.js';
-import { esc, fmtDate, norm, toast, today } from './utils.js';
+import { esc, eur2, fmtDate, norm, toast, today } from './utils.js';
 
 const nextSort = showId => Math.max(0, ...linesOf(showId).map(l => l.sort || 0)) + 1;
 const safeName = n => n.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w.\-]+/g, '_') || 'piece';
@@ -233,9 +233,11 @@ async function applyPiece({doc, path, name, show_id, project_id, line}){
       || pays.find(p => d.acompte_ou_solde && p.kind === d.acompte_ou_solde && !p.paid_at)
       || pays.find(p => ht != null && Math.abs((payAmount(p)||0) - ht) < 1 && !p.paid_at);
     if (pay){
-      await save('show_payments', pay.id, {invoice_number: d.numero || pay.invoice_number, paid_at: pay.paid_at || date, file_path: path, file_name: name,
-        ...(ht != null && Math.abs((payAmount(pay)||0) - ht) >= 1 ? {amount: ht} : {})}, {rerender:false});
-      toast(`${pay.label || 'Encaissement'} : facture ${d.numero || ''} rattachée et marquée reçue`);
+      // facture émise : jamais de montant réécrit (§6.4) ; un écart avec la pièce est seulement signalé
+      const gap = ht != null && Math.abs((payAmount(pay)||0) - ht) >= 1;
+      if (!(await save('show_payments', pay.id, {invoice_number: d.numero || pay.invoice_number, paid_at: pay.paid_at || date, file_path: path, file_name: name,
+        ...(gap && !isInvoiced(pay) ? {amount: ht} : {})}, {rerender:false}))) return null;
+      toast(`${pay.label || 'Encaissement'} : facture ${d.numero || ''} rattachée et marquée reçue` + (gap && isInvoiced(pay) ? ` — montant de la pièce (${eur2(ht)} HT) différent de la facture (${eur2(payAmount(pay))} HT) : à vérifier, rien n’a été changé` : ''), gap && isInvoiced(pay));
       return {table: 'show_payments', id: pay.id};
     }
   }
