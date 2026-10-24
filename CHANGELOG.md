@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.40.4 — 24/10/2026
+- Factures émises verrouillées partout (envoyée, payée, numérotée ou dans Pennylane) ; acompte saisi en euros conservé ; le cachet ne réécrit plus un montant saisi sans le demander
+
+
 ## 1.40.3 — 22/10/2026
 - S0-R8 : brouillons, file des résumés IA et préférences séparés entre la vraie Matrice et l'espace de test ; pages publiques dans l'environnement de leur propre lien ; liens créés en test marqués « test » ; messages de l'espace de test corrigés
 
