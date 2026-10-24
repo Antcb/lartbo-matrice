@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.40.9 — 25/10/2026
+- A2 : fiche publique d'une date booking présentée en « Échéancier prévu au contrat » (%, échéances, sans montant par ligne ; migration serveur préparée, non appliquée ; page compatible avec le serveur actuel) ; une date avec des pièces à rattacher ne se supprime pas ; pièces d'une date absente listées dans Production
+
+
 ## 1.40.8 — 24/10/2026
 - A2 (arbitrages du 24/10) : facture de vente sans correspondance sûre gardée dans « Pièces à rattacher » puis rattachée à la main ; un montant seul ne rattache plus à une ligne d'un autre type ; facture envoyée impayée relancée aussi en booking (migration serveur préparée, non appliquée) ; budget de la date : « dont X € — compte non renseigné »
 

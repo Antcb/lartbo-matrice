@@ -24,3 +24,30 @@ for (const [file, token, expected] of PAGES) {
     expectClean(ctx);
   });
 }
+
+// V1-A lot A2 (décision d'Anthony du 25/10, option A1) : date booking → « Échéancier prévu au contrat », % et échéances, sans montant par ligne ;
+// production, ou serveur actuel sans « prod_mode » : affichage inchangé.
+const echeances = page => page.locator('.fiche-dl dt', { hasText: /Paiement|Échéancier/ }).locator('xpath=following-sibling::dd[1]');
+test('fiche.html : date booking → « Échéancier prévu au contrat » sans montant par ligne', async ({ page }) => {
+  const ctx = await preparePage(page, { session: false });
+  await page.goto('/fiche.html?t=jeton-fiche-booking-001');
+  await expect(page.locator('.fiche-dl dt', { hasText: 'Échéancier prévu au contrat' })).toBeVisible();
+  await expect(page.locator('.fiche-dl dt', { hasText: /^Paiement$/ })).toHaveCount(0);
+  await expect(echeances(page)).toContainText('Acompte : 30 %');
+  await expect(echeances(page)).toContainText('à la signature');
+  await expect(echeances(page)).toContainText('Solde : 70 %');
+  await expect(echeances(page)).not.toContainText('HT');
+  await expect(echeances(page)).not.toContainText('2 400');
+  await expect(page.locator('.fiche-dl')).toContainText('8 000');   // le montant de la cession reste affiché
+  expectClean(ctx);
+});
+for (const [token, why] of [['jeton-fiche-prodmode-01', 'date en production'], ['jeton-fiche-test-0001', 'serveur sans « prod_mode »']]) {
+  test(`fiche.html : ${why} → affichage inchangé (« Paiement » avec montants)`, async ({ page }) => {
+    const ctx = await preparePage(page, { session: false });
+    await page.goto(`/fiche.html?t=${token}`);
+    await expect(page.locator('.fiche-dl dt', { hasText: /^Paiement$/ })).toBeVisible();
+    await expect(echeances(page)).toContainText('HT');
+    await expect(page.locator('body')).not.toContainText('Échéancier prévu au contrat');
+    expectClean(ctx);
+  });
+}

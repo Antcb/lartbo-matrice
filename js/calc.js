@@ -59,10 +59,21 @@ const sameVal = (a, b) => (a == null || a === '' ? null : Number.isFinite(Number
  *  patch = null : SUPPRESSION (appel de data.remove) — une ligne verrouillée, ou une date qui porte une facture émise
  *  (la base efface en chaîne ses factures et son budget), ne se supprime pas.
  *  Renvoie le message à afficher, '' si le changement est permis. CONVENTIONS §6.3–6.5 (Q4, Q5). */
+/** Pièce gardée « à rattacher » (facture de vente déposée sans ligne sûre) : pas encore référencée par une ligne */
+const pieceFree = a => !S.db.show_payments.some(p => p.file_path === a.path) && !S.db.budget_lines.some(l => l.file_path === a.path);
+export const pieceShowId = a => (/^budget\/([^/]+)\//.exec(a.path || '') || [])[1];
+/** Pièces à rattacher d'une date */
+export const piecesToAttach = s => !s ? [] : S.db.attachments.filter(a => pieceShowId(a) === s.id && pieceFree(a));
+/** Toutes les pièces à rattacher (dates supprimées ou hors de la liste Production comprises : jamais introuvables) */
+export const allPiecesToAttach = () => S.db.attachments.filter(a => { const id = pieceShowId(a); return id && !id.startsWith('projet-') && pieceFree(a); });
+
 export function changeBlocked(table, id, patch){
   if (patch === null){
     if (table === 'show_payments'){ const why = billLockReason(byId('show_payments', id)); return why && why.replace('ne se modifie plus', 'ne se supprime pas').replace('ne peuvent plus changer', 'ne se suppriment plus'); }
     if (table === 'shows' && paymentsOf(id).some(isInvoiced)) return 'Cette date a des factures émises : elle ne se supprime pas (ses factures et son budget seraient effacés avec elle).';
+    // pièces gardées « à rattacher » : la date ne se supprime pas tant qu'elles n'ont pas été rattachées (décision d'Anthony du 25/10)
+    if (table === 'shows'){ const n = piecesToAttach(byId('shows', id)).length;
+      if (n) return `Cette date a ${n} pièce${n > 1 ? 's' : ''} à rattacher (onglet Factures) : rattache-${n > 1 ? 'les' : 'la'} avant de supprimer la date.`; }
     return '';
   }
   if (!patch) return '';
