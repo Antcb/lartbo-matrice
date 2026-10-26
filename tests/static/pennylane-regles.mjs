@@ -1,7 +1,7 @@
 // Règles de la synchronisation Pennylane (lot C1) sur de FAUSSES données : aucun appel à Pennylane ni à la base.
 // Lancé par « npm test » (node --experimental-strip-types). Module testé : supabase/functions/pennylane/regles.ts
 import assert from 'node:assert/strict';
-import { acomptesFactures, caduc, emise, factureIsolee, rangeeDansLeDrive, montantAttendu, payable, relieAuDevis } from '../../supabase/functions/pennylane/regles.ts';
+import { acomptesFactures, caduc, emise, factureIsolee, figerMontant, rangeeDansLeDrive, montantAttendu, payable, relieAuDevis } from '../../supabase/functions/pennylane/regles.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -50,6 +50,12 @@ t('acompte caduc : jamais relié automatiquement quand le solde est facturé', (
 t('rangement Drive : inchangé pour acompte / solde / autre ; jamais pour la commission booking', () => {
   for (const k of ['acompte', 'solde', 'autre']) assert.equal(rangeeDansLeDrive({ kind: k }), true, k);
   assert.equal(rangeeDansLeDrive({ kind: 'artbo' }), false);
+});
+t('solde relié depuis le devis : montant figé seulement s’il n’est pas déjà émis (relecture C1, B1)', () => {
+  assert.equal(figerMontant({ kind: 'solde' }), true);
+  for (const f of ['sent_at', 'paid_at']) assert.equal(figerMontant({ kind: 'solde', [f]: '2026-10-20' }), false, f);
+  assert.equal(figerMontant({ kind: 'solde', amount: 3600 }), false);   // montant saisi : il fait foi
+  assert.equal(figerMontant({ kind: 'acompte' }), false);
 });
 
 let ko = 0;

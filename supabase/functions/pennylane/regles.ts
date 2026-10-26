@@ -24,6 +24,9 @@ export const rangeeDansLeDrive = (p: Ligne) => p.kind !== 'artbo';
 export const relieAuDevis = (p: Ligne, mode: string | null | undefined) => !isBooking(mode) && ['acompte', 'solde'].includes(p.kind);
 /** Acompte caduc : jamais facturé alors que le solde de la date l'est (plus réclamé ; jamais relié automatiquement) */
 export const caduc = (p: Ligne, lignesDeLaDate: Ligne[]) => p.kind === 'acompte' && !emise(p) && lignesDeLaDate.some(l => l.kind === 'solde' && emise(l));
+/** Solde relié depuis le devis : son montant n'est figé sur celui de la facture Pennylane QUE s'il n'est pas déjà émis
+ *  (envoyé / payé / numéroté / lié) et sans montant saisi — un solde émis ne change jamais de montant (A1, relecture C1) */
+export const figerMontant = (p: Ligne) => p.kind === 'solde' && !plein(p.amount) && !emise(p);
 /** Ligne pour laquelle la Matrice peut créer un brouillon de facture isolée */
 export const factureIsolee = (p: Ligne, mode: string | null | undefined) => isBooking(mode) ? p.kind === 'artbo' : p.kind === 'autre';
 

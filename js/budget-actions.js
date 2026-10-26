@@ -131,6 +131,7 @@ export const BUDGET_ACTIONS = {
       if (out.linked?.length) await refreshFor('show_payments', 'show_id', S.db.shows.filter(x => x.pennylane_quote_id).map(x => x.id));
       render();
       const lines = [out.linked?.length ? `${out.linked.length} facture(s) faite(s) depuis le devis, numéro repris : ${out.linked.filter(Boolean).join(', ')}\n` : '', out.updated.length ? `${out.updated.length} facture(s) marquée(s) payée(s) :\n- ` + out.updated.map(u => u.label).join('\n- ') : (out.linked?.length || out.filed?.done?.length) ? '' : 'Rien de nouveau : la Matrice est à jour.',
+        out.erreurs?.length ? `\nÉcritures REFUSÉES (rien n’a été modifié pour ces lignes) — à examiner :\n- ` + out.erreurs.join('\n- ') : '',
         out.caducs?.length ? `\nFacture(s) Pennylane d’acompte NON reliée(s) : l’acompte est caduc (solde déjà facturé), la date serait facturée au-delà de sa cession — à examiner :\n- ` + out.caducs.join('\n- ') : '',
         out.pennylaneLate.length ? `\nPayées dans la Matrice mais pas encore dans Pennylane (à mettre à jour dans Pennylane) :\n- ` + out.pennylaneLate.join('\n- ') : '',
         // PDF des factures rangés dans le Drive (compta + dossier de la date)
