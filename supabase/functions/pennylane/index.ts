@@ -7,7 +7,7 @@
 // Le jeton API est gardé côté serveur (Réglages › Pennylane). Appels depuis l'app (utilisateur connecté) :
 //   { action: 'status' } · { action: 'quote', show_id } · { action: 'invoice', payment_id } · { action: 'sync' }
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { acomptesFactures, caduc, factureIsolee, isBooking, montantAcompte, montantAttendu, payable, relieAuDevis } from './regles.ts';
+import { acomptesFactures, caduc, factureIsolee, isBooking, montantAcompte, montantAttendu, payable, rangeeDansLeDrive, relieAuDevis } from './regles.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -53,7 +53,8 @@ let PRODUCTS: any[] | null = null;
 async function product(kind: 'cession' | 'corea' | 'coprod' | 'commission') {
   if (!PRODUCTS) { try { PRODUCTS = (await pl('GET', '/products?limit=100')).items || []; } catch { PRODUCTS = []; } }
   const want = kind === 'commission' ? /commission/i : kind === 'corea' ? /cor[ée]alisation/i : kind === 'coprod' ? /co-?production/i : /cession/i;
-  return PRODUCTS.find((p: any) => want.test(p.label)) || (kind === 'coprod' ? PRODUCTS.find((p: any) => /cession/i.test(p.label)) : null);
+  const list: any[] = PRODUCTS || [];   // typage strict (deno check) : même comportement
+  return list.find((p: any) => want.test(p.label)) || (kind === 'coprod' ? list.find((p: any) => /cession/i.test(p.label)) : null);
 }
 const contractKind = (t: string) => /r[ée]alisation/i.test(t || '') ? 'corea' : /production/i.test(t || '') ? 'coprod' : 'cession';
 const CONTRACT_LABEL: Record<string, string> = { cession: 'Cession', corea: 'Coréalisation', coprod: 'Coproduction' };
@@ -227,7 +228,8 @@ Deno.serve(async (req) => {
         p.invoice_number = p.invoice_number || x.invoice_number || '';
         // à ranger : jamais rangée, ou rangée seulement en compta alors que la date a maintenant un dossier
         const filedAll = p.drive_file_id && !(String(p.drive_file_id).startsWith('compta:') && p.shows?.drive_folder_id);
-        if (!filedAll && x.invoice_number && x.public_file_url && x.status !== 'cancelled') toFile.push({ p, x });
+        // commission booking (reprise du paiement, lot C1) : PAS de rangement automatique dans le Drive — non demandé, à décider à part
+        if (!filedAll && rangeeDansLeDrive(p) && x.invoice_number && x.public_file_url && x.status !== 'cancelled') toFile.push({ p, x });
         const where = `${frDate((p as any).shows?.date)} ${(p as any).shows?.city || ''}`.trim();
         const isPaid = x.paid === true && x.status !== 'cancelled';
         if (isPaid && !p.paid_at) {
