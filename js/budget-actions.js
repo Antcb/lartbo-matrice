@@ -5,7 +5,7 @@
 import { render } from './app.js';
 import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
 import { cnmDue, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
-import { isInvoiced, paymentsOf, payAmount } from './calc.js';
+import { acompteState, isInvoiced, paymentsOf, payAmount } from './calc.js';
 import { insert, mergeRows, openStored, refreshFor, remove, save, sb } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
 import { callScript } from './mail.js';
@@ -131,6 +131,7 @@ export const BUDGET_ACTIONS = {
       if (out.linked?.length) await refreshFor('show_payments', 'show_id', S.db.shows.filter(x => x.pennylane_quote_id).map(x => x.id));
       render();
       const lines = [out.linked?.length ? `${out.linked.length} facture(s) faite(s) depuis le devis, numéro repris : ${out.linked.filter(Boolean).join(', ')}\n` : '', out.updated.length ? `${out.updated.length} facture(s) marquée(s) payée(s) :\n- ` + out.updated.map(u => u.label).join('\n- ') : (out.linked?.length || out.filed?.done?.length) ? '' : 'Rien de nouveau : la Matrice est à jour.',
+        out.caducs?.length ? `\nFacture(s) Pennylane d’acompte NON reliée(s) : l’acompte est caduc (solde déjà facturé), la date serait facturée au-delà de sa cession — à examiner :\n- ` + out.caducs.join('\n- ') : '',
         out.pennylaneLate.length ? `\nPayées dans la Matrice mais pas encore dans Pennylane (à mettre à jour dans Pennylane) :\n- ` + out.pennylaneLate.join('\n- ') : '',
         // PDF des factures rangés dans le Drive (compta + dossier de la date)
         out.filed?.done?.length ? `\n${out.filed.done.length} facture(s) rangée(s) dans le Drive (compta › D - Factures de ventes et 02_Finance de la date) :\n- ` + out.filed.done.join('\n- ') : '',
@@ -247,7 +248,7 @@ const cleanDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : null;
 /** Lignes auxquelles une facture de vente peut être rattachée : celles affichées dans l'onglet Factures
  *  (date en booking : aucune — acomptes / soldes de l'artiste, hors du suivi de L'ArtBo) */
 const attachableLines = s => !s || s.prod_mode === 'booking' ? []   // booking : acomptes / soldes = factures de l'artiste, jamais rattachées (lot C1)
-  : paymentsOf(s.id).filter(p => ['acompte','solde','autre'].includes(p.kind));
+  : paymentsOf(s.id).filter(p => ['acompte','solde','autre'].includes(p.kind) && acompteState(p) !== 'caduc');   // acompte caduc : ne s'émet plus (lot C1)
 
 /**
  * Ligne d'acompte / de solde d'une facture de vente lue par l'IA. Seules correspondances sûres :

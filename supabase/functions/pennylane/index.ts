@@ -7,7 +7,7 @@
 // Le jeton API est gardé côté serveur (Réglages › Pennylane). Appels depuis l'app (utilisateur connecté) :
 //   { action: 'status' } · { action: 'quote', show_id } · { action: 'invoice', payment_id } · { action: 'sync' }
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { acomptesFactures, factureIsolee, isBooking, montantAcompte, montantAttendu, payable, relieAuDevis } from './regles.ts';
+import { acomptesFactures, caduc, factureIsolee, isBooking, montantAcompte, montantAttendu, payable, relieAuDevis } from './regles.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -183,14 +183,14 @@ Deno.serve(async (req) => {
       // factures faites dans Pennylane depuis le devis créé par la Matrice (acompte puis solde) : reconnues par leur devis et leur montant HT
       const byQuote: Record<string, any[]> = {};
       for (const x of Object.values(byId)) if (x.quote?.id && x.status !== 'cancelled') (byQuote[String(x.quote.id)] ||= []).push(x);
-      const linked: any[] = [];
+      const linked: any[] = [], caducs: string[] = [];
       if (Object.keys(byQuote).length) {
         const open = (await readAll(() => admin.from('show_payments').select('id, show_id, kind, pct, amount, sort, invoice_number, pennylane_id, shows!inner(fee_ht, pennylane_quote_id, prod_mode)')
           .in('kind', ['acompte', 'solde']).is('invoice_number', null).is('pennylane_id', null).not('shows.pennylane_quote_id', 'is', null)) || [])
           .filter((p: any) => relieAuDevis(p, p.shows?.prod_mode));   // booking : factures de l'artiste, jamais reliées (lot C1)
         // acomptes déjà facturés de ces dates : le solde attendu = cession − acomptes facturés (comme Pennylane)
         const ids = [...new Set(open.map((p: any) => p.show_id))];
-        const acs = ids.length ? await readAll(() => admin.from('show_payments').select('show_id, kind, amount, pct, sent_at, paid_at, invoice_number, pennylane_id').eq('kind', 'acompte').in('show_id', ids)) : [];
+        const acs = ids.length ? await readAll(() => admin.from('show_payments').select('show_id, kind, amount, pct, sent_at, paid_at, invoice_number, pennylane_id').in('kind', ['acompte', 'solde']).in('show_id', ids)) : [];
         const facture: Record<string, number> = {};
         for (const id of ids) { const fee = Number((open.find((p: any) => p.show_id === id) as any)?.shows?.fee_ht) || 0; facture[id as string] = acomptesFactures((acs || []).filter((a: any) => a.show_id === id), fee); }
         const taken = await readAll(() => admin.from('show_payments').select('id, pennylane_id, invoice_number').or('invoice_number.not.is.null,pennylane_id.not.is.null'));
@@ -202,6 +202,9 @@ Deno.serve(async (req) => {
           const cands = (byQuote[String(sh.pennylane_quote_id)] || []).sort((a, b) => Number(a.id) - Number(b.id));
           const x = cands.find(c => !used.has('id:' + c.id) && !(c.invoice_number && used.has('n:' + norm(c.invoice_number))) && Math.abs(Number(c.currency_amount_before_tax) - want) < 0.05);
           if (!x) continue;
+          // acompte caduc (solde déjà facturé) : une facture Pennylane lui correspond, mais il n'est jamais relié automatiquement
+          // (la date serait facturée au-delà de sa cession) — signalé dans le rapport, à examiner (relecture C1, B3)
+          if (caduc(p, (acs || []).filter((a: any) => a.show_id === p.show_id))) { caducs.push(x.invoice_number || String(x.id)); continue; }
           used.add('id:' + x.id); if (x.invoice_number) used.add('n:' + norm(x.invoice_number));
           // solde relié : son montant est figé sur celui de la facture Pennylane (il ne sera plus jamais recalculé, lot C1)
           const fige = p.kind === 'solde' && p.amount == null ? { amount: Number(x.currency_amount_before_tax) } : {};
@@ -238,7 +241,7 @@ Deno.serve(async (req) => {
         }
       }
       const filed = await fileInvoices(toFile);
-      return json({ ok: true, updated, pennylaneLate, linked, filed });
+      return json({ ok: true, updated, pennylaneLate, linked, caducs, filed });
     }
 
     if (body.action === 'quote') {
@@ -270,7 +273,7 @@ Deno.serve(async (req) => {
       if (!s) return json({ error: 'Date introuvable' }, 404);
       // booking : seulement la commission de L'ArtBo ; production : jamais la commission (pas une facture) — acompte / solde : depuis le devis
       if (!factureIsolee(p, s.prod_mode) && (isBooking(s.prod_mode) || !['acompte', 'solde'].includes(p.kind)))
-        return json({ error: isBooking(s.prod_mode) ? 'Date en booking : seule la facture de commission de L’ArtBo se crée ici' : 'En production, la commission de L’ArtBo n’est pas une facture : note seulement sa date de versement' }, 400);
+        return json({ error: isBooking(s.prod_mode) ? 'Date en booking : seule la facture de commission de L’ArtBo se crée ici' : p.kind === 'artbo' ? 'En production, la commission de L’ArtBo n’est pas une facture : note seulement sa date de versement' : 'Cette ligne ne se facture pas depuis la Matrice' }, 400);
       const fee = Number(s.fee_ht) || 0, proj = s.projects || {}, artist = proj.name || '';
       let amount = p.amount != null ? Number(p.amount) : null;
       if (amount == null) {
