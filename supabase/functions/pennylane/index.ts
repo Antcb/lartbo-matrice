@@ -206,7 +206,8 @@ Deno.serve(async (req) => {
           // acompte caduc (solde déjà facturé) : une facture Pennylane lui correspond, mais il n'est jamais relié automatiquement
           // (la date serait facturée au-delà de sa cession) — signalé dans le rapport, à examiner (relecture C1, B3)
           if (caduc(p, (acs || []).filter((a: any) => a.show_id === p.show_id))) { caducs.push(x.invoice_number || String(x.id)); continue; }
-          // solde relié pas encore émis : son montant est figé sur celui de la facture Pennylane (plus jamais recalculé, lot C1) ;
+          // acompte / solde relié pas encore émis : son montant est figé sur celui de la facture Pennylane (plus jamais recalculé,
+          // lots C1 et D1 — le montant réel de la facture fait référence) ;
           // déjà émis (ex. marqué envoyé) : montant inchangé (protection A1) — seuls le numéro et le lien sont repris
           const fige = figerMontant(p) ? { amount: Number(x.currency_amount_before_tax) } : {};
           const { error: e1 } = await admin.from('show_payments').update({ pennylane_id: String(x.id), pennylane_url: await invoicePage(x.id) || linkOf(x), invoice_number: x.invoice_number || null, ...fige }).eq('id', p.id);

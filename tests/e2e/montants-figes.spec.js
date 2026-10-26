@@ -99,3 +99,42 @@ test('D1 (relecture) : un % qui ne touche aucune ligne émise se change sans ave
   expect((await dbPay(page, 'g-c')).amount, 'commission figée au versement, au % du moment').toBe(1800);
   expectClean(ctx);
 });
+
+// ---- Décisions d'Anthony du 26/10 (points 5 et 7) : mode et TVA d'une date engagée ----
+const toasts = page => page.evaluate(() => [...document.querySelectorAll('.toast, #toast')].map(e => e.textContent).join(' '));
+
+test('D1 (point 7) : le mode d’une date engagée ne change plus — même une commission de production seulement numérotée', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [DATE, { ...DATE, id: 'f-2', venue: 'Salle Libre' }], show_payments: [
+    { ...LIGNES[2], invoice_number: 'F-AB-ANCIEN' },                        // numéro historique, ni envoyée ni versée
+    { ...LIGNES[0], id: 'g2-a', show_id: 'f-2' } ] });
+  expect(await save(page, 'shows', 'f-1', { prod_mode: 'booking' }), 'date engagée : refusé').toBe(false);
+  expect((await dbShow(page, 'f-1')).prod_mode).toBe('production');
+  expect(await toasts(page)).toMatch(/opérations financières enregistrées/);
+  expect(await save(page, 'shows', 'f-2', { prod_mode: 'booking' }), 'date sans opération : accepté').toBe(true);
+  expectClean(ctx);
+});
+
+test('D1 (point 7) : la TVA d’une date ne change plus si une facture émise en dépend ; sinon elle change', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [DATE, { ...DATE, id: 'f-2', venue: 'Salle Libre' }], show_payments: [
+    { ...LIGNES[0], sent_at: `${Y}-10-01`, invoice_number: 'F-TEST-4', amount: 5000 }, { ...LIGNES[0], id: 'g2-a', show_id: 'f-2' } ] });
+  expect(await save(page, 'shows', 'f-1', { vat_rate: 20 }), 'facture émise à la TVA de la date : refusé').toBe(false);
+  expect((await dbShow(page, 'f-1')).vat_rate).toBe(5.5);
+  expect(await save(page, 'shows', 'f-2', { vat_rate: 20 })).toBe(true);
+  expectClean(ctx);
+});
+
+test('D1 (point 5) : l’artiste change de mode — les dates engagées gardent le leur, et c’est dit', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [DATE], show_payments: [{ ...LIGNES[2], paid_at: `${Y}-10-02`, amount: 1500 }] });
+  // (même % par défaut que la date : la question native de commission.js — lot séparé « fenêtres natives » — ne s'ouvre pas)
+  await page.evaluate(async () => { const { S } = await import('./js/state.js'); const pr = S.db.projects.find(p => p.id === 'art-a');
+    pr.default_artbo_pct = 15; window.__DB.projects.find(p => p.id === 'art-a').default_artbo_pct = 15;
+    (await import('./js/forms.js')).editProject('art-a'); });
+  await page.locator('#modal select[name="mode"]').selectOption('booking');
+  await page.locator('#modal button[type=submit]').click();
+  await expect.poll(() => toasts(page)).toMatch(/1 date garde son mode .*Salle Figée/);
+  expect((await dbPay(page, 'g-c')).amount, 'commission versée inchangée').toBe(1500);
+  expectClean(ctx);
+});

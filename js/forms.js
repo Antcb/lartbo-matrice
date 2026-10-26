@@ -4,6 +4,7 @@
  */
 import { FORMAT_FIELD, exportTable } from './exports.js';
 import { propagateCommission } from './commission.js';
+import { hasFinancialRecord } from './calc.js';
 import { render } from './app.js';
 import { CFG } from './config.js';
 import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PRIORITY_OPTS, PROSPECT, PROSPECT_OPTS, STATUSES, TASK_STATUS, TASK_STATUS_OPTS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
@@ -99,7 +100,7 @@ export function editProject(id){
     fields: [
       {k:'name', label:'Nom', full:true}, {k:'active', label:'Projet actif', type:'checkbox'},
       {k:'mode', label:'Type de suivi', type:'select', blank:false, options:[['production','Production (L’ArtBo produit les dates)'],['booking','Booking seul (commission facturée à l’artiste)']],
-        help:'Le changement s’applique aux nouvelles dates ; les dates existantes gardent leur suivi.'},
+        help:'Les dates existantes suivent, sauf celles réglées à la main et celles qui ont des opérations financières enregistrées (facture, versement, numéro, lien Pennylane).'},
       {k:'default_artbo_pct', label:"Commission L'ArtBo (%)", type:'number', help:'Par défaut : booking ' + defaultCommission('booking') + ' %, production ' + defaultCommission('production') + ' % (Réglages › Pourcentages par défaut).'},
       {k:'default_partner_id', label:'Co-producteur par défaut', type:'select', options:S.db.partners.map(x=>[x.id,x.name])},
       {k:'default_partner_pct', label:'% partenaire sur la commission', type:'number'},
@@ -128,6 +129,9 @@ export function editProject(id){
         if (ok && v.mode && v.mode !== prevMode){   // la base a mis à jour les dates (et ajouté acomptes / soldes en production) : on recharge
           const ids = S.db.shows.filter(x => x.project_id === id).map(x => x.id);
           await refreshFor('shows', 'project_id', id); await refreshFor('show_payments', 'show_id', ids); render();
+          // dates engagées (opérations financières enregistrées) : elles gardent leur mode — dit clairement (lot D1)
+          const kept = S.db.shows.filter(x => x.project_id === id && !x.prod_mode_manual && (x.prod_mode || 'production') !== v.mode && hasFinancialRecord(x.id));
+          if (kept.length) toast(`${kept.length} date${kept.length > 1 ? 's gardent leur' : ' garde son'} mode (${kept.length > 1 ? 'elles ont' : 'elle a'} des opérations financières enregistrées) : ${kept.map(x => x.venue || '').slice(0, 5).join(', ')}${kept.length > 5 ? '…' : ''}.`);
         }
         return; }
       const row = await insert('projects', v);
