@@ -10,9 +10,17 @@
 -- 3. RÉGULARISATION CONTRÔLÉE des lignes historiques (émises avant ce lot, montant encore calculé) : la protection A1 accepte
 --    UNIQUEMENT de remplir un montant vide (jamais d'en changer un), et seulement dans une transaction qui l'annonce explicitement
 --    (set_config('matrice.regularisation', 'gel', true)) — script validé par Anthony, ligne par ligne. Chaque ligne est journalisée.
+--    Retour arrière d'une régularisation (« degel ») : seul un montant posé par une régularisation contrôlée peut être revidé,
+--    dans une transaction qui l'annonce ; jamais un montant figé à l'émission, au versement ou saisi. Journalisé lui aussi.
 -- 4. JOURNAL FINANCIER (public.finance_log) : toute modification d'un cachet, d'un %, du mode, d'un montant, d'un compte
 --    d'encaissement, d'une date d'envoi / de paiement, d'un numéro ou d'un lien Pennylane est tracée (avant, après, quand, qui).
 --    Lecture : équipe seulement. Écriture : uniquement par les déclencheurs (aucun droit d'écriture pour l'application).
+-- 5. MODE ET TVA D'UNE DATE DÉJÀ ENGAGÉE (décisions d'Anthony du 26/10, points 5 et 7) :
+--    - une date dont une ligne porte une opération enregistrée (envoyée, payée / versée, numérotée ou liée à Pennylane — y compris
+--      une commission de production seulement numérotée) ne change plus de mode : ni directement, ni quand l'artiste change de mode,
+--      ni quand elle change d'artiste (project_mode_to_shows, show_follow_project_mode : définition élargie) ;
+--    - la TVA d'une date ne change plus si une ligne émise en dépend (ligne sans TVA propre, hors commissions et parts à 20 %).
+--    Même règle côté application : js/calc.js changeBlocked (mode : hasFinancialRecord ; TVA : simulation des montants TTC).
 -- Aucune donnée existante n'est modifiée par cette migration. Retour arrière : voir la fin du fichier.
 
 -- ─────────────── Calcul du montant d'une ligne (même règle que js/calc.js payAmount / soldeDue) ───────────────
@@ -78,13 +86,55 @@ drop trigger if exists show_payments_freeze on public.show_payments;
 create trigger show_payments_freeze before insert or update on public.show_payments
   for each row execute function public.show_payments_freeze();
 
+-- Date « engagée » : une de ses lignes porte une opération enregistrée, quel que soit le mode (définition large, comme la
+-- suppression d'une date — js/calc.js changeBlocked, EMITTED_FIELDS)
+create or replace function public.show_has_financial_record(p_show uuid)
+returns boolean language sql stable set search_path = public as $$
+  select exists (select 1 from public.show_payments p where p.show_id = p_show
+                   and (p.sent_at is not null or p.paid_at is not null
+                        or nullif(btrim(p.invoice_number), '') is not null or nullif(btrim(p.pennylane_id), '') is not null))
+$$;
+
+-- L'artiste change de mode : ses dates suivent, sauf mode manuel ou date engagée (définition large, décision du 26/10)
+create or replace function public.project_mode_to_shows() returns trigger
+language plpgsql as $function$
+begin
+  if new.mode is distinct from old.mode then
+    update public.shows s set prod_mode = new.mode
+     where s.project_id = new.id and not s.prod_mode_manual and not public.show_has_financial_record(s.id);
+  end if;
+  return new;
+end $function$;
+
+-- La date change d'artiste : son mode suit le nouvel artiste, sauf mode manuel ou date engagée
+create or replace function public.show_follow_project_mode() returns trigger
+language plpgsql as $function$
+begin
+  if new.project_id is distinct from old.project_id and not new.prod_mode_manual and not public.show_has_financial_record(new.id) then
+    new.prod_mode := coalesce((select mode from public.projects where id = new.project_id), new.prod_mode);
+  end if;
+  return new;
+end $function$;
+
 -- ─────────────── 2. Cachet / % / mode refusés s'ils changeaient un montant émis non figé ───────────────
 create or replace function public.shows_frozen_guard() returns trigger
 language plpgsql set search_path = public as $$
 begin
   if new.fee_ht is not distinct from old.fee_ht and new.artbo_pct is not distinct from old.artbo_pct
-     and new.partner_pct is not distinct from old.partner_pct and new.prod_mode is not distinct from old.prod_mode then
+     and new.partner_pct is not distinct from old.partner_pct and new.prod_mode is not distinct from old.prod_mode
+     and new.vat_rate is not distinct from old.vat_rate then
     return new;
+  end if;
+  -- mode d'une date engagée : jamais changé (nature des opérations déjà enregistrées)
+  if new.prod_mode is distinct from old.prod_mode and public.show_has_financial_record(new.id) then
+    raise exception 'Cette date a des opérations financières enregistrées (facture, versement, numéro ou lien Pennylane) : son mode booking / production ne change plus. Une régularisation se décide à part.'
+      using errcode = 'P0001';
+  end if;
+  -- TVA de la date : refusée si une ligne émise sans TVA propre en dépend (son TTC changerait)
+  if new.vat_rate is distinct from old.vat_rate and exists (select 1 from public.show_payments p where p.show_id = new.id
+       and p.vat_rate is null and p.kind not in ('artbo', 'partner') and public.payment_is_emitted(p)) then
+    raise exception 'Des factures de cette date sont déjà émises avec la TVA de la date : la TVA ne change plus (leur montant TTC changerait). Une régularisation se décide à part.'
+      using errcode = 'P0001';
   end if;
   if exists (select 1 from public.show_payments p where p.show_id = new.id and p.amount is null and public.payment_is_emitted(p)
              and public.payment_amount_for(p, old.fee_ht, old.artbo_pct, old.partner_pct, old.prod_mode)
@@ -130,6 +180,18 @@ begin
        and coalesce(current_setting('matrice.regularisation', true), '') = 'gel' then
       return new;
     end if;
+    -- retour arrière d'une régularisation (décision d'Anthony du 26/10, point 8) : REVIDER un montant, sans rien changer d'autre,
+    -- dans une transaction qui l'annonce (« degel »), et SEULEMENT si ce montant a été posé par une régularisation contrôlée
+    -- (dernière écriture du montant au journal : vide → cette valeur, source « régularisation contrôlée »). Un montant figé à
+    -- l'émission, au versement ou saisi à la main ne se vide jamais.
+    if old.amount is not null and new.amount is null
+       and new.pct is not distinct from old.pct and new.vat_rate is not distinct from old.vat_rate
+       and new.show_id is not distinct from old.show_id and new.kind is not distinct from old.kind
+       and coalesce(current_setting('matrice.regularisation', true), '') = 'degel'
+       and exists (select 1 from public.finance_log l where l.id = (select max(m.id) from public.finance_log m where m.row_id = old.id and m.field = 'amount')
+                     and l.source = 'régularisation contrôlée' and l.old_value is null and l.new_value::numeric = old.amount) then
+      return new;
+    end if;
     raise exception 'Facture déjà émise : son montant, son %%, sa TVA, sa date et son type ne se modifient plus.' using errcode = 'P0001';
   end if;
   return new;
@@ -170,6 +232,7 @@ declare
   fields text[] := case tg_table_name when 'shows' then array['fee_ht', 'artbo_pct', 'partner_pct', 'vat_rate', 'prod_mode', 'contract_type']
                    else array['amount', 'pct', 'vat_rate', 'kind', 'show_id', 'payee', 'sent_at', 'paid_at', 'invoice_number', 'pennylane_id'] end;
   src text := case when coalesce(current_setting('matrice.regularisation', true), '') = 'gel' then 'régularisation contrôlée'
+                   when coalesce(current_setting('matrice.regularisation', true), '') = 'degel' then 'retour arrière de régularisation'
                    when coalesce(current_setting('request.jwt.claims', true), '') <> '' then 'application / fonction serveur'
                    else 'base (éditeur SQL, tâche planifiée)' end;
   sid uuid;
@@ -197,6 +260,8 @@ revoke execute on function public.payment_amount_for(public.show_payments, numer
 revoke execute on function public.payment_amount_now(public.show_payments) from public, anon;
 revoke execute on function public.payment_is_emitted(public.show_payments) from public, anon;
 revoke execute on function public.finance_actor() from public, anon;
+revoke execute on function public.show_has_financial_record(uuid) from public, anon;
+grant execute on function public.show_has_financial_record(uuid) to authenticated, service_role;
 grant execute on function public.payment_amount_for(public.show_payments, numeric, numeric, numeric, text) to authenticated, service_role;
 grant execute on function public.payment_amount_now(public.show_payments) to authenticated, service_role;
 grant execute on function public.payment_is_emitted(public.show_payments) to authenticated, service_role;
@@ -207,4 +272,5 @@ revoke execute on function public.shows_frozen_guard() from public, anon, authen
 --   drop trigger show_payments_freeze on public.show_payments; drop trigger shows_frozen_guard on public.shows;
 --   drop trigger finance_log_shows on public.shows; drop trigger finance_log_payments on public.show_payments;
 --   drop function public.show_payments_freeze(); drop function public.shows_frozen_guard(); drop function public.finance_log_write();
---   recréer show_payments_emitted_guard depuis 2026-10-24_v1.40_factures_emises.sql (version sans régularisation).
+--   recréer show_payments_emitted_guard, project_mode_to_shows et show_follow_project_mode dans leur version de production
+--   d'avant ce lot (textes relevés le 26/10/2026), puis drop function public.show_has_financial_record(uuid).

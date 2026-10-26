@@ -55,7 +55,12 @@ t('solde relié depuis le devis : montant figé seulement s’il n’est pas dé
   assert.equal(figerMontant({ kind: 'solde' }), true);
   for (const f of ['sent_at', 'paid_at']) assert.equal(figerMontant({ kind: 'solde', [f]: '2026-10-20' }), false, f);
   assert.equal(figerMontant({ kind: 'solde', amount: 3600 }), false);   // montant saisi : il fait foi
-  assert.equal(figerMontant({ kind: 'acompte' }), false);
+  assert.equal(figerMontant({ kind: 'artbo' }), false);
+});
+t('acompte relié depuis le devis : figé sur le montant réel de la facture Pennylane (lot D1), jamais s’il est déjà émis ou saisi', () => {
+  assert.equal(figerMontant({ kind: 'acompte' }), true);
+  for (const f of ['sent_at', 'paid_at', 'invoice_number', 'pennylane_id']) assert.equal(figerMontant({ kind: 'acompte', [f]: 'x' }), false, f);
+  assert.equal(figerMontant({ kind: 'acompte', amount: 1750 }), false);
 });
 
 let ko = 0;

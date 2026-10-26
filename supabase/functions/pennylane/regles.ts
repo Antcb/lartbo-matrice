@@ -24,9 +24,11 @@ export const rangeeDansLeDrive = (p: Ligne) => p.kind !== 'artbo';
 export const relieAuDevis = (p: Ligne, mode: string | null | undefined) => !isBooking(mode) && ['acompte', 'solde'].includes(p.kind);
 /** Acompte caduc : jamais facturé alors que le solde de la date l'est (plus réclamé ; jamais relié automatiquement) */
 export const caduc = (p: Ligne, lignesDeLaDate: Ligne[]) => p.kind === 'acompte' && !emise(p) && lignesDeLaDate.some(l => l.kind === 'solde' && emise(l));
-/** Solde relié depuis le devis : son montant n'est figé sur celui de la facture Pennylane QUE s'il n'est pas déjà émis
- *  (envoyé / payé / numéroté / lié) et sans montant saisi — un solde émis ne change jamais de montant (A1, relecture C1) */
-export const figerMontant = (p: Ligne) => p.kind === 'solde' && !plein(p.amount) && !emise(p);
+/** Acompte ou solde relié depuis le devis : son montant est figé sur celui de la facture Pennylane (le montant réel de la
+ *  facture fait référence — décision d'Anthony du 26/10, lot D1) QUE s'il n'est pas déjà émis (envoyé / payé / numéroté / lié)
+ *  et sans montant saisi — une ligne émise ne change jamais de montant (A1, relecture C1). Sans cela, la base figerait le
+ *  calcul de la Matrice (rapprochement à 0,05 € près). Facture groupée (plusieurs dates) : jamais reliée (montant ≠ une ligne). */
+export const figerMontant = (p: Ligne) => ['acompte', 'solde'].includes(p.kind) && !plein(p.amount) && !emise(p);
 /** Ligne pour laquelle la Matrice peut créer un brouillon de facture isolée */
 export const factureIsolee = (p: Ligne, mode: string | null | undefined) => isBooking(mode) ? p.kind === 'artbo' : p.kind === 'autre';
 

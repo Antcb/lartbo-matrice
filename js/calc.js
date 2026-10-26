@@ -62,6 +62,9 @@ export const isInvoiced = p => !!(p && (selfPaidCommission(p) ? filled(p.paid_at
 /** Ce qui rend une facture « émise » : une fois rempli, aucun de ces champs ne s'efface (sinon la facture se déverrouillerait).
  *  Même règle côté base : déclencheur show_payments_emitted_guard (supabase/migrations/2026-10-24_v1.40_factures_emises.sql). */
 export const EMITTED_FIELDS = ['sent_at', 'paid_at', 'invoice_number', 'pennylane_id'];
+/** Date « engagée » : une de ses lignes porte une opération enregistrée (quel que soit le mode). Son mode ne change plus,
+ *  ni directement ni par l'artiste (lot D1). Même règle côté base : show_has_financial_record. */
+export const hasFinancialRecord = showId => paymentsOf(showId).some(p => EMITTED_FIELDS.some(k => filled(p[k])));
 /** Champs qui figent une ligne : commission de production = seulement sa date de versement */
 export const emittedFieldsOf = p => selfPaidCommission(p) ? ['paid_at'] : EMITTED_FIELDS;
 /** Acompte : 'facture' (émis), 'prevu' (au contrat, pas encore facturé), 'caduc' (jamais facturé alors que le solde l'est :
@@ -133,7 +136,7 @@ export function changeBlocked(table, id, patch){
     if (table === 'show_payments'){ const why = billLockReason(byId('show_payments', id)); return why && why.replace('ne se modifie plus', 'ne se supprime pas').replace('ne peuvent plus changer', 'ne se suppriment plus'); }
     // comme la base : lors de la suppression en chaîne, la date n'existe plus pour le déclencheur, qui applique la définition
     // complète — une commission de production numérotée (historique) empêche donc aussi la suppression de sa date
-    if (table === 'shows' && paymentsOf(id).some(p => isInvoiced(p) || EMITTED_FIELDS.some(k => filled(p[k])))) return 'Cette date a des factures émises : elle ne se supprime pas (ses factures et son budget seraient effacés avec elle).';
+    if (table === 'shows' && hasFinancialRecord(id)) return 'Cette date a des factures émises : elle ne se supprime pas (ses factures et son budget seraient effacés avec elle).';
     // pièces gardées « à rattacher » : la date ne se supprime pas tant qu'elles n'ont pas été rattachées (décision d'Anthony du 25/10)
     if (table === 'shows'){ const n = piecesToAttach(byId('shows', id)).length;
       if (n) return `Cette date a ${n} pièce${n > 1 ? 's' : ''} à rattacher (onglet Factures) : rattache-${n > 1 ? 'les' : 'la'} avant de supprimer la date.`; }
@@ -154,9 +157,10 @@ export function changeBlocked(table, id, patch){
     if (!['amount', 'pct', 'vat_rate', 'show_id', 'kind'].some(k => k in patch && !sameVal(patch[k], row[k]))) return '';
     return billLockReason(row);
   }
-  if (table === 'shows' && 'prod_mode' in patch && !sameVal(patch.prod_mode, byId('shows', id)?.prod_mode)
-      && paymentsOf(id).some(p => BILL_KINDS.includes(p.kind) && isInvoiced(p)))
-    return 'Cette date a des factures d’acompte ou de solde émises : son mode booking / production ne change plus (elles entreraient ou sortiraient du suivi de L’ArtBo). Une régularisation se décide à part.';
+  // mode d'une date engagée (lot D1, décisions du 26/10) : jamais changé — même définition large que la suppression d'une date.
+  // Même règle côté base : shows_frozen_guard, project_mode_to_shows, show_follow_project_mode (show_has_financial_record)
+  if (table === 'shows' && 'prod_mode' in patch && !sameVal(patch.prod_mode, byId('shows', id)?.prod_mode) && hasFinancialRecord(id))
+    return 'Cette date a des opérations financières enregistrées (facture, versement, numéro ou lien Pennylane) : son mode booking / production ne change plus. Une régularisation se décide à part.';
   if (table === 'shows' && ['fee_ht', 'vat_rate', 'artbo_pct', 'partner_pct', 'prod_mode'].some(k => k in patch)){   // prod_mode : TVA de la commission
     const s = byId('shows', id), lines = s ? paymentsOf(id).filter(isInvoiced) : [];
     if (!lines.length) return '';
