@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.41.1 — 26/10/2026
+- Lot C1, relecture : protection côté base à la suppression d'une date booking, échéancier contractuel conservé dans Conditions et le mail, acompte caduc non facturable, mode figé quand un acompte ou solde est émis, cession vide jamais figée à 0
+
+
 ## 1.41.0 — 26/10/2026
 - Lot C1 : booking — seules la commission et les parts partenaires sont suivies (factures de l'artiste hors suivi, relances, devis et rattachements) ; production — solde = cession − acomptes effectivement facturés, figé à l'émission, acomptes non facturés caducs ; commission de production suivie par son versement ; trois indicateurs distincts ; règles Pennylane testées
 

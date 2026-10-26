@@ -4,8 +4,8 @@
 --  * « Facture d'acompte à envoyer » ne part plus quand le SOLDE est déjà facturé (envoyé, payé, numéroté ou dans Pennylane) :
 --    l'acompte jamais facturé est alors caduc (plus réclamé, historique conservé).
 --  * Booking : inchangé — seule la facture de commission est relancée ; jamais d'acompte ni de solde (factures de l'artiste).
---    Remplace la migration « relances booking » (2026-10-24_v1.40_relances_booking.sql), abandonnée avant toute application
---    en production (appliquée seulement sur le projet de test, où cette version la remplace).
+--    Remplace la migration « relances booking » (2026-10-24_v1.40_relances_booking.sql, gardée pour l'historique, marquée
+--    ABANDONNÉE), jamais appliquée en production (appliquée seulement sur le projet de test, où cette version la remplace).
 -- Règle écrite deux fois (§8.4) : côté application js/reminders.js (remindersOf, « Facture d'acompte à envoyer »).
 -- Aucune donnée modifiée. Retour arrière : réappliquer la fonction de 2026-10-21_v1.39_relances_jour_ouvre.sql.
 

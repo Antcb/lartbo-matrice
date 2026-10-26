@@ -140,3 +140,64 @@ test('C1 saisies conservées : solde saisi à la main (Belvédère) gardé et fi
   expect(vars.seq.find(x => x.find === 'XXXX€ TTC').values.map(v => v.replace(/\s/g, ' '))).toEqual(['3 165€ TTC', '7 385€ TTC']);
   expectClean(ctx);
 });
+
+// ── Corrections de la relecture indépendante (B2, B3, B4, cession vide) ──
+const save = (page, t, id, patch) => page.evaluate(async ([a, b, c]) => (await import('./js/data.js')).save(a, b, c), [t, id, patch]);
+
+test('C1 relecture B2 : « Conditions » et mail gardent l’échéancier prévu au contrat (acompte 30 % · solde 70 %)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [P('r-2', 10000)], show_payments: [
+    { id: 'r2-a', show_id: 'r-2', kind: 'acompte', label: 'Acompte', pct: 30, sort: 1 },
+    { id: 'r2-s', show_id: 'r-2', kind: 'solde', label: 'Solde', pct: 70, sort: 2 },
+  ] });
+  expect(await calc(page, 'billPct', '@show_payments:r2-s'), '% au contrat').toBe(70);
+  expect(await calc(page, 'billedPct', '@show_payments:r2-s'), 'part réelle (onglet Factures)').toBe(100);
+  await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.year = new Date().getFullYear(); S.openProd.add('r-2'); S.tab['prod:r-2'] = 'conditions'; (await import('./js/app.js')).go('production'); });
+  const steps = page.locator('.steps').filter({ hasText: 'Acomptes' });
+  await expect(steps).toContainText('Acompte 30 %');
+  await expect(steps).toContainText('solde 70 %');
+  expectClean(ctx);
+});
+
+test('C1 relecture B3 : un acompte caduc ne s’émet plus (jamais au-delà de la cession)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [P('r-3', 10000)], show_payments: [
+    { id: 'r3-a', show_id: 'r-3', kind: 'acompte', label: 'Acompte', pct: 30, sort: 1 },
+    { id: 'r3-s', show_id: 'r-3', kind: 'solde', label: 'Solde', pct: 70, sort: 2 },
+  ] });
+  expect(await save(page, 'show_payments', 'r3-s', { invoice_number: 'F-S' })).toBeTruthy();
+  for (const f of ['invoice_number', 'sent_at', 'paid_at', 'pennylane_id']) {
+    expect(await save(page, 'show_payments', 'r3-a', { [f]: f === 'sent_at' || f === 'paid_at' ? `${Y}-11-02` : 'X-1' }), f).toBeFalsy();
+  }
+  const a = await dbPay(page, 'r3-a'); expect([a.invoice_number ?? null, a.sent_at ?? null, a.paid_at ?? null, a.pennylane_id ?? null]).toEqual([null, null, null, null]);
+  const b = await calc(page, 'billingOf', '@shows:r-3');
+  expect([b.ht, b.gap]).toEqual([10000, 0]);
+  expect((await calc(page, 'financeOf', ['@shows:r-3'])).impayesProd).toBe(10000);
+  // libellé encore modifiable (historique)
+  expect(await save(page, 'show_payments', 'r3-a', { label: 'Acompte (caduc)' })).toBeTruthy();
+  expect(ctx.errors).toEqual([]);
+});
+
+test('C1 relecture B4 : le mode d’une date dont un acompte / solde est émis ne change plus (production ↔ booking)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [P('r-4', 10000), B('r-5', 5000), P('r-6', 4000)], show_payments: [
+    { id: 'r4-s', show_id: 'r-4', kind: 'solde', label: 'Solde', pct: 100, sort: 1, sent_at: `${Y}-10-01`, invoice_number: 'F-4' },
+    { id: 'r5-a', show_id: 'r-5', kind: 'acompte', label: 'Acompte artiste', pct: 50, sort: 1, invoice_number: 'ART-1' },
+    { id: 'r6-a', show_id: 'r-6', kind: 'acompte', label: 'Acompte', pct: 50, sort: 1 },
+  ] });
+  expect(await calc(page, 'changeBlocked', 'shows', 'r-4', { prod_mode: 'booking' })).toContain('mode booking / production ne change plus');
+  expect(await calc(page, 'changeBlocked', 'shows', 'r-5', { prod_mode: 'production' })).toContain('mode booking / production ne change plus');
+  expect(await calc(page, 'changeBlocked', 'shows', 'r-6', { prod_mode: 'booking' }), 'aucune facture émise : libre').toBe('');
+  expect(await calc(page, 'changeBlocked', 'shows', 'r-4', { prod_mode: 'production' }), 'même mode : rien ne change').toBe('');
+  expect(await save(page, 'shows', 'r-4', { prod_mode: 'booking', prod_mode_manual: true })).toBeFalsy();
+  expect(await page.evaluate(() => window.__DB.shows.find(s => s.id === 'r-4').prod_mode)).toBe('production');
+  expect(ctx.errors).toEqual([]);
+});
+
+test('C1 relecture : cession vide → le solde n’est jamais figé à 0 € quand il est numéroté', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [P('r-7', null)], show_payments: [{ id: 'r7-s', show_id: 'r-7', kind: 'solde', label: 'Solde', pct: 100, sort: 1 }] });
+  expect(await save(page, 'show_payments', 'r7-s', { invoice_number: 'F-7' })).toBeTruthy();
+  expect((await dbPay(page, 'r7-s')).amount ?? null).toBeNull();
+  expectClean(ctx);
+});

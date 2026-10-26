@@ -57,7 +57,8 @@ export const ttc = (ht, rate) => ht==null ? null : Math.round(ht * (1 + (Number(
  *  Une facture émise n'est jamais modifiée automatiquement ni silencieusement. SEULE définition à utiliser.
  *  Exception (lot C1, décision du 26/10) : la commission d'une date en PRODUCTION n'est pas une facture (L'ArtBo se la verse) ;
  *  seul son versement (date) la fige — un ancien numéro saisi (celui de la facture d'acompte) ne la rend pas « émise ». */
-export const isInvoiced = p => !!(p && (selfPaidCommission(p) ? p.paid_at : (p.sent_at || p.paid_at || p.invoice_number || p.pennylane_id)));
+const filled = v => v != null && String(v).trim() !== '';   // comme la base (btrim) : un numéro fait d'espaces ne compte pas
+export const isInvoiced = p => !!(p && (selfPaidCommission(p) ? filled(p.paid_at) : EMITTED_FIELDS.some(k => filled(p[k]))));
 /** Ce qui rend une facture « émise » : une fois rempli, aucun de ces champs ne s'efface (sinon la facture se déverrouillerait).
  *  Même règle côté base : déclencheur show_payments_emitted_guard (supabase/migrations/2026-10-24_v1.40_factures_emises.sql). */
 export const EMITTED_FIELDS = ['sent_at', 'paid_at', 'invoice_number', 'pennylane_id'];
@@ -105,14 +106,18 @@ export function freezeOnEmit(table, id, patch){
   if (table !== 'show_payments' || !patch) return {};
   const row = byId('show_payments', id);
   if (!row || row.kind !== 'solde' || isInvoiced(row) || (row.amount != null && row.amount !== '') || 'amount' in patch) return {};
-  if (isBookingShow(byId('shows', row.show_id)) || !isInvoiced({...row, ...patch})) return {};
+  const s = byId('shows', row.show_id);
+  if (isBookingShow(s) || !isInvoiced({...row, ...patch})) return {};
+  if (s?.fee_ht == null || s.fee_ht === '') return {};   // cession pas encore saisie : rien à figer (jamais un solde figé à 0 €)
   return {amount: soldeDue(row.show_id)};
 }
 
 export function changeBlocked(table, id, patch){
   if (patch === null){
     if (table === 'show_payments'){ const why = billLockReason(byId('show_payments', id)); return why && why.replace('ne se modifie plus', 'ne se supprime pas').replace('ne peuvent plus changer', 'ne se suppriment plus'); }
-    if (table === 'shows' && paymentsOf(id).some(isInvoiced)) return 'Cette date a des factures émises : elle ne se supprime pas (ses factures et son budget seraient effacés avec elle).';
+    // comme la base : lors de la suppression en chaîne, la date n'existe plus pour le déclencheur, qui applique la définition
+    // complète — une commission de production numérotée (historique) empêche donc aussi la suppression de sa date
+    if (table === 'shows' && paymentsOf(id).some(p => isInvoiced(p) || EMITTED_FIELDS.some(k => filled(p[k])))) return 'Cette date a des factures émises : elle ne se supprime pas (ses factures et son budget seraient effacés avec elle).';
     // pièces gardées « à rattacher » : la date ne se supprime pas tant qu'elles n'ont pas été rattachées (décision d'Anthony du 25/10)
     if (table === 'shows'){ const n = piecesToAttach(byId('shows', id)).length;
       if (n) return `Cette date a ${n} pièce${n > 1 ? 's' : ''} à rattacher (onglet Factures) : rattache-${n > 1 ? 'les' : 'la'} avant de supprimer la date.`; }
@@ -126,9 +131,15 @@ export function changeBlocked(table, id, patch){
     // facture émise : ni numéro, ni date d'envoi, ni date de paiement, ni identifiant Pennylane ne s'efface (pas de déverrouillage)
     if (isInvoiced(row) && emittedFieldsOf(row).some(k => k in patch && !blank(row[k]) && blank(patch[k])))
       return 'Facture déjà émise : son numéro, sa date d’envoi, sa date de paiement et son identifiant Pennylane ne s’effacent pas (une régularisation se décide à part).';
+    // acompte caduc (solde déjà facturé, lot C1) : il ne s'émet plus — sinon la date serait facturée au-delà de sa cession
+    if (acompteState(row) === 'caduc' && isInvoiced({...row, ...patch}))
+      return 'Acompte caduc : le solde de cette date est déjà facturé, cet acompte ne se facture plus (il dépasserait la cession). Une régularisation se décide à part.';
     if (!['amount', 'pct', 'vat_rate', 'show_id', 'kind'].some(k => k in patch && !sameVal(patch[k], row[k]))) return '';
     return billLockReason(row);
   }
+  if (table === 'shows' && 'prod_mode' in patch && !sameVal(patch.prod_mode, byId('shows', id)?.prod_mode)
+      && paymentsOf(id).some(p => BILL_KINDS.includes(p.kind) && isInvoiced(p)))
+    return 'Cette date a des factures d’acompte ou de solde émises : son mode booking / production ne change plus (elles entreraient ou sortiraient du suivi de L’ArtBo). Une régularisation se décide à part.';
   if (table === 'shows' && ['fee_ht', 'vat_rate', 'artbo_pct', 'partner_pct', 'prod_mode'].some(k => k in patch)){   // prod_mode : TVA de la commission
     const s = byId('shows', id), lines = s ? paymentsOf(id).filter(isInvoiced) : [];
     if (!lines.length) return '';
@@ -146,13 +157,19 @@ export function changeBlocked(table, id, patch){
 /** Lignes qui facturent le cachet (acomptes, solde) : ensemble, 100 % du cachet au plus. Commissions, taxe CNM et « autres » à part. */
 export const BILL_KINDS = ['acompte', 'solde'];
 const r2 = n => Math.round(n * 100) / 100;
-/** % du cachet d'une ligne : saisi, ou déduit du montant HT saisi */
+/** % du cachet d'une ligne AU CONTRAT : saisi, ou déduit du montant HT saisi (conditions, mail, fiche, contrat) */
 export function billPct(p){
   const fee = Number(byId('shows', p.show_id)?.fee_ht) || 0;
   if (p.amount != null && p.amount !== '' && fee) return Number(p.amount) / fee * 100;   // montant saisi : il fait foi
-  // solde de production pas encore facturé : sa part réelle (cession − acomptes facturés), pas le % prévu au contrat
-  if (p.kind === 'solde' && !isInvoiced(p) && !isBookingShow(byId('shows', p.show_id))) return fee ? payAmount(p) / fee * 100 : null;
   return p.pct != null && p.pct !== '' ? Number(p.pct) : null;
+}
+/** Solde de production pas encore émis : son montant est calculé (cession − acomptes facturés, lot C1) */
+export const soldeComputed = p => !!p && p.kind === 'solde' && !isInvoiced(p) && (p.amount == null || p.amount === '') && !isBookingShow(byId('shows', p.show_id));
+/** % RÉEL d'une ligne dans l'onglet Factures : pour un solde calculé, sa part effective (pas le % prévu au contrat) */
+export function billedPct(p){
+  if (!soldeComputed(p)) return billPct(p);
+  const fee = Number(byId('shows', p.show_id)?.fee_ht) || 0;
+  return fee ? payAmount(p) / fee * 100 : null;
 }
 /** Total des factures d'une date face au cachet */
 export function billingOf(s){

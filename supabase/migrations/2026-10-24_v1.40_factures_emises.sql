@@ -14,7 +14,9 @@
 create or replace function public.show_payments_emitted_guard() returns trigger
 language plpgsql set search_path = public as $$   -- §7.3
 declare
-  self_paid boolean := old.kind = 'artbo' and coalesce((select prod_mode from public.shows where id = old.show_id), 'production') <> 'booking';
+  -- commission de production : la date doit exister et ne pas être en booking. Date introuvable (suppression en chaîne : la date
+  -- est déjà effacée quand ce déclencheur passe) → définition complète, comme pour toute autre ligne (relecture C1, B1)
+  self_paid boolean := old.kind = 'artbo' and exists (select 1 from public.shows where id = old.show_id and coalesce(prod_mode, 'production') <> 'booking');
   emitted boolean := case when self_paid then old.paid_at is not null
                      else old.sent_at is not null or old.paid_at is not null
                           or nullif(btrim(old.invoice_number), '') is not null or nullif(btrim(old.pennylane_id), '') is not null end;

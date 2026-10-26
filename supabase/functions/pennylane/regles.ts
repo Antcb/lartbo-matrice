@@ -19,6 +19,8 @@ export const payable = (p: Ligne, mode: string | null | undefined) =>
   isBooking(mode) ? p.kind === 'artbo' : ['acompte', 'solde', 'autre'].includes(p.kind);
 /** Ligne qui peut être reliée à une facture faite depuis le devis Pennylane : acompte ou solde de production */
 export const relieAuDevis = (p: Ligne, mode: string | null | undefined) => !isBooking(mode) && ['acompte', 'solde'].includes(p.kind);
+/** Acompte caduc : jamais facturé alors que le solde de la date l'est (plus réclamé ; jamais relié automatiquement) */
+export const caduc = (p: Ligne, lignesDeLaDate: Ligne[]) => p.kind === 'acompte' && !emise(p) && lignesDeLaDate.some(l => l.kind === 'solde' && emise(l));
 /** Ligne pour laquelle la Matrice peut créer un brouillon de facture isolée */
 export const factureIsolee = (p: Ligne, mode: string | null | undefined) => isBooking(mode) ? p.kind === 'artbo' : p.kind === 'autre';
 

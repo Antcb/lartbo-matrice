@@ -1,7 +1,7 @@
 // Règles de la synchronisation Pennylane (lot C1) sur de FAUSSES données : aucun appel à Pennylane ni à la base.
 // Lancé par « npm test » (node --experimental-strip-types). Module testé : supabase/functions/pennylane/regles.ts
 import assert from 'node:assert/strict';
-import { acomptesFactures, emise, factureIsolee, montantAttendu, payable, relieAuDevis } from '../../supabase/functions/pennylane/regles.ts';
+import { acomptesFactures, caduc, emise, factureIsolee, montantAttendu, payable, relieAuDevis } from '../../supabase/functions/pennylane/regles.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -40,6 +40,12 @@ t('facture émise : même définition que l’application', () => {
   assert.equal(emise({ kind: 'acompte' }), false);
   assert.equal(emise({ kind: 'acompte', invoice_number: '  ' }), false);
   for (const f of ['sent_at', 'paid_at', 'invoice_number', 'pennylane_id']) assert.equal(emise({ kind: 'acompte', [f]: 'x' }), true, f);
+});
+t('acompte caduc : jamais relié automatiquement quand le solde est facturé', () => {
+  const prevu = { kind: 'acompte', pct: 30 }, soldeEmis = { kind: 'solde', invoice_number: 'F-1' };
+  assert.equal(caduc(prevu, [prevu, soldeEmis]), true);
+  assert.equal(caduc(prevu, [prevu, { kind: 'solde', pct: 70 }]), false);           // solde pas encore facturé : acompte prévu
+  assert.equal(caduc({ kind: 'acompte', sent_at: '2026-01-01' }, [soldeEmis]), false); // acompte facturé : pas caduc
 });
 
 let ko = 0;
