@@ -83,3 +83,19 @@ test('D1 : artiste sans compte dédié — aucun solde de compte artiste affich�
   expect(html).not.toContain('solde réel');
   expectClean(ctx);
 });
+
+test('D1 (relecture) : un % qui ne touche aucune ligne émise se change sans avertissement ; sinon avertissement', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [DATE], show_payments: [{ ...LIGNES[0], sent_at: `${Y}-10-01`, invoice_number: 'F-TEST-3', amount: 5000 }, LIGNES[1], LIGNES[2], LIGNES[3]] });
+  expect(await save(page, 'shows', 'f-1', { artbo_pct: 18 }), 'seul l’acompte est émis : la commission n’est pas concernée').toBe(true);
+  await expect(page.locator('#modal[open]')).toHaveCount(0);
+  await page.evaluate(async y => (await import('./js/data.js')).save('show_payments', 'g-c', { paid_at: `${y}-10-02` }), Y);
+  const run = save(page, 'shows', 'f-1', { artbo_pct: 20 });
+  await expect(page.locator('#modal h2')).toHaveText('Factures déjà émises sur cette date');
+  await expect(page.locator('#modal')).toContainText('Commission');
+  await page.getByRole('button', { name: 'Annuler' }).click();
+  expect(await run).toBe(false);
+  expect((await dbShow(page, 'f-1')).artbo_pct).toBe(18);
+  expect((await dbPay(page, 'g-c')).amount, 'commission figée au versement, au % du moment').toBe(1800);
+  expectClean(ctx);
+});

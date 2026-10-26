@@ -51,7 +51,9 @@ setSaveConfirm(async (table, id, patch) => {
   if (table !== 'shows' || !patch) return true;
   const s = byId('shows', id);
   const changed = FINANCE_FIELDS.filter(k => k in patch && String(patch[k] ?? '') !== String(s?.[k] ?? ''));
-  const lines = s && changed.length ? emittedLinesOf(id) : [];
+  // seulement les lignes concernées : la commission L'ArtBo dépend de son %, la part partenaire des deux % ; cachet, TVA, mode : toutes
+  const touches = p => changed.some(k => !['artbo_pct', 'partner_pct'].includes(k) || k === 'artbo_pct' && ['artbo', 'partner'].includes(p.kind) || k === 'partner_pct' && p.kind === 'partner');
+  const lines = s && changed.length ? emittedLinesOf(id).filter(touches) : [];
   if (!lines.length) return true;
   const LABEL = {acompte: 'Acompte', solde: 'Solde', autre: 'Autre facture', artbo: 'Commission L’ArtBo', partner: 'Part partenaire'};
   const list = lines.map(p => `<li>${esc(p.label || LABEL[p.kind] || p.kind)}${p.invoice_number ? ` · ${esc(p.invoice_number)}` : ''} : <b>${eur2(payAmount(p))}</b> HT${p.paid_at ? ` · réglé le ${fmtDate(p.paid_at)}` : ''}</li>`).join('');
