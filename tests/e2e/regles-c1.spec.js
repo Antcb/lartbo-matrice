@@ -232,3 +232,14 @@ test('C1 acompte caduc : protection limitée à la production (booking : facture
   expect(await calc(page, 'changeBlocked', 'show_payments', 'k1-a', { invoice_number: 'ART-A' })).toBe('');
   expectClean(ctx);
 });
+
+test('C1 plusieurs soldes : émettre le second solde ne le fige jamais à 0 €', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [P('d-3', 10000)], show_payments: [
+    { id: 'd3-s', show_id: 'd-3', kind: 'solde', label: 'Solde', pct: 100, sort: 1 },
+    { id: 'd3-t', show_id: 'd-3', kind: 'solde', label: 'Solde 2', pct: 100, sort: 2 },
+  ] });
+  expect(await save(page, 'show_payments', 'd3-t', { invoice_number: 'F-T' })).toBeTruthy();
+  expect((await dbPay(page, 'd3-t')).amount ?? null).toBeNull();
+  expectClean(ctx);
+});

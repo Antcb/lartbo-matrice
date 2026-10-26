@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.41.3 — 26/10/2026
+- Lot C1 : plusieurs soldes — aucun solde figé automatiquement (jamais à 0 €)
+
+
 ## 1.41.2 — 26/10/2026
 - Lot C1 : acompte caduc protégé aussi côté base (migration préparée), cession jamais comptée deux fois en cas de plusieurs soldes (anomalie signalée), commission booking : paiement repris sans rangement Drive, typage Deno vérifié
 
