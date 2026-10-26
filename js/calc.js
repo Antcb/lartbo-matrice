@@ -118,6 +118,7 @@ export function freezeOnEmit(table, id, patch){
   const s = byId('shows', row.show_id);
   if (isBookingShow(s) || !isInvoiced({...row, ...patch})) return {};
   if (s?.fee_ht == null || s.fee_ht === '') return {};   // cession pas encore saisie : rien à figer (jamais un solde figé à 0 €)
+  if (multiSolde(row.show_id)) return {};                // plusieurs soldes (anomalie signalée) : rien n'est figé automatiquement
   return {amount: soldeDue(row.show_id, row.id)};
 }
 

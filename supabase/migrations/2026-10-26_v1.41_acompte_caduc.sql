@@ -6,7 +6,8 @@
 -- Une ligne d'acompte insérée déjà émise sur une telle date est refusée de la même façon.
 -- Règle écrite deux fois (§8.4) : côté application js/calc.js (changeBlocked, acompteState) ; synchronisation Pennylane :
 -- supabase/functions/pennylane/regles.ts (caduc : jamais relié).
--- Indépendante de la migration A1 (2026-10-24_v1.40_factures_emises.sql) : s'applique avant ou après elle.
+-- À appliquer AVEC la migration A1 (2026-10-24_v1.40_factures_emises.sql), avant ou après elle : A1 empêche de contourner ce
+-- déclencheur en déplaçant l'acompte vers une autre date (show_id) le temps de l'émettre.
 -- Booking : non concerné (acomptes / soldes = factures de l'artiste, hors suivi de L'ArtBo).
 -- Libellé, échéance, relance, compte, pièce, % et montant d'un acompte caduc : inchangés par ce déclencheur (historique conservé).
 -- Aucune donnée existante n'est lue pour être modifiée ; aucune donnée modifiée. Au 26/10/2026 (lecture seule) : 0 acompte caduc
