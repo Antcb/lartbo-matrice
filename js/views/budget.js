@@ -165,8 +165,8 @@ export function projectBudgetHTML(projectId){
   const cats = Object.entries(a.byCat).filter(([,v]) => Math.abs(v) >= 0.01).sort((x,y) => y[1]-x[1]);
   return `<div class="proj-budget panel">
     <div class="proj-budget-bar">${head}</div>
-    <div class="stat-row">
-      <div class="stat"><b>${eur2(a.real)}</b><span>${esc(p.account_name || 'Compte dédié')} : solde réel</span></div>
+    ${!p.account_name ? `<p class="help mb">Pas de compte dédié pour cet artiste : les cessions arrivent sur un compte de L’ArtBoristerie, qui y garde sa commission. Aucun solde de compte artiste n’est calculé (lot D1).</p>` : `<div class="stat-row">
+      <div class="stat"><b>${eur2(a.real)}</b><span>${esc(p.account_name)} : solde réel</span></div>
       <div class="stat"><b>${eur2(a.inTodo)}</b><span>Cachets encore à recevoir (HT)</span></div>
       <div class="stat"><b>${eur2(a.outTodo)}</b><span>Encore à payer par le compte</span></div>
       <div class="stat"><b>${eur2(a.end)}</b><span>Solde prévu en fin de tournée</span></div>
@@ -178,7 +178,7 @@ export function projectBudgetHTML(projectId){
       ${mv.map(m => `<tr><td class="nowrap">${fmtDate(m.date)}</td><td>${esc(m.label)}${m.calc ? ' <span class="muted" title="Pas de montant saisi : calculé à partir du pourcentage ou du prévu">(calculé)</span>' : ''}</td>
         <td class="num nowrap">${m.amount > 0 ? eur2(m.amount) : ''}</td><td class="num nowrap">${m.amount < 0 ? eur2(-m.amount) : ''}</td><td class="num nowrap">${eur2(m.balance)}</td></tr>`).join('')}
       </tbody></table></div>
-      <p class="muted small">Comptés : acomptes et soldes notés payés (encaissés sur le compte), commissions L’ArtBo virées, dépenses payées par le compte, avances remboursées par le compte. « (calculé) » : aucun montant saisi, c’est le pourcentage ou le prévu qui est utilisé.</p></details>` : ''; })()}
+      <p class="muted small">Comptés : acomptes et soldes notés payés (encaissés sur le compte), commissions L’ArtBo virées, dépenses payées par le compte, avances remboursées par le compte. « (calculé) » : aucun montant saisi, c’est le pourcentage ou le prévu qui est utilisé.</p></details>` : ''; })()}`}
     <div class="steps" style="max-width:640px;margin-bottom:12px">
       <label>Nom du compte dédié</label>${cIn('projects', p.id, 'account_name', p.account_name, 'text', 'placeholder="ex. Compte The Locos L’ArtBo (vide = pas de compte dédié)"')}
       <label>Solde de départ du compte</label>${cIn('projects', p.id, 'account_opening', p.account_opening, 'number', 'class="narrow" placeholder="0"')}

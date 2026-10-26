@@ -106,21 +106,27 @@ export const piecesToAttach = s => !s ? [] : S.db.attachments.filter(a => pieceS
 /** Toutes les pièces à rattacher (dates supprimées ou hors de la liste Production comprises : jamais introuvables) */
 export const allPiecesToAttach = () => S.db.attachments.filter(a => { const id = pieceShowId(a); return id && !id.startsWith('projet-') && pieceFree(a); });
 
+/** Lignes dont le montant est figé dès qu'elles sont émises / versées (lot D1) : la CNM n'a pas de montant calculé */
+export const FROZEN_KINDS = ['acompte', 'solde', 'autre', 'artbo', 'partner'];
 /**
- * Complément d'un enregistrement (appelé par data.save) : quand un solde de production DEVIENT émis (numéro, envoi, paiement ou
- * lien Pennylane saisi), son montant est figé à ce moment-là (cession − acomptes facturés) pour ne plus jamais bouger (lot C1).
- * Un montant déjà saisi à la main est gardé tel quel.
+ * Complément d'un enregistrement (appelé par data.save) : quand une ligne DEVIENT émise ou versée — facture d'acompte / de solde
+ * envoyée, payée, numérotée ou liée à Pennylane ; commission ou part partenaire versée — son montant calculé à ce moment-là est
+ * enregistré et ne bougera plus jamais, même si le cachet ou un % change ensuite (lot C1 pour le solde, lot D1 pour toutes).
+ * Un montant déjà saisi à la main est gardé tel quel. Même règle côté base : déclencheur show_payments_freeze (migration v1.42).
  */
 export function freezeOnEmit(table, id, patch){
   if (table !== 'show_payments' || !patch) return {};
   const row = byId('show_payments', id);
-  if (!row || row.kind !== 'solde' || isInvoiced(row) || (row.amount != null && row.amount !== '') || 'amount' in patch) return {};
+  if (!row || !FROZEN_KINDS.includes(row.kind) || isInvoiced(row) || (row.amount != null && row.amount !== '') || 'amount' in patch) return {};
+  if (!isInvoiced({...row, ...patch})) return {};
   const s = byId('shows', row.show_id);
-  if (isBookingShow(s) || !isInvoiced({...row, ...patch})) return {};
-  if (s?.fee_ht == null || s.fee_ht === '') return {};   // cession pas encore saisie : rien à figer (jamais un solde figé à 0 €)
-  if (multiSolde(row.show_id)) return {};                // plusieurs soldes (anomalie signalée) : rien n'est figé automatiquement
-  return {amount: soldeDue(row.show_id, row.id)};
+  if (s?.fee_ht == null || s.fee_ht === '') return {};   // cession pas encore saisie : rien à figer (jamais un montant figé à 0 €)
+  if (row.kind === 'solde' && multiSolde(row.show_id)) return {};   // plusieurs soldes (anomalie signalée) : rien n'est figé automatiquement
+  const amount = row.kind === 'solde' && !isBookingShow(s) ? soldeDue(row.show_id, row.id) : payAmount(row);
+  return amount == null ? {} : {amount};
 }
+/** Date qui a des lignes déjà émises ou versées : un changement de cachet / % / mode mérite un avertissement (lot D1) */
+export const emittedLinesOf = showId => paymentsOf(showId).filter(p => FROZEN_KINDS.includes(p.kind) && isInvoiced(p));
 
 export function changeBlocked(table, id, patch){
   if (patch === null){

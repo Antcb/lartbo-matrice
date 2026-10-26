@@ -117,6 +117,9 @@ test('Q5 : changer le cachet demande avant d’écraser un montant saisi à la m
   ]);
   // 1) conserver
   let run = page.evaluate(async () => (await import('./js/actions.js')).ACTIONS['change:shows.fee_ht']({ dataset: { id: 'v-1' } }, 4000));
+  // lot D1 : la date a une facture émise (c-x) → avertissement d'abord, puis la question sur les montants saisis
+  await expect(page.locator('#modal h2')).toHaveText('Factures déjà émises sur cette date');
+  await page.locator('#modal button[type=submit]').click();
   await expect(page.locator('#modal h2')).toHaveText('Cachet modifié');
   await page.getByRole('button', { name: 'Conserver les montants saisis' }).click();
   await run;
@@ -124,6 +127,9 @@ test('Q5 : changer le cachet demande avant d’écraser un montant saisi à la m
   expect((await dbPay(page, 'c-x')).amount, 'facture émise jamais touchée').toBe(500);
   // 2) recalculer
   run = page.evaluate(async () => (await import('./js/actions.js')).ACTIONS['change:shows.fee_ht']({ dataset: { id: 'v-1' } }, 5000));
+  await expect(page.locator('#modal h2')).toHaveText('Factures déjà émises sur cette date');
+  await page.locator('#modal button[type=submit]').click();
+  await expect(page.locator('#modal h2')).toHaveText('Cachet modifié');
   await page.locator('#modal button[type=submit]').click();
   await run;
   expect((await dbPay(page, 'c-a')).amount ?? null, 'recalcul choisi').toBeNull();

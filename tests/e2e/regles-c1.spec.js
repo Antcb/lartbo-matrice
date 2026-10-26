@@ -44,7 +44,7 @@ test('C1 solde : 10 000 € sans acompte facturé, 7 000 € après un acompte d
   // le solde est facturé : montant figé en base à 7 000 €, inchangé ensuite
   await page.evaluate(async () => (await import('./js/data.js')).save('show_payments', 'c1-s', { sent_at: `${new Date().getFullYear()}-11-01` }));
   expect((await dbPay(page, 'c1-s')).amount).toBe(7000);
-  expect((await dbPay(page, 'c1-a')).amount ?? null, 'acompte émis : jamais réécrit').toBeNull();
+  expect((await dbPay(page, 'c1-a')).amount, 'acompte : figé à son émission (lot D1), jamais réécrit ensuite').toBe(3000);
   expectClean(ctx);
 });
 
@@ -104,10 +104,18 @@ test('C1 commission de production : un numéro saisi ne la rend pas « émise »
   // versée : figée (montant), et sa date de versement ne s'efface pas ; le vieux numéro, lui, peut être vidé
   await page.evaluate(async () => (await import('./js/data.js')).save('show_payments', 'm1-c', { paid_at: `${new Date().getFullYear()}-02-01` }));
   expect(await calc(page, 'billLockReason', '@show_payments:m1-c')).toBe('Commission déjà versée : elle ne se modifie plus.');
+  const fige = (await dbPay(page, 'm1-c')).amount;
+  expect(fige, 'commission figée au versement (lot D1)').toBe(await calc(page, 'payAmount', '@show_payments:m1-c'));
+  // lot D1 : le cachet peut encore changer, après l'avertissement ; la commission versée garde son montant
+  const cachet = page.evaluate(async () => !!(await (await import('./js/data.js')).save('shows', 'm-1', { fee_ht: 7000 }, { rerender: false })));
+  await expect(page.locator('#modal h2')).toHaveText('Factures déjà émises sur cette date');
+  await page.locator('#modal button[type=submit]').click();
+  expect(await cachet).toBe(true);
+  expect((await dbPay(page, 'm1-c')).amount, 'montant versé inchangé').toBe(fige);
   const r = await page.evaluate(async () => { const { save } = await import('./js/data.js');
-    return { cachet: !!(await save('shows', 'm-1', { fee_ht: 7000 }, { rerender: false })), vider: !!(await save('show_payments', 'm1-c', { paid_at: null }, { rerender: false })),
+    return { vider: !!(await save('show_payments', 'm1-c', { paid_at: null }, { rerender: false })),
       numero: !!(await save('show_payments', 'm1-c', { invoice_number: null }, { rerender: false })) }; });
-  expect(r).toEqual({ cachet: false, vider: false, numero: true });
+  expect(r).toEqual({ vider: false, numero: true });
   expectClean(ctx);
 });
 
