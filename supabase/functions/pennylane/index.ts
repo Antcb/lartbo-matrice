@@ -213,7 +213,8 @@ Deno.serve(async (req) => {
           const { error: e1 } = await admin.from('show_payments').update({ pennylane_id: String(x.id), pennylane_url: await invoicePage(x.id) || linkOf(x), invoice_number: x.invoice_number || null, ...fige }).eq('id', p.id);
           if (e1) { erreurs.push(`${x.invoice_number || x.id} : ${e1.message}`); continue; }   // refusée : ni reliée, ni comptée
           used.add('id:' + x.id); if (x.invoice_number) used.add('n:' + norm(x.invoice_number));
-          if (p.kind === 'acompte') facture[p.show_id] = (facture[p.show_id] || 0) + (montantAcompte(p, fee) || 0);   // compte pour le solde suivant
+          // compte pour le solde suivant : le montant réel de la facture quand l'acompte vient d'être figé dessus (lot D1)
+          if (p.kind === 'acompte') facture[p.show_id] = (facture[p.show_id] || 0) + ('amount' in fige ? Number((fige as any).amount) : (montantAcompte(p, fee) || 0));
           linked.push(x.invoice_number);
         }
       }

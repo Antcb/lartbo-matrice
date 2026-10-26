@@ -189,6 +189,7 @@ begin
        and new.show_id is not distinct from old.show_id and new.kind is not distinct from old.kind
        and coalesce(current_setting('matrice.regularisation', true), '') = 'degel'
        and exists (select 1 from public.finance_log l where l.id = (select max(m.id) from public.finance_log m where m.row_id = old.id and m.field = 'amount')
+                     and l.row_id = old.id and l.field = 'amount'
                      and l.source = 'régularisation contrôlée' and l.old_value is null and l.new_value::numeric = old.amount) then
       return new;
     end if;
@@ -235,15 +236,26 @@ declare
                    when coalesce(current_setting('matrice.regularisation', true), '') = 'degel' then 'retour arrière de régularisation'
                    when coalesce(current_setting('request.jwt.claims', true), '') <> '' then 'application / fonction serveur'
                    else 'base (éditeur SQL, tâche planifiée)' end;
-  sid uuid;
+  sid uuid; fsrc text;
 begin
   o := case when tg_op = 'INSERT' then '{}'::jsonb else to_jsonb(old) end;
   n := case when tg_op = 'DELETE' then '{}'::jsonb else to_jsonb(new) end;
   sid := case tg_table_name when 'shows' then coalesce(n ->> 'id', o ->> 'id')::uuid else coalesce(n ->> 'show_id', o ->> 'show_id')::uuid end;
   foreach f in array fields loop
     if (o -> f) is distinct from (n -> f) and not (coalesce(o -> f, 'null'::jsonb) = 'null'::jsonb and coalesce(n -> f, 'null'::jsonb) = 'null'::jsonb) then
+      -- « régularisation contrôlée » pour un montant : SEULEMENT le cas de l'exception A1 (ligne déjà émise avant, montant vide
+      -- rempli). Un montant figé à l'émission dans la même transaction garde la source ordinaire : il ne pourra jamais être revidé.
+      fsrc := src;
+      -- (deux IF imbriqués : l'expression qui lit OLD comme ligne de facturation n'est évaluée que pour show_payments)
+      if src = 'régularisation contrôlée' and tg_table_name = 'show_payments' and f = 'amount' then
+        if tg_op <> 'UPDATE' or (o ->> 'amount') is not null then
+          fsrc := 'base (éditeur SQL, tâche planifiée)';
+        elsif not public.payment_is_emitted(old) then
+          fsrc := 'base (éditeur SQL, tâche planifiée)';
+        end if;
+      end if;
       insert into public.finance_log (table_name, row_id, show_id, op, field, old_value, new_value, actor, source)
-      values (tg_table_name, coalesce(n ->> 'id', o ->> 'id')::uuid, sid, tg_op, f, o ->> f, n ->> f, public.finance_actor(), src);
+      values (tg_table_name, coalesce(n ->> 'id', o ->> 'id')::uuid, sid, tg_op, f, o ->> f, n ->> f, public.finance_actor(), fsrc);
     end if;
   end loop;
   return null;
