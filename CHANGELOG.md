@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.41.4 — 26/10/2026
+- Lot C1 : migration acompte caduc — verrou par date contre la facturation simultanée d'un acompte et d'un solde (décision d'Anthony)
+
+
 ## 1.41.3 — 26/10/2026
 - Lot C1 : plusieurs soldes — aucun solde figé automatiquement (jamais à 0 €)
 
