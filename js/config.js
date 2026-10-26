@@ -17,15 +17,11 @@ export const PUBLIC_PAGE = (() => {
   let p = location.pathname; try { p = decodeURIComponent(p); } catch { /* adresse mal encodée : prise telle quelle */ }
   return /(^|\/)(fiche|artiste|rh)(\.html?)?\/?$/i.test(p);
 })();
-export const ENV = (() => {
-  try {
-    const q = new URLSearchParams(location.search);
-    if (PUBLIC_PAGE) return q.has('test') ? 'test' : 'prod';
-    if (q.has('test')) localStorage.setItem('artbo.env', 'test');
-    if (q.has('prod')) localStorage.removeItem('artbo.env');
-    return localStorage.getItem('artbo.env') === 'test' ? 'test' : 'prod';
-  } catch { return 'prod'; }
-})();
+// ⚠ SITE D'ESSAI lartbo-matrice-essai (branche essai/c1-interface, JAMAIS FUSIONNÉE) : copie du lot C1 (commit 3fe2238)
+// FORCÉE sur le projet de test Lartbo-matrice-test, quels que soient l'adresse et le lien (?prod sans effet). Le choix
+// d'environnement gardé par le navigateur n'est ni lu ni modifié (même adresse antcb.github.io que la vraie Matrice).
+export const ENV = 'test';
+export const ESSAI = true;
 
 const PROD = {
   // Projet Supabase « Lartbo-matrice ». La clé publiable est publique par conception :
@@ -40,4 +36,5 @@ const TEST = {
   SUPABASE_ANON_KEY: 'sb_publishable_5Nbu2tcyLaCQz5mIHtGkNQ_Ke48oNqw',
   TEAM: null,   // en test : les comptes de la table app_users du projet de test (chargés après la connexion)
 };
-export const CFG = ENV === 'test' ? TEST : PROD;
+export const CFG = TEST;   // ESSAI : jamais la production
+void PROD;

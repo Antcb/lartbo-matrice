@@ -41,7 +41,7 @@ const VIEW_FN = {booking:viewBooking, production:viewProduction, ticketing:viewT
 
 function header(){
   const unread = unreadNotifs();
-  return `${ENV === 'test' ? `<div class="test-banner">${TEST_APP_NOTICE} <a href="?prod">Revenir à la vraie Matrice</a></div>` : ''}<header class="top"><div class="top-row">
+  return `${ENV === 'test' ? `<div class="test-banner">${TEST_APP_NOTICE}</div>` : ''}<header class="top"><div class="top-row">
     <a class="brand" href="#" data-view="todo" aria-label="L'ArtBoristerie Productions — accueil">
       <img class="brand-logo" src="assets/logo.png" alt="L'ArtBoristerie Productions" width="104" height="39"><img class="brand-picto" src="assets/picto.png" alt="L'ArtBoristerie Productions" width="27" height="32"></a>
     <nav class="tabs" role="tablist">${VIEWS.map(([k,l])=>`<button class="tab" role="tab" data-view="${k}" aria-selected="${S.view===k}">${l}</button>`).join('')}</nav>

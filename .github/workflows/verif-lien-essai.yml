@@ -1,0 +1,30 @@
+# SITE D'ESSAI lartbo-matrice-essai (copie de la branche essai/c1-interface du dépôt lartbo-matrice, jamais fusionnée) : vérifie depuis Internet le site d'essai
+# https://antcb.github.io/lartbo-matrice-essai/ (version C1, projet de test uniquement, aucune requête de production).
+name: Vérification du lien d'essai
+on:
+  page_build: {}          # après chaque publication GitHub Pages du site d'essai
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  verif:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tests
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Attente de la mise en ligne
+        run: sleep 60
+      - name: Site d'essai (version, projet de test, aucune requête de production)
+        run: cp ../tools/essai/verifier-lien.mjs ./verifier-lien.mjs && node verifier-lien.mjs
