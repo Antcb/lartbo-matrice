@@ -4,9 +4,9 @@
  */
 import { afterFeeChange, askConfirmation, becameConfirmed, sendConfirmation, validateTerms } from './confirm-flow.js';
 import { go, render } from './app.js';
-import { BILL_KINDS, billLockReason, billPct, changeBlocked, freezeOnEmit, isInvoiced, paymentsOf, payVat, soldeInvoiced } from './calc.js';
+import { BILL_KINDS, billLockReason, billPct, changeBlocked, emittedLinesOf, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
-import { insert, openStored, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb, setSaveComplement, setSaveGuard } from './data.js';
+import { insert, openStored, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
 import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showsFiltered, structName } from './selectors.js';
 import { CFG } from './config.js';
@@ -17,7 +17,7 @@ import { MODALS, openModal } from './ui/modal.js';
 import { modalSaved } from './ui/drafts.js';
 import { applyAcompte, saveDepartments } from './views/settings.js';
 import { hasLogDraft, setLogDraft } from './views/suivi.js';
-import { $, esc, fmtDate, safeHtml, toast, today } from './utils.js';
+import { $, esc, eur2, fmtDate, safeHtml, toast, today } from './utils.js';
 import { rtStyle, rtToolbar } from './ui/richtext.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
@@ -43,7 +43,22 @@ export async function cleanupDraft(){
 }
 
 setSaveGuard(changeBlocked);   // aucune facture émise ne change, par aucun écran (§6.4)
-setSaveComplement(freezeOnEmit);   // solde de production : montant figé au moment où il est émis (lot C1)
+setSaveComplement(freezeOnEmit);   // montant figé au moment où la ligne est émise ou versée (lot C1 solde, lot D1 toutes)
+// Avertissement (lot D1) : cachet, %, TVA ou mode d'une date qui a déjà des factures émises ou des commissions / parts versées.
+// Leurs montants sont figés et ne changeront pas ; on demande quand même une confirmation (fenêtre de l'application, jamais confirm()).
+const FINANCE_FIELDS = ['fee_ht', 'artbo_pct', 'partner_pct', 'vat_rate', 'prod_mode'];
+setSaveConfirm(async (table, id, patch) => {
+  if (table !== 'shows' || !patch) return true;
+  const s = byId('shows', id);
+  const changed = FINANCE_FIELDS.filter(k => k in patch && String(patch[k] ?? '') !== String(s?.[k] ?? ''));
+  const lines = s && changed.length ? emittedLinesOf(id) : [];
+  if (!lines.length) return true;
+  const LABEL = {acompte: 'Acompte', solde: 'Solde', autre: 'Autre facture', artbo: 'Commission L’ArtBo', partner: 'Part partenaire'};
+  const list = lines.map(p => `<li>${esc(p.label || LABEL[p.kind] || p.kind)}${p.invoice_number ? ` · ${esc(p.invoice_number)}` : ''} : <b>${eur2(payAmount(p))}</b> HT${p.paid_at ? ` · réglé le ${fmtDate(p.paid_at)}` : ''}</li>`).join('');
+  const level = MODALS[1]?.dlg?.open ? 2 : 1;
+  return !!(await openModal({title: 'Factures déjà émises sur cette date', level, fields: [], onSave: () => true, saveLabel: 'Modifier quand même',
+    extraTop: `<p class="mb">${esc(s.venue || '')} · ${fmtDate(s.date)} : ${lines.length > 1 ? 'ces lignes sont déjà émises ou versées' : 'cette ligne est déjà émise ou versée'}. Leur montant reste celui qui a été facturé ou versé : le changement ne s’applique qu’aux lignes pas encore émises.</p><ul class="mb">${list}</ul>`}));
+});
 
 export const ACTIONS = {
   ...EMP_ACTIONS,

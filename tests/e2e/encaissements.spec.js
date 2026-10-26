@@ -76,7 +76,9 @@ test('A2-C : un encaissement sans compte reste « Non renseigné » : hors solde
   await page.evaluate(async () => (await import('./js/data.js')).save('show_payments', 'c-o', { paid_at: `${new Date().getFullYear()}-10-20` }));
   await expect(page.locator('tr', { has: page.locator('select[data-id="c-o"]') }).locator('.warn-badge', { hasText: 'compte à choisir' })).toBeVisible();
   // budget de l'artiste : le montant non renseigné est montré à part
+  // (lot D1 : le détail du compte ne s'affiche que pour un artiste qui a un compte dédié — nom du compte renseigné)
   await page.evaluate(async () => { const { S } = await import('./js/state.js'); (S.openBudget ||= new Set()).add('art-a');
+    S.db.projects.find(p => p.id === 'art-a').account_name = 'Compte Essai';
     document.body.insertAdjacentHTML('beforeend', '<div id="essai-budget">' + (await import('./js/views/budget.js')).projectBudgetHTML('art-a') + '</div>'); });
   await expect(page.locator('#essai-budget .stat', { hasText: 'Compte non renseigné' })).toBeVisible();
   expectClean(ctx);
@@ -146,7 +148,7 @@ test('A2-D (A-03) : rattacher la pièce d’une facture émise ne la marque pas 
   expect(p.invoice_number).toBe('F-55');
   expect(p.file_name).toBe('f-55.pdf');
   expect(p.paid_at ?? null, 'pas de date de paiement inventée').toBeNull();
-  expect(p.amount ?? null, 'montant inchangé').toBeNull();
+  expect(p.amount, 'lot D1 : montant figé à l’émission (celui de la ligne, égal ici à la pièce), jamais repris de la pièce').toBe(5000);
   expectClean(ctx);
 });
 

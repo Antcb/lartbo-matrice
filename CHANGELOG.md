@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.42.0 — 26/10/2026
+- Lot D1 : montants figés dès l'émission ou le versement, avertissement avant de changer le cachet ou un % d'une date déjà facturée, journal des modifications financières, artiste sans compte dédié
+
+
 ## 1.41.5 — 26/10/2026
 - Lot C1, relecture du déploiement : la synchronisation Pennylane ne fige plus le montant d'un solde déjà émis et signale toute écriture refusée au lieu de la compter comme faite
 

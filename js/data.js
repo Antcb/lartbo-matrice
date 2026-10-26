@@ -30,7 +30,10 @@ export async function fetchAll(table){
   }
 }
 
-let saveGuard = null, saveComplement = null;
+let saveGuard = null, saveComplement = null, saveConfirm = null;
+/** Confirmation demandée avant certains enregistrements (installée par actions.js : changement de cachet / % / mode d'une date qui
+ *  a déjà des factures émises ou des commissions versées, lot D1) ; renvoie false = rien n'est écrit */
+export const setSaveConfirm = f => { saveConfirm = f; };
 /** Garde-fou appelé avant chaque enregistrement (installé par actions.js : calc.changeBlocked) ; message = refus */
 export const setSaveGuard = f => { saveGuard = f; };
 /** Compléments écrits avec un enregistrement (installé par actions.js : calc.freezeOnEmit — montant du solde figé à l'émission) */
@@ -39,6 +42,7 @@ export const setSaveComplement = f => { saveComplement = f; };
 export async function save(table, id, patch, {rerender=true}={}){
   const why = saveGuard ? saveGuard(table, id, patch) : '';
   if (why){ toast(why, true); render(); return null; }   // refus : rien n'est écrit, l'affichage revient à la valeur enregistrée
+  if (saveConfirm && !(await saveConfirm(table, id, patch))){ render(); return null; }   // avertissement refusé : rien n'est écrit
   if (saveComplement) patch = {...patch, ...saveComplement(table, id, patch)};
   const row = byId(table, id); const before = row ? {...row} : null;
   if (row) Object.assign(row, patch);
