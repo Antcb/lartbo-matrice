@@ -121,6 +121,7 @@ test('D1 (point 7) : la TVA d’une date ne change plus si une facture émise en
     { ...LIGNES[0], sent_at: `${Y}-10-01`, invoice_number: 'F-TEST-4', amount: 5000 }, { ...LIGNES[0], id: 'g2-a', show_id: 'f-2' } ] });
   expect(await save(page, 'shows', 'f-1', { vat_rate: 20 }), 'facture émise à la TVA de la date : refusé').toBe(false);
   expect((await dbShow(page, 'f-1')).vat_rate).toBe(5.5);
+  expect(await save(page, 'shows', 'f-1', { vat_rate: null }), 'même si le TTC calculé ne change pas (vide = 5,5 %) : refusé, comme la base').toBe(false);
   expect(await save(page, 'shows', 'f-2', { vat_rate: 20 })).toBe(true);
   expectClean(ctx);
 });

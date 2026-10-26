@@ -161,6 +161,11 @@ export function changeBlocked(table, id, patch){
   // Même règle côté base : shows_frozen_guard, project_mode_to_shows, show_follow_project_mode (show_has_financial_record)
   if (table === 'shows' && 'prod_mode' in patch && !sameVal(patch.prod_mode, byId('shows', id)?.prod_mode) && hasFinancialRecord(id))
     return 'Cette date a des opérations financières enregistrées (facture, versement, numéro ou lien Pennylane) : son mode booking / production ne change plus. Une régularisation se décide à part.';
+  // TVA d'une date (lot D1, point 7) : refusée dès qu'une facture émise dépend de la TVA de la date (ligne sans TVA propre,
+  // hors commissions et parts à 20 %) — même règle que la base (shows_frozen_guard), même si le TTC calculé ne change pas
+  if (table === 'shows' && 'vat_rate' in patch && !sameVal(patch.vat_rate, byId('shows', id)?.vat_rate)
+      && paymentsOf(id).some(p => isInvoiced(p) && !filled(p.vat_rate) && !['artbo', 'partner'].includes(p.kind)))
+    return 'Des factures de cette date sont déjà émises avec la TVA de la date : la TVA ne change plus (leur montant TTC changerait). Une régularisation se décide à part.';
   if (table === 'shows' && ['fee_ht', 'vat_rate', 'artbo_pct', 'partner_pct', 'prod_mode'].some(k => k in patch)){   // prod_mode : TVA de la commission
     const s = byId('shows', id), lines = s ? paymentsOf(id).filter(isInvoiced) : [];
     if (!lines.length) return '';
