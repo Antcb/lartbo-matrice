@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.42.2 — 26/10/2026
+- Lot D1 : relecture — droits d'exécution explicites des fonctions de calcul pour l'application et la fonction Pennylane
+
+
 ## 1.42.1 — 26/10/2026
 - Lot D1 : relecture — avertissement limité aux lignes concernées, montants figés au centime
 
