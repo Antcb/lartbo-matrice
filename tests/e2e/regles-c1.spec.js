@@ -243,3 +243,50 @@ test('C1 plusieurs soldes : émettre le second solde ne le fige jamais à 0 €'
   expect((await dbPay(page, 'd3-t')).amount ?? null).toBeNull();
   expectClean(ctx);
 });
+
+// ── Affichage réel (test d'interface du 26/10 : l'ancienne version v1.40.9 affichait solde 7 000, « factures 130 % », « factures 200 % ») ──
+const ouvrirFactures = (page, ids) => page.evaluate(async ids => { const { S } = await import('./js/state.js'); S.year = new Date().getFullYear();
+  ids.forEach(i => { S.openProd.add(i); S.tab['prod:' + i] = 'factures'; }); (await import('./js/app.js')).go('production'); }, ids);
+
+test('C1 affichage : le solde affiche 10 000 € tant que l’acompte de 30 % n’est pas facturé (et non 7 000 €)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [P('v-1', 10000, { venue: 'Affichage solde' })], show_payments: [
+    { id: 'v1-a', show_id: 'v-1', kind: 'acompte', label: 'Acompte', pct: 30, sort: 1 },
+    { id: 'v1-s', show_id: 'v-1', kind: 'solde', label: 'Solde', pct: 70, sort: 2 },
+  ] });
+  await ouvrirFactures(page, ['v-1']);
+  await expect(page.locator('input[data-id="v1-s"][data-f="amount"]')).toHaveAttribute('placeholder', '10000');
+  await expect(page.locator('input[data-id="v1-a"][data-f="amount"]')).toHaveAttribute('placeholder', '3000');
+  await expect(page.locator('input[data-id="v1-s"][data-f="pct"]')).toHaveValue('100');
+  await expect(page.locator('tr', { has: page.locator('[data-id="v1-a"][data-f="label"]') }).locator('.badge', { hasText: 'prévu, non facturé' })).toBeVisible();
+  expectClean(ctx);
+});
+
+test('C1 affichage : aucune alerte « factures 130 % » sur une date dont l’acompte est caduc', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [P('v-2', 5000, { venue: 'Affichage caduc' })], show_payments: [
+    { id: 'v2-a', show_id: 'v-2', kind: 'acompte', label: 'Acompte', pct: 30, sort: 1 },
+    { id: 'v2-s', show_id: 'v-2', kind: 'solde', label: 'Solde', pct: 70, amount: 5000, invoice_number: 'F-V2', sent_at: `${Y}-10-20`, sort: 2 },
+  ] });
+  await ouvrirFactures(page, ['v-2']);
+  await expect(page.locator('tr', { has: page.locator('[data-id="v2-a"][data-f="label"]') }).locator('.badge', { hasText: 'caduc' })).toBeVisible();
+  await expect(page.locator('.warn-badge', { hasText: /factures \d/ })).toHaveCount(0);
+  await expect(page.locator('.warn-badge', { hasText: 'de trop' })).toHaveCount(0);
+  await expect(page.locator('.bill-total.ok')).toHaveCount(1);
+  expectClean(ctx);
+});
+
+test('C1 affichage : deux soldes → alerte « plusieurs soldes », jamais « factures 200 % »', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [P('v-6', 10000, { venue: 'Affichage deux soldes' })], show_payments: [
+    { id: 'v6-s', show_id: 'v-6', kind: 'solde', label: 'Solde', pct: 100, sort: 2 },
+    { id: 'v6-t', show_id: 'v-6', kind: 'solde', label: 'Solde (doublon)', pct: 100, sort: 4 },
+  ] });
+  await ouvrirFactures(page, ['v-6']);
+  await expect(page.locator('.warn-badge', { hasText: 'plusieurs soldes' })).toHaveCount(1);
+  await expect(page.locator('.warn-badge', { hasText: 'Plusieurs lignes de solde' })).toHaveCount(1);
+  await expect(page.locator('.warn-badge', { hasText: /factures \d/ })).toHaveCount(0);
+  await expect(page.locator('input[data-id="v6-s"][data-f="amount"]')).toHaveAttribute('placeholder', '10000');
+  await expect(page.locator('input[data-id="v6-t"][data-f="amount"]')).toHaveAttribute('placeholder', '0');
+  expectClean(ctx);
+});
