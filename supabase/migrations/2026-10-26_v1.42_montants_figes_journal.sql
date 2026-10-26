@@ -25,8 +25,10 @@ begin
   if p.kind = 'artbo' then return round(fee * coalesce(p.pct, p_artbo, 0)) / 100; end if;
   if p.kind = 'partner' then return round(fee * coalesce(p_artbo, 0) * coalesce(p.pct, p_partner, 0) / 100) / 100; end if;
   if p.kind = 'solde' and coalesce(p_mode, 'production') <> 'booking' then
-    -- solde de production pas encore émis : cession − acomptes facturés − autres soldes figés ; un autre solde calculé placé avant
-    -- lui prend le reste (plusieurs soldes = anomalie signalée par l'application)
+    -- solde de production : cession − acomptes facturés − autres soldes figés ; un autre solde calculé placé avant lui prend le reste
+    -- (plusieurs soldes = anomalie signalée par l'application). Sert au gel à l'émission (= soldeDue en JS). Pour un solde DÉJÀ émis
+    -- sans montant (historique, 0 après régularisation), le JS (payAmount) prend cachet × % : les deux varient avec le cachet, la garde
+    -- shows_frozen_guard refuse donc les mêmes changements que changeBlocked (relecture D1, point 1)
     if exists (select 1 from public.show_payments q where q.show_id = p.show_id and q.kind = 'solde' and q.id <> p.id and q.amount is null
                and not public.payment_is_emitted(q) and (coalesce(q.sort, 0) < coalesce(p.sort, 0) or (coalesce(q.sort, 0) = coalesce(p.sort, 0) and q.id::text < p.id::text))) then
       return 0;
@@ -69,7 +71,7 @@ begin
     return new;                                                                           -- plusieurs soldes : jamais figé automatiquement
   end if;
   v := public.payment_amount_now(new);
-  if v is not null then new.amount := v; end if;
+  if v is not null then new.amount := round(v, 2); end if;                               -- au centime (relecture D1)
   return new;
 end $$;
 drop trigger if exists show_payments_freeze on public.show_payments;
@@ -190,6 +192,11 @@ drop trigger if exists finance_log_payments on public.show_payments;
 create trigger finance_log_payments after insert or update or delete on public.show_payments for each row execute function public.finance_log_write();
 
 revoke execute on function public.show_payments_freeze() from public, anon, authenticated;
+-- fonctions de calcul : appelées par les déclencheurs avec les droits de l'utilisateur connecté → gardées pour authenticated
+revoke execute on function public.payment_amount_for(public.show_payments, numeric, numeric, numeric, text) from public, anon;
+revoke execute on function public.payment_amount_now(public.show_payments) from public, anon;
+revoke execute on function public.payment_is_emitted(public.show_payments) from public, anon;
+revoke execute on function public.finance_actor() from public, anon;
 revoke execute on function public.shows_frozen_guard() from public, anon, authenticated;
 
 -- Retour arrière (aucune donnée concernée ; le journal peut être gardé) :

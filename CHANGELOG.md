@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.42.1 — 26/10/2026
+- Lot D1 : relecture — avertissement limité aux lignes concernées, montants figés au centime
+
+
 ## 1.42.0 — 26/10/2026
 - Lot D1 : montants figés dès l'émission ou le versement, avertissement avant de changer le cachet ou un % d'une date déjà facturée, journal des modifications financières, artiste sans compte dédié
 
