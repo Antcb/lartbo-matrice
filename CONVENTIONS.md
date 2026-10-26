@@ -225,11 +225,14 @@ Ordre général : **valeur saisie sur la ligne (facture) > valeur de la date > v
 4. Sinon **taux par défaut des Réglages** selon le mode de la date : `default_artbo_pct_booking` ou `default_artbo_pct_production` (`defaultCommission(mode)`).
 - **Une commission déjà facturée n'est jamais modifiée automatiquement** : ligne `artbo` avec `sent_at`, `invoice_number`, `pennylane_id` ou `paid_at` renseigné → aucun recalcul (changement de cachet, de %, de mode, de réglage). Toute modification est manuelle et explicite.
 - [EN PLACE] En production, la commission est virée depuis le compte de l'artiste (pas de facture, pas de TVA) ; en booking, facturée à la structure administrative de l'artiste (TVA 20 %).
+- [DÉCIDÉ 26/10, lot C1] **Commission de production** : ce n'est **pas une facture émise**. On suit seulement son **versement** (`paid_at`, date de versement) ; seul ce versement la fige. Un numéro saisi (historiquement celui de la facture d'acompte) ne la rend pas « émise », ne la met pas dans les factures impayées et ne sert à aucun rapprochement Pennylane. Les 19 lignes historiques numérotées ne sont **pas** modifiées automatiquement (traitement séparé).
 - [CORRECTION] `budget.js` (`commissionAmount`) et `pennylane/index.ts` retombent sur **15 en dur** ; `payAmount` sur **0** ; « Valider les conditions » affiche 15 en indication même en production ; `schema.sql` utilise l'ancien réglage `default_artbo_pct`.
 
 ### 6.4 Acompte et solde [DÉCIDÉ Q3, Q4]
 - **Acompte par défaut** : le réglage `default_acompte_pct` est appliqué **tel quel, y compris 0 %** (= date sans acompte). Valeur de secours 50 uniquement si le réglage est **absent** (vide), jamais s'il vaut 0. Un % d'acompte modifié par l'utilisateur sur une date n'est jamais rétabli automatiquement. [CORRECTION] « Valider les conditions » (`confirm-flow.js`) transforme 0 en 50 ; Réglages affichent 0 si vide ; `on_show_confirmed` (SQL) calcule le solde avec un défaut de 20.
-- **Solde avant envoi** : tant que la facture de solde n'est pas envoyée, son montant = cachet − acomptes (en %) et **peut être recalculé** quand les acomptes changent (`rebalanceSolde` côté client, `ensure_production_payments` à la création).
+- **Solde à facturer** [DÉCIDÉ 26/10, lot C1] : tant que le solde n'est pas émis, son montant = **cession − acomptes EFFECTIVEMENT facturés** (`soldeDue`, `payAmount`). Un acompte seulement prévu au contrat **ne réduit pas** le solde (cession 10 000 € HT, acompte 30 % prévu non facturé → solde 10 000 € ; acompte facturé → 7 000 €). Un montant saisi à la main fait foi. Le **% prévu** (`pct`, maintenu par `rebalanceSolde`) reste l'**échéancier contractuel** : fiche organisateur, mail, contrat (`planAmount`).
+- **Acompte prévu / caduc** [DÉCIDÉ 26/10, lot C1] : un acompte non facturé est « prévu » (affiché, hors indicateurs, hors compte) ; il devient **caduc** quand le solde est facturé : plus réclamé ni relancé, historique conservé (`acompteState`).
+- **Émission du solde** : dès que le solde devient émis (numéro, envoi, paiement ou lien Pennylane), son montant est **figé** à ce moment (`freezeOnEmit` ; synchronisation Pennylane : montant HT de la facture Pennylane).
 - **Solde après envoi** (ligne `solde` avec `sent_at` ou `invoice_number` ou `pennylane_id` renseigné) :
   - son montant est **figé** ;
   - **aucun nouvel acompte** ne peut être ajouté d'une manière qui modifierait ce solde ;
@@ -263,6 +266,7 @@ Ordre général : **valeur saisie sur la ligne (facture) > valeur de la date > v
 - [NOUVELLE] Une seule fonction JS pour savoir si une date est en booking (à créer, remplace `isProdShow` / `isBookingOnly` / tests en ligne) : elle lit `shows.prod_mode` uniquement.
 - **Production L'ArtBo** [Q11] : seules les dates au contrat **Production** ou **Co-Production** ont le budget de production (billetterie, droits, résultat partagé) et sortent du compte dédié de l'artiste. La **Co-Réalisation garde le budget de tournée** (fonctionnement actuel, y compris la ligne de taxe CNM créée à la confirmation). Une seule fonction JS pour ce test (à créer, remplace les 4 expressions actuelles).
 - Rappel métier [EN PLACE] : en booking, L'ArtBo envoie la confirmation puis facture sa commission ; pas de budget, pas d'acompte/solde, pas de compte dédié.
+- [DÉCIDÉ 26/10, lot C1] **Booking : L'ArtBo n'est qu'agent.** Elle confirme la date, émet sa facture de commission à l'artiste et suit son règlement. Les acomptes / soldes d'une date booking sont les **factures de l'artiste à l'organisateur** : gardés en base pour l'historique, mais **ni affichés, ni comptés, ni relancés, ni rattachés à une pièce** (`tracked`) ; aucun devis de cession Pennylane ; le paiement des commissions booking est repris de Pennylane. La fiche organisateur garde l'**échéancier contractuel**, sans suivi financier.
 
 ### 6.8 Rappels et relances
 - [EN PLACE] Règles de production (`js/reminders.js` = affichage en rouge ; `generate_reminders` = notifications) : rappel après « Conf + FT + kit », « Pré-contrat complété », « Contrat envoyé », « Contrat signé » ; facture envoyée impayée ; jour ouvré ≤ J-7 pour envoyer le solde ; commission à virer ; boucle technique (§1.6) ; boucle com et facture de commission (booking) au contrat co-signé.
@@ -272,6 +276,7 @@ Ordre général : **valeur saisie sur la ligne (facture) > valeur de la date > v
   - Toute échéance J+n un samedi/dimanche passe au lundi. [CORRECTION] aujourd'hui 10 écrit en dur à 4 endroits (`BOOKING_DAYS`, `RELANCE_DAYS`, `plus10`, SQL).
 - **Commission à virer** [DÉCIDÉ Q14] : le délai démarre au **premier encaissement, même partiel**, toutes lignes acompte/solde confondues (règle actuelle de l'app). [CORRECTION] le serveur ne regarde que le premier acompte et le premier solde.
 - **Impayés** [DÉCIDÉ Q13] : un acompte, un solde ou une commission impayés restent suivis **sans limite de durée**, dans l'app **et** côté serveur ; une même dette ne génère **qu'une notification par échéance** (une relance envoyée crée une nouvelle échéance, donc au plus une nouvelle notification). Les **rappels administratifs** (étapes de contrat, boucles) **conservent leur limite actuelle** (date du concert passée de plus de 120 jours, côté serveur ; côté app, seulement les dates à venir). [CORRECTION] le serveur exclut aussi les paiements des dates de plus de 120 jours.
+- [DÉCIDÉ 26/10, lot C1] Booking : **jamais** de relance d'acompte ni de solde (factures de l'artiste) ; seule la commission est relancée. Production : « Facture d'acompte à envoyer » s'arrête quand le solde est facturé (acompte caduc).
 - **Prospection** [EN PLACE] : trois relances mail puis une tâche de relance téléphone ; un suivi Clos ou Confirmé n'a plus de relance (`cancelAutoRelances`).
 - [NOUVELLE] Libellés des rappels identiques dans l'app et les notifications.
 
@@ -292,6 +297,13 @@ Ordre général : **valeur saisie sur la ligne (facture) > valeur de la date > v
 - **Pôles** [DÉCIDÉ Q16] : chaque pôle a un **identifiant permanent** indépendant de son nom affiché ; les tâches et les automatisations (échéance par défaut du pôle Booking, relances, rattachement au suivi) référencent l'identifiant. **Renommer un pôle ne casse jamais** ses automatisations ni ses liens avec les tâches existantes. [CORRECTION] aujourd'hui le pôle est un texte (`tasks.department`, réglage `departments`) et « Booking » est reconnu par son nom (`/^booking$/i`, `department:'Booking'`). **D'ici la correction : ne pas renommer « Booking ».**
 
 ---
+
+### 6.11 Indicateurs financiers [DÉCIDÉ 26/10, lot C1]
+Trois indicateurs distincts (`financeOf`, vue Production), **jamais additionnés** (① et ② se recoupent) :
+1. **Reste à encaisser — production** : Σ par date de production (cession − déjà encaissé).
+2. **Factures émises impayées — production** : factures d'acompte et de solde de production émises et non réglées.
+3. **Commissions à encaisser — booking** : factures de commission booking émises et non réglées.
+Les factures de l'artiste sur les dates booking n'entrent dans **aucun** des trois.
 
 ## 7. Supabase
 
@@ -377,8 +389,9 @@ Voir `README.md` « Organisation du code » et « Où modifier quoi ». Rendu co
 Une règle présente des deux côtés est modifiée **dans la même version** des deux côtés, et le commentaire de chaque côté cite l'autre :
 | Règle | JS | Autre côté |
 |---|---|---|
-| Rappels (délais, boucle technique, impayés, commission) | `js/reminders.js` | SQL `generate_reminders` |
-| Facture émise : définition, refus de modification / d'effacement / de suppression ; mode figé d'une date facturée | `js/calc.js` (`isInvoiced`, `EMITTED_FIELDS`, `changeBlocked`) | SQL déclencheur `show_payments_emitted_guard`, `project_mode_to_shows`, `show_follow_project_mode` (migration v1.40) |
+| Rappels (délais, boucle technique, impayés, commission ; acompte caduc ; booking sans acompte/solde) | `js/reminders.js` | SQL `generate_reminders` (migration v1.41) |
+| Facture émise : définition (commission de production = seulement son versement), refus de modification / d'effacement / de suppression ; mode figé d'une date facturée | `js/calc.js` (`isInvoiced`, `emittedFieldsOf`, `changeBlocked`) | SQL déclencheur `show_payments_emitted_guard`, `project_mode_to_shows`, `show_follow_project_mode` (migration v1.40, adaptée lot C1) ; `pennylane/regles.ts` (`emise`) |
+| Solde à facturer (cession − acomptes facturés), booking hors suivi | `js/calc.js` (`soldeDue`, `payAmount`, `tracked`, `freezeOnEmit`) | `pennylane/regles.ts` (`montantAttendu`, `payable`, `relieAuDevis`, `factureIsolee`) |
 | Jour ouvré | `workDay` | SQL `workday` |
 | Montant HT d'une ligne | `payAmount` | vue `show_payments_computed`, `fiche_get`, `pennylane/index.ts` |
 | Commission par défaut | `commissionAmount`, `defaultCommission`, `projectCommission` | SQL `on_show_confirmed`, `pennylane/index.ts` |

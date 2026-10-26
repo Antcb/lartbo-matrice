@@ -32,6 +32,8 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Contrôles statiques (syntaxe, imports, versions, fenêtres natives, secrets)
         run: node static/check.mjs
+      - name: Règles de la synchronisation Pennylane (fausses données, aucun appel)
+        run: node --experimental-strip-types --no-warnings static/pennylane-regles.mjs
       - name: Navigateur de test
         run: npx playwright install --with-deps chromium
       - name: Tests dans le navigateur (fausse base, réseau extérieur bloqué)

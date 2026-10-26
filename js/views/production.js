@@ -3,7 +3,7 @@
  * Chaque date se déplie : suivi admin, commissions, dossier Drive, facturation.
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
-import { BILL_KINDS, billLockReason, billPct, billingOf, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
+import { BILL_KINDS, acompteState, billLockReason, billPct, billingOf, financeOf, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
 import { byId, projName, setting, showsFiltered, structName } from '../selectors.js';
 import { lateSteps, remindersOf } from '../reminders.js';
@@ -20,13 +20,13 @@ export function viewProduction(){
   const q = S.search.production || '';
   const all = showsFiltered().filter(s => CONFIRMED_PROD.includes(s.status));
   const shows = all.filter(s => matches([s.venue, s.city, s.department, structName(s.structure_id), projName(s.project_id), fmtDate(s.date), s.date, s.contract_type].join(' '), q));
-  let artbo=0, partner=0, toCollect=0;
+  let artbo=0, partner=0;
   shows.forEach(s => paymentsOf(s.id).forEach(p => {
     const a = payAmount(p)||0;
     if (p.kind==='artbo') artbo+=a; if (p.kind==='partner') partner+=a;
-    // date en booking : ses acomptes / soldes jamais facturés ne sont pas des créances (décision d'Anthony du 24/10) ; une facture émise, si
-    if ((p.kind==='acompte'||p.kind==='solde') && !p.paid_at && (s.prod_mode !== 'booking' || isInvoiced(p))) toCollect+=a;
   }));
+  // trois indicateurs distincts, jamais additionnés (décision d'Anthony du 26/10, lot C1) ; les factures de l'artiste en booking n'y entrent pas
+  const fin = financeOf(shows);
   const late = shows.reduce((n,s)=>n+remindersOf(s).filter(r=>r.late).length, 0);
   const groups = {};
   shows.forEach(s => (groups[s.project_id||''] ||= []).push(s));
@@ -47,7 +47,9 @@ export function viewProduction(){
       <div class="stat"><b>${eur2(artbo)}</b><span>Commissions L'ArtBo</span></div>
       <div class="stat"><b>${eur2(partner)}</b><span>dont partenaires</span></div>
       <div class="stat"><b>${eur2(artbo-partner)}</b><span>Net L'ArtBo</span></div>
-      <div class="stat"><b>${eur2(toCollect)}</b><span>Reste à encaisser (acomptes, soldes)</span></div>
+      <div class="stat" title="Contrats de production : cession − déjà encaissé, date par date (inclut les factures pas encore émises)"><b>${eur2(fin.resteProd)}</b><span>Reste à encaisser — production</span></div>
+      <div class="stat" title="Factures d’acompte et de solde de production émises et pas encore réglées (déjà comprises dans le reste à encaisser : ne pas additionner)"><b>${eur2(fin.impayesProd)}</b><span>Factures émises impayées — production${fin.factures ? ` (${fin.factures})` : ''}</span></div>
+      <div class="stat" title="Factures de commission L’ArtBo à l’artiste (dates booking) émises et pas encore réglées"><b>${eur2(fin.commissionsBooking)}</b><span>Commissions à encaisser — booking${fin.commissions ? ` (${fin.commissions})` : ''}</span></div>
       <div class="stat"><b style="${late?'color:var(--danger)':''}">${late}</b><span>Relance${late>1?'s':''} en retard</span></div>
     </div>
     ${shows.length ? order.map(pid => `<section class="group"><div class="group-head"><h2>${esc(projName(pid)||'Sans projet')}</h2><span class="count">${groups[pid].length}</span></div>
@@ -58,11 +60,11 @@ export function viewProduction(){
 function prodRow(s){
   const d = s.date ? new Date(s.date+'T12:00:00') : null;
   const booking = s.prod_mode === 'booking';
-  // date en booking : la commission, plus toute facture d'acompte / de solde DÉJÀ émise (jamais masquée, signalée)
-  const pays = paymentsOf(s.id).filter(p => !booking || p.kind==='artbo' || (BILL_KINDS.includes(p.kind) && isInvoiced(p)));
+  // date en booking : seulement la commission de L'ArtBo et la part partenaire (les factures de l'artiste ne sont pas suivies, lot C1)
+  const pays = paymentsOf(s.id).filter(tracked);
   const steps = booking ? BOOKING_STEPS : PROD_STEPS;
   const late = lateSteps(s);
-  const checks = steps.map(([k])=>({ok:!!s[k], late:late.has(k)})).concat(pays.filter(p=>p.kind!=='cnm').map(p=>({ok:!!p.paid_at, late:late.has(p.kind)})));
+  const checks = steps.map(([k])=>({ok:!!s[k], late:late.has(k)})).concat(pays.filter(p=>p.kind!=='cnm' && acompteState(p)!=='caduc').map(p=>({ok:!!p.paid_at, late:late.has(p.kind)})));
   const open = S.openProd.has(s.id);
   return `<div class="prod-row ${open?'open':''}" id="prod-${s.id}">
     <div class="prod-head" data-act="toggleProd" data-id="${s.id}" aria-expanded="${open}">
@@ -178,14 +180,16 @@ function suiviTab(s, booking, steps, late){
 /** Factures : ce que l'organisateur paie (acomptes, solde), la commission, les autres lignes */
 function billingTab(s, booking, pays, late){
   return `<div class="prod-bill">
-      <p class="tab-intro">${booking ? 'La facture de commission de L’ArtBo à l’artiste.' : 'Ce que l’organisateur paie (acomptes + solde = le cachet), et la commission de L’ArtBo.'} Montants HT ; saisis le %, le HT ou le TTC, les deux autres se calculent.</p>
+      <p class="tab-intro">${booking ? 'La facture de commission de L’ArtBo à l’artiste (et la part partenaire). Les factures d’acompte et de solde sont celles de l’artiste à l’organisateur : elles ne sont pas suivies ici.' : 'Ce que l’organisateur paie (acomptes facturés + solde = le cachet), et la commission de L’ArtBo.'} Montants HT ; saisis le %, le HT ou le TTC, les deux autres se calculent.</p>
       <div class="tbl-wrap"><table>
         <thead><tr><th>Ligne</th><th class="num">%</th><th class="num">Montant HT</th><th class="num">TVA</th><th class="num">TTC</th><th>Arrive sur</th><th>N° facture</th><th>Envoyée</th><th>Relancée</th><th>Payée</th><th>Pennylane</th><th></th></tr></thead>
         <tbody>${pays.map(p=>{ const a=payAmount(p), ov=p.amount!=null, selfPaid = !booking && p.kind==='artbo';   // production : pas de facture, L'ArtBo se verse sa commission
           const why = billLockReason(p), lock = why ? `disabled title="${esc(why)}"` : '';   // facture émise : montants verrouillés (§6.4)
-          return `<tr>
-          <td>${cIn('show_payments',p.id,'label',p.label)}${booking && BILL_KINDS.includes(p.kind) ? ' <span class="warn-badge" title="Cette date est en booking uniquement, mais cette facture a déjà été émise : elle reste comptée et ne se modifie pas">facture émise sur une date booking</span>' : ''}</td>
-          <td class="num">${BILL_KINDS.includes(p.kind) ? `<input type="number" step="any" inputmode="decimal" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="pct" value="${pctVal(billPct(p))}" aria-label="% du cachet" ${lock}>`
+          const st = acompteState(p), soldeCalc = p.kind === 'solde' && !isInvoiced(p) && !ov;   // solde calculé : cession − acomptes facturés
+          const pctLock = lock || (soldeCalc ? 'disabled title="Calculé : cession − acomptes effectivement facturés (saisis un montant HT pour le fixer)"' : '');
+          return `<tr class="${st === 'caduc' ? 'muted' : ''}">
+          <td>${cIn('show_payments',p.id,'label',p.label)}${st === 'prevu' ? ` <span class="badge" title="Prévu au contrat (${pctVal(billPct(p))} %), pas encore facturé : il ne réduit pas le solde">prévu, non facturé</span>` : st === 'caduc' ? ' <span class="badge" title="Jamais facturé alors que le solde l’est : plus réclamé, historique conservé">caduc</span>' : ''}</td>
+          <td class="num">${BILL_KINDS.includes(p.kind) ? `<input type="number" step="any" inputmode="decimal" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="pct" value="${pctVal(billPct(p))}" aria-label="% du cachet" ${pctLock}>`
             : ['cnm','autre'].includes(p.kind) ? cIn('show_payments',p.id,'pct',p.pct,'number','class="narrow"') : `<span class="muted">${payPct(p)??'—'}</span>`}</td>
           <td class="num"><input type="number" step="any" data-t="show_payments" data-id="${p.id}" data-f="amount" value="${ov?p.amount:''}" placeholder="${a==null?'à saisir':a}" ${lock || 'title="Laisse vide pour le calcul automatique"'} class="${ov?'override':''}"></td>
           ${selfPaid ? '<td class="num muted">—</td>' : `<td class="num"><input type="number" step="any" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="vat_rate" value="${p.vat_rate??''}" placeholder="${payVat(p)}" aria-label="TVA %" ${lock}></td>`}
@@ -203,16 +207,16 @@ function billingTab(s, booking, pays, late){
       <div class="vh-actions mt">
         ${booking ? '' : `<button class="btn sm" data-act="addPay" data-kind="acompte" data-id="${s.id}">Ajouter un acompte</button>
         <button class="btn sm" data-act="addPay" data-kind="cnm" data-id="${s.id}">Ajouter la taxe CNM</button>`}
-        <button class="btn sm" data-act="addPay" data-kind="autre" data-id="${s.id}">Autre ligne</button>
+        ${booking ? '' : `<button class="btn sm" data-act="addPay" data-kind="autre" data-id="${s.id}">Autre ligne</button>
         <button class="btn sm" data-act="pennylaneQuote" data-id="${s.id}" title="Crée le devis dans Pennylane (non envoyé)">${s.pennylane_quote_id ? 'Devis Pennylane créé ✓' : 'Devis dans Pennylane'}</button>
-        ${s.pennylane_quote_url ? `<a class="btn sm ghost" href="${esc(s.pennylane_quote_url)}" target="_blank" rel="noopener">Voir le devis ↗</a>` : ''}
+        ${s.pennylane_quote_url ? `<a class="btn sm ghost" href="${esc(s.pennylane_quote_url)}" target="_blank" rel="noopener">Voir le devis ↗</a>` : ''}`}
         <button class="btn sm ghost" data-act="editShow" data-id="${s.id}">Fiche complète de la date</button>
         ${s.structure_id ? `<button class="btn sm ghost" data-act="openStructure" data-id="${s.structure_id}">Fiche de la structure</button>` : ''}
       </div>
       ${(f => f.length ? `<div class="mt"><p class="help full"><b>Pièces à rattacher</b> : factures déposées sans ligne sûre (rien n’a été rattaché automatiquement). Ouvre-les, puis rattache chacune à sa ligne.</p>
         ${f.map(a => `<div class="file-row"><span class="file-ico" aria-hidden="true">📎</span><a href="#" data-act="openAttachment" data-id="${a.id}">${esc(a.name)}</a>
           <button type="button" class="btn sm" data-act="attachPiece" data-id="${a.id}" data-show="${s.id}">Rattacher</button></div>`).join('')}</div>` : '')(piecesToAttach(s))}
-      <p class="muted small mt-sm">Vide = calcul automatique sur le cachet HT ; un montant saisi à la main apparaît en orange. TVA par défaut : 5,5 % sur le cachet, 20 % sur les commissions. Le solde prend ce qui reste (100 % − acomptes) tant qu’il n’est pas envoyé ; acomptes + solde ne dépassent jamais 100 % du cachet (commissions et autres lignes à part).</p>
+      <p class="muted small mt-sm">Vide = calcul automatique sur le cachet HT ; un montant saisi à la main apparaît en orange. TVA par défaut : 5,5 % sur le cachet, 20 % sur les commissions. Le solde à facturer = cession − acomptes effectivement facturés (un acompte seulement prévu ne le réduit pas) ; une fois facturé, son montant ne bouge plus. Acomptes + solde ne dépassent jamais 100 % du cachet (commissions et autres lignes à part).</p>
     </div>`;
 }
 
@@ -222,11 +226,12 @@ const pctVal = v => v == null ? '' : Math.round(v * 100) / 100;
 function billFoot(s){
   const b = billingOf(s), ok = Math.abs(b.gap) < 0.01;
   return `<tfoot><tr class="bill-total ${ok ? 'ok' : 'warn'}">
-    <td><b>Total factures</b><div class="muted tiny">acomptes + solde</div></td>
+    <td><b>Total factures</b><div class="muted tiny">acomptes facturés + solde</div></td>
     <td class="num"><b>${pctVal(b.pct)} %</b></td><td class="num nowrap"><b>${eur2(b.ht)}</b></td><td></td><td class="num nowrap"><b>${eur2(b.ttc)}</b></td>
     <td colspan="7">${ok ? `<span class="ok-badge">✓ = cachet (${eur2(b.fee)} HT · ${eur2(b.feeTtc)} TTC)</span>`
       : `<span class="warn-badge">${b.gap > 0 ? `Il manque ${eur2(b.gap)} HT` : `${eur2(-b.gap)} HT de trop`} par rapport au cachet (${eur2(b.fee)} HT)</span>`}
-      <span class="muted nowrap"> · envoyées ${eur2(b.sentHt)} HT · payées ${eur2(b.paidHt)} HT${b.otherHt ? ` · autres lignes ${eur2(b.otherHt)} HT` : ''}</span></td></tr></tfoot>`;
+      <span class="muted nowrap"> · envoyées ${eur2(b.sentHt)} HT · payées ${eur2(b.paidHt)} HT${b.otherHt ? ` · autres lignes ${eur2(b.otherHt)} HT` : ''}</span>
+      ${b.plannedHt ? `<span class="muted nowrap"> · acomptes prévus, non facturés : ${eur2(b.plannedHt)} HT (compris dans le solde)</span>` : ''}${b.lapsedHt ? `<span class="muted nowrap"> · acomptes caducs : ${eur2(b.lapsedHt)} HT</span>` : ''}</td></tr></tfoot>`;
 }
 /** Alerte dans l'en-tête de la date quand les factures ne tombent pas juste */
 function billWarn(s, booking){
