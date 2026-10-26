@@ -201,3 +201,34 @@ test('C1 relecture : cession vide → le solde n’est jamais figé à 0 € qua
   expect((await dbPay(page, 'r7-s')).amount ?? null).toBeNull();
   expectClean(ctx);
 });
+
+test('C1 double comptage : deux lignes de solde sur une date → la cession n’est comptée qu’une fois, anomalie signalée', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [P('d-1', 10000), P('d-2', 10000)], show_payments: [
+    { id: 'd1-a', show_id: 'd-1', kind: 'acompte', label: 'Acompte', pct: 30, sort: 1, invoice_number: 'F-A' },
+    { id: 'd1-s', show_id: 'd-1', kind: 'solde', label: 'Solde', pct: 70, sort: 2 },
+    { id: 'd1-t', show_id: 'd-1', kind: 'solde', label: 'Solde (doublon)', pct: 70, sort: 3 },
+    { id: 'd2-s', show_id: 'd-2', kind: 'solde', label: 'Solde émis', amount: 4000, sort: 1, invoice_number: 'F-S1' },
+    { id: 'd2-t', show_id: 'd-2', kind: 'solde', label: 'Solde 2', pct: 100, sort: 2 },
+  ] });
+  expect(await calc(page, 'payAmount', '@show_payments:d1-s'), 'premier solde : le reste').toBe(7000);
+  expect(await calc(page, 'payAmount', '@show_payments:d1-t'), 'doublon : rien').toBe(0);
+  expect((await calc(page, 'billingOf', '@shows:d-1')).ht).toBe(10000);
+  expect(await calc(page, 'payAmount', '@show_payments:d2-t'), 'solde émis déduit').toBe(6000);
+  const f = await calc(page, 'financeOf', ['@shows:d-1', '@shows:d-2']);
+  expect([f.resteProd, f.impayesProd]).toEqual([20000, 7000]);   // ① cessions non encaissées ; ② acompte 3 000 + solde émis 4 000
+  expect(await calc(page, 'multiSolde', 'd-1')).toBe(true);
+  await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.year = new Date().getFullYear(); S.openProd.add('d-1'); S.tab['prod:d-1'] = 'factures'; (await import('./js/app.js')).go('production'); });
+  await expect(page.locator('.warn-badge', { hasText: 'Plusieurs lignes de solde' }).first()).toBeVisible();
+  expectClean(ctx);
+});
+
+test('C1 acompte caduc : protection limitée à la production (booking : factures de l’artiste, non concernées)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [B('k-1', 5000)], show_payments: [
+    { id: 'k1-a', show_id: 'k-1', kind: 'acompte', label: 'Acompte artiste', pct: 50, sort: 1 },
+    { id: 'k1-s', show_id: 'k-1', kind: 'solde', label: 'Solde artiste', pct: 50, sort: 2, invoice_number: 'ART-S' },
+  ] });
+  expect(await calc(page, 'changeBlocked', 'show_payments', 'k1-a', { invoice_number: 'ART-A' })).toBe('');
+  expectClean(ctx);
+});

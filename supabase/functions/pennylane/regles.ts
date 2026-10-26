@@ -17,6 +17,9 @@ export const emise = (p: Ligne) => !!(p.sent_at || p.paid_at || plein(p.invoice_
 /** Ligne dont le paiement (et le numéro / le lien) se reprend de Pennylane */
 export const payable = (p: Ligne, mode: string | null | undefined) =>
   isBooking(mode) ? p.kind === 'artbo' : ['acompte', 'solde', 'autre'].includes(p.kind);
+/** PDF de la facture rangé automatiquement dans le Drive (compta + dossier de la date) : comme avant le lot C1, acomptes / soldes /
+ *  autres lignes ; la commission booking, dont seul le paiement est repris (lot C1), n'est pas rangée (non demandé) */
+export const rangeeDansLeDrive = (p: Ligne) => p.kind !== 'artbo';
 /** Ligne qui peut être reliée à une facture faite depuis le devis Pennylane : acompte ou solde de production */
 export const relieAuDevis = (p: Ligne, mode: string | null | undefined) => !isBooking(mode) && ['acompte', 'solde'].includes(p.kind);
 /** Acompte caduc : jamais facturé alors que le solde de la date l'est (plus réclamé ; jamais relié automatiquement) */

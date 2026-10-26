@@ -3,7 +3,7 @@
  * Chaque date se déplie : suivi admin, commissions, dossier Drive, facturation.
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
-import { BILL_KINDS, acompteState, billLockReason, billPct, billedPct, billingOf, financeOf, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
+import { BILL_KINDS, acompteState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
 import { byId, projName, setting, showsFiltered, structName } from '../selectors.js';
 import { lateSteps, remindersOf } from '../reminders.js';
@@ -231,13 +231,15 @@ function billFoot(s){
     <td colspan="7">${ok ? `<span class="ok-badge">✓ = cachet (${eur2(b.fee)} HT · ${eur2(b.feeTtc)} TTC)</span>`
       : `<span class="warn-badge">${b.gap > 0 ? `Il manque ${eur2(b.gap)} HT` : `${eur2(-b.gap)} HT de trop`} par rapport au cachet (${eur2(b.fee)} HT)</span>`}
       <span class="muted nowrap"> · envoyées ${eur2(b.sentHt)} HT · payées ${eur2(b.paidHt)} HT${b.otherHt ? ` · autres lignes ${eur2(b.otherHt)} HT` : ''}</span>
+      ${multiSolde(s.id) ? '<span class="warn-badge">Plusieurs lignes de solde sur cette date : à vérifier (le reste à facturer ne va qu’à la première)</span>' : ''}
       ${b.plannedHt ? `<span class="muted nowrap"> · acomptes prévus, non facturés : ${eur2(b.plannedHt)} HT (compris dans le solde)</span>` : ''}${b.lapsedHt ? `<span class="muted nowrap"> · acomptes caducs : ${eur2(b.lapsedHt)} HT</span>` : ''}</td></tr></tfoot>`;
 }
 /** Alerte dans l'en-tête de la date quand les factures ne tombent pas juste */
 function billWarn(s, booking){
   if (booking || !s.fee_ht) return '';
   const b = billingOf(s);
-  return b.lines.length && Math.abs(b.gap) >= 0.01 ? ` <span class="warn-badge" title="Acomptes + solde ≠ cachet">factures ${pctVal(b.pct)} %</span>` : '';
+  return (b.lines.length && Math.abs(b.gap) >= 0.01 ? ` <span class="warn-badge" title="Acomptes + solde ≠ cachet">factures ${pctVal(b.pct)} %</span>` : '')
+    + (multiSolde(s.id) ? ' <span class="warn-badge" title="Plusieurs lignes de solde sur cette date : à vérifier">plusieurs soldes</span>' : '');
 }
 
 /** Où arrive l'argent d'une ligne de facturation */

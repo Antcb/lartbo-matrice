@@ -1,0 +1,44 @@
+-- v1.41.2 (lot C1, décision d'Anthony du 26/10/2026, point 3) — PRÉPARÉE, NON APPLIQUÉE : répétition sur le projet de test,
+-- puis application seulement sur autorisation explicite d'Anthony.
+-- Acompte CADUC protégé CÔTÉ BASE : sur une date de PRODUCTION dont le solde est déjà facturé (envoyé, payé, numéroté ou lié à
+-- Pennylane), un acompte jamais facturé ne peut plus le devenir — ni numéro, ni date d'envoi, ni date de paiement, ni lien Pennylane
+-- (sinon la date serait facturée au-delà de sa cession). Une ligne d'acompte DÉJÀ émise n'est pas concernée (protégée par A1).
+-- Une ligne d'acompte insérée déjà émise sur une telle date est refusée de la même façon.
+-- Règle écrite deux fois (§8.4) : côté application js/calc.js (changeBlocked, acompteState) ; synchronisation Pennylane :
+-- supabase/functions/pennylane/regles.ts (caduc : jamais relié).
+-- Indépendante de la migration A1 (2026-10-24_v1.40_factures_emises.sql) : s'applique avant ou après elle.
+-- Booking : non concerné (acomptes / soldes = factures de l'artiste, hors suivi de L'ArtBo).
+-- Libellé, échéance, relance, compte, pièce, % et montant d'un acompte caduc : inchangés par ce déclencheur (historique conservé).
+-- Aucune donnée existante n'est lue pour être modifiée ; aucune donnée modifiée. Au 26/10/2026 (lecture seule) : 0 acompte caduc
+-- en production. Retour arrière : voir la fin du fichier.
+
+create or replace function public.show_payments_caduc_guard() returns trigger
+language plpgsql set search_path = public as $$   -- §7.3
+begin
+  if new.kind <> 'acompte'
+     or not (new.sent_at is not null or new.paid_at is not null
+             or nullif(btrim(new.invoice_number), '') is not null or nullif(btrim(new.pennylane_id), '') is not null) then
+    return new;                                                     -- pas un acompte émis : rien à contrôler
+  end if;
+  if tg_op = 'UPDATE' and old.kind = 'acompte'
+     and (old.sent_at is not null or old.paid_at is not null
+          or nullif(btrim(old.invoice_number), '') is not null or nullif(btrim(old.pennylane_id), '') is not null) then
+    return new;                                                     -- déjà émis avant : pas un acompte caduc (A1 le protège)
+  end if;
+  if exists (select 1 from public.shows s where s.id = new.show_id and coalesce(s.prod_mode, 'production') <> 'booking')
+     and exists (select 1 from public.show_payments so where so.show_id = new.show_id and so.kind = 'solde' and so.id <> new.id
+                 and (so.sent_at is not null or so.paid_at is not null
+                      or nullif(btrim(so.invoice_number), '') is not null or nullif(btrim(so.pennylane_id), '') is not null)) then
+    raise exception 'Acompte caduc : le solde de cette date est déjà facturé, cet acompte ne se facture plus (il dépasserait la cession). Une régularisation se décide à part.'
+      using errcode = 'P0001';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists show_payments_caduc_guard on public.show_payments;
+create trigger show_payments_caduc_guard before insert or update on public.show_payments
+  for each row execute function public.show_payments_caduc_guard();
+revoke execute on function public.show_payments_caduc_guard() from public, anon, authenticated;   -- §7.3 (un déclencheur ne vérifie pas ce droit)
+
+-- Retour arrière (aucune donnée concernée) :
+--   drop trigger show_payments_caduc_guard on public.show_payments; drop function public.show_payments_caduc_guard();

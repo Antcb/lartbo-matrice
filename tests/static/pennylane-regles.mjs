@@ -1,7 +1,7 @@
 // Règles de la synchronisation Pennylane (lot C1) sur de FAUSSES données : aucun appel à Pennylane ni à la base.
 // Lancé par « npm test » (node --experimental-strip-types). Module testé : supabase/functions/pennylane/regles.ts
 import assert from 'node:assert/strict';
-import { acomptesFactures, caduc, emise, factureIsolee, montantAttendu, payable, relieAuDevis } from '../../supabase/functions/pennylane/regles.ts';
+import { acomptesFactures, caduc, emise, factureIsolee, rangeeDansLeDrive, montantAttendu, payable, relieAuDevis } from '../../supabase/functions/pennylane/regles.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -46,6 +46,10 @@ t('acompte caduc : jamais relié automatiquement quand le solde est facturé', (
   assert.equal(caduc(prevu, [prevu, soldeEmis]), true);
   assert.equal(caduc(prevu, [prevu, { kind: 'solde', pct: 70 }]), false);           // solde pas encore facturé : acompte prévu
   assert.equal(caduc({ kind: 'acompte', sent_at: '2026-01-01' }, [soldeEmis]), false); // acompte facturé : pas caduc
+});
+t('rangement Drive : inchangé pour acompte / solde / autre ; jamais pour la commission booking', () => {
+  for (const k of ['acompte', 'solde', 'autre']) assert.equal(rangeeDansLeDrive({ kind: k }), true, k);
+  assert.equal(rangeeDansLeDrive({ kind: 'artbo' }), false);
 });
 
 let ko = 0;

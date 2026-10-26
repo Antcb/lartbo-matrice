@@ -11,7 +11,7 @@ export function payAmount(p){
   const s = byId('shows', p.show_id); const fee = Number(s?.fee_ht)||0;
   // production : solde pas encore facturé = cession − acomptes EFFECTIVEMENT facturés (règle d'Anthony du 26/10, lot C1).
   // Un acompte seulement prévu ne le réduit pas. Un solde facturé garde son montant (jamais recalculé, §6.4).
-  if (p.kind==='solde' && s && !isBookingShow(s) && !isInvoiced(p)) return soldeDue(p.show_id);
+  if (p.kind==='solde' && s && !isBookingShow(s) && !isInvoiced(p)) return soldeDue(p.show_id, p.id);
   if (p.kind==='artbo')   return Math.round(fee * (Number(p.pct ?? s.artbo_pct)||0)) / 100;
   if (p.kind==='partner') return Math.round(fee * (Number(s.artbo_pct)||0) * (Number(p.pct ?? s.partner_pct)||0) / 100) / 100;
   if (p.kind==='cnm' || p.pct==null || p.pct==='') return null;
@@ -67,12 +67,21 @@ export const emittedFieldsOf = p => selfPaidCommission(p) ? ['paid_at'] : EMITTE
 /** Acompte : 'facture' (émis), 'prevu' (au contrat, pas encore facturé), 'caduc' (jamais facturé alors que le solde l'est :
  *  plus réclamé, historique gardé) ; '' pour les autres lignes */
 export const acompteState = p => p?.kind !== 'acompte' ? '' : isInvoiced(p) ? 'facture' : soldeInvoiced(p.show_id) ? 'caduc' : 'prevu';
-/** Solde à facturer d'une date de production : cession − acomptes effectivement facturés (jamais négatif) */
-export function soldeDue(showId){
-  const fee = Number(byId('shows', showId)?.fee_ht) || 0;
-  const done = paymentsOf(showId).filter(p => p.kind === 'acompte' && isInvoiced(p)).reduce((t, p) => t + (payAmount(p) || 0), 0);
-  return Math.max(0, Math.round((fee - done) * 100) / 100);
+/** Solde à facturer d'une date de production : cession − acomptes effectivement facturés (jamais négatif).
+ *  Protection (plusieurs lignes de solde sur une date, cas anormal que l'application ne crée pas) : les autres soldes émis ou
+ *  saisis sont déduits, et seul le PREMIER solde calculé reçoit le reste — la cession n'est jamais comptée deux fois. */
+export function soldeDue(showId, id = null){
+  const pays = paymentsOf(showId), fee = Number(byId('shows', showId)?.fee_ht) || 0;
+  const done = pays.filter(p => p.kind === 'acompte' && isInvoiced(p)).reduce((t, p) => t + (payAmount(p) || 0), 0);
+  const me = id && pays.find(p => p.id === id), others = pays.filter(p => p.kind === 'solde' && p.id !== id);
+  const computed = q => !isInvoiced(q) && (q.amount == null || q.amount === '');
+  const before = q => (q.sort || 0) < (me.sort || 0) || ((q.sort || 0) === (me.sort || 0) && String(q.id) < String(me.id));
+  if (me && others.some(q => computed(q) && before(q))) return 0;
+  const fixed = others.filter(q => !computed(q)).reduce((t, q) => t + (payAmount(q) || 0), 0);
+  return Math.max(0, Math.round((fee - done - fixed) * 100) / 100);
 }
+/** Plusieurs lignes de solde sur une date : anomalie signalée (jamais corrigée automatiquement) */
+export const multiSolde = showId => paymentsOf(showId).filter(p => p.kind === 'solde').length > 1;
 /** Solde déjà facturé : les acomptes de la date ne peuvent plus changer (§6.4) */
 export const soldeInvoiced = showId => paymentsOf(showId).some(p => p.kind === 'solde' && isInvoiced(p));
 /** Pourquoi une ligne de facturation ne peut plus changer ('' = modifiable) */
@@ -109,7 +118,7 @@ export function freezeOnEmit(table, id, patch){
   const s = byId('shows', row.show_id);
   if (isBookingShow(s) || !isInvoiced({...row, ...patch})) return {};
   if (s?.fee_ht == null || s.fee_ht === '') return {};   // cession pas encore saisie : rien à figer (jamais un solde figé à 0 €)
-  return {amount: soldeDue(row.show_id)};
+  return {amount: soldeDue(row.show_id, row.id)};
 }
 
 export function changeBlocked(table, id, patch){
@@ -131,8 +140,9 @@ export function changeBlocked(table, id, patch){
     // facture émise : ni numéro, ni date d'envoi, ni date de paiement, ni identifiant Pennylane ne s'efface (pas de déverrouillage)
     if (isInvoiced(row) && emittedFieldsOf(row).some(k => k in patch && !blank(row[k]) && blank(patch[k])))
       return 'Facture déjà émise : son numéro, sa date d’envoi, sa date de paiement et son identifiant Pennylane ne s’effacent pas (une régularisation se décide à part).';
-    // acompte caduc (solde déjà facturé, lot C1) : il ne s'émet plus — sinon la date serait facturée au-delà de sa cession
-    if (acompteState(row) === 'caduc' && isInvoiced({...row, ...patch}))
+    // acompte caduc (date de production dont le solde est déjà facturé, lot C1) : il ne s'émet plus — sinon la date serait facturée
+    // au-delà de sa cession. Même règle côté base : déclencheur show_payments_caduc_guard (migration v1.41 acompte caduc)
+    if (!isBookingShow(byId('shows', row.show_id)) && acompteState(row) === 'caduc' && isInvoiced({...row, ...patch}))
       return 'Acompte caduc : le solde de cette date est déjà facturé, cet acompte ne se facture plus (il dépasserait la cession). Une régularisation se décide à part.';
     if (!['amount', 'pct', 'vat_rate', 'show_id', 'kind'].some(k => k in patch && !sameVal(patch[k], row[k]))) return '';
     return billLockReason(row);
