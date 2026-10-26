@@ -7,7 +7,7 @@
 // Le jeton API est gardé côté serveur (Réglages › Pennylane). Appels depuis l'app (utilisateur connecté) :
 //   { action: 'status' } · { action: 'quote', show_id } · { action: 'invoice', payment_id } · { action: 'sync' }
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { acomptesFactures, caduc, factureIsolee, isBooking, montantAcompte, montantAttendu, payable, rangeeDansLeDrive, relieAuDevis } from './regles.ts';
+import { acomptesFactures, caduc, factureIsolee, figerMontant, isBooking, montantAcompte, montantAttendu, payable, rangeeDansLeDrive, relieAuDevis } from './regles.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -148,7 +148,7 @@ async function fileInvoices(list: { p: any; x: any }[]) {
       const inDate = (out.files || []).find((y: any) => y.where === 'date'), inCompta = (out.files || []).find((y: any) => y.where === 'compta');
       if (out.date_error) errors.push(`${x.invoice_number} : dossier de la date inaccessible (${String(out.date_error).replace(/^(Exception|Error): /, '')})`);
       const mark = inDate?.id && inCompta?.id ? inDate.id : !p.shows?.drive_folder_id && inCompta?.id ? 'compta:' + inCompta.id : null;
-      if (mark) await admin.from('show_payments').update({ drive_file_id: mark }).eq('id', p.id);
+      if (mark) { const { error: e4 } = await admin.from('show_payments').update({ drive_file_id: mark }).eq('id', p.id); if (e4) errors.push(`${x.invoice_number} : rangée, mais non notée dans la Matrice (${e4.message})`); }
       if ((out.files || []).some((y: any) => !y.existed)) done.push(name.replace(/\.pdf$/, ''));
     } catch (e) { errors.push(`${x.invoice_number} : ${String(e).replace(/^Error: /, '')}`); }
   }
@@ -184,9 +184,9 @@ Deno.serve(async (req) => {
       // factures faites dans Pennylane depuis le devis créé par la Matrice (acompte puis solde) : reconnues par leur devis et leur montant HT
       const byQuote: Record<string, any[]> = {};
       for (const x of Object.values(byId)) if (x.quote?.id && x.status !== 'cancelled') (byQuote[String(x.quote.id)] ||= []).push(x);
-      const linked: any[] = [], caducs: string[] = [];
+      const linked: any[] = [], caducs: string[] = [], erreurs: string[] = [];   // erreurs : écritures refusées (jamais comptées comme faites)
       if (Object.keys(byQuote).length) {
-        const open = (await readAll(() => admin.from('show_payments').select('id, show_id, kind, pct, amount, sort, invoice_number, pennylane_id, shows!inner(fee_ht, pennylane_quote_id, prod_mode)')
+        const open = (await readAll(() => admin.from('show_payments').select('id, show_id, kind, pct, amount, sort, invoice_number, pennylane_id, sent_at, paid_at, shows!inner(fee_ht, pennylane_quote_id, prod_mode)')
           .in('kind', ['acompte', 'solde']).is('invoice_number', null).is('pennylane_id', null).not('shows.pennylane_quote_id', 'is', null)) || [])
           .filter((p: any) => relieAuDevis(p, p.shows?.prod_mode));   // booking : factures de l'artiste, jamais reliées (lot C1)
         // acomptes déjà facturés de ces dates : le solde attendu = cession − acomptes facturés (comme Pennylane)
@@ -206,10 +206,12 @@ Deno.serve(async (req) => {
           // acompte caduc (solde déjà facturé) : une facture Pennylane lui correspond, mais il n'est jamais relié automatiquement
           // (la date serait facturée au-delà de sa cession) — signalé dans le rapport, à examiner (relecture C1, B3)
           if (caduc(p, (acs || []).filter((a: any) => a.show_id === p.show_id))) { caducs.push(x.invoice_number || String(x.id)); continue; }
+          // solde relié pas encore émis : son montant est figé sur celui de la facture Pennylane (plus jamais recalculé, lot C1) ;
+          // déjà émis (ex. marqué envoyé) : montant inchangé (protection A1) — seuls le numéro et le lien sont repris
+          const fige = figerMontant(p) ? { amount: Number(x.currency_amount_before_tax) } : {};
+          const { error: e1 } = await admin.from('show_payments').update({ pennylane_id: String(x.id), pennylane_url: await invoicePage(x.id) || linkOf(x), invoice_number: x.invoice_number || null, ...fige }).eq('id', p.id);
+          if (e1) { erreurs.push(`${x.invoice_number || x.id} : ${e1.message}`); continue; }   // refusée : ni reliée, ni comptée
           used.add('id:' + x.id); if (x.invoice_number) used.add('n:' + norm(x.invoice_number));
-          // solde relié : son montant est figé sur celui de la facture Pennylane (il ne sera plus jamais recalculé, lot C1)
-          const fige = p.kind === 'solde' && p.amount == null ? { amount: Number(x.currency_amount_before_tax) } : {};
-          await admin.from('show_payments').update({ pennylane_id: String(x.id), pennylane_url: await invoicePage(x.id) || linkOf(x), invoice_number: x.invoice_number || null, ...fige }).eq('id', p.id);
           if (p.kind === 'acompte') facture[p.show_id] = (facture[p.show_id] || 0) + (montantAcompte(p, fee) || 0);   // compte pour le solde suivant
           linked.push(x.invoice_number);
         }
@@ -223,8 +225,10 @@ Deno.serve(async (req) => {
       for (const p of pays || []) {
         const x = (p.pennylane_id && byId[String(p.pennylane_id)]) || (p.invoice_number && inv[norm(p.invoice_number)]); if (!x) continue;
         // numéro et lien vers la page de la facture dans Pennylane, s'ils manquent
-        if ((!p.invoice_number && x.invoice_number) || !p.pennylane_id)
-          await admin.from('show_payments').update({ invoice_number: p.invoice_number || x.invoice_number || null, pennylane_id: String(x.id), pennylane_url: await invoicePage(x.id) || linkOf(x) }).eq('id', p.id);
+        if ((!p.invoice_number && x.invoice_number) || !p.pennylane_id) {
+          const { error: e2 } = await admin.from('show_payments').update({ invoice_number: p.invoice_number || x.invoice_number || null, pennylane_id: String(x.id), pennylane_url: await invoicePage(x.id) || linkOf(x) }).eq('id', p.id);
+          if (e2) { erreurs.push(`${p.invoice_number || x.invoice_number || x.id} : ${e2.message}`); continue; }
+        }
         p.invoice_number = p.invoice_number || x.invoice_number || '';
         // à ranger : jamais rangée, ou rangée seulement en compta alors que la date a maintenant un dossier
         const filedAll = p.drive_file_id && !(String(p.drive_file_id).startsWith('compta:') && p.shows?.drive_folder_id);
@@ -236,14 +240,15 @@ Deno.serve(async (req) => {
           let date = '';
           try { const t = await pl('GET', `/customer_invoices/${x.id}/matched_transactions`); date = (t.items || []).map((y: any) => y.date).filter(Boolean).sort().pop() || ''; } catch (_) { /* */ }
           date = date ? String(date).slice(0, 10) : today();
-          await admin.from('show_payments').update({ paid_at: date }).eq('id', p.id);
+          const { error: e3 } = await admin.from('show_payments').update({ paid_at: date }).eq('id', p.id);
+          if (e3) { erreurs.push(`${p.invoice_number} : ${e3.message}`); continue; }
           updated.push({ id: p.id, paid_at: date, label: `${p.label || p.kind} ${p.invoice_number} · ${where}` });
         } else if (!isPaid && p.paid_at && x.status !== 'cancelled') {
           pennylaneLate.push(`${p.invoice_number} · ${where} (payée le ${frDate(p.paid_at)} dans la Matrice)`);
         }
       }
       const filed = await fileInvoices(toFile);
-      return json({ ok: true, updated, pennylaneLate, linked, caducs, filed });
+      return json({ ok: true, updated, pennylaneLate, linked, caducs, erreurs, filed });
     }
 
     if (body.action === 'quote') {
