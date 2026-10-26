@@ -197,6 +197,10 @@ revoke execute on function public.payment_amount_for(public.show_payments, numer
 revoke execute on function public.payment_amount_now(public.show_payments) from public, anon;
 revoke execute on function public.payment_is_emitted(public.show_payments) from public, anon;
 revoke execute on function public.finance_actor() from public, anon;
+grant execute on function public.payment_amount_for(public.show_payments, numeric, numeric, numeric, text) to authenticated, service_role;
+grant execute on function public.payment_amount_now(public.show_payments) to authenticated, service_role;
+grant execute on function public.payment_is_emitted(public.show_payments) to authenticated, service_role;
+grant execute on function public.finance_actor() to authenticated, service_role;
 revoke execute on function public.shows_frozen_guard() from public, anon, authenticated;
 
 -- Retour arrière (aucune donnée concernée ; le journal peut être gardé) :
