@@ -35,6 +35,10 @@ const openFactures = (page, showId) => page.evaluate(async id => {
   const { S } = await import('./js/state.js'); S.year = new Date().getFullYear();
   S.openProd.add(id); S.tab['prod:' + id] = 'factures'; (await import('./js/app.js')).go('production');
 }, showId);
+const indicateur = async (page, label) => {
+  const t = await page.locator('.stat', { hasText: label }).locator('b').textContent();
+  return Number(t.replace(/[^\d,-]/g, '').replace(',', '.'));
+};
 const resteAEncaisser = async page => {
   const t = await page.locator('.stat', { hasText: 'Reste à encaisser' }).locator('b').textContent();
   return Number(t.replace(/[^\d,-]/g, '').replace(',', '.'));
@@ -98,24 +102,34 @@ test('A2-E (A-05) : une date annulée garde ses mouvements faits dans le compte,
   expectClean(ctx);
 });
 
-test('A2-A/B : date booking : acomptes / soldes jamais facturés masqués et hors « Reste à encaisser » ; facture émise visible et signalée', async ({ page }) => {
+test('C1 booking : seules la commission et la part partenaire sont suivies ; les factures de l’artiste n’entrent dans aucun indicateur', async ({ page }) => {
   const ctx = await openApp(page);
   await openFactures(page, 'sh-1');
-  const avant = await resteAEncaisser(page);
+  const avant = { reste: await resteAEncaisser(page), impayes: await indicateur(page, 'Factures émises impayées'), commissions: await indicateur(page, 'Commissions à encaisser') };
   await seed(page, { shows: [BOOKING], show_payments: [
-    { id: 'b-a', show_id: 'e-3', kind: 'acompte', label: 'Acompte jamais facturé', pct: 50, sort: 1 },
-    { id: 'b-s', show_id: 'e-3', kind: 'solde', label: 'Solde déjà facturé', pct: 50, invoice_number: 'F-77', sort: 2 },
-    { id: 'b-c', show_id: 'e-3', kind: 'artbo', label: "Commission L'ArtBo", sort: 3 },
+    { id: 'b-a', show_id: 'e-3', kind: 'acompte', label: 'Acompte de l’artiste', pct: 50, sort: 1 },
+    { id: 'b-s', show_id: 'e-3', kind: 'solde', label: 'Solde de l’artiste (émis)', pct: 50, invoice_number: 'F-77', sent_at: '2026-01-05', sort: 2 },
+    { id: 'b-c', show_id: 'e-3', kind: 'artbo', label: "Commission L'ArtBo", invoice_number: 'F-AB-1', sent_at: '2026-01-06', sort: 3 },
+    { id: 'b-p', show_id: 'e-3', kind: 'partner', label: 'Part partenaire', sort: 4 },
   ] });
   await openFactures(page, 'e-3');
-  expect(await resteAEncaisser(page) - avant, 'seule la facture émise compte dans le reste à encaisser').toBe(4000);
+  // acompte et solde de l'artiste : ni affichés, ni comptés ; commission émise impayée = « Commissions à encaisser — booking »
   await expect(page.locator('[data-id="b-a"]')).toHaveCount(0);
-  const ligne = page.locator('tr', { has: page.locator('[data-id="b-s"][data-f="label"]') });
-  await expect(ligne.locator('.warn-badge', { hasText: 'facture émise sur une date booking' })).toBeVisible();
-  await expect(page.locator('input[data-id="b-s"][data-f="amount"]'), 'facture émise : toujours verrouillée').toBeDisabled();
-  // aucune donnée modifiée
+  await expect(page.locator('[data-id="b-s"]')).toHaveCount(0);
+  await expect(page.locator('[data-id="b-c"][data-f="invoice_number"]')).toBeVisible();
+  await expect(page.locator('[data-id="b-p"][data-f="label"]')).toBeVisible();
+  expect(await resteAEncaisser(page) - avant.reste, 'aucune cession booking dans le reste à encaisser').toBe(0);
+  expect(await indicateur(page, 'Factures émises impayées') - avant.impayes, 'facture de l’artiste hors des impayés').toBe(0);
+  expect(await indicateur(page, 'Commissions à encaisser') - avant.commissions, 'commission 15 % de 8 000 €').toBe(1200);
+  // pas de devis de cession ni « autre ligne » sur une date booking ; aucune relance d'acompte / de solde
+  const prod = page.locator('.prod-bill', { has: page.locator('[data-id="b-c"]') });
+  await expect(prod.locator('[data-act="pennylaneQuote"]')).toHaveCount(0);
+  await expect(prod.locator('[data-act="addPay"]')).toHaveCount(0);
+  const r = await page.evaluate(async () => (await import('./js/reminders.js')).remindersOf((await import('./js/selectors.js')).byId('shows', 'e-3')).map(x => x.step));
+  expect(r.filter(x => ['acompte', 'solde'].includes(x))).toEqual([]);
+  // historique conservé en base, rien modifié
+  expect(await dbPay(page, 'b-s')).toMatchObject({ invoice_number: 'F-77', pct: 50 });
   expect(await dbPay(page, 'b-a')).toMatchObject({ pct: 50 });
-  expect((await dbPay(page, 'b-a')).paid_at ?? null).toBeNull();
   expectClean(ctx);
 });
 
@@ -166,15 +180,15 @@ test('A2 point 6 : un montant seul ne rattache jamais à une ligne d’un autre 
   const ctx = await openApp(page);
   await seed(page, { shows: [PROD], show_payments: [
     { id: 'm-a', show_id: 'e-1', kind: 'acompte', label: 'Acompte', pct: 30, sort: 1 },     // 3 000 €
-    { id: 'm-s', show_id: 'e-1', kind: 'solde', label: 'Solde', pct: 50, sort: 2 },         // 5 000 €
-    { id: 'm-o', show_id: 'e-1', kind: 'autre', label: 'Défraiement', amount: 5000, sort: 3 },
+    { id: 'm-s', show_id: 'e-1', kind: 'solde', label: 'Solde', pct: 50, sort: 2 },         // à facturer : 10 000 € (aucun acompte facturé, lot C1)
+    { id: 'm-o', show_id: 'e-1', kind: 'autre', label: 'Défraiement', amount: 10000, sort: 3 },
   ] });
   const piece = (doc, n) => page.evaluate(async ([d, nom]) => (await import('./js/budget-actions.js')).applyPiece({
     doc: { type: 'facture_emise', ...d }, path: `budget/e-1/${nom}`, name: nom, show_id: 'e-1', project_id: 'art-a', line: null }), [doc, n]);
-  // pièce « acompte » de 5 000 € : le solde de 5 000 € n'est pas une correspondance sûre
-  expect(await piece({ numero: 'F-10', montant_ht: 5000, acompte_ou_solde: 'acompte' }, 'F-10.pdf')).toBeNull();
-  // sans type lu : deux lignes libres de 5 000 € → ambigu
-  expect(await piece({ numero: 'F-11', montant_ht: 5000 }, 'F-11.pdf')).toBeNull();
+  // pièce « acompte » de 10 000 € : le solde de 10 000 € n'est pas une correspondance sûre
+  expect(await piece({ numero: 'F-10', montant_ht: 10000, acompte_ou_solde: 'acompte' }, 'F-10.pdf')).toBeNull();
+  // sans type lu : deux lignes libres de 10 000 € → ambigu
+  expect(await piece({ numero: 'F-11', montant_ht: 10000 }, 'F-11.pdf')).toBeNull();
   // sans type lu : une seule ligne libre de 3 000 € → sûre
   expect(await piece({ numero: 'F-12', montant_ht: 3000 }, 'F-12.pdf')).toEqual({ table: 'show_payments', id: 'm-a' });
   for (const id of ['m-s', 'm-o']) expect((await dbPay(page, id)).file_path ?? null, id).toBeNull();
@@ -183,7 +197,7 @@ test('A2 point 6 : un montant seul ne rattache jamais à une ligne d’un autre 
   await openFactures(page, 'e-1');
   await expect(page.locator('.warn-badge', { hasText: '2 pièces à rattacher' })).toBeVisible();
   await expect(page.locator('[data-act="attachPiece"]')).toHaveCount(2);
-  // rattachement à la main : seulement les lignes sans pièce ; ni montant ni paiement changés
+  // rattachement à la main : seulement les lignes sans pièce ; aucun paiement ; le solde devient émis : montant figé (lot C1)
   await page.locator('.file-row', { hasText: 'F-10.pdf' }).locator('[data-act="attachPiece"]').click();
   await expect(page.locator('#modal select[name="pay"] option')).toHaveCount(3);   // « — » + les 2 lignes sans pièce
   await page.locator('#modal select[name="pay"]').selectOption('m-s');
@@ -192,24 +206,32 @@ test('A2 point 6 : un montant seul ne rattache jamais à une ligne d’un autre 
   await expect(page.locator('#modal')).not.toBeVisible();
   expect(await dbPay(page, 'm-s')).toMatchObject({ file_path: 'budget/e-1/F-10.pdf', file_name: 'F-10.pdf', invoice_number: 'F-10', pct: 50 });
   expect((await dbPay(page, 'm-s')).paid_at ?? null).toBeNull();
-  expect((await dbPay(page, 'm-s')).amount ?? null).toBeNull();
+  // F-12 (acompte de 3 000 €) est émis : solde figé à 10 000 − 3 000
+  expect((await dbPay(page, 'm-s')).amount).toBe(7000);
   await expect(page.locator('.warn-badge', { hasText: '1 pièce à rattacher' })).toBeVisible();
   // aucune pièce supprimée : l'enregistrement reste, il n'est plus listé
   expect(await page.evaluate(() => window.__DB.attachments.length)).toBe(2);
   expectClean(ctx);
 });
 
-test('A2 point 3 : une facture envoyée et impayée est relancée même sur une date booking ; une ligne jamais facturée, non', async ({ page }) => {
+test('C1 relances : jamais d’acompte ni de solde booking ; la commission booking reste relancée ; acompte caduc plus réclamé', async ({ page }) => {
   const ctx = await openApp(page);
-  await seed(page, { shows: [BOOKING], show_payments: [
-    { id: 'r-a', show_id: 'e-3', kind: 'acompte', label: 'Acompte', pct: 50, sort: 1 },                                       // jamais facturé
-    { id: 'r-s', show_id: 'e-3', kind: 'solde', label: 'Solde', pct: 50, invoice_number: 'F-90', sent_at: '2026-01-05', sort: 2 }, // envoyé, impayé
+  await seed(page, { shows: [BOOKING, { ...PROD, contract_sent: '2026-01-02' }], show_payments: [
+    { id: 'r-a', show_id: 'e-3', kind: 'acompte', label: 'Acompte', pct: 50, sort: 1 },
+    { id: 'r-s', show_id: 'e-3', kind: 'solde', label: 'Solde', pct: 50, invoice_number: 'F-90', sent_at: '2026-01-05', sort: 2 },
+    { id: 'r-c', show_id: 'e-3', kind: 'artbo', label: 'Commission', invoice_number: 'F-AB-9', sent_at: '2026-01-06', sort: 3 },
+    { id: 'q-a', show_id: 'e-1', kind: 'acompte', label: 'Acompte prévu', pct: 30, sort: 1 },
+    { id: 'q-s', show_id: 'e-1', kind: 'solde', label: 'Solde', pct: 70, sort: 2 },
   ] });
-  const r = await page.evaluate(async () => (await import('./js/reminders.js')).remindersOf((await import('./js/selectors.js')).byId('shows', 'e-3')).map(x => [x.step, x.title, x.due]));
-  expect(r).toEqual([['solde', 'Paiement du solde à vérifier', '2026-01-15']]);
-  // payé : plus de relance
-  await page.evaluate(async () => (await import('./js/data.js')).save('show_payments', 'r-s', { paid_at: '2026-01-20' }));
-  expect(await page.evaluate(async () => (await import('./js/reminders.js')).remindersOf((await import('./js/selectors.js')).byId('shows', 'e-3')).length)).toBe(0);
+  const rel = id => page.evaluate(async i => (await import('./js/reminders.js')).remindersOf((await import('./js/selectors.js')).byId('shows', i)).map(x => [x.step, x.title]), id);
+  expect(await rel('e-3')).toEqual([['artbo', 'Vérifier le paiement de la facture de commission']]);
+  // production : contrat envoyé, acompte prévu pas envoyé → « Facture d'acompte à envoyer »… jusqu'à ce que le solde soit facturé
+  expect((await rel('e-1')).some(([k, t]) => k === 'acompte' && t === 'Facture d’acompte à envoyer')).toBe(true);
+  await page.evaluate(async () => (await import('./js/data.js')).save('show_payments', 'q-s', { invoice_number: 'F-SOLDE', sent_at: '2026-01-10' }));
+  expect((await rel('e-1')).some(([k, t]) => k === 'acompte' && t === 'Facture d’acompte à envoyer'), 'acompte caduc : plus réclamé').toBe(false);
+  expect(await page.evaluate(async () => (await import('./js/calc.js')).acompteState((await import('./js/selectors.js')).byId('show_payments', 'q-a')))).toBe('caduc');
+  expect(await dbPay(page, 'q-a')).toMatchObject({ pct: 30 });   // historique conservé
+  expect((await dbPay(page, 'q-s')).amount, 'solde intégral figé : 10 000 €').toBe(10000);
   expectClean(ctx);
 });
 
@@ -230,27 +252,25 @@ test('A2 points 4 et 5 : date annulée, avance L’ArtBo à rembourser ; budget 
   expectClean(ctx);
 });
 
-test('A2 point 1 : date passée en booking, « Rattacher » ne propose que les factures émises visibles ; une facture qui a sa pièce ne la perd jamais', async ({ page }) => {
+test('C1 rattachement : une date booking ne rattache aucune pièce aux acomptes / soldes de l’artiste ; une facture qui a sa pièce ne la perd jamais', async ({ page }) => {
   const ctx = await openApp(page);
-  await seed(page, { shows: [BOOKING], show_payments: [
-    { id: 'k-a', show_id: 'e-3', kind: 'acompte', label: 'Acompte jamais facturé', pct: 50, sort: 1 },
-    { id: 'k-s', show_id: 'e-3', kind: 'solde', label: 'Solde émis', pct: 50, invoice_number: 'F-70', sort: 2 },
-    { id: 'k-x', show_id: 'e-3', kind: 'solde', label: 'Solde émis avec pièce', pct: 0, invoice_number: 'F-71', file_path: 'budget/e-3/ancienne.pdf', file_name: 'ancienne.pdf', sort: 3 },
+  await seed(page, { shows: [BOOKING, PROD], show_payments: [
+    { id: 'k-a', show_id: 'e-3', kind: 'acompte', label: 'Acompte de l’artiste', pct: 50, sort: 1 },
+    { id: 'k-s', show_id: 'e-3', kind: 'solde', label: 'Solde de l’artiste', pct: 50, invoice_number: 'F-70', sort: 2 },
+    { id: 'k-x', show_id: 'e-1', kind: 'solde', label: 'Solde émis avec pièce', pct: 100, invoice_number: 'F-71', file_path: 'budget/e-1/ancienne.pdf', file_name: 'ancienne.pdf', sort: 3 },
   ], attachments: [{ id: 'att-1', project_id: 'art-b', name: 'V-1.pdf', path: 'budget/e-3/V-1.pdf' }] });
+  const piece = (show, doc, n) => page.evaluate(async ([sh, d, nom]) => (await import('./js/budget-actions.js')).applyPiece({
+    doc: { type: 'facture_emise', ...d }, path: `budget/${sh}/${nom}`, name: nom, show_id: sh, project_id: 'art-a', line: null }), [show, doc, n]);
+  // booking : même avec le numéro exact du solde de l'artiste, rien n'est rattaché (pièce gardée à part)
+  expect(await piece('e-3', { numero: 'F-70', montant_ht: 4000, acompte_ou_solde: 'solde' }, 'b.pdf')).toBeNull();
+  expect((await dbPay(page, 'k-s')).file_path ?? null).toBeNull();
   // même numéro qu'une facture qui a déjà sa pièce : rien n'est remplacé, la nouvelle pièce est gardée à part
-  expect(await page.evaluate(async () => (await import('./js/budget-actions.js')).applyPiece({
-    doc: { type: 'facture_emise', numero: 'F-71', montant_ht: 0 }, path: 'budget/e-3/nouvelle.pdf', name: 'nouvelle.pdf', show_id: 'e-3', project_id: 'art-b', line: null }))).toBeNull();
-  expect(await dbPay(page, 'k-x')).toMatchObject({ file_path: 'budget/e-3/ancienne.pdf', file_name: 'ancienne.pdf' });
-  await openFactures(page, 'e-3');
-  await expect(page.locator('[data-act="attachPiece"]')).toHaveCount(2);
-  await page.locator('.file-row', { hasText: 'V-1.pdf' }).locator('[data-act="attachPiece"]').click();
-  // « — » + le seul solde émis sans pièce : jamais la ligne masquée jamais facturée
-  await expect(page.locator('#modal select[name="pay"] option')).toHaveText(['—', /^Solde émis · /]);
-  await page.locator('#modal select[name="pay"]').selectOption('k-s');
-  await page.locator('#modal button[type=submit]').click();
+  expect(await piece('e-1', { numero: 'F-71', montant_ht: 0 }, 'nouvelle.pdf')).toBeNull();
+  expect(await dbPay(page, 'k-x')).toMatchObject({ file_path: 'budget/e-1/ancienne.pdf', file_name: 'ancienne.pdf' });
+  // « Rattacher » sur une date booking : aucune ligne proposée, message, pas de fenêtre
+  await page.evaluate(async () => (await import('./js/actions.js')).ACTIONS.attachPiece({ dataset: { id: 'att-1', show: 'e-3' } }));
   await expect(page.locator('#modal')).not.toBeVisible();
-  expect(await dbPay(page, 'k-s')).toMatchObject({ file_name: 'V-1.pdf', invoice_number: 'F-70' });
-  expect((await dbPay(page, 'k-a')).file_path ?? null).toBeNull();
+  expect(await page.evaluate(() => [...document.querySelectorAll('.toast, #toast')].map(e => e.textContent).join(' '))).toMatch(/factures d’acompte et de solde sont celles de l’artiste/);
   expectClean(ctx);
 });
 

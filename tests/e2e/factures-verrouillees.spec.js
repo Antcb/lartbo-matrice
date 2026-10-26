@@ -151,7 +151,8 @@ test('relecture 2 : cachet, TVA ou % ne peuvent plus changer le montant d’une 
   await seed(page, [
     { id: 'g-a', show_id: 'v-1', kind: 'acompte', label: 'Acompte', pct: 50, invoice_number: 'F-201', sort: 1 },
     { id: 'g-s', show_id: 'v-1', kind: 'solde', label: 'Solde', pct: 50, sort: 100 },
-    { id: 'g-c', show_id: 'v-1', kind: 'artbo', label: 'Commission', sent_at: '2026-02-01', sort: 200 },
+    // date en production : la commission n'est pas une facture, seul son VERSEMENT la fige (lot C1, décision du 26/10)
+    { id: 'g-c', show_id: 'v-1', kind: 'artbo', label: 'Commission', paid_at: '2026-02-01', sort: 200 },
   ]);
   const r = await page.evaluate(async () => {
     const { save } = await import('./js/data.js'); const { ACTIONS } = await import('./js/actions.js');

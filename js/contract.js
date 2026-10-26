@@ -7,7 +7,7 @@
  * 3. generateContract() : le script Google copie le modèle (Réglages › Contrats) dans le dossier
  *    de la date, remplit les balises <<…>> et les montants, puis exportContractPdf() en fait un PDF.
  */
-import { paymentsOf, payAmount, showVat } from './calc.js';
+import { paymentsOf, planAmount, showVat } from './calc.js';
 import { save } from './data.js';
 import { FICHE_SECTIONS, ficheDefaults, ficheKind, fieldOn } from './fiche-fields.js';
 import { callScript } from './mail.js';
@@ -94,7 +94,8 @@ export function contractVars(s){
   const d = {...knownValues(s), ...(s.contract_data || {})};
   const vat = showVat(s), ht = Number(s.fee_ht) || 0, ttc = Math.round(ht * (1 + vat / 100) * 100) / 100;
   const pays = paymentsOf(s.id);
-  const ttcOf = p => p ? Math.round((payAmount(p) || 0) * (1 + vat / 100) * 100) / 100 : null;
+  // contrat = échéancier PRÉVU (% du contrat), pas le solde recalculé sur les acomptes facturés (lot C1)
+  const ttcOf = p => p ? Math.round((planAmount(p) || 0) * (1 + vat / 100) * 100) / 100 : null;
   const acompte = pays.find(p => p.kind === 'acompte'), solde = pays.find(p => p.kind === 'solde');
   const tags = {};
   FICHE_SECTIONS.forEach(sec => sec.fields.forEach(f => { if (f.tag) tags[f.tag] = d[f.k] ?? ''; }));

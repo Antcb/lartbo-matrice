@@ -46,7 +46,8 @@ test('calculs des factures, commissions et budget', async ({ page }) => {
   expect(r).toEqual({
     acompte: 1800, soldeSaisi: 4200, commission: 900, partenaire: 45, net: 855, arrondi: 407.4, pctDeduit: 70,
     tvaAcompte: 5.5, tvaCommissionBooking: 20, tvaCommissionProduction: 0,
-    ttc: 1899, billHt: 6000, billTtc: 6330, billPct: 100, billGap: 0,
+    // lot C1 (26/10) : un acompte seulement prévu (non facturé) n'entre plus dans le total facturé (il ne réduit pas le solde)
+    ttc: 1899, billHt: 4200, billTtc: 4431, billPct: 70, billGap: 1800,
     comProd: 1200,
     comSansLigne: 150,   // défaut de 15 % écrit en dur : sera corrigé par le lot B1 (Q1/Q2)
     budget: { fee: 6000, com: 1200, expenses: 500, available: 4300, solde: 3000, result: 1300 },

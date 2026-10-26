@@ -30,13 +30,16 @@ export async function fetchAll(table){
   }
 }
 
-let saveGuard = null;
+let saveGuard = null, saveComplement = null;
 /** Garde-fou appelé avant chaque enregistrement (installé par actions.js : calc.changeBlocked) ; message = refus */
 export const setSaveGuard = f => { saveGuard = f; };
+/** Compléments écrits avec un enregistrement (installé par actions.js : calc.freezeOnEmit — montant du solde figé à l'émission) */
+export const setSaveComplement = f => { saveComplement = f; };
 
 export async function save(table, id, patch, {rerender=true}={}){
   const why = saveGuard ? saveGuard(table, id, patch) : '';
   if (why){ toast(why, true); render(); return null; }   // refus : rien n'est écrit, l'affichage revient à la valeur enregistrée
+  if (saveComplement) patch = {...patch, ...saveComplement(table, id, patch)};
   const row = byId(table, id); const before = row ? {...row} : null;
   if (row) Object.assign(row, patch);
   touch(table);

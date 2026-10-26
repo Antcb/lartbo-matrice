@@ -1,11 +1,13 @@
--- v1.40.8 (V1-A lot A2) — PRÉPARÉE, NON APPLIQUÉE : à appliquer seulement sur autorisation explicite d'Anthony.
--- Relances : une facture d'acompte / de solde déjà envoyée et impayée est relancée aussi sur une date booking
--- (décision d'Anthony du 24/10/2026). Une ligne jamais facturée n'a pas de date d'envoi : elle ne génère aucune relance.
--- Règle écrite deux fois (CONVENTIONS §8.4) : côté application js/reminders.js (paidCheck), depuis v1.40.8.
--- Seul changement par rapport à v1.39 (texte identique à la production, vérifié le 24/10/2026) :
---   « acompte_paye » et « solde_paye » ne sont plus limités à « mode <> 'booking' ».
--- Effet estimé au 24/10/2026 (lecture seule) : 1 rappel « Paiement du solde à vérifier » sur une date booking.
--- Aucune donnée existante modifiée. Retour arrière : réappliquer la fonction de 2026-10-21_v1.39_relances_jour_ouvre.sql.
+-- v1.41.0 (lot C1, décisions d'Anthony du 26/10/2026) — PRÉPARÉE, NON APPLIQUÉE : répétition sur le projet de test, puis
+-- application seulement sur autorisation explicite d'Anthony.
+-- Relances (generate_reminders), à partir de la v1.39 en production (texte identique, vérifié le 24/10/2026) :
+--  * « Facture d'acompte à envoyer » ne part plus quand le SOLDE est déjà facturé (envoyé, payé, numéroté ou dans Pennylane) :
+--    l'acompte jamais facturé est alors caduc (plus réclamé, historique conservé).
+--  * Booking : inchangé — seule la facture de commission est relancée ; jamais d'acompte ni de solde (factures de l'artiste).
+--    Remplace la migration « relances booking » (2026-10-24_v1.40_relances_booking.sql), abandonnée avant toute application
+--    en production (appliquée seulement sur le projet de test, où cette version la remplace).
+-- Règle écrite deux fois (§8.4) : côté application js/reminders.js (remindersOf, « Facture d'acompte à envoyer »).
+-- Aucune donnée modifiée. Retour arrière : réappliquer la fonction de 2026-10-21_v1.39_relances_jour_ouvre.sql.
 
 create or replace function public.generate_reminders()
  returns integer
@@ -20,6 +22,8 @@ begin
       sh.conf_kit_sent, sh.precontract_done, sh.contract_sent, sh.contract_signed, sh.contract_cosigned_sent, sh.boucle_tech, sh.boucle_com,
       a.id a_id, a.sent_at a_sent, a.paid_at a_paid, greatest(a.sent_at, a.reminded_at) a_last,
       so.id so_id, so.sent_at so_sent, so.paid_at so_paid, greatest(so.sent_at, so.reminded_at) so_last,
+      (so.sent_at is not null or so.paid_at is not null or nullif(btrim(so.invoice_number), '') is not null
+       or nullif(btrim(so.pennylane_id), '') is not null) so_emis,
       c.id c_id, c.sent_at c_sent, c.paid_at c_paid, c.label c_label,
       pt.id pt_id, pt.sent_at pt_sent, pt.paid_at pt_paid, pt.label pt_label
     from shows sh
@@ -35,9 +39,9 @@ begin
     union all select 'contrat_envoi', id, precontract_done + 10, true, 'Contrat à envoyer' from s where mode <> 'booking' and precontract_done is not null and contract_sent is null and (date is null or date >= current_date)
     union all select 'contrat_signe', id, contract_sent + 10, true, 'Contrat signé à récupérer' from s where mode <> 'booking' and contract_sent is not null and contract_signed is null and (date is null or date >= current_date)
     union all select 'contrat_cosigne', id, contract_signed + 10, true, 'Contrat co-signé à renvoyer' from s where mode <> 'booking' and contract_signed is not null and contract_cosigned_sent is null and (date is null or date >= current_date)
-    union all select 'facture_acompte', id, contract_sent, false, 'Facture d''acompte à envoyer (contrat envoyé)' from s where mode <> 'booking' and contract_sent is not null and a_id is not null and a_sent is null
-    union all select 'acompte_paye', id, a_last + 10, true, 'Paiement de l''acompte à vérifier' from s where a_sent is not null and a_paid is null
-    union all select 'solde_paye', id, so_last + 10, true, 'Paiement du solde à vérifier' from s where so_sent is not null and so_paid is null
+    union all select 'facture_acompte', id, contract_sent, false, 'Facture d''acompte à envoyer (contrat envoyé)' from s where mode <> 'booking' and contract_sent is not null and a_id is not null and a_sent is null and not coalesce(so_emis, false)
+    union all select 'acompte_paye', id, a_last + 10, true, 'Paiement de l''acompte à vérifier' from s where mode <> 'booking' and a_sent is not null and a_paid is null
+    union all select 'solde_paye', id, so_last + 10, true, 'Paiement du solde à vérifier' from s where mode <> 'booking' and so_sent is not null and so_paid is null
     union all select 'solde_envoi', id, (date - 7) - (case extract(isodow from date - 7) when 6 then 1 when 7 then 2 else 0 end)::int, false,
                      'Envoyer la facture de solde' from s where mode <> 'booking' and date is not null and so_id is not null and so_sent is null and date >= current_date - 30
     union all select 'commission', id, least(a_paid, so_paid) + 10, true, coalesce(c_label,'Commission L''ArtBo') || ' : à te verser (virement du compte de l''artiste vers L''ArtBo)'

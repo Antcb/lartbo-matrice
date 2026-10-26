@@ -7,14 +7,14 @@
  *  - 10 j après « Pré-contrat complété » sans « Contrat envoyé »
  *  - 10 j après « Contrat envoyé » sans « Contrat signé »
  *  - 10 j après « Contrat signé » sans « Contrat co-signé renvoyé »
- *  - Contrat envoyé alors que la facture d'acompte n'est pas envoyée
+ *  - Contrat envoyé alors que la facture d'acompte n'est pas envoyée (sauf acompte caduc : solde déjà facturé)
  *  - 10 j après l'envoi de la facture d'acompte / de solde sans paiement
  *  - 10 j après le premier encaissement (acompte ou solde) : commission L'ArtBo pas encore versée (pas de facture en production) ; facture partenaire pas envoyée / payée
  *  - Jour ouvré le plus proche de J-7 (sans descendre sous 7 jours) : envoyer la facture de solde
- * Booking seul : après le contrat co-signé, envoyer la facture de commission ; 10 j après, vérifier le paiement ;
- *   une facture d'acompte / de solde déjà envoyée (rare en booking) : même vérification du paiement qu'en production.
+ * Booking seul : après le contrat co-signé, envoyer la facture de commission ; 10 j après, vérifier le paiement.
+ *   Jamais de relance d'acompte ni de solde (factures de l'artiste à l'organisateur).
  */
-import { paymentsOf } from './calc.js';
+import { isInvoiced, paymentsOf } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { today, workDay } from './utils.js';
 
@@ -45,9 +45,7 @@ export function remindersOf(s){
     const com = first('artbo');
     if (s.contract_cosigned_sent && com && !com.sent_at) rule('artbo', s.contract_cosigned_sent, 'Envoyer la facture de commission à l’artiste');
     if (com?.sent_at && !com.paid_at) rule('artbo', plus10(com.sent_at), 'Vérifier le paiement de la facture de commission');
-    // facture d'acompte / de solde déjà envoyée sur une date booking : relancée si impayée (même règle qu'en production) ;
-    // une ligne jamais facturée (pas de date d'envoi) ne génère aucune relance (décision d'Anthony du 24/10)
-    paidCheck(first('acompte'), first('solde'), rule);
+    // acomptes / soldes : factures de l'artiste à l'organisateur, jamais relancées par L'ArtBo (décision d'Anthony du 26/10, lot C1)
     return out;
   }
   const upcoming = !s.date || s.date >= now;
@@ -56,7 +54,8 @@ export function remindersOf(s){
   if (upcoming && s.contract_sent && !s.contract_signed) rule('contract_signed', plus10(s.contract_sent), 'Contrat signé à récupérer');
   if (upcoming && s.contract_signed && !s.contract_cosigned_sent) rule('contract_cosigned_sent', plus10(s.contract_signed), 'Contrat co-signé à renvoyer');
   const ac = first('acompte'), so = first('solde');
-  if (s.contract_sent && ac && !ac.sent_at) rule('acompte', s.contract_sent, 'Facture d’acompte à envoyer');
+  // acompte devenu caduc (solde déjà facturé) : plus réclamé (lot C1) — même règle côté serveur (generate_reminders, facture_acompte)
+  if (s.contract_sent && ac && !ac.sent_at && !isInvoiced(so)) rule('acompte', s.contract_sent, 'Facture d’acompte à envoyer');
   paidCheck(ac, so, rule);
   if (s.date && so && !so.sent_at && s.date >= addDays(now, -30)) rule('solde', soldeReminderDay(s.date), 'Envoyer la facture de solde');
   if (upcoming && s.date && !s.boucle_tech) rule('boucle_tech', addDays(s.date, -122), 'Boucle accueil & technique à envoyer (J-4 mois)');

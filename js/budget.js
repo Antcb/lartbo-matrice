@@ -7,7 +7,7 @@
  * Chaque ligne a un montant prévu (saisi ou calculé) et un montant réel (lu sur la pièce) ; elle est « payée » quand paid_at est rempli.
  * Une date cochée « booking uniquement » (prod_mode = booking) n'a pas de budget : seulement la facture de commission.
  */
-import { payAmount, paymentsOf } from './calc.js';
+import { isInvoiced, payAmount, paymentsOf } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { byId, setting, showsOfProject } from './selectors.js';
 import { S } from './state.js';
@@ -105,6 +105,8 @@ export function accountOf(projectId){
     for (const pay of paymentsOf(s.id)){
       const v = payAmount(pay) || 0;
       if (!conf && !pay.paid_at) continue;
+      // acompte prévu ou caduc (pas facturé) : déjà compris dans le solde (cession − acomptes facturés), jamais compté deux fois (lot C1)
+      if (pay.kind === 'acompte' && !isInvoiced(pay)) continue;
       if (['acompte','solde','autre'].includes(pay.kind)){
         const who = payee(pay);
         if (who === 'compte') pay.paid_at ? a.inDone += v : a.inTodo += v;

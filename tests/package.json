@@ -4,8 +4,8 @@
   "type": "module",
   "description": "Tests automatiques de la Matrice (aucune connexion à la production, aucune donnée réelle)",
   "scripts": {
-    "test": "node static/check.mjs && playwright test",
-    "test:static": "node static/check.mjs",
+    "test": "node static/check.mjs && node --experimental-strip-types --no-warnings static/pennylane-regles.mjs && playwright test",
+    "test:static": "node static/check.mjs && node --experimental-strip-types --no-warnings static/pennylane-regles.mjs",
     "test:e2e": "playwright test"
   },
   "devDependencies": {

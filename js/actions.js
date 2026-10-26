@@ -4,9 +4,9 @@
  */
 import { afterFeeChange, askConfirmation, becameConfirmed, sendConfirmation, validateTerms } from './confirm-flow.js';
 import { go, render } from './app.js';
-import { BILL_KINDS, billLockReason, billPct, changeBlocked, isInvoiced, paymentsOf, payVat, soldeInvoiced } from './calc.js';
+import { BILL_KINDS, billLockReason, billPct, changeBlocked, freezeOnEmit, isInvoiced, paymentsOf, payVat, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
-import { insert, openStored, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb, setSaveGuard } from './data.js';
+import { insert, openStored, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb, setSaveComplement, setSaveGuard } from './data.js';
 import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showsFiltered, structName } from './selectors.js';
 import { CFG } from './config.js';
@@ -43,6 +43,7 @@ export async function cleanupDraft(){
 }
 
 setSaveGuard(changeBlocked);   // aucune facture émise ne change, par aucun écran (§6.4)
+setSaveComplement(freezeOnEmit);   // solde de production : montant figé au moment où il est émis (lot C1)
 
 export const ACTIONS = {
   ...EMP_ACTIONS,

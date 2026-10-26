@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.41.0 — 26/10/2026
+- Lot C1 : booking — seules la commission et les parts partenaires sont suivies (factures de l'artiste hors suivi, relances, devis et rattachements) ; production — solde = cession − acomptes effectivement facturés, figé à l'émission, acomptes non facturés caducs ; commission de production suivie par son versement ; trois indicateurs distincts ; règles Pennylane testées
+
+
 ## 1.40.9 — 25/10/2026
 - A2 : fiche publique d'une date booking présentée en « Échéancier prévu au contrat » (%, échéances, sans montant par ligne ; migration serveur préparée, non appliquée ; page compatible avec le serveur actuel) ; une date avec des pièces à rattacher ne se supprime pas ; pièces d'une date absente listées dans Production
 
