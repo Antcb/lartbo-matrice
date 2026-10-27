@@ -299,7 +299,7 @@ test('C1 affichage : deux soldes → alerte « plusieurs soldes », jamais « fa
   expectClean(ctx);
 });
 
-test('v1.46 Pennylane : une commission booking déjà facturée hors Pennylane (ex. Tout Se Chante) n’affiche jamais « Créer » ; une commission non émise le garde', async ({ page }) => {
+test('v1.45.2 Pennylane : une commission booking déjà facturée hors Pennylane (ex. Tout Se Chante) n’affiche jamais « Créer » ; une commission non émise le garde', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, { shows: [B('c-px', 8500), B('c-py', 4000)], show_payments: [
     { id: 'px-c', show_id: 'c-px', kind: 'artbo', label: 'Commission L’ArtBo', invoice_number: 'F-AB-2025-08-15-23 PYR', sent_at: '2025-08-15', paid_at: '2025-08-18', sort: 3 },
