@@ -159,7 +159,7 @@ export function showBudgetHTML(s){
       ${b.lines.length ? '' : `<button class="btn sm primary" data-act="prefillBudget" data-id="${s.id}">Préremplir (budget type)</button>`}
       <button class="btn sm ghost" data-act="copyBudget" data-id="${s.id}">Copier les lignes d'une autre date</button>
     </div>
-    ${dropZone(`data-budget-drop='${JSON.stringify({show_id:s.id})}'`, 'Glisse ici une facture, un bulletin ou une note de frais (ou sur une ligne précise) : l’IA la lit, met la ligne à jour, la marque payée et la range dans le Drive de la date (02_Finance).')}
+    ${dropZone(`data-budget-drop='${JSON.stringify({show_id:s.id})}'`, 'Glisse ici une facture, un bulletin ou une note de frais (ou sur une ligne précise) : l’IA la lit, met la ligne à jour et la range dans le Drive de la date (02_Finance). La date de paiement se note à part : une pièce reçue n’est pas une dépense payée.')}
     ${artistBlock(s, b, p)}
     <p class="muted small mt-sm">Montants HT ; salaires en coût total. Ligne verte : payée ; jaune : pièce reçue, pas encore payée. Prévu en orange : montant tapé à la place du calcul automatique (Movinmotion, CNM) ; efface-le pour revenir au calcul.</p>
   </div>`;

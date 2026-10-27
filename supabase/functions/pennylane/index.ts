@@ -7,7 +7,7 @@
 // Le jeton API est gardé côté serveur (Réglages › Pennylane). Appels depuis l'app (utilisateur connecté) :
 //   { action: 'status' } · { action: 'quote', show_id } · { action: 'invoice', payment_id } · { action: 'sync' }
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { acomptesFactures, caduc, emise, factureIsolee, figerMontant, isBooking, montantAcompte, montantAttendu, payable, rangeeDansLeDrive, relieAuDevis } from './regles.ts';
+import { acomptesFactures, caduc, emise, factureIsolee, figerMontant, isBooking, montantAcompte, montantAttendu, payable, pctCommission, rangeeDansLeDrive, relieAuDevis } from './regles.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -210,7 +210,8 @@ Deno.serve(async (req) => {
           // lots C1 et D1 — le montant réel de la facture fait référence) ;
           // déjà émis (ex. marqué envoyé) : montant inchangé (protection A1) — seuls le numéro et le lien sont repris
           const fige = figerMontant(p) ? { amount: Number(x.currency_amount_before_tax) } : {};
-          const { error: e1 } = await admin.from('show_payments').update({ pennylane_id: String(x.id), pennylane_url: await invoicePage(x.id) || linkOf(x), invoice_number: x.invoice_number || null, ...fige }).eq('id', p.id);
+          // jour de la facture (date Pennylane) : départ du rappel « Facture à envoyer » (v1.46) — la date d'envoi reste saisie à la main
+          const { error: e1 } = await admin.from('show_payments').update({ pennylane_id: String(x.id), pennylane_url: await invoicePage(x.id) || linkOf(x), invoice_number: x.invoice_number || null, ...(x.date ? { invoiced_on: x.date } : {}), ...fige }).eq('id', p.id);
           if (e1) { erreurs.push(`${x.invoice_number || x.id} : ${e1.message}`); continue; }   // refusée : ni reliée, ni comptée
           used.add('id:' + x.id); if (x.invoice_number) used.add('n:' + norm(x.invoice_number));
           // compte pour le solde suivant : le montant réel de la facture quand l'acompte vient d'être figé dessus (lot D1)
@@ -290,7 +291,13 @@ Deno.serve(async (req) => {
       const fee = Number(s.fee_ht) || 0, proj = s.projects || {}, artist = proj.name || '';
       let amount = p.amount != null ? Number(p.amount) : null;
       if (amount == null) {
-        if (p.kind === 'artbo') amount = Math.round(fee * Number(p.pct ?? s.artbo_pct ?? 15)) / 100;
+        if (p.kind === 'artbo') {
+          // % de la ligne > % de la date > % de l'artiste > Réglages selon le mode de la date (§6.3, v1.46 : plus de 15 en dur)
+          const { data: defaut, error: eDef } = await admin.rpc('default_commission_pct', { p_show: s.id, p_mode: s.prod_mode });
+          if (eDef) return json({ error: 'Commission par défaut illisible : ' + eDef.message }, 500);
+          const pct = pctCommission(p.pct, s.artbo_pct, defaut);
+          if (pct != null) amount = Math.round(fee * pct) / 100;
+        }
         else if (p.pct != null) amount = Math.round(fee * Number(p.pct)) / 100;
       }
       if (!amount) return json({ error: 'Montant de la ligne vide' }, 400);

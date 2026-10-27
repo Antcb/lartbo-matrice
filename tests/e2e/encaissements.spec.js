@@ -229,11 +229,11 @@ test('C1 relances : jamais d’acompte ni de solde booking ; la commission booki
     { id: 'q-s', show_id: 'e-1', kind: 'solde', label: 'Solde', pct: 70, sort: 2 },
   ] });
   const rel = id => page.evaluate(async i => (await import('./js/reminders.js')).remindersOf((await import('./js/selectors.js')).byId('shows', i)).map(x => [x.step, x.title]), id);
-  expect(await rel('e-3')).toEqual([['artbo', 'Vérifier le paiement de la facture de commission']]);
-  // production : contrat envoyé, acompte prévu pas envoyé → « Facture d'acompte à envoyer »… jusqu'à ce que le solde soit facturé
-  expect((await rel('e-1')).some(([k, t]) => k === 'acompte' && t === 'Facture d’acompte à envoyer')).toBe(true);
+  expect(await rel('e-3')).toEqual([['artbo', 'Paiement à vérifier : Commission (F-AB-9)']]);   // libellé commun app / serveur (v1.46)
+  // production : contrat envoyé, acompte prévu pas envoyé → « Facture d'acompte à faire »… jusqu'à ce que le solde soit facturé
+  expect((await rel('e-1')).some(([k, t]) => k === 'acompte' && t === 'Facture d’acompte à faire (contrat envoyé)')).toBe(true);
   await page.evaluate(async () => (await import('./js/data.js')).save('show_payments', 'q-s', { invoice_number: 'F-SOLDE', sent_at: '2026-01-10' }));
-  expect((await rel('e-1')).some(([k, t]) => k === 'acompte' && t === 'Facture d’acompte à envoyer'), 'acompte caduc : plus réclamé').toBe(false);
+  expect((await rel('e-1')).some(([k, t]) => k === 'acompte' && t === 'Facture d’acompte à faire (contrat envoyé)'), 'acompte caduc : plus réclamé').toBe(false);
   expect(await page.evaluate(async () => (await import('./js/calc.js')).acompteState((await import('./js/selectors.js')).byId('show_payments', 'q-a')))).toBe('caduc');
   expect(await dbPay(page, 'q-a')).toMatchObject({ pct: 30 });   // historique conservé
   expect((await dbPay(page, 'q-s')).amount, 'solde intégral figé : 10 000 €').toBe(10000);

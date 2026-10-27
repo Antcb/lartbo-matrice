@@ -31,7 +31,7 @@ create table if not exists settings (
   value jsonb not null
 );
 insert into settings (key, value) values
-  ('default_acompte_pct', '20'),
+  ('default_acompte_pct', '50'),
   ('default_solde_pct', '80'),
   ('default_artbo_pct', '15'),
   ('default_cnm_pct', '3.5'),

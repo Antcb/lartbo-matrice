@@ -1,7 +1,7 @@
 /**
  * 🧮 Calculs financiers : acomptes, solde, commission L'ArtBo, part partenaire, net.
  */
-import { byId } from './selectors.js';
+import { byId, showCommissionPct } from './selectors.js';
 import { S } from './state.js';
 
 /** Lignes financières d'une date QUI COMPTENT : une ligne « hors calcul » (coproduction, import — v1.44) est gardée pour la traçabilité
@@ -20,8 +20,9 @@ export function payAmount(p){
   // production : solde pas encore facturé = cession − acomptes EFFECTIVEMENT facturés (règle d'Anthony du 26/10, lot C1).
   // Un acompte seulement prévu ne le réduit pas. Un solde facturé garde son montant (jamais recalculé, §6.4).
   if (p.kind==='solde' && s && !isBookingShow(s) && !isInvoiced(p)) return soldeDue(p.show_id, p.id);
-  if (p.kind==='artbo')   return Math.round(fee * (Number(p.pct ?? s.artbo_pct)||0)) / 100;
-  if (p.kind==='partner') return Math.round(fee * (Number(s.artbo_pct)||0) * (Number(p.pct ?? s.partner_pct)||0) / 100) / 100;
+  // commission : % de la ligne > % de la date > % de l'artiste > Réglages selon le mode de la date (§6.3, v1.46a — plus de 0 ni de 15 en dur)
+  if (p.kind==='artbo')   return Math.round(fee * (filled(p.pct) ? Number(p.pct) : showCommissionPct(s))) / 100;
+  if (p.kind==='partner') return Math.round(fee * showCommissionPct(s) * (Number(p.pct ?? s.partner_pct)||0) / 100) / 100;
   if (p.kind==='cnm' || p.pct==null || p.pct==='') return null;
   return Math.round(fee * Number(p.pct)) / 100;
 }
@@ -54,7 +55,7 @@ export function netArtbo(s){
 export function payPct(p){
   const s = byId('shows', p.show_id);
   if (p.pct!=null) return p.pct;
-  if (p.kind==='artbo') return s?.artbo_pct;
+  if (p.kind==='artbo') return s ? showCommissionPct(s) : null;
   if (p.kind==='partner') return s?.partner_pct;
   return null;
 }

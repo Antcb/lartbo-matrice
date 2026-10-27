@@ -4,7 +4,7 @@
  */
 import { commissionAmount, commissionOf, isSolde, lineValue, showBudget } from './budget.js';
 import { artistResult } from './views/budget.js';
-import { byId } from './selectors.js';
+import { byId, showCommissionPct } from './selectors.js';
 import { commissionState } from './calc.js';
 import { esc, eur2, fmtDate } from './utils.js';
 
@@ -12,7 +12,7 @@ export function exportArtistBudget(showId){
   const s = byId('shows', showId); if (!s) return;
   const p = byId('projects', s.project_id), b = showBudget(s), r = artistResult(s, b), com = commissionOf(s);
   // commission (lot D1) : total, versements réels et reste ; le % n'est affiché que s'il correspond au total (sinon total fixé à part)
-  const cst = com ? commissionState(com) : null, pctN = Number(com?.pct ?? s.artbo_pct ?? 15);
+  const cst = com ? commissionState(com) : null, pctN = com?.pct != null && String(com.pct).trim() !== '' ? Number(com.pct) : showCommissionPct(s);
   const comPct = Math.abs(Math.round((Number(s.fee_ht) || 0) * pctN) / 100 - commissionAmount(s)) < 0.005 ? String(pctN) : '';
   const artist = (p?.name || '').replace(/\s*•.*$/, ''), who = p?.artist_payee || artist;
   const exp = b.lines.filter(l => !isSolde(l) && Math.abs(lineValue(l)) >= 0.005);
