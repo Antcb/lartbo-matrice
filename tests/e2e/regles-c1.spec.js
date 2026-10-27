@@ -298,3 +298,19 @@ test('C1 affichage : deux soldes → alerte « plusieurs soldes », jamais « fa
   await expect(page.locator('input[data-id="v6-t"][data-f="amount"]')).toHaveAttribute('placeholder', '0');
   expectClean(ctx);
 });
+
+test('v1.46 Pennylane : une commission booking déjà facturée hors Pennylane (ex. Tout Se Chante) n’affiche jamais « Créer » ; une commission non émise le garde', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [B('c-px', 8500), B('c-py', 4000)], show_payments: [
+    { id: 'px-c', show_id: 'c-px', kind: 'artbo', label: 'Commission L’ArtBo', invoice_number: 'F-AB-2025-08-15-23 PYR', sent_at: '2025-08-15', paid_at: '2025-08-18', sort: 3 },
+    { id: 'py-c', show_id: 'c-py', kind: 'artbo', label: 'Commission L’ArtBo', sort: 3 },
+  ] });
+  await page.evaluate(async () => { const { S } = await import('./js/state.js'); for (const id of ['c-px', 'c-py']) { S.openProd.add(id); S.tab['prod:' + id] = 'factures'; } (await import('./js/app.js')).go('production'); });
+  await expect(page.locator('button[data-act="pennylaneInvoice"][data-id="py-c"]'), 'commission non émise : création possible').toHaveCount(1);
+  await expect(page.locator('button[data-act="pennylaneInvoice"][data-id="px-c"]'), 'facture existante : jamais « Créer »').toHaveCount(0);
+  await expect(page.getByText('Facture existante')).toHaveCount(1);
+  // aucune donnée de la ligne n'est modifiée par l'affichage
+  expect(await dbPay(page, 'px-c')).toMatchObject({ invoice_number: 'F-AB-2025-08-15-23 PYR', sent_at: '2025-08-15', paid_at: '2025-08-18' });
+  expect((await dbPay(page, 'px-c')).pennylane_id ?? null).toBeNull();
+  expectClean(ctx);
+});

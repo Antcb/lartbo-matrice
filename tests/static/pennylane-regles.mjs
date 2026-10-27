@@ -79,6 +79,12 @@ t('coproduction (v1.44) : une ligne hors calcul n’est jamais reliée, synchron
   assert.match(src, /\['acompte', 'solde', 'autre', 'artbo'\]\)\.is\('hors_calcul', null\)/, 'paiements repris');
   assert.match(src, /if \(p\.hors_calcul\) return json\(/, 'création de facture refusée');
 });
+t('v1.46 : une facture déjà émise (numéro, envoi, paiement) ne reçoit jamais de second brouillon Pennylane (fonction serveur)', () => {
+  const src = readFileSync(new URL('../../supabase/functions/pennylane/index.ts', import.meta.url), 'utf8');
+  const action = src.slice(src.indexOf("body.action === 'invoice'"));
+  assert.ok(action.indexOf('if (emise(p)) return json(') > 0 && action.indexOf('if (emise(p)) return json(') < action.indexOf("create('customer_invoices'"), 'refus avant toute création');
+  for (const f of ['sent_at', 'paid_at', 'invoice_number']) assert.equal(emise({ kind: 'artbo', [f]: 'x' }), true, 'commission booking émise par ' + f);
+});
 
 let ko = 0;
 for (const [nom, f] of cas) { try { f(); } catch (e) { ko++; console.error('✗ ' + nom + '\n  ' + e.message); } }

@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.45.2 — 27/10/2026
+- Pennylane : plus de bouton « Créer » sur une facture déjà émise hors Pennylane (ex. Tout Se Chante) ; la fonction serveur refuse aussi ce cas
+
+
 ## 1.45.1 — 27/10/2026
 - relecture indépendante D1 : v1.45 vérifie ses droits par comparaison (compatible avec la suspension des écritures), coproduction devenue production : lignes réelles recréées, historique des migrations enregistré
 

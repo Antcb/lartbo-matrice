@@ -280,6 +280,8 @@ function pennylaneCell(p, s){
       ? `<a class="btn sm ghost" href="${esc(s.pennylane_quote_url || 'https://app.pennylane.com/')}" target="_blank" rel="noopener" title="Ouvre le devis dans Pennylane : « Créer une facture d’acompte » (ou la facture de solde). Le numéro revient ici avec « Synchroniser Pennylane ».">Facturer depuis le devis ↗</a>`
       : `<button class="btn sm" data-act="pennylaneQuote" data-id="${p.show_id}" title="L’acompte et le solde se facturent depuis le devis Pennylane">Créer le devis</button>`;
   }
+  // facture déjà émise hors Pennylane (numéro, envoi ou paiement noté, ex. ancienne facture) : jamais de second brouillon (§6.3)
+  if (isInvoiced(p)) return '<span class="muted small" title="Facture déjà émise (numéro, envoi ou paiement noté) : aucun brouillon Pennylane ne se crée">Facture existante</span>';
   return `<button class="btn sm" data-act="pennylaneInvoice" data-id="${p.id}" title="Crée la facture en brouillon dans Pennylane">Créer</button>`;
 }
 

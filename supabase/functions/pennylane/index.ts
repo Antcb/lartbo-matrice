@@ -7,7 +7,7 @@
 // Le jeton API est gardé côté serveur (Réglages › Pennylane). Appels depuis l'app (utilisateur connecté) :
 //   { action: 'status' } · { action: 'quote', show_id } · { action: 'invoice', payment_id } · { action: 'sync' }
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { acomptesFactures, caduc, factureIsolee, figerMontant, isBooking, montantAcompte, montantAttendu, payable, rangeeDansLeDrive, relieAuDevis } from './regles.ts';
+import { acomptesFactures, caduc, emise, factureIsolee, figerMontant, isBooking, montantAcompte, montantAttendu, payable, rangeeDansLeDrive, relieAuDevis } from './regles.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -280,6 +280,8 @@ Deno.serve(async (req) => {
       if (!p) return json({ error: 'Ligne de facturation introuvable' }, 404);
       // ligne hors calcul (coproduction, import — v1.44) : jamais facturée
       if (p.hors_calcul) return json({ error: 'Ligne hors calcul (gardée pour la traçabilité) : elle ne se facture pas' }, 400);
+      // facture déjà émise (numéro, envoi, paiement ou lien Pennylane — même définition que l'application) : jamais de second brouillon
+      if (emise(p)) return json({ error: 'Cette ligne a déjà une facture (numéro, envoi ou paiement noté) : aucun nouveau brouillon n’est créé dans Pennylane' }, 400);
       const { data: s } = await admin.from('shows').select('*, projects(*)').eq('id', p.show_id).single();
       if (!s) return json({ error: 'Date introuvable' }, 404);
       // booking : seulement la commission de L'ArtBo ; production : jamais la commission (pas une facture) — acompte / solde : depuis le devis
