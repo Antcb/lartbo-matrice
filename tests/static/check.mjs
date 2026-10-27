@@ -5,7 +5,9 @@
 //  4. le nombre de fenêtres natives (alert / confirm / prompt) n'augmente pas (référence : baselines/fenetres-natives.json) ;
 //  5. aucun secret écrit dans les fichiers du dépôt (tous les fichiers suivis par Git, tests compris) ;
 //  6. aucune bibliothèque chargée depuis un service tiers ;
-//  7. aucun accès direct au stockage du navigateur hors js/storage.js et js/config.js (séparation production / test).
+//  7. aucun accès direct au stockage du navigateur hors js/storage.js et js/config.js (séparation production / test) ;
+//  8. politique de sécurité (CSP, v1.47) sur chaque page, empreinte de la carte d'import à jour, aucun gestionnaire d'événement en ligne
+//     (onclick=… dans les pages ou les gabarits du code), aucun secret de la table settings lu par le navigateur.
 // Usage : node static/check.mjs            (contrôle)
 //         node static/check.mjs --baseline (réécrit la référence des fenêtres natives, seulement si leur nombre a BAISSÉ)
 import { execFileSync } from 'node:child_process';
@@ -162,6 +164,24 @@ for (const page of readdirSync(ROOT).filter(f => f.endsWith('.html'))) {
   for (const m of html.matchAll(/<script(?![^>]*\bsrc=)(?![^>]*type=["']importmap)[^>]*>([\s\S]*?)<\/script>/gi))
     if (/\b(localStorage|sessionStorage|indexedDB)\b/.test(m[1])) fail('stockage', `${page} : un script de la page accède directement au stockage du navigateur (passer par js/storage.js)`);
   if (/\son\w+\s*=\s*["'][^"']*\b(localStorage|sessionStorage|indexedDB)\b/i.test(html)) fail('stockage', `${page} : un attribut d'événement accède au stockage du navigateur`);
+}
+
+// 8. Politique de sécurité (lot Sécurité v1.47) : la CSP interdit les scripts en ligne sauf la carte d'import (empreinte) ;
+// un gestionnaire en ligne (onclick=, onsubmit=…) serait bloqué en production — il doit passer par addEventListener.
+const { createHash } = await import('node:crypto');
+for (const page of readdirSync(ROOT).filter(f => f.endsWith('.html'))) {
+  const html = readFileSync(join(ROOT, page), 'utf8');
+  const csp = html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)">/)?.[1];
+  if (!csp) { fail('sécurité', `${page} : politique de sécurité (CSP) absente — lancer tools/bump_version.py`); continue; }
+  const im = html.match(/<script type="importmap">([\s\S]*?)<\/script>/)?.[1];
+  if (im != null && !csp.includes(`'sha256-${createHash('sha256').update(im, 'utf8').digest('base64')}'`)) fail('sécurité', `${page} : empreinte de la carte d'import absente de la CSP — lancer tools/bump_version.py`);
+  if (/unsafe-eval|script-src[^;]*unsafe-inline/.test(csp)) fail('sécurité', `${page} : la CSP autorise des scripts en ligne ou eval`);
+  if (/<[a-z][^>]*\son[a-z]+\s*=/i.test(html)) fail('sécurité', `${page} : gestionnaire d'événement en ligne (on…=) interdit par la CSP`);
+}
+for (const f of JS) {
+  const src = readFileSync(f, 'utf8');
+  if (/<[a-z][^>`]*\son(click|submit|change|input|load|error|keydown|keyup|focus|blur|mouse\w+)\s*=\s*["']/i.test(src)) fail('sécurité', `${rel(f)} : gestionnaire d'événement en ligne dans un gabarit (interdit par la CSP)`);
+  if (/setting\(\s*['"](brevo_api_key|brevo_hook_secret|drive_webhook_secret)['"]/.test(src)) fail('sécurité', `${rel(f)} : lecture d'un secret de la table settings par le navigateur (illisible depuis la v1.47)`);
 }
 
 // Bilan

@@ -31,6 +31,9 @@ test('sans session, l’écran de connexion s’affiche', async ({ page }) => {
   expectClean(ctx);
 });
 
+// La politique de sécurité de la page (CSP, v1.47) bloque déjà ces appels avant le réseau : ce test vérifie la barrière des TESTS
+// elle-même, donc sans la CSP (la CSP est vérifiée par securite-v147.spec.js).
+test.describe('garde-fou des tests sans la CSP', () => { test.use({ bypassCSP: true });
 test('le garde-fou réseau détecte tout appel à un service réel (page, nouvel onglet, WebSocket)', async ({ page }) => {
   const ctx = await openApp(page);
   await page.evaluate(() => {
@@ -46,6 +49,7 @@ test('le garde-fou réseau détecte tout appel à un service réel (page, nouvel
   await expect.poll(() => ctx.external.length).toBeGreaterThanOrEqual(3);
   expect(ctx.external.join(' ')).toMatch(/https:\/\/script\.google\.com/);
   expect(ctx.external.join(' ')).toMatch(/websocket : wss:\/\/exemple-interdit/);
+});
 });
 
 test('seconde barrière : aucun domaine extérieur joignable, même hors du routage des tests', async ({ browser }) => {

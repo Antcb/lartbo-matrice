@@ -4,7 +4,9 @@
  * Appelée par un déclencheur de la base à chaque création ou modification d'un contact
  * (et quand on le rattache à une structure), ou par Réglages › Brevo pour tout envoyer d'un coup.
  * Réglages lus dans la table settings : brevo_api_key, brevo_list_id (une ou plusieurs listes, séparées par des virgules),
- * brevo_hook_secret (code partagé avec le déclencheur).
+ * brevo_hook_secret (code partagé avec le déclencheur). Ces réglages ne sont lisibles que côté serveur (v1.47).
+ * Accès : le déclencheur de la base (code x-hook-secret) ; « tout envoyer » (Réglages) : un compte de l'équipe connecté (v1.47 —
+ * le navigateur n'a plus le code secret).
  */
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -27,6 +29,14 @@ async function settings() {
   const m: Record<string, string> = {};
   for (const r of data || []) m[r.key] = typeof r.value === "string" ? r.value : (r.value == null ? "" : String(r.value));
   return m;
+}
+
+/** Compte de l'équipe connecté (jeton de session de l'utilisateur, vérifié par la base) */
+async function isTeam(auth: string) {
+  if (!/^Bearer\s+\S+/.test(auth)) return false;
+  const user = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } }, auth: { persistSession: false } });
+  const { data } = await user.rpc("is_team");
+  return data === true;
 }
 
 let ATTRS: { first?: string; last?: string; struct?: string } | null = null;
@@ -87,12 +97,15 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const s = await settings();
-    if (!s.brevo_hook_secret || req.headers.get("x-hook-secret") !== s.brevo_hook_secret) return json({ ok: false, error: "Code d’accès incorrect" }, 401);
+    const body = await req.json().catch(() => ({}));
+    const hook = !!s.brevo_hook_secret && req.headers.get("x-hook-secret") === s.brevo_hook_secret;
+    // « tout envoyer » depuis les Réglages : session d'un compte de l'équipe (vérifiée par la base, is_team)
+    const team = !hook && body.all === true && await isTeam(req.headers.get("Authorization") || "");
+    if (!hook && !team) return json({ ok: false, error: "Accès refusé" }, 401);
     if (!s.brevo_api_key) return json({ ok: false, error: "Clé API Brevo absente (Réglages › Brevo)" });
     const key = s.brevo_api_key.trim();
     const listIds = String(s.brevo_list_id || "").split(/[,;\s]+/).map(Number).filter((n) => n > 0);
     const a = await attrNames(key);
-    const body = await req.json().catch(() => ({}));
 
     // Tout envoyer d'un coup (import Brevo)
     if (body.all) {

@@ -36,7 +36,7 @@ export function exportArtistBudget(showId){
   footer{color:var(--m);font-size:12px;margin-top:28px}
   @media print{.bar{display:none} body{padding:0}}
 </style></head><body><main>
-  <div class="bar"><button onclick="print()">Imprimer / enregistrer en PDF</button></div>
+  <div class="bar"><button type="button" id="print-btn">Imprimer / enregistrer en PDF</button></div>
   <h1>${esc(artist)} — ${esc(s.venue || '')}</h1>
   <p class="sub">${esc(fmtDate(s.date))}${s.city ? ' · ' + esc(s.city) : ''} · montants HT</p>
 
@@ -68,4 +68,5 @@ export function exportArtistBudget(showId){
   const w = window.open('', '_blank');
   if (!w) return alert('Autorise les fenêtres pop-up pour exporter le budget.');
   w.document.open(); w.document.write(html); w.document.close();
+  w.document.getElementById?.('print-btn')?.addEventListener('click', () => w.print());   // pas de gestionnaire en ligne (politique de sécurité, v1.47)
 }

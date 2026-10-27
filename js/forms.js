@@ -251,7 +251,7 @@ const CONTACT_COORDS = [
 export function editContact(id, prefill={}){
   const c = id ? byId('contacts', id) : {...prefill};
   const links = id ? linksOfContact(id).map(s=>s.id) : (prefill._structures || []);
-  const brevo = !id || !setting('brevo_api_key') ? '' : c.brevo_error ? `<p class="help full" style="color:var(--danger)">Brevo : ${esc(c.brevo_error)}</p>`
+  const brevo = !id ? '' : c.brevo_error ? `<p class="help full" style="color:var(--danger)">Brevo : ${esc(c.brevo_error)}</p>`
     : c.brevo_at ? `<p class="help full">Dans Brevo (mis à jour le ${fmtDate(c.brevo_at.slice(0,10))}).</p>` : '';
   return openModal({ title: id ? c.display_name : 'Nouveau contact', values: {...c, _structures: links}, extra: brevo,
     fields: [

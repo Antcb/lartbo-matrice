@@ -214,7 +214,7 @@ function artistTab(p){
     ${p.artist_submitted_at ? `<p class="ok-txt">✓ Remplie le ${fmtDate(p.artist_submitted_at.slice(0, 10))}</p>` : '<p class="muted">Pas encore remplie par l’artiste : tu peux aussi la remplir ici.</p>'}
     ${docs.length ? `<h3 class="block-title">Fichiers reçus</h3><ul class="af-list">${docs.map(d => `<li>${esc(label(d.kind))} : ${d.file_id ? `<a href="https://drive.google.com/file/d/${esc(d.file_id)}/view" target="_blank" rel="noopener">${esc(d.drive_name || d.name)}</a>` : `${esc(d.name)} <span class="muted">(rangement dans le Drive en cours)</span>`}</li>`).join('')}</ul>` : ''}
     <div class="af-bar"><button type="button" class="btn sm" data-af-copyall="${p.id}">Copier toute la fiche</button><span class="muted af-state" data-af-state="${p.id}">Modifie un champ : c’est enregistré tout seul.</span></div>
-    <form class="af-edit fiche-form" data-af-form="${p.id}" autocomplete="off" onsubmit="return false">${sections}
+    <form class="af-edit fiche-form" data-af-form="${p.id}" autocomplete="off">${sections}
       <section class="af-sec"><h3 class="block-title">Photos</h3><div class="fiche-grid">${afInput(PHOTO_CREDITS, info[PHOTO_CREDITS.k] ?? '', {copy: true, prefix: 'af-' + p.id.slice(0, 6) + '-'})}</div></section></form>
   </div>`;
 }
@@ -243,6 +243,8 @@ async function afWrite(id){
   else if (pr?.admin_structure_id){ const {data: st2} = await sb.from('structures').select('*').eq('id', pr.admin_structure_id).single(); const cur = byId('structures', pr.admin_structure_id); if (st2 && cur){ Object.assign(cur, st2); touch('structures'); } }
   if (st) st.textContent = 'Enregistré ✓ (structure administrative et membres mis à jour)';
 }
+// fiche artiste éditée sur place : enregistrée au fil de la saisie, jamais envoyée (remplace onsubmit="return false", interdit par la CSP v1.47)
+document.addEventListener('submit', e => { if (e.target.closest?.('form.af-edit')) e.preventDefault(); });
 document.addEventListener('input', e => { const f = e.target.closest?.('form.af-edit'); if (f) afSave(f); });
 document.addEventListener('change', e => { const f = e.target.closest?.('form.af-edit'); if (f){ e.stopPropagation(); afSave(f); } }, true);
 document.addEventListener('click', async e => {

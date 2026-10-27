@@ -77,13 +77,19 @@ export async function mailVars(showId, contactId){
 
 const scriptUrl = () => (setting('drive_webhook_url') || '').trim();
 
+/** Appel d'un script Google par le relais serveur « script-google » (lot Sécurité v1.47) : le code secret des scripts reste sur le
+ *  serveur, jamais dans le navigateur. target : 'main' (production@) ou 'prospect' (script de prospection). Erreur → message français. */
+export async function callGoogle(target, action, payload = {}){
+  const {data, error} = await sb.functions.invoke('script-google', {body: {target, action, payload}});
+  if (data) return data;
+  const out = await error?.context?.json?.().catch(() => null);   // réponse d'erreur de la fonction : son message français
+  return out?.error ? out : {ok: false, error: 'Script Google injoignable pour le moment : réessaie dans un instant.'};
+}
+
 /** Appel du script Apps Script (compte production@) */
 export async function callScript(action, payload){
-  const url = scriptUrl();
-  if (!url) throw new Error('Le script Google (Apps Script) n’est pas encore installé.');
-  const res = await fetch(url, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body: JSON.stringify({secret: setting('drive_webhook_secret'), action, ...payload})});
-  const out = await res.json().catch(() => ({ok:false, error:'Réponse illisible du script'}));
+  if (!scriptUrl()) throw new Error('Le script Google (Apps Script) n’est pas encore installé.');
+  const out = await callGoogle('main', action, payload);
   // script pas encore mis à jour sur production@ : on dit quoi faire
   if (!out.ok && /Action inconnue/i.test(out.error || '')) throw new Error('Le script Google de production@ n’est pas à jour. Réglages › Google : « Copier le code à jour », colle-le dans Code.gs puis redéploie (nouvelle version).');
   if (!out.ok) throw new Error(out.error || 'Erreur du script');
