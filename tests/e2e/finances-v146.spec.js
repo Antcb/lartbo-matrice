@@ -115,9 +115,12 @@ test('v1.46a « Valider les conditions » : réglage à 0 % → aucun acompte pr
 
 test('v1.46a réglage à 0 % : jamais d’acompte à 0 % posé en lot sur les dates déjà confirmées (relecture, B2)', async ({ page }) => {
   const ctx = await openApp(page);
+  // date à venir, conditions pas validées, rien de facturé : exactement le cas que « Appliquer » viserait
+  await seed(page, { shows: [P('z-1', { status: 'Confirmée Salle' })], show_payments: [
+    { id: 'z1-a', show_id: 'z-1', kind: 'acompte', label: 'Acompte', pct: 50, sort: 1 }, { id: 'z1-s', show_id: 'z-1', kind: 'solde', label: 'Solde', pct: 50, sort: 2 }] });
   await page.evaluate(async () => { const { S, touch } = await import('./js/state.js'); S.db.settings.find(k => k.key === 'default_acompte_pct').value = 0; touch('settings');
     await (await import('./js/views/settings.js')).applyAcompte(); });
-  expect(await page.evaluate(() => window.__DB.show_payments.filter(p => ['pa-1', 'pa-2'].includes(p.id)).map(p => p.pct))).toEqual([50, 50]);
+  expect(await page.evaluate(() => window.__DB.show_payments.filter(p => ['z1-a', 'z1-s'].includes(p.id)).map(p => p.pct))).toEqual([50, 50]);
   await page.evaluate(async () => (await import('./js/app.js')).go('settings'));
   await expect(page.locator('[data-act="applyAcompte"]')).toHaveCount(0);
   expectClean(ctx);
