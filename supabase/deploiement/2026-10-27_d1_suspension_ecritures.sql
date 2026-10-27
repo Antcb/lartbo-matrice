@@ -73,8 +73,10 @@ begin
     if to_regprocedure(f) is not null and (has_function_privilege('anon', to_regprocedure(f), 'EXECUTE') or has_function_privilege('authenticated', to_regprocedure(f), 'EXECUTE')) then
       raise exception 'ECHEC : % encore exécutable — TOUT EST ANNULÉ', f; end if;
   end loop;
-  if to_regclass('cron.job') is not null and exists (select 1 from cron.job where jobname = 'rappels-quotidiens' and active) then
-    raise exception 'ECHEC : rappels automatiques encore actifs — TOUT EST ANNULÉ'; end if;
+  if to_regclass('cron.job') is not null then
+    if exists (select 1 from cron.job where jobname = 'rappels-quotidiens' and active) then
+      raise exception 'ECHEC : rappels automatiques encore actifs — TOUT EST ANNULÉ'; end if;
+  end if;
   if not has_table_privilege('authenticated', 'public.show_payments', 'SELECT') or not has_function_privilege('anon', 'public.fiche_get(text)', 'EXECUTE') then
     raise exception 'ECHEC : la lecture a été coupée par erreur — TOUT EST ANNULÉ'; end if;
 end $s$;

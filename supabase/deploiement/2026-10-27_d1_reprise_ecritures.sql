@@ -29,8 +29,10 @@ begin
   select count(*) into n from maintenance_d1.droits_fonctions where to_regprocedure(fn) is not null
      and not has_function_privilege(case when grantee = 'PUBLIC' then 'anon' else grantee end, to_regprocedure(fn), 'EXECUTE');
   if n > 0 then raise exception 'ECHEC : % droit(s) de fonction non rétabli(s) — TOUT EST ANNULÉ', n; end if;
-  if to_regclass('cron.job') is not null and exists (select 1 from maintenance_d1.taches t join cron.job j using (jobid) where j.active is distinct from t.active) then
-    raise exception 'ECHEC : rappels automatiques non rétablis — TOUT EST ANNULÉ'; end if;
+  if to_regclass('cron.job') is not null then
+    if exists (select 1 from maintenance_d1.taches t join cron.job j using (jobid) where j.active is distinct from t.active) then
+      raise exception 'ECHEC : rappels automatiques non rétablis — TOUT EST ANNULÉ'; end if;
+  end if;
 end $r$;
 drop schema maintenance_d1 cascade;
 commit;
