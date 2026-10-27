@@ -252,6 +252,7 @@ Ordre général : **valeur saisie sur la ligne (facture) > valeur de la date > v
   - **une facture déjà envoyée n'est jamais modifiée silencieusement**, par aucun chemin (écran, trigger SQL, synchronisation).
 - [EN PLACE] Une date « sans acompte » (solde seul) est respectée par `ensure_production_payments`.
 - [EN PLACE] Facturation : acompte et solde se font **depuis le devis Pennylane** (bouton « Facturer depuis le devis ») ; la synchronisation reconnaît les factures par devis + montant HT et range le PDF dans le Drive.
+- [CORRECTION v1.46] Une ligne **déjà émise** (numéro, envoi ou paiement noté, `isInvoiced` ; ex. ancienne facture faite hors Pennylane) n'affiche jamais « Créer » (mention « Facture existante ») et la fonction serveur `pennylane` (action `invoice`) refuse d'en créer un brouillon (`emise`) : jamais de seconde facture. Aucune donnée n'est modifiée.
 - [CORRECTION] aucun blocage aujourd'hui : un acompte peut être ajouté/modifié après envoi du solde et `rebalanceSolde` peut recalculer le solde.
 
 ### 6.5 Cachet [DÉCIDÉ Q5]
