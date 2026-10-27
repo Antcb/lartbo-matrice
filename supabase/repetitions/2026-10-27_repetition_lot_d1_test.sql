@@ -1307,6 +1307,10 @@ revoke execute on function public.finance_log_transfers() from public, anon, aut
 alter table public.show_payments add column if not exists hors_calcul text;
 comment on column public.show_payments.hors_calcul is 'Motif : ligne gardée pour la traçabilité mais hors de tout calcul (lot D1, v1.44). Posé/retiré seulement par une régularisation annoncée (matrice.regularisation = hors_calcul).';
 
+-- une seule commission L'ArtBo QUI COMPTE par date (v1.43) : une commission hors calcul (import) n'empêche pas d'en noter une réelle
+drop index if exists public.show_payments_une_commission;
+create unique index show_payments_une_commission on public.show_payments (show_id) where kind = 'artbo' and hors_calcul is null;
+
 -- ─────────────── 1. Garde : le classement « hors calcul » ne se change que par un script annoncé ───────────────
 create or replace function public.show_payments_hors_calcul_guard() returns trigger
 language plpgsql set search_path = public as $$
@@ -2045,6 +2049,13 @@ begin
   begin insert into public.show_payments (show_id, kind, label, sort, hors_calcul) values (sc, 'autre', 'x', 90, 'essai');
     insert into _d1_r (essai, attendu, obtenu) values ('74. créer une ligne directement hors calcul', 'refusé', 'ACCEPTÉ');
   exception when sqlstate 'P0001' then insert into _d1_r (essai, attendu, obtenu) values ('74. créer une ligne directement hors calcul', 'refusé', 'refusé'); end;
+  begin insert into public.show_payments (show_id, kind, label, sort) values (sc, 'artbo', 'Commission réelle (essai)', 31);
+    insert into _d1_r (essai, attendu, obtenu) values ('78. commission réelle notée à côté d''une commission hors calcul', 'acceptée', 'acceptée');
+  exception when unique_violation then insert into _d1_r (essai, attendu, obtenu) values ('78. commission réelle notée à côté d''une commission hors calcul', 'acceptée', 'REFUSÉE'); end;
+  begin insert into public.show_payments (show_id, kind, label, sort) values (sc, 'artbo', 'Seconde commission réelle (essai)', 32);
+    insert into _d1_r (essai, attendu, obtenu) values ('79. deux commissions réelles sur une date', 'refusée', 'ACCEPTÉE');
+  exception when unique_violation then insert into _d1_r (essai, attendu, obtenu) values ('79. deux commissions réelles sur une date', 'refusée', 'refusée'); end;
+  delete from public.show_payments where show_id = sc and kind = 'artbo' and hors_calcul is null;   -- l'essai 78 ne doit pas gêner le nettoyage
   -- cachet d'une coproduction dont l'acompte « N.C » est hors calcul : plus bloqué par cette ligne fictive
   update public.shows set fee_ht = 6000 where id = sc;
   insert into _d1_r (essai, attendu, obtenu) select '75. cachet modifiable malgré la ligne fictive', '6000', (select trim_scale(fee_ht)::text from public.shows where id = sc);
@@ -2073,7 +2084,7 @@ begin
   select string_agg(essai || ' → attendu « ' || attendu || ' », obtenu « ' || coalesce(obtenu, 'rien') || ' »', ' | ' order by n) into ko
     from _d1_r where obtenu is distinct from attendu;
   if ko is not null then raise exception 'ECHEC ESSAIS — TOUT EST ANNULÉ : %', ko; end if;
-  if (select count(*) from _d1_r) <> 77 then raise exception 'ECHEC ESSAIS : % essais au lieu de 77 — TOUT EST ANNULÉ', (select count(*) from _d1_r); end if;
+  if (select count(*) from _d1_r) <> 79 then raise exception 'ECHEC ESSAIS : % essais au lieu de 79 — TOUT EST ANNULÉ', (select count(*) from _d1_r); end if;
 end $chk$;
 -- Fin des essais : versements fictifs retirés (retour arrière contrôlé), pour que le retour arrière de la migration puisse s'essayer
 do $n$ begin
@@ -2340,6 +2351,8 @@ begin
   return n;
 end $function$;
 revoke execute on function public.generate_reminders() from public, anon, authenticated;
+drop index if exists public.show_payments_une_commission;
+create unique index show_payments_une_commission on public.show_payments (show_id) where kind = 'artbo';   -- version v1.43
 alter table public.show_payments drop column if exists hors_calcul;
 -- v1.43 (versements de commission) : seulement si AUCUN versement n'est enregistré (sinon : décision d'Anthony)
 do $v$ begin
@@ -3241,6 +3254,10 @@ revoke execute on function public.finance_log_transfers() from public, anon, aut
 
 alter table public.show_payments add column if not exists hors_calcul text;
 comment on column public.show_payments.hors_calcul is 'Motif : ligne gardée pour la traçabilité mais hors de tout calcul (lot D1, v1.44). Posé/retiré seulement par une régularisation annoncée (matrice.regularisation = hors_calcul).';
+
+-- une seule commission L'ArtBo QUI COMPTE par date (v1.43) : une commission hors calcul (import) n'empêche pas d'en noter une réelle
+drop index if exists public.show_payments_une_commission;
+create unique index show_payments_une_commission on public.show_payments (show_id) where kind = 'artbo' and hors_calcul is null;
 
 -- ─────────────── 1. Garde : le classement « hors calcul » ne se change que par un script annoncé ───────────────
 create or replace function public.show_payments_hors_calcul_guard() returns trigger

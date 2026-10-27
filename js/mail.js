@@ -6,7 +6,7 @@
  * Le brouillon est créé dans Gmail (compte production@) par le script Apps Script
  * (réglage drive_webhook_url) ; sans lui, on copie le mail pour le coller dans Gmail.
  */
-import { billPct, paymentsOf } from './calc.js';
+import { billPct, isCoproduction, paymentsOf } from './calc.js';
 import { ENV } from './config.js';
 import { insert, remove, save, sb } from './data.js';
 import { byId, contactMails, linksOfStructure, projectOptions, setting } from './selectors.js';
@@ -240,12 +240,12 @@ function confChecks(s, booking=false){
   if (s.fee_ht == null) miss.push('le cachet HT');
   if (!s.contract_type || s.contract_type === 'N.C') miss.push('le type de contrat');
   if (!s.structure_id) miss.push('la structure');
-  if (!booking && !pays.length) miss.push('les acomptes');
+  if (!booking && !pays.length && !isCoproduction(s)) miss.push('les acomptes');   // coproduction : aucun acompte attendu (27/10/2026)
   const vat = s.vat_rate ?? 5.5, pc = p => { const v = billPct(p); return v == null ? '' : (Math.round(v * 100) / 100).toLocaleString('fr-FR') + ' %'; };
   return `<div class="conf-check ${miss.length?'warn':''}">
     <b>${s.terms_validated_at ? `Conditions validées le ${fmtDate(s.terms_validated_at.slice(0,10))}` : 'Conditions reprises dans le mail'}</b>
     <div>${esc(s.contract_type||'Contrat ?')} · ${s.fee_ht!=null?`${Number(s.fee_ht).toLocaleString('fr-FR')} € HT · TVA ${String(vat).replace('.',',')} %`:'cachet ?'}
-      ${booking ? '' : '· ' + (pays.map(p=>`${esc(p.label||p.kind)} ${pc(p)}`).join(' · ') || 'aucun acompte')}</div>
+      ${booking ? '' : '· ' + (pays.map(p=>`${esc(p.label||p.kind)} ${pc(p)}`).join(' · ') || (isCoproduction(s) ? 'coproduction : ni acompte ni solde' : 'aucun acompte'))}</div>
     ${miss.length ? `<div class="err">Manque : ${miss.join(', ')}. Ferme ce mail et valide les conditions de la date (le mail reprend ces infos).</div>` : ''}
     <div class="muted">${booking ? 'Booking uniquement : le lien de la fiche de renseignements est retiré du mail, l’organisateur et l’artiste s’arrangent entre eux pour le contrat.' : 'La fiche de renseignements affiche toujours les conditions à jour : tu peux encore les corriger après l’envoi, tant que le contrat n’est pas parti.'}</div>
   </div>`;
