@@ -41,7 +41,9 @@ begin
   begin update public.settings set value = value where key = 'functions_base_url'; res := res || 'SERVEUR MODIFIE UN RÉGLAGE ; ';
   exception when insufficient_privilege then res := res || 'serveur, réglage : refusé ; '; when others then res := res || 'AUTRE ERREUR (serveur, réglage) ' || sqlerrm || ' ; '; end;
   reset role;
-  if to_regclass('cron.job') is not null and exists (select 1 from cron.job where jobname = 'rappels-quotidiens' and active) then res := res || 'RAPPELS ACTIFS ; '; end if;
+  if to_regclass('cron.job') is not null then
+    if exists (select 1 from cron.job where jobname = 'rappels-quotidiens' and active) then res := res || 'RAPPELS ACTIFS ; '; end if;
+  end if;
   if res ~ '[A-ZÉ]{4,} [A-ZÉ]' then raise exception 'BILAN GEL : NON CONFORME — %', res; end if;
   raise exception using errcode = 'P0001', message = 'BILAN GEL : CONFORME (tout est refusé, lecture possible ; tout est annulé). ' || res;
 end $t$;
