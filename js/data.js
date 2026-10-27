@@ -209,6 +209,16 @@ export function planRetries(){
   }, Math.max(1000, next - Date.now()));
 }
 /** Supprime les lignes liées (tables sans cascade) */
+/** Fichiers stockés (espace « suivi ») d'un élément supprimé : effacés APRÈS la suppression réussie de ses lignes (§4.4, v1.46b).
+ *  Un échec est signalé, jamais silencieux. Les fichiers Google Drive ne sont jamais touchés. */
+export async function purgeStored(paths){
+  paths = [...new Set((paths || []).filter(Boolean))];
+  if (!paths.length) return true;
+  const {error} = await sb.storage.from('suivi').remove(paths);
+  if (error){ toast(`Supprimé, mais ${paths.length > 1 ? paths.length + ' fichiers n’ont' : '1 fichier n’a'} pas pu être effacé${paths.length > 1 ? 's' : ''} du stockage : ${error.message}`, true); return false; }
+  return true;
+}
+
 export async function removeWhere(table, col, val){
   const {error} = await sb.from(table).delete().eq(col, val);
   if (!error){ S.db[table] = S.db[table].filter(r => r[col] !== val); touch(table); }

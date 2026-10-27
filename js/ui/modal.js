@@ -55,13 +55,14 @@ export const MODALS = {};
 export let MODAL = null;
 
 /**
- * openModal({title, fields, values, onSave, onDelete, extra, extraTop, level, wide, saveLabel})
+ * openModal({title, fields, values, onSave, onDelete, deleteAsk, extra, extraTop, level, wide, saveLabel})
+ * deleteAsk() : question de suppression ({title, text, actions}, voir ui/dialog.js) ; onDelete(choix) reçoit la valeur du bouton choisi.
  * extraTop : contenu libre affiché avant les champs, extra : après.
  * onSave(valeurs) : renvoyer false pour garder la fenêtre ouverte.
  */
-export function openModal({title, fields, values={}, onSave, onDelete, extra='', extraTop='', level=1, wide=false, mail=false, footExtra='', saveLabel='Enregistrer'}){
+export function openModal({title, fields, values={}, onSave, onDelete, deleteAsk, extra='', extraTop='', level=1, wide=false, mail=false, footExtra='', saveLabel='Enregistrer'}){
   const dlg = $(level===2 ? '#modal2' : '#modal');
-  MODALS[level] = {fields, onSave, onDelete, dlg};
+  MODALS[level] = {fields, onSave, onDelete, deleteAsk, dlg};
   if (level===1) MODAL = MODALS[1];
   // mail : fenêtre haute, seul le texte du mail défile (champs en haut, boutons toujours visibles en bas)
   dlg.className = [wide || mail ? 'wide' : '', mail ? 'mail' : ''].filter(Boolean).join(' ');
