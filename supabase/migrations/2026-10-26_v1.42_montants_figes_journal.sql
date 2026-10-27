@@ -71,6 +71,8 @@ language plpgsql set search_path = public as $$
 declare v numeric; fee numeric;
 begin
   if new.amount is not null or new.kind not in ('acompte', 'solde', 'autre', 'artbo', 'partner') then return new; end if;
+  -- classement « hors calcul » posé ou retiré (v1.44, régularisation annoncée) : ce n'est pas une émission, rien à figer
+  if tg_op = 'UPDATE' and (to_jsonb(new) -> 'hors_calcul') is distinct from (to_jsonb(old) -> 'hors_calcul') then return new; end if;
   if not public.payment_is_emitted(new) then return new; end if;
   if tg_op = 'UPDATE' and public.payment_is_emitted(old) then return new; end if;   -- déjà émise avant : régularisation contrôlée (§3)
   select fee_ht into fee from public.shows where id = new.show_id;
@@ -236,11 +238,12 @@ language plpgsql security definer set search_path = public as $$
 declare
   f text; o jsonb; n jsonb;
   fields text[] := case tg_table_name when 'shows' then array['fee_ht', 'artbo_pct', 'partner_pct', 'vat_rate', 'prod_mode', 'contract_type']
-                   else array['amount', 'pct', 'vat_rate', 'kind', 'show_id', 'payee', 'sent_at', 'paid_at', 'invoice_number', 'pennylane_id'] end;
+                   else array['amount', 'pct', 'vat_rate', 'kind', 'show_id', 'payee', 'sent_at', 'paid_at', 'invoice_number', 'pennylane_id', 'hors_calcul'] end;   -- hors_calcul : v1.44
   src text := case when coalesce(current_setting('matrice.regularisation', true), '') = 'gel' then 'régularisation contrôlée'
                    when coalesce(current_setting('matrice.regularisation', true), '') in ('degel', 'retour_versement') then 'retour arrière de régularisation'
                    when coalesce(current_setting('matrice.regularisation', true), '') = 'commission_partielle' then 'régularisation contrôlée (commission partielle)'
                    when coalesce(current_setting('matrice.regularisation', true), '') = 'acompte_facture' then 'régularisation contrôlée (facture émise)'
+                   when coalesce(current_setting('matrice.regularisation', true), '') = 'hors_calcul' then 'régularisation contrôlée (hors calcul)'
                    when coalesce(current_setting('request.jwt.claims', true), '') <> '' then 'application / fonction serveur'
                    else 'base (éditeur SQL, tâche planifiée)' end;
   sid uuid; fsrc text;

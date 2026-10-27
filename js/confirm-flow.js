@@ -8,7 +8,7 @@
  */
 import { render } from './app.js';
 import { applyTemplate } from './budget-template.js';
-import { BILL_KINDS, billPct, isInvoiced, payAmount, paymentsOf, soldeInvoiced } from './calc.js';
+import { BILL_KINDS, billPct, isCoproduction, isInvoiced, payAmount, paymentsOf, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, CONTRACTS } from './constants.js';
 import { insert, refreshShowSide, remove, save } from './data.js';
 import { isBookingOnly, prepareMail } from './mail.js';
@@ -65,7 +65,8 @@ export async function validateTerms(showId){
   const locked = isInvoiced;                       // facture émise : envoyée, payée, numérotée ou dans Pennylane (§6.4)
   const soldeLock = !booking && soldeInvoiced(showId);   // solde facturé : plus aucun acompte ne change (§6.4)
   const def = Number(setting('default_acompte_pct') ?? 50) || 50;
-  const pcts = acs.length ? acs.map(p => ({v: r2(billPct(p) ?? 0), due: p.due_label || ''})) : [{v: def, due: ''}];
+  // coproduction (décision du 27/10/2026) : aucun acompte proposé par défaut — seulement ceux qui existent réellement
+  const pcts = acs.length ? acs.map(p => ({v: r2(billPct(p) ?? 0), due: p.due_label || ''})) : isCoproduction(s) ? [] : [{v: def, due: ''}];
   // chaque acompte : son % et son échéance (le 1er : à la signature du contrat, sauf autre choix)
   const acRows = (list) => list.map(({v, due}, i) => `<div class="terms-ac"><span>Acompte ${list.length > 1 ? i + 1 : ''}</span>
       <input type="number" step="any" inputmode="decimal" class="narrow" data-terms-ac="${i}" value="${v}" ${soldeLock ? 'disabled title="Solde déjà facturé : les acomptes ne changent plus"' : acs[i] && locked(acs[i]) ? 'disabled title="Facture déjà émise : elle ne se modifie plus"' : ''} aria-label="% de l’acompte ${i + 1}"> %
@@ -75,7 +76,7 @@ export async function validateTerms(showId){
     : `<div class="field full"><label>Acomptes</label>
       <div class="terms-acs">
         ${soldeLock ? '<p class="mode-note">Le solde est déjà facturé : les acomptes ne peuvent plus changer (seules les échéances se modifient).</p>' : ''}
-        <label class="terms-n">Nombre d’acomptes <select id="terms-n" ${soldeLock ? 'disabled' : ''}>${[0, 1, 2, 3].map(n => `<option ${n === (acs.length || 1) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <label class="terms-n">Nombre d’acomptes <select id="terms-n" ${soldeLock ? 'disabled' : ''}>${[0, 1, 2, 3].map(n => `<option ${n === (acs.length || (isCoproduction(s) ? 0 : 1)) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <div id="terms-list">${acRows(pcts)}</div>
         <div class="terms-solde" id="terms-solde"></div>
       </div>
@@ -109,7 +110,7 @@ export async function validateTerms(showId){
       if (sum > 100.001){ toast(`Les factures dépasseraient 100 % du cachet (${String(r2(sum)).replace('.', ',')} % avec celles déjà envoyées)`, true); return false; }
       const oldFee = s.fee_ht;
       if (!(await save('shows', s.id, {...v, terms_validated_at: new Date().toISOString()}, {rerender: false}))) return false;
-      if (!booking && !(await syncAcomptes(s.id, rows, {duesOnly: soldeLock}))){ toast('Les acomptes n’ont pas pu être enregistrés : vérifie l’onglet Factures', true); return false; }
+      if (!booking && !(await syncAcomptes(s.id, rows, {duesOnly: soldeLock, coproduction: v.contract_type === 'Co-Production'}))){ toast('Les acomptes n’ont pas pu être enregistrés : vérifie l’onglet Factures', true); return false; }
       if (!booking && Number(v.fee_ht) !== Number(oldFee)) await afterFeeChange(s.id, {level: 2});   // montants saisis : on demande (Q5)
       toast('Conditions validées');
       return true;
@@ -162,7 +163,7 @@ export async function afterFeeChange(showId, {level = 1} = {}){
 /** Lignes d'acompte = la liste validée (une facture émise n'est jamais touchée, §6.4), solde = le reste.
  *  Un montant saisi en euros est conservé tant que son % n'a pas été changé (Q22 : la précision n'est jamais perdue).
  *  duesOnly : solde déjà facturé, seules les échéances changent. */
-async function syncAcomptes(showId, rows, {duesOnly = false} = {}){
+async function syncAcomptes(showId, rows, {duesOnly = false, coproduction = false} = {}){
   const acs = acomptesOf(showId), list = rows.map(r => r.pct), dues = rows.map(r => r.due || null);
   if (duesOnly){
     for (let i = 0; i < Math.min(acs.length, dues.length); i++)
@@ -188,7 +189,8 @@ async function syncAcomptes(showId, rows, {duesOnly = false} = {}){
       } else if ((p.due_label || null) !== dues[i] && !(await save('show_payments', p.id, {due_label: dues[i]}, {rerender: false}))) return false;   // facture partie : seule l'échéance change
     } else if (p && !isInvoiced(p) && !(await remove('show_payments', p.id))) return false;
   }
-  if (!paymentsOf(showId).some(p => p.kind === 'solde') && !(await insert('show_payments', {show_id: showId, kind: 'solde', label: 'Solde', pct: 100, sort: 100}))) return false;
+  // coproduction : jamais de solde créé d'office (aucune facture de cession) — une opération réelle s'ajoute à la main
+  if (!paymentsOf(showId).some(p => p.kind === 'solde') && !coproduction && !(await insert('show_payments', {show_id: showId, kind: 'solde', label: 'Solde', pct: 100, sort: 100}))) return false;
   await rebalanceSolde(showId);
   render();
   return true;

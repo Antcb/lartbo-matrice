@@ -6,7 +6,7 @@
  * Le brouillon est créé dans Gmail (compte production@) par le script Apps Script
  * (réglage drive_webhook_url) ; sans lui, on copie le mail pour le coller dans Gmail.
  */
-import { billPct } from './calc.js';
+import { billPct, paymentsOf } from './calc.js';
 import { ENV } from './config.js';
 import { insert, remove, save, sb } from './data.js';
 import { byId, contactMails, linksOfStructure, projectOptions, setting } from './selectors.js';
@@ -203,7 +203,7 @@ export const isBookingOnly = s => (s?.prod_mode || byId('projects', s?.project_i
  * avec son % et son échéance (« à la signature du contrat » pour le 1er, « le 15 janvier 2027 »… pour les suivants).
  */
 export function expandAcomptes(html, s){
-  const acs = S.db.show_payments.filter(p => p.show_id === s.id && p.kind === 'acompte').sort((a, b) => (a.sort || 0) - (b.sort || 0));
+  const acs = paymentsOf(s.id).filter(p => p.kind === 'acompte');   // lignes hors calcul exclues (v1.44)
   const TAG = '{{acompte_pct}}', FIRST = 'à la signature du contrat';
   if (!acs.length || !String(html || '').includes(TAG)) return html;
   if (acs.length === 1 && (!acs[0].due_label || acs[0].due_label === FIRST)) return html;   // cas simple : le modèle tel quel
@@ -235,7 +235,7 @@ export function withoutFiche(html){
 }
 
 function confChecks(s, booking=false){
-  const pays = S.db.show_payments.filter(p => p.show_id === s.id && ['acompte','solde'].includes(p.kind)).sort((a,b)=>(a.sort||0)-(b.sort||0));
+  const pays = paymentsOf(s.id).filter(p => ['acompte','solde'].includes(p.kind));   // lignes hors calcul exclues (v1.44)
   const miss = [];
   if (s.fee_ht == null) miss.push('le cachet HT');
   if (!s.contract_type || s.contract_type === 'N.C') miss.push('le type de contrat');

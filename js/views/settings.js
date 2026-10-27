@@ -6,7 +6,7 @@ import { sb } from '../data.js';
 import { departments, setting } from '../selectors.js';
 import { fetchAll } from '../data.js';
 import { S, touch } from '../state.js';
-import { isInvoiced } from '../calc.js';
+import { isCoproduction, isInvoiced, paymentsOf } from '../calc.js';
 import { viewHead } from '../ui/bits.js';
 import { cIn } from '../ui/cells.js';
 import { esc, toast } from '../utils.js';
@@ -197,13 +197,13 @@ export async function applyAcompte(){
   // seulement l'acompte et le solde créés à la confirmation (pas les acomptes ajoutés à la main)
   // dates à venir dont les conditions ne sont pas validées, avec un seul acompte et rien d'envoyé / payé / saisi à la main
   const now = new Date().toLocaleDateString('sv-SE');
-  const ids = S.db.shows.filter(s => !s.terms_validated_at && s.prod_mode !== 'booking' && (!s.date || s.date >= now)).map(s => s.id).filter(id => {
-    const p = S.db.show_payments.filter(x => x.show_id === id && ['acompte','solde'].includes(x.kind));
+  const ids = S.db.shows.filter(s => !s.terms_validated_at && s.prod_mode !== 'booking' && !isCoproduction(s) && (!s.date || s.date >= now)).map(s => s.id).filter(id => {   // coproduction : pas d'acompte / solde par défaut (v1.44)
+    const p = paymentsOf(id).filter(x => ['acompte','solde'].includes(x.kind));
     return p.filter(x => x.kind === 'acompte').length === 1 && p.every(x => !isInvoiced(x) && (x.amount == null || x.amount === ''));   // aucune facture émise (§6.4)
   });
   for (const [kind, pct] of [['acompte', ac], ['solde', 100-ac]]){
     for (let i = 0; i < ids.length; i += 100){
-      const {error} = await sb.from('show_payments').update({pct}).eq('kind', kind).is('sent_at', null).is('paid_at', null).is('invoice_number', null).is('pennylane_id', null).is('amount', null).in('show_id', ids.slice(i, i + 100));
+      const {error} = await sb.from('show_payments').update({pct}).eq('kind', kind).is('sent_at', null).is('paid_at', null).is('invoice_number', null).is('pennylane_id', null).is('amount', null).is('hors_calcul', null).in('show_id', ids.slice(i, i + 100));
       if (error) return toast(error.message, true);
     }
   }

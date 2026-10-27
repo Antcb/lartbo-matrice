@@ -1,6 +1,7 @@
 // Règles de la synchronisation Pennylane (lot C1) sur de FAUSSES données : aucun appel à Pennylane ni à la base.
 // Lancé par « npm test » (node --experimental-strip-types). Module testé : supabase/functions/pennylane/regles.ts
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { acomptesFactures, caduc, emise, factureIsolee, figerMontant, rangeeDansLeDrive, montantAttendu, payable, relieAuDevis } from '../../supabase/functions/pennylane/regles.ts';
 
 const cas = [];
@@ -70,6 +71,13 @@ t('commission de PRODUCTION (lot D1, versements) : jamais facturée, jamais reli
     assert.equal(relieAuDevis({ kind: 'artbo' }, mode), false, 'jamais reliée au devis ' + mode);
   }
   assert.equal(factureIsolee({ kind: 'artbo' }, 'booking'), true, 'booking : la commission reste une facture');
+});
+t('coproduction (v1.44) : une ligne hors calcul n’est jamais reliée, synchronisée ni facturée (requêtes de la fonction)', () => {
+  const src = readFileSync(new URL('../../supabase/functions/pennylane/index.ts', import.meta.url), 'utf8');
+  assert.match(src, /\.is\('pennylane_id', null\)\.is\('hors_calcul', null\)/, 'rapprochement avec le devis');
+  assert.match(src, /\.in\('kind', \['acompte', 'solde'\]\)\.is\('hors_calcul', null\)\.in\('show_id', ids\)/, 'acomptes déjà facturés');
+  assert.match(src, /\['acompte', 'solde', 'autre', 'artbo'\]\)\.is\('hors_calcul', null\)/, 'paiements repris');
+  assert.match(src, /if \(p\.hors_calcul\) return json\(/, 'création de facture refusée');
 });
 
 let ko = 0;

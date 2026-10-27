@@ -187,11 +187,11 @@ Deno.serve(async (req) => {
       const linked: any[] = [], caducs: string[] = [], erreurs: string[] = [];   // erreurs : écritures refusées (jamais comptées comme faites)
       if (Object.keys(byQuote).length) {
         const open = (await readAll(() => admin.from('show_payments').select('id, show_id, kind, pct, amount, sort, invoice_number, pennylane_id, sent_at, paid_at, shows!inner(fee_ht, pennylane_quote_id, prod_mode)')
-          .in('kind', ['acompte', 'solde']).is('invoice_number', null).is('pennylane_id', null).not('shows.pennylane_quote_id', 'is', null)) || [])
+          .in('kind', ['acompte', 'solde']).is('invoice_number', null).is('pennylane_id', null).is('hors_calcul', null).not('shows.pennylane_quote_id', 'is', null)) || [])
           .filter((p: any) => relieAuDevis(p, p.shows?.prod_mode));   // booking : factures de l'artiste, jamais reliées (lot C1)
         // acomptes déjà facturés de ces dates : le solde attendu = cession − acomptes facturés (comme Pennylane)
         const ids = [...new Set(open.map((p: any) => p.show_id))];
-        const acs = ids.length ? await readAll(() => admin.from('show_payments').select('show_id, kind, amount, pct, sent_at, paid_at, invoice_number, pennylane_id').in('kind', ['acompte', 'solde']).in('show_id', ids)) : [];
+        const acs = ids.length ? await readAll(() => admin.from('show_payments').select('show_id, kind, amount, pct, sent_at, paid_at, invoice_number, pennylane_id').in('kind', ['acompte', 'solde']).is('hors_calcul', null).in('show_id', ids)) : [];
         const facture: Record<string, number> = {};
         for (const id of ids) { const fee = Number((open.find((p: any) => p.show_id === id) as any)?.shows?.fee_ht) || 0; facture[id as string] = acomptesFactures((acs || []).filter((a: any) => a.show_id === id), fee); }
         const taken = await readAll(() => admin.from('show_payments').select('id, pennylane_id, invoice_number').or('invoice_number.not.is.null,pennylane_id.not.is.null'));
@@ -221,7 +221,7 @@ Deno.serve(async (req) => {
       // paiements repris : acomptes / soldes / autres lignes de PRODUCTION, et factures de commission BOOKING (lot C1) ;
       // jamais les factures de l'artiste en booking, ni la commission de production (pas une facture)
       const pays = ((await readAll(() => admin.from('show_payments').select('id, show_id, kind, label, invoice_number, pennylane_id, paid_at, drive_file_id, shows(date, city, venue, drive_folder_id, prod_mode)')
-        .in('kind', ['acompte', 'solde', 'autre', 'artbo']).or('invoice_number.not.is.null,pennylane_id.not.is.null'))) || [])
+        .in('kind', ['acompte', 'solde', 'autre', 'artbo']).is('hors_calcul', null).or('invoice_number.not.is.null,pennylane_id.not.is.null'))) || [])
         .filter((p: any) => payable(p, p.shows?.prod_mode));
       const updated: any[] = [], pennylaneLate: any[] = [], toFile: { p: any; x: any }[] = [];
       for (const p of pays || []) {
@@ -278,6 +278,8 @@ Deno.serve(async (req) => {
     if (body.action === 'invoice') {
       const { data: p } = await admin.from('show_payments').select('*').eq('id', body.payment_id).single();
       if (!p) return json({ error: 'Ligne de facturation introuvable' }, 404);
+      // ligne hors calcul (coproduction, import — v1.44) : jamais facturée
+      if (p.hors_calcul) return json({ error: 'Ligne hors calcul (gardée pour la traçabilité) : elle ne se facture pas' }, 400);
       const { data: s } = await admin.from('shows').select('*, projects(*)').eq('id', p.show_id).single();
       if (!s) return json({ error: 'Date introuvable' }, 404);
       // booking : seulement la commission de L'ArtBo ; production : jamais la commission (pas une facture) — acompte / solde : depuis le devis
