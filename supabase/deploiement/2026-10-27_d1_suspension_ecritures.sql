@@ -8,9 +8,13 @@
 --   • fonctions serveur (rôle serveur : Pennylane, imports) : plus aucune écriture sur les tables financières
 --     (dates, lignes de facturation, versements, budgets, artistes, réglages) et plus d'accès aux clés des services externes
 --     (Pennylane, import, lecture IA, export des fichiers) — donc aucune synchronisation ni brouillon Pennylane possible ;
---   • pages publiques et fonctions d'écriture appelables par l'API (fiche, artiste, RH, dossier Drive, clés, Movinmotion) ;
+--   • pages publiques et fonctions d'écriture appelables par l'API ou par les fonctions serveur / le script Google (fiche, artiste,
+--     RH, dossier Drive, clés, Movinmotion, lignes de production, fichiers artistes, Brevo) ;
 --   • rappels automatiques (tâche planifiée « rappels-quotidiens ») mis en pause.
--- Les scripts lancés dans l'éditeur SQL (rôle postgres) et la sauvegarde nocturne (lecture) ne sont pas concernés.
+-- Les scripts lancés dans l'éditeur SQL (rôle postgres) ne sont pas concernés.
+-- ATTENTION : la fonction d'export des fichiers (backup-export) lit aussi une clé : la sauvegarde de nuit des FICHIERS échoue tant que
+-- la suspension est en place → intervenir en journée et lancer la reprise avant 01 h 30 UTC (sinon : une nuit de sauvegarde manquée,
+-- à relancer à la main après la reprise). La sauvegarde complète de la base (pg_dump, rôle « sauvegarde ») n'est pas concernée.
 -- =====================================================================================================
 begin;
 set local lock_timeout = '5s';
@@ -28,7 +32,11 @@ create table if not exists maintenance_d1.journal (at timestamptz not null defau
 do $s$
 declare r record; fns text[] := array['public.request_drive_folder(uuid)', 'public.fiche_submit(text, jsonb, jsonb)', 'public.rh_submit(text, jsonb, jsonb, jsonb)',
   'public.set_ai_key(text)', 'public.set_pennylane_key(text)', 'public.artist_submit(text, jsonb, jsonb)', 'public.artist_info_save(uuid, jsonb)',
-  'public.ensure_movinmotion(uuid)'];
+  'public.ensure_movinmotion(uuid)',
+  -- appelables seulement par le rôle serveur (fonctions serveur, script Google) et qui écrivent avec les droits du propriétaire
+  'public.import_secret(text)', 'public.ensure_production_payments(uuid)', 'public.artist_doc_claim(uuid, text)',
+  'public.artist_doc_filed(uuid, text, text, text)', 'public.artist_sync(uuid, jsonb, boolean)', 'public.brevo_add_emails(uuid, text[])',
+  'public.brevo_queue(uuid)', 'public.generate_reminders()'];
   f text; n int;
 begin
   -- 1. tables : droits d'écriture des rôles de l'API (toutes les tables pour l'application et les visiteurs ; tables financières pour le serveur)
@@ -42,28 +50,18 @@ begin
   for r in select * from maintenance_d1.droits_tables where to_regclass(tbl) is not null loop
     execute format('revoke %s on %s from %I', r.priv, r.tbl, r.rol);
   end loop;
-  -- 2. fonctions d'écriture appelables par l'API (droit d'exécution noté tel qu'il est, PUBLIC compris)
+  -- 2. fonctions d'écriture (droit d'exécution noté tel qu'il est, PUBLIC compris) ; import_secret : plus aucune clé lisible
+  --    → aucune synchronisation Pennylane ni création de brouillon (devis / facture) dans Pennylane possible
   foreach f in array fns loop
     if to_regprocedure(f) is null then continue; end if;
     insert into maintenance_d1.droits_fonctions
       select f, case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end
         from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
        where p.oid = to_regprocedure(f) and a.privilege_type = 'EXECUTE'
-         and (a.grantee = 0 or a.grantee::regrole::text in ('anon', 'authenticated'))
-    on conflict do nothing;
-    execute format('revoke execute on function %s from public, anon, authenticated', f);
-  end loop;
-  -- 2b. clés des services externes (Pennylane, imports, lecture IA) : plus lisibles par les fonctions serveur pendant l'intervention
-  --     → aucune synchronisation Pennylane ni création de brouillon (devis / facture) dans Pennylane possible
-  if to_regprocedure('public.import_secret(text)') is not null then
-    insert into maintenance_d1.droits_fonctions
-      select 'public.import_secret(text)', case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end
-        from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
-       where p.oid = to_regprocedure('public.import_secret(text)') and a.privilege_type = 'EXECUTE'
          and (a.grantee = 0 or a.grantee::regrole::text in ('anon', 'authenticated', 'service_role'))
     on conflict do nothing;
-    revoke execute on function public.import_secret(text) from public, anon, authenticated, service_role;
-  end if;
+    execute format('revoke execute on function %s from public, anon, authenticated, service_role', f);
+  end loop;
   -- 3. rappels automatiques en pause
   if to_regclass('cron.job') is not null then
     insert into maintenance_d1.taches select jobid, jobname, active from cron.job where jobname = 'rappels-quotidiens' on conflict do nothing;
@@ -82,11 +80,10 @@ begin
      and has_table_privilege('service_role', c.oid, pr.p);
   if n > 0 then raise exception 'ECHEC : % droit(s) d''écriture encore ouverts aux fonctions serveur — TOUT EST ANNULÉ', n; end if;
   foreach f in array fns loop
-    if to_regprocedure(f) is not null and (has_function_privilege('anon', to_regprocedure(f), 'EXECUTE') or has_function_privilege('authenticated', to_regprocedure(f), 'EXECUTE')) then
+    if to_regprocedure(f) is not null and (has_function_privilege('anon', to_regprocedure(f), 'EXECUTE') or has_function_privilege('authenticated', to_regprocedure(f), 'EXECUTE')
+                                           or has_function_privilege('service_role', to_regprocedure(f), 'EXECUTE')) then
       raise exception 'ECHEC : % encore exécutable — TOUT EST ANNULÉ', f; end if;
   end loop;
-  if to_regprocedure('public.import_secret(text)') is not null and has_function_privilege('service_role', 'public.import_secret(text)', 'EXECUTE') then
-    raise exception 'ECHEC : clés Pennylane encore lisibles par les fonctions serveur — TOUT EST ANNULÉ'; end if;
   if to_regclass('cron.job') is not null then
     if exists (select 1 from cron.job where jobname = 'rappels-quotidiens' and active) then
       raise exception 'ECHEC : rappels automatiques encore actifs — TOUT EST ANNULÉ'; end if;
