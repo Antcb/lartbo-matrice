@@ -272,6 +272,10 @@ test('v1.51 commission en coréalisation : 20 % (Réglages) et 15 % (artiste), a
     Object.assign(S.db.show_payments.find(p => p.id === 'com-c15'), { paid_at: '2026-10-20' });   // production : commission versée (sans montant figé, comme l'historique) touch('show_payments');
     return c.changeBlocked('shows', 'c15', { corea_share: 1500 }); });
   expect(why).toContain('modifierait leur montant');
+  // part validée qui n'est plus calculable (break à revalider) : signalée à l'écran, jamais retirée en silence
+  await set(page, 'c20', { break_even: 450 });
+  await openBudget(page, 'c20');
+  await expect(page.locator('.corea-block')).toContainText('la part n’est plus calculable');
   expectClean(ctx);
 });
 
@@ -313,5 +317,9 @@ test('v1.51 clôture de coproduction : une dépense restant à payer bloque ; pr
   await set(page, 'cp-9', { production: { ...(await page.evaluate(() => window.__DB.shows.find(s => s.id === 'cp-9').production)), promo_debtor: 'artbo' } });
   k = await close();
   expect(k.x).toMatchObject({ result: 4685, shared_result: 5650, artbo_part: 1860, partner_part: 2825, transfer: 6790, from: 'artbo' });
+  // promotion locale négative (taux négatif) : bloquante
+  await set(page, 'cp-9', { production: { ...(await page.evaluate(() => window.__DB.shows.find(s => s.id === 'cp-9').production)), promo_net_pct: -10 } });
+  k = await close();
+  expect(k.ok).toBe(false); expect(k.issues).toContain('Promotion locale négative');
   expectClean(ctx);
 });
