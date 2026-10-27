@@ -8,11 +8,11 @@ import { projName, showsFiltered } from '../selectors.js';
 import { S } from '../state.js';
 import { filterBar, fold, viewHead } from '../ui/bits.js';
 import { cChk, cIn, cUrl } from '../ui/cells.js';
-import { esc, fmtDate, fmtWeekday } from '../utils.js';
+import { esc, fmtDate, fmtWeekday, pct as fmtPct } from '../utils.js';
 
 const pct = (a, b) => b ? Math.round((a||0) / b * 100) : null;
 const meter = (p, label) => p==null ? '<span class="muted">—</span>'
-  : `<div class="meter" style="--c:${p>=100?'var(--ok)':p>=60?'var(--brand-2)':p>=30?'var(--warn)':'var(--danger)'}"><b>${p} %</b><div class="bar"><i style="width:${Math.min(p,100)}%"></i></div>${label?`<span class="muted small">${label}</span>`:''}</div>`;
+  : `<div class="meter" style="--c:${p>=100?'var(--ok)':p>=60?'var(--brand-2)':p>=30?'var(--warn)':'var(--danger)'}"><b>${fmtPct(p)}</b><div class="bar"><i style="width:${Math.min(p,100)}%"></i></div>${label?`<span class="muted small">${label}</span>`:''}</div>`;
 
 /** Dates confirmées groupées par artiste : [[projectId, [dates]]] */
 export function byArtist(shows){

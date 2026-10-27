@@ -10,7 +10,7 @@ import { S, touch } from '../state.js';
 import { isCoproduction, isInvoiced, paymentsOf } from '../calc.js';
 import { viewHead } from '../ui/bits.js';
 import { cIn } from '../ui/cells.js';
-import { esc, toast, pct } from '../utils.js';
+import { esc, toast, pct, today } from '../utils.js';
 import { render } from '../app.js';
 import { templatesList } from '../mail.js';
 import { templateForm } from '../budget-template.js';
@@ -24,14 +24,14 @@ export function viewSettings(){
       <p class="help mb">Appliqués aux nouvelles dates confirmées. Chaque date et chaque projet peuvent les remplacer.</p>
       <div class="steps kv-grid">
         <label for="set-ac">Acompte (% du cachet)</label><input id="set-ac" type="number" step="any" data-act-setting="default_acompte_pct" value="${esc(acShown)}" placeholder="50">
-        <label>Solde (100 % − acompte)</label><span><b>${esc(100 - ac)} %</b></span>
+        <label>Solde (100 % − acompte)</label><span><b>${esc(pct(100 - ac))}</b></span>
         <label for="set-artbo-b">Commission L'ArtBo par défaut — booking (%)</label><input id="set-artbo-b" type="number" step="any" data-act-setting="default_artbo_pct_booking" value="${esc(setting('default_artbo_pct_booking')??15)}">
         <label for="set-artbo-p">Commission L'ArtBo par défaut — production (%)</label><input id="set-artbo-p" type="number" step="any" data-act-setting="default_artbo_pct_production" value="${esc(setting('default_artbo_pct_production')??20)}">
         <label for="set-cnm">Taxe CNM (%)</label><input id="set-cnm" type="number" step="any" data-act-setting="default_cnm_pct" value="${esc(setting('default_cnm_pct')??'')}">
         <label for="set-mvm">Coût Movinmotion par bulletin (€)</label><input id="set-mvm" type="number" step="any" data-act-setting="movinmotion_payslip_cost" value="${esc(setting('movinmotion_payslip_cost')??'')}">
       </div>
       <p class="help mt mb-sm">Les nouvelles dates confirmées prennent ces pourcentages. Les dates déjà confirmées gardent les leurs, sauf si tu les mets à jour :</p>
-      ${ac === 0 ? '' : `<button class="btn sm" data-act="applyAcompte">Appliquer ${esc(ac)} % / ${esc(100-ac)} % aux acomptes et soldes pas encore envoyés</button>`}</div>
+      ${ac === 0 ? '' : `<button class="btn sm" data-act="applyAcompte">Appliquer ${esc(pct(ac))} / ${esc(pct(100-ac))} aux acomptes et soldes pas encore envoyés</button>`}</div>
     <div class="panel pad"><h3 class="panel-title">Budget type</h3>
       <p class="help mb">Le budget prévisionnel posé sur chaque nouvelle date confirmée en production.</p>
       ${templateForm('settings')}</div>
@@ -211,7 +211,7 @@ export async function applyAcompte(){
   if (!(await confirmAsk('Appliquer aux dates à venir ?', `Mettre ${pct(ac)} d’acompte et ${pct(100-ac)} de solde sur les dates à venir dont les conditions ne sont pas validées et dont rien n’est facturé ni saisi à la main.`, `Appliquer ${pct(ac)} / ${pct(100-ac)}`))) return;
   // seulement l'acompte et le solde créés à la confirmation (pas les acomptes ajoutés à la main)
   // dates à venir dont les conditions ne sont pas validées, avec un seul acompte et rien d'envoyé / payé / saisi à la main
-  const now = new Date().toLocaleDateString('sv-SE');
+  const now = today();
   const ids = S.db.shows.filter(s => !s.terms_validated_at && s.prod_mode !== 'booking' && !isCoproduction(s) && (!s.date || s.date >= now)).map(s => s.id).filter(id => {   // coproduction : pas d'acompte / solde par défaut (v1.44)
     const p = paymentsOf(id).filter(x => ['acompte','solde'].includes(x.kind));
     return p.filter(x => x.kind === 'acompte').length === 1 && p.every(x => !isInvoiced(x) && (x.amount == null || x.amount === ''));   // aucune facture émise (§6.4)

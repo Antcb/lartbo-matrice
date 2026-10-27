@@ -18,7 +18,7 @@ import { ask, askText, confirmAsk, copyText } from './ui/dialog.js';
 import { modalSaved } from './ui/drafts.js';
 import { applyAcompte, saveDepartments } from './views/settings.js';
 import { hasLogDraft, setLogDraft } from './views/suivi.js';
-import { $, esc, eur2, fmtDate, safeHtml, toast, today, r2 } from './utils.js';
+import { $, esc, eur2, fmtDate, safeHtml, toast, today, r2, pct as fmtPct } from './utils.js';
 import { rtStyle, rtToolbar } from './ui/richtext.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
@@ -318,8 +318,8 @@ export const ACTIONS = {
   copyForAi: async t => {
     const p = byId('prospects', t.dataset.id);
     const logs = logsOf(p.id).slice().reverse().map(l=>`[${l.date?fmtDate(l.date):'sans date'}] ${l.kind}${l.contact_name?' — '+l.contact_name:''}\n${l.body||''}`).join('\n\n');
-    const today = new Date().toLocaleDateString('fr-FR');
-    const txt = `Mets à jour le résumé de ce suivi de booking (L'ArtBoristerie). 6 à 8 puces max, dans cet ordre : **Contexte / interlocuteurs**, **Date(s) visée(s) / option(s)**, **Jauge + billetterie**, **Offre financière** (HT/TTC), **Accueil / VHR / technique**, **Statut actuel**, **Prochaine action + date de relance**. Une puce par ligne commençant par « - », libellés en gras. Termine par « Dernière mise à jour : ${today} ». N'invente rien. Réponds uniquement avec le résumé.
+    const updated = fmtDate(today());
+    const txt = `Mets à jour le résumé de ce suivi de booking (L'ArtBoristerie). 6 à 8 puces max, dans cet ordre : **Contexte / interlocuteurs**, **Date(s) visée(s) / option(s)**, **Jauge + billetterie**, **Offre financière** (HT/TTC), **Accueil / VHR / technique**, **Statut actuel**, **Prochaine action + date de relance**. Une puce par ligne commençant par « - », libellés en gras. Termine par « Dernière mise à jour : ${updated} ». N'invente rien. Réponds uniquement avec le résumé.
 
 Structure : ${structName(p.structure_id)}
 Artiste(s) : ${projNames(p)}
@@ -421,7 +421,7 @@ export async function rebalanceSolde(showId){
 async function setBill(pay, pct){
   if (!BILL_KINDS.includes(pay.kind)) return false;
   const max = r2(100 - othersPct(pay, pay.kind === 'solde'));
-  if (pct > max + 0.001){ toast(`Les factures ne peuvent pas dépasser 100 % du cachet : ${String(max).replace('.', ',')} % au plus pour cette ligne`, true); return true; }
+  if (pct > max + 0.001){ toast(`Les factures ne peuvent pas dépasser ${fmtPct(100)} du cachet : ${fmtPct(max)} au plus pour cette ligne`, true); return true; }
   return false;
 }
 // commission de l'artiste changée : ses dates suivent (après confirmation)

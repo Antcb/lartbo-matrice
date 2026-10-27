@@ -5,7 +5,7 @@
  * Les conditions affichées sont toujours celles de la base : si l'équipe corrige le cachet
  * ou les acomptes, la fiche est à jour sans renvoyer de lien.
  */
-import { eur, pct as fmtPct } from './utils.js';
+import { eur, fmtDate, pct as fmtPct } from './utils.js';
 import { CFG } from './config.js';
 import { localDel, localGet, localSet } from './storage.js';
 import './ui/testbanner.js';
@@ -81,7 +81,7 @@ function draw(d){
   const values = {}; FICHE_SECTIONS.forEach(sec => sec.fields.forEach(f => values[f.k] = val(f)));
   const locked = !!d.locked;
   root.innerHTML = conditions(d) + `
-    ${d.submitted_at ? `<div class="panel pad fiche-ok">Fiche envoyée le ${new Date(d.submitted_at).toLocaleDateString('fr-FR')}${d.validated_at ? ' et validée par notre équipe' : ''}. ${locked ? 'Le contrat est en préparation : la fiche n’est plus modifiable.' : 'Tu peux encore la corriger et la renvoyer.'}</div>` : ''}
+    ${d.submitted_at ? `<div class="panel pad fiche-ok">Fiche envoyée le ${fmtDate(d.submitted_at)}${d.validated_at ? ' et validée par notre équipe' : ''}. ${locked ? 'Le contrat est en préparation : la fiche n’est plus modifiable.' : 'Tu peux encore la corriger et la renvoyer.'}</div>` : ''}
     <form id="fiche-form" class="fiche-form" novalidate>
       ${FICHE_SECTIONS.map(sec => `<section class="panel pad"><h2>${esc(sec.title)}</h2>${sec.help ? `<p class="help">${esc(sec.help)}</p>` : ''}
         <div class="fiche-grid${sec.cols === 3 ? ' cols3' : ''}">${sec.fields.map(f => input(f, values[f.k], locked, kind, values)).join('')}</div></section>`).join('')}

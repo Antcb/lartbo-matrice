@@ -191,6 +191,8 @@ for (const f of JS.filter(p => !p.endsWith('js/utils.js'))) {
   if (/new Date\(\)\.toISOString\(\)\.slice\(0,\s*10\)/.test(src)) fail('dates', `${rel(f)} : date du jour en UTC (utiliser today())`);
   if (/_at\??\.slice\(0,\s*10\)|created_at\s*\|\|\s*''\)\.slice\(0,\s*10\)/.test(src)) fail('dates', `${rel(f)} : jour coupé dans un horodatage (utiliser dayOf() ou fmtDate(horodatage))`);
   if (/const\s+(r2|addDays|addD|inDays|plusDays)\s*=\s*\(?[\w,\s]*\)?\s*=>\s*\{?\s*(Math\.round|const x = new Date)/.test(src)) fail('formats', `${rel(f)} : copie d'une fonction officielle (r2, addDays dans js/utils.js)`);
+  if (/new Date\([^)]*\)\.toLocaleDateString\(\s*['"](sv-SE|fr-FR)['"]\s*\)/.test(src)) fail('dates', `${rel(f)} : date du jour ou d'un horodatage selon le fuseau de l'ordinateur (utiliser today() / fmtDate())`);
+  if (/\$\{(?![^}]*\b(pin|cIn)\()[^}]*\}\s%/.test(src) && !/utils\.js$/.test(f)) fail('formats', `${rel(f)} : pourcentage formaté à la main (utiliser pct() ; seule l'unité après une case de saisie reste « % »)`);
   if (/toLocaleString\(\s*['"]fr-FR['"]\s*,\s*\{\s*style:\s*['"]currency/.test(src)) fail('formats', `${rel(f)} : montant formaté à la main (utiliser eur2 / eur)`);
 }
 

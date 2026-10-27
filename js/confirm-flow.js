@@ -15,7 +15,7 @@ import { isBookingOnly, prepareMail } from './mail.js';
 import { byId, defaultAcompte, projFilterOk, showCommissionPct } from './selectors.js';
 import { S, setProjects } from './state.js';
 import { openModal } from './ui/modal.js';
-import { esc, eur2, fmtDate, toast, r2 } from './utils.js';
+import { esc, eur2, fmtDate, toast, r2, pct } from './utils.js';
 import { rebalanceSolde } from './actions.js';
 
 export const DUE_FIRST = 'à la signature du contrat';
@@ -106,7 +106,7 @@ export async function validateTerms(showId){
       const lockedExtra = now.slice(list.length).filter(locked).reduce((a, p) => a + (billPct(p) || 0), 0);
       const solde = pays.find(p => p.kind === 'solde'), soldeLocked = solde && locked(solde) ? (billPct(solde) || 0) : 0;
       const sum = list.reduce((a, b) => a + b, 0) + lockedExtra + soldeLocked;
-      if (sum > 100.001){ toast(`Les factures dépasseraient 100 % du cachet (${String(r2(sum)).replace('.', ',')} % avec celles déjà envoyées)`, true); return false; }
+      if (sum > 100.001){ toast(`Les factures dépasseraient ${pct(100)} du cachet (${pct(sum)} avec celles déjà envoyées)`, true); return false; }
       const oldFee = s.fee_ht;
       if (!(await save('shows', s.id, {...v, terms_validated_at: new Date().toISOString()}, {rerender: false}))) return false;
       if (!booking && !(await syncAcomptes(s.id, rows, {duesOnly: soldeLock, coproduction: v.contract_type === 'Co-Production'}))){ toast('Les acomptes n’ont pas pu être enregistrés : vérifie l’onglet Factures', true); return false; }
@@ -121,7 +121,7 @@ export async function validateTerms(showId){
       vals.forEach((v, i) => { const e = document.querySelector(`#modal [data-terms-eur="${i}"]`); if (e) e.textContent = fee ? `= ${eur2(fee * v / 100)} HT` : ''; });
       const rest = r2(100 - vals.reduce((a, b) => a + b, 0));
       const box = document.querySelector('#modal #terms-solde');
-      if (box) box.innerHTML = rest < 0 ? `<span class="err">Les acomptes dépassent 100 % du cachet</span>` : `Solde : <b>${String(rest).replace('.', ',')} %</b>${fee ? ` = ${eur2(fee * rest / 100)} HT` : ''}`;
+      if (box) box.innerHTML = rest < 0 ? `<span class="err">Les acomptes dépassent 100 % du cachet</span>` : `Solde : <b>${pct(rest)}</b>${fee ? ` = ${eur2(fee * rest / 100)} HT` : ''}`;
     };
     document.querySelector('#modal #terms-n')?.addEventListener('change', e => {
       const n = Number(e.target.value), cur = [...document.querySelectorAll('#modal [data-terms-ac]')].map((x, i) => ({v: x.value, due: document.querySelector(`#modal [data-terms-due="${i}"]`)?.value || ''}));

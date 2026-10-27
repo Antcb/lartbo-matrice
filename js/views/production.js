@@ -188,7 +188,7 @@ function billingTab(s, booking, pays, late){
           const st = acompteState(p), soldeCalc = p.kind === 'solde' && !isInvoiced(p) && !ov;   // solde calculé : cession − acomptes facturés
           const pctLock = lock || (soldeCalc ? 'disabled title="Calculé : cession − acomptes effectivement facturés (saisis un montant HT pour le fixer)"' : '');
           return `<tr class="${st === 'caduc' ? 'muted' : ''}">
-          <td>${cIn('show_payments',p.id,'label',p.label)}${st === 'prevu' ? ` <span class="badge" title="Prévu au contrat (${pctVal(billPct(p))} %), pas encore facturé : il ne réduit pas le solde">prévu, non facturé</span>` : st === 'caduc' ? ' <span class="badge" title="Jamais facturé alors que le solde l’est : plus réclamé, historique conservé">caduc</span>' : ''}</td>
+          <td>${cIn('show_payments',p.id,'label',p.label)}${st === 'prevu' ? ` <span class="badge" title="Prévu au contrat (${pct(billPct(p))}), pas encore facturé : il ne réduit pas le solde">prévu, non facturé</span>` : st === 'caduc' ? ' <span class="badge" title="Jamais facturé alors que le solde l’est : plus réclamé, historique conservé">caduc</span>' : ''}</td>
           <td class="num">${BILL_KINDS.includes(p.kind) ? `<input type="number" step="any" inputmode="decimal" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="pct" value="${pctVal(billedPct(p))}" aria-label="% du cachet" ${pctLock}>`
             : ['cnm','autre'].includes(p.kind) ? cIn('show_payments',p.id,'pct',p.pct,'number','class="narrow"') : `<span class="muted">${payPct(p)??'—'}</span>`}</td>
           <td class="num"><input type="number" step="any" data-t="show_payments" data-id="${p.id}" data-f="amount" value="${ov?p.amount:''}" placeholder="${a==null?'à saisir':a}" ${lock || 'title="Laisse vide pour le calcul automatique"'} class="${ov?'override':''}"></td>
@@ -239,7 +239,7 @@ function billFoot(s){
   const b = billingOf(s), ok = Math.abs(b.gap) < 0.01;
   return `<tfoot><tr class="bill-total ${ok ? 'ok' : 'warn'}">
     <td><b>Total factures</b><div class="muted tiny">acomptes facturés + solde</div></td>
-    <td class="num"><b>${pctVal(b.pct)} %</b></td><td class="num nowrap"><b>${eur2(b.ht)}</b></td><td></td><td class="num nowrap"><b>${eur2(b.ttc)}</b></td>
+    <td class="num"><b>${pct(b.pct)}</b></td><td class="num nowrap"><b>${eur2(b.ht)}</b></td><td></td><td class="num nowrap"><b>${eur2(b.ttc)}</b></td>
     <td colspan="7">${ok ? `<span class="ok-badge">✓ = cachet (${eur2(b.fee)} HT · ${eur2(b.feeTtc)} TTC)</span>`
       : `<span class="warn-badge">${b.gap > 0 ? `Il manque ${eur2(b.gap)} HT` : `${eur2(-b.gap)} HT de trop`} par rapport au cachet (${eur2(b.fee)} HT)</span>`}
       <span class="muted nowrap"> · envoyées ${eur2(b.sentHt)} HT · payées ${eur2(b.paidHt)} HT${b.otherHt ? ` · autres lignes ${eur2(b.otherHt)} HT` : ''}</span>
@@ -250,7 +250,7 @@ function billFoot(s){
 function billWarn(s, booking){
   if (booking || !s.fee_ht || isCoproduction(s)) return '';
   const b = billingOf(s);
-  return (b.lines.length && Math.abs(b.gap) >= 0.01 ? ` <span class="warn-badge" title="Acomptes + solde ≠ cachet">factures ${pctVal(b.pct)} %</span>` : '')
+  return (b.lines.length && Math.abs(b.gap) >= 0.01 ? ` <span class="warn-badge" title="Acomptes + solde ≠ cachet">factures ${pct(b.pct)}</span>` : '')
     + (multiSolde(s.id) ? ' <span class="warn-badge" title="Plusieurs lignes de solde sur cette date : à vérifier">plusieurs soldes</span>' : '');
 }
 

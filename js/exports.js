@@ -7,7 +7,7 @@ import { STATUSES, isOff } from './constants.js';
 import { projName, structName } from './selectors.js';
 import { S } from './state.js';
 import { openModal } from './ui/modal.js';
-import { downloadCSV, toast, today } from './utils.js';
+import { downloadCSV, fmtDate, toast, today } from './utils.js';
 
 const BRAND = 'FF283C63', TINT = 'FFE8ECF3';
 let EXCEL = null;
@@ -52,7 +52,7 @@ export async function exportTable({name, title, subtitle = '', columns, rows, fo
   const tc = String.fromCharCode(65 + Math.max(ci, 1));
   ws.getCell(tc + '1').value = title; ws.getCell(tc + '1').font = {name: 'Geist', size: 16, bold: true, color: {argb: BRAND}};
   ws.getCell(tc + '2').value = subtitle; ws.getCell(tc + '2').font = {name: 'Geist', size: 11, color: {argb: 'FF5B677D'}};
-  ws.getCell(tc + '3').value = `Export du ${new Date().toLocaleDateString('fr-FR')} · L'ArtBoristerie Productions · production@lartboristerie.com`;
+  ws.getCell(tc + '3').value = `Export du ${fmtDate(today())} · L'ArtBoristerie Productions · production@lartboristerie.com`;
   ws.getCell(tc + '3').font = {name: 'Geist', size: 9, color: {argb: 'FF8A94A6'}};
   // Ligne d'en-têtes
   const head = ws.getRow(6);
