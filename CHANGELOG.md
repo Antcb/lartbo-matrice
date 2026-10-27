@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.43.4 — 27/10/2026
+- Régularisations des commissions et acomptes facturés resserrées (relecture)
+
+
 ## 1.43.3 — 27/10/2026
 - Régularisation contrôlée des acomptes facturés à un autre % (La Puce, La MOBA) et retour arrière de la commission partielle tracé comme tel
 

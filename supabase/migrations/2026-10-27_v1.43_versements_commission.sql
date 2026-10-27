@@ -146,7 +146,13 @@ begin
        and new.amount is not null and new.amount >= done then
       null;
     -- son retour arrière annoncé (« degel ») : le total revient EXACTEMENT au déjà transféré (journalisé comme retour arrière)
-    elsif coalesce(current_setting('matrice.regularisation', true), '') = 'degel' and new.amount = done then
+    -- seulement si ce total a été relevé par la régularisation « commission partielle » (dernière écriture du montant au journal :
+    -- cette valeur → le total actuel) ; un total figé au premier versement ne se modifie jamais (relecture D1)
+    elsif coalesce(current_setting('matrice.regularisation', true), '') = 'degel' and new.amount = done
+       and exists (select 1 from public.finance_log l where l.id = (select max(m.id) from public.finance_log m where m.row_id = old.id and m.field = 'amount')
+                     and l.source = 'régularisation contrôlée (commission partielle)'
+                     and (case when l.field = 'amount' then l.old_value::numeric end) = new.amount
+                     and (case when l.field = 'amount' then l.new_value::numeric end) = old.amount) then
       null;
     else
       raise exception 'Cette commission a des versements enregistrés : son montant total ne se modifie plus.' using errcode = 'P0001';
@@ -236,6 +242,9 @@ begin
        and new.amount = round(coalesce((select fee_ht from public.shows where id = old.show_id), 0) * new.pct) / 100
        and new.vat_rate is not distinct from old.vat_rate
        and new.show_id is not distinct from old.show_id and new.kind is not distinct from old.kind
+       and new.sent_at is not distinct from old.sent_at and new.paid_at is not distinct from old.paid_at
+       and new.invoice_number is not distinct from old.invoice_number and new.pennylane_id is not distinct from old.pennylane_id
+       and new.payee is not distinct from old.payee
        and coalesce(current_setting('matrice.regularisation', true), '') = 'acompte_facture' then
       return new;
     end if;
