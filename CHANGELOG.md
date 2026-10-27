@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.43.2 — 27/10/2026
+- Journal financier : écriture retirée aux fonctions serveur, seuls les déclencheurs l'alimentent
+
+
 ## 1.43.1 — 27/10/2026
 - Commissions de production : droits d'accès du journal et des versements restreints, date engagée dès un versement, versements non modifiables
 

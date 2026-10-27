@@ -220,6 +220,7 @@ create policy finance_log_read on public.finance_log for select to authenticated
 -- droits par défaut de Supabase : tout est accordé aux visiteurs sur une nouvelle table → tout leur est retiré (relecture D1, B1)
 revoke all on public.finance_log from public, anon;
 revoke insert, update, delete, truncate, references, trigger on public.finance_log from authenticated;
+revoke insert, update, delete, truncate, references, trigger on public.finance_log from service_role;  -- la sauvegarde ne fait que lire ; le journal n'est écrit que par déclencheur (relecture D1)
 grant select on public.finance_log to authenticated;
 revoke all on sequence public.finance_log_id_seq from public, anon, authenticated;
 
