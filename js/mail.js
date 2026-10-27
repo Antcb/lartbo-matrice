@@ -316,7 +316,7 @@ export async function editTemplate(id, defaults={}){
       {k:'applies_to', label:'Proposé en premier pour', type:'select', blank:false, options:Object.entries(APPLIES), full:true,
         help:'Au moment de préparer le mail, ce modèle est choisi automatiquement pour ces dates. Les autres modèles restent disponibles dans la liste.'},
       {k:'subject', label:'Objet', full:true},
-      {k:'cc', label:'En copie', full:true, placeholder:'Nom <adresse@…>, …'},
+      {k:'cc', label:'En copie', full:true, mails:true, placeholder:'Nom <adresse@…>, …'},
     ], extra,
     onSave: async v => {
       const ids = v.project_ids || [];

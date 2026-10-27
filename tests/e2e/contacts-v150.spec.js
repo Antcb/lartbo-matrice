@@ -77,6 +77,10 @@ test('v1.50 tableau des membres : mail invalide refusé sous la case, l’ancien
   await cell.fill('alex@');
   await cell.dispatchEvent('change');
   await expect(page.locator('.help.err', { hasText: 'Adresse mail invalide' })).toBeVisible();
+  // bordure et message en --danger, même quand la case a le focus (relecture, facultatif 3)
+  const col = await cell.evaluate(el => { el.focus(); const d = document.createElement('i'); d.style.color = 'var(--danger)'; document.body.append(d);
+    const want = getComputedStyle(d).color; d.remove(); return { border: getComputedStyle(el).borderTopColor, msg: getComputedStyle(el.nextElementSibling).color, want }; });
+  expect([col.border, col.msg]).toEqual([col.want, col.want]);
   expect(await page.evaluate(() => window.__DB.project_members.find(m => m.id === 'mb-1').email)).toBe('alex@exemple.fr');
   // contrôle commun utilisé par fiche.js, rh.js et artiste.js
   const r = await page.evaluate(async () => {
@@ -129,7 +133,7 @@ test('v1.50 relecture B2 : infos administratives d’une structure — mail inva
   expectClean(ctx);
 });
 
-test('v1.50 relecture B3 : listes de la fiche artiste — un seul message par champ, retiré une fois corrigé ; invisibles ignorés', async ({ page }) => {
+test('v1.50 relecture B3 : listes de la fiche artiste — un seul message par champ, retiré une fois corrigé ; invisible refusé ; listes d’adresses', async ({ page }) => {
   const ctx = await openApp(page);
   const r = await page.evaluate(async () => {
     const u = await import('./js/utils.js'), f = document.createElement('form');
@@ -137,11 +141,13 @@ test('v1.50 relecture B3 : listes de la fiche artiste — un seul message par ch
     document.body.append(f);
     const n = () => f.querySelectorAll('[data-field-err]').length;
     const out = [u.checkMails(f).length, n()]; out.push(u.checkMails(f).length, n());
-    f.querySelectorAll('input').forEach(i => { i.value = 'ok@exemple.fr​'; }); out.push(u.checkMails(f).length, n());
+    f.querySelectorAll('input').forEach(i => { i.value = 'ok@exemple.fr'; }); out.push(u.checkMails(f).length, n());
     f.remove();
-    return [...out, u.mailsOk('A <a@b.fr>, c@d.fr'), u.mailsOk('a@b.fr; x'), u.mailsOk('')];
+    return [...out, u.mailsOk('A <a@b.fr>, c@d.fr'), u.mailsOk('a@b.fr; x'), u.mailsOk(''), u.mailsOk(','), u.mailsOk('a@b.fr,'),
+      u.mailsOk('"Dupont, Jean" <j@x.fr>; k@y.fr'), u.mailOk('neo@exemple.fr\u200B')];
   });
-  expect(r).toEqual([2, 2, 2, 2, 0, 0, true, false, true]);
+  // invisible refusé (relecture N1) : il serait enregistré tel quel hors de la table des contacts
+  expect(r).toEqual([2, 2, 2, 2, 0, 0, true, false, true, false, true, true, false]);
   expectClean(ctx);
 });
 
