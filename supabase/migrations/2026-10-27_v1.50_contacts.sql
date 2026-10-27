@@ -1,7 +1,8 @@
 -- =====================================================================================================
 -- v1.50 — Lot Contacts (CONVENTIONS §3.4, décision Q23 ; décision d'Anthony du 27/10/2026 sur les doublons)
 -- Une adresse mail n'est JAMAIS déplacée automatiquement (notes, téléphone) : contacts_clean ne fait plus que le nettoyage
--- autorisé (espaces et caractères invisibles, majuscules) ; une adresse au mauvais format est laissée telle quelle
+-- autorisé (espaces et caractères invisibles, majuscules) ; une adresse au mauvais format reste dans sa case, seulement
+-- nettoyée comme les autres par clean_email (minuscules, espaces et invisibles retirés, fin « (…) » retirée), jamais déplacée
 -- (l'application et les pages publiques la refusent avant l'envoi, avec un message sous le champ).
 -- Inchangé : nettoyage des téléphones (clean_phone), mail 2 remonté en mail 1 quand le mail 1 est vide, mail 2 identique retiré.
 -- Aucune donnée existante n'est modifiée (la fonction ne s'applique qu'aux prochaines saisies).

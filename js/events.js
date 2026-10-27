@@ -8,7 +8,7 @@ import { insert, save, sb, uploadFiles } from './data.js';
 import { geocode } from './geo.js';
 import { byId, projIds } from './selectors.js';
 import { S, localSet, setProjects } from './state.js';
-import { parseCSV, toast, today } from './utils.js';
+import { MAIL_MSG, fieldError, mailOk, parseCSV, toast, today } from './utils.js';
 import { setLogDraft } from './views/suivi.js';
 import { clearDraft } from './ui/drafts.js';
 
@@ -114,6 +114,8 @@ document.addEventListener('change', async e => {
 document.addEventListener('change', async e => {
   const t = e.target; if (!t.dataset?.admin) return;
   const st = byId('structures', t.dataset.sid);
+  // mail au mauvais format : message sous le champ, rien n'est enregistré (Q23, comme les cases des tableaux)
+  if (/(^|_)email(_\d)?$/.test(t.dataset.admin)){ if (!mailOk(t.value)){ fieldError(t, MAIL_MSG); t.focus(); return; } fieldError(t, ''); }
   await save('structures', st.id, {admin: {...(st.admin||{}), [t.dataset.admin]: t.value.trim()}}, {rerender:false});
   toast('Enregistré');
 });

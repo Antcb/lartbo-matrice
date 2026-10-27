@@ -120,8 +120,8 @@ export async function prepareMail(showId, kind){
       <label for="ml-tpl">Modèle</label><select id="ml-tpl">${tpls.map(t=>`<option value="${t.id}">${esc(t.name||MAIL_KINDS[t.kind])}${tplProjects(t).length?'':' · générique'}</option>`).join('')}</select>
       <label>Envoyé par</label><span class="ml-from">${esc(PROD_MAIL)}${sig ? ' <span class="muted">· avec la signature production@</span>' : ' <span class="muted">· pas de signature (Réglages › Prospection, signature de Chloé)</span>'}</span>
       <label for="ml-contact">Destinataire</label><span class="mail-to"><select id="ml-contact"><option value="">— autre adresse —</option>${contacts.map(c=>`<option value="${c.id}" ${c.id===contactId?'selected':''}>${esc(c.display_name)}${contactMails(c)?` · ${esc(contactMails(c))}`:' (pas de mail)'}</option>`).join('')}</select>
-        <input id="ml-to" type="text" inputmode="email" placeholder="adresse@exemple.fr (plusieurs : séparées par des virgules)" value="${esc(vars.contact_email||'')}"></span>
-      <label for="ml-cc">Copie</label><input id="ml-cc" type="text" placeholder="Nom <adresse@…>, …">
+        <input id="ml-to" type="text" data-mails inputmode="email" placeholder="adresse@exemple.fr (plusieurs : séparées par des virgules)" value="${esc(vars.contact_email||'')}"></span>
+      <label for="ml-cc">Copie</label><input id="ml-cc" type="text" data-mails placeholder="Nom <adresse@…>, …">
       <label for="ml-subj">Objet</label><input id="ml-subj">
     </div>
     ${rtToolbar('ml-body')}<div class="mail-preview" id="ml-body" contenteditable="true" style="${rtStyle()}" aria-label="Texte du mail (modifiable)"></div>

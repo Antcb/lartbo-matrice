@@ -27,7 +27,7 @@ begin
   select * into r from contacts where id = c2;
   if r.email_2 is not null then raise exception 'ECHEC 2b : mail 2 identique gardé (%)', r.email_2; end if;
 
-  -- Q23 : mauvais format laissé tel quel (nettoyé), jamais déplacé
+  -- Q23 : mauvais format gardé dans sa case (nettoyé par clean_email), jamais déplacé
   insert into contacts (first_name, display_name, email, notes, phone) values ('ESSAI 3', 'ESSAI 3', 'Voir avec la régie 06 11 22 33 44', 'note', null) returning id into c3;
   select * into r from contacts where id = c3;
   if r.email is null or r.notes is distinct from 'note' or r.phone is not null then
