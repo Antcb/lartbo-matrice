@@ -40,6 +40,22 @@ test('v1.46b relance téléphone : « Annuler », Échap et clic dehors ne suppr
   expectClean(ctx);
 });
 
+test('v1.46b téléphone (375 px) : les trois boutons de la question, « Annuler » compris, sont entièrement visibles', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 740 });
+  const ctx = await openApp(page);
+  await seed(page, { tasks: [PHONE] });
+  await openTask(page, 'tk-tel');
+  await page.locator('#modal [data-act="modalDelete"]').click();
+  for (const b of await page.locator('dialog.ask button').all()) {
+    const r = await b.boundingBox();
+    expect(r.x, await b.textContent()).toBeGreaterThanOrEqual(0);
+    expect(r.x + r.width, await b.textContent()).toBeLessThanOrEqual(375);
+  }
+  await page.locator('dialog.ask button', { hasText: 'Annuler' }).click();
+  expect(await db(page, 'tasks', 'tk-tel')).not.toBeNull();
+  expectClean(ctx);
+});
+
 test('v1.46b relance téléphone : « Supprimer seulement la tâche » garde le suivi ouvert ; « Supprimer et clore » le clôt', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, { tasks: [PHONE, { ...PHONE, id: 'tk-tel2' }] });

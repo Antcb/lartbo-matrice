@@ -219,7 +219,7 @@ export function editTask(id, prefill={}){
       const up = v._files || []; delete v._files; delete v._existing;
       v.project_id = v.project_ids[0] || null;
       // date et heure réelles de réalisation (Q17, v1.46b) : posées en passant à « Faite » / « Annulée », effacées en revenant « À faire »
-      const wasDone = !!id && isDone(t), nowDone = isDone(v);
+      const cur = id ? byId('tasks', id) : null, wasDone = !!cur && isDone(cur), nowDone = isDone(v);   // état actuel (mise à jour en direct comprise)
       if (nowDone && !wasDone) v.done_at = new Date().toISOString();
       else if (!nowDone && wasDone) v.done_at = null;
       let row = {id};
