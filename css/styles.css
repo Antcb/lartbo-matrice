@@ -410,6 +410,9 @@ dialog::backdrop{background:rgba(16,24,42,.5)}
 /* fenêtre de dialogue (js/ui/dialog.js, §9.1) : texte en une colonne */
 dialog.ask .modal-body{display:block}
 dialog.ask .modal-body p{margin:0 0 8px}
+/* boutons toujours tous visibles, « Annuler » compris : à la ligne si besoin, empilés sur téléphone (relecture v1.46b) */
+dialog.ask .modal-foot{flex-wrap:wrap}
+@media (max-width:720px){ dialog.ask .modal-foot{flex-direction:column;align-items:stretch} }
 
 /* Connexion */
 .login{max-width:400px;margin:12vh auto;padding:32px}

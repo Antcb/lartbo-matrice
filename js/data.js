@@ -208,7 +208,6 @@ export function planRetries(){
     planRetries();
   }, Math.max(1000, next - Date.now()));
 }
-/** Supprime les lignes liées (tables sans cascade) */
 /** Fichiers stockés (espace « suivi ») d'un élément supprimé : effacés APRÈS la suppression réussie de ses lignes (§4.4, v1.46b).
  *  Un échec est signalé, jamais silencieux. Les fichiers Google Drive ne sont jamais touchés. */
 export async function purgeStored(paths){
@@ -219,6 +218,7 @@ export async function purgeStored(paths){
   return true;
 }
 
+/** Supprime les lignes liées (tables sans cascade) */
 export async function removeWhere(table, col, val){
   const {error} = await sb.from(table).delete().eq(col, val);
   if (!error){ S.db[table] = S.db[table].filter(r => r[col] !== val); touch(table); }

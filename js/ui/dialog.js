@@ -14,9 +14,10 @@ export function ask({title, text = '', actions = [], cancel = 'Annuler'}){
   const dlg = document.createElement('dialog');
   dlg.className = 'ask';
   dlg.setAttribute('aria-label', title);
+  dlg.setAttribute('aria-describedby', 'ask-text');
   dlg.innerHTML = `<form method="dialog" class="mform">
     <div class="modal-head"><h2>${esc(title)}</h2></div>
-    <div class="modal-body">${String(text).split('\n').filter(Boolean).map(l => `<p>${esc(l)}</p>`).join('')}</div>
+    <div class="modal-body" id="ask-text">${String(text).split('\n').filter(Boolean).map(l => `<p>${esc(l)}</p>`).join('')}</div>
     <div class="modal-foot"><button type="button" class="btn" data-ask="">${esc(cancel)}</button>${actions.map((a, i) =>
       `<button type="button" class="btn ${a.danger ? 'danger' : 'primary'}" data-ask="${i}">${esc(a.label)}</button>`).join('')}</div></form>`;
   document.body.appendChild(dlg);
