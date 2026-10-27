@@ -240,6 +240,7 @@ declare
   src text := case when coalesce(current_setting('matrice.regularisation', true), '') = 'gel' then 'régularisation contrôlée'
                    when coalesce(current_setting('matrice.regularisation', true), '') in ('degel', 'retour_versement') then 'retour arrière de régularisation'
                    when coalesce(current_setting('matrice.regularisation', true), '') = 'commission_partielle' then 'régularisation contrôlée (commission partielle)'
+                   when coalesce(current_setting('matrice.regularisation', true), '') = 'acompte_facture' then 'régularisation contrôlée (facture émise)'
                    when coalesce(current_setting('request.jwt.claims', true), '') <> '' then 'application / fonction serveur'
                    else 'base (éditeur SQL, tâche planifiée)' end;
   sid uuid; fsrc text;

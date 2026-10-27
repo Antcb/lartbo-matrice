@@ -145,6 +145,9 @@ begin
     if coalesce(current_setting('matrice.regularisation', true), '') = 'commission_partielle'
        and new.amount is not null and new.amount >= done then
       null;
+    -- son retour arrière annoncé (« degel ») : le total revient EXACTEMENT au déjà transféré (journalisé comme retour arrière)
+    elsif coalesce(current_setting('matrice.regularisation', true), '') = 'degel' and new.amount = done then
+      null;
     else
       raise exception 'Cette commission a des versements enregistrés : son montant total ne se modifie plus.' using errcode = 'P0001';
     end if;
@@ -225,17 +228,34 @@ begin
        and coalesce(current_setting('matrice.regularisation', true), '') = 'gel' then
       return new;
     end if;
-    -- retour arrière d'une régularisation (décision d'Anthony du 26/10, point 8) : REVIDER un montant, sans rien changer d'autre,
-    -- dans une transaction qui l'annonce (« degel »), et SEULEMENT si ce montant a été posé par une régularisation contrôlée
-    -- (dernière écriture du montant au journal : vide → cette valeur, source « régularisation contrôlée »). Un montant figé à
-    -- l'émission, au versement ou saisi à la main ne se vide jamais.
+    -- acompte ou solde FACTURÉ à un autre % que celui de la Matrice (décision d'Anthony du 27/10 : La Puce à l'Oreille, La MOBA,
+    -- 50 % facturés, 20 % posés par l'import Notion) : dans une transaction qui l'annonce (« acompte_facture »), le montant encore
+    -- vide est FIGÉ au montant de la facture et le % aligné dessus, ensemble et seulement si les deux concordent
+    -- (montant = cachet × % arrondi au centime). Rien d'autre ne change ; un montant déjà rempli ne change jamais.
+    if not self_paid and old.kind in ('acompte', 'solde') and old.amount is null and new.amount is not null and new.pct is not null
+       and new.amount = round(coalesce((select fee_ht from public.shows where id = old.show_id), 0) * new.pct) / 100
+       and new.vat_rate is not distinct from old.vat_rate
+       and new.show_id is not distinct from old.show_id and new.kind is not distinct from old.kind
+       and coalesce(current_setting('matrice.regularisation', true), '') = 'acompte_facture' then
+      return new;
+    end if;
+    -- retour arrière d'une régularisation (décision d'Anthony du 26/10, point 8) : REVIDER un montant dans une transaction qui
+    -- l'annonce (« degel »), et SEULEMENT si ce montant a été posé par une régularisation contrôlée (dernière écriture du montant
+    -- au journal : vide → cette valeur, source « régularisation contrôlée… »). Le % ne revient en arrière QUE s'il a été changé
+    -- par cette même régularisation (dernière écriture du % au journal : son ancienne valeur → le % actuel, même source).
+    -- Un montant figé à l'émission, au versement ou saisi à la main ne se vide jamais.
     if old.amount is not null and new.amount is null
-       and new.pct is not distinct from old.pct and new.vat_rate is not distinct from old.vat_rate
+       and new.vat_rate is not distinct from old.vat_rate
        and new.show_id is not distinct from old.show_id and new.kind is not distinct from old.kind
        and coalesce(current_setting('matrice.regularisation', true), '') = 'degel'
        and exists (select 1 from public.finance_log l where l.id = (select max(m.id) from public.finance_log m where m.row_id = old.id and m.field = 'amount')
                      and l.row_id = old.id and l.field = 'amount'
-                     and l.source = 'régularisation contrôlée' and l.old_value is null and (case when l.field = 'amount' then l.new_value::numeric end) = old.amount) then
+                     and l.source in ('régularisation contrôlée', 'régularisation contrôlée (facture émise)') and l.old_value is null
+                     and (case when l.field = 'amount' then l.new_value::numeric end) = old.amount)
+       and (new.pct is not distinct from old.pct
+            or exists (select 1 from public.finance_log l where l.id = (select max(m.id) from public.finance_log m where m.row_id = old.id and m.field = 'pct')
+                         and l.row_id = old.id and l.field = 'pct' and l.source = 'régularisation contrôlée (facture émise)'
+                         and l.new_value is not distinct from old.pct::text and l.old_value is not distinct from new.pct::text)) then
       return new;
     end if;
     raise exception 'Facture déjà émise : son montant, son %%, sa TVA, sa date et son type ne se modifient plus.' using errcode = 'P0001';
