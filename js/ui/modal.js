@@ -32,7 +32,7 @@ export function field(f, v){
   else if (f.type==='links') input = linksPicker(f, v);
   else if (f.type==='checks') input = `<div class="checks pills">${f.options.map(([val,lab])=>`<label><input type="checkbox" name="${f.k}" value="${esc(val)}" ${(v||[]).includes(val)?'checked':''}> ${esc(lab)}</label>`).join('')}</div>`;
   else if (f.type==='files') input = `<div class="dropzone" data-drop-form="${f.k}"><label class="btn sm file-btn">Ajouter un fichier<input type="file" name="${f.k}" multiple class="file-input" data-filelist="${f.k}"></label><span class="drop-hint">ou glisse les fichiers ici</span><div class="muted file-list" id="fl-${f.k}"></div></div>`;
-  else input = `<input id="${id}" type="${f.type||'text'}" name="${f.k}" value="${esc(v??'')}" ${f.type==='number'?'step="any" inputmode="decimal"':''} ${f.placeholder?`placeholder="${esc(f.placeholder)}"`:''}>`;
+  else input = `<input id="${id}" type="${f.type||'text'}" name="${f.k}" value="${esc(v??'')}" ${f.type==='number'?'step="any" inputmode="decimal"':''} ${f.mails?'data-mails':''} ${f.placeholder?`placeholder="${esc(f.placeholder)}"`:''}>`;
   return `<div class="${cls}"><label for="${id}">${f.label}</label>${input}${f.help?`<div class="help">${f.help}</div>`:''}</div>`;
 }
 

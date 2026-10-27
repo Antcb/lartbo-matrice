@@ -15,12 +15,16 @@ export const eur = n => n==null || n==='' || isNaN(n) ? '—' : Number(n).toLoca
 
 /** Mail valide (CONVENTIONS §3.4, Q23) : même expression que la base (contacts_clean) ; un champ vide est accepté (obligatoire vérifié à part) */
 export const MAIL_RE = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i;
-/** Caractères invisibles retirés avant le contrôle (mêmes que clean_email côté base) */
-const INVISIBLE = /[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g;
-const mailText = v => String(v ?? '').replace(INVISIBLE, '').trim();
+// une adresse contenant un caractère invisible est refusée (elle serait enregistrée telle quelle hors de la table des contacts)
+const mailText = v => String(v ?? '').trim();
 export const mailOk = v => !mailText(v) || MAIL_RE.test(mailText(v));
-/** Liste d'adresses (destinataires, copie) : séparées par des virgules ou des points-virgules, « Nom <adresse> » accepté */
-export const mailsOk = v => mailText(v).split(/[,;]/).map(x => x.trim()).filter(Boolean).every(x => mailOk((x.match(/<([^<>]*)>\s*$/) || [, x])[1]));
+/** Liste d'adresses (destinataires, copie) : séparées par des virgules ou des points-virgules (hors noms entre guillemets),
+ *  « Nom <adresse> » et « "Dupont, Jean" <adresse> » acceptés ; au moins une adresse si le champ n'est pas vide */
+export const mailsOk = v => {
+  const t = mailText(v); if (!t) return true;
+  const parts = t.split(/[,;](?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x => x.trim());
+  return parts.some(Boolean) && parts.every((x, i) => (x || (i === parts.length - 1 && i > 0)) && (!x || mailOk((x.match(/<([^<>]*)>\s*$/) || [, x])[1])));
+};
 export const MAIL_MSG = 'Adresse mail invalide : vérifie le @ et le domaine';
 /** Erreur sous un champ (§9.1, Q23) : message en --danger sous le champ, bordure du champ en --danger ; msg vide = retire l'erreur */
 export function fieldError(input, msg){
