@@ -5,6 +5,7 @@
  * Il peut revenir sur le même lien pour compléter ou corriger : ses réponses sont reprises.
  */
 import { CFG } from './config.js';
+import { fmtDate } from './utils.js';
 import { localDel, localGet, localSet } from './storage.js';
 import './ui/testbanner.js';
 import './ui/dropfiles.js';
@@ -38,7 +39,7 @@ function draw(d, values){
     <section class="panel pad"><p class="fiche-kicker">Fiche artiste · L’ArtBoristerie Productions</p><h1>${esc(d.name || 'Bienvenue')}</h1>
       <p class="help">Ces informations nous servent à présenter le projet aux programmateurs, festivals et dispositifs (candidatures, dossiers, communication).
         Remplis ce que tu peux : tu peux revenir sur ce même lien pour compléter ou corriger.</p>
-      ${d.submitted_at ? `<p class="fiche-engage">Fiche déjà envoyée le ${new Date(d.submitted_at).toLocaleDateString('fr-FR')}. Tes réponses sont reprises ci-dessous.</p>` : ''}</section>
+      ${d.submitted_at ? `<p class="fiche-engage">Fiche déjà envoyée le ${fmtDate(d.submitted_at)}. Tes réponses sont reprises ci-dessous.</p>` : ''}</section>
     <form id="artist-form" class="fiche-form" novalidate>
       ${ARTIST_SECTIONS.map(sec => `<section class="panel pad"><h2>${esc(sec.title)}</h2>${sec.help ? `<p class="help">${esc(sec.help)}</p>` : ''}
         <div class="fiche-grid${sec.cols ? ` cols${sec.cols} even` : ''}">${sec.fields.map(f => input(f, values[f.k] ?? '')).join('')}</div></section>`).join('')}

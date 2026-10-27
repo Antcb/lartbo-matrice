@@ -28,7 +28,7 @@ Toute règle ci-dessous qui n'est pas encore appliquée par le code **ne doit pa
 - [NOUVELLE] Fonctions serveur (edge) : dates calculées avec `timeZone:'Europe/Paris'` (comme `resume-suivi`). [CORRIGÉ v1.49] `pennylane/index.ts` (`today`, `plusDays`) au jour de Paris.
 - [NOUVELLE] SQL : toute nouvelle fonction utilise `(now() at time zone 'Europe/Paris')::date`. [EN PLACE] `generate_reminders` utilise `current_date` (UTC) ; sans effet pratique car la tâche planifiée tourne à 5 h UTC.
 - [EN PLACE] Apps Script : `Utilities.formatDate(…, 'Europe/Paris', …)` aux endroits datés. [CORRECTION] `Code.gs` utilise aussi `new Date().getFullYear()` (fuseau du projet Apps Script, non versionné).
-- [CORRIGÉ v1.49] `today()` et `dayOf(horodatage)` (`js/utils.js`) donnent le jour **de Paris** même si l'ordinateur est réglé sur un autre fuseau ; `fmtDate` reçoit l'horodatage complet partout (notifications, « Faite le », envois, fiches) ; date d'un mail de prospection et de sa relance, date d'un `.eml` sans en-tête : jour de Paris. Contrôle statique : aucune date du jour en UTC, aucun `.slice(0,10)` d'horodatage.
+- [CORRIGÉ v1.49] `today()` et `dayOf(horodatage)` (`js/utils.js`) donnent le jour **de Paris** même si l'ordinateur est réglé sur un autre fuseau ; `fmtDate` reçoit l'horodatage complet partout (notifications, « Faite le », envois, fiches) ; date d'un mail de prospection et de sa relance, date d'un `.eml` sans en-tête : jour de Paris. Pages publiques (`fiche`, `artiste`, `rh` : « envoyée le », date maximale), Réglages (acompte), export artiste et Excel, résumé IA : jour de Paris. `daysUntil` / `daysBetween` comptent depuis le jour de Paris, en jours de calendrier. Contrôle statique : aucune date du jour en UTC, aucun `.slice(0,10)` d'horodatage, aucun `new Date(…).toLocaleDateString('fr-FR' | 'sv-SE')` sans fuseau.
 
 ### 1.3 Affichage
 | Besoin | Format | Fonction | Statut |
@@ -82,7 +82,7 @@ Toute règle ci-dessous qui n'est pas encore appliquée par le code **ne doit pa
 
 ### 2.4 Pourcentages
 - [EN PLACE] Stockés en **points** (15 = 15 %) : `show_payments.pct`, `shows.artbo_pct`, `partner_pct`, `vat_rate`, réglages `default_*`, `production.artbo_share`. Seul le taux de remplissage est un ratio 0–1 (calcul interne).
-- [NOUVELLE] Affichage : `15 %` (espace insécable avant `%`), 2 décimales au plus, sans zéro inutile (`33,33 %`, `5,5 %`). [CORRIGÉ v1.49] fonction officielle `pct(v)` (`js/utils.js`) : mails (`mail.js`, et SQL `mail_vars` `acompte_pct` / `tva`, migration v1.49), fiche publique (`fiche.js`), Production, Réglages, budget. Exception gardée : texte des modèles de contrat (« TVA 5,5% » vient du modèle Google Docs d'Anthony).
+- [NOUVELLE] Affichage : `15 %` (espace insécable avant `%`), 2 décimales au plus, sans zéro inutile (`33,33 %`, `5,5 %`). [CORRIGÉ v1.49] fonction officielle `pct(v)` (`js/utils.js`) : mails (`mail.js`, et SQL `mail_vars` `acompte_pct` / `tva`, migration v1.49), fiche publique (`fiche.js`), Production, Réglages, budget, projets, export artiste, confirmation (répartition, solde), billetterie. Contrôle statique : aucun `${…} %` hors unité placée après une case de saisie. Restent « % » simple : le libellé « Acompte 30 % » envoyé à Pennylane (fonction serveur, à aligner au prochain déploiement de `pennylane`). Exception gardée : texte des modèles de contrat (« TVA 5,5% » vient du modèle Google Docs d'Anthony).
 
 ### 2.5 Calculs financiers — fonctions officielles [EN PLACE]
 | Calcul | Fonction | Fichier |

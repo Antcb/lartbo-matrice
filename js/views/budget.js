@@ -272,7 +272,7 @@ export function productionBudgetHTML(s){
       <label>Jauge (fiche de la date)</label>${cIn('shows', s.id, 'capacity', s.capacity, 'number', 'class="narrow"')}
       <label>Représentations</label>${pin(s, 'reps', p.reps, 'class="narrow"')}
       <label>TVA billetterie (%)</label>${pin(s, 'vat', p.vat, 'class="narrow"')}
-      ${s.contract_type === 'Co-Production' || s.partner_id ? `<label>Part de L’ArtBo (%)</label><span>${pin(s, 'artbo_share', p.artbo_share, 'class="narrow"')} <span class="muted">· ${esc(f.partnerName)} : ${esc(String(100 - (Number(p.artbo_share) || 0)))} %</span></span>` : ''}
+      ${s.contract_type === 'Co-Production' || s.partner_id ? `<label>Part de L’ArtBo (%)</label><span>${pin(s, 'artbo_share', p.artbo_share, 'class="narrow"')} <span class="muted">· ${esc(f.partnerName)} : ${esc(fmtPct(100 - (Number(p.artbo_share) || 0)))}</span></span>` : ''}
     </div>
 
     <h4 class="block-title">Recettes : billetterie</h4>
@@ -285,7 +285,7 @@ export function productionBudgetHTML(s){
     <h4 class="block-title">Droits et taxes</h4>
     <div class="tbl-wrap"><table class="budget-table prod-table"><thead><tr><th></th><th class="num">Taux</th><th class="num">Prévu</th><th class="num">Réel</th></tr></thead><tbody>
       <tr><td>Recette TTC</td><td></td>${two(f.grossTtc, R(r.grossTtc))}</tr>
-      <tr><td>TVA</td><td class="num">${esc(String(p.vat))} %</td>${two(f.vatAmount, R(r.vatAmount))}</tr>
+      <tr><td>TVA</td><td class="num">${esc(fmtPct(p.vat))}</td>${two(f.vatAmount, R(r.vatAmount))}</tr>
       <tr><td><b>Recette HT</b></td><td></td>${two(f.ht, R(r.ht), 'strong')}</tr>
       ${taxRow('Taxe CNM', 'cnm_pct', f.cnm, r.cnm, '% de la recette HT')}
       ${taxRow('SACEM + AGESSA', 'sacem_pct', f.sacem, r.sacem, '% de la recette HT ; AGESSA ' + p.agessa_pct + ' % des droits')}
@@ -314,8 +314,8 @@ export function productionBudgetHTML(s){
       <tr><td>Promo locale (sur les DL)</td><td class="num">${pin(s, 'promo_dl_pct', p.promo_dl_pct, 'class="narrow"')} %</td>${two(-f.promo, R(-r.promo))}</tr>
       <tr><td><b>Résultat hors DL</b></td><td></td>${two(f.result, R(r.result), 'strong')}</tr>
       <tr class="bill-total"><td><b>Résultat DL inclus</b></td><td></td>${two(f.resultDl, R(r.resultDl), 'strong')}</tr>
-      ${f.share < 1 ? `<tr><td>Part L’ArtBo (${esc(String(p.artbo_share))} %)</td><td></td>${two(f.artbo, R(r.artbo))}</tr>
-      <tr><td>Part ${esc(f.partnerName)} (${esc(String(100 - p.artbo_share))} %)</td><td></td>${two(f.partner, R(r.partner))}</tr>` : ''}
+      ${f.share < 1 ? `<tr><td>Part L’ArtBo (${esc(fmtPct(p.artbo_share))})</td><td></td>${two(f.artbo, R(r.artbo))}</tr>
+      <tr><td>Part ${esc(f.partnerName)} (${esc(fmtPct(100 - p.artbo_share))})</td><td></td>${two(f.partner, R(r.partner))}</tr>` : ''}
     </tbody></table></div>
     <p class="muted small mt-sm">Montants HT sauf la billetterie (TTC). Le réel se remplit avec les billets vendus et les montants réels des pièces ; tant qu’aucun billet vendu n’est saisi, les recettes réelles restent vides. Une date produite par L’ArtBo n’entre pas dans le compte dédié de l’artiste.</p>
   </div>`;

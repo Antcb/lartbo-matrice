@@ -27,9 +27,7 @@ const plus10 = d => workDay(addDays(d, 10));
 
 /** Jour ouvré (lun–ven) le plus proche de J-7 sans être à moins de 7 jours du concert */
 export function soldeReminderDay(showDate){
-  let d = new Date(addDays(showDate, -7)+'T12:00:00');
-  while (d.getDay()===0 || d.getDay()===6) d.setDate(d.getDate()-1);
-  return d.toISOString().slice(0,10);
+  return workDayBefore(addDays(showDate, -7));
 }
 
 const last = p => [p.sent_at, p.reminded_at].filter(Boolean).sort().pop();   // 10 j après l'envoi ou la dernière relance

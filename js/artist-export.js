@@ -6,7 +6,7 @@ import { commissionAmount, commissionOf, isSolde, lineValue, showBudget } from '
 import { artistResult } from './views/budget.js';
 import { byId, showCommissionPct } from './selectors.js';
 import { commissionState } from './calc.js';
-import { esc, eur2, fmtDate, toast } from './utils.js';
+import { esc, eur2, fmtDate, toast, pct, today } from './utils.js';
 
 export function exportArtistBudget(showId){
   const s = byId('shows', showId); if (!s) return;
@@ -43,7 +43,7 @@ export function exportArtistBudget(showId){
   <h2>Le cachet</h2>
   <table><tbody>
     <tr><td>Cachet HT</td><td class="n">${eur2(b.fee)}</td></tr>
-    <tr><td>Commission L’ArtBoristerie${comPct ? ` (${esc(comPct)} %)` : ''}</td><td class="n">− ${eur2(commissionAmount(s))}</td></tr>
+    <tr><td>Commission L’ArtBoristerie${comPct ? ` (${esc(pct(comPct))})` : ''}</td><td class="n">− ${eur2(commissionAmount(s))}</td></tr>
     ${cst ? cst.transfers.map(t => `<tr><td class="m">dont transféré le ${esc(fmtDate(t.transferred_at))}${t.note ? ' · ' + esc(t.note) : ''}</td><td class="n m">${eur2(Number(t.amount))}</td></tr>`).join('')
       + (cst.legacy ? `<tr><td class="m">transférée le ${esc(fmtDate(com.paid_at))}</td><td class="n m">${eur2(cst.total)}</td></tr>` : '')
       + (cst.remaining >= 0.005 && !cst.legacy ? `<tr><td class="m">reste à transférer (pas encore prélevé sur ton compte)</td><td class="n m">${eur2(cst.remaining)}</td></tr>` : '') : ''}
@@ -63,7 +63,7 @@ export function exportArtistBudget(showId){
     ${todo.map(l => `<tr><td>À verser${l.supplier ? ' à ' + esc(l.supplier) : ''}</td><td class="n">${eur2(l.amount)}</td></tr>`).join('')}
   </tbody></table>
   ${exp.some(l => l.amount == null) ? '<p class="m">« (prévu) » : montant estimé, la pièce n’est pas encore arrivée.</p>' : ''}
-  <footer>L’ArtBoristerie Productions · établi le ${esc(fmtDate(new Date().toLocaleDateString('sv-SE')))}</footer>
+  <footer>L’ArtBoristerie Productions · établi le ${esc(fmtDate(today()))}</footer>
 </main></body></html>`;
   const w = window.open('', '_blank');
   if (!w) return toast('Autorise les fenêtres pop-up pour exporter le budget (icône dans la barre d’adresse), puis recommence.', true);

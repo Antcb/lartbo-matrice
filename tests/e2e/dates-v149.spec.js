@@ -14,6 +14,10 @@ test.describe('ordinateur réglé en UTC, 00 h 30 à Paris', () => {
     const r = await utils(page, async () => { const u = await import('./js/utils.js');
       return [u.today(), u.dayOf('2026-03-10T23:30:00Z'), u.fmtDate('2026-03-10T23:30:00+00:00'), u.fmtDate('2026-03-10'), u.dayOf('2026-07-01')]; });
     expect(r).toEqual(['2026-03-11', '2026-03-11', '11/03/2026', '10/03/2026', '2026-07-01']);
+    // écarts de jours comptés depuis le jour de Paris, même à cheval sur le passage à l'heure d'été ; texte libre laissé tel quel
+    const e = await utils(page, async () => { const u = await import('./js/utils.js'), m = await import('./js/reminders.js');
+      return [u.daysUntil('2026-03-12'), u.daysUntil('2026-03-11'), u.daysBetween('2026-03-28', '2026-03-30'), u.fmtDate('Salle 12 34'), m.soldeReminderDay('2026-11-22'), m.soldeReminderDay('2026-11-23')]; });
+    expect(e).toEqual([1, 0, 2, 'Salle 12 34', '2026-11-13', '2026-11-16']);
     expectClean(ctx);
   });
 });

@@ -5,6 +5,7 @@
  * Les numéros sensibles déjà connus ne sont jamais réaffichés (seulement « déjà renseigné »).
  */
 import { CFG } from './config.js';
+import { fmtDate, today } from './utils.js';
 import './ui/testbanner.js';
 import './ui/dropfiles.js';
 import './ui/filepick.js';
@@ -47,7 +48,7 @@ function draw(d){
   root.innerHTML = `
     <section class="panel pad"><p class="fiche-kicker">${esc(RH_PARTS[PART])}</p><h1>${esc([d.first_name, d.last_name].filter(Boolean).join(' ') || 'Bienvenue')}</h1>
       <p class="help">${PART === 'extra' ? 'Quelques informations en plus de ta fiche Movinmotion, utiles pour les déplacements en tournée. Elles restent confidentielles.' : 'Ces informations servent à établir tes contrats et bulletins de paie avec L’ArtBoristerie Productions. Elles restent confidentielles.'}</p>
-      ${d.submitted_at ? `<p class="fiche-engage">Fiche déjà envoyée le ${new Date(d.submitted_at).toLocaleDateString('fr-FR')}. Tu peux la compléter ou la corriger.</p>` : ''}</section>
+      ${d.submitted_at ? `<p class="fiche-engage">Fiche déjà envoyée le ${fmtDate(d.submitted_at)}. Tu peux la compléter ou la corriger.</p>` : ''}</section>
     <form id="rh-form" class="fiche-form" novalidate>
       ${SECTIONS.map(sec => `<section class="panel pad"><h2>${esc(sec.title)}</h2>${sec.help ? `<p class="help">${esc(sec.help)}</p>` : ''}
         <div class="fiche-grid">${sec.fields.map(f => input(f, values[f.k], values)).join('')}</div></section>`).join('')}
@@ -58,7 +59,7 @@ function draw(d){
     </form>`;
   const form = document.getElementById('rh-form');
   // dates cohérentes : naissance / délivrance / obtention pas dans le futur ; expiration jamais avant la délivrance
-  const todayISO = new Date().toLocaleDateString('sv-SE');
+  const todayISO = today();
   form.querySelectorAll('input[type=date]').forEach(i => { if (/^birth_date$|_issued$|_date$/.test(i.name) && !/_expires$/.test(i.name)) i.max = todayISO; });
   const pairExp = () => form.querySelectorAll('input[type=date][name$="_expires"]').forEach(x => {
     const iss = form.querySelector(`input[name="${x.name.replace(/_expires$/, '_issued')}"]`);

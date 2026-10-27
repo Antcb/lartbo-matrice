@@ -18,7 +18,7 @@ export const TZ = 'Europe/Paris';
 /** Jour (AAAA-MM-JJ) d'un horodatage, à Paris — jamais .slice(0,10) d'un horodatage (jour UTC : la veille entre 0 h et 2 h) */
 export const dayOf = ts => { if (!ts) return null; const s = String(ts); if (/^\d{4}-\d\d-\d\d$/.test(s)) return s; const d = new Date(s); return isNaN(d) ? null : d.toLocaleDateString('sv-SE', {timeZone: TZ}); };
 /** Date affichée partout en JJ/MM/AAAA (stockage : AAAA-MM-JJ) ; accepte aussi un horodatage complet (jour à Paris) */
-export const fmtDate = d => { if (!d) return ''; const s = String(d); return /^\d{4}-\d\d-\d\d$/.test(s) ? fmtNum(s) : /T|\d \d/.test(s) && dayOf(s) ? fmtNum(dayOf(s)) : s; };
+export const fmtDate = d => { if (!d) return ''; const s = String(d); return /^\d{4}-\d\d-\d\d$/.test(s) ? fmtNum(s) : /^\d{4}-\d\d-\d\d[ T]/.test(s) && dayOf(s) ? fmtNum(dayOf(s)) : s; };
 
 /** Date courte avec le jour : « sam. 10/01 » (listes compactes) */
 export const fmtShort = d => d ? `${new Date(String(d).slice(0,10)+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short'})} ${fmtNum(d).slice(0,5)}` : '';
@@ -40,9 +40,9 @@ export const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 /** Pourcentage affiché « 15 % », « 33,33 % », « 5,5 % » : espace insécable, 2 décimales au plus, sans zéro inutile (§2.4) */
 export const pct = v => v == null || v === '' || isNaN(v) ? '—' : String(Math.round(Number(v) * 100) / 100).replace('.', ',') + '\u00a0%';
 
-export const daysUntil = d => d ? Math.round((new Date(d+'T00:00:00') - new Date(new Date().toDateString())) / 86400000) : null;
+export const daysUntil = d => d ? daysBetween(today(), dayOf(d)) : null;   // jour de Paris
 
-export const daysBetween = (a, b) => Math.round((new Date(b+'T00:00:00') - new Date(a+'T00:00:00')) / 86400000);
+export const daysBetween = (a, b) => Math.round((Date.parse(dayOf(b)+'T00:00:00Z') - Date.parse(dayOf(a)+'T00:00:00Z')) / 86400000);   // en jours de calendrier, sans effet heure d'été
 
 /** Texte comparable : minuscules, sans accents ; apostrophes (' ’ ‘ ` ´) et tirets comptent comme un espace */
 const APOS = /['‘’ʼ`´]/g;
