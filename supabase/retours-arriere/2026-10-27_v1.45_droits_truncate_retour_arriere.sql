@@ -14,4 +14,6 @@ begin
   end loop;
 end $r$;
 alter default privileges for role postgres in schema public grant truncate on tables to anon, authenticated, service_role;
+do $h$ begin if to_regclass('supabase_migrations.schema_migrations') is not null then
+  delete from supabase_migrations.schema_migrations where version = '20261027000145'; end if; end $h$;
 commit;
