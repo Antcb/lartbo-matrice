@@ -20,9 +20,10 @@ begin
           or has_table_privilege('service_role', c.oid, 'TRUNCATE'));
   if n > 0 then raise exception 'ECHEC : % table(s) encore vidables par un rôle de l''API — TOUT EST ANNULÉ', n; end if;
   -- les droits utiles restent : l'équipe lit et écrit toujours (sous RLS et déclencheurs)
-  if not has_table_privilege('authenticated', 'public.show_payments', 'SELECT,INSERT,UPDATE,DELETE')
-     or not has_table_privilege('authenticated', 'public.shows', 'SELECT,INSERT,UPDATE,DELETE')
-     or not has_table_privilege('service_role', 'public.show_payments', 'SELECT,UPDATE') then
+  if exists (select 1 from (values ('authenticated', 'public.show_payments'), ('authenticated', 'public.shows'), ('authenticated', 'public.budget_lines'),
+                                     ('service_role', 'public.show_payments'), ('service_role', 'public.shows')) r(rol, tbl),
+                   unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE']) pr
+              where not has_table_privilege(r.rol, r.tbl, pr)) then
     raise exception 'ECHEC : un droit utile a disparu — TOUT EST ANNULÉ'; end if;
 end $k$;
 commit;
