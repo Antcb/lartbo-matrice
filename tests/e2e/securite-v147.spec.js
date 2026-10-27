@@ -53,6 +53,19 @@ test('v1.47 Réglages : clé Brevo jamais affichée, saisie par la base (set_bre
   expectClean(ctx);
 });
 
+test('v1.47 Réglages : l’adresse d’un script Google doit être une adresse de script publiée (…/exec)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.evaluate(async () => (await import('./js/app.js')).go('settings'));
+  await page.locator('#set-gas').fill('https://exemple.com/vol');
+  await page.locator('#set-gas').dispatchEvent('change');
+  await expect(page.locator('.toast').last()).toContainText('finit par /exec');
+  expect(await page.evaluate(() => window.__DB.settings.find(s => s.key === 'drive_webhook_url')?.value ?? null)).toBeNull();
+  await page.locator('#set-gas').fill('https://script.google.com/macros/s/AKfy-exemple_1/exec');
+  await page.locator('#set-gas').dispatchEvent('change');
+  await expect.poll(() => page.evaluate(() => window.__DB.settings.find(s => s.key === 'drive_webhook_url')?.value ?? null)).toBe('https://script.google.com/macros/s/AKfy-exemple_1/exec');
+  expectClean(ctx);
+});
+
 test('v1.47 CSP : chaque page a sa politique de sécurité et s’ouvre sans violation', async ({ page }) => {
   const violations = [];
   await page.addInitScript(() => document.addEventListener('securitypolicyviolation', e => (window.__csp ||= []).push(e.violatedDirective + ' ' + e.blockedURI)));

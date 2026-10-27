@@ -170,6 +170,9 @@ document.addEventListener('change', async e => {
     let v = e.target.value.trim();
     if (/_id$/.test(kt) && kt !== 'brevo_list_id') v = (v.match(/[-\w]{25,}/) || [v])[0];   // un lien Drive collé → son identifiant
     if (kt === 'brevo_list_id') v = (v.match(/\d+/g) || []).join(', ');   // « #2 » → 2
+    // adresses où le serveur envoie le code secret : seulement un script Google publié (même contrôle que la base et script-google, v1.47)
+    if (['drive_webhook_url', 'prospect_script_url'].includes(kt) && v && !/^https:\/\/script\.google\.com\/(a\/macros\/[\w.-]+|macros)\/s\/[\w-]+\/exec$/.test(v)){
+      toast('Colle l’adresse du déploiement du script Google : elle commence par https://script.google.com/ et finit par /exec', true); e.target.value = setting(kt) || ''; return; }
     if (await setSetting(kt, v)){ e.target.value = v; toast('Réglage enregistré'); if (/^mail_font/.test(kt)) render(); }
     return; }
   const k = e.target.dataset.actSetting; if (!k) return;
