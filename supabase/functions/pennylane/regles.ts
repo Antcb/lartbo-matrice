@@ -12,7 +12,8 @@ export type Ligne = {
 
 const plein = (v: unknown) => v != null && String(v).trim() !== '';
 export const isBooking = (mode: string | null | undefined) => mode === 'booking';
-/** Facture émise : envoyée, payée, numérotée ou liée à Pennylane (même définition que js/calc.js isInvoiced) */
+/** Facture émise : envoyée, payée, numérotée ou liée à Pennylane (même définition que js/calc.js isInvoiced, hors commission de
+ *  production : l'application ne la traite pas comme une facture, et cette fonction ne la facture jamais — factureIsolee) */
 export const emise = (p: Ligne) => !!(p.sent_at || p.paid_at || plein(p.invoice_number) || plein(p.pennylane_id));
 /** Ligne dont le paiement (et le numéro / le lien) se reprend de Pennylane */
 export const payable = (p: Ligne, mode: string | null | undefined) =>
