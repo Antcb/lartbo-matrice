@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.50.1 — 27/10/2026
+- Doublons de contacts : avertissement seulement à la création ou quand une adresse est ajoutée ou modifiée (plus quand on change seulement le téléphone ou les notes)
+
+
 ## 1.50.0 — 27/10/2026
 - Contacts (lot V1.50a) — mail au mauvais format refusé avec un message sous le champ partout (fenêtres, tableaux, pages publiques) ; doublon de contact par mail : avertissement et accès à la fiche existante, sans fusion ; contacts_clean ne déplace plus jamais un mail
 

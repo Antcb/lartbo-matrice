@@ -170,3 +170,28 @@ test('v1.50 relecture B2 : fiche artiste dans l’app (enregistrée au fil de la
   await expect.poll(() => page.evaluate(() => window.__calls.filter(c => c.rpc === 'artist_info_save').length)).toBe(1);
   expectClean(ctx);
 });
+
+test('v1.50.1 doublon : pas d’avertissement quand on ne change que le téléphone ; avertissement si on change le mail', async ({ page }) => {
+  const ctx = await openApp(page);
+  // deux contacts partagent déjà le même mail (donnée existante)
+  await page.evaluate(async () => {
+    const { S, touch } = await import('./js/state.js');
+    const d = { id: 'ct-2', first_name: 'Camille', last_name: 'Bis', display_name: 'Camille Bis', email: 'camille@example.com' };
+    window.__DB.contacts.push({ ...d }); S.db.contacts.push({ ...d }); touch('contacts');
+  });
+  await openContact(page, 'ct-2');
+  await page.locator('#modal [name=phone]').fill('06 00 00 00 00');
+  await page.locator('#modal button[type=submit]').click();
+  await expect(page.locator('#modal')).toBeHidden();
+  await expect(page.locator('dialog.ask')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.__DB.contacts.find(c => c.id === 'ct-2').phone)).toBe('06 00 00 00 00');
+  // mail 2 ajouté, déjà celui d'un autre contact : avertissement
+  const d = { id: 'ct-3', first_name: 'Dom', display_name: 'Dom', email: 'dom@exemple.fr' };
+  await page.evaluate(async x => { const { S, touch } = await import('./js/state.js'); window.__DB.contacts.push({ ...x }); S.db.contacts.push({ ...x }); touch('contacts'); }, d);
+  await openContact(page, 'ct-3');
+  await page.locator('#modal [name=email_2]').fill('CAMILLE@example.com');
+  await page.locator('#modal button[type=submit]').click();
+  await expect(page.locator('dialog.ask')).toContainText('Contact déjà présent');
+  await page.locator('dialog.ask button', { hasText: 'Annuler' }).click();
+  expectClean(ctx);
+});
