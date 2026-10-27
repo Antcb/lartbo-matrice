@@ -18,6 +18,24 @@ export function payAmount(p){
   return Math.round(fee * Number(p.pct)) / 100;
 }
 
+/**
+ * Commission de PRODUCTION (lot D1, option B décidée par Anthony le 27/10) : un montant TOTAL dû (la ligne, unique par date)
+ * et l'historique des VERSEMENTS réels (table commission_transfers : montant, date, référence).
+ *  - déjà transféré = somme des versements ; reste = total − déjà transféré ; « versée » seulement quand le reste est nul ;
+ *  - commission marquée versée avant ce lot, sans versement détaillé : versée en totalité à sa date (compatibilité).
+ * Même règle côté base : commission_total, commission_transferred, déclencheurs de la migration v1.43.
+ */
+export const transfersOf = payId => (S.db.commission_transfers || []).filter(t => t.payment_id === payId)
+  .sort((a, b) => String(a.transferred_at).localeCompare(String(b.transferred_at)) || String(a.created_at || '').localeCompare(String(b.created_at || '')));
+export const isProdCommission = p => !!p && p.kind === 'artbo' && !isBookingShow(byId('shows', p.show_id));
+export function commissionState(p){
+  const total = Math.round((payAmount(p) || 0) * 100) / 100, list = p ? transfersOf(p.id) : [];
+  const legacy = !list.length && !!p?.paid_at;
+  const transferred = legacy ? total : Math.round(list.reduce((t, x) => t + Number(x.amount || 0), 0) * 100) / 100;
+  const remaining = Math.max(0, Math.round((total - transferred) * 100) / 100);
+  return {total, transferred, remaining, transfers: list, legacy, full: transferred > 0 && remaining < 0.005, partial: transferred > 0 && remaining >= 0.005};
+}
+
 export function netArtbo(s){
   const pays = paymentsOf(s.id);
   const a = pays.filter(p=>p.kind==='artbo').reduce((t,p)=>t+(payAmount(p)||0),0);
@@ -92,6 +110,8 @@ export function billLockReason(p){
   if (!p) return '';
   if (isInvoiced(p)) return selfPaidCommission(p) ? 'Commission déjà versée : elle ne se modifie plus.' : 'Facture déjà émise (envoyée, numérotée, dans Pennylane ou payée) : elle ne se modifie plus.';
   if (p.kind === 'acompte' && soldeInvoiced(p.show_id)) return 'Le solde de cette date est déjà facturé : les acomptes ne peuvent plus changer.';
+  // commission de production versée en partie (lot D1) : son total est figé dès le premier versement (base : show_payments_commission_lock)
+  if (p.kind === 'artbo' && transfersOf(p.id).length) return 'Commission en partie versée : son montant total ne se modifie plus (note les versements restants).';
   return '';
 }
 
@@ -129,7 +149,7 @@ export function freezeOnEmit(table, id, patch){
   return amount == null ? {} : {amount};
 }
 /** Date qui a des lignes déjà émises ou versées : un changement de cachet / % / mode mérite un avertissement (lot D1) */
-export const emittedLinesOf = showId => paymentsOf(showId).filter(p => FROZEN_KINDS.includes(p.kind) && isInvoiced(p));
+export const emittedLinesOf = showId => paymentsOf(showId).filter(p => FROZEN_KINDS.includes(p.kind) && (isInvoiced(p) || (p.kind === 'artbo' && transfersOf(p.id).length)));
 
 export function changeBlocked(table, id, patch){
   if (patch === null){
@@ -148,6 +168,12 @@ export function changeBlocked(table, id, patch){
     if (!row) return '';
     const blank = v => v == null || String(v).trim() === '';
     // facture émise : ni numéro, ni date d'envoi, ni date de paiement, ni identifiant Pennylane ne s'efface (pas de déverrouillage)
+    // commission de production versée en partie (lot D1) : « versée » seulement quand tout est transféré — une date de versement
+    // ne remplace pas le versement du reste. Même règle côté base : show_payments_commission_lock (migration v1.43)
+    if (isProdCommission(row) && transfersOf(row.id).length && 'paid_at' in patch && !blank(patch.paid_at) && blank(row.paid_at)){
+      const st = commissionState(row);
+      if (st.remaining >= 0.005) return `Commission versée en partie : note le versement du reste (${st.remaining.toFixed(2).replace('.', ',')} €) au lieu d’une date de versement.`;
+    }
     if (isInvoiced(row) && emittedFieldsOf(row).some(k => k in patch && !blank(row[k]) && blank(patch[k])))
       return 'Facture déjà émise : son numéro, sa date d’envoi, sa date de paiement et son identifiant Pennylane ne s’effacent pas (une régularisation se décide à part).';
     // acompte caduc (date de production dont le solde est déjà facturé, lot C1) : il ne s'émet plus — sinon la date serait facturée

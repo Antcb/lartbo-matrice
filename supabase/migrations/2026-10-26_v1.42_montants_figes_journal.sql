@@ -190,7 +190,7 @@ begin
        and coalesce(current_setting('matrice.regularisation', true), '') = 'degel'
        and exists (select 1 from public.finance_log l where l.id = (select max(m.id) from public.finance_log m where m.row_id = old.id and m.field = 'amount')
                      and l.row_id = old.id and l.field = 'amount'
-                     and l.source = 'régularisation contrôlée' and l.old_value is null and l.new_value::numeric = old.amount) then
+                     and l.source = 'régularisation contrôlée' and l.old_value is null and (case when l.field = 'amount' then l.new_value::numeric end) = old.amount) then
       return new;
     end if;
     raise exception 'Facture déjà émise : son montant, son %%, sa TVA, sa date et son type ne se modifient plus.' using errcode = 'P0001';

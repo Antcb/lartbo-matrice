@@ -4,7 +4,8 @@
 import { localDel, localGet, localSet } from './storage.js';
 export const TABLES = ['structures','contacts','contact_structures','projects','partners','shows','show_payments',
   'prospects','prospect_logs','prospect_files','tasks','settings',
-  'structure_events','project_logs','project_members','attachments','notifications','mail_templates','employees','budget_lines'];
+  'structure_events','project_logs','project_members','attachments','notifications','mail_templates','employees','budget_lines',
+  'commission_transfers'];   // versements des commissions de production (lot D1, migration v1.43)
 
 export const S = {
   rtBuffers: new Set(), rtApply: null,   // changements en direct gardés pendant un rechargement partiel (data.js refreshFor)

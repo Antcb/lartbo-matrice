@@ -5,11 +5,15 @@
 import { commissionAmount, commissionOf, isSolde, lineValue, showBudget } from './budget.js';
 import { artistResult } from './views/budget.js';
 import { byId } from './selectors.js';
+import { commissionState } from './calc.js';
 import { esc, eur2, fmtDate } from './utils.js';
 
 export function exportArtistBudget(showId){
   const s = byId('shows', showId); if (!s) return;
   const p = byId('projects', s.project_id), b = showBudget(s), r = artistResult(s, b), com = commissionOf(s);
+  // commission (lot D1) : total, versements réels et reste ; le % n'est affiché que s'il correspond au total (sinon total fixé à part)
+  const cst = com ? commissionState(com) : null, pctN = Number(com?.pct ?? s.artbo_pct ?? 15);
+  const comPct = Math.abs(Math.round((Number(s.fee_ht) || 0) * pctN) / 100 - commissionAmount(s)) < 0.005 ? String(pctN) : '';
   const artist = (p?.name || '').replace(/\s*•.*$/, ''), who = p?.artist_payee || artist;
   const exp = b.lines.filter(l => !isSolde(l) && Math.abs(lineValue(l)) >= 0.005);
   const CAT = {Staff: 'Salaires', Movinmotion: 'Frais de paie (Movinmotion)', Taxes: 'Taxes'};
@@ -39,7 +43,10 @@ export function exportArtistBudget(showId){
   <h2>Le cachet</h2>
   <table><tbody>
     <tr><td>Cachet HT</td><td class="n">${eur2(b.fee)}</td></tr>
-    <tr><td>Commission L’ArtBoristerie (${esc(String(com?.pct ?? s.artbo_pct ?? 15))} %)</td><td class="n">− ${eur2(commissionAmount(s))}</td></tr>
+    <tr><td>Commission L’ArtBoristerie${comPct ? ` (${esc(comPct)} %)` : ''}</td><td class="n">− ${eur2(commissionAmount(s))}</td></tr>
+    ${cst ? cst.transfers.map(t => `<tr><td class="m">dont transféré le ${esc(fmtDate(t.transferred_at))}${t.note ? ' · ' + esc(t.note) : ''}</td><td class="n m">${eur2(Number(t.amount))}</td></tr>`).join('')
+      + (cst.legacy ? `<tr><td class="m">transférée le ${esc(fmtDate(com.paid_at))}</td><td class="n m">${eur2(cst.total)}</td></tr>` : '')
+      + (cst.remaining >= 0.005 && !cst.legacy ? `<tr><td class="m">reste à transférer (pas encore prélevé sur ton compte)</td><td class="n m">${eur2(cst.remaining)}</td></tr>` : '') : ''}
   </tbody></table>
 
   <h2>Les dépenses de la date</h2>

@@ -63,6 +63,15 @@ t('acompte relié depuis le devis : figé sur le montant réel de la facture Pen
   assert.equal(figerMontant({ kind: 'acompte', amount: 1750 }), false);
 });
 
+t('commission de PRODUCTION (lot D1, versements) : jamais facturée, jamais reliée, jamais reprise de Pennylane', () => {
+  for (const mode of ['production', null, undefined]) {
+    assert.equal(factureIsolee({ kind: 'artbo' }, mode), false, 'pas de facture isolée ' + mode);
+    assert.equal(payable({ kind: 'artbo' }, mode), false, 'paiement jamais repris de Pennylane ' + mode);
+    assert.equal(relieAuDevis({ kind: 'artbo' }, mode), false, 'jamais reliée au devis ' + mode);
+  }
+  assert.equal(factureIsolee({ kind: 'artbo' }, 'booking'), true, 'booking : la commission reste une facture');
+});
+
 let ko = 0;
 for (const [nom, f] of cas) { try { f(); } catch (e) { ko++; console.error('✗ ' + nom + '\n  ' + e.message); } }
 console.log(`Règles Pennylane (fausses données) : ${cas.length - ko}/${cas.length} réussies.`);

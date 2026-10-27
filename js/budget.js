@@ -7,7 +7,7 @@
  * Chaque ligne a un montant prévu (saisi ou calculé) et un montant réel (lu sur la pièce) ; elle est « payée » quand paid_at est rempli.
  * Une date cochée « booking uniquement » (prod_mode = booking) n'a pas de budget : seulement la facture de commission.
  */
-import { isInvoiced, payAmount, paymentsOf } from './calc.js';
+import { commissionState, isInvoiced, payAmount, paymentsOf } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { byId, setting, showsOfProject } from './selectors.js';
 import { S } from './state.js';
@@ -104,6 +104,8 @@ export function accountOf(projectId){
     const conf = confirmed(s);   // date non confirmée (annulée…) : seuls ses mouvements FAITS comptent
     for (const pay of paymentsOf(s.id)){
       const v = payAmount(pay) || 0;
+      // commission (lot D1) : seuls les versements réels sortent du compte ; le reste à transférer reste « à venir »
+      if (pay.kind === 'artbo'){ const st = commissionState(pay); a.outDone += st.transferred; if (conf) a.outTodo += st.remaining; continue; }
       if (!conf && !pay.paid_at) continue;
       // acompte prévu ou caduc (pas facturé) : déjà compris dans le solde (cession − acomptes facturés), jamais compté deux fois (lot C1)
       if (pay.kind === 'acompte' && !isInvoiced(pay)) continue;
@@ -112,7 +114,6 @@ export function accountOf(projectId){
         if (who === 'compte') pay.paid_at ? a.inDone += v : a.inTodo += v;
         else if (!who) pay.paid_at ? a.unassignedDone += v : a.unassignedTodo += v;
       }
-      if (pay.kind === 'artbo') pay.paid_at ? a.outDone += v : a.outTodo += v;
     }
     if (conf) a.byCat['Commission'] = (a.byCat['Commission']||0) + commissionAmount(s);
   }
@@ -147,10 +148,16 @@ export function accountMoves(projectId){
   const where = s => s ? `${s.venue || '?'} (${String(s.date || '').split('-').reverse().join('/')})` : 'hors date';
   for (const s of accountShowsOf(projectId).filter(x => !isOwnProd(x))){
     for (const pay of paymentsOf(s.id)){
+      // commission (lot D1) : un mouvement par versement réel (date, référence) ; commission versée avant ce lot sans détail : un mouvement
+      if (pay.kind === 'artbo'){
+        const st = commissionState(pay);
+        if (st.legacy && st.total) moves.push({date: pay.paid_at, label: `Commission L'ArtBo — ${where(s)}`, amount: -st.total, calc: pay.amount == null || pay.amount === ''});
+        for (const t of st.transfers) moves.push({date: t.transferred_at, label: `Commission L'ArtBo — ${where(s)}${st.transfers.length > 1 || st.remaining ? ' (versement)' : ''}${t.reference ? ' · ' + t.reference : ''}`, amount: -Number(t.amount), calc: false});
+        continue;
+      }
       const v = payAmount(pay) || 0; if (!pay.paid_at || !v) continue;   // payee vide : « Non renseigné », pas un mouvement du compte
       if (['acompte','solde','autre'].includes(pay.kind) && payee(pay) === 'compte')
         moves.push({date: pay.paid_at, label: `${pay.label || pay.kind} — ${where(s)}`, amount: v, calc: pay.amount == null || pay.amount === ''});
-      if (pay.kind === 'artbo') moves.push({date: pay.paid_at, label: `Commission L'ArtBo — ${where(s)}`, amount: -v, calc: pay.amount == null || pay.amount === ''});
     }
   }
   const lines = S.db.budget_lines.filter(l => l.project_id === projectId && accountLineOk(l));
