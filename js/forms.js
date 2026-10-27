@@ -119,7 +119,7 @@ export function editProject(id){
       {k:'contract_template_cr', label:'Contrat de co-réalisation', full:true, placeholder:'https://docs.google.com/document/d/…'},
       {k:'notes', label:'Notes', type:'textarea', full:true},
     ],
-    deleteAsk: () => ({title: 'Supprimer l’artiste ?', text: `Supprimer l’artiste « ${p.name || ''} » de la Matrice ?\nSes lignes de budget et ses modèles de mail propres sont supprimés avec lui ; ses dates, suivis et tâches restent, sans artiste.\nSes dossiers et fichiers Google Drive ne sont pas touchés.`,
+    deleteAsk: () => ({title: 'Supprimer l’artiste ?', text: `Supprimer l’artiste « ${p.name || ''} » de la Matrice ?\nSes lignes de budget et ses modèles de mail propres sont supprimés avec lui ; ses dates, suivis et tâches restent, sans artiste.\nSes membres et son journal (échanges et pièces jointes) restent en base mais ne s’affichent plus nulle part.\nSes dossiers et fichiers Google Drive ne sont pas touchés.`,
       actions: [{value: 'del', label: 'Supprimer l’artiste', danger: true}]}),
     onDelete: id ? () => deleteProject(id) : null,
     onSave: async v => {
@@ -266,7 +266,7 @@ export function editContact(id, prefill={}){
       ...CONTACT_COORDS,
       {k:'notes', label:'Notes', type:'textarea', full:true},
     ],
-    deleteAsk: () => ({title: 'Supprimer le contact ?', text: `Supprimer le contact « ${c.display_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || 'sans nom'} » et ses liens avec les structures ? Il n’est pas retiré de Brevo.`,
+    deleteAsk: () => ({title: 'Supprimer le contact ?', text: `Supprimer le contact « ${c.display_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || 'sans nom'} » et ses liens avec les structures ? Les dates, suivis et échanges qui le citaient restent, sans contact. Il n’est pas retiré de Brevo.`,
       actions: [{value: 'del', label: 'Supprimer le contact', danger: true}]}),
     onDelete: id ? () => remove('contacts', id) : null,
     onSave: async v => {
@@ -342,7 +342,7 @@ export function editStructure(id){
   const links = id ? linksOfStructure(id).map(c=>c.id) : [];
   openModal({ title: id ? s.name : 'Nouvelle structure', values: {...s, _contacts: links}, extra: structHidden(s),
     fields: structFormFields(!id),
-    deleteAsk: () => ({title: 'Supprimer la structure ?', text: `Supprimer la structure « ${byId('structures', id)?.name || ''} » ? Ses liens avec les contacts sont retirés ; les dates, suivis et tâches liés restent, sans structure.`,
+    deleteAsk: () => ({title: 'Supprimer la structure ?', text: `Supprimer la structure « ${byId('structures', id)?.name || ''} » ? Ses liens avec les contacts sont retirés ; les dates, suivis et tâches liés restent, sans structure. Ses événements (festivals, saisons) restent en base mais ne s’affichent plus.`,
       actions: [{value: 'del', label: 'Supprimer la structure', danger: true}]}),
     onDelete: id ? () => remove('structures', id) : null,
     onSave: async v => { const row = await saveStructure(id, s, v); if (!row) return false;

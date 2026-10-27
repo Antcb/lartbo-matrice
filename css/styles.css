@@ -415,7 +415,7 @@ dialog.ask .modal-foot{flex-wrap:wrap}
 dialog.ask textarea.ask-copy{width:100%;font-family:inherit}
 /* message d'erreur sous un champ (§9.1, Q23) : texte et bordure en --danger */
 .field .help.err{color:var(--danger)}
-.field input.bad,.field textarea.bad{border-color:var(--danger)}
+.field input.bad:not([type=checkbox]):not([type=hidden]):not(.dt-txt):not(.dt-val):not(.ac-input):not(.file-input),.field textarea.bad{border-color:var(--danger)}   /* même poids que la règle des champs, placée après */
 @media (max-width:720px){ dialog.ask .modal-foot{flex-direction:column;align-items:stretch} }
 
 /* Connexion */

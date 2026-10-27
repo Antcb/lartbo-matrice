@@ -31,7 +31,7 @@ test('v1.46b relance téléphone : « Annuler », Échap et clic dehors ne suppr
     await expect(dlg.locator('button', { hasText: 'Annuler' })).toBeFocused();
     if (how === 'annuler') await dlg.locator('button', { hasText: 'Annuler' }).click();
     else if (how === 'echap') await page.keyboard.press('Escape');
-    else await page.mouse.click(5, 5);   // fond, hors de la fenêtre
+    else { await page.waitForTimeout(450); await page.mouse.click(5, 5); }   // fond, hors de la fenêtre (un clic dans les 400 ms suivant l'ouverture est ignoré : double-clic)
     await expect(dlg).toHaveCount(0);
     expect(await db(page, 'tasks', 'tk-tel'), how).not.toBeNull();
     expect((await db(page, 'prospects', 'pr-1')).status, how + ' : suivi inchangé').toBe('Interest');
