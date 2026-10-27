@@ -5,7 +5,8 @@ Ils ne s'exécutent que sur la production (garde d'identité) et uniquement **su
 dans l'ordre de la « PROCÉDURE DÉFINITIVE — DÉPLOIEMENT MATRICE D1 ».
 
 - `2026-10-27_d1_suspension_ecritures.sql` : note puis retire les droits d'écriture de l'application, des visiteurs et des
-  fonctions serveur (tables financières), l'exécution des fonctions d'écriture appelables par l'API, et met en pause les
+  fonctions serveur (tables financières), l'exécution des fonctions d'écriture appelables par l'API, l'accès des fonctions
+  serveur aux clés des services externes (Pennylane…), et met en pause les
   rappels automatiques ; vérifie le résultat dans la même transaction. Relançable (à relancer après le déploiement D1).
 - `2026-10-27_d1_verification_gel.sql` : tentatives d'écriture réelles par chaque rôle, transaction entièrement annulée ;
   attendu « BILAN GEL : CONFORME ».

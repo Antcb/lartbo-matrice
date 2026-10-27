@@ -40,6 +40,8 @@ begin
   exception when insufficient_privilege then res := res || 'serveur, facture : refusé ; '; when others then res := res || 'AUTRE ERREUR (serveur, facture) ' || sqlerrm || ' ; '; end;
   begin update public.settings set value = value where key = 'functions_base_url'; res := res || 'SERVEUR MODIFIE UN RÉGLAGE ; ';
   exception when insufficient_privilege then res := res || 'serveur, réglage : refusé ; '; when others then res := res || 'AUTRE ERREUR (serveur, réglage) ' || sqlerrm || ' ; '; end;
+  begin perform public.import_secret('pennylane_token'); res := res || 'SERVEUR LIT LA CLÉ PENNYLANE ; ';
+  exception when insufficient_privilege then res := res || 'serveur, clé Pennylane : refusé ; '; when others then res := res || 'AUTRE ERREUR (clé Pennylane) ' || sqlerrm || ' ; '; end;
   reset role;
   if to_regclass('cron.job') is not null then
     if exists (select 1 from cron.job where jobname = 'rappels-quotidiens' and active) then res := res || 'RAPPELS ACTIFS ; '; end if;

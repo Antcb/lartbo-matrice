@@ -6,7 +6,8 @@
 --   • application (utilisateurs connectés) et visiteurs : plus AUCUNE création / modification / suppression, sur toutes les tables ;
 --     la LECTURE reste possible (contrôle visuel des comptes dans l'application avant réouverture) ;
 --   • fonctions serveur (rôle serveur : Pennylane, imports) : plus aucune écriture sur les tables financières
---     (dates, lignes de facturation, versements, budgets, artistes, réglages) — donc aucune synchronisation Pennylane possible ;
+--     (dates, lignes de facturation, versements, budgets, artistes, réglages) et plus d'accès aux clés des services externes
+--     (Pennylane, import, lecture IA, export des fichiers) — donc aucune synchronisation ni brouillon Pennylane possible ;
 --   • pages publiques et fonctions d'écriture appelables par l'API (fiche, artiste, RH, dossier Drive, clés, Movinmotion) ;
 --   • rappels automatiques (tâche planifiée « rappels-quotidiens ») mis en pause.
 -- Les scripts lancés dans l'éditeur SQL (rôle postgres) et la sauvegarde nocturne (lecture) ne sont pas concernés.
@@ -52,6 +53,17 @@ begin
     on conflict do nothing;
     execute format('revoke execute on function %s from public, anon, authenticated', f);
   end loop;
+  -- 2b. clés des services externes (Pennylane, imports, lecture IA) : plus lisibles par les fonctions serveur pendant l'intervention
+  --     → aucune synchronisation Pennylane ni création de brouillon (devis / facture) dans Pennylane possible
+  if to_regprocedure('public.import_secret(text)') is not null then
+    insert into maintenance_d1.droits_fonctions
+      select 'public.import_secret(text)', case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end
+        from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+       where p.oid = to_regprocedure('public.import_secret(text)') and a.privilege_type = 'EXECUTE'
+         and (a.grantee = 0 or a.grantee::regrole::text in ('anon', 'authenticated', 'service_role'))
+    on conflict do nothing;
+    revoke execute on function public.import_secret(text) from public, anon, authenticated, service_role;
+  end if;
   -- 3. rappels automatiques en pause
   if to_regclass('cron.job') is not null then
     insert into maintenance_d1.taches select jobid, jobname, active from cron.job where jobname = 'rappels-quotidiens' on conflict do nothing;
@@ -73,6 +85,8 @@ begin
     if to_regprocedure(f) is not null and (has_function_privilege('anon', to_regprocedure(f), 'EXECUTE') or has_function_privilege('authenticated', to_regprocedure(f), 'EXECUTE')) then
       raise exception 'ECHEC : % encore exécutable — TOUT EST ANNULÉ', f; end if;
   end loop;
+  if to_regprocedure('public.import_secret(text)') is not null and has_function_privilege('service_role', 'public.import_secret(text)', 'EXECUTE') then
+    raise exception 'ECHEC : clés Pennylane encore lisibles par les fonctions serveur — TOUT EST ANNULÉ'; end if;
   if to_regclass('cron.job') is not null then
     if exists (select 1 from cron.job where jobname = 'rappels-quotidiens' and active) then
       raise exception 'ECHEC : rappels automatiques encore actifs — TOUT EST ANNULÉ'; end if;
