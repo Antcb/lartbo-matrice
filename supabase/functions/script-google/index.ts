@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
     const { data: team } = await user.rpc('is_team');
     if (team !== true) return json({ ok: false, error: 'Accès refusé : connecte-toi avec un compte de l’équipe.' }, 403);
     const body = await req.json().catch(() => null);
-    const t = TARGETS[body?.target || 'main'];
+    const t = Object.hasOwn(TARGETS, body?.target || 'main') ? TARGETS[body?.target || 'main'] : null;
     if (!t || typeof body?.action !== 'string' || !/^[a-z_]{2,40}$/.test(body.action)) return json({ ok: false, error: 'Demande illisible' }, 400);
     const { data: st, error } = await admin.from('settings').select('key, value').in('key', [t.key, 'drive_webhook_secret']);
     if (error) { console.error('réglages', error.message); return json({ ok: false, error: 'Réglages illisibles pour le moment : réessaie dans un instant.' }, 500); }

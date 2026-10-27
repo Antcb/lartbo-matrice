@@ -41,6 +41,19 @@ begin
   if c <> 0 then raise exception 'ECHEC 1 : secret supprimable par le navigateur'; end if;
   -- un réglage ordinaire reste modifiable
   update settings set value = value where key = 'site_url';
+  -- les fonctions de lecture des réglages ne contournent pas la règle (droits de l'appelant)
+  if public.setting_text('drive_webhook_secret') is not null or public.setting_text('brevo_api_key') is not null then raise exception 'ECHEC 1 : secret lisible par setting_text'; end if;
+  -- adresses où le serveur envoie le secret : seulement un script Google publié ; adresse des fonctions serveur non modifiable
+  begin update settings set value = to_jsonb('https://exemple.com/vol'::text) where key = 'drive_webhook_url'; raise exception 'ECHEC 1 : adresse quelconque acceptée';
+  exception when insufficient_privilege then null; end;
+  begin insert into settings (key, value) values ('prospect_script_url_essai', to_jsonb('x'::text)); delete from settings where key = 'prospect_script_url_essai';
+  exception when insufficient_privilege then raise exception 'ECHEC 1 : réglage ordinaire non insérable'; end;
+  update settings set value = to_jsonb('https://script.google.com/macros/s/ESSAI_essai-123/exec'::text) where key = 'drive_webhook_url';
+  get diagnostics c = row_count;
+  if c <> 1 and exists (select 1 from settings where key = 'drive_webhook_url') then raise exception 'ECHEC 1 : adresse de script Google valide refusée'; end if;
+  update settings set value = to_jsonb('https://exemple.supabase.co/functions/v1'::text) where key = 'functions_base_url';
+  get diagnostics c = row_count;
+  if c <> 0 then raise exception 'ECHEC 1 : adresse des fonctions serveur modifiable par le navigateur'; end if;
   -- clé Brevo par la fonction dédiée
   perform public.set_brevo_key('xkeysib-essaiessaiessaiessaiessai01');
   if public.brevo_key_status() is distinct from true then raise exception 'ECHEC 1 : clé Brevo non enregistrée'; end if;
@@ -48,7 +61,7 @@ begin
   exception when raise_exception then if sqlerrm like 'ECHEC%' then raise; end if; end;
   perform public.set_brevo_key('');
   if public.brevo_key_status() is distinct from false then raise exception 'ECHEC 1 : clé Brevo non retirée'; end if;
-  insert into essai_bilan (quoi) values ('1 équipe : 0 secret lisible, ni modifiable, ni insérable, ni supprimable ; réglages ordinaires lisibles ; clé Brevo par set_brevo_key (format vérifié), état par brevo_key_status');
+  insert into essai_bilan (quoi) values ('1 équipe : 0 secret lisible (ni par setting_text), ni modifiable, ni insérable, ni supprimable ; adresses des scripts : seulement …/exec ; adresse des fonctions serveur non modifiable ; réglages ordinaires lisibles ; clé Brevo par set_brevo_key (format vérifié), état par brevo_key_status');
 end $e$;
 
 -- 2. compte connecté hors équipe
@@ -80,7 +93,7 @@ reset role;
 insert into essai_bilan (quoi) select '4 règle ' || policyname || ' (' || cmd || ')' from pg_policies where schemaname = 'public' and tablename = 'settings' order by policyname;
 insert into essai_bilan (quoi)
 select '4 droits ' || p.proname || ' ' || coalesce(array_to_string(p.proacl, ','), 'défaut') || case when p.prosecdef then ' definer' else '' end
-  from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname in ('set_brevo_key', 'brevo_key_status', 'is_secret_setting');
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname in ('set_brevo_key', 'brevo_key_status', 'is_secret_setting', 'setting_write_ok');
 
 do $f$ begin raise exception 'ESSAI v1.47 RÉUSSI (tout est annulé, rien n''est gardé) :%', E'\n' || (select string_agg(n || '. ' || quoi, E'\n' order by n) from essai_bilan); end $f$;
 rollback;
