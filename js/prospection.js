@@ -5,6 +5,7 @@
  * tâche Booking de relance à J+10.
  * « Relance » : réponse dans le même fil Gmail (l'historique reste), journal, nouvelle tâche de relance.
  */
+import { confirmAsk } from './ui/dialog.js';
 import { render } from './app.js';
 import { insert, purgeStored, remove, save, sb, signedUrl } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
@@ -125,7 +126,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
       if (!m.to) { toast('Indique le destinataire', true); return false; }
       if (!pids.length) { toast('Coche au moins un artiste', true); return false; }
       if (!relance && !m.subject) { toast('Indique l’objet du mail', true); return false; }
-      if (send && !confirm(`Envoyer le mail à ${m.to} maintenant ?`)) return false;
+      if (send && !(await confirmAsk('Envoyer le mail ?', `Le mail part maintenant à ${m.to}${m.cc ? ` (copie : ${m.cc})` : ''}, depuis ${fromAddr()}.`, 'Envoyer le mail'))) return false;
       try {
         const attachments = await Promise.all(files.filter(f => f.on).map(async f => f.id ? {id: f.id} : {url: await signedUrl(f.path), name: f.name}));
         const out = relance
@@ -172,8 +173,10 @@ export async function openProspection(structureId, {prospectId=null}={}){
     pids = ids.filter(id => active.some(a => a.id === id));
     document.querySelectorAll('#modal [data-pr-art]').forEach(c => { c.checked = pids.includes(c.dataset.prArt); });
   }
-  $('#pr-tpl').onchange = () => { const prev = $('#pr-tpl').dataset.prev;
-    if (dirty && !confirm('Remplacer le texte retouché par ce modèle ?')){ $('#pr-tpl').value = prev; return; }
+  $('#pr-tpl').onchange = async () => { const prev = $('#pr-tpl').dataset.prev, next = $('#pr-tpl').value;
+    if (dirty){ $('#pr-tpl').value = prev;   // en attendant la réponse : le modèle d'avant reste affiché
+      if (!(await confirmAsk('Remplacer le texte retouché ?', 'Le texte du mail que tu as retouché sera remplacé par ce modèle.', 'Remplacer le texte', {danger: true}))) return;
+      $('#pr-tpl').value = next; }
     syncArtists(); const cur = $('#pr-tpl').value; drawTpls(); $('#pr-tpl').value = cur; $('#pr-tpl').dataset.prev = cur; draw(true); };
   $('#pr-body').addEventListener('input', () => { dirty = true; });
   document.querySelector('#modal .pr-arts').addEventListener('change', e => {
@@ -187,7 +190,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
   });
   $('#pr-contact').onchange = e => { contact = byId('contacts', e.target.value) || null; if (contactMails(contact)) $('#pr-to').value = contactMails(contact); draw(); };
   $('#pr-date')?.addEventListener('change', () => draw());
-  $('#pr-show').onchange = () => { if (dirty && !confirm('Remplacer le texte retouché ?')) return; draw(true); };
+  $('#pr-show').onchange = async () => { if (dirty && !(await confirmAsk('Remplacer le texte retouché ?', 'Le texte du mail que tu as retouché sera réécrit avec ce concert.', 'Remplacer le texte', {danger: true}))) return; draw(true); };
   $('#pr-from').onchange = e => { const before = signatureOf(sender); sender = e.target.value; $('#pr-from-addr').textContent = fromAddr();
     // la signature suit l'expéditeur, sans toucher au texte déjà retouché
     const body = $('#pr-body'); if (before && body.innerHTML.endsWith(before)) body.innerHTML = body.innerHTML.slice(0, -before.length) + signatureOf(sender); else if (!dirty) draw(true); };

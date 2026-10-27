@@ -6,7 +6,7 @@ import { afterFeeChange, askConfirmation, becameConfirmed, sendConfirmation, val
 import { go, render } from './app.js';
 import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
-import { insert, openStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
+import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
 import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showsFiltered, structName } from './selectors.js';
 import { CFG } from './config.js';
@@ -14,7 +14,7 @@ import { propagateCommission } from './commission.js';
 import { payerLabel } from './budget.js';
 import { S, localSet, setProjects, touch } from './state.js';
 import { MODALS, openModal } from './ui/modal.js';
-import { ask } from './ui/dialog.js';
+import { ask, askText, confirmAsk, copyText } from './ui/dialog.js';
 import { modalSaved } from './ui/drafts.js';
 import { applyAcompte, saveDepartments } from './views/settings.js';
 import { hasLogDraft, setLogDraft } from './views/suivi.js';
@@ -120,10 +120,10 @@ export const ACTIONS = {
   newTemplate: t => editTemplate(null, {...(t.dataset.project ? {project_id: t.dataset.project, project_ids: [t.dataset.project]} : {}), ...(t.dataset.kind ? {kind: t.dataset.kind} : {})}),
   copyFiche: async t => { const s = byId('shows', t.dataset.id);
     const link = publicLink('fiche', s.fiche_token);
-    try { await navigator.clipboard.writeText(link); toast(linkLabel('Lien de la fiche copié')); } catch { prompt(linkLabel('Lien de la fiche') + ' :', link); } },
+    await copyText(link, linkLabel('Lien de la fiche copié'), linkLabel('Lien de la fiche')); },
   copyArtistLink: async t => { const p = byId('projects', t.dataset.id); if (!p?.artist_token) return toast('Lien pas encore prêt : recharge la page', true);
     const {artistLink} = await import('./views/projects.js'); const link = artistLink(p);
-    try { await navigator.clipboard.writeText(link); toast(linkLabel('Lien de la fiche artiste copié')); } catch { prompt(linkLabel('Lien de la fiche artiste') + ' :', link); } },
+    await copyText(link, linkLabel('Lien de la fiche artiste copié'), linkLabel('Lien de la fiche artiste')); },
   validateFiche: t => validateFiche(t.dataset.id),
   genContract: t => generateContract(t.dataset.id),
   contractPdf: t => exportContractPdf(t.dataset.id),
@@ -136,7 +136,7 @@ export const ACTIONS = {
       if (win) win.location.href = out.url; else window.open(out.url, '_blank');
       toast(`${out.count} ligne(s) à vérifier dans le tableau`); render(); }
     catch (err) { if (win) win.close(); toast(err.message, true); } t.disabled = false; },
-  renameApply: async t => { if (!confirm('Renommer dans le Drive tous les éléments cochés du tableau ?')) return; t.disabled = true;
+  renameApply: async t => { if (!(await confirmAsk('Renommer dans le Drive ?', 'Tous les éléments cochés dans le tableau de renommage seront renommés dans le Drive (rien n’est supprimé ni déplacé).', 'Renommer les éléments cochés'))) return; t.disabled = true;
     try { const out = await callScript('rename_apply', {}); toast(`${out.renamed} élément(s) renommé(s)`); } catch (err) { toast(err.message, true); } t.disabled = false; },
   prospection: t => openProspection(t.dataset.id),
   relance: t => openProspection(null, {prospectId: t.dataset.id}),
@@ -160,7 +160,7 @@ export const ACTIONS = {
     toast('Signature enregistrée'); },
   brevoSyncAll: async () => {
     const n = S.db.contacts.reduce((n, c) => n + new Set([c.email, c.email_2].filter(e => /@/.test(e || '')).map(e => e.trim().toLowerCase())).size, 0);
-    if (!confirm(`Envoyer dans Brevo les contacts de la Matrice (${n} avec un mail) ? Seuls ceux qui ne sont pas encore dans Brevo sont ajoutés : les autres (et les désabonnés) ne sont pas touchés.`)) return;
+    if (!(await confirmAsk('Envoyer les contacts dans Brevo ?', `Contacts de la Matrice avec un mail : ${n}. Seuls ceux qui ne sont pas encore dans Brevo sont ajoutés : les autres (et les désabonnés) ne sont pas touchés.`, 'Envoyer à Brevo'))) return;
     toast('Envoi à Brevo…');
     try {
       // session de l'utilisateur (compte de l'équipe) au lieu du code secret du déclencheur (v1.47)
@@ -221,7 +221,7 @@ export const ACTIONS = {
   delPay: async t => { const p = byId('show_payments', t.dataset.id);
     const why = billLockReason(p);
     if (why){ toast(why.replace('ne se modifie plus', 'ne se supprime pas').replace('ne peuvent plus changer', 'ne se suppriment plus'), true); return; }
-    if (confirm('Supprimer cette ligne de facturation ?') && await remove('show_payments', t.dataset.id)){ if (p && p.kind !== 'solde') await rebalanceSolde(p.show_id); render(); } },
+    if (await confirmAsk('Supprimer la ligne de facturation ?', `Supprimer la ligne « ${p?.label || 'sans nom'} » (pas encore facturée) ?${p && p.kind !== 'solde' ? ' Le solde de la date se recalcule.' : ''}`, 'Supprimer la ligne', {danger: true}) && await remove('show_payments', t.dataset.id)){ if (p && p.kind !== 'solde') await rebalanceSolde(p.show_id); render(); } },
 
   // Tâches
   toggleTask: async t => {
@@ -237,8 +237,8 @@ export const ACTIONS = {
   newTaskFor: t => editTask(null, {structure_id: t.dataset.id}),
   newTaskProject: t => editTask(null, {project_ids:[t.dataset.id]}),
   openAttachment: t => { const f = byId('attachments', t.dataset.id); if (f) openStored(f.path); },
-  delAttachment: async t => { const f = byId('attachments', t.dataset.id); if (!f || !confirm(`Supprimer « ${f.name} » ?`)) return;
-    await sb.storage.from('suivi').remove([f.path]); if (await remove('attachments', f.id)){ t.closest('.file-row')?.remove(); render(); } },
+  delAttachment: async t => { const f = byId('attachments', t.dataset.id); if (!f || !(await confirmAsk('Supprimer la pièce jointe ?', `Supprimer « ${f.name} » et son fichier stocké dans la Matrice ?`, 'Supprimer la pièce jointe', {danger: true}))) return;
+    if (await remove('attachments', f.id)){ await purgeStored([f.path]); t.closest('.file-row')?.remove(); render(); } },   // ligne d'abord, puis le fichier (§4.4)
 
   // Dates
   newShow: t => editShow(null, t.dataset.project || S.project),
@@ -251,10 +251,13 @@ export const ACTIONS = {
   closeProject: () => { S.projectPage=null; render(); },
   projectPhoto: t => projectPhoto(t.dataset.id),
   addLink: async t => { const p = byId('projects', t.dataset.id), f = t.dataset.field; await save('projects', p.id, {[f]: [...(p[f]||[]), {label:'', url:''}]}); },
-  rmLink: async t => { if (!confirm('Retirer ce lien ?')) return; const p = byId('projects', t.dataset.id), f = t.dataset.field; const list = (p[f]||[]).slice(); list.splice(Number(t.dataset.i), 1); await save('projects', p.id, {[f]: list}); },
-  delProjLog: async t => { if (!confirm('Supprimer cet échange et ses fichiers ?')) return;
-    const files = attachmentsOf('project_log_id', t.dataset.id); if (files.length){ await sb.storage.from('suivi').remove(files.map(f=>f.path)); await removeWhere('attachments', 'project_log_id', t.dataset.id); }
-    if (await remove('project_logs', t.dataset.id)) render(); },
+  rmLink: async t => { const p0 = byId('projects', t.dataset.id), l = (p0?.[t.dataset.field] || [])[Number(t.dataset.i)];
+    if (!(await confirmAsk('Retirer le lien ?', `Retirer le lien « ${l?.label || l?.url || 'sans nom'} » de la fiche de l’artiste ?`, 'Retirer le lien', {danger: true}))) return; const p = byId('projects', t.dataset.id), f = t.dataset.field; const list = (p[f]||[]).slice(); list.splice(Number(t.dataset.i), 1); await save('projects', p.id, {[f]: list}); },
+  delProjLog: async t => { const files = attachmentsOf('project_log_id', t.dataset.id);
+    if (!(await confirmAsk('Supprimer l’échange ?', `Supprimer cet échange du journal de l’artiste${files.length ? ` et ${files.length > 1 ? `ses ${files.length} pièces jointes` : 'sa pièce jointe'}` : ''} ?`, 'Supprimer l’échange', {danger: true}))) return;
+    if (!(await remove('project_logs', t.dataset.id))) return;   // ligne d'abord, puis pièces et fichiers (§4.4)
+    if (files.length){ await removeWhere('attachments', 'project_log_id', t.dataset.id); await purgeStored(files.map(f => f.path)); }
+    render(); },
   addMember: async t => { await insert('project_members', {project_id:t.dataset.id, sort:999}); render(); },
   memberCard: t => { const m = byId('project_members', t.dataset.id); const keys = Object.keys(m.data||{});
     openModal({ title: [m.first_name, m.last_name].filter(Boolean).join(' ') || 'Membre', values:{...m, ...Object.fromEntries(keys.map((k,i)=>['_d'+i, m.data[k]]))},
@@ -262,10 +265,12 @@ export const ACTIONS = {
         {k:'birth_date', label:'Date de naissance', type:'date'}, {k:'address', label:'Adresse', type:'fulladdr', full:true},
         ...(keys.length ? [{k:'_sep', type:'html', cls:'sep', html:'<h3>Autres informations (import Movinmotion)</h3>'}] : []),
         ...keys.map((k,i)=>({k:'_d'+i, label:k}))],
+      deleteAsk: () => ({title: 'Supprimer le membre ?', text: `Supprimer ${[m.first_name, m.last_name].filter(Boolean).join(' ') || 'ce membre'} de l’équipe de l’artiste ?`, actions: [{value: 'del', label: 'Supprimer le membre', danger: true}]}),
       onDelete: async () => remove('project_members', m.id),
       onSave: async v => { const data = {}; keys.forEach((k,i) => { if (v['_d'+i]) data[k] = v['_d'+i]; delete v['_d'+i]; }); delete v._sep;
         await save('project_members', m.id, {...v, data}, {rerender:false}); } }); },
-  delMember: async t => { if (confirm('Supprimer ce membre ?') && await remove('project_members', t.dataset.id)) render(); },
+  delMember: async t => { const m = byId('project_members', t.dataset.id);
+    if (await confirmAsk('Supprimer le membre ?', `Supprimer ${[m?.first_name, m?.last_name].filter(Boolean).join(' ') || 'ce membre'} de l’équipe de l’artiste ?`, 'Supprimer le membre', {danger: true}) && await remove('project_members', t.dataset.id)) render(); },
 
   // Contacts & structures
   newContact: () => editContact(null), editContact: t => editContact(t.dataset.id),
@@ -281,7 +286,8 @@ export const ACTIONS = {
   closeStructure: () => { S.structurePage=null; render(); },
   clearNear: () => { S.near = null; render(); },
   newEvent: t => newEvent(t.dataset.id),
-  delEvent: async t => { if (confirm('Supprimer cet événement ?') && await remove('structure_events', t.dataset.id)) render(); },
+  delEvent: async t => { const ev = byId('structure_events', t.dataset.id);
+    if (await confirmAsk('Supprimer l’événement ?', `Supprimer l’événement « ${ev?.name || ev?.kind || 'sans nom'} »${ev?.date_start ? ` du ${fmtDate(ev.date_start)}` : ''} de la structure ?`, 'Supprimer l’événement', {danger: true}) && await remove('structure_events', t.dataset.id)) render(); },
   adminFromStructure: async t => { const st = byId('structures', t.dataset.id);
     await save('structures', st.id, {admin: {...(st.admin||{}), address: st.address||'', postal_code: st.postal_code||'', city: st.city||'', country: st.country||''}}); },
 
@@ -299,7 +305,7 @@ export const ACTIONS = {
     const fest = (st?.tags||[]).some(x=>/festival/i.test(x));
     editShow(null, S.wsProject && projIds(p).includes(S.wsProject) ? S.wsProject : projIds(p)[0], {...showPrefillFromStructure(st), date:S.wsTarget||null, status: fest?'Option Festival':'Option Salle', prospect_id: p.id}); },
   wsTask: t => { const p = byId('prospects', t.dataset.id); editTask(null, {structure_id:p.structure_id, project_ids:projIds(p), department:'Booking', prospect_id:p.id}); },
-  noAnswerClose: async t => { if (confirm('Pas de réponse au téléphone : clore le suivi ? (noté dans le journal)')) await closeNoAnswer(t.dataset.id); },
+  noAnswerClose: async t => { if (await confirmAsk('Clore le suivi ?', 'Pas de réponse au téléphone : la tâche est terminée et le suivi est clos (noté dans son journal).', 'Clore le suivi')) await closeNoAnswer(t.dataset.id); },
   rmProj: async (t, e) => { e.stopPropagation(); const tb = t.dataset.t || 'prospects', r = byId(tb, t.dataset.id); const ids = projIds(r).filter(x=>x!==t.dataset.p);
     await save(tb, r.id, {project_ids: ids, project_id: ids[0]||null}); },
   delProspect: async t => { if (await ask(prospectDeleteAsk(t.dataset.id)) !== 'del') return;
@@ -330,7 +336,7 @@ ${p.content_md||'(aucune)'}`;
     try { await navigator.clipboard.writeText(txt); toast('Copié. Colle-le dans ChatGPT, puis colle la réponse avec « Modifier »'); }
     catch(e){ openModal({title:'Copier pour ChatGPT', values:{t:txt}, fields:[{k:'t', label:'Sélectionne tout et copie', type:'textarea', full:true}], onSave: async()=>{} }); }
   },
-  clearLogDraft: t => { if (confirm('Effacer le brouillon de notes ?')){ setLogDraft(t.dataset.id, {}); render(); } },
+  clearLogDraft: async t => { if (await confirmAsk('Effacer le brouillon ?', 'Le brouillon de notes pas encore enregistré sera effacé.', 'Effacer le brouillon', {danger: true})){ setLogDraft(t.dataset.id, {}); render(); } },
   editLog: t => { const l = byId('prospect_logs', t.dataset.id);
     // un mail envoyé depuis la Matrice se modifie avec sa mise en forme
     const mail = !!l.body_html, head = String(l.body || '').split('\n\n')[0];
@@ -350,29 +356,32 @@ ${p.content_md||'(aucune)'}`;
       fields:[{k:'date', label:'Date', type:'date'}, {k:'kind', label:'Type', type:'select', options:['Note','Mail','Appel','Lien','Fichier'], blank:false},
         {k:'url', label:'Lien envoyé', full:true}, {k:'body', label:'Notes', type:'textarea', full:true, rows:10}],
       onSave: async v => { await save('project_logs', l.id, v, {rerender:false}); } }); },
-  delLog: async t => { if (confirm('Supprimer cette entrée du journal ?') && await remove('prospect_logs', t.dataset.id)) render(); },
+  delLog: async t => { const l = byId('prospect_logs', t.dataset.id);
+    if (await confirmAsk('Supprimer l’entrée du journal ?', `Supprimer l’entrée « ${l?.kind || 'Note'}${l?.date ? ' du ' + fmtDate(l.date) : ''} » du journal du suivi ?`, 'Supprimer l’entrée', {danger: true}) && await remove('prospect_logs', t.dataset.id)) render(); },
   editText: t => { const p=byId('prospects',t.dataset.id), f=t.dataset.f;
     openModal({ title: f==='summary'?'Résumé':'Autres notes', values:p, fields:[{k:f, label:f==='summary'?'Résumé (une ligne par point, « - » pour une puce, **gras**)':'Notes', type:'textarea', full:true, rows:14}],
       onSave: async v => { await save('prospects', p.id, v, {rerender:false}); } }); },
   openFile: async t => { const f=byId('prospect_files',t.dataset.id); if (!f) return;
     if (f.mime==='link') return window.open(f.path,'_blank');
     openStored(f.path); },
-  delFile: async t => { const f=byId('prospect_files',t.dataset.id); if (!f || !confirm(`Supprimer « ${f.name} » ?`)) return;
-    if (f.mime!=='link') await sb.storage.from('suivi').remove([f.path]);
-    if (await remove('prospect_files', f.id)) render(); },
+  delFile: async t => { const f=byId('prospect_files',t.dataset.id); if (!f || !(await confirmAsk(f.mime === 'link' ? 'Retirer le lien ?' : 'Supprimer le fichier ?', f.mime === 'link' ? `Retirer le lien « ${f.name} » du suivi ?` : `Supprimer « ${f.name} » et son fichier stocké dans la Matrice ?`, f.mime === 'link' ? 'Retirer le lien' : 'Supprimer le fichier', {danger: true}))) return;
+    if (!(await remove('prospect_files', f.id))) return;   // ligne d'abord, puis le fichier (§4.4)
+    if (f.mime!=='link') await purgeStored([f.path]);
+    render(); },
 
   // Réglages
   applyAcompte: () => applyAcompte(),
-  addDept: async () => { const n = prompt('Nom du nouveau pôle'); if (!n) return; await saveDepartments([...departments(), {name:n.trim(), color:'#5B677D'}]); render(); },
+  addDept: async () => { const n = await askText({title: 'Nouveau pôle', label: 'Nom du pôle', ok: 'Ajouter le pôle', check: v => departments().some(d => d.name.toLowerCase() === v.toLowerCase()) ? 'Ce pôle existe déjà' : ''}); if (!n) return; await saveDepartments([...departments(), {name:n.trim(), color:'#5B677D'}]); render(); },
   rmDept: async t => { const list = departments().slice(); const d = list[Number(t.dataset.i)];
-    if (!confirm(`Supprimer le pôle « ${d.name} » ? Les tâches concernées n’auront plus de pôle.`)) return;
+    if (!(await confirmAsk('Supprimer le pôle ?', `Supprimer le pôle « ${d.name} » ? Les tâches concernées n’auront plus de pôle.`, 'Supprimer le pôle', {danger: true}))) return;
     list.splice(Number(t.dataset.i), 1); await saveDepartments(list); render(); },
-  newPartner: async () => { const n = prompt('Nom du partenaire'); if (n && await insert('partners',{name:n})) render(); },
+  newPartner: async () => { const n = await askText({title: 'Nouveau partenaire', label: 'Nom du partenaire', ok: 'Ajouter le partenaire'}); if (n && await insert('partners',{name:n})) render(); },
   changePw: async () => {
     S.userOpen = false;
-    const pw = prompt('Nouveau mot de passe (8 caractères minimum)');
+    // champ masqué (Q20), jamais affiché en clair ; 8 caractères minimum vérifiés dans la fenêtre
+    const pw = await askText({title: 'Changer de mot de passe', label: 'Nouveau mot de passe (8 caractères minimum)', type: 'password', ok: 'Changer le mot de passe',
+      check: v => v.length < 8 ? 'Au moins 8 caractères' : ''});
     if (!pw) return render();
-    if (pw.length < 8) return toast('Le mot de passe doit faire au moins 8 caractères', true);
     const {error} = await sb.auth.updateUser({password: pw});
     toast(error ? 'Changement impossible : '+error.message : 'Mot de passe changé', !!error);
     render();

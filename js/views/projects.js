@@ -3,6 +3,7 @@
  * Aperçu (cachets et commissions par année), Dates, Suivis, Tâches, Échanges, Liens, Drive,
  * Administratif (structure juridique de l'artiste), Membres (import CSV Movinmotion possible), Modèles de mail.
  */
+import { copyText } from '../ui/dialog.js';
 import { ARTIST_DOCS, ARTIST_SECTIONS, PHOTO_CREDITS } from '../artist-fields.js';
 import { templateForm } from '../budget-template.js';
 import { ALL_FIELDS as AF_FIELDS, ficheText, fieldText, input as afInput, listClick, migrateInfo, read as afRead } from '../artist-form.js';
@@ -252,12 +253,12 @@ document.addEventListener('click', async e => {
   if (form && listClick(e, form, () => afSave(form))) return;
   const one = e.target.closest?.('[data-af-copy]');
   if (one && form){ e.preventDefault(); const f = AF_FIELDS.find(x => x.k === one.dataset.afCopy); const txt = fieldText(f, afRead(form)[f.k]);
-    try { await navigator.clipboard.writeText(txt); one.textContent = 'Copié ✓'; setTimeout(() => { one.textContent = 'Copier'; }, 1200); } catch { prompt('À copier :', txt); } return; }
+    if (await copyText(txt, '', f.label || 'Texte à copier')){ one.textContent = 'Copié ✓'; setTimeout(() => { one.textContent = 'Copier'; }, 1200); } return; }
   const retry = e.target.closest?.('[data-af-retry]');
   if (retry){ afWrite(retry.dataset.afRetry); return; }
   const all = e.target.closest?.('[data-af-copyall]');
   if (all){ const fm = document.querySelector(`form[data-af-form="${all.dataset.afCopyall}"]`); const p = byId('projects', all.dataset.afCopyall);
     const txt = ficheText(fm ? afRead(fm) : (p?.artist_info || {}), p?.name || '');
-    try { await navigator.clipboard.writeText(txt); toast('Fiche copiée : colle-la où tu veux'); } catch { prompt('Fiche :', txt); } }
+    await copyText(txt, 'Fiche copiée : colle-la où tu veux', 'Fiche de l’artiste'); }
 });
 export const artistLink = p => publicLink('artiste', p.artist_token);   // en test : « &test », le lien ouvre la base de test

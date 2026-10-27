@@ -7,6 +7,7 @@
  * 3. generateContract() : le script Google copie le modèle (Réglages › Contrats) dans le dossier
  *    de la date, remplit les balises <<…>> et les montants, puis exportContractPdf() en fait un PDF.
  */
+import { confirmAsk } from './ui/dialog.js';
 import { paymentsOf, planAmount, showVat } from './calc.js';
 import { save } from './data.js';
 import { FICHE_SECTIONS, ficheDefaults, ficheKind, fieldOn } from './fiche-fields.js';
@@ -143,9 +144,9 @@ export async function generateContract(showId){
   const v = contractVars(s);
   if (!templateId(v.kind, s)) return toast(`Ajoute le modèle de contrat ${v.kind === 'cr' ? 'de co-réalisation' : 'de cession'} dans Réglages › Contrats`, true);
   if (!s.drive_folder_id) return toast('Crée ou lie d’abord le dossier Drive de la date', true);
-  if (!s.fiche_validated_at && !confirm('La fiche de renseignements n’est pas validée. Générer quand même le contrat ?')) return;
-  if (v.missing.length && !confirm(`Infos manquantes (laissées visibles dans le contrat) :\n• ${v.missing.join('\n• ')}\n\nGénérer quand même ?`)) return;
-  if (s.contract_doc_id && !confirm('Un contrat existe déjà pour cette date. En générer un nouveau ? (l’ancien reste dans le Drive)')) return;
+  if (!s.fiche_validated_at && !(await confirmAsk('Fiche pas validée', 'La fiche de renseignements de cette date n’est pas validée.', 'Générer quand même le contrat'))) return;
+  if (v.missing.length && !(await confirmAsk('Infos manquantes', `Infos manquantes (laissées visibles dans le contrat) :\n${v.missing.map(x => '• ' + x).join('\n')}`, 'Générer quand même le contrat'))) return;
+  if (s.contract_doc_id && !(await confirmAsk('Générer un nouveau contrat ?', 'Un contrat existe déjà pour cette date. L’ancien reste dans le Drive, rien n’est supprimé.', 'Générer un nouveau contrat'))) return;
   toast('Préparation du contrat…');
   try {
     const out = await callScript('contract', {template_id: templateId(v.kind, s), folder_id: s.drive_folder_id, name: v.name, tags: v.tags, seq: v.seq});

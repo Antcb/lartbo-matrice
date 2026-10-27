@@ -13,6 +13,7 @@ import { applyTemplate } from './budget-template.js';
 import { exportArtistBudget } from './artist-export.js';
 import { S, touch } from './state.js';
 import { openModal } from './ui/modal.js';
+import { confirmAsk, inform } from './ui/dialog.js';
 import { esc, eur2, fmtDate, norm, toast, today } from './utils.js';
 
 const nextSort = showId => Math.max(0, ...linesOf(showId).map(l => l.sort || 0)) + 1;
@@ -57,7 +58,9 @@ document.addEventListener('change', async e => {
 
 export const BUDGET_ACTIONS = {
   prodAddTicket: t => saveProd(t.dataset.id, p => { p.tickets.push({label: '', qty: 0, price: 0, dl_prod: 0, dl_net: 0}); }),
-  prodDelTicket: t => { if (confirm('Retirer ce tarif ?')) saveProd(t.dataset.id, p => { p.tickets.splice(Number(t.dataset.i), 1); }); },
+  prodDelTicket: async t => { const lab = prodOf(byId('shows', t.dataset.id)).tickets[Number(t.dataset.i)]?.label;
+    if (await confirmAsk('Retirer le tarif ?', `Retirer le tarif « ${lab || 'sans nom'} » de la billetterie de cette date (quantités et prix de ce tarif compris) ?`, 'Retirer le tarif', {danger: true}))
+      saveProd(t.dataset.id, p => { p.tickets.splice(Number(t.dataset.i), 1); }); },
   prefillProduction: async t => {
     const s = byId('shows', t.dataset.id); let sort = nextSort(s.id);
     const rows = PROD_LINES.map(([category, label]) => ({project_id: s.project_id, show_id: s.id, category, label, payer: 'artbo', sort: sort++}));
@@ -69,7 +72,7 @@ export const BUDGET_ACTIONS = {
   },
   toggleBookingOnly: async t => {
     const s = byId('shows', t.dataset.id), on = t.checked;
-    if (on && linesOf(s.id).length && !confirm('Cette date a déjà un budget. Il sera masqué (pas supprimé) et la date sortira du solde du compte. Continuer ?')){ t.checked = false; return; }
+    if (on && linesOf(s.id).length && !(await confirmAsk('Passer la date en booking uniquement ?', `Cette date a déjà un budget (${linesOf(s.id).length} ligne${linesOf(s.id).length > 1 ? 's' : ''}). Il sera masqué (pas supprimé) et la date sortira du solde du compte.`, 'Passer en booking'))){ t.checked = false; return; }
     if (!(await save('shows', s.id, {prod_mode: on ? 'booking' : 'production', prod_mode_manual: (on ? 'booking' : 'production') !== (byId('projects', s.project_id)?.mode || 'production')}, {rerender: false}))){ render(); return; }   // refusé (facture émise) : le message du garde-fou reste
     // passage en production : la base ajoute l'acompte et le solde manquants (factures déjà faites gardées) ; on les recharge
     if (!on) await refreshFor('show_payments', 'show_id', s.id);
@@ -97,7 +100,9 @@ export const BUDGET_ACTIONS = {
       tr.querySelector(cat === 'Staff' ? '[data-f="supplier"]' : '[data-f="label"]')?.focus({preventScroll: true}); }
   },
   exportArtistBudget: t => exportArtistBudget(t.dataset.id),
-  delBudgetLine: async t => { if (confirm('Supprimer cette ligne du budget ?') && await remove('budget_lines', t.dataset.id)) render(); },
+  delBudgetLine: async t => { const l = byId('budget_lines', t.dataset.id);
+    if (await confirmAsk('Supprimer la ligne du budget ?', `Supprimer la ligne « ${l?.label || l?.category || 'sans nom'} »${l?.amount != null ? ` (${eur2(l.amount)})` : ''} du budget ?`, 'Supprimer la ligne', {danger: true})
+      && await remove('budget_lines', t.dataset.id)) render(); },
   prefillBudget: async t => { await applyTemplate(byId('shows', t.dataset.id)); render(); },
   copyBudget: t => {
     const s = byId('shows', t.dataset.id);
@@ -141,14 +146,14 @@ export const BUDGET_ACTIONS = {
         // la synchronisation ne choisit jamais le compte (§6.6) : les encaissements payés sans compte sont signalés
         (n => n ? `\n${n} encaissement(s) payé(s) sans compte d’encaissement : choisis « Arrive sur » dans l’onglet Factures de la date.` : '')(
           out.updated.map(u => S.db.show_payments.find(p => p.id === u.id)).filter(p => p && ['acompte','solde','autre'].includes(p.kind) && !p.payee && byId('shows', p.show_id)?.prod_mode !== 'booking').length)];
-      alert(lines.join('\n'));
+      await inform({title: 'Synchronisation Pennylane', text: lines.join('\n')});
     } catch (err) { toast(err.message, true); }
     t.disabled = false;
   },
   testPennylane: async () => { try { const out = await pennylane('status', {}); toast(`Pennylane OK : ${out.company || 'compte connecté'}`); } catch (err) { toast(err.message, true); } },
   pennylaneQuote: async t => {
     const s = byId('shows', t.dataset.id);
-    if (s.pennylane_quote_id && !confirm('Un devis a déjà été créé dans Pennylane pour cette date. En créer un nouveau ?')) return;
+    if (s.pennylane_quote_id && !(await confirmAsk('Créer un nouveau devis ?', 'Un devis a déjà été créé dans Pennylane pour cette date. Le nouveau devis s’ajoute à l’ancien (rien n’est supprimé dans Pennylane).', 'Créer un nouveau devis'))) return;
     t.disabled = true; toast('Création du devis dans Pennylane…');
     try { const out = await pennylane('quote', {show_id: s.id}); await save('shows', s.id, {pennylane_quote_id: String(out.id), pennylane_quote_url: out.url || null}); toast(`Devis ${out.number || ''} créé dans Pennylane${out.headers === false ? ' (complète « Projet » et « Date de réalisation » dans Pennylane)' : ''}`); }
     catch (err) { toast(err.message, true); }

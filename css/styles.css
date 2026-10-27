@@ -412,6 +412,10 @@ dialog.ask .modal-body{display:block}
 dialog.ask .modal-body p{margin:0 0 8px}
 /* boutons toujours tous visibles, « Annuler » compris : à la ligne si besoin, empilés sur téléphone (relecture v1.46b) */
 dialog.ask .modal-foot{flex-wrap:wrap}
+dialog.ask textarea.ask-copy{width:100%;font-family:inherit}
+/* message d'erreur sous un champ (§9.1, Q23) : texte et bordure en --danger */
+.field .help.err{color:var(--danger)}
+.field input.bad,.field textarea.bad{border-color:var(--danger)}
 @media (max-width:720px){ dialog.ask .modal-foot{flex-direction:column;align-items:stretch} }
 
 /* Connexion */

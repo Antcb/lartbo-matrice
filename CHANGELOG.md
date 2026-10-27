@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.48.0 — 27/10/2026
+- Fenêtres (lot V1.48) : plus aucune fenêtre native du navigateur — questions de l'application qui nomment l'élément et ce qui part avec lui, saisies dans la fenêtre (mot de passe masqué), rapport Pennylane et copie de secours dans une fenêtre
+
+
 ## 1.47.0 — 27/10/2026
 - Sécurité (lot V1.47) : codes secrets illisibles par le navigateur (scripts Google appelés par un relais serveur, clé Brevo saisie côté serveur), clé IA hors des adresses, messages d'erreur du serveur en français, politique de sécurité (CSP) sur toutes les pages
 

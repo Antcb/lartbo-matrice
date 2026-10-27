@@ -1,6 +1,7 @@
 /**
  * Réglages : pourcentages par défaut (acompte + solde = 100 %), partenaires, version.
  */
+import { confirmAsk } from '../ui/dialog.js';
 import { APP_VERSION } from '../config.js';
 import { sb } from '../data.js';
 import { defaultAcompte, departments, setting } from '../selectors.js';
@@ -207,7 +208,7 @@ export async function applyAcompte(){
   const ac = defaultAcompte();   // 0 % gardé tel quel ; 50 seulement si le réglage est vide (§6.4)
   // 0 % = date SANS acompte (§6.4) : jamais d'acompte à 0 % posé en lot, et aucune ligne supprimée en lot sans décision (relecture v1.46a)
   if (ac === 0) return toast('Acompte par défaut à 0 % : les prochaines dates confirmées n’auront pas d’acompte. Les dates déjà confirmées gardent le leur ; pour en retirer un, « Valider les conditions » de la date › 0 acompte.');
-  if (!confirm(`Mettre ${ac} % d’acompte et ${100-ac} % de solde sur les dates à venir pas encore facturées ?`)) return;
+  if (!(await confirmAsk('Appliquer aux dates à venir ?', `Mettre ${ac} % d’acompte et ${100-ac} % de solde sur les dates à venir dont les conditions ne sont pas validées et dont rien n’est facturé ni saisi à la main.`, `Appliquer ${ac} % / ${100-ac} %`))) return;
   // seulement l'acompte et le solde créés à la confirmation (pas les acomptes ajoutés à la main)
   // dates à venir dont les conditions ne sont pas validées, avec un seul acompte et rien d'envoyé / payé / saisi à la main
   const now = new Date().toLocaleDateString('sv-SE');

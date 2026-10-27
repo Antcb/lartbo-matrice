@@ -2,6 +2,7 @@
  * Formulaires de création / modification : date, projet, tâche, contact, structure, suivi, événement,
  * créations rapides (structure, contact) depuis un champ de recherche, export CSV des suivis, photo de projet.
  */
+import { askText } from './ui/dialog.js';
 import { FORMAT_FIELD, exportTable } from './exports.js';
 import { propagateCommission } from './commission.js';
 import { hasFinancialRecord } from './calc.js';
@@ -53,6 +54,8 @@ export function editShow(id, projectId, prefill={}){
     + (id && s.status?.startsWith('Confirmée') ? `<div class="full drive">${driveHTML(s)}</div>` : '');
   const p = openModal({
     title: id ? s.venue : 'Nouvelle date', fields: showFields(s), values: s, extra,
+    deleteAsk: () => ({title: 'Supprimer la date ?', text: `Supprimer la date « ${[s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · ')} » avec ses lignes de facturation et son budget ? Les tâches liées restent ; le dossier Google Drive n’est pas touché.`,
+      actions: [{value: 'del', label: 'Supprimer la date', danger: true}]}),
     onDelete: id ? () => remove('shows', id) : null,
     onSave: async v => {
       if (!v.venue) { toast('Indique le nom du lieu ou du festival', true); return false; }
@@ -116,6 +119,8 @@ export function editProject(id){
       {k:'contract_template_cr', label:'Contrat de co-réalisation', full:true, placeholder:'https://docs.google.com/document/d/…'},
       {k:'notes', label:'Notes', type:'textarea', full:true},
     ],
+    deleteAsk: () => ({title: 'Supprimer l’artiste ?', text: `Supprimer l’artiste « ${p.name || ''} » de la Matrice ?\nSes lignes de budget et ses modèles de mail propres sont supprimés avec lui ; ses dates, suivis et tâches restent, sans artiste.\nSes dossiers et fichiers Google Drive ne sont pas touchés.`,
+      actions: [{value: 'del', label: 'Supprimer l’artiste', danger: true}]}),
     onDelete: id ? () => deleteProject(id) : null,
     onSave: async v => {
       if (!v.name) return false;
@@ -261,6 +266,8 @@ export function editContact(id, prefill={}){
       ...CONTACT_COORDS,
       {k:'notes', label:'Notes', type:'textarea', full:true},
     ],
+    deleteAsk: () => ({title: 'Supprimer le contact ?', text: `Supprimer le contact « ${c.display_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || 'sans nom'} » et ses liens avec les structures ? Il n’est pas retiré de Brevo.`,
+      actions: [{value: 'del', label: 'Supprimer le contact', danger: true}]}),
     onDelete: id ? () => remove('contacts', id) : null,
     onSave: async v => {
       const ids = v._structures; delete v._structures;
@@ -335,6 +342,8 @@ export function editStructure(id){
   const links = id ? linksOfStructure(id).map(c=>c.id) : [];
   openModal({ title: id ? s.name : 'Nouvelle structure', values: {...s, _contacts: links}, extra: structHidden(s),
     fields: structFormFields(!id),
+    deleteAsk: () => ({title: 'Supprimer la structure ?', text: `Supprimer la structure « ${byId('structures', id)?.name || ''} » ? Ses liens avec les contacts sont retirés ; les dates, suivis et tâches liés restent, sans structure.`,
+      actions: [{value: 'del', label: 'Supprimer la structure', danger: true}]}),
     onDelete: id ? () => remove('structures', id) : null,
     onSave: async v => { const row = await saveStructure(id, s, v); if (!row) return false;
       // nouvelle structure : sa fiche s'ouvre une fois la fenêtre fermée
@@ -535,10 +544,10 @@ async function cropSquare(path, [px, py, z]){
 
 /** Lier un dossier Drive existant à une date (lien collé) */
 export async function linkDrive(showId){
-  const v = prompt('Colle le lien du dossier Google Drive de cette date');
+  const v = await askText({title: 'Lier un dossier Drive', label: 'Lien du dossier Google Drive de cette date', placeholder: 'https://drive.google.com/drive/folders/…', ok: 'Lier le dossier',
+    check: x => /^[\w-]{10,}$/.test(driveId(x)) ? '' : 'Lien de dossier Drive non reconnu'});
   if (!v) return;
   const id = driveId(v);
-  if (!/^[\w-]{10,}$/.test(id)) return toast('Lien de dossier Drive non reconnu', true);
   await save('shows', showId, {drive_folder_id: id, drive_folder_error: null});
   toast('Dossier Drive lié');
 }
