@@ -113,6 +113,16 @@ test('v1.46a « Valider les conditions » : réglage à 0 % → aucun acompte pr
   expectClean(ctx);
 });
 
+test('v1.46a réglage à 0 % : jamais d’acompte à 0 % posé en lot sur les dates déjà confirmées (relecture, B2)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js'); S.db.settings.find(k => k.key === 'default_acompte_pct').value = 0; touch('settings');
+    await (await import('./js/views/settings.js')).applyAcompte(); });
+  expect(await page.evaluate(() => window.__DB.show_payments.filter(p => ['pa-1', 'pa-2'].includes(p.id)).map(p => p.pct))).toEqual([50, 50]);
+  await page.evaluate(async () => (await import('./js/app.js')).go('settings'));
+  await expect(page.locator('[data-act="applyAcompte"]')).toHaveCount(0);
+  expectClean(ctx);
+});
+
 test('v1.46a commission par défaut : date > artiste > Réglages selon le mode de la date (plus de 0 ni de 15 en dur)', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, {
@@ -142,14 +152,14 @@ test('v1.46a dépenses : un justificatif déposé ne marque jamais la dépense p
     doc: { type: 'facture', numero: 'SF-1', date: '2026-01-15', montant_ht: 480, emetteur: 'Sono Fictive', categorie: 'Technique', libelle: 'Son' },
     path: 'pieces/sf-1.pdf', name: 'sf-1.pdf', show_id: 'd-1', project_id: 'art-a' }));
   const l = await page.evaluate(() => ({ ...window.__DB.budget_lines.find(x => x.id === 'd1-l') }));
-  expect(l).toMatchObject({ doc_number: 'SF-1', amount: 480, file_path: 'pieces/sf-1.pdf' });
+  expect(l).toMatchObject({ doc_number: 'SF-1', amount: 480, file_path: 'pieces/sf-1.pdf', file_name: 'sf-1.pdf' });
   expect(l.paid_at ?? null, 'pièce reçue ≠ dépense payée').toBeNull();
   // nouvelle ligne créée par une pièce : pas payée non plus
   await page.evaluate(async () => (await import('./js/budget-actions.js')).applyPiece({
     doc: { type: 'facture', numero: 'HT-9', date: '2026-01-16', montant_ht: 90, emetteur: 'Hôtel Témoin', categorie: 'VHR', libelle: 'Nuitée' },
     path: 'pieces/ht-9.pdf', name: 'ht-9.pdf', show_id: 'd-1', project_id: 'art-a' }));
   const n = await page.evaluate(() => ({ ...window.__DB.budget_lines.find(x => x.doc_number === 'HT-9') }));
-  expect(n.amount).toBe(90);
+  expect(n).toMatchObject({ amount: 90, file_name: 'ht-9.pdf' });
   expect(n.paid_at ?? null).toBeNull();
   expectClean(ctx);
 });

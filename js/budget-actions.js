@@ -302,7 +302,7 @@ export async function applyPiece({doc, path, name, show_id, project_id, line}){
   const s = show_id ? byId('shows', show_id) : null;
   const bulletin = d.type === 'bulletin';
   const amount = bulletin ? (d.cout_employeur ?? ttc ?? ht) : (ht ?? ttc);
-  const patch = {doc_number: d.numero || (bulletin ? `BDS ${String(date).slice(0,7)}` : null), doc_date: date, file_path: path,   // un justificatif n'est jamais un paiement (v1.46a) : la date de paiement se note à part file_name: name,
+  const patch = {doc_number: d.numero || (bulletin ? `BDS ${String(date).slice(0,7)}` : null), doc_date: date, file_path: path, file_name: name,   // jamais paid_at : un justificatif n'est pas un paiement (v1.46a)
     ...(amount != null ? {amount: Number(amount)} : {}), ...(ttc != null ? {amount_ttc: ttc} : {}), ...(d.tva_taux != null ? {vat_rate: Number(d.tva_taux)} : {})};
   let target = line;
   if (!target && s){

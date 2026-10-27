@@ -30,7 +30,7 @@ export function viewSettings(){
         <label for="set-mvm">Coût Movinmotion par bulletin (€)</label><input id="set-mvm" type="number" step="any" data-act-setting="movinmotion_payslip_cost" value="${esc(setting('movinmotion_payslip_cost')??'')}">
       </div>
       <p class="help mt mb-sm">Les nouvelles dates confirmées prennent ces pourcentages. Les dates déjà confirmées gardent les leurs, sauf si tu les mets à jour :</p>
-      <button class="btn sm" data-act="applyAcompte">Appliquer ${esc(ac)} % / ${esc(100-ac)} % aux acomptes et soldes pas encore envoyés</button></div>
+      ${ac === 0 ? '' : `<button class="btn sm" data-act="applyAcompte">Appliquer ${esc(ac)} % / ${esc(100-ac)} % aux acomptes et soldes pas encore envoyés</button>`}</div>
     <div class="panel pad"><h3 class="panel-title">Budget type</h3>
       <p class="help mb">Le budget prévisionnel posé sur chaque nouvelle date confirmée en production.</p>
       ${templateForm('settings')}</div>
@@ -193,6 +193,8 @@ document.addEventListener('change', async e => {
 
 export async function applyAcompte(){
   const ac = defaultAcompte();   // 0 % gardé tel quel ; 50 seulement si le réglage est vide (§6.4)
+  // 0 % = date SANS acompte (§6.4) : jamais d'acompte à 0 % posé en lot, et aucune ligne supprimée en lot sans décision (relecture v1.46a)
+  if (ac === 0) return toast('Acompte par défaut à 0 % : les prochaines dates confirmées n’auront pas d’acompte. Les dates déjà confirmées gardent le leur ; pour en retirer un, « Valider les conditions » de la date › 0 acompte.');
   if (!confirm(`Mettre ${ac} % d’acompte et ${100-ac} % de solde sur les dates à venir pas encore facturées ?`)) return;
   // seulement l'acompte et le solde créés à la confirmation (pas les acomptes ajoutés à la main)
   // dates à venir dont les conditions ne sont pas validées, avec un seul acompte et rien d'envoyé / payé / saisi à la main

@@ -1,6 +1,6 @@
 /**
  * Règles de rappel de la production (mêmes règles que la fonction serveur qui crée les notifications,
- * supabase/migrations/2026-10-28_v1.46a_finances.sql generate_reminders). Sert à signaler en rouge les étapes en retard.
+ * supabase/migrations/2026-10-27_v1.46_finances.sql generate_reminders). Sert à signaler en rouge les étapes en retard.
  *
  * Production complète :
  *  - 10 j après « Conf + FT + kit » sans « Pré-contrat complété »
@@ -41,7 +41,7 @@ export const followedInvoice = (p, booking) => booking ? p.kind === 'artbo' : ['
 /** Facture faite (numéro ou lien Pennylane) mais sans date d'envoi ni de paiement */
 const madeNotSent = p => (filled(p.invoice_number) || filled(p.pennylane_id)) && !p.sent_at && !p.paid_at;
 /** Jour où la facture a été faite : date de la facture Pennylane, sinon jour où le numéro a été noté (invoiced_on), sinon création de la ligne */
-const madeOn = p => p.invoiced_on || String(p.created_at || '').slice(0, 10) || null;
+const madeOn = p => p.invoiced_on || (p.created_at ? new Date(p.created_at).toLocaleDateString('sv-SE', {timeZone: 'Europe/Paris'}) : null);   // jour de Paris, comme le serveur
 const nameOf = p => [p.label || '', filled(p.invoice_number) ? `(${String(p.invoice_number).trim()})` : ''].filter(Boolean).join(' ');
 /** Libellés communs avec la fonction serveur (generate_reminders) */
 export const sendTitle = p => `Facture à envoyer : ${nameOf(p)}`;
@@ -87,7 +87,7 @@ export function remindersOf(s){
   // reste à transférer (versements partiels compris, lot D1) — même règle côté serveur (generate_reminders, migration v1.43)
   const reste = com ? commissionState(com).remaining : 0;
   if (cashed && com && reste >= 0.005) rule('artbo', plus10(cashed), `${com.label || 'Commission L’ArtBo'} : ${eur2(reste)} à te verser`);
-  if (cashed && part && (!part.sent_at || !part.paid_at)) rule('partner', plus10(cashed), `Facture ${part.label} à ${part.sent_at?'faire payer':'envoyer'}`);
+  if (cashed && part && (!part.sent_at || !part.paid_at)) rule('partner', plus10(cashed), `Facture ${part.label || 'Commission partenaire'} à ${part.sent_at?'faire payer':'envoyer'}`);
   return out;
 }
 
