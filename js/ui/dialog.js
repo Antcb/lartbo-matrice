@@ -30,12 +30,12 @@ function open({title, text, extra = '', buttons, cancel, focus, done}){
       `<button type="${a.submit ? 'submit' : 'button'}" class="btn ${a.danger ? 'danger' : a.plain ? '' : 'primary'}" data-ask="${i}">${esc(a.label)}</button>`).join('')}</div></form>`;
   document.body.appendChild(dlg);
   return new Promise(resolve => {
-    let out = null;
+    let out = null; const opened = Date.now();
     const pick = b => { const r = b.dataset.ask === '' ? null : done(buttons[Number(b.dataset.ask)], dlg); if (r === undefined) return; out = r; dlg.close(); };
     dlg.addEventListener('click', e => {
       const b = e.target.closest('[data-ask]');
       if (b){ e.preventDefault(); e.stopPropagation(); pick(b); }
-      else if (e.target === dlg) dlg.close();   // clic hors de la fenêtre (fond) : rien
+      else if (e.target === dlg && Date.now() - opened > 400) dlg.close();   // clic hors de la fenêtre (fond) : rien ; ignoré juste après l'ouverture (double-clic)
     });
     // Entrée dans un champ : le bouton d'action (submit), jamais « Annuler »
     dlg.querySelector('form').addEventListener('submit', e => { e.preventDefault(); const b = dlg.querySelector('button[type=submit]'); if (b) pick(b); });

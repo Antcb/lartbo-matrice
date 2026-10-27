@@ -77,7 +77,7 @@ export function editEmployee(id){
     ${Object.keys(mm).length ? `<details class="mt"><summary>Données de l’export Movinmotion (${Object.keys(mm).length})</summary><dl class="fiche-dl mt-sm">${Object.entries(mm).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></details>` : ''}
   </div>` : '';
   return openModal({title: id ? fullName(e) || 'Salarié' : 'Nouveau salarié', wide: true, fields, values, extraTop: extra,
-    deleteAsk: () => ({title: 'Supprimer le salarié ?', text: `Supprimer la fiche de « ${fullName(e)} » de la Matrice ? Son dossier et ses fichiers Google Drive ne sont pas touchés.`,
+    deleteAsk: () => ({title: 'Supprimer le salarié ?', text: `Supprimer la fiche de « ${fullName(e)} » de la Matrice ? Ses lignes de budget (Staff) et sa place dans l’équipe d’un artiste restent, sans lien vers lui. Son dossier et ses fichiers Google Drive ne sont pas touchés.`,
       actions: [{value: 'del', label: 'Supprimer la fiche', danger: true}]}),
     onDelete: id ? () => remove('employees', id) : null,
     onSave: async v => {

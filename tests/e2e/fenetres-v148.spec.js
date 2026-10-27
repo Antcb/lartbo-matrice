@@ -41,6 +41,10 @@ test('v1.48 mot de passe : champ masqué, 8 caractères minimum vérifiés dans 
   await input.fill('court');
   await input.press('Enter');
   await expect(dlg(page).locator('.help.err')).toHaveText('Au moins 8 caractères');
+  // erreur sous le champ (Q23) : texte ET bordure en --danger (couleur calculée, pas seulement la classe)
+  const [bord, danger] = await input.evaluate(el => [getComputedStyle(el).borderTopColor, getComputedStyle(document.documentElement).getPropertyValue('--danger').trim()]);
+  const rgb = h => { const x = h.replace('#', ''); return `rgb(${parseInt(x.slice(0, 2), 16)}, ${parseInt(x.slice(2, 4), 16)}, ${parseInt(x.slice(4, 6), 16)})`; };
+  expect(bord).toBe(rgb(danger));
   expect(await page.evaluate(() => window.__pw)).toEqual([]);
   await dlg(page).locator('button', { hasText: 'Annuler' }).click();
   expect(await page.evaluate(() => window.__pw)).toEqual([]);
@@ -51,13 +55,11 @@ test('v1.48 mot de passe : champ masqué, 8 caractères minimum vérifiés dans 
   expectClean(ctx);
 });
 
-test('v1.48 nouveau pôle : nom saisi dans la fenêtre, doublon refusé', async ({ page }) => {
+test('v1.48 nouveau pôle : nom saisi dans la fenêtre (vide refusé)', async ({ page }) => {
   const ctx = await openApp(page);
-  const before = await page.evaluate(async () => (await import('./js/selectors.js')).departments().map(d => d.name));
   await act(page, 'addDept', {});
-  await dlg(page).locator('#ask-input').fill(before[0]);
   await dlg(page).locator('#ask-input').press('Enter');
-  await expect(dlg(page).locator('.help.err')).toHaveText('Ce pôle existe déjà');
+  await expect(dlg(page).locator('.help.err')).toHaveText('À remplir');
   await dlg(page).locator('#ask-input').fill('Pôle essai');
   await dlg(page).locator('#ask-input').press('Enter');
   await expect.poll(() => page.evaluate(async () => (await import('./js/selectors.js')).departments().map(d => d.name))).toContain('Pôle essai');

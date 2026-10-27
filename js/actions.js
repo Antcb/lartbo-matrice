@@ -371,7 +371,7 @@ ${p.content_md||'(aucune)'}`;
 
   // Réglages
   applyAcompte: () => applyAcompte(),
-  addDept: async () => { const n = await askText({title: 'Nouveau pôle', label: 'Nom du pôle', ok: 'Ajouter le pôle', check: v => departments().some(d => d.name.toLowerCase() === v.toLowerCase()) ? 'Ce pôle existe déjà' : ''}); if (!n) return; await saveDepartments([...departments(), {name:n.trim(), color:'#5B677D'}]); render(); },
+  addDept: async () => { const n = await askText({title: 'Nouveau pôle', label: 'Nom du pôle', ok: 'Ajouter le pôle'}); if (!n) return; await saveDepartments([...departments(), {name:n.trim(), color:'#5B677D'}]); render(); },
   rmDept: async t => { const list = departments().slice(); const d = list[Number(t.dataset.i)];
     if (!(await confirmAsk('Supprimer le pôle ?', `Supprimer le pôle « ${d.name} » ? Les tâches concernées n’auront plus de pôle.`, 'Supprimer le pôle', {danger: true}))) return;
     list.splice(Number(t.dataset.i), 1); await saveDepartments(list); render(); },
