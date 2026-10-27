@@ -5,7 +5,7 @@
 -- Données FICTIVES créées dans la transaction ; TOUT est annulé à la fin (erreur voulue « BILAN DROITS … »).
 -- =====================================================================================================
 do $t$
-declare pj uuid; sid uuid; lid uuid; cid uuid; tid uuid; n int; v text; ok boolean;
+declare pj uuid; sid uuid; lid uuid; cid uuid; tid uuid; n int; v text; ok boolean; acpt text; nlig int;
   res text[] := '{}';
 begin
   if not exists (select 1 from public.settings where key = 'functions_base_url' and value::text like '%dthfocplfzzmkgaxhmwk%') then
@@ -15,8 +15,12 @@ begin
   select id into pj from public.projects order by name limit 1;
   insert into public.shows (project_id, venue, date, fee_ht, artbo_pct, partner_pct, prod_mode, prod_mode_manual, contract_type, status)
     values (pj, 'Salle Essai droits', current_date + 60, 4000, 15, 30, 'production', true, 'Cession', 'Confirmée Salle') returning id into sid;
-  insert into public.show_payments (show_id, kind, label, pct, sort) values (sid, 'acompte', 'Acompte essai', 50, 10) returning id into lid;
-  insert into public.show_payments (show_id, kind, label, sort) values (sid, 'artbo', 'Commission essai', 30) returning id into cid;
+  -- lignes créées par la confirmation de la date (on_show_confirmed), comme dans l'application
+  select id into lid from public.show_payments where show_id = sid and kind = 'acompte' order by sort limit 1;
+  select id into cid from public.show_payments where show_id = sid and kind = 'artbo' limit 1;
+  if lid is null or cid is null then raise exception 'ARRET : lignes de la date d''essai non créées'; end if;
+  select (round(4000 * pct) / 100)::numeric(12,2)::text into acpt from public.show_payments where id = lid;
+  select count(*) into nlig from public.show_payments where show_id = sid;
 
   -- ───── visiteur non connecté (clé publique seule)
   perform set_config('request.jwt.claims', '{"role":"anon"}', true); set local role anon;
@@ -47,15 +51,15 @@ begin
   -- ───── membre de l'équipe (compte présent dans app_users du test)
   select email into v from public.app_users order by email limit 1;
   perform set_config('request.jwt.claims', json_build_object('role', 'authenticated', 'email', v)::text, true); set local role authenticated;
-  select count(*) into n from public.show_payments where show_id = sid; insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'lire les factures de la date', '2 ligne', n || ' ligne');
+  select count(*) into n from public.show_payments where show_id = sid; insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'lire les factures de la date', nlig || ' ligne', n || ' ligne');
   update public.show_payments set sent_at = current_date, invoice_number = 'ESSAI-1' where id = lid;
-  select amount::text into v from public.show_payments where id = lid; insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'acompte émis : montant figé à l''émission', '2000.00', v);
+  select amount::text into v from public.show_payments where id = lid; insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'acompte émis : montant figé à l''émission', acpt, v);
   begin update public.show_payments set amount = 1500 where id = lid; insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'modifier un montant figé', 'refusé', 'ACCEPTÉ');
   exception when sqlstate 'P0001' then insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'modifier un montant figé', 'refusé', 'refusé'); end;
   begin update public.show_payments set invoice_number = 'AUTRE' where id = lid; insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'changer le numéro d''une facture émise', 'refusé', 'ACCEPTÉ');
   exception when sqlstate 'P0001' then insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'changer le numéro d''une facture émise', 'refusé', 'refusé'); end;
   update public.shows set fee_ht = 5000 where id = sid;
-  select amount::text into v from public.show_payments where id = lid; insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'cachet changé : montant émis inchangé', '2000.00', v);
+  select amount::text into v from public.show_payments where id = lid; insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'cachet changé : montant émis inchangé', acpt, v);
   begin update public.shows set prod_mode = 'booking' where id = sid; insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'mode changé sur une date engagée', 'refusé', 'ACCEPTÉ');
   exception when sqlstate 'P0001' then insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'mode changé sur une date engagée', 'refusé', 'refusé'); end;
   begin update public.shows set vat_rate = 20 where id = sid; insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'TVA changée sur une date engagée', 'refusé', 'ACCEPTÉ');
