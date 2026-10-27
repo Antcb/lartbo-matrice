@@ -8,7 +8,7 @@
  * Ensuite on ajoute / retire les lignes à la main.
  */
 import { render } from './app.js';
-import { cnmDue, linesOf } from './budget.js';
+import { cnmDue, isFree, linesOf } from './budget.js';
 import { save, sb, mergeRows } from './data.js';
 import { isProductionShow } from './production-budget.js';
 import { byId, eventsOfStructure, setting } from './selectors.js';
@@ -52,7 +52,7 @@ export function templateLines(s){
   if (t.peage > 0) rows.push({category: 'VHR', label: 'Péage', forecast: t.peage});
   if (t.essence > 0) rows.push({category: 'VHR', label: 'Essence', forecast: t.essence});
   rows.push({category: 'Movinmotion', label: 'Commission bulletins de paie', supplier: 'Movinmotion', auto: 'movinmotion'});
-  if (cnmDue(s)) rows.push({category: 'Taxes', label: 'Taxe CNM (entrée gratuite)', supplier: 'CNM', auto: 'cnm'});
+  if (cnmDue(s)) rows.push({category: 'Taxes', label: isFree(s) ? 'Taxe CNM (entrée gratuite)' : 'Taxe CNM (billetterie)', supplier: 'CNM', auto: 'cnm'});
   if (p?.artist_payee) rows.push({category: 'Solde artiste', label: 'Solde artiste', supplier: p.artist_payee, auto: 'solde_artiste'});
   return rows;
 }

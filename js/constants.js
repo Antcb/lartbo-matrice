@@ -48,9 +48,9 @@ export const TEAM_NAMES = {'anthony@lartboristerie.com':'Anthony', 'production@l
 // Budget d'une date : catégories de dépenses (l'Excel : Technical, VHR, Promoting, Hospitality, Taxes, Others, Staff, Movinmotion, Fees)
 export const BUDGET_CATS = ['Technique','VHR','Promo','Accueil','Taxes','Autres','Staff','Movinmotion','Solde artiste','Salle','Promoteur'];
 // Qui paie / qui reçoit l'argent
-export const PAYERS = ['compte','artbo','artiste','organisateur','autre'];
+export const PAYERS = ['compte','artbo','artiste','organisateur','partenaire','autre'];   // partenaire : coproducteur (v1.51)
 
-export const PAY_KINDS = {acompte:'Acompte', solde:'Solde', artbo:"Commission L'ArtBo", partner:'Commission partenaire', cnm:'Taxe CNM', autre:'Autre'};
+export const PAY_KINDS = {acompte:'Acompte', solde:'Solde', artbo:"Commission L'ArtBo", partner:'Commission partenaire', cnm:'Taxe CNM (historique)', autre:'Autre'};   // v1.51 : plus de nouvelle ligne CNM en facturation (calculée dans le budget)
 
 // Suivi admin d'une date en production complète
 export const PROD_STEPS = [

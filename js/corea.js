@@ -1,0 +1,94 @@
+/**
+ * 🎫 Taxe CNM et partage d'une coréalisation (décisions d'Anthony du 27/10/2026).
+ *
+ * Taxe CNM — quatre notions distinctes :
+ *   1. redevable légal : le détenteur de la billetterie (spectacle payant) ;
+ *   2. structure qui supporte contractuellement le coût : shows.cnm_bearer (vide = usage habituel : payant → l'organisateur,
+ *      gratuit → L'ArtBo ; en coréalisation, attribution explicite obligatoire) ;
+ *   3. montant : payant = taux × TOTALITÉ des recettes de billetterie HT (jamais seulement au-delà du break) ;
+ *      gratuit = taux × prix de cession HT ; taux = shows.cnm_pct, sinon Réglages (default_cnm_pct) ;
+ *   4. prise en compte dans le résultat net partagé d'une coréalisation : seulement si shows.cnm_in_result (contrat).
+ *
+ * Coréalisation : rémunération = minimum garanti (cachet HT, acquis, fixe) + part contractuelle du résultat net
+ * attribuable aux billets vendus au-delà du break. Le MG n'est jamais remplacé par le %, ni compté dans les charges.
+ *   - recettes au-delà du break : exactes si les ventes après le break sont connues pour CHAQUE tarif (somme = vendus − break) ;
+ *     sinon fourchette (billets les moins chers / les plus chers) et prorata des ventes, appliqué seulement après validation ;
+ *   - break : nombre de billets, validé à la main avant tout calcul (anciens breaks compris) ;
+ *   - charges déductibles : celles du contrat, saisies pour la date (chacune une fois) + la CNM si cnm_in_result.
+ */
+import { r2 } from './utils.js';
+import { setting } from './selectors.js';
+
+const num = v => v == null || v === '' ? null : Number(v);
+export const isFreeShow = s => /gratuit/i.test(s?.ticketing_type || '');   // « Prix libre » = payant
+export const isCorea = s => s?.contract_type === 'Co-Réalisation';
+export const HOLDERS = [['organisateur', 'L’organisateur (la structure)'], ['artbo', 'L’ArtBoristerie'], ['partenaire', 'Le coproducteur / partenaire']];
+export const holderLabel = k => (HOLDERS.find(h => h[0] === k) || [, 'non renseigné'])[1];
+
+/** Taux CNM de la date (%) : celui de la date, sinon l'ancien taux du budget de production, sinon les Réglages */
+export const cnmRate = s => num(s?.cnm_pct) ?? num(s?.production?.cnm_pct) ?? num(setting('default_cnm_pct')) ?? 3.5;
+/** Structure qui supporte la taxe : saisie sur la date ; sinon l'usage habituel (payant → organisateur, gratuit → L'ArtBo) ;
+ *  coréalisation payante : jamais supposée (null = à attribuer) */
+export function cnmBearer(s){
+  if (s?.cnm_bearer) return s.cnm_bearer;
+  if (isFreeShow(s)) return 'artbo';
+  return isCorea(s) ? null : 'organisateur';
+}
+/** Redevable légal (spectacle payant) : le détenteur de la billetterie */
+export const cnmDebtor = s => isFreeShow(s) ? null : (s?.ticket_holder || null);
+
+/** Tarifs d'une coréalisation : prix TTC, TVA (5,5 % par défaut), quantité vendue, ventes après le break (si connues) */
+export function coreaTiers(s){
+  return (s?.corea?.tiers || []).map(t => {
+    const price = num(t.price) || 0, vat = num(t.vat) ?? 5.5, qty = num(t.qty) || 0, after = num(t.after);
+    const unitHt = price / (1 + vat / 100);
+    return {label: t.label || '', price, vat, qty, after, unitHt, ht: r2(qty * unitHt)};
+  });
+}
+/** Break validé : seulement s'il a été validé à la main pour sa valeur actuelle (anciens breaks : validation obligatoire) */
+export const breakValidated = s => s?.break_even != null && s.break_even !== '' && !!s?.corea?.break_validated_at
+  && Number(s.corea.break_value) === Number(s.break_even);
+
+/** Calcul complet d'une coréalisation (null pour les autres contrats) */
+export function coreaCalc(s){
+  if (!isCorea(s)) return null;
+  const tiers = coreaTiers(s), sold = tiers.reduce((a, t) => a + t.qty, 0), ht = r2(tiers.reduce((a, t) => a + t.ht, 0));
+  const brk = num(s.break_even), validated = breakValidated(s), beyond = brk == null ? null : Math.max(0, sold - brk);
+  const issues = [];
+  // ventes après le break connues pour chaque tarif : données exactes
+  const allAfter = tiers.length > 0 && tiers.every(t => t.after != null);
+  const afterSum = tiers.reduce((a, t) => a + (t.after || 0), 0);
+  let exact = null;
+  if (allAfter && beyond != null){
+    const bad = tiers.find(t => t.after < 0 || t.after > t.qty);
+    if (bad) issues.push(`Tarif « ${bad.label || 'sans nom'} » : ventes après le break hors de 0 à ${bad.qty}`);
+    else if (afterSum !== beyond) issues.push(`Ventes après le break : ${afterSum} saisies pour ${beyond} attendues (vendus − break)`);
+    else exact = r2(tiers.reduce((a, t) => a + t.after * t.unitHt, 0));
+  }
+  // fourchette : les billets après le break sont les moins chers (min) ou les plus chers (max) ; prorata des ventes
+  const fill = order => { let left = beyond || 0, v = 0; for (const t of [...tiers].sort(order)){ const n = Math.min(left, t.qty); v += n * t.unitHt; left -= n; } return r2(v); };
+  const range = beyond == null || !sold ? null : {min: fill((a, b) => a.unitHt - b.unitHt), max: fill((a, b) => b.unitHt - a.unitHt), prorata: r2(ht * beyond / sold)};
+  const method = s.corea?.method?.kind === 'prorata' && s.corea?.method?.at ? 'prorata' : null;
+  // ventes après le break saisies pour tous les tarifs mais incohérentes : rien n'est calculé tant qu'elles ne sont pas corrigées
+  const revenue = !validated ? null : exact != null ? exact : allAfter ? null : method === 'prorata' && range ? range.prorata : null;
+  // charges déductibles (contrat) : chacune une fois ; la CNM (sur la TOTALITÉ des recettes) seulement si le contrat le prévoit
+  const charges = (s.corea?.charges || []).map(c => ({label: c.label || '', amount: num(c.amount) || 0}));
+  const cnm = r2(ht * cnmRate(s) / 100);
+  if (charges.some(c => /\bcnm\b/i.test(c.label))) issues.push('La CNM ne se saisit pas comme charge : coche « CNM déduite du résultat partagé »');
+  if (charges.some(c => /minimum garanti|\bmg\b/i.test(c.label))) issues.push('Le minimum garanti n’est jamais une charge du partage (il est acquis à part)');
+  const deducted = r2(charges.reduce((a, c) => a + c.amount, 0) + (s.cnm_in_result ? cnm : 0));
+  const net = revenue == null ? null : r2(revenue - deducted);
+  const pct = num(s.cr_producer_pct);
+  const share = net == null || pct == null ? null : r2(Math.max(0, net) * pct / 100);
+  const mg = num(s.fee_ht) || 0;
+  return {tiers, sold, ht, brk, validated, beyond, exact, range, method, revenue, charges, cnm, deducted, net, pct, share,
+    partnerShare: net == null || share == null ? null : r2(Math.max(0, net) - share), mg, total: share == null ? null : r2(mg + share),
+    issues, needsMethod: validated && exact == null && !allAfter && !method};
+}
+
+/** Montant de la taxe CNM d'une date et ce qu'il recouvre (les montants payant viennent des recettes connues) */
+export function cnmOf(s, recettesHt = null){
+  const rate = cnmRate(s), free = isFreeShow(s);
+  const base = free ? num(s?.fee_ht) || 0 : recettesHt ?? coreaCalc(s)?.ht ?? null;
+  return {rate, free, base, amount: base == null ? null : r2(base * rate / 100), bearer: cnmBearer(s), debtor: cnmDebtor(s)};
+}

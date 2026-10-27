@@ -4,8 +4,9 @@
  */
 import { render } from './app.js';
 import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
-import { cnmDue, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
-import { acompteState, isInvoiced, paymentsOf, payAmount } from './calc.js';
+import { cnmDue, isFree, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
+import { coreaCalc } from './corea.js';
+import { acompteState, isCoproduction, isInvoiced, paymentsOf, payAmount } from './calc.js';
 import { insert, mergeRows, openStored, refreshFor, remove, save, sb } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
 import { callScript } from './mail.js';
@@ -13,8 +14,9 @@ import { applyTemplate } from './budget-template.js';
 import { exportArtistBudget } from './artist-export.js';
 import { S, touch } from './state.js';
 import { openModal } from './ui/modal.js';
-import { confirmAsk, inform } from './ui/dialog.js';
-import { esc, eur2, fmtDate, norm, toast, today } from './utils.js';
+import { ask, askText, confirmAsk, inform } from './ui/dialog.js';
+import { coprodClose } from './production-budget.js';
+import { esc, eur2, fmtDate, norm, pct, toast, today } from './utils.js';
 
 const nextSort = showId => Math.max(0, ...linesOf(showId).map(l => l.sort || 0)) + 1;
 const safeName = n => n.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w.\-]+/g, '_') || 'piece';
@@ -22,12 +24,13 @@ const simil = (a, b) => { a = norm(a||''); b = norm(b||''); if (!a || !b) return
   const wa = new Set(a.split(/\W+/).filter(w => w.length > 2)), wb = b.split(/\W+/).filter(w => w.length > 2);
   return wb.length ? wb.filter(w => wa.has(w)).length / Math.max(wa.size, wb.length) : 0; };
 
-/** Taxe CNM : la ligne n'existe que si la date est concernée (entrée gratuite, en France). Appelé quand la billetterie change. */
+/** Taxe CNM : la ligne n'existe que quand L'ArtBo en supporte le coût (v1.51 : gratuit par usage, ou attribuée sur la date), en France.
+ *  Appelé quand la billetterie, la structure qui supporte la taxe ou le contrat changent. */
 export async function syncCnmLine(showId){
   const s = byId('shows', showId); if (!s || !linesOf(s.id).length) return;
   const cnm = linesOf(s.id).filter(l => l.auto === 'cnm');
   if (cnmDue(s) && !cnm.length)
-    await insert('budget_lines', {project_id:s.project_id, show_id:s.id, category:'Taxes', label:'Taxe CNM (entrée gratuite)', supplier:'CNM', auto:'cnm', payer:'compte', sort: nextSort(s.id)});
+    await insert('budget_lines', {project_id:s.project_id, show_id:s.id, category:'Taxes', label: isFree(s) ? 'Taxe CNM (entrée gratuite)' : 'Taxe CNM (billetterie)', supplier:'CNM', auto:'cnm', payer:'compte', sort: nextSort(s.id)});
   if (!cnmDue(s)) for (const l of cnm) if (l.amount == null && l.forecast == null && !l.file_path && !l.doc_number && !l.paid_at) await remove('budget_lines', l.id);
 }
 
@@ -56,7 +59,65 @@ document.addEventListener('change', async e => {
   await saveProd(el.dataset.prodShow, p => { let o = p; path.slice(0, -1).forEach(k => { o = o[k]; }); o[path.at(-1)] = v; });
 }, true);
 
+/** Coréalisation : tarifs, break, méthode et charges enregistrés sur la date (shows.corea, v1.51) */
+async function saveCorea(showId, change){
+  const s = byId('shows', showId); if (!s) return;
+  const c = structuredClone(s.corea || {}); c.tiers ||= []; c.charges ||= []; change(c);
+  await save('shows', showId, {corea: c});
+}
+document.addEventListener('change', async e => {
+  const el = e.target.closest?.('[data-corea-path]'); if (!el) return;
+  e.stopPropagation();
+  const path = el.dataset.coreaPath.split('.'), raw = el.value.trim();
+  const v = /label/.test(path.at(-1)) ? raw : (raw === '' ? null : Number(raw.replace(',', '.')));
+  if (v !== null && typeof v === 'number' && (!isFinite(v) || v < 0)) { toast('Nombre positif attendu', true); render(); return; }
+  await saveCorea(el.dataset.coreaShow, c => { let o = c; path.slice(0, -1).forEach(k => { o = o[k]; }); o[path.at(-1)] = v; });
+}, true);
+const me = () => S.user?.email || '';
+const sideLabel = (x, w) => w === 'artbo' ? 'L’ArtBoristerie' : (x.partner || 'le coproducteur');
+
 export const BUDGET_ACTIONS = {
+  coreaAddTier: t => saveCorea(t.dataset.id, c => { c.tiers.push({label: '', price: null, vat: 5.5, qty: null, after: null}); }),
+  coreaDelTier: async t => { const lab = byId('shows', t.dataset.id)?.corea?.tiers?.[Number(t.dataset.i)]?.label;
+    if (await confirmAsk('Retirer le tarif ?', `Retirer le tarif « ${lab || 'sans nom'} » (prix et billets vendus compris) ?`, 'Retirer le tarif', {danger: true}))
+      saveCorea(t.dataset.id, c => { c.tiers.splice(Number(t.dataset.i), 1); }); },
+  coreaAddCharge: t => saveCorea(t.dataset.id, c => { c.charges.push({label: '', amount: null}); }),
+  coreaDelCharge: async t => { const lab = byId('shows', t.dataset.id)?.corea?.charges?.[Number(t.dataset.i)]?.label;
+    if (await confirmAsk('Retirer la charge ?', `Retirer la charge « ${lab || 'sans nom'} » du calcul du résultat partagé ?`, 'Retirer la charge', {danger: true}))
+      saveCorea(t.dataset.id, c => { c.charges.splice(Number(t.dataset.i), 1); }); },
+  // break : validation manuelle obligatoire avant tout calcul (anciens breaks compris) ; une autre valeur la rend caduque
+  coreaValidateBreak: async t => { const s = byId('shows', t.dataset.id);
+    if (!(await confirmAsk('Valider le break ?', `Break de ${s.break_even} billets vendus pour cette date${s.cr_break ? ` (texte du contrat : « ${s.cr_break} »)` : ''}. Le partage sera calculé sur les billets vendus au-delà.`, 'Valider le break'))) return;
+    saveCorea(s.id, c => { c.break_validated_at = new Date().toISOString(); c.break_value = Number(s.break_even); c.break_by = me(); }); },
+  // prorata des ventes : jamais appliqué sans validation explicite, pour cette date seulement
+  coreaValidateProrata: async t => { const s = byId('shows', t.dataset.id), k = coreaCalc(s);
+    if (!(await confirmAsk('Valider le prorata ?', `Les ventes après le break ne sont pas connues par tarif. Retenir pour cette date les recettes au prorata des ventes de chaque tarif : ${eur2(k.range.prorata)} HT (fourchette ${eur2(k.range.min)} à ${eur2(k.range.max)}) ?`, 'Valider le prorata'))) return;
+    saveCorea(s.id, c => { c.method = {kind: 'prorata', at: new Date().toISOString(), by: me()}; }); },
+  coreaClearMethod: t => saveCorea(t.dataset.id, c => { delete c.method; }),
+  // part du résultat : ligne de facture préparée à la demande (rien n'est envoyé ni créé dans Pennylane)
+  coreaPrepareInvoice: async t => { const s = byId('shows', t.dataset.id), k = coreaCalc(s);
+    if (paymentsOf(s.id).some(p => p.kind === 'autre' && /part du résultat/i.test(p.label || ''))) return toast('Une ligne « Part du résultat » existe déjà dans Factures', true);
+    if (!(await confirmAsk('Préparer la ligne de facture ?', `Ajouter dans Factures une ligne « Part du résultat (coréalisation) » de ${eur2(k.share)} HT, en plus de l’acompte et du solde du minimum garanti. Rien n’est envoyé.`, 'Préparer la ligne'))) return;
+    await insert('show_payments', {show_id: s.id, kind: 'autre', label: 'Part du résultat (coréalisation)', amount: k.share, sort: 60});
+    toast('Ligne ajoutée dans Factures'); },
+  // coproduction : clôture du résultat (synthèse, confirmation, enregistrement daté par la base, montants verrouillés)
+  closeResult: async t => { const s = byId('shows', t.dataset.id), k = coprodClose(s), x = k.snapshot;
+    if (!k.ok) return inform({title: 'Clôture impossible', text: k.issues.join('\n')});
+    const text = [`Résultat global réel : ${eur2(x.result)}`, `Part de L’ArtBo (${pct(x.artbo_share)}) : ${eur2(x.artbo_part)}`, `Part de ${x.partner} : ${eur2(x.partner_part)}`,
+      `Recettes encaissées par ${sideLabel(x, x.holder)} : ${eur2(x.net_encaisse)} (nettes)`, `Dépenses payées : L’ArtBo ${eur2(x.paid_artbo)} · coproducteur ${eur2(x.paid_partner)}`,
+      x.from ? `Reversement : ${sideLabel(x, x.from)} reverse ${eur2(x.transfer)} à ${sideLabel(x, x.to)}` : 'Aucun reversement', ...k.warnings,
+      'Après clôture, les montants de la date sont verrouillés ; la réouverture demande un motif.'].join('\n');
+    if (await ask({title: 'Clôturer le résultat ?', text, actions: [{value: 'ok', label: 'Clôturer le résultat'}]}) !== 'ok') return;
+    const {error} = await sb.rpc('close_result', {p_show: s.id, p_snapshot: {...x, at: new Date().toISOString()}});
+    if (error) return toast('Clôture impossible : ' + error.message, true);
+    await refreshFor('shows', 'id', s.id); render(); toast('Résultat clôturé'); },
+  reopenResult: async t => { const s = byId('shows', t.dataset.id);
+    const reason = await askText({title: 'Rouvrir le résultat ?', text: 'Les montants de la date redeviennent modifiables. La réouverture est notée avec son motif.', label: 'Motif de la réouverture', ok: 'Rouvrir le résultat'});
+    if (!reason) return;
+    const {error} = await sb.rpc('reopen_result', {p_show: s.id, p_reason: reason});
+    if (error) return toast('Réouverture impossible : ' + error.message, true);
+    await refreshFor('shows', 'id', s.id); render(); toast('Résultat rouvert'); },
+
   prodAddTicket: t => saveProd(t.dataset.id, p => { p.tickets.push({label: '', qty: 0, price: 0, dl_prod: 0, dl_net: 0}); }),
   prodDelTicket: async t => { const lab = prodOf(byId('shows', t.dataset.id)).tickets[Number(t.dataset.i)]?.label;
     if (await confirmAsk('Retirer le tarif ?', `Retirer le tarif « ${lab || 'sans nom'} » de la billetterie de cette date (quantités et prix de ce tarif compris) ?`, 'Retirer le tarif', {danger: true}))
@@ -153,6 +214,7 @@ export const BUDGET_ACTIONS = {
   testPennylane: async () => { try { const out = await pennylane('status', {}); toast(`Pennylane OK : ${out.company || 'compte connecté'}`); } catch (err) { toast(err.message, true); } },
   pennylaneQuote: async t => {
     const s = byId('shows', t.dataset.id);
+    if (isCoproduction(s)) return toast('Coproduction : pas de devis Pennylane (le résultat n’est pas connu) ; les factures se préparent après la clôture', true);
     if (s.pennylane_quote_id && !(await confirmAsk('Créer un nouveau devis ?', 'Un devis a déjà été créé dans Pennylane pour cette date. Le nouveau devis s’ajoute à l’ancien (rien n’est supprimé dans Pennylane).', 'Créer un nouveau devis'))) return;
     t.disabled = true; toast('Création du devis dans Pennylane…');
     try { const out = await pennylane('quote', {show_id: s.id}); await save('shows', s.id, {pennylane_quote_id: String(out.id), pennylane_quote_url: out.url || null}); toast(`Devis ${out.number || ''} créé dans Pennylane${out.headers === false ? ' (complète « Projet » et « Date de réalisation » dans Pennylane)' : ''}`); }

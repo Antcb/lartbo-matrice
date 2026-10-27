@@ -259,6 +259,8 @@ Deno.serve(async (req) => {
       const { data: s } = await admin.from('shows').select('*, projects(name)').eq('id', body.show_id).single();
       if (!s) return json({ error: 'Date introuvable' }, 404);
       if (isBooking(s.prod_mode)) return json({ error: 'Date en booking : pas de devis de cession (L’ArtBo ne facture que sa commission à l’artiste)' }, 400);
+      // coproduction : jamais de devis tant que le résultat n'est pas connu (décision d'Anthony du 27/10/2026, v1.51)
+      if (s.contract_type === 'Co-Production') return json({ error: 'Coproduction : pas de devis Pennylane (le résultat n’est pas connu) ; les factures se préparent après la clôture du résultat' }, 400);
       if (!s.structure_id) return json({ error: 'La date n’a pas de structure (organisateur) : impossible de choisir le client' }, 400);
       const fee = Number(s.fee_ht) || 0;
       if (!fee) return json({ error: 'Le cachet HT de la date est vide' }, 400);

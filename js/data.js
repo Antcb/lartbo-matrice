@@ -53,7 +53,7 @@ export async function save(table, id, patch, {rerender=true}={}){
   touch(table);
   summaryAfter(table, row || data);
   if (table==='shows' && (patch.status || patch.project_id)) await refreshShowSide(id);
-  if (table==='shows' && ('ticketing_type' in patch || 'department' in patch || 'structure_id' in patch)) await (await import('./budget-actions.js')).syncCnmLine(id);
+  if (table==='shows' && ('ticketing_type' in patch || 'department' in patch || 'structure_id' in patch || 'cnm_bearer' in patch || 'contract_type' in patch)) await (await import('./budget-actions.js')).syncCnmLine(id);
   if (rerender) render();
   return before || {};   // réussi (même si la ligne n'était pas encore en mémoire)
 }
