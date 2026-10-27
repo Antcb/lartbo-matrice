@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.44.1 — 27/10/2026
+- Coproductions : une commission réelle reste possible à côté d'une ligne importée ; plus d'avertissement « acomptes manquants »
+
+
 ## 1.44.0 — 27/10/2026
 - Coproductions : aucune ligne de facturation ni commission générée ; lignes importées gardées hors calcul ; versements historiques aux dates bancaires
 

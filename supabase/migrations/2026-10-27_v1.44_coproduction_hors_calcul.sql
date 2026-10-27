@@ -17,6 +17,10 @@
 alter table public.show_payments add column if not exists hors_calcul text;
 comment on column public.show_payments.hors_calcul is 'Motif : ligne gardée pour la traçabilité mais hors de tout calcul (lot D1, v1.44). Posé/retiré seulement par une régularisation annoncée (matrice.regularisation = hors_calcul).';
 
+-- une seule commission L'ArtBo QUI COMPTE par date (v1.43) : une commission hors calcul (import) n'empêche pas d'en noter une réelle
+drop index if exists public.show_payments_une_commission;
+create unique index show_payments_une_commission on public.show_payments (show_id) where kind = 'artbo' and hors_calcul is null;
+
 -- ─────────────── 1. Garde : le classement « hors calcul » ne se change que par un script annoncé ───────────────
 create or replace function public.show_payments_hors_calcul_guard() returns trigger
 language plpgsql set search_path = public as $$
