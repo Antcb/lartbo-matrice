@@ -16,7 +16,7 @@ import { S, touch } from '../state.js';
 import { curTab, dropZone, fileRow, fold, pstBadge, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cAc, cIn } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
-import { esc, eur, fmtDate, md, toast, today, url, pct } from '../utils.js';
+import { badMails, checkMails, esc, eur, fmtDate, md, toast, today, url, pct } from '../utils.js';
 import { adminForm } from './structures.js';
 import { taskSection } from './todo.js';
 
@@ -223,8 +223,12 @@ function artistTab(p){
 // Fiche artiste dans la Matrice : enregistrement automatique (la structure administrative et l'onglet Membres suivent),
 // copie d'un champ ou de toute la fiche
 const afTimers = new Map(), AF_UNSAVED = new Map();
-function afSave(form){
+function afSave(form, show){
   const id = form.dataset.afForm; clearTimeout(afTimers.get(id));
+  // mail au mauvais format (Q23) : rien n'est enregistré tant qu'il n'est pas corrigé ; message sous le champ en quittant le champ
+  const bad = badMails(form);
+  if (show || !bad.length) checkMails(form);
+  if (bad.length){ const st = document.querySelector(`[data-af-state="${id}"]`); if (st) st.textContent = 'Non enregistré : adresse mail à corriger'; return; }
   AF_UNSAVED.set(id, afRead(form));
   const state = document.querySelector(`[data-af-state="${id}"]`); if (state) state.textContent = 'Enregistrement…';
   afTimers.set(id, setTimeout(() => afWrite(id), 600));
@@ -247,7 +251,7 @@ async function afWrite(id){
 // fiche artiste éditée sur place : enregistrée au fil de la saisie, jamais envoyée (remplace onsubmit="return false", interdit par la CSP v1.47)
 document.addEventListener('submit', e => { if (e.target.closest?.('form.af-edit')) e.preventDefault(); });
 document.addEventListener('input', e => { const f = e.target.closest?.('form.af-edit'); if (f) afSave(f); });
-document.addEventListener('change', e => { const f = e.target.closest?.('form.af-edit'); if (f){ e.stopPropagation(); afSave(f); } }, true);
+document.addEventListener('change', e => { const f = e.target.closest?.('form.af-edit'); if (f){ e.stopPropagation(); afSave(f, true); } }, true);
 document.addEventListener('click', async e => {
   const form = e.target.closest?.('form.af-edit');
   if (form && listClick(e, form, () => afSave(form))) return;

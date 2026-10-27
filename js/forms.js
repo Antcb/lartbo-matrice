@@ -253,7 +253,7 @@ async function askDuplicate(v, id, openLabel){
   const dups = contactsWithMail([v.email, v.email_2], id); if (!dups.length) return null;
   const d = dups[0], st = linksOfContact(d.id).map(s => s.name).filter(Boolean).join(', ');
   const mail = [v.email, v.email_2].find(m => m && [d.email, d.email_2].some(x => String(x || '').trim().toLowerCase() === String(m).trim().toLowerCase()));
-  const r = await ask({title: 'Contact déjà présent', text: `Le mail ${mail} est déjà celui de « ${d.display_name || [d.first_name, d.last_name].filter(Boolean).join(' ') || 'contact sans nom'} »${st ? ` (${st})` : ''}${dups.length > 1 ? ` et de ${dups.length - 1} autre${dups.length > 2 ? 's' : ''} contact${dups.length > 2 ? 's' : ''}` : ''}.\nAucune fusion n’est faite : tu peux ouvrir la fiche existante, ou enregistrer quand même un second contact.`,
+  const r = await ask({title: 'Contact déjà présent', text: `Le mail ${mail} est déjà celui de « ${d.display_name || [d.first_name, d.last_name].filter(Boolean).join(' ') || 'contact sans nom'} »${st ? ` (${st})` : ''}${dups.length > 1 ? ` et de ${dups.length - 1} autre${dups.length > 2 ? 's' : ''} contact${dups.length > 2 ? 's' : ''}` : ''}.\nAucune fusion n’est faite : tu peux ouvrir la fiche existante, ou enregistrer quand même un second contact.${openLabel === 'Ouvrir la fiche existante' ? '\nEn ouvrant la fiche existante, ce que tu viens de saisir ici n’est pas enregistré.' : ''}`,
     actions: [{value: 'open', label: openLabel}, {value: 'save', label: 'Enregistrer quand même'}]});
   return r === 'open' ? d : r === 'save' ? 'save' : 'cancel';
 }

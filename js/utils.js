@@ -15,24 +15,35 @@ export const eur = n => n==null || n==='' || isNaN(n) ? '—' : Number(n).toLoca
 
 /** Mail valide (CONVENTIONS §3.4, Q23) : même expression que la base (contacts_clean) ; un champ vide est accepté (obligatoire vérifié à part) */
 export const MAIL_RE = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i;
-export const mailOk = v => !String(v ?? '').trim() || MAIL_RE.test(String(v).trim());
+/** Caractères invisibles retirés avant le contrôle (mêmes que clean_email côté base) */
+const INVISIBLE = /[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g;
+const mailText = v => String(v ?? '').replace(INVISIBLE, '').trim();
+export const mailOk = v => !mailText(v) || MAIL_RE.test(mailText(v));
+/** Liste d'adresses (destinataires, copie) : séparées par des virgules ou des points-virgules, « Nom <adresse> » accepté */
+export const mailsOk = v => mailText(v).split(/[,;]/).map(x => x.trim()).filter(Boolean).every(x => mailOk((x.match(/<([^<>]*)>\s*$/) || [, x])[1]));
 export const MAIL_MSG = 'Adresse mail invalide : vérifie le @ et le domaine';
 /** Erreur sous un champ (§9.1, Q23) : message en --danger sous le champ, bordure du champ en --danger ; msg vide = retire l'erreur */
 export function fieldError(input, msg){
   if (!input) return;
-  const box = input.closest('.field') || input.parentElement;
-  box?.querySelector(':scope > .help.err[data-field-err]')?.remove();
+  // le message est toujours posé juste après le champ : on retire celui-là (et l'ancien emplacement, sous .field)
+  if (input.nextElementSibling?.matches?.('[data-field-err]')) input.nextElementSibling.remove();
+  (input.closest('.field') || input.parentElement)?.querySelector(':scope > .help.err[data-field-err]')?.remove();
   input.classList.toggle('bad', !!msg); input.classList.toggle('invalid', !!msg);
   if (msg){ const p = document.createElement('p'); p.className = 'help err'; p.dataset.fieldErr = '1'; p.textContent = msg; input.insertAdjacentElement('afterend', p); }
 }
+/** Champs mail visibles d'un formulaire : type email, ou liste d'adresses (attribut multiple ou data-mails) */
+export const mailInputs = form => [...form.querySelectorAll('input[type=email], input[data-mails]')].filter(i => !i.closest('[hidden]') && !i.disabled);
+const inputOk = i => (i.multiple || i.dataset.mails !== undefined) ? mailsOk(i.value) : mailOk(i.value);
 /** Mails d'un formulaire au mauvais format : erreurs posées sous chaque champ, renvoie les champs fautifs (les champs masqués sont ignorés) */
 export function checkMails(form){
-  const all = [...form.querySelectorAll('input[type=email]')].filter(i => !i.closest('[hidden]') && !i.disabled);
+  const all = mailInputs(form);
   all.forEach(i => fieldError(i, ''));
-  const bad = all.filter(i => !mailOk(i.value));
+  const bad = all.filter(i => !inputOk(i));
   bad.forEach(i => fieldError(i, MAIL_MSG));
   return bad;
 }
+/** Champs fautifs sans rien afficher (enregistrement automatique pendant la saisie) */
+export const badMails = form => mailInputs(form).filter(i => !inputOk(i));
 
 /** Fuseau de référence de toute règle métier (CONVENTIONS §1.2) */
 export const TZ = 'Europe/Paris';

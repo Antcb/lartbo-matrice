@@ -88,3 +88,79 @@ test('v1.50 tableau des membres : mail invalide refusé sous la case, l’ancien
   expect(r).toEqual({ bad: 1, msgs: ['Adresse mail invalide : vérifie le @ et le domaine'], ok: [true, true, false, false] });
   expectClean(ctx);
 });
+
+test('v1.50 relecture B1 : prospection vers un contact à 2 mails — plusieurs destinataires acceptés, une adresse fausse dans la liste refusée', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.evaluate(async () => {
+    const { S, touch } = await import('./js/state.js');
+    for (const db of [window.__DB, S.db]) db.contacts.find(c => c.id === 'ct-1').email_2 = 'camille2@example.com';
+    touch('contacts');
+    (await import('./js/prospection.js')).openProspection('st-1');
+  });
+  const to = page.locator('#pr-to');
+  await expect(to).toHaveValue(/camille@example\.com.*camille2@example\.com/);
+  await page.locator('#pr-cc').fill('Régie <regie@exemple.fr>; prod@exemple.fr');
+  await page.locator('#modal button[type=submit]').first().click();
+  await expect(page.locator('#modal .help.err[data-field-err]')).toHaveCount(0);
+  // le contrôle des mails est passé : on arrive aux contrôles suivants de la fenêtre (artiste / objet)
+  await expect(page.locator('.toast').last()).toContainText(/artiste|objet/);
+  // une adresse fausse dans la liste : message sous le champ, rien n'est envoyé
+  const avant = await page.evaluate(() => window.__calls.filter(c => c.fn === 'script-google').length);
+  await to.fill('camille@example.com, camille.example.com');
+  await page.locator('#modal button[type=submit]').first().click();
+  await expect(page.locator('#modal .help.err[data-field-err]')).toHaveText('Adresse mail invalide : vérifie le @ et le domaine');
+  expect(await page.evaluate(() => window.__calls.filter(c => c.fn === 'script-google').length)).toBe(avant);
+  expectClean(ctx);
+});
+
+test('v1.50 relecture B2 : infos administratives d’une structure — mail invalide jamais enregistré, message sous le champ', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.evaluate(async () => {
+    const box = document.createElement('div'); box.className = 'field';
+    box.innerHTML = '<input id="adm-email" data-admin="email" data-sid="st-1">'; document.body.append(box);
+  });
+  const i = page.locator('#adm-email');
+  await i.fill('pas-un-mail'); await i.dispatchEvent('change');
+  await expect(page.locator('.help.err[data-field-err]')).toHaveText('Adresse mail invalide : vérifie le @ et le domaine');
+  expect(await page.evaluate(() => (window.__DB.structures.find(s => s.id === 'st-1').admin || {}).email)).toBeUndefined();
+  await i.fill('admin@exemple.fr'); await i.dispatchEvent('change');
+  await expect(page.locator('.help.err[data-field-err]')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => (window.__DB.structures.find(s => s.id === 'st-1').admin || {}).email)).toBe('admin@exemple.fr');
+  expectClean(ctx);
+});
+
+test('v1.50 relecture B3 : listes de la fiche artiste — un seul message par champ, retiré une fois corrigé ; invisibles ignorés', async ({ page }) => {
+  const ctx = await openApp(page);
+  const r = await page.evaluate(async () => {
+    const u = await import('./js/utils.js'), f = document.createElement('form');
+    f.innerHTML = '<div class="al-row"><div class="al-cell"><input data-col="email" type="email" value="faux"></div></div><div class="al-row"><input data-col="email" type="email" value="aussi-faux"></div>';
+    document.body.append(f);
+    const n = () => f.querySelectorAll('[data-field-err]').length;
+    const out = [u.checkMails(f).length, n()]; out.push(u.checkMails(f).length, n());
+    f.querySelectorAll('input').forEach(i => { i.value = 'ok@exemple.fr​'; }); out.push(u.checkMails(f).length, n());
+    f.remove();
+    return [...out, u.mailsOk('A <a@b.fr>, c@d.fr'), u.mailsOk('a@b.fr; x'), u.mailsOk('')];
+  });
+  expect(r).toEqual([2, 2, 2, 2, 0, 0, true, false, true]);
+  expectClean(ctx);
+});
+
+test('v1.50 relecture B2 : fiche artiste dans l’app (enregistrée au fil de la saisie) — rien n’est enregistré tant que le mail est faux', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.evaluate(async () => {
+    await import('./js/views/projects.js');
+    const box = document.createElement('div');
+    box.innerHTML = '<span data-af-state="art-a"></span><form class="af-edit" data-af-form="art-a"><div class="field"><input name="adm_email" type="email"></div></form>';
+    document.body.append(box);
+  });
+  const i = page.locator('form.af-edit input[name=adm_email]');
+  await i.fill('pas-un-mail'); await i.dispatchEvent('change');
+  await expect(page.locator('form.af-edit .help.err[data-field-err]')).toHaveText('Adresse mail invalide : vérifie le @ et le domaine');
+  await expect(page.locator('[data-af-state="art-a"]')).toHaveText('Non enregistré : adresse mail à corriger');
+  await page.waitForTimeout(900);
+  expect(await page.evaluate(() => window.__calls.filter(c => c.rpc === 'artist_info_save').length)).toBe(0);
+  await i.fill('admin@exemple.fr'); await i.dispatchEvent('change');
+  await expect(page.locator('form.af-edit .help.err[data-field-err]')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.__calls.filter(c => c.rpc === 'artist_info_save').length)).toBe(1);
+  expectClean(ctx);
+});
