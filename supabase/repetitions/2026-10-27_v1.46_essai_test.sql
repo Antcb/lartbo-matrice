@@ -1,6 +1,6 @@
 -- =====================================================================================================
 -- ESSAI v1.46 (lot V1.46a — Finances) — PROJET DE TEST UNIQUEMENT, dans une transaction ANNULÉE à la fin (rien n'est gardé).
--- Usage : ce fichier entoure la migration 2026-10-27_v1.46_finances.sql (insérée à la place de « -- MIGRATION ») :
+-- Usage : ce fichier entoure la migration 2026-10-27_v1.46_finances.sql (insérée à la place de la ligne repère ci-dessous) :
 --   begin ; garde « projet de test » ; migration ; scénarios avec contrôles (exception « ECHEC » = échec) ; bilan renvoyé par
 --   une exception finale « ESSAI v1.46 RÉUSSI » qui annule tout (le rollback final ne sert qu'en lecture manuelle).
 -- Données : uniquement des lignes fictives créées ici (artiste « ESSAI v1.46 »).
@@ -11,7 +11,7 @@ do $g$ begin
     raise exception 'ARRET : ceci est la PRODUCTION — essai réservé au projet de test'; end if;
 end $g$;
 
--- MIGRATION
+--@@MIGRATION@@
 
 create temp table essai_bilan (n serial, quoi text);
 do $e$
