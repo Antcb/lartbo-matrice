@@ -282,8 +282,11 @@ export function editContact(id, prefill={}){
       const ids = v._structures; delete v._structures;
       v.display_name = [v.first_name, v.last_name].filter(Boolean).join(' ') || c.display_name || v.email || v.email_2;
       if (!v.display_name){ toast('Indique au moins un nom', true); return false; }
-      // doublon par mail (décision du 27/10) : avertissement et accès à la fiche existante ; jamais de fusion automatique
-      const dup = await askDuplicate(v, id, 'Ouvrir la fiche existante');
+      // doublon par mail (décisions du 27/10) : avertissement et accès à la fiche existante ; jamais de fusion automatique.
+      // Seulement à la création, ou pour une adresse ajoutée / modifiée : changer le téléphone ou les notes ne le refait pas.
+      const key = m => String(m || '').trim().toLowerCase(), before = id ? [c.email, c.email_2].map(key) : [];
+      const fresh = [v.email, v.email_2].filter(m => key(m) && !before.includes(key(m)));
+      const dup = fresh.length ? await askDuplicate({email: fresh[0], email_2: fresh[1] || null}, id, 'Ouvrir la fiche existante') : null;
       if (dup === 'cancel') return false;
       if (dup && dup !== 'save'){ setTimeout(() => editContact(dup.id), 0); return null; }   // la fenêtre se ferme sans rien enregistrer, la fiche existante s'ouvre
       let row; if (id){ await save('contacts', id, v, {rerender:false}); row={id}; } else row = await insert('contacts', v);
