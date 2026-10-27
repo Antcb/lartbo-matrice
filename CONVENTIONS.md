@@ -25,10 +25,10 @@ Toute règle ci-dessous qui n'est pas encore appliquée par le code **ne doit pa
 - [NOUVELLE] **Europe/Paris** est l'heure de référence de toute règle métier : « aujourd'hui », échéances, date d'un mail, date d'une facture, date de réalisation d'une tâche.
 - [EN PLACE] Navigateur : `today()` (`js/utils.js`) donne le jour local. Toute « date du jour » s'obtient par `today()`, **jamais** par `new Date().toISOString().slice(0,10)` (jour UTC : la veille entre 0 h et 2 h).
 - [NOUVELLE] Pour afficher la date d'un horodatage : passer l'horodatage **complet** à `fmtDate()` ; **interdit** : `.slice(0,10)` sur un horodatage.
-- [NOUVELLE] Fonctions serveur (edge) : dates calculées avec `timeZone:'Europe/Paris'` (comme `resume-suivi`). [CORRECTION] `pennylane/index.ts` (`today`, `plusDays`, `paid_at` par défaut) en UTC.
+- [NOUVELLE] Fonctions serveur (edge) : dates calculées avec `timeZone:'Europe/Paris'` (comme `resume-suivi`). [CORRIGÉ v1.49] `pennylane/index.ts` (`today`, `plusDays`) au jour de Paris.
 - [NOUVELLE] SQL : toute nouvelle fonction utilise `(now() at time zone 'Europe/Paris')::date`. [EN PLACE] `generate_reminders` utilise `current_date` (UTC) ; sans effet pratique car la tâche planifiée tourne à 5 h UTC.
 - [EN PLACE] Apps Script : `Utilities.formatDate(…, 'Europe/Paris', …)` aux endroits datés. [CORRECTION] `Code.gs` utilise aussi `new Date().getFullYear()` (fuseau du projet Apps Script, non versionné).
-- [CORRECTION] Jour UTC aujourd'hui dans : date d'un mail de prospection parti entre 0 h et 2 h (`prospection.js` `checkProspect`, donc sa relance), date d'un `.eml` sans en-tête (`data.js`), dates de notification et « Faite le » (`.slice(0,10)`, ~20 endroits), dates d'envoi dans Production.
+- [CORRIGÉ v1.49] `today()` et `dayOf(horodatage)` (`js/utils.js`) donnent le jour **de Paris** même si l'ordinateur est réglé sur un autre fuseau ; `fmtDate` reçoit l'horodatage complet partout (notifications, « Faite le », envois, fiches) ; date d'un mail de prospection et de sa relance, date d'un `.eml` sans en-tête : jour de Paris. Contrôle statique : aucune date du jour en UTC, aucun `.slice(0,10)` d'horodatage.
 
 ### 1.3 Affichage
 | Besoin | Format | Fonction | Statut |
@@ -56,8 +56,8 @@ Toute règle ci-dessous qui n'est pas encore appliquée par le code **ne doit pa
 ### 1.6 Calculs de dates
 - [EN PLACE] `addDays(d, n)` (`js/reminders.js`), `daysUntil`, `daysBetween`, `workDay` (`js/utils.js`) et `public.workday(d)` (SQL) : une échéance « J+n » qui tombe un samedi ou un dimanche passe au **lundi suivant**.
 - [EN PLACE] Facture de solde : jour ouvré le plus proche de J-7 en **reculant** (`soldeReminderDay`, même règle en SQL).
-- [DÉCIDÉ Q12] Boucle accueil & technique : **4 mois calendaires** avant le concert ; samedi ou dimanche → **vendredi précédent** ; même calcul dans l'interface (`js/reminders.js`) et dans `generate_reminders`. [CORRECTION] l'app utilise J-122 jours, le serveur `date - 4 months` sans recul au vendredi.
-- [NOUVELLE] Interdit de recréer une fonction d'ajout de jours/mois. [CORRECTION] copies : `contract.js` (addDays), `views/suivi.js` (addD, addY — `addY('2028-02-29',1)` donne une date inexistante), `forms.js` (inDays), `prospection.js` (J+10 et J-2 à la main), `pennylane/index.ts` (plusDays, UTC).
+- [DÉCIDÉ Q12] Boucle accueil & technique : **4 mois calendaires** avant le concert ; samedi ou dimanche → **vendredi précédent** ; même calcul dans l'interface (`js/reminders.js`) et dans `generate_reminders`. [CORRIGÉ v1.49] application (`addMonths` + `workDayBefore`) et serveur (`generate_reminders`, clé anti-doublon inchangée) identiques.
+- [NOUVELLE] Interdit de recréer une fonction d'ajout de jours/mois. [CORRIGÉ v1.49] une seule fonction : `addDays`, `addMonths` (29/02 + 1 an → 28/02), `workDay`, `workDayBefore` (`js/utils.js`) ; `reminders.js` les reprend ; copies retirées (`contract.js`, `views/suivi.js`, `forms.js`, `prospection.js`). Côté serveur : `pennylane/index.ts` `plusDays` au jour de Paris.
 
 ---
 
@@ -74,15 +74,15 @@ Toute règle ci-dessous qui n'est pas encore appliquée par le code **ne doit pa
 |---|---|---|
 | **Comptable** : factures, lignes de paiement (acompte, solde, commission, partenaire, CNM, autre), budgets (lignes, résumé, résultat), compte dédié et ses mouvements, exports (xlsx/CSV/PDF), mails de facturation, contrats | `eur2(n)` — centimes **toujours** affichés | `1 200,00 €` |
 | **Indicatif** : cartes et listes Booking, cachet affiché dans un suivi ou sur une fiche structure/artiste, statistiques de synthèse | `eur(n)` — centimes masqués **seulement s'ils valent zéro** | `1 200 €`, `1 200,50 €` |
-**Interdit** : `toLocaleString(...)+' €'`, `toFixed` affiché, formatage local. [CORRECTION] formats locaux (`fiche.js` `eur`, `views/budget.js` `money`, `contract.js` `num`, `mail.js`), et vues comptables qui utilisent `eur` (à vérifier écran par écran lors de la correction).
+**Interdit** : `toLocaleString(...)+' €'`, `toFixed` affiché, formatage local. [CORRIGÉ v1.49] `fiche.js` et `mail.js` utilisent `eur` / `eur2` ; message de commission partielle en `eur2`. [CORRECTION] restent : `contract.js` `num` (montants en lettres et chiffres des contrats, à revoir avec les modèles), vues comptables qui utilisent `eur` (écran par écran).
 
 ### 2.3 Arrondis
 - [EN PLACE] Arrondi **au centime, à chaque montant calculé** (`Math.round(x*100)/100`) ; les totaux additionnent des montants déjà arrondis.
-- [CORRECTION] `r2` est défini 6 fois (`calc.js`, `actions.js`, `budget.js`, `views/budget.js`, `confirm-flow.js`, `production-budget.js` — cette dernière transforme une valeur illisible en 0) : une seule fonction, exportée par `js/utils.js`.
+- [CORRIGÉ v1.49] `r2` : une seule fonction, exportée par `js/utils.js` (une valeur illisible donne 0) ; les 6 copies sont retirées.
 
 ### 2.4 Pourcentages
 - [EN PLACE] Stockés en **points** (15 = 15 %) : `show_payments.pct`, `shows.artbo_pct`, `partner_pct`, `vat_rate`, réglages `default_*`, `production.artbo_share`. Seul le taux de remplissage est un ratio 0–1 (calcul interne).
-- [NOUVELLE] Affichage : `15 %` (espace insécable avant `%`), 2 décimales au plus, sans zéro inutile (`33,33 %`, `5,5 %`). [CORRECTION] « 50% » sans espace (`mail.js`, SQL `mail_vars` `acompte_pct`), valeur brute dans `fiche.js` (`33,3333 %`).
+- [NOUVELLE] Affichage : `15 %` (espace insécable avant `%`), 2 décimales au plus, sans zéro inutile (`33,33 %`, `5,5 %`). [CORRIGÉ v1.49] fonction officielle `pct(v)` (`js/utils.js`) : mails (`mail.js`, et SQL `mail_vars` `acompte_pct` / `tva`, migration v1.49), fiche publique (`fiche.js`), Production, Réglages, budget. Exception gardée : texte des modèles de contrat (« TVA 5,5% » vient du modèle Google Docs d'Anthony).
 
 ### 2.5 Calculs financiers — fonctions officielles [EN PLACE]
 | Calcul | Fonction | Fichier |

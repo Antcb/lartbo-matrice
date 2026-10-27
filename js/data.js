@@ -8,7 +8,7 @@ import { TEAM_NAMES } from './constants.js';
 import { LINGER_MS } from './constants.js';
 import { byId, linksOfStructure } from './selectors.js';
 import { S, TABLES, localGet, localSet, touch } from './state.js';
-import { toast } from './utils.js';
+import { toast, today } from './utils.js';
 
 export const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
 
@@ -281,7 +281,7 @@ async function emlToJournal(pid, file){
   const contacts = linksOfStructure(p.structure_id);
   const c = contacts.find(x => [x.email, x.email_2].some(e => e && e.toLowerCase() === mail));
   const body = `${sent ? 'Envoyé' : 'Reçu'}${m.subject ? ` — **${m.subject}**` : ''}\n\n${m.text || '(mail sans texte)'}`;
-  const date = m.date || new Date().toISOString().slice(0, 10);
+  const date = m.date || today();   // jour de Paris (§1.2)
   if (S.db.prospect_logs.some(l => l.prospect_id === pid && l.date === date && l.body === body)) return;
   const row = await insert('prospect_logs', {prospect_id: pid, date, kind: 'Mail', contact_name: c?.display_name || name || mail || null,
     contact_id: c?.id || null, body, author: S.user?.email});

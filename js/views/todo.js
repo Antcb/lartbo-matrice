@@ -48,7 +48,7 @@ export function taskTable(tasks, emptyMsg){
         <button class="btn sm ghost" data-act="editTask" data-id="${t.id}" title="Notes, pièces jointes, statut…">Détails${nf?` · ${nf} 📎`:''}</button>${taskSuiviBtns(t)}</div>
         ${t.notes?`<div class="task-notes">${esc(t.notes.length>160?t.notes.slice(0,160)+'…':t.notes)}</div>`:''}</td>
       <td><select class="dept-sel" data-t="tasks" data-id="${t.id}" data-f="department" style="--c:${deptColor(t.department)}" aria-label="Pôle"><option value="">Pôle ?</option>${deptNames().concat(t.department && !deptNames().includes(t.department) ? [t.department] : []).map(d=>`<option ${d===t.department?'selected':''}>${esc(d)}</option>`).join('')}</select></td>
-      <td class="due-cell">${cIn('tasks',t.id,'deadline',t.deadline,'date')}${t.status==='Done' && t.done_at ? `<span class="muted nowrap">Faite le ${fmtDate(t.done_at.slice(0,10))}</span>` : u?`<span class="urg ${u.cls}">${esc(u.label)}</span>`:''}</td>
+      <td class="due-cell">${cIn('tasks',t.id,'deadline',t.deadline,'date')}${t.status==='Done' && t.done_at ? `<span class="muted nowrap">Faite le ${fmtDate(t.done_at)}</span>` : u?`<span class="urg ${u.cls}">${esc(u.label)}</span>`:''}</td>
       <td>${cSel('tasks',t.id,'assigned_to',t.assigned_to,team)}</td>
       <td style="min-width:200px">${projChips('tasks', t)}</td>
       <td class="link-cell">${cAc('structures','tasks',t.id,'structure_id',t.structure_id,{placeholder:'Structure…', create:true})}${cAc('shows','tasks',t.id,'show_id',t.show_id,{placeholder:'Date…'})}</td></tr>`;}).join('')}

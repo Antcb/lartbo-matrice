@@ -7,13 +7,13 @@
  * Chaque ligne a un montant prévu (saisi ou calculé) et un montant réel (lu sur la pièce) ; elle est « payée » quand paid_at est rempli.
  * Une date cochée « booking uniquement » (prod_mode = booking) n'a pas de budget : seulement la facture de commission.
  */
+import { r2 } from './utils.js';
 import { commissionState, isCoproduction, isInvoiced, payAmount, paymentsOf } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { byId, setting, showCommissionPct, showsOfProject } from './selectors.js';
 import { S } from './state.js';
 
 const num = v => v==null || v==='' ? null : Number(v);
-const r2 = n => Math.round(n * 100) / 100;
 
 export const isProdShow = s => !!s && s.prod_mode !== 'booking';
 export const isFree = s => /gratuit/i.test(s?.ticketing_type || '');

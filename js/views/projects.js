@@ -212,7 +212,7 @@ function artistTab(p){
   return `<div class="panel pad">
     <p class="tab-intro">Envoie ce lien à l’artiste : il remplit sa fiche et dépose ses fichiers (photos, logos, fiche technique, titres…), rangés tout seuls dans son dossier Drive. Il peut revenir sur le même lien pour corriger.
       <button class="btn sm primary" data-act="copyArtistLink" data-id="${p.id}">Copier le lien</button> <a class="btn sm ghost" href="${esc(artistLink(p))}" target="_blank" rel="noopener">Voir la fiche ↗</a></p>
-    ${p.artist_submitted_at ? `<p class="ok-txt">✓ Remplie le ${fmtDate(p.artist_submitted_at.slice(0, 10))}</p>` : '<p class="muted">Pas encore remplie par l’artiste : tu peux aussi la remplir ici.</p>'}
+    ${p.artist_submitted_at ? `<p class="ok-txt">✓ Remplie le ${fmtDate(p.artist_submitted_at)}</p>` : '<p class="muted">Pas encore remplie par l’artiste : tu peux aussi la remplir ici.</p>'}
     ${docs.length ? `<h3 class="block-title">Fichiers reçus</h3><ul class="af-list">${docs.map(d => `<li>${esc(label(d.kind))} : ${d.file_id ? `<a href="https://drive.google.com/file/d/${esc(d.file_id)}/view" target="_blank" rel="noopener">${esc(d.drive_name || d.name)}</a>` : `${esc(d.name)} <span class="muted">(rangement dans le Drive en cours)</span>`}</li>`).join('')}</ul>` : ''}
     <div class="af-bar"><button type="button" class="btn sm" data-af-copyall="${p.id}">Copier toute la fiche</button><span class="muted af-state" data-af-state="${p.id}">Modifie un champ : c’est enregistré tout seul.</span></div>
     <form class="af-edit fiche-form" data-af-form="${p.id}" autocomplete="off">${sections}

@@ -8,7 +8,7 @@ import { commissionState, payAmount, paymentsOf } from '../calc.js';
 import { byId } from '../selectors.js';
 import { S } from '../state.js';
 import { cIn, cSel } from '../ui/cells.js';
-import { esc, eur2, fmtDate, today } from '../utils.js';
+import { esc, eur2, fmtDate, today, r2, pct as fmtPct } from '../utils.js';
 import { PROD_CATS, isProductionShow, productionBudget } from '../production-budget.js';
 
 const STATUS = {paid:['Payé','ok-badge'], doc:['Pièce reçue','warn-badge'], planned:['Prévu','badge']};
@@ -113,7 +113,6 @@ export function artistResult(s, b = showBudget(s)){
   const verse = r2(paid.reduce((t, l) => t + Number(l.amount), 0)), todo = r2(known.filter(l => !l.paid_at).reduce((t, l) => t + Number(l.amount), 0));
   return {reste, verse, todo, hasVerse: paid.length > 0, ecart: known.length ? r2(reste - verse - todo) : null, lines: sl};
 }
-const r2 = n => Math.round(n * 100) / 100;
 export const ecartHTML = e => e == null ? '<span class="muted">—</span>' : Math.abs(e) < 0.01 ? '<span class="muted">0,00 €</span>'
   : `<b style="color:var(--${e < 0 ? 'danger' : 'ok'})">${e > 0 ? '+' : ''}${eur2(e)}</b>`;
 
@@ -237,7 +236,7 @@ export function projectBudgetHTML(projectId){
 // ─────────────── Budget de production (contrat Production / Co-Production) ───────────────
 
 const pin = (s, path, v, extra = '') => `<input type="${/label/.test(path) ? 'text' : 'number'}" ${/label/.test(path) ? '' : 'step="any" inputmode="decimal"'} data-prod-show="${s.id}" data-prod-path="${path}" value="${esc(v ?? '')}" ${extra}>`;
-const pct = v => v == null ? '—' : (Math.round(v * 1000) / 10).toLocaleString('fr-FR') + ' %';
+const pct = v => v == null ? '—' : fmtPct(Math.round(v * 1000) / 10);   // taux 0–1 affiché « 87,5 % » (format officiel §2.4)
 const two = (f, r, cls = '') => `<td class="num nowrap ${cls}">${eur2(f)}</td><td class="num nowrap ${cls}">${r == null ? '—' : eur2(r)}</td>`;
 
 /** Budget d'une date produite par L'ArtBo : billetterie, droits et taxes, coûts, résultat partagé avec le coproducteur */

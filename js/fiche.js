@@ -5,6 +5,7 @@
  * Les conditions affichées sont toujours celles de la base : si l'équipe corrige le cachet
  * ou les acomptes, la fiche est à jour sans renvoyer de lien.
  */
+import { eur, pct as fmtPct } from './utils.js';
 import { CFG } from './config.js';
 import { localDel, localGet, localSet } from './storage.js';
 import './ui/testbanner.js';
@@ -15,8 +16,7 @@ const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY,
 const root = document.getElementById('fiche');
 const token = new URLSearchParams(location.search).get('t') || '';
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const eur = n => n == null ? '—' : Number(n).toLocaleString('fr-FR', {style:'currency', currency:'EUR', maximumFractionDigits: Number(n) % 1 ? 2 : 0});
-const pct = n => n == null ? '' : String(n).replace('.', ',') + ' %';
+const pct = n => n == null ? '' : fmtPct(n);   // formats officiels (§2.2, §2.4) : « 33,33 % » au lieu de « 33,3333 % »
 const DRAFT = 'fiche-brouillon-' + token;
 
 async function load(){

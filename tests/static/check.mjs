@@ -184,6 +184,16 @@ for (const f of JS) {
   if (/setting\(\s*['"](brevo_api_key|brevo_hook_secret|drive_webhook_secret)['"]/.test(src)) fail('sécurité', `${rel(f)} : lecture d'un secret de la table settings par le navigateur (illisible depuis la v1.47)`);
 }
 
+// 9. Dates et formats (lot v1.49, CONVENTIONS §1.2, §1.6, §2.2–2.4) : aucune « date du jour » en UTC, aucun jour coupé dans un
+// horodatage, aucune copie des fonctions officielles (ajout de jours, arrondi), aucun montant ou pourcentage formaté à la main
+for (const f of JS.filter(p => !p.endsWith('js/utils.js'))) {
+  const src = readFileSync(f, 'utf8');
+  if (/new Date\(\)\.toISOString\(\)\.slice\(0,\s*10\)/.test(src)) fail('dates', `${rel(f)} : date du jour en UTC (utiliser today())`);
+  if (/_at\??\.slice\(0,\s*10\)|created_at\s*\|\|\s*''\)\.slice\(0,\s*10\)/.test(src)) fail('dates', `${rel(f)} : jour coupé dans un horodatage (utiliser dayOf() ou fmtDate(horodatage))`);
+  if (/const\s+(r2|addDays|addD|inDays|plusDays)\s*=\s*\(?[\w,\s]*\)?\s*=>\s*\{?\s*(Math\.round|const x = new Date)/.test(src)) fail('formats', `${rel(f)} : copie d'une fonction officielle (r2, addDays dans js/utils.js)`);
+  if (/toLocaleString\(\s*['"]fr-FR['"]\s*,\s*\{\s*style:\s*['"]currency/.test(src)) fail('formats', `${rel(f)} : montant formaté à la main (utiliser eur2 / eur)`);
+}
+
 // Bilan
 console.log(`Contrôles statiques : ${JS.length} modules, version ${version}, ${total(now)} fenêtre(s) native(s) tolérée(s), ${scanned.length} fichiers examinés pour les secrets.`);
 if (problems.length) { console.error(`\n${problems.length} problème(s) :\n` + problems.map(p => ' - ' + p).join('\n')); process.exit(1); }

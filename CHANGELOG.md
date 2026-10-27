@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.49.0 — 27/10/2026
+- Dates et formats (lot V1.49) : jour de Paris partout (aujourd'hui, horodatages, mails, factures Pennylane), une seule fonction d'ajout de jours et de mois, rappel de la boucle accueil à 4 mois calendaires (vendredi si week-end), pourcentages « 50 % » et montants aux formats officiels, y compris dans les mails
+
+
 ## 1.48.0 — 27/10/2026
 - Fenêtres (lot V1.48) : plus aucune fenêtre native du navigateur — questions de l'application qui nomment l'élément et ce qui part avec lui, saisies dans la fenêtre (mot de passe masqué), rapport Pennylane et copie de secours dans une fenêtre
 

@@ -19,9 +19,9 @@
  */
 import { commissionState, isInvoiced, paymentsOf } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
-import { eur2, today, workDay } from './utils.js';
+import { addDays, eur2, today, workDay, addMonths, workDayBefore } from './utils.js';
 
-export const addDays = (d, n) => { const x = new Date(d+'T12:00:00'); x.setDate(x.getDate()+n); return x.toISOString().slice(0,10); };
+export { addDays };   // fonction officielle de js/utils.js (§1.6), gardée ici pour les modules qui l'importent d'ici
 /** Rappel à J+10 : décalé au lundi s'il tombe un samedi ou un dimanche (même règle que la fonction serveur) */
 const plus10 = d => workDay(addDays(d, 10));
 
@@ -78,7 +78,8 @@ export function remindersOf(s){
   if (s.contract_sent && ac && !isInvoiced(ac) && !isInvoiced(so)) rule('acompte', s.contract_sent, 'Facture d’acompte à faire (contrat envoyé)');
   if (s.date && so && !isInvoiced(so) && s.date >= addDays(now, -30)) rule('solde', soldeReminderDay(s.date), 'Facture de solde à faire');
   invoiceRules(pays, false, rule);
-  if (upcoming && s.date && !s.boucle_tech) rule('boucle_tech', addDays(s.date, -122), 'Boucle accueil & technique à envoyer (J-4 mois)');
+  // 4 mois calendaires avant le concert ; samedi / dimanche → vendredi précédent (Q12, v1.49) — même règle côté serveur
+  if (upcoming && s.date && !s.boucle_tech) rule('boucle_tech', workDayBefore(addMonths(s.date, -4)), 'Boucle accueil & technique à envoyer (J-4 mois)');
   if (upcoming && s.contract_cosigned_sent && !s.boucle_com) rule('boucle_com', s.contract_cosigned_sent, 'Boucle communication à envoyer');
   // en production, la commission L'ArtBo n'est pas facturée : L'ArtBo se la verse depuis le compte de l'artiste
   // dès le premier encaissement (acompte, ou solde quand il n'y a pas d'acompte)

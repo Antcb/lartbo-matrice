@@ -16,7 +16,7 @@ import { inactiveToggle, dropZone, fileRow, fold, projPicker, stSelect, pstBadge
 import { cAc, cIn, cSel, projChips } from '../ui/cells.js';
 import { acInput } from '../ui/autocomplete.js';
 import { dateInput } from '../ui/datefield.js';
-import { $, daysBetween, esc, eur, fmtDate, fmtShort, matches, md, period, safeHtml, today } from '../utils.js';
+import { $, addDays, addMonths, daysBetween, esc, eur, fmtDate, fmtShort, matches, md, period, safeHtml, today, dayOf } from '../utils.js';
 import { setMapData } from './booking.js';
 import { isDraftLog, relanceHistory } from '../prospection.js';
 
@@ -63,7 +63,7 @@ export function suiviCard(p, {page=false}={}){
   const d = logDraft(p.id);
   // Fil de la date : échanges et pièces jointes mêlés, du plus récent au plus ancien
   const thread = [...logs.map(l => ({log:l, at:l.date || '0000', ts:l.created_at || ''})),
-                  ...files.map(f => ({file:f, at:(f.created_at || '').slice(0, 10) || '0000', ts:f.created_at || ''}))]
+                  ...files.map(f => ({file:f, at:dayOf(f.created_at) || '0000', ts:f.created_at || ''}))]
     .sort((a, b) => b.at.localeCompare(a.at) || b.ts.localeCompare(a.ts));
   const tasks = suiviTasks(p);
   const tasksHTML = `<div class="suivi-block"><h3 class="block-title">Tâches <span class="count">${tasks.filter(t=>!isDone(t)).length}</span><span class="spacer"></span>
@@ -101,7 +101,7 @@ export function suiviCard(p, {page=false}={}){
       <span class="sel-wrap">${cSel('prospects',p.id,'status',p.status,PROSPECT_OPTS,false)}</span>
       <span class="muted">Dernier échange : ${lastExchange(p)?fmtDate(lastExchange(p)):'—'}</span>
       <span class="spacer"></span>
-      ${p.mail_thread_id ? `<span class="muted mail-state">✉️ ${p.mail_sent_at ? `Prospection envoyée le ${fmtDate(p.mail_sent_at.slice(0,10))}` : `Prospection en brouillon${p.mail_log_id && byId('prospect_logs', p.mail_log_id) ? ` <button class="btn sm" data-act="markLogSent" data-id="${p.mail_log_id}">Marquer envoyé</button>` : ''}`}${p.relances ? ` · ${p.relances} relance${p.relances>1?'s':''}${(h => h.length ? ' (' + h.map(fmtDate).join(', ') + ')' : '')(relanceHistory(p).relances)}` : ''}</span>
+      ${p.mail_thread_id ? `<span class="muted mail-state">✉️ ${p.mail_sent_at ? `Prospection envoyée le ${fmtDate(p.mail_sent_at)}` : `Prospection en brouillon${p.mail_log_id && byId('prospect_logs', p.mail_log_id) ? ` <button class="btn sm" data-act="markLogSent" data-id="${p.mail_log_id}">Marquer envoyé</button>` : ''}`}${p.relances ? ` · ${p.relances} relance${p.relances>1?'s':''}${(h => h.length ? ' (' + h.map(fmtDate).join(', ') + ')' : '')(relanceHistory(p).relances)}` : ''}</span>
         ${suiviClosed(p) ? '' : `<button class="btn sm" data-act="relance" data-id="${p.id}">Relance</button>`}` : ''}
       ${page ? '' : `<button class="btn sm" data-act="openSuivi" data-id="${p.id}">Ouvrir avec planning et carte</button>`}
       <button class="btn sm ghost danger" data-act="delProspect" data-id="${p.id}">Supprimer</button>
@@ -176,8 +176,7 @@ function suiviPage(p){
   </div>`;
 }
 
-const addD = (d, n) => { const x = new Date(d+'T12:00:00'); x.setDate(x.getDate()+n); return x.toISOString().slice(0,10); };
-const addY = (d, n) => `${Number(d.slice(0,4))+n}${d.slice(4)}`;
+const addD = addDays, addY = (d, n) => addMonths(d, 12 * n);   // fonctions officielles (§1.6) : 29/02 + 1 an → 28/02
 
 function sidePanel(p, st, proj, linked){
   const ids = projIds(p);

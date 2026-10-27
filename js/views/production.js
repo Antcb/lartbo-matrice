@@ -11,7 +11,7 @@ import { S } from '../state.js';
 import { filterBar, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cChk, cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
-import { esc, eur2, fmtDate, matches, today } from '../utils.js';
+import { esc, eur2, fmtDate, matches, today, pct } from '../utils.js';
 import { payerLabel } from '../budget.js';
 import { commissionTransferCell, productionBudgetHTML, projectBudgetHTML, showBudgetHTML } from './budget.js';
 import { isProductionShow } from '../production-budget.js';
@@ -97,12 +97,12 @@ function actionsBar(s, booking){
   const log = s.mail_log || {};
   const state = kind => { const l = log[kind]; if (!l) return '';
     const sent = l.sent || (kind === 'confirmation' ? s.conf_kit_sent : s[kind]);
-    return `<small class="${sent ? 'ok-txt' : 'muted'}">${sent ? '✓ envoyé' : 'brouillon'} le ${fmtDate((sent && typeof sent === 'string' && sent.length === 10 ? sent : l.at).slice(0,10))}</small>`; };
+    return `<small class="${sent ? 'ok-txt' : 'muted'}">${sent ? '✓ envoyé' : 'brouillon'} le ${fmtDate(sent && typeof sent === 'string' && sent.length === 10 ? sent : l.at)}</small>`; };
   const mailBtn = (kind, label) => `<span class="pa-item"><button class="btn sm ${log[kind] ? '' : 'primary'}" data-act="prepareMail" data-kind="${kind}" data-id="${s.id}">${label}</button>${state(kind)}</span>`;
   const fiche = s.fiche_validated_at
-    ? `<span class="pa-item"><button class="btn sm ghost" data-act="validateFiche" data-id="${s.id}">Fiche de renseignements</button><small class="ok-txt">✓ validée le ${fmtDate(s.fiche_validated_at.slice(0,10))}</small></span>`
+    ? `<span class="pa-item"><button class="btn sm ghost" data-act="validateFiche" data-id="${s.id}">Fiche de renseignements</button><small class="ok-txt">✓ validée le ${fmtDate(s.fiche_validated_at)}</small></span>`
     : s.fiche_submitted_at
-      ? `<span class="pa-item"><button class="btn sm primary" data-act="validateFiche" data-id="${s.id}">Vérifier la fiche</button><small class="warn-txt">reçue le ${fmtDate(s.fiche_submitted_at.slice(0,10))}</small></span>`
+      ? `<span class="pa-item"><button class="btn sm primary" data-act="validateFiche" data-id="${s.id}">Vérifier la fiche</button><small class="warn-txt">reçue le ${fmtDate(s.fiche_submitted_at)}</small></span>`
       : `<span class="pa-item"><button class="btn sm ghost" data-act="validateFiche" data-id="${s.id}">Fiche de renseignements</button><small class="muted">pas encore remplie</small></span>`;
   const contract = s.contract_doc_id
     ? `<span class="pa-item"><a class="btn sm" href="https://docs.google.com/document/d/${esc(s.contract_doc_id)}/edit" target="_blank" rel="noopener">Contrat ↗</a>${s.contract_pdf_id ? `<a class="btn sm ghost" href="https://drive.google.com/file/d/${esc(s.contract_pdf_id)}/view" target="_blank" rel="noopener">PDF ↗</a>` : ''}
@@ -128,8 +128,8 @@ function actionsBar(s, booking){
 const isPastShow = s => !!s.date && s.date < today();
 const termsPending = s => !s.terms_validated_at && !isPastShow(s) && !s.conf_kit_sent;
 function termsStatus(s){
-  if (s.terms_validated_at) return `<span class="ok-txt">✓ Conditions validées le ${fmtDate(s.terms_validated_at.slice(0,10))}</span>`;
-  if (s.conf_kit_sent) return `<span class="ok-txt">✓ Conditions envoyées dans la confirmation du ${fmtDate(String(s.conf_kit_sent).slice(0,10))}</span>`;
+  if (s.terms_validated_at) return `<span class="ok-txt">✓ Conditions validées le ${fmtDate(s.terms_validated_at)}</span>`;
+  if (s.conf_kit_sent) return `<span class="ok-txt">✓ Conditions envoyées dans la confirmation du ${fmtDate(s.conf_kit_sent)}</span>`;
   if (isPastShow(s)) return '<span class="muted">Date passée</span>';
   return '<span class="warn-txt">Conditions pas encore validées</span>';
 }
@@ -147,7 +147,7 @@ function conditionsTab(s, booking){
         <label>Cachet HT</label>${cIn('shows',s.id,'fee_ht',s.fee_ht,'number')}
         <label>TVA du cachet (%)</label>${cIn('shows',s.id,'vat_rate',s.vat_rate,'number','placeholder="5.5" class="narrow"')}
         <label>Cachet TTC</label><b>${eur2(ttc(s.fee_ht, showVat(s)))}</b>
-        ${booking ? '' : `<label>Acomptes</label><span>${plan.filter(p => p.kind === 'acompte').map(p => `${esc(p.label || 'Acompte')} ${pctVal(billPct(p))} %${p.due_label ? ` <span class="muted">(${esc(p.due_label)})</span>` : ''}`).join(' · ') || '<span class="muted">aucun</span>'}${plan.some(p => p.kind === 'solde') ? ` · solde ${pctVal(billPct(plan.find(p => p.kind === 'solde')))} %` : ''}</span>`}
+        ${booking ? '' : `<label>Acomptes</label><span>${plan.filter(p => p.kind === 'acompte').map(p => `${esc(p.label || 'Acompte')} ${pct(billPct(p))}${p.due_label ? ` <span class="muted">(${esc(p.due_label)})</span>` : ''}`).join(' · ') || '<span class="muted">aucun</span>'}${plan.some(p => p.kind === 'solde') ? ` · solde ${pct(billPct(plan.find(p => p.kind === 'solde')))}` : ''}</span>`}
         <label>Heure de passage</label>${cIn('shows',s.id,'show_time',s.show_time,'text','placeholder="ex. 22h30" class="narrow"')}
         <label>Durée du set</label>${cIn('shows',s.id,'set_length',s.set_length,'text','placeholder="ex. 1h15" class="narrow"')}
         ${booking ? '' : `<label>Invitations producteur</label>${cIn('shows',s.id,'invitations',s.invitations,'number','placeholder="10" class="narrow"')}`}
