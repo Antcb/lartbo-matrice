@@ -35,8 +35,27 @@ drop policy if exists commission_transfers_read on public.commission_transfers;
 create policy commission_transfers_read on public.commission_transfers for select to authenticated using (public.is_team());
 drop policy if exists commission_transfers_add on public.commission_transfers;
 create policy commission_transfers_add on public.commission_transfers for insert to authenticated with check (public.is_team());
-revoke update, delete, truncate on public.commission_transfers from public, anon, authenticated;
+-- droits par défaut de Supabase : tout est accordé aux visiteurs sur une nouvelle table → tout leur est retiré (relecture D1, B1)
+revoke all on public.commission_transfers from public, anon;
+revoke update, delete, truncate, references, trigger on public.commission_transfers from authenticated;
 grant select, insert on public.commission_transfers to authenticated;
+-- mises à jour en direct (autres postes) comme les autres tables de l'application, si la publication existe
+do $p$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'commission_transfers') then
+    execute 'alter publication supabase_realtime add table public.commission_transfers';
+  end if;
+end $p$;
+
+-- Date « engagée » (décision 5) : un versement de commission compte aussi comme une opération enregistrée (relecture D1, B2) —
+-- son mode ne change plus (sinon la commission versée deviendrait une facture de booking). Même règle : js/calc.js hasFinancialRecord
+create or replace function public.show_has_financial_record(p_show uuid)
+returns boolean language sql stable set search_path = public as $$
+  select exists (select 1 from public.show_payments p where p.show_id = p_show
+                   and (p.sent_at is not null or p.paid_at is not null
+                        or nullif(btrim(p.invoice_number), '') is not null or nullif(btrim(p.pennylane_id), '') is not null
+                        or exists (select 1 from public.commission_transfers t where t.payment_id = p.id)))
+$$;
 
 -- Total dû d'une commission (montant figé, sinon calcul du moment) et déjà transféré
 create or replace function public.commission_total(p public.show_payments)
@@ -54,8 +73,9 @@ language plpgsql set search_path = public as $$
 declare l public.show_payments; total numeric; done numeric;
 begin
   if tg_op <> 'INSERT' then
-    if coalesce(current_setting('matrice.regularisation', true), '') = 'retour_versement' then
-      return case when tg_op = 'DELETE' then old else new end;
+    -- seul retour arrière permis : SUPPRIMER un versement, dans un script de retour arrière qui l'annonce ; jamais le modifier
+    if tg_op = 'DELETE' and coalesce(current_setting('matrice.regularisation', true), '') = 'retour_versement' then
+      return old;
     end if;
     raise exception 'Un versement de commission enregistré ne se modifie pas et ne se supprime pas (une régularisation se décide à part).'
       using errcode = 'P0001';
@@ -79,7 +99,7 @@ begin
   if l.amount is null then
     update public.show_payments set amount = total where id = l.id;   -- total figé au premier versement (jamais recalculé ensuite)
   end if;
-  new.created_by := coalesce(new.created_by, public.finance_actor());
+  new.created_by := public.finance_actor();   -- toujours l'auteur réel (jamais une valeur fournie par l'application)
   return new;
 end $$;
 drop trigger if exists commission_transfer_before on public.commission_transfers;
@@ -229,7 +249,9 @@ language plpgsql security definer set search_path = public as $$
 declare sid uuid; src text;
 begin
   select show_id into sid from public.show_payments where id = coalesce(new.payment_id, old.payment_id);
-  src := case when coalesce(current_setting('matrice.regularisation', true), '') <> '' then 'régularisation contrôlée'
+  src := case when coalesce(current_setting('matrice.regularisation', true), '') = 'retour_versement' then 'retour arrière de régularisation'
+              when coalesce(current_setting('matrice.regularisation', true), '') = 'commission_partielle' then 'régularisation contrôlée (commission partielle)'
+              when coalesce(current_setting('matrice.regularisation', true), '') <> '' then 'régularisation contrôlée'
               when coalesce(current_setting('request.jwt.claims', true), '') <> '' then 'application / fonction serveur'
               else 'base (éditeur SQL, tâche planifiée)' end;
   insert into public.finance_log (table_name, row_id, show_id, op, field, old_value, new_value, actor, source)
@@ -320,4 +342,5 @@ revoke execute on function public.finance_log_transfers() from public, anon, aut
 --   drop trigger show_payments_commission_lock, show_payments_commission_paid on public.show_payments ; drop table public.commission_transfers ;
 --   drop function commission_transfer_before(), commission_transfer_after(), show_payments_commission_lock(),
 --     show_payments_commission_paid(), finance_log_transfers(), commission_total(show_payments), commission_transferred(uuid) ;
---   drop index public.show_payments_une_commission ; recréer generate_reminders (v1.41) et show_payments_emitted_guard (v1.42).
+--   drop index public.show_payments_une_commission ; recréer show_has_financial_record, generate_reminders (v1.41) et
+--   show_payments_emitted_guard dans leur version d'avant (v1.42 / v1.41).

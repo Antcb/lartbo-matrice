@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.43.1 — 27/10/2026
+- Commissions de production : droits d'accès du journal et des versements restreints, date engagée dès un versement, versements non modifiables
+
+
 ## 1.43.0 — 27/10/2026
 - Lot D1 : commission de production = total dû + historique des versements (versements partiels, reste à transférer, rappels sur le reste)
 
