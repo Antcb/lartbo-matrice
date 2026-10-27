@@ -97,3 +97,34 @@ test('coproduction avec une opération réelle ajoutée à la main : elle compte
   expect(e.emise, 'facture réelle : la date est engagée').toBe(true);
   expectClean(ctx);
 });
+
+// Décision d'Anthony (27/10/2026) : le tableau par date du compte artiste ne présente plus un budget prévisionnel de coproduction
+// comme un « reste artiste » (Cabaret Sauvage −12 889,98, Rockstore 5 000) ; seuls les montants réalisés s'affichent, hors totaux.
+test('coproduction : tableau de l’artiste — aucun « reste artiste » prévisionnel, hors totaux, solde du compte inchangé', async ({ page }) => {
+  const ctx = await openApp(page);
+  const avant = await page.evaluate(async () => (await import('./js/budget.js')).accountOf('art-a'));
+  const LIGNES = [
+    { id: 'cp-l1', show_id: 'cp-1', project_id: 'art-a', category: 'Salle', label: 'Location salle', forecast: 6000, sort: 1, payer: 'artbo' },
+    { id: 'cp-l2', show_id: 'cp-1', project_id: 'art-a', category: 'Promo', label: 'Communication', forecast: 800, amount: 800, paid_at: `${Y}-04-02`, sort: 2, payer: 'artbo' },
+  ];
+  await seed(page, { shows: [COPRO], show_payments: IMPORT, budget_lines: LIGNES });
+  const apres = await page.evaluate(async () => (await import('./js/budget.js')).accountOf('art-a'));
+  expect(apres.real, 'solde réel du compte inchangé').toBe(avant.real);
+  expect(apres.end, 'solde prévu du compte inchangé').toBe(avant.end);
+  await page.evaluate(async () => {
+    const { S } = await import('./js/state.js'); const { go } = await import('./js/app.js');
+    S.year = Number(S.db.shows.find(x => x.id === 'cp-1').date.slice(0, 4)); S.openBudget = new Set(['art-a']); go('production');
+  });
+  const row = page.locator('.proj-budget tr', { has: page.locator('a[data-id="cp-1"]') });
+  await expect(row).toHaveCount(1);
+  const cells = await row.locator('td').allInnerTexts();
+  expect(cells[1]).toContain('Coproduction');
+  expect(cells[2], 'pas de cachet présenté comme cession').toBe('—');
+  expect(cells[3], 'pas de commission').toBe('—');
+  expect(cells[4], 'dépenses réellement payées seulement').toContain('800,00');
+  expect(cells[5], 'pas de reste artiste prévisionnel').toBe('—');
+  const total = await page.locator('.proj-budget .total-row').innerText();
+  expect(total, 'totaux sans le budget de la coproduction').not.toContain('5 000,00');
+  expect(total).toContain('hors totaux');
+  expectClean(ctx);
+});
