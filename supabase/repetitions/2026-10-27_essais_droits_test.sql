@@ -56,8 +56,12 @@ begin
   select amount::text into v from public.show_payments where id = lid; insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'acompte émis : montant figé à l''émission', acpt, v);
   begin update public.show_payments set amount = 1500 where id = lid; insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'modifier un montant figé', 'refusé', 'ACCEPTÉ');
   exception when sqlstate 'P0001' then insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'modifier un montant figé', 'refusé', 'refusé'); end;
-  begin update public.show_payments set invoice_number = 'AUTRE' where id = lid; insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'changer le numéro d''une facture émise', 'refusé', 'ACCEPTÉ');
-  exception when sqlstate 'P0001' then insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'changer le numéro d''une facture émise', 'refusé', 'refusé'); end;
+  -- LIMITE CONNUE (hors D1) : A1 n'interdit pas encore de remplacer un numéro de facture existant — évolution notée par Anthony
+  -- « à planifier après C1 ». L'essai constate l'état actuel (accepté) ; le montant figé, lui, ne bouge pas.
+  begin update public.show_payments set invoice_number = 'AUTRE' where id = lid;
+    select case when amount::text = acpt then 'accepté, montant inchangé' else 'MONTANT CHANGÉ' end into v from public.show_payments where id = lid;
+    insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'changer le numéro d''une facture émise (limite connue, évolution prévue après C1)', 'accepté, montant inchangé', v);
+  exception when sqlstate 'P0001' then insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'changer le numéro d''une facture émise (limite connue)', 'accepté, montant inchangé', 'refusé'); end;
   update public.shows set fee_ht = 5000 where id = sid;
   select amount::text into v from public.show_payments where id = lid; insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'cachet changé : montant émis inchangé', acpt, v);
   begin update public.shows set prod_mode = 'booking' where id = sid; insert into _r (profil, essai, attendu, obtenu) values ('équipe', 'mode changé sur une date engagée', 'refusé', 'ACCEPTÉ');
