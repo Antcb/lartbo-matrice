@@ -3,7 +3,7 @@
  */
 import { APP_VERSION } from '../config.js';
 import { sb } from '../data.js';
-import { departments, setting } from '../selectors.js';
+import { defaultAcompte, departments, setting } from '../selectors.js';
 import { fetchAll } from '../data.js';
 import { S, touch } from '../state.js';
 import { isCoproduction, isInvoiced, paymentsOf } from '../calc.js';
@@ -16,13 +16,13 @@ import { templateForm } from '../budget-template.js';
 import { FONTS, SIZES, mailFont, rtStyle, rtToolbar } from '../ui/richtext.js';
 
 export function viewSettings(){
-  const ac = Number(setting('default_acompte_pct') ?? 0);
+  const acRaw = setting('default_acompte_pct'), ac = defaultAcompte(), acShown = acRaw == null || String(acRaw).trim() === '' ? '' : ac;   // vide : affiché vide (50 % appliqué), jamais 0 (§6.4)
   return viewHead('Réglages') + `
   <div class="grid-cards" style="grid-template-columns:repeat(auto-fill,minmax(360px,1fr))">
     <div class="panel pad"><h3 class="panel-title">Pourcentages par défaut</h3>
       <p class="help mb">Appliqués aux nouvelles dates confirmées. Chaque date et chaque projet peuvent les remplacer.</p>
       <div class="steps kv-grid">
-        <label for="set-ac">Acompte (% du cachet)</label><input id="set-ac" type="number" step="any" data-act-setting="default_acompte_pct" value="${esc(ac)}">
+        <label for="set-ac">Acompte (% du cachet)</label><input id="set-ac" type="number" step="any" data-act-setting="default_acompte_pct" value="${esc(acShown)}" placeholder="50">
         <label>Solde (100 % − acompte)</label><span><b>${esc(100 - ac)} %</b></span>
         <label for="set-artbo-b">Commission L'ArtBo par défaut — booking (%)</label><input id="set-artbo-b" type="number" step="any" data-act-setting="default_artbo_pct_booking" value="${esc(setting('default_artbo_pct_booking')??15)}">
         <label for="set-artbo-p">Commission L'ArtBo par défaut — production (%)</label><input id="set-artbo-p" type="number" step="any" data-act-setting="default_artbo_pct_production" value="${esc(setting('default_artbo_pct_production')??20)}">
@@ -192,7 +192,7 @@ document.addEventListener('change', async e => {
 });
 
 export async function applyAcompte(){
-  const ac = Number(setting('default_acompte_pct') ?? 0);
+  const ac = defaultAcompte();   // 0 % gardé tel quel ; 50 seulement si le réglage est vide (§6.4)
   if (!confirm(`Mettre ${ac} % d’acompte et ${100-ac} % de solde sur les dates à venir pas encore facturées ?`)) return;
   // seulement l'acompte et le solde créés à la confirmation (pas les acomptes ajoutés à la main)
   // dates à venir dont les conditions ne sont pas validées, avec un seul acompte et rien d'envoyé / payé / saisi à la main

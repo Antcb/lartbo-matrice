@@ -9,7 +9,7 @@ import { byId, projName, setting, showsFiltered, structName } from '../selectors
 import { lateSteps, remindersOf } from '../reminders.js';
 import { S } from '../state.js';
 import { filterBar, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
-import { cIn, cSel } from '../ui/cells.js';
+import { cChk, cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { esc, eur2, fmtDate, matches, today } from '../utils.js';
 import { payerLabel } from '../budget.js';
@@ -199,7 +199,7 @@ function billingTab(s, booking, pays, late){
           <td class="${commissionState(p).full || commissionState(p).legacy ? 'done-cell' : late.has('artbo') ? 'late-cell' : ''}" title="Versements de la commission à L’ArtBo">${commissionTransferCell(p)}</td><td></td>` : `
           <td>${cIn('show_payments',p.id,'invoice_number',p.invoice_number,'text','style="min-width:90px"')}</td>
           <td class="${late.has(p.kind)&&!p.sent_at?'late-cell':''}">${cIn('show_payments',p.id,'sent_at',p.sent_at,'date')}</td>
-          <td title="Date de la dernière relance">${cIn('show_payments',p.id,'reminded_at',p.reminded_at,'date')}</td>
+          <td title="Date de la dernière relance">${cIn('show_payments',p.id,'reminded_at',p.reminded_at,'date')}${p.sent_at && !p.paid_at ? `<div class="small" title="Plus de rappel « Paiement à vérifier » pour cette facture tant que la case est cochée (elle reste impayée et comptée)">${cChk('show_payments', p.id, 'reminders_paused', p.reminders_paused, 'Relances suspendues')}</div>` : ''}</td>
           <td class="${p.paid_at?'done-cell':''}">${cIn('show_payments',p.id,'paid_at',p.paid_at,'date')}</td>
           <td>${pennylaneCell(p, s)}</td>`}
           <td>${why ? `<span class="muted" role="img" aria-label="Ligne verrouillée" title="${esc(why)}">🔒</span>` : `<button class="btn icon sm ghost danger" data-act="delPay" data-id="${p.id}" aria-label="Supprimer la ligne">✕</button>`}</td></tr>`;}).join('')}

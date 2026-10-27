@@ -114,6 +114,18 @@ export const defaultCommission = mode => { const v = Number(setting(mode === 'bo
   return Number.isFinite(v) && v > 0 ? v : (mode === 'booking' ? 15 : 20); };
 /** Commission d'un projet : la sienne, sinon celle par défaut de son type de suivi */
 export const projectCommission = p => p?.default_artbo_pct != null && p.default_artbo_pct !== '' ? Number(p.default_artbo_pct) : defaultCommission(p?.mode);
+const filled = v => v != null && String(v).trim() !== '';
+/** Commission d'une date sans % sur sa ligne (§6.3, v1.46a) : % de la date > % de l'artiste > Réglages selon le mode de la DATE.
+ *  Même règle côté base (default_commission_pct) et côté Pennylane (regles.ts pctCommission). */
+export function showCommissionPct(s){
+  if (!s) return 0;
+  if (filled(s.artbo_pct)) return Number(s.artbo_pct);
+  const p = byId('projects', s.project_id);
+  if (filled(p?.default_artbo_pct)) return Number(p.default_artbo_pct);
+  return defaultCommission(s.prod_mode || p?.mode || 'production');
+}
+/** Acompte par défaut (§6.4, v1.46a) : le réglage tel quel, 0 % compris (= date sans acompte) ; 50 seulement si le réglage est absent ou vide */
+export const defaultAcompte = () => { const v = setting('default_acompte_pct'); return filled(v) && Number.isFinite(Number(v)) ? Number(v) : 50; };
 
 /** Suivi terminé : clos (Closed) ou confirmé (Confirmed) — rangé dans « suivis clos », plus de relance */
 export const suiviClosed = p => p?.status === 'Closed' || p?.status === 'Confirmed';

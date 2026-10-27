@@ -302,7 +302,7 @@ export async function applyPiece({doc, path, name, show_id, project_id, line}){
   const s = show_id ? byId('shows', show_id) : null;
   const bulletin = d.type === 'bulletin';
   const amount = bulletin ? (d.cout_employeur ?? ttc ?? ht) : (ht ?? ttc);
-  const patch = {doc_number: d.numero || (bulletin ? `BDS ${String(date).slice(0,7)}` : null), doc_date: date, paid_at: date, file_path: path, file_name: name,
+  const patch = {doc_number: d.numero || (bulletin ? `BDS ${String(date).slice(0,7)}` : null), doc_date: date, file_path: path,   // un justificatif n'est jamais un paiement (v1.46a) : la date de paiement se note à part file_name: name,
     ...(amount != null ? {amount: Number(amount)} : {}), ...(ttc != null ? {amount_ttc: ttc} : {}), ...(d.tva_taux != null ? {vat_rate: Number(d.tva_taux)} : {})};
   let target = line;
   if (!target && s){
@@ -315,14 +315,14 @@ export async function applyPiece({doc, path, name, show_id, project_id, line}){
   }
   if (target){
     await save('budget_lines', target.id, {...patch, supplier: target.supplier || (bulletin ? d.personne : d.emetteur) || null}, {rerender:false});
-    toast(`Ligne « ${target.label || target.category} » mise à jour : ${d.numero || name} (payée le ${fmtDate(date)})`);
+    toast(`Ligne « ${target.label || target.category} » mise à jour : ${d.numero || name} (pièce rattachée ; le paiement se note à part)`);
     return {table: 'budget_lines', id: target.id};
   }
   const row = await insert('budget_lines', {project_id, show_id: s?.id || null, category: bulletin ? 'Staff' : (d.categorie || 'Autres'),
     label: d.libelle || (bulletin ? 'Cachet' : name), supplier: (bulletin ? d.personne : d.emetteur) || null, payer: 'compte',
     qty: bulletin ? 1 : null, sort: s ? nextSort(s.id) : 0, ...patch});
   if (row && bulletin && s) await syncMovinmotionLine(s.id);
-  if (row) toast(`Nouvelle ligne ajoutée : ${row.label} (${row.category})`);
+  if (row) toast(`Nouvelle ligne ajoutée : ${row.label} (${row.category}) ; le paiement se note à part`);
   return row ? {table: 'budget_lines', id: row.id} : null;
 }
 

@@ -9,7 +9,7 @@
  */
 import { commissionState, isCoproduction, isInvoiced, payAmount, paymentsOf } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
-import { byId, setting, showsOfProject } from './selectors.js';
+import { byId, setting, showCommissionPct, showsOfProject } from './selectors.js';
 import { S } from './state.js';
 
 const num = v => v==null || v==='' ? null : Number(v);
@@ -31,7 +31,7 @@ export const offLinesOf = projectId => S.db.budget_lines.filter(l => !l.show_id 
 
 export const commissionOf = s => paymentsOf(s.id).find(p => p.kind === 'artbo');
 // coproduction sans ligne de commission réelle : aucune commission (jamais calculée sur le cachet, décision du 27/10/2026)
-export const commissionAmount = s => { const p = commissionOf(s); return p ? payAmount(p) || 0 : isCoproduction(s) ? 0 : r2((Number(s.fee_ht)||0) * (Number(s.artbo_pct ?? 15)||0) / 100); };
+export const commissionAmount = s => { const p = commissionOf(s); return p ? payAmount(p) || 0 : isCoproduction(s) ? 0 : r2((Number(s.fee_ht)||0) * showCommissionPct(s) / 100); };
 
 /** Ligne de solde artiste (automatique ou ajoutée à la main / par une pièce) : comptée une seule fois, dans le solde */
 export const isSolde = l => l.auto === 'solde_artiste' || l.category === 'Solde artiste';

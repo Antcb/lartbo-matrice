@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.46.0 — 27/10/2026
+- Finances (lot V1.46a) : rappel « Facture à envoyer » 3 jours après la facture faite, impayés relancés sans limite avec suspension possible, acompte par défaut à 0 % respecté, commission par défaut de l'artiste ou des Réglages (plus de 15 ni de 0 en dur), compte d'encaissement choisi seulement au paiement, justificatif de dépense jamais marqué payé
+
+
 ## 1.45.2 — 27/10/2026
 - Pennylane : plus de bouton « Créer » sur une facture déjà émise hors Pennylane (ex. Tout Se Chante) ; la fonction serveur refuse aussi ce cas
 

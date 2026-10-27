@@ -12,7 +12,7 @@ import { BILL_KINDS, billPct, isCoproduction, isInvoiced, payAmount, paymentsOf,
 import { CONFIRMED_PROD, CONTRACTS } from './constants.js';
 import { insert, refreshShowSide, remove, save } from './data.js';
 import { isBookingOnly, prepareMail } from './mail.js';
-import { byId, projFilterOk, setting } from './selectors.js';
+import { byId, defaultAcompte, projFilterOk, showCommissionPct } from './selectors.js';
 import { S, setProjects } from './state.js';
 import { openModal } from './ui/modal.js';
 import { esc, eur2, fmtDate, toast } from './utils.js';
@@ -64,9 +64,9 @@ export async function validateTerms(showId){
   const acs = acomptesOf(showId);
   const locked = isInvoiced;                       // facture émise : envoyée, payée, numérotée ou dans Pennylane (§6.4)
   const soldeLock = !booking && soldeInvoiced(showId);   // solde facturé : plus aucun acompte ne change (§6.4)
-  const def = Number(setting('default_acompte_pct') ?? 50) || 50;
+  const def = defaultAcompte();   // 0 % gardé tel quel (= sans acompte) ; 50 seulement si le réglage est vide (§6.4)
   // coproduction (décision du 27/10/2026) : aucun acompte proposé par défaut — seulement ceux qui existent réellement
-  const pcts = acs.length ? acs.map(p => ({v: r2(billPct(p) ?? 0), due: p.due_label || ''})) : isCoproduction(s) ? [] : [{v: def, due: ''}];
+  const pcts = acs.length ? acs.map(p => ({v: r2(billPct(p) ?? 0), due: p.due_label || ''})) : isCoproduction(s) || def === 0 ? [] : [{v: def, due: ''}];   // réglage à 0 % : date sans acompte
   // chaque acompte : son % et son échéance (le 1er : à la signature du contrat, sauf autre choix)
   const acRows = (list) => list.map(({v, due}, i) => `<div class="terms-ac"><span>Acompte ${list.length > 1 ? i + 1 : ''}</span>
       <input type="number" step="any" inputmode="decimal" class="narrow" data-terms-ac="${i}" value="${v}" ${soldeLock ? 'disabled title="Solde déjà facturé : les acomptes ne changent plus"' : acs[i] && locked(acs[i]) ? 'disabled title="Facture déjà émise : elle ne se modifie plus"' : ''} aria-label="% de l’acompte ${i + 1}"> %
@@ -76,7 +76,7 @@ export async function validateTerms(showId){
     : `<div class="field full"><label>Acomptes</label>
       <div class="terms-acs">
         ${soldeLock ? '<p class="mode-note">Le solde est déjà facturé : les acomptes ne peuvent plus changer (seules les échéances se modifient).</p>' : ''}
-        <label class="terms-n">Nombre d’acomptes <select id="terms-n" ${soldeLock ? 'disabled' : ''}>${[0, 1, 2, 3].map(n => `<option ${n === (acs.length || (isCoproduction(s) ? 0 : 1)) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <label class="terms-n">Nombre d’acomptes <select id="terms-n" ${soldeLock ? 'disabled' : ''}>${[0, 1, 2, 3].map(n => `<option ${n === (acs.length || (isCoproduction(s) || def === 0 ? 0 : 1)) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <div id="terms-list">${acRows(pcts)}</div>
         <div class="terms-solde" id="terms-solde"></div>
       </div>
@@ -88,7 +88,7 @@ export async function validateTerms(showId){
       {k: 'contract_type', label: 'Type de contrat', type: 'select', options: CONTRACTS, blank: false},
       {k: 'fee_ht', label: 'Cachet HT (€)', type: 'number'},
       {k: 'vat_rate', label: 'TVA du cachet (%)', type: 'number', placeholder: '5.5'},
-      {k: 'artbo_pct', label: 'Commission L’ArtBo (%)', type: 'number', placeholder: '15'},
+      {k: 'artbo_pct', label: 'Commission L’ArtBo (%)', type: 'number', placeholder: String(showCommissionPct({...s, artbo_pct: null}))},   // vide : % de l'artiste, sinon Réglages selon le mode de la date (§6.3)
       {k: 'show_time', label: 'Heure de passage', placeholder: 'ex. 22h30'},
       {k: 'set_length', label: 'Durée du set', placeholder: 'ex. 1h15'},
       ...(booking ? [] : [{k: 'invitations', label: 'Invitations producteur', type: 'number', placeholder: '10'}]),

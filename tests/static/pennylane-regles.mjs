@@ -2,7 +2,7 @@
 // Lancé par « npm test » (node --experimental-strip-types). Module testé : supabase/functions/pennylane/regles.ts
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { acomptesFactures, caduc, emise, factureIsolee, figerMontant, rangeeDansLeDrive, montantAttendu, payable, relieAuDevis } from '../../supabase/functions/pennylane/regles.ts';
+import { acomptesFactures, caduc, emise, factureIsolee, figerMontant, rangeeDansLeDrive, montantAttendu, payable, pctCommission, relieAuDevis } from '../../supabase/functions/pennylane/regles.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -85,6 +85,19 @@ t('v1.45.2 : une facture déjà émise (numéro, envoi, paiement) ne reçoit jam
   assert.ok(action.indexOf('if (emise(p)) return json(') > 0 && action.indexOf('if (emise(p)) return json(') < action.indexOf("create('customer_invoices'"), 'refus avant toute création');
   for (const f of ['sent_at', 'paid_at', 'invoice_number', 'pennylane_id']) assert.equal(emise({ kind: 'artbo', [f]: 'x' }), true, 'commission booking émise par ' + f);
   assert.equal(emise({ kind: 'artbo', invoice_number: '   ' }), false, 'un numéro fait d’espaces ne compte pas (comme l’application)');
+});
+
+t('v1.46 : commission — % de la ligne > % de la date > défaut (artiste / Réglages, fonction SQL) ; jamais 15 ni 0 en dur', () => {
+  assert.equal(pctCommission(12, 8, 20), 12);
+  assert.equal(pctCommission(null, 8, 20), 8);
+  assert.equal(pctCommission('', '', 20), 20);
+  assert.equal(pctCommission(null, null, '17.5'), 17.5);
+  assert.equal(pctCommission(0, 8, 20), 0, 'un 0 saisi sur la ligne reste 0');
+  assert.equal(pctCommission(null, null, null), null, 'rien de connu : pas de valeur inventée');
+  const src = readFileSync(new URL('../../supabase/functions/pennylane/index.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /artbo_pct \?\? 15/, 'plus de 15 en dur');
+  assert.match(src, /admin\.rpc\('default_commission_pct'/, 'défaut lu dans la base');
+  assert.match(src, /invoiced_on: x\.date/, 'date de la facture Pennylane reprise à la liaison (rappel « Facture à envoyer »)');
 });
 
 let ko = 0;

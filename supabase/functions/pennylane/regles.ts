@@ -33,6 +33,12 @@ export const figerMontant = (p: Ligne) => ['acompte', 'solde'].includes(p.kind) 
 /** Ligne pour laquelle la Matrice peut créer un brouillon de facture isolée */
 export const factureIsolee = (p: Ligne, mode: string | null | undefined) => isBooking(mode) ? p.kind === 'artbo' : p.kind === 'autre';
 
+/** % de commission d'une ligne (§6.3, v1.46) : % de la ligne > % de la date > défaut (% de l'artiste, sinon Réglages selon le mode
+ *  de la date : fonction SQL default_commission_pct) ; null si aucun n'est connu — jamais de 15 ni de 0 en dur.
+ *  Même règle côté application : js/calc.js payAmount, js/selectors.js showCommissionPct. */
+export const pctCommission = (linePct: unknown, showPct: unknown, defaut: unknown): number | null =>
+  plein(linePct) ? Number(linePct) : plein(showPct) ? Number(showPct) : plein(defaut) ? Number(defaut) : null;
+
 const r2 = (n: number) => Math.round(n * 100) / 100;
 /** Montant HT prévu d'un acompte (saisi, ou % × cachet) */
 export const montantAcompte = (p: Ligne, fee: number) =>
