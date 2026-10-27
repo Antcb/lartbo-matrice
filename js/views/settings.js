@@ -62,7 +62,7 @@ export function viewSettings(){
       <p class="help mb">Le script Google installé sur le compte production@ crée les dossiers Drive des dates et les brouillons Gmail.</p>
       <div class="steps">
         <label for="set-gas">Adresse du script (Apps Script)</label><input id="set-gas" data-setting-text="drive_webhook_url" value="${esc(setting('drive_webhook_url')||'')}" placeholder="https://script.google.com/macros/s/…/exec">
-        <label>Code secret à coller dans le script</label><span class="secret-line"><code>${esc(String(setting('drive_webhook_secret')||'').slice(0,8))}…</code> <button class="btn sm ghost" data-act="copySecret">Copier</button></span>
+        <label>Code secret du script</label><span class="help">Gardé sur le serveur, jamais affiché ici (propriété WEBHOOK_SECRET du script ; valeur dans Supabase › table settings › drive_webhook_secret).</span>
         <label for="set-mac">Dossier Google Drive sur le Mac</label><input id="set-mac" data-setting-text="drive_mac_root" value="${esc(setting('drive_mac_root')||'')}" placeholder="/Users/…/Library/CloudStorage/GoogleDrive-…/Mon Drive">
         <label for="set-emp">Dossier Drive des salariés</label><input id="set-emp" data-setting-text="employees_folder_id" value="${esc(setting('employees_folder_id')||'')}" placeholder="ID ou lien du dossier">
         <label for="set-fin">Dossier « 01_Finance » (bulletins de paie, notes de frais)</label><input id="set-fin" data-setting-text="finance_folder_id" value="${esc(setting('finance_folder_id')||'')}" placeholder="Lien du dossier">
@@ -101,10 +101,10 @@ export function viewSettings(){
     <div class="panel pad"><h3 class="panel-title">Brevo</h3>
       <p class="help mb">Chaque nouveau contact de la Matrice qui a un mail est ajouté automatiquement dans Brevo (mail, prénom, nom, structure). Un mail déjà présent dans Brevo n’est jamais modifié : ni ses infos, ni ses listes, et un désabonné reste désabonné. Dans Brevo : ton nom en haut à droite › « SMTP et API » › onglet « Clés API » › « Générer une nouvelle clé API », puis colle-la ici. La liste est facultative : son numéro est dans Contacts › Listes (colonne ID).</p>
       <div class="steps">
-        <label for="set-brevo">Clé API Brevo</label><input id="set-brevo" type="password" autocomplete="off" data-1p-ignore data-setting-text="brevo_api_key" value="${esc(setting('brevo_api_key')||'')}" placeholder="xkeysib-…">
+        <label for="set-brevo">Clé API Brevo</label><span class="secret-line"><input id="set-brevo" type="password" autocomplete="off" data-1p-ignore data-brevo-key="1" placeholder="xkeysib-…"> <span class="muted" id="brevo-state">…</span></span>
         <label for="set-brevo-list">Liste Brevo (n°, ou plusieurs séparés par des virgules)</label><input id="set-brevo-list" data-setting-text="brevo_list_id" value="${esc(setting('brevo_list_id')||'')}" placeholder="ex. 3">
       </div>
-      <div class="vh-actions mt"><button class="btn sm" data-act="brevoSyncAll" ${setting('brevo_api_key') ? '' : 'disabled title="Colle d’abord la clé API"'}>Envoyer tous les contacts existants à Brevo</button></div></div>
+      <div class="vh-actions mt"><button class="btn sm" data-act="brevoSyncAll">Envoyer tous les contacts existants à Brevo</button></div></div>
     <div class="panel pad"><h3 class="panel-title">IA (résumés de suivi)</h3>
       <p class="help mb">Le bouton « Mettre à jour avec l’IA » d’un suivi utilise Gemini, l’IA gratuite de Google. Va sur <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> avec le compte production@, clique sur « Create API key » (« Créer une clé API »), copie la clé (elle commence par « AIza » ou « AQ. ») et colle-la ici. Les demandes partent toujours des serveurs de Paris : Google applique alors ses règles européennes (pas d’entraînement de son IA sur vos données, pas de relecture humaine).</p>
       <div class="steps">
@@ -138,6 +138,9 @@ export async function refreshAiState(){
   const pl = document.getElementById('pl-state'); if (!pl) return;
   const {data: ok} = await sb.rpc('pennylane_status');
   pl.textContent = ok ? '✓ jeton enregistré' : 'pas encore de jeton';
+  const br = document.getElementById('brevo-state'); if (!br) return;
+  const {data: brevo} = await sb.rpc('brevo_key_status');   // la clé Brevo n'est jamais renvoyée au navigateur (v1.47)
+  br.textContent = brevo ? '✓ clé enregistrée' : 'pas encore de clé';
 }
 
 document.addEventListener('change', async e => {
@@ -148,6 +151,13 @@ document.addEventListener('change', async e => {
     const {error} = await sb.rpc('set_ai_key', {k: m ? m[0] : ''});
     if (error) return toast(error.message, true);
     e.target.value = ''; toast(m ? 'Clé IA enregistrée' : 'Clé IA retirée'); refreshAiState(); return;
+  }
+  if (e.target.dataset.brevoKey){
+    const v = e.target.value.trim(), m = v.match(/xkeysib-[\w-]+/);
+    if (v && !m) return toast('Ce n’est pas une clé API Brevo : elle commence par « xkeysib- » (Brevo › SMTP et API › Clés API)', true);
+    const {error} = await sb.rpc('set_brevo_key', {k: m ? m[0] : ''});
+    if (error) return toast(error.message, true);
+    e.target.value = ''; toast(m ? 'Clé Brevo enregistrée' : 'Clé Brevo retirée'); refreshAiState(); return;
   }
   if (e.target.dataset.plKey){
     const v = e.target.value.trim().replace(/^Bearer\s+/i, '');
@@ -160,7 +170,6 @@ document.addEventListener('change', async e => {
     let v = e.target.value.trim();
     if (/_id$/.test(kt) && kt !== 'brevo_list_id') v = (v.match(/[-\w]{25,}/) || [v])[0];   // un lien Drive collé → son identifiant
     if (kt === 'brevo_list_id') v = (v.match(/\d+/g) || []).join(', ');   // « #2 » → 2
-    if (kt === 'brevo_api_key' && v){ const k = v.match(/xkeysib-[\w-]+/); if (!k){ toast('Ce n’est pas une clé API Brevo : elle commence par « xkeysib- » (Brevo › SMTP et API › Clés API)', true); e.target.value = setting('brevo_api_key') || ''; return; } v = k[0]; }
     if (await setSetting(kt, v)){ e.target.value = v; toast('Réglage enregistré'); if (/^mail_font/.test(kt)) render(); }
     return; }
   const k = e.target.dataset.actSetting; if (!k) return;

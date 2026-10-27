@@ -33,8 +33,8 @@ const region = () => Deno.env.get('SB_REGION') || Deno.env.get('DENO_REGION') ||
  * `accept` transforme la réponse (ou lève une erreur si elle est inutilisable).
  */
 async function askGemini<T>(gkey: string, parts: unknown[], generationConfig: Record<string, unknown>, accept: (txt: string) => T): Promise<{ ok: T } | { error: string }> {
-  const list = await (await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + gkey)).json();
-  if (list.error) return { error: 'Gemini : ' + list.error.message };
+  const list = await (await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': gkey } })).json();   // clé en en-tête, jamais dans l'adresse (v1.47)
+  if (list.error) { console.error('Gemini', list.error.message); return { error: [400, 401, 403].includes(list.error.code) ? 'Clé IA refusée par Google : vérifie-la dans Réglages › IA.' : 'Gemini indisponible pour le moment : réessaie dans quelques minutes.' }; }
   const models: string[] = (list.models || [])
     .filter((m: any) => /flash/i.test(m.name) && !/lite|image|tts|audio|live|omni|thinking-exp|embedding/i.test(m.name)
       && (m.supportedGenerationMethods || []).includes('generateContent'))
@@ -54,8 +54,8 @@ async function askGemini<T>(gkey: string, parts: unknown[], generationConfig: Re
       if (Date.now() > deadline) break;
       tries++;
       try {
-        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${gkey}`, {
-          method: 'POST', headers: { 'content-type': 'application/json' },
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/${model}:generateContent`, {
+          method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': gkey },
           body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig }),
         });
         const out = await r.json();
@@ -68,7 +68,7 @@ async function askGemini<T>(gkey: string, parts: unknown[], generationConfig: Re
     }
   }
   if (tries && busy === tries) return { error: 'Gemini est saturé en ce moment (forte demande chez Google). Réessaie dans quelques minutes.' };
-  return { error: 'Gemini : ' + (lastErr || 'pas de réponse') };
+  console.error('Gemini', lastErr); return { error: 'Gemini n’a pas pu répondre : réessaie dans quelques minutes.' };
 }
 
 Deno.serve(async (req) => {
@@ -140,16 +140,17 @@ Deno.serve(async (req) => {
         ] }] }),
       });
       const out = await r.json();
-      if (!r.ok) return json({ error: 'IA : ' + (out?.error?.message || r.status) }, 502);
+      if (!r.ok) { console.error('IA', out?.error?.message || r.status); return json({ error: 'L’IA n’a pas pu répondre : réessaie dans quelques minutes.' }, 502); }
       summary = (out.content || []).filter((c: any) => c.type === 'text').map((c: any) => c.text).join('\n').trim();
     }
     summary = summary.replace(/^```[a-z]*\n?|```$/g, '').trim();
     if (!summary) return json({ error: "L'IA n'a rien renvoyé" }, 502);
 
     const { error: ue } = await user.from('prospects').update({ summary }).eq('id', p.id);
-    if (ue) return json({ error: ue.message }, 500);
+    if (ue) { console.error(ue.message); return json({ error: 'Résumé non enregistré : réessaie dans un instant.' }, 500); }
     return json({ summary });
   } catch (err) {
-    return json({ error: String((err as any)?.message || err) }, 500);
+    console.error(err);   // détail technique dans les journaux du serveur seulement (v1.47)
+    return json({ error: 'Erreur inattendue du serveur : réessaie dans un instant.' }, 500);
   }
 });

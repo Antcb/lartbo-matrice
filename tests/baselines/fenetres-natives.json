@@ -1,8 +1,8 @@
 {
   "commentaire": "Fenêtres natives encore présentes (à remplacer, lot B12). Ce nombre ne doit jamais augmenter.",
-  "total": 40,
+  "total": 39,
   "fichiers": {
-    "js/actions.js": 19,
+    "js/actions.js": 18,
     "js/artist-export.js": 1,
     "js/budget-actions.js": 5,
     "js/commission.js": 1,

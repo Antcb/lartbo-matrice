@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.47.0 — 27/10/2026
+- Sécurité (lot V1.47) : codes secrets illisibles par le navigateur (scripts Google appelés par un relais serveur, clé Brevo saisie côté serveur), clé IA hors des adresses, messages d'erreur du serveur en français, politique de sécurité (CSP) sur toutes les pages
+
+
 ## 1.46.1 — 27/10/2026
 - Tâches (lot V1.46b) : fenêtre de dialogue de l'application pour les suppressions (« Annuler » ne supprime plus jamais une relance téléphone), date de réalisation notée depuis la fenêtre de tâche avec 5 s pour annuler, fichiers stockés effacés avec la tâche ou le suivi supprimé
 

@@ -14,7 +14,7 @@
 Sans argument (`python3 tools/bump_version.py`), seul le rafraîchissement des fichiers est refait
 avec la version actuelle.
 """
-import datetime, pathlib, re, sys
+import base64, datetime, hashlib, pathlib, re, sys
 
 root = pathlib.Path(__file__).resolve().parent.parent
 config = root / "js" / "config.js"
@@ -58,10 +58,26 @@ block = f'''<!-- import-map:début (généré par tools/bump_version.py) -->
   }}
   </script>
   <!-- import-map:fin -->'''
+# Politique de sécurité des pages (CSP) : scripts et styles du site seulement (+ polices Google), connexions limitées à Supabase
+# (production et test) et aux services de carte / d'adresses ; images https (cartes, aperçus) et cid: (images intégrées des mails
+# archivés : jamais chargées, comme avant, mais sans erreur) ; aucun cadre, aucun objet.
+# Les scripts Google sont appelés par le serveur (fonction script-google), jamais par le navigateur.
+CSP = ("default-src 'self'; script-src 'self' 'sha256-{importmap}'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+       "font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https: cid:; "
+       "connect-src 'self' https://ypvvjoqhzddzbmerypdc.supabase.co wss://ypvvjoqhzddzbmerypdc.supabase.co "
+       "https://dthfocplfzzmkgaxhmwk.supabase.co wss://dthfocplfzzmkgaxhmwk.supabase.co https://data.geopf.fr https://photon.komoot.io "
+       "https://nominatim.openstreetmap.org https://router.project-osrm.org; "
+       "frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'")
 for page in (index, root / "fiche.html", root / "rh.html", root / "artiste.html"):   # pages publiques : fiche de renseignements, fiche salarié, fiche artiste
     if not page.exists(): continue
     s = page.read_text(encoding="utf-8")
     s = re.sub(r"<!-- import-map:début.*?import-map:fin -->", block, s, flags=re.S)
+    # Politique de sécurité (CSP, lot Sécurité v1.47) : le seul script en ligne autorisé est la carte d'import, par son empreinte
+    inline = re.search(r'<script type="importmap">(.*?)</script>', s, flags=re.S).group(1)
+    digest = base64.b64encode(hashlib.sha256(inline.encode("utf-8")).digest()).decode()
+    meta = f'<meta http-equiv="Content-Security-Policy" content="{CSP.format(importmap=digest)}">'
+    if "Content-Security-Policy" in s: s = re.sub(r'<meta http-equiv="Content-Security-Policy"[^>]*>', meta, s)
+    else: s = s.replace('<meta name="viewport"', meta + '\n  <meta name="viewport"', 1)
     s = re.sub(r'(css/styles\.css|css/fiche\.css|js/app\.js|js/fiche\.js|js/rh\.js|js/artiste\.js)\?v=[\w.-]+', lambda m: f"{m.group(1)}?v={version}", s)
     page.write_text(s, encoding="utf-8")
 print(f"version {version} — {len(mods)} modules")

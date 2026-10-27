@@ -9,15 +9,19 @@
  *  2. À gauche « Services » › + › « Gmail API » › Ajouter (sert aux relances dans le même fil).
  *  3. Déployer › Nouveau déploiement › Application Web · Exécuter en tant que : moi · Accès : Tout le monde.
  *  4. Coller l'adresse du déploiement (…/exec) dans Réglages › Prospection.
+ *  5. Paramètres du projet (roue dentée) › Propriétés du script › ajouter WEBHOOK_SECRET = le code secret des scripts
+ *     (même valeur que le script principal ; il n'est plus affiché dans la Matrice : Supabase › table settings › drive_webhook_secret).
  *
- * Le code secret ci-dessous est rempli automatiquement quand on copie le script depuis les Réglages.
+ * Le code secret n'est jamais écrit dans ce code (v1.47) : il est lu dans les propriétés du script. Un script déjà installé
+ * avec le code écrit en dur continue de fonctionner tel quel (la Matrice envoie toujours le même code, depuis son serveur).
  */
-var SECRET = '__SECRET__';
+var SECRET = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET') || '';
 
 function doPost(e) {
   var out;
   try {
     var body = JSON.parse(e.postData.contents || '{}');
+    if (!SECRET) return json_({ ok: false, error: 'Script de prospection : ajoute la propriété WEBHOOK_SECRET (Paramètres du projet › Propriétés du script)' });
     if (!body.secret || body.secret !== SECRET) return json_({ ok: false, error: 'Code secret du script de prospection incorrect' });
     var a = body.action;
     if (a === 'ping') out = { ok: true, account: Session.getEffectiveUser().getEmail() };

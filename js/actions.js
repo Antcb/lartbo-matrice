@@ -142,8 +142,9 @@ export const ACTIONS = {
   relance: t => openProspection(null, {prospectId: t.dataset.id}),
   copyProspectScript: async () => {
     try {
-      const code = (await (await fetch('apps-script/Prospection.gs?v=' + Date.now())).text()).replace('__SECRET__', setting('drive_webhook_secret') || '');
-      await navigator.clipboard.writeText(code); toast('Code du script copié : colle-le dans le nouveau projet Apps Script');
+      // le code secret n'est plus injecté (v1.47) : le script le lit dans ses propriétés (WEBHOOK_SECRET), voir l'en-tête du script
+      const code = await (await fetch('apps-script/Prospection.gs?v=' + Date.now())).text();
+      await navigator.clipboard.writeText(code); toast('Code du script copié : colle-le dans le nouveau projet Apps Script, puis ajoute la propriété WEBHOOK_SECRET (voir l’en-tête du code)');
     } catch (err) { toast('Copie impossible : ' + err.message, true); }
   },
   copyMainScript: async () => {
@@ -162,13 +163,13 @@ export const ACTIONS = {
     if (!confirm(`Envoyer dans Brevo les contacts de la Matrice (${n} avec un mail) ? Seuls ceux qui ne sont pas encore dans Brevo sont ajoutés : les autres (et les désabonnés) ne sont pas touchés.`)) return;
     toast('Envoi à Brevo…');
     try {
-      const r = await fetch(`${CFG.SUPABASE_URL}/functions/v1/brevo-sync`, {method:'POST', headers:{'Content-Type':'application/json', 'x-hook-secret': setting('brevo_hook_secret') || ''}, body: JSON.stringify({all:true})});
-      const out = await r.json();
+      // session de l'utilisateur (compte de l'équipe) au lieu du code secret du déclencheur (v1.47)
+      const {data, error} = await sb.functions.invoke('brevo-sync', {body: {all: true}});
+      const out = data || await error?.context?.json?.().catch(() => null) || {ok: false, error: 'Brevo injoignable pour le moment : réessaie dans un instant.'};
       if (!out.ok) throw new Error(out.error || 'Erreur Brevo');
       toast(out.count ? `${out.count} nouveaux contacts envoyés : Brevo les importe (quelques minutes)` : 'Tous les contacts sont déjà dans Brevo');
     } catch (err) { toast(err.message, true); }
   },
-  copySecret: async () => { try { await navigator.clipboard.writeText(setting('drive_webhook_secret')||''); toast('Code secret copié'); } catch { prompt('Code secret :', setting('drive_webhook_secret')||''); } },
   testScript: async () => { try { const out = await callScript('ping', {}); toast(`Script OK (${out.account||'compte Google'})`); } catch (err) { toast(err.message, true); } },
   driveScan: async t => { t.disabled = true; toast('Recherche des dossiers dans le Drive… (jusqu’à 1 min)');
     try { const out = await callScript('link_folders', {}); toast(`${out.linked} dossier${out.linked>1?'s':''} rattaché${out.linked>1?'s':''}`); const {loadAll} = await import('./data.js'); await loadAll(); render(); }

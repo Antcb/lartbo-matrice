@@ -8,7 +8,7 @@
 import { render } from './app.js';
 import { insert, purgeStored, remove, save, sb, signedUrl } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
-import { PROSPECT_TAGS, callScript, fill, tplLabel, tplProjects } from './mail.js';
+import { PROSPECT_TAGS, callGoogle, callScript, fill, tplLabel, tplProjects } from './mail.js';
 import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName } from './selectors.js';
 import { S, touch } from './state.js';
 import { CONFIRMED_PROD } from './constants.js';
@@ -35,9 +35,7 @@ const defaultSender = () => S.user?.email === PROD_MAIL ? 'production' : 'anthon
 export async function callProspect(action, payload, account='anthony'){
   if (account === 'production') return callScript('prospect_' + action, payload);
   if (!scriptUrl()) throw new Error('Le script de prospection n’est pas encore installé : Réglages › Prospection.');
-  const res = await fetch(scriptUrl(), {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body: JSON.stringify({secret: setting('drive_webhook_secret'), action, ...payload})});
-  const out = await res.json().catch(() => ({ok:false, error:'Réponse illisible du script de prospection'}));
+  const out = await callGoogle('prospect', action, payload);   // relais serveur : le code secret ne passe plus par le navigateur (v1.47)
   if (!out.ok) throw new Error(out.error || 'Erreur du script de prospection');
   return out;
 }
