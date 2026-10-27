@@ -144,10 +144,10 @@ test('v1.50 relecture B3 : listes de la fiche artiste — un seul message par ch
     f.querySelectorAll('input').forEach(i => { i.value = 'ok@exemple.fr'; }); out.push(u.checkMails(f).length, n());
     f.remove();
     return [...out, u.mailsOk('A <a@b.fr>, c@d.fr'), u.mailsOk('a@b.fr; x'), u.mailsOk(''), u.mailsOk(','), u.mailsOk('a@b.fr,'),
-      u.mailsOk('"Dupont, Jean" <j@x.fr>; k@y.fr'), u.mailOk('neo@exemple.fr\u200B')];
+      u.mailsOk('"Dupont, Jean" <j@x.fr>; k@y.fr'), u.mailOk('neo@exemple.fr\u200B'), u.mailOk('neo\u200B@exemple.fr'), u.mailOk('neo@exe\u200Bmple.fr'), u.mailOk('n\u202Eeo@exemple.fr'), u.mailsOk('a\u200B@b.fr, c@d.fr')];
   });
   // invisible refusé (relecture N1) : il serait enregistré tel quel hors de la table des contacts
-  expect(r).toEqual([2, 2, 2, 2, 0, 0, true, false, true, false, true, true, false]);
+  expect(r).toEqual([2, 2, 2, 2, 0, 0, true, false, true, false, true, true, false, false, false, false, false]);
   expectClean(ctx);
 });
 

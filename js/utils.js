@@ -14,7 +14,8 @@ export const eur2 = n => n==null || n==='' || isNaN(n) ? '—' : Number(n).toLoc
 export const eur = n => n==null || n==='' || isNaN(n) ? '—' : Number(n).toLocaleString('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2});
 
 /** Mail valide (CONVENTIONS §3.4, Q23) : même expression que la base (contacts_clean) ; un champ vide est accepté (obligatoire vérifié à part) */
-export const MAIL_RE = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i;
+// caractères invisibles (largeur nulle, inversion d'affichage…) refusés n'importe où dans l'adresse (relecture v1.50a)
+export const MAIL_RE = /^[^@\s\u200B-\u200F\u202A-\u202E\u2060\uFEFF]+@[^@\s\u200B-\u200F\u202A-\u202E\u2060\uFEFF]+\.[a-z]{2,}$/i;
 // une adresse contenant un caractère invisible est refusée (elle serait enregistrée telle quelle hors de la table des contacts)
 const mailText = v => String(v ?? '').trim();
 export const mailOk = v => !mailText(v) || MAIL_RE.test(mailText(v));
