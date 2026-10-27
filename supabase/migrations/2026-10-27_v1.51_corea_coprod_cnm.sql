@@ -7,6 +7,7 @@
 --    déductibles (JSON « corea »).
 -- 3. Coproduction : « Clôturer le résultat » (résultat définitif enregistré, montants verrouillés), réouverture explicite,
 --    motivée et tracée (table result_closures, jamais modifiée ni effacée) ; date de paiement réel du reversement.
+-- 4. Commission en coréalisation : base = MG + part du résultat validée (shows.corea_share) ; payment_amount_for mise à jour.
 -- Aucune donnée existante n'est modifiée (colonnes ajoutées vides ; aucun update / delete).
 -- Retour arrière : voir la fin du fichier.
 -- =====================================================================================================
@@ -189,8 +190,83 @@ drop trigger if exists result_lock_budget_lines on public.budget_lines;
 create trigger result_lock_budget_lines before insert or update or delete on public.budget_lines
   for each row execute function public.result_lock_budget_lines();
 
+-- ─────────────── 4. Commission en coréalisation : sur MG + part du résultat validée (décision d'Anthony du 27/10/2026, au soir) ───────────────
+-- rémunération brute de l'artiste = MG (cachet HT) + part du résultat net après break ; commission = brute × taux (paramétrage existant :
+-- ligne > date > artiste > Réglages, aucune exception par nom) ; nette = brute − commission. La part n'entre dans la base qu'une fois
+-- VALIDÉE sur la date (shows.corea_share, vide = MG seul). Une commission déjà figée (montant saisi / figé au versement ou à la facture)
+-- n'est jamais recalculée ; aucune ligne existante n'est modifiée (colonne ajoutée vide).
+alter table public.shows add column if not exists corea_share numeric check (corea_share is null or corea_share >= 0);
+comment on column public.shows.corea_share is 'Coréalisation : part du résultat net après break VALIDÉE (HT) ; entre dans la base de la commission (MG + part)';
+
+create or replace function public.corea_share_of(p_show uuid) returns numeric
+language sql stable set search_path = public as $$
+  select coalesce((select s.corea_share from public.shows s where s.id = p_show and s.contract_type = 'Co-Réalisation'), 0)
+$$;
+revoke all on function public.corea_share_of(uuid) from public, anon, authenticated, service_role;
+grant execute on function public.corea_share_of(uuid) to authenticated, service_role;
+
+-- même fonction que la v1.46 ; seule la base des commissions (artbo, partner) change
+create or replace function public.payment_amount_for(p public.show_payments, p_fee numeric, p_artbo numeric, p_partner numeric, p_mode text)
+ returns numeric
+ language plpgsql
+ stable
+ set search_path to 'public'
+as $function$
+declare done numeric; fixed numeric; fee numeric := coalesce(p_fee, 0); pct_com numeric; base numeric;
+begin
+  if p.amount is not null then return p.amount; end if;
+  if p.kind in ('artbo', 'partner') then
+    -- % de la ligne (commission) > % de la date > % de l'artiste > Réglages selon le mode de la date (v1.46 : plus de repli à 0)
+    pct_com := coalesce(p_artbo, public.default_commission_pct(p.show_id, p_mode), 0);
+    -- base (v1.51) : cachet HT ; en coréalisation, MG + part du résultat VALIDÉE (rémunération brute de l'artiste)
+    base := fee + public.corea_share_of(p.show_id);
+    if p.kind = 'artbo' then return round(base * coalesce(p.pct, pct_com)) / 100; end if;
+    return round(base * pct_com * coalesce(p.pct, p_partner, 0) / 100) / 100;
+  end if;
+  if p.kind = 'solde' and coalesce(p_mode, 'production') <> 'booking' then
+    -- solde de production : cession − acomptes facturés − autres soldes figés ; un autre solde calculé placé avant lui prend le reste
+    -- (plusieurs soldes = anomalie signalée par l'application). Sert au gel à l'émission (= soldeDue en JS). Pour un solde DÉJÀ émis
+    -- sans montant (historique, 0 après régularisation), le JS (payAmount) prend cachet × % : les deux varient avec le cachet, la garde
+    -- shows_frozen_guard refuse donc les mêmes changements que changeBlocked (relecture D1, point 1)
+    if exists (select 1 from public.show_payments q where q.show_id = p.show_id and q.kind = 'solde' and q.id <> p.id and q.amount is null
+               and not public.payment_is_emitted(q) and (coalesce(q.sort, 0) < coalesce(p.sort, 0) or (coalesce(q.sort, 0) = coalesce(p.sort, 0) and q.id::text < p.id::text))) then
+      return 0;
+    end if;
+    select coalesce(sum(case when a.amount is not null then a.amount when a.pct is null then 0 else round(fee * a.pct) / 100 end), 0) into done
+      from public.show_payments a where a.show_id = p.show_id and a.kind = 'acompte' and a.id <> p.id and public.payment_is_emitted(a);
+    select coalesce(sum(case when q.amount is not null then q.amount when q.pct is null then 0 else round(fee * q.pct) / 100 end), 0) into fixed
+      from public.show_payments q where q.show_id = p.show_id and q.kind = 'solde' and q.id <> p.id and (q.amount is not null or public.payment_is_emitted(q));
+    return greatest(0, round((fee - done - fixed) * 100) / 100);
+  end if;
+  if p.kind = 'cnm' or p.pct is null then return null; end if;
+  return round(fee * p.pct) / 100;
+end $function$;
+
+revoke all on function public.payment_amount_for(public.show_payments, numeric, numeric, numeric, text) from public, anon, authenticated, service_role;
+grant execute on function public.payment_amount_for(public.show_payments, numeric, numeric, numeric, text) to authenticated, service_role;
+
+-- garde : la part validée (ou le contrat) ne change pas si une commission / part partenaire déjà émise ou versée SANS montant figé en
+-- dépend (son montant changerait) — même règle que shows_frozen_guard pour le cachet et les % (l'application refuse aussi : changeBlocked)
+create or replace function public.corea_share_guard() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if (case when old.contract_type = 'Co-Réalisation' then coalesce(old.corea_share, 0) else 0 end)
+     is not distinct from (case when new.contract_type = 'Co-Réalisation' then coalesce(new.corea_share, 0) else 0 end) then return new; end if;
+  if exists (select 1 from public.show_payments p where p.show_id = new.id and p.kind in ('artbo', 'partner') and p.amount is null
+             and public.payment_is_emitted(p)) then
+    raise exception 'Une commission de cette date est déjà émise ou versée sans montant figé : la part du résultat retenue ne change plus (son montant changerait). Une régularisation se décide à part.'
+      using errcode = 'P0001';
+  end if;
+  return new;
+end $$;
+revoke all on function public.corea_share_guard() from public, anon, authenticated, service_role;
+drop trigger if exists corea_share_guard on public.shows;
+create trigger corea_share_guard before update of corea_share, contract_type on public.shows for each row execute function public.corea_share_guard();
+
 -- Retour arrière (après accord) :
 --   drop trigger result_lock_budget_lines on budget_lines ; drop trigger result_lock_shows on shows ;
 --   drop function result_lock_budget_lines(), result_lock_shows(), close_result(uuid, jsonb), reopen_result(uuid, text) ;
+--   drop trigger corea_share_guard on shows ; drop function corea_share_guard() ; recréer payment_amount_for dans sa version v1.46
+--   (la colonne corea_share vide redonne de toute façon le calcul sur le cachet seul) ; puis drop function corea_share_of(uuid) ;
 --   recréer on_show_confirmed dans sa version v1.46 (supabase/migrations/2026-10-27_v1.46_finances.sql) ;
 --   la table result_closures et les colonnes ajoutées restent (aucune perte) tant qu'une suppression n'est pas décidée.

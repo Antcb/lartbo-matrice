@@ -47,13 +47,13 @@ setSaveGuard(changeBlocked);   // aucune facture émise ne change, par aucun éc
 setSaveComplement(freezeOnEmit);   // montant figé au moment où la ligne est émise ou versée (lot C1 solde, lot D1 toutes)
 // Avertissement (lot D1) : cachet, %, TVA ou mode d'une date qui a déjà des factures émises ou des commissions / parts versées.
 // Leurs montants sont figés et ne changeront pas ; on demande quand même une confirmation (fenêtre de l'application, jamais confirm()).
-const FINANCE_FIELDS = ['fee_ht', 'artbo_pct', 'partner_pct', 'vat_rate', 'prod_mode'];
+const FINANCE_FIELDS = ['fee_ht', 'artbo_pct', 'partner_pct', 'vat_rate', 'prod_mode', 'corea_share'];
 setSaveConfirm(async (table, id, patch) => {
   if (table !== 'shows' || !patch) return true;
   const s = byId('shows', id);
   const changed = FINANCE_FIELDS.filter(k => k in patch && String(patch[k] ?? '') !== String(s?.[k] ?? ''));
   // seulement les lignes concernées : la commission L'ArtBo dépend de son %, la part partenaire des deux % ; cachet, TVA, mode : toutes
-  const touches = p => changed.some(k => !['artbo_pct', 'partner_pct'].includes(k) || k === 'artbo_pct' && ['artbo', 'partner'].includes(p.kind) || k === 'partner_pct' && p.kind === 'partner');
+  const touches = p => changed.some(k => !['artbo_pct', 'partner_pct', 'corea_share'].includes(k) || ['artbo_pct', 'corea_share'].includes(k) && ['artbo', 'partner'].includes(p.kind) || k === 'partner_pct' && p.kind === 'partner');
   const lines = s && changed.length ? emittedLinesOf(id).filter(touches) : [];
   if (!lines.length) return true;
   const LABEL = {acompte: 'Acompte', solde: 'Solde', autre: 'Autre facture', artbo: 'Commission L’ArtBo', partner: 'Part partenaire'};

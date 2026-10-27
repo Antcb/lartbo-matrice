@@ -126,8 +126,16 @@ test('v1.51 coréalisation (écran) : valider le break puis le prorata ; la part
   await page.locator('dialog.ask button', { hasText: 'Valider le prorata' }).click();
   // 100 billets × 20 € HT = 2 000 ; 50 % = 1 000 ; rémunération = MG 3 000 + 1 000
   await expect(blk).toContainText('Méthode retenue pour cette date : prorata des ventes');
-  await expect(blk.locator('tr', { hasText: 'Rémunération du producteur' })).toContainText(/4\s000,00/);
+  await expect(blk.locator('tr', { hasText: 'Rémunération brute' })).toContainText(/4\s000,00/);
+  // commission (20 %, Réglages production) sur MG + part : 800 ; nette 3 200 ; part pas encore validée → pas de ligne de facture
+  await expect(blk.locator('tr', { hasText: 'Commission L’ArtBo' })).toContainText(/800,00/);
+  await expect(blk.locator('tr', { hasText: 'Rémunération nette' })).toContainText(/3\s200,00/);
   expect(await page.evaluate(() => window.__DB.shows.find(s => s.id === 'co-2').corea.method.kind)).toBe('prorata');
+  await expect(blk.locator('[data-act="coreaPrepareInvoice"]')).toHaveCount(0);
+  await blk.locator('[data-act="coreaValidateShare"]').click();
+  await expect(page.locator('dialog.ask')).toContainText(/Commission L’ArtBo \(20\s?%\) : 800,00/);
+  await page.locator('dialog.ask button', { hasText: 'Valider la part' }).click();
+  await expect.poll(() => page.evaluate(() => window.__DB.shows.find(s => s.id === 'co-2').corea_share)).toBe(1000);
   await blk.locator('[data-act="coreaPrepareInvoice"]').click();
   await page.locator('dialog.ask button', { hasText: 'Préparer la ligne' }).click();
   await expect.poll(() => page.evaluate(() => window.__DB.show_payments.filter(p => p.show_id === 'co-2' && p.kind === 'autre').map(p => [p.label, p.amount]))).toEqual([['Part du résultat (coréalisation)', 1000]]);
@@ -214,5 +222,96 @@ test('v1.51 relecture : taxes réelles payées par chacun (reversement juste), d
   // L'ArtBo a payé la SACEM (880) → le coproducteur reverse 4 385 + 880 = 5 265 à L'ArtBo
   expect(r.copro).toEqual([8770, 9650, 880, 5265, 'partenaire', 'artbo']);
   expect([r.prorata, r.apresModif, r.cnmCharge, r.mgCharge, r.pct, r.etranger, r.copieDeBudget]).toEqual([2000, null, null, null, null, 0, 0]);
+  expectClean(ctx);
+});
+
+// ─────────── Corrections du 27/10 au soir : commission sur MG + part ; clôture bloquée par un impayé ; promotion locale ───────────
+const TIERS = n => [{ label: 'Plein', price: 21.1, vat: 5.5, qty: n }];   // 21,10 TTC = 20 € HT
+const COREA = (id, project, qty) => ({ ...BASE, id, project_id: project, date: `${Y}-09-0${id.length}`, contract_type: 'Co-Réalisation', fee_ht: 3000, ticketing_type: 'Payant/Prix Libre',
+  break_even: 400, cr_producer_pct: 50, corea: { tiers: TIERS(qty), break_validated_at: '2026-10-27T20:00:00Z', break_value: 400,
+    method: { kind: 'prorata', at: '2026-10-27T20:05:00Z', by: 'testeur@example.com', sig: `${qty}|${qty * 20}|400` } } });
+
+test('v1.51 commission en coréalisation : 20 % (Réglages) et 15 % (artiste), avec et sans break dépassé ; jamais deux fois ; jamais une charge', async ({ page }) => {
+  const ctx = await openApp(page);
+  // « Artiste Lambda » : commission de l'artiste à 15 % même en production (comme The Locos) — paramétrage, aucun nom en dur
+  await seed(page, { projects: [{ id: 'art-l', name: 'Artiste Lambda', active: true, mode: 'production', default_artbo_pct: 15 }],
+    shows: [COREA('c20', 'art-a', 500), COREA('c15', 'art-l', 500), COREA('c20b', 'art-a', 400), COREA('c15b', 'art-l', 400),
+      { ...BASE, id: 'ces', date: `${Y}-09-09`, contract_type: 'Cession', fee_ht: 3000, corea_share: 1000 }],
+    show_payments: ['c20', 'c15', 'c20b', 'c15b', 'ces'].map((id, i) => ({ id: 'com-' + id, show_id: id, kind: 'artbo', sort: 90 + i })) });
+  const st = () => page.evaluate(async () => {
+    const b = await import('./js/budget.js'), c = await import('./js/calc.js'), co = await import('./js/corea.js'), { byId } = await import('./js/selectors.js');
+    return Object.fromEntries(['c20', 'c15', 'c20b', 'c15b', 'ces'].map(id => { const s = byId('shows', id), k = co.coreaCalc(s), sb = b.showBudget(s);
+      return [id, { share: k?.share ?? null, line: c.payAmount(byId('show_payments', 'com-' + id)), com: b.commissionAmount(s), gross: sb.gross, available: sb.available, net: k?.net ?? null }]; }));
+  });
+  let r = await st();
+  // part calculée (100 billets × 20 € × 50 % = 1 000) pas encore validée : commission provisoire sur le MG seul
+  expect([r.c20.share, r.c20.line, r.c20.com, r.c20.gross]).toEqual([1000, 600, 600, 3000]);
+  expect([r.c15.share, r.c15.line, r.c15.com]).toEqual([1000, 450, 450]);
+  // break non dépassé (400 vendus pour un break de 400) : part nulle
+  expect([r.c20b.share, r.c15b.share]).toEqual([0, 0]);
+  // parts validées
+  for (const [id, v] of [['c20', 1000], ['c15', 1000], ['c20b', 0], ['c15b', 0]]) await set(page, id, { corea_share: v });
+  r = await st();
+  // 20 % : (3 000 + 1 000) × 20 % = 800 ; nette 3 200 — 15 % : 600 ; nette 3 400
+  expect([r.c20.line, r.c20.com, r.c20.gross, r.c20.available]).toEqual([800, 800, 4000, 3200]);
+  expect([r.c15.line, r.c15.com, r.c15.gross, r.c15.available]).toEqual([600, 600, 4000, 3400]);
+  // sans break dépassé : sur le MG seul (600 / 450)
+  expect([r.c20b.line, r.c20b.available, r.c15b.line, r.c15b.available]).toEqual([600, 2400, 450, 2550]);
+  // la commission n'entre pas dans le résultat partagé (net inchangé par le taux) ; hors coréalisation, aucune part dans la base
+  expect([r.c20.net, r.c15.net]).toEqual([2000, 2000]);
+  expect([r.ces.line, r.ces.gross]).toEqual([600, 3000]);
+  // une commission figée (versée / facturée) garde son montant : jamais recalculée
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js'); S.db.show_payments.find(p => p.id === 'com-c20').amount = 600; touch('show_payments'); });
+  expect((await st()).c20.line).toBe(600);
+  // une « charge » commission dans le partage : bloquante
+  await set(page, 'c15', { corea: { ...(await page.evaluate(() => window.__DB.shows.find(s => s.id === 'c15').corea)), charges: [{ label: 'Commission agent', amount: 100 }] } });
+  const k = await page.evaluate(async () => { const co = await import('./js/corea.js'), { byId } = await import('./js/selectors.js'); return co.coreaCalc(byId('shows', 'c15')); });
+  expect(k.net).toBeNull(); expect(k.issues.join(' ')).toContain('jamais une charge du résultat partagé');
+  // la part validée ne change pas si une commission émise sans montant figé en dépend (garde de l'application, comme la base)
+  const why = await page.evaluate(async () => { const { S, touch } = await import('./js/state.js'); const c = await import('./js/calc.js');
+    Object.assign(S.db.show_payments.find(p => p.id === 'com-c15'), { paid_at: '2026-10-20' });   // production : commission versée (sans montant figé, comme l'historique) touch('show_payments');
+    return c.changeBlocked('shows', 'c15', { corea_share: 1500 }); });
+  expect(why).toContain('modifierait leur montant');
+  expectClean(ctx);
+});
+
+test('v1.51 clôture de coproduction : une dépense restant à payer bloque ; promotion locale : débiteur et payeur saisis, jamais présumés', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { partners: [{ id: 'pa-x', name: 'Coprod Fictive' }],
+    shows: [{ ...COPRO, ticket_holder: 'artbo', production: { ...COPRO.production, promo_net_pct: 10 } }],
+    budget_lines: [{ id: 'cl-1', show_id: 'cp-9', project_id: 'art-a', category: 'Salle', label: 'Location salle', forecast: 3000, amount: 3000, payer: 'partenaire', paid_at: `${Y}-10-02`, sort: 1 },
+      { id: 'cl-2', show_id: 'cp-9', project_id: 'art-a', category: 'Promoteur', label: 'Technique', forecast: 1000, amount: 1000, payer: 'artbo', sort: 2 }] });
+  const close = () => page.evaluate(async () => { const { coprodClose } = await import('./js/production-budget.js'), { byId } = await import('./js/selectors.js');
+    const k = coprodClose(byId('shows', 'cp-9')); return { ok: k.ok, issues: k.issues.join(' | '), x: k.snapshot }; });
+  let k = await close();
+  // technique non payée + promo sans débiteur, payeur ni date : clôture bloquée ; le résultat prévisionnel reste calculé
+  expect(k.ok).toBe(false);
+  expect(k.issues).toContain('1 dépense réelle pas encore payée');
+  expect(k.issues).toContain('Promotion locale : indique à qui elle incombe');
+  expect(k.issues).toContain('Promotion locale : indique qui l’a réellement payée');
+  expect(k.issues).toContain('pas encore payée : note sa date de paiement');
+  // 10 000 HT − CNM 350 = 9 650 ; promo 10 % = 965 ; résultat 9 650 − 4 000 − 965 = 4 685
+  expect([k.x.promo, k.x.result]).toEqual([965, 4685]);
+  await openBudget(page, 'cp-9');
+  await expect(page.locator('.coprod-block [data-act="closeResult"]')).toBeDisabled();
+  await expect(page.locator('.coprod-block')).toContainText('pas encore payée');
+  // saisie à l'écran : promo charge commune, payée par le coproducteur ; technique payée
+  await page.locator('.coprod-block select[data-prod-path="promo_debtor"]').selectOption('commun');
+  await page.locator('.coprod-block select[data-prod-path="promo_payer"]').selectOption('partenaire');
+  await page.locator('.coprod-block input[data-prod-path="promo_paid_at"]').fill(`${Y}-10-03`);
+  await page.locator('.coprod-block input[data-prod-path="promo_paid_at"]').dispatchEvent('change');
+  await expect.poll(() => page.evaluate(() => { const p = window.__DB.shows.find(s => s.id === 'cp-9').production; return [p.promo_debtor, p.promo_payer, p.promo_paid_at, p.promo_net_pct]; }))
+    .toEqual(['commun', 'partenaire', `${Y}-10-03`, 10]);
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
+    for (const db of [S.db, window.__DB]) db.budget_lines.find(l => l.id === 'cl-2').paid_at = '2026-10-02'; touch('budget_lines'); });
+  k = await close();
+  // charge commune : 4 685 / 2 = 2 342,50 chacun ; L'ArtBo garde 9 650 (promo non présumée chez elle), a payé 1 000 → position 8 650
+  // le coproducteur a payé 3 000 + 965 de promo ; L'ArtBo reverse 8 650 − 2 342,50 = 6 307,50
+  expect(k.ok).toBe(true);
+  expect(k.x).toMatchObject({ result: 4685, shared_result: 4685, artbo_part: 2342.5, partner_part: 2342.5, net_encaisse: 9650, paid_artbo: 1000, paid_partner: 3965, transfer: 6307.5, from: 'artbo', to: 'partenaire' });
+  // promo à la charge de L'ArtBo seule : hors du résultat partagé (5 650 / 2 = 2 825), retirée de sa part → 1 860 ; coproducteur 2 825
+  await set(page, 'cp-9', { production: { ...(await page.evaluate(() => window.__DB.shows.find(s => s.id === 'cp-9').production)), promo_debtor: 'artbo' } });
+  k = await close();
+  expect(k.x).toMatchObject({ result: 4685, shared_result: 5650, artbo_part: 1860, partner_part: 2825, transfer: 6790, from: 'artbo' });
   expectClean(ctx);
 });

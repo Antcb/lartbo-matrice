@@ -11,7 +11,7 @@ import { r2 } from './utils.js';
 import { commissionState, isCoproduction, isInvoiced, payAmount, paymentsOf } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { byId, setting, showCommissionPct, showsOfProject } from './selectors.js';
-import { cnmBearer, cnmOf, isAbroad, isCnmLine } from './corea.js';
+import { cnmBearer, cnmOf, commissionBase, coreaShareOf, isAbroad, isCnmLine } from './corea.js';
 import { S } from './state.js';
 
 const num = v => v==null || v==='' ? null : Number(v);
@@ -30,7 +30,7 @@ export const offLinesOf = projectId => S.db.budget_lines.filter(l => !l.show_id 
 
 export const commissionOf = s => paymentsOf(s.id).find(p => p.kind === 'artbo');
 // coproduction sans ligne de commission réelle : aucune commission (jamais calculée sur le cachet, décision du 27/10/2026)
-export const commissionAmount = s => { const p = commissionOf(s); return p ? payAmount(p) || 0 : isCoproduction(s) ? 0 : r2((Number(s.fee_ht)||0) * showCommissionPct(s) / 100); };
+export const commissionAmount = s => { const p = commissionOf(s); return p ? payAmount(p) || 0 : isCoproduction(s) ? 0 : r2(commissionBase(s) * showCommissionPct(s) / 100); };   // coréalisation : MG + part validée (v1.51)
 
 /** Ligne de solde artiste (automatique ou ajoutée à la main / par une pièce) : comptée une seule fois, dans le solde */
 export const isSolde = l => l.auto === 'solde_artiste' || l.category === 'Solde artiste';
@@ -59,21 +59,22 @@ export function lineForecast(l){
 export const lineValue = l => l.amount != null ? Number(l.amount) : (lineForecast(l) || 0);
 export const lineStatus = l => l.paid_at || l.reimbursed_at ? 'paid' : (l.doc_number || l.file_path || l.amount != null) ? 'doc' : 'planned';
 
-/** Cachet − commission − dépenses (hors solde artiste) = ce qui peut revenir à l'artiste */
+/** Rémunération brute − commission − dépenses (hors solde artiste) = ce qui peut revenir à l'artiste.
+ *  Brute = cachet HT (MG), plus la part du résultat validée en coréalisation (v1.51) ; la commission n'est retirée qu'une fois. */
 export function availableForArtist(s){
   const out = linesOf(s.id).filter(l => !isSolde(l)).reduce((t,l) => t + lineValue(l), 0);
-  return (Number(s.fee_ht)||0) - commissionAmount(s) - out;
+  return commissionBase(s) - commissionAmount(s) - out;
 }
 
 export function showBudget(s){
   const lines = linesOf(s.id);
-  const fee = Number(s.fee_ht)||0, com = commissionAmount(s);
+  const fee = Number(s.fee_ht)||0, share = coreaShareOf(s), gross = r2(fee + share), com = commissionAmount(s);
   const expenses = lines.filter(l => !isSolde(l)).reduce((t,l) => t + lineValue(l), 0);
   const solde = lines.filter(isSolde).reduce((t,l) => t + lineValue(l), 0);
   const forecastExp = lines.filter(l => !isSolde(l)).reduce((t,l) => t + (lineForecast(l) ?? (Number(l.amount)||0)), 0);
   const docs = lines.filter(l => lineValue(l) !== 0);
-  return {fee, com, expenses: r2(expenses), forecastExp: r2(forecastExp), available: r2(fee - com - expenses), solde: r2(solde),
-    result: r2(fee - com - expenses - solde), lines,
+  return {fee, share, gross, com, expenses: r2(expenses), forecastExp: r2(forecastExp), available: r2(gross - com - expenses), solde: r2(solde),
+    result: r2(gross - com - expenses - solde), lines,
     docsIn: docs.filter(l => l.doc_number || l.file_path).length, docsAll: docs.length, paid: docs.filter(l => l.paid_at).length};
 }
 

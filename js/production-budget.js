@@ -86,11 +86,17 @@ export { lineValue };
 /**
  * 🤝 Coproduction : positions de chacun et reversement (décisions d'Anthony du 27/10/2026). Sur les montants RÉELS :
  *   - résultat global réel (DL inclus) réparti selon les % du contrat, bénéfice ou perte ;
- *   - la structure qui encaisse les recettes garde la recette nette (HT, après droits et taxes, DL inclus, promo locale déduite) ;
+ *   - la structure qui encaisse les recettes garde la recette nette (HT, après droits et taxes, DL inclus) ;
+ *   - promotion locale : débiteur contractuel (charge commune, ou une partie seule : hors du résultat partagé, retirée de sa part)
+ *     et payeur réel saisis à part, jamais présumés (v1.51) ; payée par l'un, elle compte dans sa position ;
+ *   - toute dépense réelle (ou promo) pas encore payée bloque la clôture ;
  *   - chacun a payé ses dépenses réelles (payeur « L'ArtBo » ou « coproducteur », date de paiement remplie) ;
  *   - reversement = part due − position réelle ; celui qui reçoit le reversement facture l'autre (facture préparée à la main).
  * Rien n'est payé ni facturé automatiquement ; un reversement n'est payé que quand sa date de paiement est notée.
  */
+/** Promotion locale d'une coproduction : à qui elle incombe selon le contrat (v1.51) */
+export const PROMO_DEBTORS = [['commun', 'Charge commune (déduite du résultat partagé)'], ['artbo', 'L’ArtBoristerie seule'], ['partenaire', 'Le coproducteur seul']];
+export const PROMO_PAYERS = [['artbo', 'L’ArtBoristerie'], ['partenaire', 'Le coproducteur']];
 export function coprodClose(s){
   const r = productionBudget(s, true), p = r.p, issues = [], warnings = [];
   const holder = s.ticket_holder, share = num(p.artbo_share);
@@ -107,16 +113,31 @@ export function coprodClose(s){
   const realLines = [...costLines.filter(l => l.amount != null && Number(l.amount) !== 0), ...taxPaidLines];
   const noPayer = realLines.filter(l => !['artbo', 'partenaire'].includes(l.payer));
   if (noPayer.length) issues.push(`${noPayer.length} dépense${noPayer.length > 1 ? 's' : ''} réelle${noPayer.length > 1 ? 's' : ''} sans payeur L’ArtBo / coproducteur : précise qui l’a payée`);
-  const paidBy = who => r2(realLines.filter(l => l.payer === who && l.paid_at).reduce((a, l) => a + Number(l.amount), 0));
-  const unpaid = r2(realLines.filter(l => !l.paid_at).reduce((a, l) => a + Number(l.amount), 0));
-  if (unpaid) warnings.push(`Dépenses réelles pas encore payées : ${eur2(unpaid)} (non comptées dans les positions)`);
+  // dépense restant à payer : bloque la clôture définitive (décision d'Anthony du 27/10/2026, au soir) ; le résultat prévisionnel reste visible
+  const unpaidLines = realLines.filter(l => !l.paid_at);
+  const unpaid = r2(unpaidLines.reduce((a, l) => a + Number(l.amount), 0));
+  if (unpaidLines.length) issues.push(`${unpaidLines.length} dépense${unpaidLines.length > 1 ? 's' : ''} réelle${unpaidLines.length > 1 ? 's' : ''} pas encore payée${unpaidLines.length > 1 ? 's' : ''} (${eur2(unpaid)}) : note la date de paiement avant la clôture`);
+  // promotion locale (même décision) : jamais présumée supportée ni payée par la structure qui encaisse. Débiteur contractuel
+  // (charge commune du résultat, ou L'ArtBo / le coproducteur seul) et payeur réel (avec sa date de paiement) saisis à part.
+  const promo = r.promo, debtor = p.promo_debtor || null, payer = p.promo_payer || null, promoPaid = !!p.promo_paid_at;
+  if (promo){
+    if (!PROMO_DEBTORS.some(d => d[0] === debtor)) issues.push('Promotion locale : indique à qui elle incombe selon le contrat (charge commune, L’ArtBo ou le coproducteur)');
+    if (!['artbo', 'partenaire'].includes(payer)) issues.push('Promotion locale : indique qui l’a réellement payée (L’ArtBo ou le coproducteur)');
+    if (!promoPaid) issues.push(`Promotion locale (${eur2(promo)}) pas encore payée : note sa date de paiement avant la clôture`);
+  }
+  const paidBy = who => r2(realLines.filter(l => l.payer === who && l.paid_at).reduce((a, l) => a + Number(l.amount), 0)
+    + (promo && payer === who && promoPaid ? promo : 0));
   const realTaxes = r2((r.cnmReal ?? 0) + (r.sacemReal ?? 0));
-  const net = r2(r.ht + r.dlHt - r.promo - (r.taxes - realTaxes));   // ce que garde la structure qui encaisse (taxes calculées payées par elle)
-  const result = r.resultDl, artboPart = r2(result * (share ?? 0) / 100), partnerPart = r2(result - artboPart);
+  const net = r2(r.ht + r.dlHt - (r.taxes - realTaxes));   // ce que garde la structure qui encaisse (taxes calculées payées par elle ; promo à part)
+  // résultat global (promo déduite, quel que soit son débiteur) ; promo à la charge d'une seule partie : hors du résultat partagé,
+  // retirée de la part de cette partie
+  const result = r.resultDl, own = promo && ['artbo', 'partenaire'].includes(debtor) ? promo : 0, shared = r2(result + own);
+  const artboPart = r2(shared * (share ?? 0) / 100 - (debtor === 'artbo' ? own : 0)), partnerPart = r2(result - artboPart);
   const posArtbo = r2((holder === 'artbo' ? net : 0) - paidBy('artbo')), posPartner = r2((holder === 'partenaire' ? net : 0) - paidBy('partenaire'));
   const transfer = r2(artboPart - posArtbo);   // > 0 : le coproducteur reverse à L'ArtBo ; < 0 : L'ArtBo reverse au coproducteur
   return {r, issues, warnings, ok: !issues.length, snapshot: {
-    holder, recettes_ht: r.ht, dl_ht: r.dlHt, taxes: r.taxes, cnm: r.cnm, sacem: r.sacem, costs: r.costs, promo: r.promo, result,
+    holder, recettes_ht: r.ht, dl_ht: r.dlHt, taxes: r.taxes, cnm: r.cnm, sacem: r.sacem, costs: r.costs, promo: r.promo, result, shared_result: shared,
+    promo_debtor: debtor, promo_payer: payer, promo_paid_at: p.promo_paid_at || null,
     artbo_share: share, artbo_part: artboPart, partner_part: partnerPart, partner: r.partnerName,
     net_encaisse: net, paid_artbo: paidBy('artbo'), paid_partner: paidBy('partenaire'), unpaid, pos_artbo: posArtbo, pos_partner: posPartner,
     transfer: Math.abs(transfer), from: transfer > 0 ? 'partenaire' : transfer < 0 ? 'artbo' : null, to: transfer > 0 ? 'artbo' : transfer < 0 ? 'partenaire' : null,

@@ -2,7 +2,7 @@
 // Lancé par « npm test » (node --experimental-strip-types). Module testé : supabase/functions/pennylane/regles.ts
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { acomptesFactures, caduc, emise, factureIsolee, figerMontant, rangeeDansLeDrive, montantAttendu, payable, pctCommission, relieAuDevis } from '../../supabase/functions/pennylane/regles.ts';
+import { acomptesFactures, baseCommission, caduc, emise, factureIsolee, figerMontant, rangeeDansLeDrive, montantAttendu, payable, pctCommission, relieAuDevis } from '../../supabase/functions/pennylane/regles.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -98,6 +98,15 @@ t('v1.46 : commission — % de la ligne > % de la date > défaut (artiste / Rég
   assert.doesNotMatch(src, /artbo_pct \?\? 15/, 'plus de 15 en dur');
   assert.match(src, /admin\.rpc\('default_commission_pct'/, 'défaut lu dans la base');
   assert.match(src, /invoiced_on: x\.date/, 'date de la facture Pennylane reprise à la liaison (rappel « Facture à envoyer »)');
+});
+
+t('v1.51 : commission en coréalisation sur MG + part du résultat validée ; autres contrats : le cachet seul', () => {
+  assert.equal(baseCommission({ fee_ht: 1000, contract_type: 'Co-Réalisation', corea_share: 500 }), 1500);
+  assert.equal(baseCommission({ fee_ht: 1000, contract_type: 'Co-Réalisation', corea_share: null }), 1000, 'part pas encore validée : MG seul');
+  assert.equal(baseCommission({ fee_ht: 1000, contract_type: 'Cession', corea_share: 500 }), 1000, 'hors coréalisation : jamais de part');
+  assert.equal(Math.round(baseCommission({ fee_ht: 1000, contract_type: 'Co-Réalisation', corea_share: 500 }) * pctCommission(null, null, 15)) / 100, 225);
+  const src = readFileSync(new URL('../../supabase/functions/pennylane/index.ts', import.meta.url), 'utf8');
+  assert.match(src, /amount = Math\.round\(baseCommission\(s\) \* pct\) \/ 100/, 'facture de commission sur la base');
 });
 
 let ko = 0;
