@@ -18,7 +18,7 @@ import { ask, askText, confirmAsk, copyText } from './ui/dialog.js';
 import { modalSaved } from './ui/drafts.js';
 import { applyAcompte, saveDepartments } from './views/settings.js';
 import { hasLogDraft, setLogDraft } from './views/suivi.js';
-import { $, esc, eur2, fmtDate, safeHtml, toast, today } from './utils.js';
+import { $, esc, eur2, fmtDate, safeHtml, toast, today, r2 } from './utils.js';
 import { rtStyle, rtToolbar } from './ui/richtext.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
@@ -409,7 +409,6 @@ ACTIONS['change:shows.status'] = async (t, v) => {
 export { go };
 
 // Facturation : % ↔ HT liés, solde = 100 % − les autres lignes, jamais plus de 100 % du cachet
-const r2 = n => Math.round(n * 100) / 100;
 const othersPct = (pay, withSolde) => paymentsOf(pay.show_id).filter(p => BILL_KINDS.includes(p.kind) && p.id !== pay.id && (withSolde || p.kind !== 'solde' || isInvoiced(p)))
   .reduce((t, p) => t + (billPct(p) || 0), 0);
 /** Remet le solde à « ce qui reste » (s'il n'est pas encore envoyé) */

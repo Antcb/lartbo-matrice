@@ -16,7 +16,7 @@ import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow } from './ui/bits.js';
 import { hiddenFields, openModal } from './ui/modal.js';
-import { $, downloadCSV, esc, fmtDate, norm, toast, today, workDay } from './utils.js';
+import { $, downloadCSV, esc, fmtDate, norm, toast, today, workDay, addDays } from './utils.js';
 import { driveHTML } from './views/production.js';
 import { cancelAutoRelances, closeNoAnswer, deleteProspect, prospectDeleteAsk } from './prospection.js';
 import { afterFeeChange, askConfirmation, becameConfirmed } from './confirm-flow.js';
@@ -174,7 +174,7 @@ export const driveId = s => { const m = String(s).match(/folders\/([\w-]{10,})/)
 /** Tâche Booking : à réaliser sous 10 jours par défaut */
 const BOOKING_DAYS = 10;
 // échéance à J+n, décalée au lundi si elle tombe un samedi ou un dimanche
-const inDays = n => { const d = new Date(); d.setDate(d.getDate() + n); return workDay(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`); };
+const inDays = n => workDay(addDays(today(), n));   // fonctions officielles (§1.6), jour de Paris
 
 /** Suivis proposés pour une tâche : ceux de sa structure d'abord, puis les autres suivis ouverts */
 function suiviOptions(t){
@@ -257,7 +257,7 @@ export function editContact(id, prefill={}){
   const c = id ? byId('contacts', id) : {...prefill};
   const links = id ? linksOfContact(id).map(s=>s.id) : (prefill._structures || []);
   const brevo = !id ? '' : c.brevo_error ? `<p class="help full" style="color:var(--danger)">Brevo : ${esc(c.brevo_error)}</p>`
-    : c.brevo_at ? `<p class="help full">Dans Brevo (mis à jour le ${fmtDate(c.brevo_at.slice(0,10))}).</p>` : '';
+    : c.brevo_at ? `<p class="help full">Dans Brevo (mis à jour le ${fmtDate(c.brevo_at)}).</p>` : '';
   return openModal({ title: id ? c.display_name : 'Nouveau contact', values: {...c, _structures: links}, extra: brevo,
     fields: [
       {k:'first_name', label:'Prénom'}, {k:'last_name', label:'Nom'},

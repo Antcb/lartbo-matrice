@@ -6,10 +6,10 @@
  *   partagé avec le coproducteur selon le % de la date.
  * Chaque montant existe en prévu et en réel (billets vendus, pièces reçues).
  */
+import { r2 } from './utils.js';
 import { lineValue, lineForecast, linesOf } from './budget.js';
 import { byId } from './selectors.js';
 
-const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 const num = v => v == null || v === '' ? null : Number(v);
 
 export const isProductionShow = s => !!s && /^(Production|Co-Production)$/.test(s.contract_type || '') && s.prod_mode !== 'booking';

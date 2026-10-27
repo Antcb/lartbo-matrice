@@ -13,8 +13,12 @@ export const eur2 = n => n==null || n==='' || isNaN(n) ? '—' : Number(n).toLoc
 /** Montant courant : sans centimes quand il est rond (1 200 €), avec sinon (8 967,50 €) */
 export const eur = n => n==null || n==='' || isNaN(n) ? '—' : Number(n).toLocaleString('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2});
 
-/** Date affichée partout en JJ/MM/AAAA (stockage : AAAA-MM-JJ) ; accepte aussi un horodatage */
-export const fmtDate = d => { if (!d) return ''; const s = String(d); return /^\d{4}-\d\d-\d\d$/.test(s) ? fmtNum(s) : /T/.test(s) ? new Date(s).toLocaleDateString('fr-FR') : s; };
+/** Fuseau de référence de toute règle métier (CONVENTIONS §1.2) */
+export const TZ = 'Europe/Paris';
+/** Jour (AAAA-MM-JJ) d'un horodatage, à Paris — jamais .slice(0,10) d'un horodatage (jour UTC : la veille entre 0 h et 2 h) */
+export const dayOf = ts => { if (!ts) return null; const s = String(ts); if (/^\d{4}-\d\d-\d\d$/.test(s)) return s; const d = new Date(s); return isNaN(d) ? null : d.toLocaleDateString('sv-SE', {timeZone: TZ}); };
+/** Date affichée partout en JJ/MM/AAAA (stockage : AAAA-MM-JJ) ; accepte aussi un horodatage complet (jour à Paris) */
+export const fmtDate = d => { if (!d) return ''; const s = String(d); return /^\d{4}-\d\d-\d\d$/.test(s) ? fmtNum(s) : /T|\d \d/.test(s) && dayOf(s) ? fmtNum(dayOf(s)) : s; };
 
 /** Date courte avec le jour : « sam. 10/01 » (listes compactes) */
 export const fmtShort = d => d ? `${new Date(String(d).slice(0,10)+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short'})} ${fmtNum(d).slice(0,5)}` : '';
@@ -23,7 +27,18 @@ export const fmtWeekday = d => d ? new Date(String(d).slice(0,10)+'T12:00:00').t
 
 export function fmtNum(d){ if (!d) return ''; const [y,m,j] = String(d).slice(0,10).split('-'); return `${j}/${m}/${y}`; }
 
-export const today = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10); };
+/** Aujourd'hui à Paris (AAAA-MM-JJ) */
+export const today = () => new Date().toLocaleDateString('sv-SE', {timeZone: TZ});
+
+/** J+n (ou J-n) d'une date simple — la seule fonction d'ajout de jours (CONVENTIONS §1.6) */
+export const addDays = (d, n) => { const x = new Date(String(d).slice(0, 10) + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+/** M+n (ou M-n) d'une date simple ; un jour qui n'existe pas dans le mois d'arrivée devient le dernier jour du mois (29/02 + 1 an → 28/02) */
+export const addMonths = (d, n) => { const [y, m, j] = String(d).slice(0, 10).split('-').map(Number), t = (m - 1) + n, Y = y + Math.floor(t / 12), M = ((t % 12) + 12) % 12;
+  const last = new Date(Date.UTC(Y, M + 1, 0)).getUTCDate(); return `${Y}-${String(M + 1).padStart(2, '0')}-${String(Math.min(j, last)).padStart(2, '0')}`; };
+/** Arrondi au centime (CONVENTIONS §2.3) — la seule fonction d'arrondi */
+export const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+/** Pourcentage affiché « 15 % », « 33,33 % », « 5,5 % » : espace insécable, 2 décimales au plus, sans zéro inutile (§2.4) */
+export const pct = v => v == null || v === '' || isNaN(v) ? '—' : String(Math.round(Number(v) * 100) / 100).replace('.', ',') + '\u00a0%';
 
 export const daysUntil = d => d ? Math.round((new Date(d+'T00:00:00') - new Date(new Date().toDateString())) / 86400000) : null;
 
@@ -147,6 +162,9 @@ export function safeHtml(html){
 }
 
 /** Jour ouvré : une échéance qui tombe un samedi ou un dimanche passe au lundi suivant (AAAA-MM-JJ) */
+/** Jour ouvré en reculant : samedi ou dimanche → vendredi précédent (boucle accueil & technique, Q12) */
+export const workDayBefore = iso => { if (!iso) return iso; const w = new Date(iso + 'T12:00:00Z').getUTCDay(); return w === 6 ? addDays(iso, -1) : w === 0 ? addDays(iso, -2) : iso; };
+
 export function workDay(iso){
   if (!iso) return iso;
   const d = new Date(iso + 'T12:00:00'), w = d.getDay();

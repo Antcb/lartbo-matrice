@@ -14,7 +14,7 @@ import { FICHE_SECTIONS, ficheDefaults, ficheKind, fieldOn } from './fiche-field
 import { callScript } from './mail.js';
 import { byId, eventsOfStructure, setting } from './selectors.js';
 import { openModal } from './ui/modal.js';
-import { esc, fmtDate, toast, today } from './utils.js';
+import { addDays, esc, fmtDate, toast, today } from './utils.js';
 
 /** Département pour les noms de fichiers : 79200 → 79, Corse 2A / 2B, outre-mer 971… ; sinon le département de la date (CH, BE… à l'étranger) */
 export function deptOf(postal, fallback){
@@ -27,7 +27,6 @@ const stripCode = name => String(name || '').replace(/\s*•.*$/, '').trim();
 const venueName = v => String(v || '').replace(/\*\*/g, '').replace(/\s*•\s*[A-Z/]{1,5}(\s*\([^)]*\))?\s*$/, '').trim();
 const num = n => n == null || n === '' ? '' : Number(n).toLocaleString('fr-FR', {minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2}).replace(/ /g, ' ');
 const longDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long', year:'numeric'}).replace(/^(\D+ )1 /, '$11er ') : '';
-const addDays = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
 
 /** Ce que l'app sait déjà de la date (proposé quand l'organisateur n'a rien répondu) */
 function knownValues(s){
@@ -60,7 +59,7 @@ export function validateFiche(showId){
     }).join('');
   }).join('');
   const extra = `<div class="mail-wrap">
-    <p class="help mt0">${s.fiche_submitted_at ? `Fiche envoyée par l’organisateur le ${fmtDate(s.fiche_submitted_at.slice(0,10))}.` : 'L’organisateur n’a pas encore rempli la fiche : tu peux tout de même compléter les infos ici.'}
+    <p class="help mt0">${s.fiche_submitted_at ? `Fiche envoyée par l’organisateur le ${fmtDate(s.fiche_submitted_at)}.` : 'L’organisateur n’a pas encore rempli la fiche : tu peux tout de même compléter les infos ici.'}
       Corrige la colonne « Valeur retenue » si besoin : c’est elle qui part dans le contrat. En orange : l’organisateur a donné une autre valeur que celle de la fiche structure.</p>
     <div class="tbl-wrap"><table class="vf-table"><thead><tr><th>Champ</th><th>Réponse de l’organisateur</th><th>Valeur retenue</th></tr></thead><tbody>${rows}</tbody></table></div>
     <label class="check-line"><input type="checkbox" id="vf-struct" checked> Mettre à jour les coordonnées de la structure${st ? ` « ${esc(st.name)} »` : ''} avec ces valeurs</label>

@@ -14,7 +14,7 @@ import { byId, contactMails, linksOfStructure, projectOptions, setting } from '.
 import { S } from './state.js';
 import { openModal } from './ui/modal.js';
 import { rtStyle, rtToolbar, wrapMail } from './ui/richtext.js';
-import { esc, fmtDate, toast, today } from './utils.js';
+import { esc, fmtDate, toast, today, eur2, pct } from './utils.js';
 
 export const MAIL_KINDS = { confirmation: 'Confirmation', boucle_tech: 'Boucle accueil & technique', boucle_com: 'Boucle communication', prospection: 'Prospection', relance: 'Relance de prospection', autre: 'Autre' };
 /** Mails envoyés depuis une structure (pas depuis une date) : balises de la structure */
@@ -114,7 +114,7 @@ export async function prepareMail(showId, kind){
   const checks = kind === 'confirmation' ? confChecks(s, booking) : '';
   const sig = prodSignature();
   const extra = `<div class="mail-wrap">
-    ${log ? `<p class="mode-note">${log.sent ? 'Envoyé' : 'Déjà préparé'} le ${fmtDate(log.at.slice(0,10))}${log.to?` à ${esc(log.to)}`:''}${log.draft?' (brouillon Gmail)':''}.</p>` : ''}
+    ${log ? `<p class="mode-note">${log.sent ? 'Envoyé' : 'Déjà préparé'} le ${fmtDate(log.at)}${log.to?` à ${esc(log.to)}`:''}${log.draft?' (brouillon Gmail)':''}.</p>` : ''}
     ${checks}
     <div class="mail-grid">
       <label for="ml-tpl">Modèle</label><select id="ml-tpl">${tpls.map(t=>`<option value="${t.id}">${esc(t.name||MAIL_KINDS[t.kind])}${tplProjects(t).length?'':' · générique'}</option>`).join('')}</select>
@@ -214,7 +214,7 @@ export function expandAcomptes(html, s){
   const TAG = '{{acompte_pct}}', FIRST = 'à la signature du contrat';
   if (!acs.length || !String(html || '').includes(TAG)) return html;
   if (acs.length === 1 && (!acs[0].due_label || acs[0].due_label === FIRST)) return html;   // cas simple : le modèle tel quel
-  const pctTxt = p => { const v = billPct(p); return v == null ? '' : String(Math.round(v * 100) / 100).replace('.', ',') + '%'; };
+  const pctTxt = p => { const v = billPct(p); return v == null ? '' : pct(v); };   // « 50 % » (§2.4), comme {{acompte_pct}} côté serveur
   const div = document.createElement('div'); div.innerHTML = String(html);
   const blocks = [...div.querySelectorAll('div,p,li')].filter(b => b.innerHTML.includes(TAG));
   const block = blocks.find(b => !blocks.some(o => o !== b && b.contains(o)));
@@ -248,10 +248,10 @@ function confChecks(s, booking=false){
   if (!s.contract_type || s.contract_type === 'N.C') miss.push('le type de contrat');
   if (!s.structure_id) miss.push('la structure');
   if (!booking && !pays.length && !isCoproduction(s)) miss.push('les acomptes');   // coproduction : aucun acompte attendu (27/10/2026)
-  const vat = s.vat_rate ?? 5.5, pc = p => { const v = billPct(p); return v == null ? '' : (Math.round(v * 100) / 100).toLocaleString('fr-FR') + ' %'; };
+  const vat = s.vat_rate ?? 5.5, pc = p => { const v = billPct(p); return v == null ? '' : pct(v); };
   return `<div class="conf-check ${miss.length?'warn':''}">
-    <b>${s.terms_validated_at ? `Conditions validées le ${fmtDate(s.terms_validated_at.slice(0,10))}` : 'Conditions reprises dans le mail'}</b>
-    <div>${esc(s.contract_type||'Contrat ?')} · ${s.fee_ht!=null?`${Number(s.fee_ht).toLocaleString('fr-FR')} € HT · TVA ${String(vat).replace('.',',')} %`:'cachet ?'}
+    <b>${s.terms_validated_at ? `Conditions validées le ${fmtDate(s.terms_validated_at)}` : 'Conditions reprises dans le mail'}</b>
+    <div>${esc(s.contract_type||'Contrat ?')} · ${s.fee_ht!=null?`${eur2(s.fee_ht)} HT · TVA ${pct(vat)}`:'cachet ?'}
       ${booking ? '' : '· ' + (pays.map(p=>`${esc(p.label||p.kind)} ${pc(p)}`).join(' · ') || (isCoproduction(s) ? 'coproduction : ni acompte ni solde' : 'aucun acompte'))}</div>
     ${miss.length ? `<div class="err">Manque : ${miss.join(', ')}. Ferme ce mail et valide les conditions de la date (le mail reprend ces infos).</div>` : ''}
     <div class="muted">${booking ? 'Booking uniquement : le lien de la fiche de renseignements est retiré du mail, l’organisateur et l’artiste s’arrangent entre eux pour le contrat.' : 'La fiche de renseignements affiche toujours les conditions à jour : tu peux encore les corriger après l’envoi, tant que le contrat n’est pas parti.'}</div>

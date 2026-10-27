@@ -1,6 +1,7 @@
 /**
  * 🧮 Calculs financiers : acomptes, solde, commission L'ArtBo, part partenaire, net.
  */
+import { r2, eur2 } from './utils.js';
 import { byId, showCommissionPct } from './selectors.js';
 import { S } from './state.js';
 
@@ -184,7 +185,7 @@ export function changeBlocked(table, id, patch){
     // ne remplace pas le versement du reste. Même règle côté base : show_payments_commission_lock (migration v1.43)
     if (isProdCommission(row) && transfersOf(row.id).length && 'paid_at' in patch && !blank(patch.paid_at) && blank(row.paid_at)){
       const st = commissionState(row);
-      if (st.remaining >= 0.005) return `Commission versée en partie : note le versement du reste (${st.remaining.toFixed(2).replace('.', ',')} €) au lieu d’une date de versement.`;
+      if (st.remaining >= 0.005) return `Commission versée en partie : note le versement du reste (${eur2(st.remaining)}) au lieu d’une date de versement.`;
     }
     if (isInvoiced(row) && emittedFieldsOf(row).some(k => k in patch && !blank(row[k]) && blank(patch[k])))
       return 'Facture déjà émise : son numéro, sa date d’envoi, sa date de paiement et son identifiant Pennylane ne s’effacent pas (une régularisation se décide à part).';
@@ -220,7 +221,6 @@ export function changeBlocked(table, id, patch){
 
 /** Lignes qui facturent le cachet (acomptes, solde) : ensemble, 100 % du cachet au plus. Commissions, taxe CNM et « autres » à part. */
 export const BILL_KINDS = ['acompte', 'solde'];
-const r2 = n => Math.round(n * 100) / 100;
 /** % du cachet d'une ligne AU CONTRAT : saisi, ou déduit du montant HT saisi (conditions, mail, fiche, contrat) */
 export function billPct(p){
   const fee = Number(byId('shows', p.show_id)?.fee_ht) || 0;

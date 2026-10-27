@@ -10,7 +10,7 @@ import { S, touch } from '../state.js';
 import { isCoproduction, isInvoiced, paymentsOf } from '../calc.js';
 import { viewHead } from '../ui/bits.js';
 import { cIn } from '../ui/cells.js';
-import { esc, toast } from '../utils.js';
+import { esc, toast, pct } from '../utils.js';
 import { render } from '../app.js';
 import { templatesList } from '../mail.js';
 import { templateForm } from '../budget-template.js';
@@ -180,7 +180,7 @@ document.addEventListener('change', async e => {
   const v = e.target.value===''?null:Number(e.target.value);
   if (k==='default_acompte_pct'){
     if (v==null || v<0 || v>100) return toast("L'acompte doit être entre 0 et 100 %", true);
-    if (await setSetting(k, v) && await setSetting('default_solde_pct', 100 - v)) toast(`Acompte ${v} % · solde ${100 - v} %`);
+    if (await setSetting(k, v) && await setSetting('default_solde_pct', 100 - v)) toast(`Acompte ${pct(v)} · solde ${pct(100 - v)}`);
     render();
     return applyAcompte();   // les dates à venir pas encore facturées suivent (après confirmation)
   }
@@ -208,7 +208,7 @@ export async function applyAcompte(){
   const ac = defaultAcompte();   // 0 % gardé tel quel ; 50 seulement si le réglage est vide (§6.4)
   // 0 % = date SANS acompte (§6.4) : jamais d'acompte à 0 % posé en lot, et aucune ligne supprimée en lot sans décision (relecture v1.46a)
   if (ac === 0) return toast('Acompte par défaut à 0 % : les prochaines dates confirmées n’auront pas d’acompte. Les dates déjà confirmées gardent le leur ; pour en retirer un, « Valider les conditions » de la date › 0 acompte.');
-  if (!(await confirmAsk('Appliquer aux dates à venir ?', `Mettre ${ac} % d’acompte et ${100-ac} % de solde sur les dates à venir dont les conditions ne sont pas validées et dont rien n’est facturé ni saisi à la main.`, `Appliquer ${ac} % / ${100-ac} %`))) return;
+  if (!(await confirmAsk('Appliquer aux dates à venir ?', `Mettre ${pct(ac)} d’acompte et ${pct(100-ac)} de solde sur les dates à venir dont les conditions ne sont pas validées et dont rien n’est facturé ni saisi à la main.`, `Appliquer ${pct(ac)} / ${pct(100-ac)}`))) return;
   // seulement l'acompte et le solde créés à la confirmation (pas les acomptes ajoutés à la main)
   // dates à venir dont les conditions ne sont pas validées, avec un seul acompte et rien d'envoyé / payé / saisi à la main
   const now = new Date().toLocaleDateString('sv-SE');

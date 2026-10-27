@@ -15,10 +15,9 @@ import { isBookingOnly, prepareMail } from './mail.js';
 import { byId, defaultAcompte, projFilterOk, showCommissionPct } from './selectors.js';
 import { S, setProjects } from './state.js';
 import { openModal } from './ui/modal.js';
-import { esc, eur2, fmtDate, toast } from './utils.js';
+import { esc, eur2, fmtDate, toast, r2 } from './utils.js';
 import { rebalanceSolde } from './actions.js';
 
-const r2 = n => Math.round(n * 100) / 100;
 export const DUE_FIRST = 'à la signature du contrat';
 export const becameConfirmed = (before, after) => CONFIRMED_PROD.includes(after) && !CONFIRMED_PROD.includes(before);
 
@@ -83,7 +82,7 @@ export async function validateTerms(showId){
       <div class="help">Le solde prend ce qui reste. Dans le mail de confirmation, chaque acompte a sa ligne avec son % et son échéance ; ces % partent aussi dans la fiche de renseignements et le contrat, et créent les lignes de facturation.</div></div>`;
   const p = openModal({title: `Conditions à valider · ${s.venue || ''}`, saveLabel: 'Valider et préparer le mail',
     values: {id: s.id, contract_type: s.contract_type, fee_ht: s.fee_ht, vat_rate: s.vat_rate, show_time: s.show_time, set_length: s.set_length, invitations: s.invitations, artbo_pct: s.artbo_pct},
-    extraTop: `<p class="muted mb">${fmtDate(s.date)} · ${esc(byId('projects', s.project_id)?.name || '')}${s.terms_validated_at ? ` · déjà validées le ${fmtDate(s.terms_validated_at.slice(0, 10))}` : ''}</p>`,
+    extraTop: `<p class="muted mb">${fmtDate(s.date)} · ${esc(byId('projects', s.project_id)?.name || '')}${s.terms_validated_at ? ` · déjà validées le ${fmtDate(s.terms_validated_at)}` : ''}</p>`,
     fields: [
       {k: 'contract_type', label: 'Type de contrat', type: 'select', options: CONTRACTS, blank: false},
       {k: 'fee_ht', label: 'Cachet HT (€)', type: 'number'},

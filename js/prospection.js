@@ -16,7 +16,7 @@ import { CONFIRMED_PROD } from './constants.js';
 import { dateInput } from './ui/datefield.js';
 import { openModal } from './ui/modal.js';
 import { rtStyle, rtToolbar, wrapMail } from './ui/richtext.js';
-import { esc, firstName, fmtDate, toast, today, workDay } from './utils.js';
+import { esc, firstName, fmtDate, toast, today, workDay, dayOf, addDays } from './utils.js';
 
 const RELANCE_DAYS = 10;
 const MAIL_RELANCES = 3;   // après 3 relances par mail sans réponse : relance par téléphone
@@ -47,8 +47,7 @@ function concertVars(show){
   if (!show) return {};
   const proj = byId('projects', show.project_id), links = (proj?.links || []).filter(l => l?.url);
   const pro = links.find(l => /pro/i.test(l.label || '')) || links[0];
-  const d = new Date(show.date + 'T12:00:00'); d.setDate(d.getDate() - 2);
-  const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const iso = addDays(show.date, -2);   // fonction officielle (§1.6)
   const [y, m, j] = show.date.split('-');
   return {artiste: proj ? projName(proj.id) : undefined, date_concert: longDate(show.date), date_concert_court: `${j}/${m}/${y.slice(2)}`, ville_concert: show.city || structById(show.structure_id)?.city || '', cp_concert: show.department || '',
     lieu_concert: String(show.venue || '').replace(/\*\*/g, '').trim(), date_reponse: longDate(iso), lien_projet: pro?.url || '',
@@ -98,7 +97,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
   const fromAddr = () => sender === 'production' ? PROD_MAIL : (setting('prospect_from') || 'anthony@lartboristerie.com');
 
   const extra = `<div class="mail-wrap">
-    ${relance ? `<p class="mode-note">Réponse dans le fil « ${esc(p.mail_subject || '')} » envoyé à ${esc(p.mail_to || '')}${p.mail_sent_at ? ` le ${fmtDate(p.mail_sent_at.slice(0, 10))}` : ''} : l’historique reste en dessous du mail.</p>` : ''}
+    ${relance ? `<p class="mode-note">Réponse dans le fil « ${esc(p.mail_subject || '')} » envoyé à ${esc(p.mail_to || '')}${p.mail_sent_at ? ` le ${fmtDate(p.mail_sent_at)}` : ''} : l’historique reste en dessous du mail.</p>` : ''}
     <div class="mail-grid">
       <label>Artiste(s)</label><div class="checks pills pr-arts">${active.map(a => `<label><input type="checkbox" data-pr-art="${a.id}" ${pids.includes(a.id) ? 'checked' : ''}> ${esc(a.name)}</label>`).join('')}</div>
       <label for="pr-from">Envoyé par</label><select id="pr-from" ${relance ? 'disabled title="La relance part de la boîte qui a envoyé la prospection"' : ''}>${Object.entries(SENDERS).map(([k, l]) => `<option value="${k}" ${k === sender ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
@@ -238,7 +237,7 @@ async function recordProspection(st, {to, subject, html, send, out, pids, contac
 /** Dates de la prospection et des relances d'un suivi (journal) */
 export function relanceHistory(p){
   const logs = logsOf(p.id).filter(l => l.date && /^\*\*Relance n°\d+/.test(l.body || '')).map(l => l.date).sort();
-  return {sent: p.mail_sent_at ? p.mail_sent_at.slice(0, 10) : null, relances: logs};
+  return {sent: dayOf(p.mail_sent_at), relances: logs};   // jour de Paris (§1.2)
 }
 const historyText = (p, extra=[]) => { const h = relanceHistory(p); const r = [...h.relances, ...extra];
   return [h.sent && `prospection le ${fmtDate(h.sent)}`, r.length && `relance${r.length > 1 ? 's' : ''} le ${r.map(fmtDate).join(', ')}`].filter(Boolean).join(' · '); };
@@ -306,9 +305,8 @@ export async function restoreRelances(undo){
 async function relanceTask(st, pids, subject, sent, p, n, sentOn=today()){
   await closeOpenRelances(st, p);
   if (suiviClosed(p)) return;   // suivi confirmé ou clos : plus de relance
-  const due = new Date(sentOn + 'T12:00:00'); due.setDate(due.getDate() + RELANCE_DAYS);   // J+10 après l'envoi réel
-  // un samedi ou un dimanche : le lundi suivant
-  const deadline = workDay(`${due.getFullYear()}-${String(due.getMonth()+1).padStart(2,'0')}-${String(due.getDate()).padStart(2,'0')}`);
+  // J+10 après l'envoi réel ; un samedi ou un dimanche : le lundi suivant (fonctions officielles §1.6)
+  const deadline = workDay(addDays(sentOn, RELANCE_DAYS));
   const base = {department: 'Booking', status: 'To Do', assigned_to: S.user.email, deadline,
     structure_id: st.id, project_ids: pids, project_id: pids[0] || null, prospect_id: p?.id || null};
   if (p && n >= MAIL_RELANCES){
@@ -376,10 +374,10 @@ export async function checkProspect(p, force=false){
       // un envoi postérieur à la préparation du brouillon (sinon il est toujours en brouillon)
       const after = log.created_at ? sent.find(d => d.slice(0, 19) >= log.created_at.slice(0, 19)) : null;
       if (after){
-        await save('prospect_logs', log.id, {date: after.slice(0, 10), body: String(log.body || '').replace(DRAFT_MARK, '')}, {rerender: false});
-        if (/^\*\*Relance n°/.test(log.body || '')) await relanceSent(byId('prospects', p.id), after.slice(0, 10));
+        await save('prospect_logs', log.id, {date: dayOf(after), body: String(log.body || '').replace(DRAFT_MARK, '')}, {rerender: false});
+        if (/^\*\*Relance n°/.test(log.body || '')) await relanceSent(byId('prospects', p.id), dayOf(after));
       }
-      if (after) patch.last_contact = [p.last_contact, after.slice(0, 10)].filter(Boolean).sort().pop();
+      if (after) patch.last_contact = [p.last_contact, dayOf(after)].filter(Boolean).sort().pop();
     }
     if (Object.keys(patch).length){ await save('prospects', p.id, patch, {rerender: false}); render(); }
   } catch (err) { /* script absent ou fil supprimé : on réessaiera à la prochaine session */ }

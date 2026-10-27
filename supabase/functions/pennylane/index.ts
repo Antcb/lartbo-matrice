@@ -36,8 +36,9 @@ const vatCode = (rate: number | null, country: string) => {
   return 'FR_' + String(Math.round(r * 10));
 };
 const frDate = (d: string) => d ? d.split('-').reverse().join('/') : '';
-const today = () => new Date().toISOString().slice(0, 10);
-const plusDays = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+// jour de Paris (CONVENTIONS §1.2, v1.49) : une facture faite entre 0 h et 2 h ne prend plus la date de la veille
+const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+const plusDays = (n: number) => { const d = new Date(today() + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const norm = (s: string) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const ISO2: Record<string, string> = { france: 'FR', suisse: 'CH', switzerland: 'CH', belgique: 'BE', belgium: 'BE', espagne: 'ES', spain: 'ES', allemagne: 'DE', germany: 'DE', 'pays bas': 'NL', netherlands: 'NL', luxembourg: 'LU', italie: 'IT', italy: 'IT', 'royaume uni': 'GB', portugal: 'PT', canada: 'CA' };
 const iso2 = (c: string) => { const k = norm(c || 'France'); return k.length === 2 ? k.toUpperCase() : (ISO2[k] || 'FR'); };
