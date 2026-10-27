@@ -951,6 +951,7 @@ create policy commission_transfers_add on public.commission_transfers for insert
 -- droits par défaut de Supabase : tout est accordé aux visiteurs sur une nouvelle table → tout leur est retiré (relecture D1, B1)
 revoke all on public.commission_transfers from public, anon;
 revoke update, delete, truncate, references, trigger on public.commission_transfers from authenticated;
+revoke truncate, references, trigger on public.commission_transfers from service_role;   -- vider la table contournerait les déclencheurs (relecture finale D1)
 grant select, insert on public.commission_transfers to authenticated;
 -- mises à jour en direct (autres postes) comme les autres tables de l'application, si la publication existe
 do $p$ begin
@@ -1297,6 +1298,8 @@ revoke execute on function public.finance_log_transfers() from public, anon, aut
 --     comptes, rappels, Pennylane, fiche publique, mails, date engagée, garde du cachet. Le motif se pose / se retire
 --     SEULEMENT dans une transaction annoncée (« hors_calcul »), sans rien changer d'autre, et c'est journalisé ; une ligne
 --     hors calcul ne se modifie plus et ne se supprime pas ; aucun versement de commission ne s'y note.
+--     Seule une ligne ARTIFICIELLE d'import d'une date « Co-Production » (acompte, solde, commission, part partenaire, avec
+--     import_key, sans montant figé, facture numérotée autre que « N.C », Pennylane, pièce, déclaration ni versement) peut l'être.
 --  2. Lignes automatiques : plus créées pour une date « Co-Production » (confirmation de la date, passage booking → production) ;
 --     la taxe CNM (billetterie) reste prévue comme avant.
 --  3. Fiche publique et variables des mails : sans les lignes hors calcul ; coproduction sans acompte = 0 %.
@@ -1337,6 +1340,21 @@ begin
     raise exception 'Motif « hors calcul » vide.' using errcode = 'P0001'; end if;
   if new.hors_calcul is not null and exists (select 1 from public.commission_transfers t where t.payment_id = old.id) then
     raise exception 'Cette commission a des versements enregistrés : elle ne passe pas hors calcul.' using errcode = 'P0001'; end if;
+  -- seule une ligne ARTIFICIELLE d'import d'une coproduction peut passer hors calcul : jamais une opération réelle
+  -- (pièce, facture numérotée, Pennylane, montant figé, déclaration, versement)
+  if new.hors_calcul is not null then
+    if not exists (select 1 from public.shows s where s.id = old.show_id and s.contract_type = 'Co-Production') then
+      raise exception 'Seule une ligne d''une date en coproduction peut passer hors calcul.' using errcode = 'P0001'; end if;
+    if old.kind not in ('acompte', 'solde', 'artbo', 'partner') then
+      raise exception 'Seuls un acompte, un solde, une commission ou une part partenaire importés peuvent passer hors calcul.' using errcode = 'P0001'; end if;
+    if old.import_key is null then
+      raise exception 'Ligne saisie dans la Matrice (pas issue de l''import) : elle ne passe pas hors calcul.' using errcode = 'P0001'; end if;
+    if old.amount is not null or old.declared_at is not null
+       or nullif(btrim(old.pennylane_id), '') is not null or nullif(btrim(old.pennylane_url), '') is not null
+       or old.file_path is not null or old.drive_file_id is not null
+       or (nullif(btrim(old.invoice_number), '') is not null and upper(btrim(old.invoice_number)) <> 'N.C') then
+      raise exception 'Ligne portant une opération réelle (montant figé, facture numérotée, Pennylane, pièce ou déclaration) : elle ne passe pas hors calcul.' using errcode = 'P0001'; end if;
+  end if;
   return new;
 end $$;
 drop trigger if exists show_payments_hors_calcul_guard on public.show_payments;
@@ -1671,6 +1689,7 @@ begin
      or position('commission_transfers' in pg_get_functiondef('public.show_has_financial_record(uuid)'::regprocedure)) = 0 then
     raise exception 'ECHEC : droits des visiteurs ou date engagée (versements) incorrects — TOUT EST ANNULÉ'; end if;
   if has_table_privilege('authenticated', 'public.commission_transfers', 'UPDATE') or has_table_privilege('authenticated', 'public.commission_transfers', 'DELETE')
+     or has_table_privilege('service_role', 'public.commission_transfers', 'TRUNCATE') or has_table_privilege('authenticated', 'public.commission_transfers', 'TRUNCATE')
      or has_table_privilege('anon', 'public.commission_transfers', 'SELECT') or has_table_privilege('anon', 'public.commission_transfers', 'INSERT')
      or not has_table_privilege('authenticated', 'public.commission_transfers', 'INSERT')
      or not has_function_privilege('authenticated', 'public.commission_total(public.show_payments)', 'EXECUTE')
@@ -2021,9 +2040,11 @@ begin
   perform public.ensure_production_payments(sc);
   insert into _d1_r (essai, attendu, obtenu) select '66. coproduction : aucune ligne créée au passage en production', '0',
     (select count(*)::text from public.show_payments where show_id = sc and kind in ('acompte', 'solde', 'artbo', 'partner'));
-  -- lignes « importées » (comme le Rockstore) : acompte « N.C » noté envoyé / payé, commission notée versée
-  insert into public.show_payments (show_id, kind, label, pct, invoice_number, sent_at, paid_at, sort) values (sc, 'acompte', 'Acompte', 20, 'N.C', current_date, current_date, 10) returning id into la;
-  insert into public.show_payments (show_id, kind, label, paid_at, sort) values (sc, 'artbo', 'Commission', current_date, 30) returning id into lc;
+  -- lignes « importées » (comme le Rockstore) : acompte « N.C » noté envoyé / payé, commission notée versée ; montant vide comme
+  -- à l'import réel (fait avant v1.42) : le cachet est vide le temps de l'insertion, donc rien n'est figé à l'émission
+  update public.shows set fee_ht = null where id = sc;
+  insert into public.show_payments (show_id, kind, label, pct, invoice_number, sent_at, paid_at, sort, import_key) values (sc, 'acompte', 'Acompte', 20, 'N.C', current_date, current_date, 10, 'essai-d1:acompte') returning id into la;
+  insert into public.show_payments (show_id, kind, label, paid_at, sort, import_key) values (sc, 'artbo', 'Commission', current_date, 30, 'essai-d1:artbo') returning id into lc;
   begin update public.show_payments set hors_calcul = 'essai' where id = la;
     insert into _d1_r (essai, attendu, obtenu) values ('67. classer hors calcul sans régularisation annoncée', 'refusé', 'ACCEPTÉ');
   exception when sqlstate 'P0001' then insert into _d1_r (essai, attendu, obtenu) values ('67. classer hors calcul sans régularisation annoncée', 'refusé', 'refusé'); end;
@@ -2032,6 +2053,7 @@ begin
     insert into _d1_r (essai, attendu, obtenu) values ('68. classer hors calcul en changeant autre chose', 'refusé', 'ACCEPTÉ');
   exception when sqlstate 'P0001' then insert into _d1_r (essai, attendu, obtenu) values ('68. classer hors calcul en changeant autre chose', 'refusé', 'refusé'); end;
   update public.show_payments set hors_calcul = 'Coproduction : essai' where id in (la, lc);
+  update public.shows set fee_ht = 5000 where id = sc;
   insert into _d1_r (essai, attendu, obtenu) select '69. classement annoncé, journalisé', '2',
     (select count(*)::text from public.finance_log where row_id in (la, lc) and field = 'hors_calcul' and source = 'régularisation contrôlée (hors calcul)');
   perform set_config('matrice.regularisation', '', true);
@@ -2067,6 +2089,28 @@ begin
   perform public.generate_reminders();
   select count(*) into n from public.notifications where show_id = sc and kind in ('facture_acompte', 'acompte_paye', 'solde_envoi', 'solde_paye', 'commission', 'commission_partenaire');
   insert into _d1_r (essai, attendu, obtenu) values ('77. rappels de la coproduction (facture, paiement, commission)', '0', n::text);
+  -- 80-86 : le classement « hors calcul » ne peut JAMAIS masquer une opération réelle (seule une ligne artificielle d'import d'une coproduction)
+  insert into public.shows (project_id, venue, date, fee_ht, artbo_pct, prod_mode, prod_mode_manual, contract_type, status)
+    values (pj, 'Salle Essai cession', current_date + 41, 5000, 15, 'production', true, 'Cession', 'Confirmée Salle') returning id into sd;
+  insert into _d1_ids values ('scq', sd);
+  perform set_config('matrice.regularisation', 'hors_calcul', true);
+  for v in select jsonb_build_object('e', e, 'sh', sh, 'k', k, 'ik', ik, 'num', num, 'pl', pl, 'amt', amt, 'fp', fp) from (values
+      ('80. ligne importée d''une date qui n''est pas une coproduction', 'autre', 'acompte', 'essai-d1:x1', null, null, null, null),
+      ('81. ligne saisie dans la Matrice (sans import)', 'copro', 'solde', null, null, null, null, null),
+      ('82. ligne avec un vrai numéro de facture', 'copro', 'solde', 'essai-d1:x3', 'F-AB-2099-01-1', null, null, null),
+      ('83. ligne reliée à Pennylane', 'copro', 'solde', 'essai-d1:x4', null, 'pl-essai', null, null),
+      ('84. ligne au montant figé', 'copro', 'solde', 'essai-d1:x5', null, null, 100, null),
+      ('85. ligne avec une pièce jointe', 'copro', 'solde', 'essai-d1:x6', null, null, null, 'essai/piece.pdf'),
+      ('86. taxe CNM importée', 'copro', 'cnm', 'essai-d1:x7', null, null, null, null)) t(e, sh, k, ik, num, pl, amt, fp) loop
+    perform set_config('matrice.regularisation', '', true);
+    insert into public.show_payments (show_id, kind, label, sort, import_key, invoice_number, pennylane_id, amount, file_path)
+      values (case when v->>'sh' = 'copro' then sc else sd end, v->>'k', 'Essai', 95, v->>'ik', v->>'num', v->>'pl', (v->>'amt')::numeric, v->>'fp') returning id into la;
+    perform set_config('matrice.regularisation', 'hors_calcul', true);
+    begin update public.show_payments set hors_calcul = 'Coproduction : essai' where id = la;
+      insert into _d1_r (essai, attendu, obtenu) values (v->>'e', 'refusé', 'ACCEPTÉ');
+    exception when sqlstate 'P0001' then insert into _d1_r (essai, attendu, obtenu) values (v->>'e', 'refusé', 'refusé'); end;
+  end loop;
+  perform set_config('matrice.regularisation', '', true);
 end $cp$;
 -- Aucune donnée réelle touchée : empreintes recalculées SANS les données fictives = empreintes d'avant (lignes / dates / artistes fictifs exclus)
 do $chk$
@@ -2084,7 +2128,7 @@ begin
   select string_agg(essai || ' → attendu « ' || attendu || ' », obtenu « ' || coalesce(obtenu, 'rien') || ' »', ' | ' order by n) into ko
     from _d1_r where obtenu is distinct from attendu;
   if ko is not null then raise exception 'ECHEC ESSAIS — TOUT EST ANNULÉ : %', ko; end if;
-  if (select count(*) from _d1_r) <> 79 then raise exception 'ECHEC ESSAIS : % essais au lieu de 79 — TOUT EST ANNULÉ', (select count(*) from _d1_r); end if;
+  if (select count(*) from _d1_r) <> 86 then raise exception 'ECHEC ESSAIS : % essais au lieu de 86 — TOUT EST ANNULÉ', (select count(*) from _d1_r); end if;
 end $chk$;
 -- Fin des essais : versements fictifs retirés (retour arrière contrôlé), pour que le retour arrière de la migration puisse s'essayer
 do $n$ begin
@@ -2899,6 +2943,7 @@ create policy commission_transfers_add on public.commission_transfers for insert
 -- droits par défaut de Supabase : tout est accordé aux visiteurs sur une nouvelle table → tout leur est retiré (relecture D1, B1)
 revoke all on public.commission_transfers from public, anon;
 revoke update, delete, truncate, references, trigger on public.commission_transfers from authenticated;
+revoke truncate, references, trigger on public.commission_transfers from service_role;   -- vider la table contournerait les déclencheurs (relecture finale D1)
 grant select, insert on public.commission_transfers to authenticated;
 -- mises à jour en direct (autres postes) comme les autres tables de l'application, si la publication existe
 do $p$ begin
@@ -3245,6 +3290,8 @@ revoke execute on function public.finance_log_transfers() from public, anon, aut
 --     comptes, rappels, Pennylane, fiche publique, mails, date engagée, garde du cachet. Le motif se pose / se retire
 --     SEULEMENT dans une transaction annoncée (« hors_calcul »), sans rien changer d'autre, et c'est journalisé ; une ligne
 --     hors calcul ne se modifie plus et ne se supprime pas ; aucun versement de commission ne s'y note.
+--     Seule une ligne ARTIFICIELLE d'import d'une date « Co-Production » (acompte, solde, commission, part partenaire, avec
+--     import_key, sans montant figé, facture numérotée autre que « N.C », Pennylane, pièce, déclaration ni versement) peut l'être.
 --  2. Lignes automatiques : plus créées pour une date « Co-Production » (confirmation de la date, passage booking → production) ;
 --     la taxe CNM (billetterie) reste prévue comme avant.
 --  3. Fiche publique et variables des mails : sans les lignes hors calcul ; coproduction sans acompte = 0 %.
@@ -3285,6 +3332,21 @@ begin
     raise exception 'Motif « hors calcul » vide.' using errcode = 'P0001'; end if;
   if new.hors_calcul is not null and exists (select 1 from public.commission_transfers t where t.payment_id = old.id) then
     raise exception 'Cette commission a des versements enregistrés : elle ne passe pas hors calcul.' using errcode = 'P0001'; end if;
+  -- seule une ligne ARTIFICIELLE d'import d'une coproduction peut passer hors calcul : jamais une opération réelle
+  -- (pièce, facture numérotée, Pennylane, montant figé, déclaration, versement)
+  if new.hors_calcul is not null then
+    if not exists (select 1 from public.shows s where s.id = old.show_id and s.contract_type = 'Co-Production') then
+      raise exception 'Seule une ligne d''une date en coproduction peut passer hors calcul.' using errcode = 'P0001'; end if;
+    if old.kind not in ('acompte', 'solde', 'artbo', 'partner') then
+      raise exception 'Seuls un acompte, un solde, une commission ou une part partenaire importés peuvent passer hors calcul.' using errcode = 'P0001'; end if;
+    if old.import_key is null then
+      raise exception 'Ligne saisie dans la Matrice (pas issue de l''import) : elle ne passe pas hors calcul.' using errcode = 'P0001'; end if;
+    if old.amount is not null or old.declared_at is not null
+       or nullif(btrim(old.pennylane_id), '') is not null or nullif(btrim(old.pennylane_url), '') is not null
+       or old.file_path is not null or old.drive_file_id is not null
+       or (nullif(btrim(old.invoice_number), '') is not null and upper(btrim(old.invoice_number)) <> 'N.C') then
+      raise exception 'Ligne portant une opération réelle (montant figé, facture numérotée, Pennylane, pièce ou déclaration) : elle ne passe pas hors calcul.' using errcode = 'P0001'; end if;
+  end if;
   return new;
 end $$;
 drop trigger if exists show_payments_hors_calcul_guard on public.show_payments;
@@ -3619,6 +3681,7 @@ begin
      or position('commission_transfers' in pg_get_functiondef('public.show_has_financial_record(uuid)'::regprocedure)) = 0 then
     raise exception 'ECHEC : droits des visiteurs ou date engagée (versements) incorrects — TOUT EST ANNULÉ'; end if;
   if has_table_privilege('authenticated', 'public.commission_transfers', 'UPDATE') or has_table_privilege('authenticated', 'public.commission_transfers', 'DELETE')
+     or has_table_privilege('service_role', 'public.commission_transfers', 'TRUNCATE') or has_table_privilege('authenticated', 'public.commission_transfers', 'TRUNCATE')
      or has_table_privilege('anon', 'public.commission_transfers', 'SELECT') or has_table_privilege('anon', 'public.commission_transfers', 'INSERT')
      or not has_table_privilege('authenticated', 'public.commission_transfers', 'INSERT')
      or not has_function_privilege('authenticated', 'public.commission_total(public.show_payments)', 'EXECUTE')

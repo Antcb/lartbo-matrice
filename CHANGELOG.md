@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.44.2 — 27/10/2026
+- relecture D1 : le classement « hors calcul » n'est possible que sur une ligne artificielle d'import d'une coproduction (jamais sur une opération réelle)
+
+
 ## 1.44.1 — 27/10/2026
 - Coproductions : une commission réelle reste possible à côté d'une ligne importée ; plus d'avertissement « acomptes manquants »
 

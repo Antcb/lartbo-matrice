@@ -7,6 +7,8 @@
 --     comptes, rappels, Pennylane, fiche publique, mails, date engagée, garde du cachet. Le motif se pose / se retire
 --     SEULEMENT dans une transaction annoncée (« hors_calcul »), sans rien changer d'autre, et c'est journalisé ; une ligne
 --     hors calcul ne se modifie plus et ne se supprime pas ; aucun versement de commission ne s'y note.
+--     Seule une ligne ARTIFICIELLE d'import d'une date « Co-Production » (acompte, solde, commission, part partenaire, avec
+--     import_key, sans montant figé, facture numérotée autre que « N.C », Pennylane, pièce, déclaration ni versement) peut l'être.
 --  2. Lignes automatiques : plus créées pour une date « Co-Production » (confirmation de la date, passage booking → production) ;
 --     la taxe CNM (billetterie) reste prévue comme avant.
 --  3. Fiche publique et variables des mails : sans les lignes hors calcul ; coproduction sans acompte = 0 %.
@@ -47,6 +49,21 @@ begin
     raise exception 'Motif « hors calcul » vide.' using errcode = 'P0001'; end if;
   if new.hors_calcul is not null and exists (select 1 from public.commission_transfers t where t.payment_id = old.id) then
     raise exception 'Cette commission a des versements enregistrés : elle ne passe pas hors calcul.' using errcode = 'P0001'; end if;
+  -- seule une ligne ARTIFICIELLE d'import d'une coproduction peut passer hors calcul : jamais une opération réelle
+  -- (pièce, facture numérotée, Pennylane, montant figé, déclaration, versement)
+  if new.hors_calcul is not null then
+    if not exists (select 1 from public.shows s where s.id = old.show_id and s.contract_type = 'Co-Production') then
+      raise exception 'Seule une ligne d''une date en coproduction peut passer hors calcul.' using errcode = 'P0001'; end if;
+    if old.kind not in ('acompte', 'solde', 'artbo', 'partner') then
+      raise exception 'Seuls un acompte, un solde, une commission ou une part partenaire importés peuvent passer hors calcul.' using errcode = 'P0001'; end if;
+    if old.import_key is null then
+      raise exception 'Ligne saisie dans la Matrice (pas issue de l''import) : elle ne passe pas hors calcul.' using errcode = 'P0001'; end if;
+    if old.amount is not null or old.declared_at is not null
+       or nullif(btrim(old.pennylane_id), '') is not null or nullif(btrim(old.pennylane_url), '') is not null
+       or old.file_path is not null or old.drive_file_id is not null
+       or (nullif(btrim(old.invoice_number), '') is not null and upper(btrim(old.invoice_number)) <> 'N.C') then
+      raise exception 'Ligne portant une opération réelle (montant figé, facture numérotée, Pennylane, pièce ou déclaration) : elle ne passe pas hors calcul.' using errcode = 'P0001'; end if;
+  end if;
   return new;
 end $$;
 drop trigger if exists show_payments_hors_calcul_guard on public.show_payments;
