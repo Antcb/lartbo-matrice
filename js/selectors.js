@@ -109,6 +109,13 @@ export const tasksOfShow = id => byCol('tasks','show_id').get(id) || [];
 
 export function lastExchange(p){ const l = logsOf(p.id).find(x=>x.date); const d = [l?.date, p.last_contact].filter(Boolean).sort().pop(); return d || null; }
 
+/** Autres contacts qui ont déjà l'un de ces mails (mail 1 ou 2, sans tenir compte des majuscules ni des espaces) — doublons (décision du 27/10) */
+export function contactsWithMail(mails, exceptId = null){
+  const want = new Set((mails || []).map(m => String(m || '').trim().toLowerCase()).filter(Boolean));
+  if (!want.size) return [];
+  return S.db.contacts.filter(c => c.id !== exceptId && [c.email, c.email_2].some(m => want.has(String(m || '').trim().toLowerCase())));
+}
+
 /** Commission L'ArtBo par défaut selon le type de suivi (Réglages › Pourcentages par défaut) : booking 15 %, production 20 % */
 export const defaultCommission = mode => { const v = Number(setting(mode === 'booking' ? 'default_artbo_pct_booking' : 'default_artbo_pct_production'));
   return Number.isFinite(v) && v > 0 ? v : (mode === 'booking' ? 15 : 20); };

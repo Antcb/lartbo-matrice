@@ -5,7 +5,7 @@
  * Les numéros sensibles déjà connus ne sont jamais réaffichés (seulement « déjà renseigné »).
  */
 import { CFG } from './config.js';
-import { fmtDate, today } from './utils.js';
+import { MAIL_MSG, checkMails, esc, fmtDate, today } from './utils.js';
 import './ui/testbanner.js';
 import './ui/dropfiles.js';
 import './ui/filepick.js';
@@ -15,7 +15,6 @@ import { RH_DOCS, RH_PARTS, RH_SECTIONS, partOf } from './rh-fields.js';
 const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {auth:{persistSession:false}});
 const root = document.getElementById('fiche');
 const token = new URLSearchParams(location.search).get('t') || '';
-const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const FILLED = '__rempli__';
 const PART = new URLSearchParams(location.search).get('p') === 'main' ? 'main' : 'extra';   // le lien envoyé = infos complémentaires
 const SECTIONS = RH_SECTIONS.filter(s => partOf(s) === PART), DOCS = RH_DOCS.filter(d => d[3] === PART);
@@ -77,6 +76,8 @@ function draw(d){
       .concat([...form.querySelectorAll('fieldset[data-req]')].filter(fs => shown(fs) && !fs.querySelector('input:checked')))
       .concat([...form.querySelectorAll('[data-req-doc]')].filter(x => shown(x) && !x.files.length));
     if (missing.length){ missing.forEach(x => x.classList.add('invalid')); (missing[0].querySelector?.('input') || missing[0]).focus(); return note(`Il manque ${missing.length} élément${missing.length > 1 ? 's' : ''} obligatoire${missing.length > 1 ? 's' : ''}.`, true); }
+    // mails au bon format, message sous chaque champ fautif (Q23, même contrôle que l'application)
+    const badMail = checkMails(form); if (badMail.length){ badMail[0].focus(); return note(MAIL_MSG + '.', true); }
     const badDate = [...form.querySelectorAll('input[type=date]')].find(x => shown(x) && x.value && ((x.min && x.value < x.min) || (x.max && x.value > x.max)));
     if (badDate){ badDate.classList.add('invalid'); badDate.focus(); return note(badDate.min && badDate.value < badDate.min ? 'La date d’expiration ne peut pas être avant la date de délivrance.' : 'Cette date ne peut pas être dans le futur.', true); }
     const v = Object.fromEntries([...new FormData(form)].filter(([, x]) => typeof x === 'string').map(([k, x]) => [k, x.trim()]));

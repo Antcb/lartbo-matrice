@@ -2,7 +2,7 @@
  * Formulaires de création / modification : date, projet, tâche, contact, structure, suivi, événement,
  * créations rapides (structure, contact) depuis un champ de recherche, export CSV des suivis, photo de projet.
  */
-import { askText } from './ui/dialog.js';
+import { ask, askText } from './ui/dialog.js';
 import { FORMAT_FIELD, exportTable } from './exports.js';
 import { propagateCommission } from './commission.js';
 import { hasFinancialRecord } from './calc.js';
@@ -11,7 +11,7 @@ import { CFG } from './config.js';
 import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PRIORITY_OPTS, PROSPECT, PROSPECT_OPTS, STATUSES, TASK_STATUS, TASK_STATUS_OPTS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
 import { insert, purgeStored, refreshFor, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode, geoFrance, searchPlaces } from './geo.js';
-import { contactMails, defaultCommission, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
+import { contactMails, contactsWithMail, defaultCommission, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow } from './ui/bits.js';
@@ -248,6 +248,15 @@ export function editTask(id, prefill={}){
 }
 
 /* ------------------------------------------------------------------ Contacts */
+/** Doublon par mail : null (aucun), 'save' (enregistrer quand même), 'cancel' (rester dans la fenêtre) ou le contact existant choisi */
+async function askDuplicate(v, id, openLabel){
+  const dups = contactsWithMail([v.email, v.email_2], id); if (!dups.length) return null;
+  const d = dups[0], st = linksOfContact(d.id).map(s => s.name).filter(Boolean).join(', ');
+  const mail = [v.email, v.email_2].find(m => m && [d.email, d.email_2].some(x => String(x || '').trim().toLowerCase() === String(m).trim().toLowerCase()));
+  const r = await ask({title: 'Contact déjà présent', text: `Le mail ${mail} est déjà celui de « ${d.display_name || [d.first_name, d.last_name].filter(Boolean).join(' ') || 'contact sans nom'} »${st ? ` (${st})` : ''}${dups.length > 1 ? ` et de ${dups.length - 1} autre${dups.length > 2 ? 's' : ''} contact${dups.length > 2 ? 's' : ''}` : ''}.\nAucune fusion n’est faite : tu peux ouvrir la fiche existante, ou enregistrer quand même un second contact.`,
+    actions: [{value: 'open', label: openLabel}, {value: 'save', label: 'Enregistrer quand même'}]});
+  return r === 'open' ? d : r === 'save' ? 'save' : 'cancel';
+}
 /** Coordonnées d'un contact : les mêmes cases partout où l'on crée ou modifie une personne (les 2 mails partent dans Brevo) */
 const CONTACT_COORDS = [
   {k:'email', label:'Mail', type:'email'}, {k:'email_2', label:'Mail 2', type:'email'},
@@ -273,6 +282,10 @@ export function editContact(id, prefill={}){
       const ids = v._structures; delete v._structures;
       v.display_name = [v.first_name, v.last_name].filter(Boolean).join(' ') || c.display_name || v.email || v.email_2;
       if (!v.display_name){ toast('Indique au moins un nom', true); return false; }
+      // doublon par mail (décision du 27/10) : avertissement et accès à la fiche existante ; jamais de fusion automatique
+      const dup = await askDuplicate(v, id, 'Ouvrir la fiche existante');
+      if (dup === 'cancel') return false;
+      if (dup && dup !== 'save'){ setTimeout(() => editContact(dup.id), 0); return null; }   // la fenêtre se ferme sans rien enregistrer, la fiche existante s'ouvre
       let row; if (id){ await save('contacts', id, v, {rerender:false}); row={id}; } else row = await insert('contacts', v);
       if (row) await syncLinks('contact', row.id, ids);
       return row;
@@ -389,7 +402,12 @@ CREATORS.contacts = async name => {
   const [first, ...rest] = String(name).trim().split(/\s+/);
   const row = await openModal({ level:2, title:'Nouveau contact', values:{first_name:first, last_name:rest.join(' ')}, saveLabel:'Créer le contact',
     fields:[{k:'first_name', label:'Prénom'}, {k:'last_name', label:'Nom'}, {k:'roles', label:'Poste(s)', type:'tags', full:true, suggest: () => [...CONTACT_ROLES, ...S.db.contacts.flatMap(x => x.roles || [])]}, ...CONTACT_COORDS],
-    onSave: async v => { v.display_name = [v.first_name, v.last_name].filter(Boolean).join(' ') || v.email || v.email_2; if (!v.display_name){ toast('Indique au moins un nom', true); return false; } return await insert('contacts', v); } });
+    onSave: async v => { v.display_name = [v.first_name, v.last_name].filter(Boolean).join(' ') || v.email || v.email_2; if (!v.display_name){ toast('Indique au moins un nom', true); return false; }
+      // doublon par mail : on peut reprendre le contact existant au lieu d'en créer un second (aucune fusion automatique)
+      const dup = await askDuplicate(v, null, 'Utiliser ce contact');
+      if (dup === 'cancel') return false;
+      if (dup && dup !== 'save') return dup;
+      return await insert('contacts', v); } });
   if (!row) return null;
   return {id: row.id, label: row.display_name};
 };

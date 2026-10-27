@@ -5,7 +5,7 @@
  * Les conditions affichées sont toujours celles de la base : si l'équipe corrige le cachet
  * ou les acomptes, la fiche est à jour sans renvoyer de lien.
  */
-import { eur, fmtDate, pct as fmtPct } from './utils.js';
+import { eur, fmtDate, pct as fmtPct, MAIL_MSG, checkMails } from './utils.js';
 import { CFG } from './config.js';
 import { localDel, localGet, localSet } from './storage.js';
 import './ui/testbanner.js';
@@ -98,6 +98,8 @@ function draw(d){
     const missing = [...form.querySelectorAll('[required]')].filter(x => !x.closest('[hidden]') && !x.value.trim())
       .concat([...form.querySelectorAll('fieldset[data-req]')].filter(fs => !fs.closest('[hidden]') && !fs.querySelector('input:checked')));
     if (missing.length){ missing.forEach(x => x.classList.add('invalid')); (missing[0].querySelector?.('input') || missing[0]).focus(); return note(`Il manque ${missing.length} champ${missing.length > 1 ? 's' : ''} obligatoire${missing.length > 1 ? 's' : ''}.`, true); }
+    // mails au bon format, message sous chaque champ fautif (Q23, même contrôle que l'application)
+    const badMail = checkMails(form); if (badMail.length){ badMail[0].focus(); return note(MAIL_MSG + '.', true); }
     const v = read(form), adm = {}, fi = {};
     FICHE_SECTIONS.forEach(sec => sec.fields.forEach(f => { if (fieldOn(f, kind, v)) (f.src === 'admin' ? adm : fi)[f.k] = v[f.k] || ''; }));
     const btn = form.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Envoi…';

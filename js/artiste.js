@@ -5,7 +5,7 @@
  * Il peut revenir sur le même lien pour compléter ou corriger : ses réponses sont reprises.
  */
 import { CFG } from './config.js';
-import { fmtDate } from './utils.js';
+import { MAIL_MSG, checkMails, esc, fmtDate } from './utils.js';
 import { localDel, localGet, localSet } from './storage.js';
 import './ui/testbanner.js';
 import './ui/dropfiles.js';
@@ -17,7 +17,6 @@ import { input, migrateInfo, read, wireLists } from './artist-form.js';
 const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {auth: {persistSession: false}});
 const root = document.getElementById('fiche');
 const token = new URLSearchParams(location.search).get('t') || '';
-const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const DRAFT = 'artiste.' + token;   // brouillon gardé dans le navigateur tant que la fiche n'est pas envoyée
 const words = s => (String(s || '').trim().match(/\S+/g) || []).length;
 
@@ -98,9 +97,11 @@ function draw(d, values){
       return note(`${l} : il en faut au moins ${min}.`, true); }
     const tooLong = [...form.querySelectorAll('[data-words]')].filter(t => words(t.value) > Number(t.dataset.words));
     // mail, liens, nombres : au bon format
-    const bad = [...form.querySelectorAll('input[type=email], input[type=url], input[type=number]')].filter(x => x.value.trim() && !x.checkValidity());
+    const badMail = missing.length ? [] : checkMails(form);   // même contrôle des mails que l'application (Q23), message sous le champ
+    if (badMail.length){ badMail[0].focus(); return note(MAIL_MSG + '.', true); }
+    const bad = [...form.querySelectorAll('input[type=url], input[type=number]')].filter(x => x.value.trim() && !x.checkValidity());
     if (bad.length && !missing.length){ bad.forEach(x => x.classList.add('invalid')); bad[0].focus();
-      return note(bad[0].type === 'email' ? 'L’adresse mail n’est pas valide.' : bad[0].type === 'url' ? 'Un lien n’est pas valide : il doit commencer par https://' : 'Un nombre n’est pas valide.', true); }
+      return note(bad[0].type === 'url' ? 'Un lien n’est pas valide : il doit commencer par https://' : 'Un nombre n’est pas valide.', true); }
     if (missing.length){ missing.forEach(x => x.classList.add('invalid')); (missing[0].querySelector?.('input') || missing[0]).focus(); return note(`Il manque ${missing.length} élément${missing.length > 1 ? 's' : ''} obligatoire${missing.length > 1 ? 's' : ''}.`, true); }
     if (tooLong.length){ tooLong.forEach(x => x.classList.add('invalid')); tooLong[0].focus(); return note(`La présentation dépasse ${tooLong[0].dataset.words} mots.`, true); }
     const info = read(form);

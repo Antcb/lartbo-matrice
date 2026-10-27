@@ -13,6 +13,27 @@ export const eur2 = n => n==null || n==='' || isNaN(n) ? '—' : Number(n).toLoc
 /** Montant courant : sans centimes quand il est rond (1 200 €), avec sinon (8 967,50 €) */
 export const eur = n => n==null || n==='' || isNaN(n) ? '—' : Number(n).toLocaleString('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2});
 
+/** Mail valide (CONVENTIONS §3.4, Q23) : même expression que la base (contacts_clean) ; un champ vide est accepté (obligatoire vérifié à part) */
+export const MAIL_RE = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i;
+export const mailOk = v => !String(v ?? '').trim() || MAIL_RE.test(String(v).trim());
+export const MAIL_MSG = 'Adresse mail invalide : vérifie le @ et le domaine';
+/** Erreur sous un champ (§9.1, Q23) : message en --danger sous le champ, bordure du champ en --danger ; msg vide = retire l'erreur */
+export function fieldError(input, msg){
+  if (!input) return;
+  const box = input.closest('.field') || input.parentElement;
+  box?.querySelector(':scope > .help.err[data-field-err]')?.remove();
+  input.classList.toggle('bad', !!msg); input.classList.toggle('invalid', !!msg);
+  if (msg){ const p = document.createElement('p'); p.className = 'help err'; p.dataset.fieldErr = '1'; p.textContent = msg; input.insertAdjacentElement('afterend', p); }
+}
+/** Mails d'un formulaire au mauvais format : erreurs posées sous chaque champ, renvoie les champs fautifs (les champs masqués sont ignorés) */
+export function checkMails(form){
+  const all = [...form.querySelectorAll('input[type=email]')].filter(i => !i.closest('[hidden]') && !i.disabled);
+  all.forEach(i => fieldError(i, ''));
+  const bad = all.filter(i => !mailOk(i.value));
+  bad.forEach(i => fieldError(i, MAIL_MSG));
+  return bad;
+}
+
 /** Fuseau de référence de toute règle métier (CONVENTIONS §1.2) */
 export const TZ = 'Europe/Paris';
 /** Jour (AAAA-MM-JJ) d'un horodatage, à Paris — jamais .slice(0,10) d'un horodatage (jour UTC : la veille entre 0 h et 2 h) */
