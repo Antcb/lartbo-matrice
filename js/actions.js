@@ -4,9 +4,9 @@
  */
 import { afterFeeChange, askConfirmation, becameConfirmed, sendConfirmation, validateTerms } from './confirm-flow.js';
 import { go, render } from './app.js';
-import { BILL_KINDS, billLockReason, billPct, changeBlocked, emittedLinesOf, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
+import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
-import { insert, openStored, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
+import { insert, openStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
 import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showsFiltered, structName } from './selectors.js';
 import { CFG } from './config.js';
@@ -180,6 +180,36 @@ export const ACTIONS = {
     const sort = Math.max(0,...paymentsOf(showId).map(p=>p.sort||0)) + 1;
     await insert('show_payments', {show_id:showId, kind, label: PAY_KINDS[kind] + (n?` ${n+1}`:''), pct: kind==='cnm'?Number(setting('default_cnm_pct'))||null:null, sort});
     render();
+  },
+  // Commission de production (lot D1) : noter un virement réel vers L'ArtBo — montant, date, référence. Jamais une facture.
+  // Même règles côté base : commission_transfer_before / _after (migration v1.43) — reste jamais dépassé, total figé au 1er versement
+  addTransfer: async t => {
+    const p = byId('show_payments', t.dataset.id); if (!p) return;
+    const st = commissionState(p);
+    if (!isProdCommission(p) || st.legacy || st.remaining < 0.005) return toast('Rien à transférer sur cette commission.');
+    const level = MODALS[1]?.dlg?.open ? 2 : 1;
+    const v = await openModal({title: 'Noter un versement de commission', level, saveLabel: 'Enregistrer le versement',
+      fields: [{k: 'amount', label: 'Montant transféré HT (€)', type: 'number'}, {k: 'transferred_at', label: 'Date du transfert', type: 'date'},
+        {k: 'reference', label: 'Référence (relevé bancaire)', full: true}, {k: 'note', label: 'Note', full: true, placeholder: 'ex. retenue sur l’acompte, sans virement distinct'}],
+      values: {amount: st.remaining, transferred_at: today()},
+      extraTop: `<p class="mb">Commission totale <b>${eur2(st.total)}</b> · déjà transféré ${eur2(st.transferred)} · reste <b>${eur2(st.remaining)}</b>. Un versement enregistré ne se modifie plus.</p>`,
+      onSave: v => {
+        if (!(Number(v.amount) > 0)){ toast('Montant du versement à saisir', true); return false; }
+        if (Number(v.amount) > st.remaining + 0.004){ toast(`Au plus ${eur2(st.remaining)} : c’est le reste à transférer`, true); return false; }
+        if (!v.transferred_at){ toast('Date du transfert à saisir', true); return false; }
+        return v; }});
+    if (!v) return;
+    const row = await insert('commission_transfers', {payment_id: p.id, amount: Math.round(Number(v.amount) * 100) / 100, transferred_at: v.transferred_at,
+      reference: v.reference || null, note: v.note || null});
+    if (!row) return;
+    await refreshFor('show_payments', 'show_id', [p.show_id]);   // la base a figé le total et, si tout est transféré, noté la date
+    const cur = byId('show_payments', p.id);
+    if (cur && (cur.amount == null || cur.amount === '')) await save('show_payments', p.id, {amount: st.total}, {rerender: false});   // même règle que la base
+    const after = commissionState(byId('show_payments', p.id));
+    if (after.full && !byId('show_payments', p.id)?.paid_at)
+      await save('show_payments', p.id, {paid_at: after.transfers.map(x => x.transferred_at).sort().pop()}, {rerender: false});
+    render();
+    toast(after.full ? 'Versement enregistré : commission entièrement versée.' : `Versement enregistré : reste ${eur2(after.remaining)} à transférer.`);
   },
   delPay: async t => { const p = byId('show_payments', t.dataset.id);
     const why = billLockReason(p);

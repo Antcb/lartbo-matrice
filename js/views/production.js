@@ -3,7 +3,7 @@
  * Chaque date se déplie : suivi admin, commissions, dossier Drive, facturation.
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
-import { BILL_KINDS, acompteState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
+import { BILL_KINDS, acompteState, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
 import { byId, projName, setting, showsFiltered, structName } from '../selectors.js';
 import { lateSteps, remindersOf } from '../reminders.js';
@@ -13,7 +13,7 @@ import { cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { esc, eur2, fmtDate, matches, today } from '../utils.js';
 import { payerLabel } from '../budget.js';
-import { productionBudgetHTML, projectBudgetHTML, showBudgetHTML } from './budget.js';
+import { commissionTransferCell, productionBudgetHTML, projectBudgetHTML, showBudgetHTML } from './budget.js';
 import { isProductionShow } from '../production-budget.js';
 
 export function viewProduction(){
@@ -196,7 +196,7 @@ function billingTab(s, booking, pays, late){
           <td class="num nowrap">${BILL_KINDS.includes(p.kind) && s.fee_ht ? `<input type="number" step="any" inputmode="decimal" data-t="show_payments" data-id="${p.id}" data-f="amount_ttc" value="${a==null?'':ttc(a, payVat(p))}" aria-label="Montant TTC" ${lock || 'title="Saisis le TTC : le HT et le % se calculent"'}>` : eur2(ttc(a, payVat(p)))}</td>
           <td>${payeeCell(s, p, booking)}</td>
           ${selfPaid ? `<td class="muted small">Pas de facture : tu te verses ta commission depuis le compte de l’artiste</td><td></td><td></td>
-          <td class="${p.paid_at?'done-cell':late.has('artbo')?'late-cell':''}" title="Commission versée à L’ArtBo le">${cIn('show_payments',p.id,'paid_at',p.paid_at,'date')}</td><td></td>` : `
+          <td class="${commissionState(p).full || commissionState(p).legacy ? 'done-cell' : late.has('artbo') ? 'late-cell' : ''}" title="Versements de la commission à L’ArtBo">${commissionTransferCell(p)}</td><td></td>` : `
           <td>${cIn('show_payments',p.id,'invoice_number',p.invoice_number,'text','style="min-width:90px"')}</td>
           <td class="${late.has(p.kind)&&!p.sent_at?'late-cell':''}">${cIn('show_payments',p.id,'sent_at',p.sent_at,'date')}</td>
           <td title="Date de la dernière relance">${cIn('show_payments',p.id,'reminded_at',p.reminded_at,'date')}</td>

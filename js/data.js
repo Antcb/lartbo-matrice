@@ -25,7 +25,7 @@ export async function fetchAll(table){
   let out = [], from = 0, size = 1000;
   for(;;){
     const {data, error} = await sb.from(table).select('*').range(from, from+size-1);
-    if (error) { if (!/does not exist/.test(error.message)) toast(`Chargement ${table} : ${error.message}`, true); return out; }
+    if (error) { if (!/does not exist|schema cache/.test(error.message)) toast(`Chargement ${table} : ${error.message}`, true); return out; }
     out = out.concat(data); if (data.length < size) return out; from += size;
   }
 }

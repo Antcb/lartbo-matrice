@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.43.0 — 27/10/2026
+- Lot D1 : commission de production = total dû + historique des versements (versements partiels, reste à transférer, rappels sur le reste)
+
+
 ## 1.42.4 — 26/10/2026
 - Lot D1 : relecture — journal de régularisation limité au cas prévu, TVA alignée sur la base, cumul d'acomptes Pennylane au montant réel
 

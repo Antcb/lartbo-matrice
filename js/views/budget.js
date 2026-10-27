@@ -4,7 +4,7 @@
  */
 import { accountMoves, accountOf, availableForArtist, commissionAmount, commissionOf, isFree, isSolde, lineForecast, lineStatus, lineValue, linesOf, offLinesOf, payerLabel, payslipCost, prodShowsOf, showBudget } from '../budget.js';
 import { BUDGET_CATS, PAYERS } from '../constants.js';
-import { payAmount, paymentsOf } from '../calc.js';
+import { commissionState, payAmount, paymentsOf } from '../calc.js';
 import { byId } from '../selectors.js';
 import { S } from '../state.js';
 import { cIn, cSel } from '../ui/cells.js';
@@ -62,6 +62,25 @@ function dropZone(attrs, text){
  *  - « Écart » = seulement ce qui a vraiment changé (réel connu − son prévu) ;
  *  - le reste pour l'artiste se calcule avec les mêmes chiffres, donc il tombe juste avec les lignes du dessus.
  */
+/** Commission de production (lot D1) : total, déjà transféré, reste — même texte dans le budget, l'onglet Factures et l'export */
+export function commissionStatus(com){
+  if (!com) return 'pas encore versée';
+  const st = commissionState(com), dates = st.transfers.map(t => fmtDate(t.transferred_at));
+  if (st.legacy) return `versée le ${fmtDate(com.paid_at)}`;
+  if (st.full) return st.transfers.length > 1 ? `versée en ${st.transfers.length} fois (${dates.join(', ')})` : `versée le ${dates[0]}`;
+  if (st.partial) return `versée en partie : ${eur2(st.transferred)} transférés (${dates.join(', ')}), reste ${eur2(st.remaining)} à transférer`;
+  return 'pas encore versée';
+}
+/** Cellule « versement » d'une commission de production : historique des versements + bouton pour noter le suivant */
+export function commissionTransferCell(com){
+  if (!com) return '<span class="muted">—</span>';
+  const st = commissionState(com);
+  const list = st.transfers.map(t => `<div class="nowrap" title="${esc([t.reference, t.note].filter(Boolean).join(' · '))}">${eur2(Number(t.amount))} · ${fmtDate(t.transferred_at)}${t.reference ? ' · ' + esc(t.reference) : ''}</div>`).join('');
+  const legacy = st.legacy ? `<div class="nowrap">${eur2(st.total)} · ${fmtDate(com.paid_at)}</div>` : '';
+  const btn = st.remaining >= 0.005 && !st.legacy ? `<button class="btn sm" data-act="addTransfer" data-id="${com.id}" title="Noter un virement réel vers L’ArtBo (date, montant, référence)">Noter un versement</button>` : '';
+  return `${legacy}${list}${btn}`;
+}
+
 function summaryTable(s, b, com, p){
   const exp = b.lines.filter(l => !isSolde(l)), real = exp.filter(l => l.amount != null), est = exp.filter(l => l.amount == null);
   const realSum = real.reduce((t, l) => t + Number(l.amount), 0), estSum = est.reduce((t, l) => t + (lineForecast(l) || 0), 0);
@@ -76,7 +95,7 @@ function summaryTable(s, b, com, p){
   const resteF = r2(b.fee - b.com - b.forecastExp), resteR = r2(b.fee - b.com - expNow);
   return `<div class="tbl-wrap"><table class="budget-sum"><thead><tr><th></th><th class="num">Prévu</th><th class="num" title="Montant réel quand il est connu, sinon le prévu">Réel / à jour</th><th class="num">Écart</th></tr></thead><tbody>
     ${row('Cachet HT', b.fee, b.fee, 0, (cashed >= b.fee - 0.01 && b.fee ? 'entièrement encaissé' : `encaissé : ${eur2(cashed)} sur ${eur2(b.fee)}`) + (unassigned ? ` · dont ${eur2(unassigned)} — compte non renseigné` : ''))}
-    ${row('Commission L’ArtBo', b.com, b.com, 0, com?.paid_at ? `virée le ${fmtDate(com.paid_at)}` : 'pas encore virée', {cost: true})}
+    ${row('Commission L’ArtBo', b.com, b.com, 0, commissionStatus(com), {cost: true})}
     ${row('Dépenses', b.forecastExp, expNow, expGap, !exp.length ? 'aucune ligne' : est.length ? `${eur2(realSum)} réels (${real.length} ligne${real.length > 1 ? 's' : ''}) + ${eur2(estSum)} encore au prévu (${est.length} ligne${est.length > 1 ? 's' : ''})` : 'toutes les lignes ont leur montant réel', {cost: true})}
     ${row('Reste pour l’artiste' + (p?.artist_payee ? ` (${esc(p.artist_payee)})` : ''), resteF, resteR, r2(resteR - resteF), est.length ? `cachet − commission − dépenses · encore provisoire : ${est.length} dépense${est.length > 1 ? 's' : ''} au prévu` : 'cachet − commission − dépenses · définitif', {strong: true})}
   </tbody></table></div>
@@ -126,9 +145,10 @@ function artistBlock(s, b, p){
 /** Budget d'une date (dans la date dépliée) */
 export function showBudgetHTML(s){
   const p = byId('projects', s.project_id), b = showBudget(s), com = commissionOf(s);
-  const comRow = `<tr class="${com?.paid_at?'is-paid':''}"><td><b>Commission</b></td><td><span>Commission L'ArtBo</span> ${com?.amount != null && com.amount !== '' ? `<span class="muted" title="Montant saisi à la main dans Factures">(montant saisi)</span>` : com?.pct != null && com.pct !== '' ? cIn('show_payments', com.id, 'pct', com.pct, 'number', 'class="narrow" title="% de commission sur cette date"') : cIn('shows', s.id, 'artbo_pct', s.artbo_pct, 'number', 'class="narrow" title="% de commission sur cette date"')} %</td><td>L'ArtBoristerie</td><td>${esc(payerLabel('compte', p))}</td>
-    <td class="num">${money(commissionAmount(s))}</td><td class="num">—</td><td class="muted">${com?.paid_at ? 'versée' : 'à te verser'}</td>
-    <td class="${com?.paid_at?'done-cell':''}">${com ? cIn('show_payments', com.id, 'paid_at', com.paid_at, 'date', 'title="Commission versée à L’ArtBo le"') : '<span class="muted">—</span>'}</td><td></td></tr>`;
+  const cst = com ? commissionState(com) : null;
+  const comRow = `<tr class="${cst?.full || cst?.legacy ? 'is-paid' : ''}"><td><b>Commission</b></td><td><span>Commission L'ArtBo</span> ${com?.amount != null && com.amount !== '' ? `<span class="muted" title="Montant saisi à la main dans Factures">(montant saisi)</span>` : com?.pct != null && com.pct !== '' ? cIn('show_payments', com.id, 'pct', com.pct, 'number', 'class="narrow" title="% de commission sur cette date"') : cIn('shows', s.id, 'artbo_pct', s.artbo_pct, 'number', 'class="narrow" title="% de commission sur cette date"')} %</td><td>L'ArtBoristerie</td><td>${esc(payerLabel('compte', p))}</td>
+    <td class="num">${money(commissionAmount(s))}</td><td class="num">${cst && (cst.transferred || cst.remaining) ? eur2(cst.transferred) : '—'}</td><td class="muted">${cst?.full || cst?.legacy ? 'versée' : cst?.partial ? `reste ${eur2(cst.remaining)} à te verser` : 'à te verser'}</td>
+    <td class="${cst?.full || cst?.legacy ? 'done-cell' : ''}">${commissionTransferCell(com)}</td><td></td></tr>`;
   return `<div class="prod-budget">
 
     ${summaryTable(s, b, com, p)}

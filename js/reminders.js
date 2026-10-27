@@ -14,9 +14,9 @@
  * Booking seul : après le contrat co-signé, envoyer la facture de commission ; 10 j après, vérifier le paiement.
  *   Jamais de relance d'acompte ni de solde (factures de l'artiste à l'organisateur).
  */
-import { isInvoiced, paymentsOf } from './calc.js';
+import { commissionState, isInvoiced, paymentsOf } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
-import { today, workDay } from './utils.js';
+import { eur2, today, workDay } from './utils.js';
 
 export const addDays = (d, n) => { const x = new Date(d+'T12:00:00'); x.setDate(x.getDate()+n); return x.toISOString().slice(0,10); };
 /** Rappel à J+10 : décalé au lundi s'il tombe un samedi ou un dimanche (même règle que la fonction serveur) */
@@ -64,7 +64,9 @@ export function remindersOf(s){
   // dès le premier encaissement (acompte, ou solde quand il n'y a pas d'acompte)
   const com = first('artbo'), part = first('partner');
   const cashed = pays.filter(p => ['acompte','solde'].includes(p.kind) && p.paid_at).map(p => p.paid_at).sort()[0];
-  if (cashed && com && !com.paid_at) rule('artbo', plus10(cashed), `${com.label || 'Commission L’ArtBo'} à te verser`);
+  // reste à transférer (versements partiels compris, lot D1) — même règle côté serveur (generate_reminders, migration v1.43)
+  const reste = com ? commissionState(com).remaining : 0;
+  if (cashed && com && reste >= 0.005) rule('artbo', plus10(cashed), `${com.label || 'Commission L’ArtBo'} : ${eur2(reste)} à te verser`);
   if (cashed && part && (!part.sent_at || !part.paid_at)) rule('partner', plus10(cashed), `Facture ${part.label} à ${part.sent_at?'faire payer':'envoyer'}`);
   return out;
 }
