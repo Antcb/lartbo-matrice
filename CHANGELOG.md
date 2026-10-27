@@ -8,281 +8,372 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 ## 1.51.0 — 27/10/2026
 - Coréalisation, coproduction, taxe CNM (lot V1.51) — tarifs et partage au-delà du break (MG + part du résultat net), clôture du résultat d'une coproduction avec reversements, taxe CNM calculée dans le budget (taux par date, structure qui la supporte, plus de ligne de facturation automatique)
 
+
 ## 1.50.1 — 27/10/2026
 - Doublons de contacts : avertissement seulement à la création ou quand une adresse est ajoutée ou modifiée (plus quand on change seulement le téléphone ou les notes)
+
 
 ## 1.50.0 — 27/10/2026
 - Contacts (lot V1.50a) — mail au mauvais format refusé avec un message sous le champ partout (fenêtres, tableaux, pages publiques) ; doublon de contact par mail : avertissement et accès à la fiche existante, sans fusion ; contacts_clean ne déplace plus jamais un mail
 
+
 ## 1.49.0 — 27/10/2026
 - Dates et formats (lot V1.49) : jour de Paris partout (aujourd'hui, horodatages, mails, factures Pennylane), une seule fonction d'ajout de jours et de mois, rappel de la boucle accueil à 4 mois calendaires (vendredi si week-end), pourcentages « 50 % » et montants aux formats officiels, y compris dans les mails
+
 
 ## 1.48.0 — 27/10/2026
 - Fenêtres (lot V1.48) : plus aucune fenêtre native du navigateur — questions de l'application qui nomment l'élément et ce qui part avec lui, saisies dans la fenêtre (mot de passe masqué), rapport Pennylane et copie de secours dans une fenêtre
 
+
 ## 1.47.0 — 27/10/2026
 - Sécurité (lot V1.47) : codes secrets illisibles par le navigateur (scripts Google appelés par un relais serveur, clé Brevo saisie côté serveur), clé IA hors des adresses, messages d'erreur du serveur en français, politique de sécurité (CSP) sur toutes les pages
+
 
 ## 1.46.1 — 27/10/2026
 - Tâches (lot V1.46b) : fenêtre de dialogue de l'application pour les suppressions (« Annuler » ne supprime plus jamais une relance téléphone), date de réalisation notée depuis la fenêtre de tâche avec 5 s pour annuler, fichiers stockés effacés avec la tâche ou le suivi supprimé
 
+
 ## 1.46.0 — 27/10/2026
 - Finances (lot V1.46a) : rappel « Facture à envoyer » 3 jours après la facture faite, impayés relancés sans limite avec suspension possible, acompte par défaut à 0 % respecté, commission par défaut de l'artiste ou des Réglages (plus de 15 ni de 0 en dur), compte d'encaissement choisi seulement au paiement, justificatif de dépense jamais marqué payé
+
 
 ## 1.45.2 — 27/10/2026
 - Pennylane : plus de bouton « Créer » sur une facture déjà émise hors Pennylane (ex. Tout Se Chante) ; la fonction serveur refuse aussi ce cas
 
+
 ## 1.45.1 — 27/10/2026
 - relecture indépendante D1 : v1.45 vérifie ses droits par comparaison (compatible avec la suspension des écritures), coproduction devenue production : lignes réelles recréées, historique des migrations enregistré
+
 
 ## 1.45.0 — 27/10/2026
 - lot D1 : coproductions sans « reste artiste » prévisionnel dans le compte artiste ; droits TRUNCATE retirés aux rôles de l'API (migration v1.45)
 
+
 ## 1.44.2 — 27/10/2026
 - relecture D1 : le classement « hors calcul » n'est possible que sur une ligne artificielle d'import d'une coproduction (jamais sur une opération réelle)
+
 
 ## 1.44.1 — 27/10/2026
 - Coproductions : une commission réelle reste possible à côté d'une ligne importée ; plus d'avertissement « acomptes manquants »
 
+
 ## 1.44.0 — 27/10/2026
 - Coproductions : aucune ligne de facturation ni commission générée ; lignes importées gardées hors calcul ; versements historiques aux dates bancaires
+
 
 ## 1.43.4 — 27/10/2026
 - Régularisations des commissions et acomptes facturés resserrées (relecture)
 
+
 ## 1.43.3 — 27/10/2026
 - Régularisation contrôlée des acomptes facturés à un autre % (La Puce, La MOBA) et retour arrière de la commission partielle tracé comme tel
+
 
 ## 1.43.2 — 27/10/2026
 - Journal financier : écriture retirée aux fonctions serveur, seuls les déclencheurs l'alimentent
 
+
 ## 1.43.1 — 27/10/2026
 - Commissions de production : droits d'accès du journal et des versements restreints, date engagée dès un versement, versements non modifiables
+
 
 ## 1.43.0 — 27/10/2026
 - Lot D1 : commission de production = total dû + historique des versements (versements partiels, reste à transférer, rappels sur le reste)
 
+
 ## 1.42.4 — 26/10/2026
 - Lot D1 : relecture — journal de régularisation limité au cas prévu, TVA alignée sur la base, cumul d'acomptes Pennylane au montant réel
+
 
 ## 1.42.3 — 26/10/2026
 - Lot D1 : mode et TVA des dates engagées protégés, retour arrière contrôlé des régularisations, journal dans la sauvegarde, acompte relié figé sur la facture Pennylane
 
+
 ## 1.42.2 — 26/10/2026
 - Lot D1 : relecture — droits d'exécution explicites des fonctions de calcul pour l'application et la fonction Pennylane
+
 
 ## 1.42.1 — 26/10/2026
 - Lot D1 : relecture — avertissement limité aux lignes concernées, montants figés au centime
 
+
 ## 1.42.0 — 26/10/2026
 - Lot D1 : montants figés dès l'émission ou le versement, avertissement avant de changer le cachet ou un % d'une date déjà facturée, journal des modifications financières, artiste sans compte dédié
+
 
 ## 1.41.5 — 26/10/2026
 - Lot C1, relecture du déploiement : la synchronisation Pennylane ne fige plus le montant d'un solde déjà émis et signale toute écriture refusée au lieu de la compter comme faite
 
+
 ## 1.41.4 — 26/10/2026
 - Lot C1 : migration acompte caduc — verrou par date contre la facturation simultanée d'un acompte et d'un solde (décision d'Anthony)
+
 
 ## 1.41.3 — 26/10/2026
 - Lot C1 : plusieurs soldes — aucun solde figé automatiquement (jamais à 0 €)
 
+
 ## 1.41.2 — 26/10/2026
 - Lot C1 : acompte caduc protégé aussi côté base (migration préparée), cession jamais comptée deux fois en cas de plusieurs soldes (anomalie signalée), commission booking : paiement repris sans rangement Drive, typage Deno vérifié
+
 
 ## 1.41.1 — 26/10/2026
 - Lot C1, relecture : protection côté base à la suppression d'une date booking, échéancier contractuel conservé dans Conditions et le mail, acompte caduc non facturable, mode figé quand un acompte ou solde est émis, cession vide jamais figée à 0
 
+
 ## 1.41.0 — 26/10/2026
 - Lot C1 : booking — seules la commission et les parts partenaires sont suivies (factures de l'artiste hors suivi, relances, devis et rattachements) ; production — solde = cession − acomptes effectivement facturés, figé à l'émission, acomptes non facturés caducs ; commission de production suivie par son versement ; trois indicateurs distincts ; règles Pennylane testées
+
 
 ## 1.40.9 — 25/10/2026
 - A2 : fiche publique d'une date booking présentée en « Échéancier prévu au contrat » (%, échéances, sans montant par ligne ; migration serveur préparée, non appliquée ; page compatible avec le serveur actuel) ; une date avec des pièces à rattacher ne se supprime pas ; pièces d'une date absente listées dans Production
 
+
 ## 1.40.8 — 24/10/2026
 - A2 (arbitrages du 24/10) : facture de vente sans correspondance sûre gardée dans « Pièces à rattacher » puis rattachée à la main ; un montant seul ne rattache plus à une ligne d'un autre type ; facture envoyée impayée relancée aussi en booking (migration serveur préparée, non appliquée) ; budget de la date : « dont X € — compte non renseigné »
+
 
 ## 1.40.7 — 24/10/2026
 - V1-A lot A2 : encaissements sans compte « Non renseigné » (hors solde des comptes, compte demandé au paiement), lignes booking jamais facturées hors « Reste à encaisser », factures émises sur date booking visibles et signalées, date annulée : mouvements faits gardés dans le compte, pièce rattachée sans date de paiement inventée
 
+
 ## 1.40.6 — 24/10/2026
 - Facture émise : son numéro, ses dates d’envoi et de paiement et son identifiant Pennylane ne s’effacent plus (pas de déverrouillage) ; protection doublée côté base (déclencheur) ; le mode d’une date facturée ne suit plus automatiquement l’artiste
+
 
 ## 1.40.5 — 24/10/2026
 - Facture émise (envoyée, payée, numérotée ou dans Pennylane) verrouillée par un garde-fou unique : ni montant, ni %, ni TVA, ni cachet, ni mode booking/production qui la modifierait, ni suppression de la ligne ou de sa date (refus avec message) ; acompte saisi en euros conservé ; changement de cachet : question conserver / recalculer depuis le tableau, la fiche de la date et « Valider les conditions »
 
+
 ## 1.40.4 — 24/10/2026
 - Factures émises verrouillées partout (envoyée, payée, numérotée ou dans Pennylane) ; acompte saisi en euros conservé ; le cachet ne réécrit plus un montant saisi sans le demander
+
 
 ## 1.40.3 — 22/10/2026
 - S0-R8 : brouillons, file des résumés IA et préférences séparés entre la vraie Matrice et l'espace de test ; pages publiques dans l'environnement de leur propre lien ; liens créés en test marqués « test » ; messages de l'espace de test corrigés
 
+
 ## 1.40.2 — 22/10/2026
 - Bibliothèques (Supabase JS 2.45.4, Leaflet 1.9.4, ExcelJS 4.4.0) chargées depuis des copies locales vérifiées au lieu de services tiers, mêmes versions
+
 
 ## 1.40.1 — 22/10/2026
 - Mails du journal : nettoyage du HTML par DOMPurify 3.4.16 (liens et attributs dangereux neutralisés, mise en page conservée)
 
+
 ## 1.40.0 — 21/10/2026
 - Budget : résumé prévu / à jour cohérent, lignes rangées par catégorie, orange réservé aux calculs remplacés, remboursement d'avance lisible ; onglets Production dans l'ordre du travail ; dossier artiste : copie complète en plusieurs fois
+
 
 ## 1.39.2 — 21/10/2026
 - Résumé IA : un seul passage d'essais à la fois
 
+
 ## 1.39.1 — 21/10/2026
 - Résumé IA : abandon sur erreur durable, essais après chargement ; factures : rangement complet ou nouvel essai
+
 
 ## 1.39.0 — 21/10/2026
 - Artistes les plus utilisés en premier, mail .eml au journal, menu Types compact, en-têtes alignés, recherche structures par nom d'abord, factures Pennylane rangées dans le Drive, relances J+10 au lundi, recherche sélectionnée au clic, résumé IA réessayé automatiquement
 
+
 ## 1.38.2 — 21/10/2026
 - Pennylane : « Facturer depuis le devis » et « Facture ↗ » ouvrent directement la page du devis / de la facture
+
 
 ## 1.38.1 — 21/10/2026
 - Relecture : synchro Pennylane lit toutes les pages ; paiements rechargés sans perdre les changements en direct
 
+
 ## 1.38.0 — 21/10/2026
 - Pennylane : acompte et solde facturés depuis le devis (comme avant) ; la synchro reprend seule leur numéro et leur paiement
+
 
 ## 1.37.3 — 20/10/2026
 - Téléphone : notifications et menu du compte (Réglages) s'ouvrent sous les icônes
 
+
 ## 1.37.2 — 20/10/2026
 - Relecture : rechargement partiel par pages stables, rejeu limité à la table rechargée
+
 
 ## 1.37.1 — 20/10/2026
 - Relecture : lieu vérifié dans le bon pays ; paiements au passage en production respectent « sans acompte » ; rechargements partiels complets et sans perte
 
+
 ## 1.37.0 — 20/10/2026
 - Tags : liste dans la fiche qui se ferme, anciens tags proposés ; lieu d'une structure remplacé en entier ; recherche par mail de contact ; téléphone : calendrier et choix des artistes
+
 
 ## 1.36.2 — 20/10/2026
 - Relecture : nombre illisible refusé partout ; une seule ligne Movinmotion par date ; acompte et solde ajoutés quand une date passe en production
 
+
 ## 1.36.1 — 20/10/2026
 - Contacts toujours propres (mails, téléphones) ; Brevo réessaie quand il est saturé
+
 
 ## 1.36.0 — 20/10/2026
 - Dates qui suivent le mode de l'artiste, Movinmotion ajouté dès qu'il y a un salarié, pôles en français, nombres à la virgule, tableaux alignés au cordeau
 
+
 ## 1.35.2 — 20/10/2026
 - Relecture : « Annuler » sur un suivi clos remet aussi ses relances
+
 
 ## 1.35.1 — 20/10/2026
 - Relecture : brouillon de mail restauré sans écrasement ; suivi confirmé ou clos = relances automatiques retirées
 
+
 ## 1.35.0 — 20/10/2026
 - Audit : design system (hauteurs, titres, espacements, flèches), en-tête commun, dates JJ/MM/AAAA, statuts en français, tablette en fiches, rien ne déborde
+
 
 ## 1.34.2 — 20/10/2026
 - Relecture : tags et budget type fiables
 
+
 ## 1.34.1 — 20/10/2026
 - Relecture : tags gardés au brouillon et à l'enregistrement, budget type sans écrasement, migration budget_template
+
 
 ## 1.34.0 — 20/10/2026
 - Budget type prérempli, tags des structures, nouvelle structure ouverte, acompte 50 % par défaut, budget et To Do allégés, mobile sans débordement
 
+
 ## 1.33.6 — 20/10/2026
 - Rappel « commission à te verser » dès le premier encaissement, même sans acompte
+
 
 ## 1.33.5 — 19/10/2026
 - Production : pas de TVA sur la commission L'ArtBo (elle n'est pas facturée)
 
+
 ## 1.33.4 — 19/10/2026
 - Corrections relecture (rappel de commission, affichage mobile)
+
 
 ## 1.33.3 — 19/10/2026
 - Production : plus de « facture de commission » — la commission L'ArtBo est « à te verser » (date de versement seulement), rappels et notifications compris
 - Commission : les commissions déjà versées ou facturées ne changent pas quand on change le % de l'artiste
 
+
 ## 1.33.2 — 19/10/2026
 - Commission : le % se modifie aussi depuis le budget de la date ; quand on change la commission d'un artiste, ses dates suivent (après confirmation)
 
+
 ## 1.33.1 — 19/10/2026
 - Budget : un montant sans date de versement compte comme « encore à verser » ; facture de l'artiste visible sur le versement
+
 
 ## 1.33.0 — 19/10/2026
 - Budget d'une date : le solde artiste sort du tableau des dépenses ; un bloc « Reste pour l'artiste » (calculé) + versements + écart pour toi (négatif = tu perds, positif = tu gagnes)
 - Export du budget d'une date pour l'artiste (page à imprimer / PDF)
 - Compte dédié : détail de tous les mouvements comptés, avec le solde après chacun, pour pointer avec la banque
 
+
 ## 1.32.1 — 19/10/2026
 - Corrections relecture : fiche salarié (dates des questions masquées), Brevo (liste des mails créés jamais écrasée)
+
 
 ## 1.32.0 — 19/10/2026
 - Dates début / fin cohérentes partout (calendrier de fin ouvert sur le début, fin avant début refusée, la fin suit le début)
 - Production : plus d'alerte « conditions pas encore validées » sur une date passée ou déjà confirmée par mail
 - Contacts : 2 mails et 2 téléphones partout (création rapide comprise), les 2 mails partent dans Brevo et dans les mails
 
+
 ## 1.31.8 — 19/10/2026
 - IA (résumé de suivi, lecture des pièces) : si les modèles Gemini les plus récents sont saturés, on passe automatiquement aux suivants
+
 
 ## 1.31.7 — 19/10/2026
 - Fiches organisateur, salarié et artiste : les grandes cases de texte s'adaptent à la longueur du texte
 
+
 ## 1.31.6 — 19/10/2026
 - Fiche artiste : cases de fichier plus petites ; la présentation et la stratégie s'agrandissent avec le texte
+
 
 ## 1.31.5 — 19/10/2026
 - Fiche artiste : une case = un fichier, bouton court dans les petites cases ; l'onglet Fiche artiste n'écrase plus une correction faite dans Administratif ou Membres
 
+
 ## 1.31.4 — 19/10/2026
 - Pages publiques : choix de fichier en français, bouton et nom du fichier bien alignés
+
 
 ## 1.31.3 — 19/10/2026
 - Onglet « Fiche artiste » : une correction met aussi à jour la structure administrative et l'onglet Membres ; une modification non enregistrée reste affichée avec « Réessayer » ; anciennes réponses reprises ; commission par défaut aussi appliquée par la base aux dates confirmées
 
+
 ## 1.31.2 — 19/10/2026
 - Fiche artiste : « + Ajouter un logo » et « + Ajouter une photo » pour en déposer autant que nécessaire
+
 
 ## 1.31.1 — 19/10/2026
 - Projet : bloc « Accueil » (personnes, montage, chambres, commission) modifiable directement dans l'Aperçu
 
+
 ## 1.31.0 — 19/10/2026
 - Onglet « Fiche artiste » : toutes les réponses modifiables (enregistrées toutes seules), « Copier » sur chaque champ et « Copier toute la fiche » ; équipe pro : structure + prénom et nom + mail + téléphone ; téléphone des membres ; une case par titre audio ; commission par défaut selon le type de suivi (booking 15 %, production 20 %), réglable dans Réglages
+
 
 ## 1.30.3 — 19/10/2026
 - Fiche artiste : équipe professionnelle avec structure + prénom et nom + mail + téléphone ; téléphone des membres ; une case par titre audio
 
+
 ## 1.30.2 — 19/10/2026
 - Fiche artiste : titres audio en MP3 ou WAV (3 minimum)
+
 
 ## 1.30.1 — 19/10/2026
 - Fiche artiste : une structure déjà en base (même SIRET) n'est jamais modifiée par l'artiste, elle est signalée « à relier » ; l'artiste complète seulement ce qui manque sur sa structure ; noms des membres corrigés ; seuls les MP3 comptent ; reprise des anciennes réponses « structure administrative »
 
+
 ## 1.30.0 — 19/10/2026
 - Fiche artiste : jusqu'à 3 formules, membres de l'équipe (poste, nom, prénom, naissance, mail, ville et pays de résidence) ajoutés dans l'onglet Membres, structure administrative créée / complétée dans la base et reliée au projet, 3 MP3 minimum, plan de scène avec la fiche technique ; nouveau projet : case « Créer son dossier Drive à son nom » et bouton « Créer son dossier Drive » en haut de la fiche projet
+
 
 ## 1.29.0 — 19/10/2026
 - Fiche artiste : département, dernières sorties (EP / album / single), répétitions et accompagnement (lieu, accompagnement en cours, dispositifs déjà suivis), personnes non-genrées dans l'équipe, équipe professionnelle (manager, booker, label, RP, éditeur, CM, structure administrative), photos récentes en carré / 300×400 / 400×300 ; vérification des mails et liens ; sauvegarde des fichiers en attente ; rangement Drive fichier par fichier
 
+
 ## 1.28.1 — 19/10/2026
 - Fiche artiste : mise en page des choix (boutons ronds) corrigée, équipe sur 3 colonnes
+
 
 ## 1.28.0 — 19/10/2026
 - Fiche artiste : un lien propre à chaque artiste (fiche projet › « Copier le lien de la fiche artiste ») ; l'artiste remplit infos, présentation, actualités, dates, équipe, référent, liens, prestation live et dépose ses fichiers, rangés automatiquement dans son dossier Drive ; ses réponses s'affichent dans l'onglet « Fiche artiste »
 
+
 ## 1.27.4 — 19/10/2026
 - Diagnostic : une erreur du site est affichée et notée pour correction (table client_errors)
+
 
 ## 1.27.3 — 19/10/2026
 - Suivis « Confirmed » rangés avec les suivis clos partout (Suivi, fiche structure, fiche artiste, To Do, relances)
 
+
 ## 1.27.2 — 19/10/2026
 - Correctif : pages longues (To Do, tâches terminées…) 8 fois plus rapides, plus de blocage de Safari ; échéance d'un acompte déjà facturé enregistrée ; la fiche de renseignements affiche les acomptes avec leurs échéances
 
+
 ## 1.27.1 — 19/10/2026
 - To Do : filtres en cours rappelés au-dessus de la liste avec « Tout afficher » ; bandeau « Nouvelle version — Recharger » quand le site est mis à jour
+
 
 ## 1.27.0 — 19/10/2026
 - Plusieurs acomptes : chaque acompte a son échéance (le 1er : à la signature du contrat) et sa ligne dans le mail de confirmation.
 - Réglages › Google : « Copier le code à jour » (Code.gs) et « Tester le script » ; message clair quand le script de production@ n'est pas à jour.
 
+
 ## 1.26.2 — 19/10/2026
 - Mise à jour automatique : rien n'est perdu pendant un rechargement après une coupure
 
+
 ## 1.26.1 — 19/10/2026
 - Corrections de la relecture Greptile : limite des acomptes avec les factures déjà envoyées, « 0 acompte » respecté dans le mail et la fiche, pop-up de confirmation depuis la fiche de la date, mise à jour automatique plus fiable (réglages, liens contacts, reconnexion, sans doublon), contrat regénérable, envoi bloqué s'il manque une pièce jointe, solde artiste prévu / réel, Communication suit le filtre des inactifs, double envoi impossible
+
 
 ## 1.26.0 — 19/10/2026
 - Mise à jour automatique : ce que fait un collègue (date validée, échange, tâche…) apparaît tout seul, sans recharger.
@@ -293,107 +384,140 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 - Date en production : actions (confirmation, boucles, fiche, contrat, Drive) en haut, puis onglets Conditions / Factures / Budget / Suivi admin ; budget en prévu / réel / écart.
 - Correctif : la position de défilement est de nouveau gardée après un enregistrement.
 
+
 ## 1.25.2 — 18/10/2026
 - Brouillons de mail rouverts : l'adresse, l'objet et le texte écrits restent ; déplier une section garde la position des tableaux ; invitation : le concert ne compte que pour un modèle d'invitation
+
 
 ## 1.25.1 — 18/10/2026
 - Corrections de la 3e relecture Greptile : limite des acomptes avec solde envoyé, montant saisi prioritaire, taxe CNM selon le département du concert, défilement, suivi de la To do, artiste de l'invitation, brouillons, modèles partagés gardés à la suppression d'un artiste, script Drive plus sûr
 
+
 ## 1.25.0 — 18/10/2026
 - Mise en forme des mails (police, taille, couleur, lien), Helvetica Neue 14 par défaut ; modèles pour plusieurs artistes, artistes cochés selon le modèle ; émojis gardés dans Gmail ; brouillons jamais perdus et échanges modifiables partout ; mail mis en forme dans le journal, « Marquer envoyé » ; résumé IA à chaque échange ou pièce ; dossier Drive d'un nouvel artiste ; booking : pas de fiche de renseignements ; fenêtre de prospection, To do et choix des artistes plus clairs ; budget de production (Production / Co-Production)
+
 
 ## 1.24.1 — 18/10/2026
 - Relecture Greptile : relances en brouillon revérifiées, prochaine relance à J+10 de l'envoi réel, factures Pennylane reconnues par leur identifiant, remplacement d'une pièce sans risque, migrations sûres
 
+
 ## 1.24.0 — 18/10/2026
 - Facturation : % ↔ HT ↔ TTC liés, solde automatique, 100 % max, total des factures face au cachet, montants au centime ; taxe CNM seulement si la date est concernée ; défilement gardé dans les tableaux ; To do : accès direct structure et suivi ; {{contact}} = prénom seul ; prospection depuis production@ avec la signature de Chloé ; invitation remplie depuis une date confirmée
+
 
 ## 1.23.0 — 18/10/2026
 - Modèles de prospection (Nova Noir, Rosters 2027, Invitation, MaMA, Réponse Tryo) ; modèles de mail rangés par type dans des groupes dépliables
 
+
 ## 1.22.0 — 18/10/2026
 - Relecture Greptile corrigée (formulaire salariés, réglages, sauvegarde complète, budget, relances, adresses tapées) ; pièces rangées dans le Drive de la date avec détection des doublons
+
 
 ## 1.21.1 — 18/10/2026
 - Synchroniser Pennylane (factures payées → « Payée »), dépenses déduites du compte The Locos, solde Martigny reçu
 
+
 ## 1.21.0 — 18/10/2026
 - Pennylane au format de tes factures (artiste, description date • ville • lieu, Projet et Date de réalisation, produits Cession / Coréalisation / Commission, acompte en quantité) ; avances de L'ArtBo remboursées par le compte dédié ; cachet Carcassonne corrigé
+
 
 ## 1.20.0 — 17/10/2026
 - Tâches rattachées à un suivi (lien depuis To Do), relances : après 3 relances par mail la tâche devient une relance téléphone ; pas de réponse = suivi clos ; dates des relances notées dans le journal
 
+
 ## 1.19.0 — 17/10/2026
 - Budget par date (prévu / réel, pièces lues par l'IA, qui paie), compte dédié de l'artiste en temps réel, case « booking uniquement » par date, devis et factures en brouillon dans Pennylane, import du budget Excel The Locos
+
 
 ## 1.18.1 — 17/10/2026
 - Espace de test (?test) : copie séparée de la Matrice pour faire tester le site
 
+
 ## 1.18.0 — 17/10/2026
 - Prospection depuis une structure (modèles, brouillon ou envoi depuis anthony@, suivi + journal + date en Intérêt + tâche de relance) et relance en réponse dans le même fil Gmail
+
 
 ## 1.17.2 — 13/10/2026
 - Glisser une pièce jointe depuis Mail dans la fenêtre du mail ; retour arrière au glissement du doigt
 
+
 ## 1.17.1 — 13/10/2026
 - Correctif fenêtre des modèles de mail
+
 
 ## 1.17.0 — 13/10/2026
 - Bandeau réordonné ; tâches Booking à J+10 ; filtre Pour qui dans To Do ; artistes d'un suivi en cases à cocher ; pincement pour zoomer la carte ; {{cp}} = 2 chiffres ; pièces jointes Gmail dans les brouillons ; abréviations retirées ; même fiche structure partout ; recherche de ville plus rapide
 
+
 ## 1.16.5 — 13/10/2026
 - IA : clés Google au nouveau format AQ.
+
 
 ## 1.16.4 — 13/10/2026
 - IA : demandes envoyées depuis Paris (règles européennes de Google)
 
+
 ## 1.16.3 — 13/10/2026
 - Réglages › IA : clé Google AI Studio (Gemini) pour les résumés de suivi
+
 
 ## 1.16.2 — 13/10/2026
 - Brevo : vérification de la clé API et du n° de liste
 
+
 ## 1.16.1 — 13/10/2026
 - Brevo : n'ajoute que les nouveaux mails, ne modifie jamais un contact déjà dans Brevo (désabonnés compris)
+
 
 ## 1.16.0 — 13/10/2026
 - Structures : festivals/salles avec dates, jauge, tarif et prix moyen (résumé sur l'accueil), dates annulées repliées, toujours ouvertes sur l'Accueil ; Brevo ; recherche avec apostrophes ; / automatiques dans les dates ; choix de l'artiste au clavier ; pièces jointes dans le fil du suivi ; export booking simplifié ; lien vers la structure depuis Production
 
+
 ## 1.15.6 — 12/10/2026
 - Tableau de renommage rangé dans « - Temp » ; nouvel exercice comptable copié depuis le modèle
 
+
 ## 1.15.5 — 12/10/2026
 - Noms Drive : département du lieu de la date (plus celui du siège de la structure), versions de contrats V1/V2, pré-contrats et locations ignorés, rattachement des dossiers à la date confirmée
+
 
 ## 1.15.4 — 12/10/2026
 - Exports nommés « 2026-10-12 Tour The Locos 2026 » et « 2026-10-12 Suivis The Locos »
 - Bulletins de paie rangés dans 01_Finance › exercice › E - Sociale › AAAA-MM ; notes de frais dans 01_Finance › exercice › B - Notes de Frais › AAAA-MM › NOM Prénom (dossier type copié, fichier modèle renommé)
 
+
 ## 1.15.3 — 12/10/2026
 - Renommage des contrats : « • Signed » quand l’organisateur a signé, « • Co-signed » quand les deux parties ont signé ; nomenclatures récapitulées dans le README
+
 
 ## 1.15.2 — 12/10/2026
 - Nomenclatures corrigées : dossier de date « MM-DD • Ville • Salle (79) » et contrat « Artiste • AAAA-MM-JJ • Ville (79) • Salle • CC/CR », avec les 2 premiers chiffres du code postal (2A/2B en Corse, 971… outre-mer, pays à l’étranger)
 - Vérification des noms : seuls les fichiers contenant « contrat » sont considérés comme des contrats (hors avenants, contrats techniques, fiches)
 
+
 ## 1.15.1 — 12/10/2026
 - Glisser-déposer partout : un fichier lâché près de n’importe quel bouton « Ajouter un fichier » (modèles de mail, préparation d’un mail, fiche salarié, questionnaire…) est pris en compte, avec la zone surlignée pendant le survol
+
 
 ## 1.15.0 — 12/10/2026
 - Modèles de mail : balises {{horaire}} (heure de passage) et {{duree_set}} (durée du set), remplies depuis la date, la fiche validée ou la fiche de l’organisateur ; heure de passage et durée du set modifiables dans Production
 - Raccourcis clavier partout : ⌘B gras, ⌘I italique, ⌘U souligné (mails), ⌘K lien, ⌘Entrée pour enregistrer (journal, formulaires) — Ctrl sur PC
 
+
 ## 1.14.0 — 12/10/2026
 - Modèles de mail : pièces jointes déposées directement (sans passer par le Drive) ou liens Drive, et pièces jointes ajoutées au moment d’envoyer
 - Modèles de mail : variante en nom libre, règle « Proposé en premier pour » (salle, festival, co-réalisation, cession, toutes) et bouton « Dupliquer » pour créer une variante
 
+
 ## 1.13.2 — 12/10/2026
 - Vérifier les noms : le tableau s’ouvre sans être bloqué par le navigateur, il est partagé avec anthony@ et un bouton « Ouvrir le dernier tableau » le retrouve dans Réglages
+
 
 ## 1.13.1 — 10/10/2026
 - Salariés : nouveau fonctionnement — l’export Movinmotion remplit la fiche, le lien envoyé au salarié ne demande que les infos complémentaires (permis 4a/4b, permis B, cartes SNCF, Flying Blue, scan du permis) et range tout
 - Salariés : « Créer la fiche RH » génère le Google Sheet depuis le modèle Fiche RH 2026 dans son dossier
 - Suivi : dates sans suite, annulées ou d’autres artistes repliées
+
 
 ## 1.13.0 — 10/10/2026
 - Booking : un clic sur une pastille de statut sous la carte la masque / l’affiche ; enchaînements repliés par défaut ; export des dates (un artiste, année complète ou période, statuts, avec ou sans cachets)
@@ -404,6 +528,7 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 - Suivis : seules les tâches du pôle Booking de la structure apparaissent ; une tâche créée depuis un suivi est en Booking
 - Projet JACO créé ; dossiers Drive des artistes rattachés (FAV = dossier « FAV »)
 
+
 ## 1.12.0 — 10/10/2026
 - Nouvel onglet Salariés : fiche complète (état civil, coordonnées, paie, pièces d’identité, déplacements), pièces reçues, dossier Drive « NOM Prénom » ; les 16 dossiers existants sont déjà rattachés
 - Questionnaire salarié en ligne (rh.html) : le salarié complète sa fiche et envoie RIB, carte vitale, pièce d’identité… depuis son téléphone ; les numéros sensibles déjà connus ne sont jamais réaffichés
@@ -411,17 +536,20 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 - Import de l’export Movinmotion depuis l’onglet Salariés (ou un projet) : crée ou met à jour les fiches salariés et les relie au projet
 - Réglages › Google : vérification des noms des dossiers de dates et des contrats dans un Google Sheet (rien n’est renommé sans validation), puis renommage des lignes cochées
 
+
 ## 1.11.0 — 10/10/2026
 - Fiche de renseignements alignée sur les formulaires Contrat de Cession / Contrat de Coréalisation (TVA oui/non, signataire, lieu, horaire, durée, billetterie…) avec la mention d’engagement et le % d’acompte
 - Validation par l’équipe : les réponses de l’organisateur restent « à valider » ; écran de comparaison (réponse / valeur retenue), recopie sur la structure et « Pré-contrat complété » seulement après validation
 - Contrat : génération du Google Doc depuis le modèle CC ou CR dans le dossier de la date (01_Legal), balises remplies, montants TTC et en lettres, acompte / solde, date de solde, invitations ; export PDF au nom « Artiste • AAAA-MM-JJ • Ville (CP) • Salle • CC/CR »
 - Production : invitations producteur, % après break et break pour les co-réalisations
 
+
 ## 1.10.0 — 10/10/2026
 - Modèles de mail par artiste (confirmations CC / CC Club / CC Festival / CCR Club, boucles accueil & technique et communication) avec balises remplies automatiquement : Réglages et onglet « Modèles de mail » du projet
 - Production : « Préparer la confirmation » et les boucles — vérification du cachet, de la TVA, du contrat et des acomptes, choix du destinataire, aperçu modifiable, brouillon Gmail (ou copie du mail)
 - Fiche de renseignements en ligne (fiche.html) propre à chaque date : conditions à jour et verrouillées, l’organisateur remplit ses coordonnées (enregistrées sur la structure) ; pré-contrat coché et notification à l’envoi ; réponses consultables et modifiables
 - Script Google : brouillons Gmail, dossiers nommés « MM_DD • Ville • Salle (CP) », rattachement des dossiers existants, chemin Finder, brouillons automatiques des boucles et récap quotidien par mail
+
 
 ## 1.9.0 — 10/10/2026
 - Notes d'échange gardées en brouillon (même en cliquant ailleurs ou en quittant la page) ; un nouveau suivi n'est plus supprimé tant qu'il contient quelque chose
@@ -437,6 +565,7 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 - Communication : dates passées repliées, artistes inactifs masqués
 - To Do : onglet « Terminées » (30 derniers jours)
 
+
 ## 1.8.0 — 08/10/2026
 - Police Geist et bleu L'ArtBo #283C63
 - Réglages : pôles des tâches modifiables ; bouton pour appliquer le nouvel acompte / solde aux factures pas encore envoyées
@@ -450,6 +579,7 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 - Suivi : nouveau suivi ouvert directement dans l'espace de prospection, résumé IA au-dessus du journal (partout), dates du suivi modifiables et rattachables, carte : rayon réglable jusqu'à un an après la date + dates du monde entier à ±5 jours, distance et temps de route au clic
 - Export CSV des suivis : filtre sur la période du dernier échange
 - Membres : import Movinmotion réglé sur le vrai export, fiche complète par membre, réimport = mise à jour
+
 
 ## 1.7.0 — 08/10/2026
 - Nouveau nom et logo : L'ArtBoristerie Productions
@@ -467,6 +597,7 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 - Ticketing et Communication : par artiste et par date, seulement les dates concernées, break et taux de remplissage
 - Production : par artiste et par date, recherche, pré-contrat, relances en rouge, mode booking seul, créer ou lier le dossier Drive
 - Notifications : cloche dans l'en-tête, rappels créés chaque matin
+
 
 ## 1.6.0 — 08/10/2026
 - Code réorganisé en fichiers séparés (un fichier par onglet, réglages, calculs, carte…), comme la Matrice Production AccessFac
