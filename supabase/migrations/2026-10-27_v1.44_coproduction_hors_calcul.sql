@@ -234,14 +234,14 @@ begin
   if s.contract_type = 'Co-Production' then return; end if;   -- coproduction : aucune ligne de facturation générée (27/10/2026)
   perform pg_advisory_xact_lock(hashtext('pay:' || p_show));
   select coalesce(max(sort), 0) into mx from show_payments where show_id = p_show;
-  has_ac := exists (select 1 from show_payments where show_id = p_show and kind = 'acompte');
-  has_so := exists (select 1 from show_payments where show_id = p_show and kind = 'solde');
+  has_ac := exists (select 1 from show_payments where show_id = p_show and kind = 'acompte' and hors_calcul is null);   -- une ligne hors calcul ne compte pas (relecture D1)
+  has_so := exists (select 1 from show_payments where show_id = p_show and kind = 'solde' and hors_calcul is null);
   -- rien de prévu : acompte par défaut + solde ; un solde déjà là sans acompte = choix « sans acompte », gardé tel quel
   if not has_ac and not has_so then
     insert into show_payments (show_id, kind, label, pct, sort, payee) values
       (p_show, 'acompte', 'Acompte', ac, mx + 1, 'compte'), (p_show, 'solde', 'Solde', greatest(0, 100 - ac), mx + 2, 'compte');
   elsif not has_so then
-    select coalesce(sum(pct), 0) into sum_ac from show_payments where show_id = p_show and kind = 'acompte';
+    select coalesce(sum(pct), 0) into sum_ac from show_payments where show_id = p_show and kind = 'acompte' and hors_calcul is null;
     insert into show_payments (show_id, kind, label, pct, sort, payee) values (p_show, 'solde', 'Solde', greatest(0, 100 - sum_ac), mx + 1, 'compte');
   end if;
 end $function$;

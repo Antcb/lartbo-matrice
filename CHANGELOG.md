@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.45.1 — 27/10/2026
+- relecture indépendante D1 : v1.45 vérifie ses droits par comparaison (compatible avec la suspension des écritures), coproduction devenue production : lignes réelles recréées, historique des migrations enregistré
+
+
 ## 1.45.0 — 27/10/2026
 - lot D1 : coproductions sans « reste artiste » prévisionnel dans le compte artiste ; droits TRUNCATE retirés aux rôles de l'API (migration v1.45)
 

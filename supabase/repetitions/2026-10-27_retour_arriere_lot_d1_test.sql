@@ -465,4 +465,6 @@ begin
               (select md5(coalesce(string_agg(t::text, '|' order by t.id), '')) from public.projects t)) from _d1_ra) then
     raise exception 'ECHEC : des données ont changé pendant le retour arrière — TOUT EST ANNULÉ'; end if;
 end $ctl$;
+-- Historique des migrations Supabase (§7.5) : les 3 versions du lot D1 sont retirées avec le lot
+do $hist$ begin if to_regclass('supabase_migrations.schema_migrations') is not null then execute 'delete from supabase_migrations.schema_migrations where version in (''20261026000142'', ''20261027000143'', ''20261027000144'')'; end if; end $hist$;
 commit;
