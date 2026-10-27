@@ -6,8 +6,9 @@
  *   partagé avec le coproducteur selon le % de la date.
  * Chaque montant existe en prévu et en réel (billets vendus, pièces reçues).
  */
-import { r2 } from './utils.js';
-import { lineValue, lineForecast, linesOf } from './budget.js';
+import { eur2, r2 } from './utils.js';
+import { isCnmLine, isSacemLine, lineValue, lineForecast, linesOf } from './budget.js';
+import { cnmRate } from './corea.js';
 import { byId } from './selectors.js';
 
 const num = v => v == null || v === '' ? null : Number(v);
@@ -16,7 +17,8 @@ export const isProductionShow = s => !!s && /^(Production|Co-Production)$/.test(
 export const PROD_CATS = ['Salle', 'Promoteur'];
 
 export const PROD_DEFAULTS = {
-  reps: 1, vat: 5.5, cnm_pct: 3.5, sacem_pct: 8.8, sacd_pct: 0, sacd_ms_pct: 0, agessa_pct: 1.1,
+  reps: 1, vat: 5.5, sacem_pct: 8.8,   // taux CNM : celui de la date ou des Réglages (cnmRate, v1.51), plus de 3,5 écrit ici
+  sacd_pct: 0, sacd_ms_pct: 0, agessa_pct: 1.1,
   promo_net_pct: 0, promo_dl_pct: 0, artbo_share: 100, invitations: 0,
   tickets: [{label: 'Prix unique', qty: 0, price: 0, dl_prod: 0, dl_net: 0}],
 };
@@ -41,27 +43,31 @@ export function productionBudget(s, real = false){
   const dlTtc = r2(tickets.reduce((a, t) => a + t.dl, 0));
   const ht = r2(grossTtc / (1 + vat / 100)), dlHt = r2(dlTtc / (1 + vat / 100));
   const capacity = (Number(s.capacity) || 0) * (Number(p.reps) || 1);
-  // droits et taxes (sur la recette HT, comme le tableau)
-  const cnm = r2(Math.round(ht) * (num(p.cnm_pct) || 0) / 100);
+  // droits et taxes : sur la TOTALITÉ de la recette HT (comme le tableau) ; une dépense CNM / SACEM réelle saisie remplace le calcul
+  const lines = linesOf(s.id), taxLines = lines.filter(l => isCnmLine(l) || isSacemLine(l));
+  const realOf = test => { const ls = taxLines.filter(test).filter(l => l.amount != null); return real && ls.length ? r2(ls.reduce((a, l) => a + Number(l.amount), 0)) : null; };
+  const cnmCalc = r2(Math.round(ht) * cnmRate(s) / 100), cnmReal = realOf(isCnmLine);
+  const cnm = cnmReal ?? cnmCalc;
   const ag = (num(p.agessa_pct) || 0) / 100;
   const sacd = (() => { const d = Math.floor(ht * (num(p.sacd_pct) || 0)) / 100, cr = r2(ht * (num(p.sacd_pct) || 0) / 5 / 100); return r2(d + cr + r2(d * ag)); })();
   const sacdMs = (() => { const d = Math.floor(ht * (num(p.sacd_ms_pct) || 0)) / 100, cr = r2(ht * (num(p.sacd_ms_pct) || 0) / 5 / 100); return r2(d + cr + r2(d * ag)); })();
-  const sacem = (() => { const d = Math.floor(ht * (num(p.sacem_pct) || 0)) / 100; return r2(d + r2(d * ag)); })();
+  const sacemReal = realOf(l => isSacemLine(l) && !isCnmLine(l));
+  const sacem = sacemReal ?? (() => { const d = Math.floor(ht * (num(p.sacem_pct) || 0)) / 100; return r2(d + r2(d * ag)); })();
   const taxes = r2(cnm + sacd + sacdMs + sacem);
   const net = r2(ht - taxes);
-  // coûts : lignes du budget de la date (salle, promoteur…), prévu ou réel
-  const lines = linesOf(s.id);
+  // coûts : lignes du budget de la date (salle, promoteur…), prévu ou réel — hors CNM / SACEM, déjà dans les taxes (jamais deux fois)
+  const costLines = lines.filter(l => !taxLines.includes(l));
   const costOf = l => real ? (l.amount != null ? Number(l.amount) : 0) : (lineForecast(l) ?? (Number(l.amount) || 0));
   const byCat = {};
-  lines.forEach(l => { byCat[l.category || 'Autres'] = r2((byCat[l.category || 'Autres'] || 0) + costOf(l)); });
-  const costs = r2(lines.reduce((a, l) => a + costOf(l), 0));
+  costLines.forEach(l => { byCat[l.category || 'Autres'] = r2((byCat[l.category || 'Autres'] || 0) + costOf(l)); });
+  const costs = r2(costLines.reduce((a, l) => a + costOf(l), 0));
   const promo = r2(net * (num(p.promo_net_pct) || 0) / 100 + dlHt * (num(p.promo_dl_pct) || 0) / 100);
   const result = r2(net - costs - promo);
   const resultDl = r2(net + dlHt - costs - promo);
   const share = (num(p.artbo_share) ?? 100) / 100;
   return {p, tickets, paying, invitations, total: paying + invitations, capacity,
     fill: capacity ? (paying + invitations) / capacity : null, avgPrice: paying ? r2(grossTtc / paying) : 0,
-    grossTtc, dlTtc, ht, dlHt, vatAmount: r2(grossTtc - ht), cnm, sacem, sacd, sacdMs, taxes, net, netPerTicket: paying ? r2(net / paying) : 0,
+    grossTtc, dlTtc, ht, dlHt, vatAmount: r2(grossTtc - ht), cnm, cnmCalc, cnmReal, cnmRate: cnmRate(s), sacemReal, taxLines, sacem, sacd, sacdMs, taxes, net, netPerTicket: paying ? r2(net / paying) : 0,
     costs, byCat, promo, result, resultDl, artbo: r2(resultDl * share), partner: r2(resultDl * (1 - share)), share,
     partnerName: byId('partners', s.partner_id)?.name || 'Coproducteur'};
 }
@@ -76,3 +82,39 @@ export const PROD_LINES = [
   ['Promoteur', 'Repas soir'], ['Promoteur', 'Fournitures loges'], ['Promoteur', 'Repas prod'],
 ];
 export { lineValue };
+
+/**
+ * 🤝 Coproduction : positions de chacun et reversement (décisions d'Anthony du 27/10/2026). Sur les montants RÉELS :
+ *   - résultat global réel (DL inclus) réparti selon les % du contrat, bénéfice ou perte ;
+ *   - la structure qui encaisse les recettes garde la recette nette (HT, après droits et taxes, DL inclus, promo locale déduite) ;
+ *   - chacun a payé ses dépenses réelles (payeur « L'ArtBo » ou « coproducteur », date de paiement remplie) ;
+ *   - reversement = part due − position réelle ; celui qui reçoit le reversement facture l'autre (facture préparée à la main).
+ * Rien n'est payé ni facturé automatiquement ; un reversement n'est payé que quand sa date de paiement est notée.
+ */
+export function coprodClose(s){
+  const r = productionBudget(s, true), p = r.p, issues = [], warnings = [];
+  const holder = s.ticket_holder, share = num(p.artbo_share);
+  if (!['artbo', 'partenaire'].includes(holder)) issues.push('Indique qui encaisse les recettes : L’ArtBoristerie ou le coproducteur');
+  if (!p.tickets.length || p.tickets.some(t => t.real_qty == null || t.real_qty === '')) issues.push('Recettes réelles : saisis les billets vendus de chaque tarif');
+  if (share == null || share < 0 || share > 100) issues.push('Part de L’ArtBo : un pourcentage entre 0 et 100');
+  else if (share < 100 && !s.partner_id) issues.push('Choisis le coproducteur de la date (sa part est de ' + r2(100 - share) + ' %)');
+  const costLines = linesOf(s.id).filter(l => !r.taxLines.includes(l));
+  const onlyPlanned = costLines.filter(l => l.amount == null && (lineForecast(l) || 0) !== 0);
+  if (onlyPlanned.length) issues.push(`${onlyPlanned.length} dépense${onlyPlanned.length > 1 ? 's' : ''} seulement prévue${onlyPlanned.length > 1 ? 's' : ''} : saisis le montant réel (ou 0)`);
+  const realLines = costLines.filter(l => l.amount != null && Number(l.amount) !== 0);
+  const noPayer = realLines.filter(l => !['artbo', 'partenaire'].includes(l.payer));
+  if (noPayer.length) issues.push(`${noPayer.length} dépense${noPayer.length > 1 ? 's' : ''} réelle${noPayer.length > 1 ? 's' : ''} sans payeur L’ArtBo / coproducteur : précise qui l’a payée`);
+  const paidBy = who => r2(realLines.filter(l => l.payer === who && l.paid_at).reduce((a, l) => a + Number(l.amount), 0));
+  const unpaid = r2(realLines.filter(l => !l.paid_at).reduce((a, l) => a + Number(l.amount), 0));
+  if (unpaid) warnings.push(`Dépenses réelles pas encore payées : ${eur2(unpaid)} (non comptées dans les positions)`);
+  const net = r2(r.net + r.dlHt - r.promo);   // ce que garde la structure qui encaisse
+  const result = r.resultDl, artboPart = r2(result * (share ?? 0) / 100), partnerPart = r2(result - artboPart);
+  const posArtbo = r2((holder === 'artbo' ? net : 0) - paidBy('artbo')), posPartner = r2((holder === 'partenaire' ? net : 0) - paidBy('partenaire'));
+  const transfer = r2(artboPart - posArtbo);   // > 0 : le coproducteur reverse à L'ArtBo ; < 0 : L'ArtBo reverse au coproducteur
+  return {r, issues, warnings, ok: !issues.length, snapshot: {
+    holder, recettes_ht: r.ht, dl_ht: r.dlHt, taxes: r.taxes, cnm: r.cnm, sacem: r.sacem, costs: r.costs, promo: r.promo, result,
+    artbo_share: share, artbo_part: artboPart, partner_part: partnerPart, partner: r.partnerName,
+    net_encaisse: net, paid_artbo: paidBy('artbo'), paid_partner: paidBy('partenaire'), unpaid, pos_artbo: posArtbo, pos_partner: posPartner,
+    transfer: Math.abs(transfer), from: transfer > 0 ? 'partenaire' : transfer < 0 ? 'artbo' : null, to: transfer > 0 ? 'artbo' : transfer < 0 ? 'partenaire' : null,
+  }};
+}

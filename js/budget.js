@@ -11,6 +11,7 @@ import { r2 } from './utils.js';
 import { commissionState, isCoproduction, isInvoiced, payAmount, paymentsOf } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { byId, setting, showCommissionPct, showsOfProject } from './selectors.js';
+import { cnmBearer, cnmOf } from './corea.js';
 import { S } from './state.js';
 
 const num = v => v==null || v==='' ? null : Number(v);
@@ -21,10 +22,14 @@ export const isFree = s => /gratuit/i.test(s?.ticketing_type || '');
 export const isAbroad = s => { const d = String(s?.department || '').trim().toUpperCase(), c = byId('structures', s?.structure_id)?.country;
   if (d) return /^[A-Z]{2,}$/.test(d) && !/^2[AB]$/.test(d);   // le département du concert fait foi
   return !!c && !/^france$/i.test(c); };
-/** Taxe CNM due : entrée gratuite, en France */
-export const cnmDue = s => isFree(s) && !isAbroad(s);
+/** Taxe CNM dans le budget de la date : en France, quand L'ArtBo en supporte le coût (v1.51 : structure saisie sur la date,
+ *  sinon l'usage habituel — gratuit → L'ArtBo, payant → l'organisateur ; coréalisation payante : à attribuer) */
+export const cnmDue = s => cnmBearer(s) === 'artbo' && !isAbroad(s);
+/** Dépense CNM / SACEM saisie (ligne, pièce lue par l'IA…) : elle remplace la charge calculée, sans s'y ajouter (27/10/2026) */
+export const isCnmLine = l => l.auto === 'cnm' || /\bcnm\b/i.test(`${l.label || ''} ${l.supplier || ''}`);
+export const isSacemLine = l => /\bsacem\b/i.test(`${l.label || ''} ${l.supplier || ''}`);
 export const payslipCost = () => num(setting('movinmotion_payslip_cost')) ?? 20.3;
-export const cnmPct = () => num(setting('default_cnm_pct')) ?? 3.5;
+export const cnmPct = () => num(setting('default_cnm_pct')) ?? 3.5;   // taux des Réglages ; taux d'une date : cnmRate (corea.js)
 
 export const linesOf = showId => S.db.budget_lines.filter(l => l.show_id === showId).sort((a,b) => (a.sort||0)-(b.sort||0) || (a.created_at||'').localeCompare(b.created_at||''));
 export const offLinesOf = projectId => S.db.budget_lines.filter(l => !l.show_id && l.project_id === projectId).sort((a,b) => (a.doc_date||'').localeCompare(b.doc_date||'') || (a.created_at||'').localeCompare(b.created_at||''));
@@ -44,7 +49,11 @@ export function lineForecast(l){
   if (!l.auto && l.qty != null && l.unit_cost != null) return r2(Number(l.qty) * Number(l.unit_cost));   // quantité × prix unitaire (salariés, salle, promoteur…)
   const s = byId('shows', l.show_id);
   if (l.auto === 'movinmotion' && s) return r2(payslipCost() * staffQty(s.id));
-  if (l.auto === 'cnm' && s) return cnmDue(s) ? r2((Number(s.fee_ht)||0) * cnmPct() / 100) : 0;
+  if (l.auto === 'cnm' && s){
+    // une dépense CNM réelle saisie à part remplace le calcul (jamais les deux)
+    if (linesOf(s.id).some(x => x.id !== l.id && !x.auto && isCnmLine(x) && x.amount != null)) return 0;
+    return cnmDue(s) ? cnmOf(s).amount ?? 0 : 0;
+  }
   if (l.auto === 'solde_artiste' && s){   // ce qui reste du cachet, moins les autres soldes déjà notés
     const others = linesOf(s.id).filter(x => isSolde(x) && x.id !== l.id).reduce((t,x) => t + (x.amount != null ? Number(x.amount) : 0), 0);   // les autres versements ne comptent que par leur montant saisi
     return Math.max(0, r2(availableForArtist(s) - others));
@@ -175,5 +184,5 @@ export function accountMoves(projectId){
 
 /** Libellés des payeurs pour un projet */
 export function payerLabel(code, project){
-  return ({compte: project?.account_name || 'Compte dédié', artbo: "L'ArtBo", artiste: project?.artist_payee || 'Artiste', organisateur: 'Organisateur', autre: 'Autre'})[code || 'compte'] || code;
+  return ({compte: project?.account_name || 'Compte dédié', artbo: "L'ArtBo", artiste: project?.artist_payee || 'Artiste', organisateur: 'Organisateur', partenaire: 'Coproducteur', autre: 'Autre'})[code || 'compte'] || code;
 }

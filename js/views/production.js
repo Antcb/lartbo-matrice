@@ -207,10 +207,9 @@ function billingTab(s, booking, pays, late){
       ${isCoproduction(s) ? `<p class="help mt-sm">Coproduction : aucune facture de cession, aucun acompte ni solde, aucune commission L’ArtBo ni part partenaire générés. Ajoute une ligne seulement pour une opération réelle.</p>` : ''}
       ${horsCalculHTML(s)}
       <div class="vh-actions mt">
-        ${booking ? '' : `<button class="btn sm" data-act="addPay" data-kind="acompte" data-id="${s.id}">Ajouter un acompte</button>
-        <button class="btn sm" data-act="addPay" data-kind="cnm" data-id="${s.id}">Ajouter la taxe CNM</button>`}
+        ${booking ? '' : `<button class="btn sm" data-act="addPay" data-kind="acompte" data-id="${s.id}">Ajouter un acompte</button>`}
         ${booking ? '' : `<button class="btn sm" data-act="addPay" data-kind="autre" data-id="${s.id}">Autre ligne</button>
-        <button class="btn sm" data-act="pennylaneQuote" data-id="${s.id}" title="Crée le devis dans Pennylane (non envoyé)">${s.pennylane_quote_id ? 'Devis Pennylane créé ✓' : 'Devis dans Pennylane'}</button>
+        ${isCoproduction(s) && !s.pennylane_quote_id ? '' : `<button class="btn sm" data-act="pennylaneQuote" data-id="${s.id}" title="Crée le devis dans Pennylane (non envoyé)" ${isCoproduction(s) ? 'disabled' : ''}>${s.pennylane_quote_id ? 'Devis Pennylane créé ✓' : 'Devis dans Pennylane'}</button>`}
         ${s.pennylane_quote_url ? `<a class="btn sm ghost" href="${esc(s.pennylane_quote_url)}" target="_blank" rel="noopener">Voir le devis ↗</a>` : ''}`}
         <button class="btn sm ghost" data-act="editShow" data-id="${s.id}">Fiche complète de la date</button>
         ${s.structure_id ? `<button class="btn sm ghost" data-act="openStructure" data-id="${s.structure_id}">Fiche de la structure</button>` : ''}
@@ -228,7 +227,7 @@ const pctVal = v => v == null ? '' : Math.round(v * 100) / 100;
 function horsCalculHTML(s){
   const list = allPaymentsOf(s.id).filter(p => !counted(p));
   if (!list.length) return '';
-  const KIND = {acompte: 'Acompte', solde: 'Solde', artbo: 'Commission L’ArtBo', partner: 'Commission partenaire', cnm: 'Taxe CNM', autre: 'Autre ligne'};
+  const KIND = {acompte: 'Acompte', solde: 'Solde', artbo: 'Commission L’ArtBo', partner: 'Commission partenaire', cnm: 'Taxe CNM (historique)', autre: 'Autre ligne'};
   return `<details class="hors-calcul mt-sm"><summary>${list.length} ligne${list.length > 1 ? 's' : ''} importée${list.length > 1 ? 's' : ''}, hors calcul (aucune facture ni paiement réels)</summary>
     <ul class="muted small">${list.map(p => `<li><b>${esc(p.label || KIND[p.kind] || p.kind)}</b> — ${esc(p.hors_calcul)}</li>`).join('')}</ul>
     <p class="muted small">Gardées pour l’historique : elles n’entrent dans aucun indicateur, compte, rappel ni opération Pennylane.</p></details>`;
@@ -278,6 +277,7 @@ function pennylaneCell(p, s){
     if (p.invoice_number || acompteState(p) === 'caduc') return '';   // acompte caduc : ne se facture plus (lot C1)
     return s?.pennylane_quote_id
       ? `<a class="btn sm ghost" href="${esc(s.pennylane_quote_url || 'https://app.pennylane.com/')}" target="_blank" rel="noopener" title="Ouvre le devis dans Pennylane : « Créer une facture d’acompte » (ou la facture de solde). Le numéro revient ici avec « Synchroniser Pennylane ».">Facturer depuis le devis ↗</a>`
+      : isCoproduction(s) ? ''   // coproduction : jamais de devis (résultat inconnu), décision du 27/10/2026
       : `<button class="btn sm" data-act="pennylaneQuote" data-id="${p.show_id}" title="L’acompte et le solde se facturent depuis le devis Pennylane">Créer le devis</button>`;
   }
   // facture déjà émise hors Pennylane (numéro, envoi ou paiement noté, ex. ancienne facture) : jamais de second brouillon (§6.3)
