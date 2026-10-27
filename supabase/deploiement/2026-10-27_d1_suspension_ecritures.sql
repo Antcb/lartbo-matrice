@@ -32,13 +32,18 @@ create table if not exists maintenance_d1.journal (at timestamptz not null defau
 do $s$
 declare r record; fns text[] := array['public.request_drive_folder(uuid)', 'public.fiche_submit(text, jsonb, jsonb)', 'public.rh_submit(text, jsonb, jsonb, jsonb)',
   'public.set_ai_key(text)', 'public.set_pennylane_key(text)', 'public.artist_submit(text, jsonb, jsonb)', 'public.artist_info_save(uuid, jsonb)',
-  'public.ensure_movinmotion(uuid)',
-  -- appelables seulement par le rôle serveur (fonctions serveur, script Google) et qui écrivent avec les droits du propriétaire
-  'public.import_secret(text)', 'public.ensure_production_payments(uuid)', 'public.artist_doc_claim(uuid, text)',
+  'public.ensure_movinmotion(uuid)'];
+  -- appelables SEULEMENT par le rôle serveur (fonctions serveur, script Google) et qui écrivent avec les droits du propriétaire
+  -- (ou lisent les clés) : seul le droit du rôle serveur est noté et retiré ; un droit public inattendu arrête tout
+  fns_srv text[] := array['public.import_secret(text)', 'public.ensure_production_payments(uuid)', 'public.artist_doc_claim(uuid, text)',
   'public.artist_doc_filed(uuid, text, text, text)', 'public.artist_sync(uuid, jsonb, boolean)', 'public.brevo_add_emails(uuid, text[])',
   'public.brevo_queue(uuid)', 'public.generate_reminders()'];
   f text; n int;
 begin
+  foreach f in array fns_srv loop
+    if to_regprocedure(f) is not null and (has_function_privilege('anon', to_regprocedure(f), 'EXECUTE') or has_function_privilege('authenticated', to_regprocedure(f), 'EXECUTE')) then
+      raise exception 'ARRET : % est exécutable par l''application ou les visiteurs (état inattendu) — rien n''a été fait', f; end if;
+  end loop;
   -- 1. tables : droits d'écriture des rôles de l'API (toutes les tables pour l'application et les visiteurs ; tables financières pour le serveur)
   insert into maintenance_d1.droits_tables
     select c.oid::regclass::text, ro.rol, pr.p
@@ -62,6 +67,13 @@ begin
     on conflict do nothing;
     execute format('revoke execute on function %s from public, anon, authenticated, service_role', f);
   end loop;
+  foreach f in array fns_srv loop
+    if to_regprocedure(f) is null then continue; end if;
+    if has_function_privilege('service_role', to_regprocedure(f), 'EXECUTE') then
+      insert into maintenance_d1.droits_fonctions values (f, 'service_role') on conflict do nothing;
+      execute format('revoke execute on function %s from service_role', f);
+    end if;
+  end loop;
   -- 3. rappels automatiques en pause
   if to_regclass('cron.job') is not null then
     insert into maintenance_d1.taches select jobid, jobname, active from cron.job where jobname = 'rappels-quotidiens' on conflict do nothing;
@@ -79,7 +91,7 @@ begin
    where s.nspname = 'public' and c.relname in ('shows', 'show_payments', 'commission_transfers', 'budget_lines', 'projects', 'settings')
      and has_table_privilege('service_role', c.oid, pr.p);
   if n > 0 then raise exception 'ECHEC : % droit(s) d''écriture encore ouverts aux fonctions serveur — TOUT EST ANNULÉ', n; end if;
-  foreach f in array fns loop
+  foreach f in array fns || fns_srv loop
     if to_regprocedure(f) is not null and (has_function_privilege('anon', to_regprocedure(f), 'EXECUTE') or has_function_privilege('authenticated', to_regprocedure(f), 'EXECUTE')
                                            or has_function_privilege('service_role', to_regprocedure(f), 'EXECUTE')) then
       raise exception 'ECHEC : % encore exécutable — TOUT EST ANNULÉ', f; end if;
