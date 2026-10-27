@@ -5,4 +5,4 @@ annulée** (erreur voulue « BILAN … TOUT EST ANNULÉ » à la fin) : aucune m
 ailleurs que sur le projet de test (contrôle de l'adresse des fonctions, absence de l'identifiant de production, nombre de dates).
 
 - `2026-10-27_repetition_lot_d1_test.sql` : lot D1 (migrations v1.42, v1.43, v1.44 — corps identiques aux fichiers de
-  `supabase/migrations/`), 79 essais sur des données fictives, retour arrière, redéploiement.
+  `supabase/migrations/`), 86 essais sur des données fictives, retour arrière, redéploiement.

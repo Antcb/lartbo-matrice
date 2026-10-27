@@ -38,6 +38,7 @@ create policy commission_transfers_add on public.commission_transfers for insert
 -- droits par défaut de Supabase : tout est accordé aux visiteurs sur une nouvelle table → tout leur est retiré (relecture D1, B1)
 revoke all on public.commission_transfers from public, anon;
 revoke update, delete, truncate, references, trigger on public.commission_transfers from authenticated;
+revoke truncate, references, trigger on public.commission_transfers from service_role;   -- vider la table contournerait les déclencheurs (relecture finale D1)
 grant select, insert on public.commission_transfers to authenticated;
 -- mises à jour en direct (autres postes) comme les autres tables de l'application, si la publication existe
 do $p$ begin
