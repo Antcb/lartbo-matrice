@@ -210,7 +210,8 @@ Ordre des classes : `btn [sm] [variante]` (ex. `btn sm primary`). Interdit : red
 | Pastilles de statut / pôle / tag | `stBadge`, `stSelect`, `pstBadge`, `deptBadge`, `tag`, `projTag` | `js/ui/bits.js` |
 | Champ modifiable dans un tableau | `cIn`, `cSel`, `cChk`, `cAc`, `cUrl`, `projChips` | `js/ui/cells.js` |
 | Fenêtre de formulaire | `openModal({title, fields, values, onSave, onDelete, deleteAsk, …})`, `field()` | `js/ui/modal.js` |
-| Fenêtre de dialogue (§9.1, Q20) — en place v1.46b pour les suppressions | `ask({title, text, actions: [{value, label, danger}], cancel})` → valeur ou `null` | `js/ui/dialog.js` |
+| Fenêtre de dialogue (§9.1, Q20) — partout depuis la v1.48 | `ask({title, text, actions, cancel})` → valeur ou `null` ; `confirmAsk(titre, texte, action, {danger})` → booléen ; `askText({title, label, type, check…})` → texte ou `null` (mot de passe masqué) ; `inform({title, text, value})` ; `copyText(texte, message, titre)` | `js/ui/dialog.js` |
+| Erreur sous un champ (§9.1, Q23) — en place v1.48 dans la fenêtre de saisie | `<p class="help err">` sous le champ + classe `bad` sur le champ (texte et bordure `--danger`) | `css/styles.css` |
 | Date | `dateInput(value, attrs)` | `js/ui/datefield.js` |
 | Nombre (virgule) | automatique sur tout `input[type=number]` | `js/ui/numfield.js` |
 | Recherche avec suggestions | `acInput(kind, opts)` / `cAc` | `js/ui/autocomplete.js` |
@@ -226,7 +227,7 @@ Menus et listes flottantes [NOUVELLE] : style unique = fond `--panel`, bordure `
 Pastilles [NOUVELLE] : affichage = `.badge` (+ variante) ; filtre cliquable = `.tag-chip` (actif `.on`) ; choix multiple dans un formulaire = `.pills`. [CORRECTION] `.chip-btn`, `.tp-opt` (identique à `.tag-chip`), `.ok-badge`/`.warn-badge` (sans bordure) dupliquent `.badge`.
 Dépliage [NOUVELLE] : `fold()` pour une section ; `<details>` stylé uniquement pour un menu (`.tag-dd`). [CORRECTION] `details.mt` sans style (employees.js), `.pp-toggle` à flèche texte. Dates passées d'une fiche artiste ou structure : section `fold()` fermée par défaut, titre « Dates passées » + compteur [DÉCIDÉ Q28].
 
-### 9.1 Composants décidés, à créer (n’existent pas encore — sauf la fenêtre de dialogue, en place depuis la v1.46b : `js/ui/dialog.js`, mot de passe et saisies à venir)
+### 9.1 Composants décidés, à créer (n’existent pas encore — sauf la fenêtre de dialogue, en place partout depuis la v1.48 : `js/ui/dialog.js`)
 | Besoin | Comportement obligatoire | Décision |
 |---|---|---|
 | **Fenêtre de dialogue** (confirmation, saisie, alerte, mot de passe) — remplace `alert`, `confirm`, `prompt` | Style des fenêtres (`dialog`, `--r-lg`, `--shadow-pop`) ; titre ; texte de l'action **et de ses conséquences** (« et ses 2 pièces jointes ») ; bouton d'action nommé (`.btn.danger` pour détruire, `.btn.primary` sinon) ; « Annuler » en `.btn` ; question à deux issues = deux boutons nommés + « Annuler ». **Annuler, Échap et clic à l'extérieur ne déclenchent jamais l'action.** Mot de passe : champ masqué. Focus initial sur le bouton le moins risqué. Plein écran sur téléphone (comme `dialog`). | Q20 |

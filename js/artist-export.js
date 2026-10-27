@@ -6,7 +6,7 @@ import { commissionAmount, commissionOf, isSolde, lineValue, showBudget } from '
 import { artistResult } from './views/budget.js';
 import { byId, showCommissionPct } from './selectors.js';
 import { commissionState } from './calc.js';
-import { esc, eur2, fmtDate } from './utils.js';
+import { esc, eur2, fmtDate, toast } from './utils.js';
 
 export function exportArtistBudget(showId){
   const s = byId('shows', showId); if (!s) return;
@@ -66,7 +66,7 @@ export function exportArtistBudget(showId){
   <footer>L’ArtBoristerie Productions · établi le ${esc(fmtDate(new Date().toLocaleDateString('sv-SE')))}</footer>
 </main></body></html>`;
   const w = window.open('', '_blank');
-  if (!w) return alert('Autorise les fenêtres pop-up pour exporter le budget.');
+  if (!w) return toast('Autorise les fenêtres pop-up pour exporter le budget (icône dans la barre d’adresse), puis recommence.', true);
   w.document.open(); w.document.write(html); w.document.close();
   w.document.getElementById?.('print-btn')?.addEventListener('click', () => w.print());   // pas de gestionnaire en ligne (politique de sécurité, v1.47)
 }

@@ -4,6 +4,8 @@
  * Dans les éditeurs de mail (texte mis en forme) la mise en forme est directe ;
  * dans les zones de notes et le journal, elle s'écrit en **gras**, _italique_ et [texte](lien), affichés mis en forme.
  */
+import { askText } from './dialog.js';
+
 function wrap(ta, before, after = before, placeholder = 'texte'){
   const {selectionStart: a, selectionEnd: z, value} = ta;
   const sel = value.slice(a, z) || placeholder;
@@ -17,10 +19,10 @@ function wrap(ta, before, after = before, placeholder = 'texte'){
   ta.dispatchEvent(new Event('input', {bubbles: true}));
 }
 
-function askUrl(){
-  const u = prompt('Adresse du lien (https://…)');
+async function askUrl(){
+  const u = await askText({title: 'Insérer un lien', label: 'Adresse du lien', placeholder: 'https://…', ok: 'Insérer le lien'});
   if (!u) return null;
-  return /^(https?:|mailto:)/i.test(u.trim()) ? u.trim() : 'https://' + u.trim();
+  return /^(https?:|mailto:)/i.test(u) ? u : 'https://' + u;
 }
 
 document.addEventListener('keydown', e => {
@@ -38,7 +40,11 @@ document.addEventListener('keydown', e => {
     if (k === 'k'){
       const bar = t.id && document.querySelector(`.rt-bar[data-rt-for="${CSS.escape(t.id)}"]`);
       if (bar){ bar.querySelector('[data-rt="link"]').click(); return; }
-      const u = askUrl(); if (u) document.execCommand('createLink', false, u); }
+      // la fenêtre prend le focus : la sélection du texte est gardée puis rétablie avant de créer le lien
+      const sel = getSelection(), range = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+      askUrl().then(u => { if (!u) return; t.focus(); if (range){ sel.removeAllRanges(); sel.addRange(range); }
+        document.execCommand('createLink', false, u); t.dispatchEvent(new Event('input', {bubbles: true})); });
+      return; }
     else document.execCommand({b: 'bold', i: 'italic', u: 'underline'}[k]);
     t.dispatchEvent(new Event('input', {bubbles: true}));
     return;
@@ -46,9 +52,9 @@ document.addEventListener('keydown', e => {
   if (k === 'b') wrap(t, '**');
   else if (k === 'i') wrap(t, '_');
   else if (k === 'k'){
-    const u = askUrl(); if (!u) return;
-    const {selectionStart: a, selectionEnd: z, value} = t;
-    t.setRangeText(`[${value.slice(a, z) || 'lien'}](${u})`, a, z, 'end');
-    t.dispatchEvent(new Event('input', {bubbles: true}));
+    const {selectionStart: a, selectionEnd: z} = t;   // gardés avant que la fenêtre prenne le focus
+    askUrl().then(u => { if (!u) return; t.focus();
+      t.setRangeText(`[${t.value.slice(a, z) || 'lien'}](${u})`, a, z, 'end');
+      t.dispatchEvent(new Event('input', {bubbles: true})); });
   }
 });

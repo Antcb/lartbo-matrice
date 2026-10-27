@@ -12,6 +12,7 @@ import { byId, linkLabel, publicLink, setting } from '../selectors.js';
 import { S } from '../state.js';
 import { viewHead } from '../ui/bits.js';
 import { openModal } from '../ui/modal.js';
+import { copyText } from '../ui/dialog.js';
 import { esc, fmtDate, matches, norm, parseCSV, toast, today } from '../utils.js';
 
 const REQ = RH_FIELDS.filter(f => f.req);
@@ -76,6 +77,8 @@ export function editEmployee(id){
     ${Object.keys(mm).length ? `<details class="mt"><summary>Données de l’export Movinmotion (${Object.keys(mm).length})</summary><dl class="fiche-dl mt-sm">${Object.entries(mm).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></details>` : ''}
   </div>` : '';
   return openModal({title: id ? fullName(e) || 'Salarié' : 'Nouveau salarié', wide: true, fields, values, extraTop: extra,
+    deleteAsk: () => ({title: 'Supprimer le salarié ?', text: `Supprimer la fiche de « ${fullName(e)} » de la Matrice ? Son dossier et ses fichiers Google Drive ne sont pas touchés.`,
+      actions: [{value: 'del', label: 'Supprimer la fiche', danger: true}]}),
     onDelete: id ? () => remove('employees', id) : null,
     onSave: async v => {
       const row = {active: !!v.active, info: {...(e.info || {})}, updated_at: new Date().toISOString()};
@@ -106,7 +109,7 @@ export const EMP_ACTIONS = {
   openEmployee: (t, ev) => { if (ev.target.closest('[data-stop]')) return; editEmployee(t.dataset.id); },
   toggleInactiveEmployees: () => { S.showInactiveEmployees = !S.showInactiveEmployees; render(); },
   rhCopyLink: async t => { const link = formLink(byId('employees', t.dataset.id), t.dataset.part);
-    try { await navigator.clipboard.writeText(link); toast(linkLabel('Lien du questionnaire copié')); } catch { prompt(linkLabel('Lien du questionnaire') + ' :', link); } },
+    await copyText(link, linkLabel('Lien du questionnaire copié'), linkLabel('Lien du questionnaire')); },
   rhSendForm: async t => {
     const e = byId('employees', t.dataset.id);
     if (!e.email) return toast('Ajoute d’abord son mail', true);

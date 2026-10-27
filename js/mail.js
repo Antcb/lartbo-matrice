@@ -6,6 +6,7 @@
  * Le brouillon est créé dans Gmail (compte production@) par le script Apps Script
  * (réglage drive_webhook_url) ; sans lui, on copie le mail pour le coller dans Gmail.
  */
+import { confirmAsk } from './ui/dialog.js';
 import { billPct, isCoproduction, paymentsOf } from './calc.js';
 import { ENV } from './config.js';
 import { insert, remove, save, sb } from './data.js';
@@ -137,8 +138,8 @@ export async function prepareMail(showId, kind){
       if (!scriptUrl()){ toast('Le script Google (Apps Script) n’est pas encore installé (Réglages).', true); return false; }
       const m = current();
       if (!m.to) { toast('Indique le destinataire', true); return false; }
-      if (/\[\w+ à compléter\]/.test(m.html + m.subject) && !confirm('Il reste des zones à compléter (en jaune). Continuer quand même ?')) return false;
-      if (send && !confirm(`Envoyer le mail à ${m.to} maintenant ?`)) return false;
+      if (/\[\w+ à compléter\]/.test(m.html + m.subject) && !(await confirmAsk('Zones à compléter', 'Il reste des zones à compléter (en jaune) dans le mail. Elles partiront telles quelles.', 'Continuer quand même'))) return false;
+      if (send && !(await confirmAsk('Envoyer le mail ?', `Le mail part maintenant à ${m.to}${m.cc ? ` (copie : ${m.cc})` : ''}, depuis production@.`, 'Envoyer le mail'))) return false;
       try {
         const out = await callScript('draft', {to: m.to, cc: m.cc, subject: m.subject, html: m.html, send,
           attachments: files.filter(f => f.on).map(f => f.path ? {path: f.path, name: f.name} : {id: f.id})});
@@ -324,6 +325,8 @@ export async function editTemplate(id, defaults={}){
       if (id) return !!(await save('mail_templates', id, row));
       return !!(await insert('mail_templates', row));
     },
+    deleteAsk: () => ({title: 'Supprimer le modèle ?', text: `Supprimer le modèle de mail « ${byId('mail_templates', id)?.name || ''} » ? Les mails déjà envoyés ne changent pas.`,
+      actions: [{value: 'del', label: 'Supprimer le modèle', danger: true}]}),
     onDelete: id ? () => remove('mail_templates', id) : null});
   const body = document.querySelector('#tpl-body');
   document.querySelector('#modal [name=variant]')?.setAttribute('list', 'tpl-variants');
