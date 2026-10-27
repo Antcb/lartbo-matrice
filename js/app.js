@@ -13,7 +13,7 @@ import { APP_VERSION, ENV } from './config.js';
 import { VIEWS } from './constants.js';
 import { loadAll, save, sb } from './data.js';
 import { S, localSet, setProjects } from './state.js';
-import { $, esc, fmtDate } from './utils.js';
+import { $, esc, fmtDate, MAIL_MSG, fieldError, mailOk } from './utils.js';
 import { autosizeAll } from './ui/modal.js';
 import { loginHTML } from './views/auth.js';
 import { attachMap, viewBooking } from './views/booking.js';
@@ -158,6 +158,8 @@ document.addEventListener('change', async e => {
       if (v != null && !Number.isFinite(v)){ toast('Nombre illisible : rien n’a été enregistré', true); const row = byId(t.dataset.t, t.dataset.id); t.value = row?.[t.dataset.f] ?? ''; t.focus(); return; }
     }
     if (typeof v === 'string'){ v = v.trim(); if (v==='') v = null; }
+    // mail saisi dans un tableau : refusé s'il est au mauvais format, message sous la case (Q23)
+    if (/(^|_)email(_\d)?$/.test(t.dataset.f)){ if (!mailOk(v)){ fieldError(t, MAIL_MSG); t.focus(); return; } fieldError(t, ''); }
     const hook = ACTIONS['change:'+t.dataset.t+'.'+t.dataset.f];
     if (hook) return hook(t, v);
     await save(t.dataset.t, t.dataset.id, {[t.dataset.f]: v}, {rerender: t.dataset.rr!=='0'});

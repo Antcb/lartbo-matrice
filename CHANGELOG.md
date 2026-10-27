@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.50.0 — 27/10/2026
+- Contacts (lot V1.50a) — mail au mauvais format refusé avec un message sous le champ partout (fenêtres, tableaux, pages publiques) ; doublon de contact par mail : avertissement et accès à la fiche existante, sans fusion ; contacts_clean ne déplace plus jamais un mail
+
+
 ## 1.49.0 — 27/10/2026
 - Dates et formats (lot V1.49) : jour de Paris partout (aujourd'hui, horodatages, mails, factures Pennylane), une seule fonction d'ajout de jours et de mois, rappel de la boucle accueil à 4 mois calendaires (vendredi si week-end), pourcentages « 50 % » et montants aux formats officiels, y compris dans les mails
 

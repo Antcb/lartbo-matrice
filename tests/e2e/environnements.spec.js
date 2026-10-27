@@ -171,7 +171,7 @@ test('5. les liens créés en test portent « test », ouvrent la base de test e
   // le lien de fiche de test, ouvert puis envoyé : tout part vers la base de test
   const u = new URL(t.fiche); await page.goto('/fiche.html' + u.search);
   await expect(page.locator('#fiche-form')).toBeVisible();
-  await page.locator('#fiche-form input[required], #fiche-form textarea[required]').evaluateAll(els => els.forEach(e => { e.value = 'x'; }));
+  await page.locator('#fiche-form input[required], #fiche-form textarea[required]').evaluateAll(els => els.forEach(e => { e.value = e.type === 'email' ? 'test@exemple.fr' : 'x'; }));   // v1.50 : un mail invalide est refusé avant l'envoi
   await page.locator('#fiche-form fieldset[data-req]').evaluateAll(fs => fs.forEach(f => { const i = f.querySelector('input'); if (i) i.checked = true; }));
   await page.locator('#fiche-form button[type=submit]').click();
   await expect.poll(() => page.evaluate(() => window.__calls.filter(c => c.rpc === 'fiche_submit').map(c => c.url))).toEqual([expect.stringContaining(TEST)]);

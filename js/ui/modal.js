@@ -8,7 +8,7 @@
  */
 import { render } from '../app.js';
 import { S } from '../state.js';
-import { $, esc, toast } from '../utils.js';
+import { $, esc, toast, checkMails } from '../utils.js';
 import { SOURCES, acInput, commitTypedText } from './autocomplete.js';
 import { dateInput } from './datefield.js';
 import { tagPicker, commitTags } from './tagpicker.js';
@@ -66,7 +66,7 @@ export function openModal({title, fields, values={}, onSave, onDelete, deleteAsk
   if (level===1) MODAL = MODALS[1];
   // mail : fenêtre haute, seul le texte du mail défile (champs en haut, boutons toujours visibles en bas)
   dlg.className = [wide || mail ? 'wide' : '', mail ? 'mail' : ''].filter(Boolean).join(' ');
-  dlg.innerHTML = `<form method="dialog" class="mform" data-level="${level}">
+  dlg.innerHTML = `<form method="dialog" class="mform" data-level="${level}" novalidate>
     <div class="modal-head"><h2>${esc(title)}</h2><button type="button" class="btn icon ghost" data-act="closeModal" data-level="${level}" aria-label="Fermer">✕</button></div>
     <div class="modal-body">${extraTop}${fields.map(f=>field(f, values[f.k])).join('')}${extra}</div>
     <div class="modal-foot">${onDelete?`<button type="button" class="btn ghost danger left" data-act="modalDelete" data-level="${level}">Supprimer</button>`:''}
@@ -88,6 +88,9 @@ export function openModal({title, fields, values={}, onSave, onDelete, deleteAsk
       // un seul enregistrement à la fois : tous les boutons du bas attendent la fin (envoi, brouillon…)
       if (dlg._busy) return;
       // une date illisible ou une fin avant le début : on ne ferme pas, on montre le champ
+      // mail au mauvais format : message sous le champ, rien n'est enregistré (Q23)
+      const badMail = checkMails(ev.target);
+      if (badMail.length){ badMail[0].focus(); return; }
       const bad = ev.target.querySelector('.dt-txt.bad');
       if (bad){ toast(bad.title || 'Date à corriger', true); bad.focus(); return; }
       const out = readForm(ev.target, fields);
