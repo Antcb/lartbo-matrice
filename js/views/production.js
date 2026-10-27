@@ -3,7 +3,7 @@
  * Chaque date se déplie : suivi admin, commissions, dossier Drive, facturation.
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
-import { BILL_KINDS, acompteState, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
+import { BILL_KINDS, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
 import { byId, projName, setting, showsFiltered, structName } from '../selectors.js';
 import { lateSteps, remindersOf } from '../reminders.js';
@@ -203,7 +203,9 @@ function billingTab(s, booking, pays, late){
           <td class="${p.paid_at?'done-cell':''}">${cIn('show_payments',p.id,'paid_at',p.paid_at,'date')}</td>
           <td>${pennylaneCell(p, s)}</td>`}
           <td>${why ? `<span class="muted" role="img" aria-label="Ligne verrouillée" title="${esc(why)}">🔒</span>` : `<button class="btn icon sm ghost danger" data-act="delPay" data-id="${p.id}" aria-label="Supprimer la ligne">✕</button>`}</td></tr>`;}).join('')}
-        </tbody>${booking ? '' : billFoot(s)}</table></div>
+        </tbody>${booking || isCoproduction(s) ? '' : billFoot(s)}</table></div>
+      ${isCoproduction(s) ? `<p class="help mt-sm">Coproduction : aucune facture de cession, aucun acompte ni solde, aucune commission L’ArtBo ni part partenaire générés. Ajoute une ligne seulement pour une opération réelle.</p>` : ''}
+      ${horsCalculHTML(s)}
       <div class="vh-actions mt">
         ${booking ? '' : `<button class="btn sm" data-act="addPay" data-kind="acompte" data-id="${s.id}">Ajouter un acompte</button>
         <button class="btn sm" data-act="addPay" data-kind="cnm" data-id="${s.id}">Ajouter la taxe CNM</button>`}
@@ -222,6 +224,16 @@ function billingTab(s, booking, pays, late){
 
 const pctVal = v => v == null ? '' : Math.round(v * 100) / 100;
 
+/** Lignes gardées pour la traçabilité mais hors de tout calcul (coproduction, import — v1.44) : jamais présentées comme facture ni paiement */
+function horsCalculHTML(s){
+  const list = allPaymentsOf(s.id).filter(p => !counted(p));
+  if (!list.length) return '';
+  const KIND = {acompte: 'Acompte', solde: 'Solde', artbo: 'Commission L’ArtBo', partner: 'Commission partenaire', cnm: 'Taxe CNM', autre: 'Autre ligne'};
+  return `<details class="hors-calcul mt-sm"><summary>${list.length} ligne${list.length > 1 ? 's' : ''} importée${list.length > 1 ? 's' : ''}, hors calcul (aucune facture ni paiement réels)</summary>
+    <ul class="muted small">${list.map(p => `<li><b>${esc(p.label || KIND[p.kind] || p.kind)}</b> — ${esc(p.hors_calcul)}</li>`).join('')}</ul>
+    <p class="muted small">Gardées pour l’historique : elles n’entrent dans aucun indicateur, compte, rappel ni opération Pennylane.</p></details>`;
+}
+
 /** Total des factures (acomptes + solde) face au cachet */
 function billFoot(s){
   const b = billingOf(s), ok = Math.abs(b.gap) < 0.01;
@@ -236,7 +248,7 @@ function billFoot(s){
 }
 /** Alerte dans l'en-tête de la date quand les factures ne tombent pas juste */
 function billWarn(s, booking){
-  if (booking || !s.fee_ht) return '';
+  if (booking || !s.fee_ht || isCoproduction(s)) return '';
   const b = billingOf(s);
   return (b.lines.length && Math.abs(b.gap) >= 0.01 ? ` <span class="warn-badge" title="Acomptes + solde ≠ cachet">factures ${pctVal(b.pct)} %</span>` : '')
     + (multiSolde(s.id) ? ' <span class="warn-badge" title="Plusieurs lignes de solde sur cette date : à vérifier">plusieurs soldes</span>' : '');

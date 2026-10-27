@@ -7,7 +7,7 @@
  * Chaque ligne a un montant prévu (saisi ou calculé) et un montant réel (lu sur la pièce) ; elle est « payée » quand paid_at est rempli.
  * Une date cochée « booking uniquement » (prod_mode = booking) n'a pas de budget : seulement la facture de commission.
  */
-import { commissionState, isInvoiced, payAmount, paymentsOf } from './calc.js';
+import { commissionState, isCoproduction, isInvoiced, payAmount, paymentsOf } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { byId, setting, showsOfProject } from './selectors.js';
 import { S } from './state.js';
@@ -30,7 +30,8 @@ export const linesOf = showId => S.db.budget_lines.filter(l => l.show_id === sho
 export const offLinesOf = projectId => S.db.budget_lines.filter(l => !l.show_id && l.project_id === projectId).sort((a,b) => (a.doc_date||'').localeCompare(b.doc_date||'') || (a.created_at||'').localeCompare(b.created_at||''));
 
 export const commissionOf = s => paymentsOf(s.id).find(p => p.kind === 'artbo');
-export const commissionAmount = s => { const p = commissionOf(s); return p ? payAmount(p) || 0 : r2((Number(s.fee_ht)||0) * (Number(s.artbo_pct ?? 15)||0) / 100); };
+// coproduction sans ligne de commission réelle : aucune commission (jamais calculée sur le cachet, décision du 27/10/2026)
+export const commissionAmount = s => { const p = commissionOf(s); return p ? payAmount(p) || 0 : isCoproduction(s) ? 0 : r2((Number(s.fee_ht)||0) * (Number(s.artbo_pct ?? 15)||0) / 100); };
 
 /** Ligne de solde artiste (automatique ou ajoutée à la main / par une pièce) : comptée une seule fois, dans le solde */
 export const isSolde = l => l.auto === 'solde_artiste' || l.category === 'Solde artiste';

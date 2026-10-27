@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.44.0 — 27/10/2026
+- Coproductions : aucune ligne de facturation ni commission générée ; lignes importées gardées hors calcul ; versements historiques aux dates bancaires
+
+
 ## 1.43.4 — 27/10/2026
 - Régularisations des commissions et acomptes facturés resserrées (relecture)
 

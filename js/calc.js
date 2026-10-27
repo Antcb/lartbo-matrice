@@ -4,7 +4,15 @@
 import { byId } from './selectors.js';
 import { S } from './state.js';
 
-export function paymentsOf(showId){ return S.db.show_payments.filter(p=>p.show_id===showId).sort((a,b)=>(a.sort||0)-(b.sort||0)); }
+/** Lignes financières d'une date QUI COMPTENT : une ligne « hors calcul » (coproduction, import — v1.44) est gardée pour la traçabilité
+ *  mais n'entre dans aucun calcul, indicateur, compte, rappel ni opération Pennylane. Même règle côté base : payment_is_emitted, rappels. */
+export const counted = p => !!p && (p.hors_calcul == null || p.hors_calcul === '');
+export function paymentsOf(showId){ return allPaymentsOf(showId).filter(counted); }
+/** Toutes les lignes, y compris hors calcul (affichage de traçabilité seulement) */
+export function allPaymentsOf(showId){ return S.db.show_payments.filter(p=>p.show_id===showId).sort((a,b)=>(a.sort||0)-(b.sort||0)); }
+/** Coproduction (décision d'Anthony du 27/10/2026) : ni facture de cession, ni acompte, ni solde, ni commission générés ;
+ *  seules ses opérations réelles, ajoutées à la main, comptent. Même règle côté base : on_show_confirmed, ensure_production_payments. */
+export const isCoproduction = s => s?.contract_type === 'Co-Production';
 
 export function payAmount(p){
   if (p.amount!=null && p.amount!=='') return Number(p.amount);
@@ -153,6 +161,8 @@ export const emittedLinesOf = showId => paymentsOf(showId).filter(p => FROZEN_KI
 
 export function changeBlocked(table, id, patch){
   if (patch === null){
+    if (table === 'show_payments' && !counted(byId('show_payments', id))) return 'Ligne hors calcul (gardée pour la traçabilité) : elle ne se supprime pas.';
+    if (table === 'shows' && allPaymentsOf(id).some(p => !counted(p))) return 'Cette date garde des lignes hors calcul (traçabilité) : elle ne se supprime pas.';
     if (table === 'show_payments'){ const why = billLockReason(byId('show_payments', id)); return why && why.replace('ne se modifie plus', 'ne se supprime pas').replace('ne peuvent plus changer', 'ne se suppriment plus'); }
     // comme la base : lors de la suppression en chaîne, la date n'existe plus pour le déclencheur, qui applique la définition
     // complète — une commission de production numérotée (historique) empêche donc aussi la suppression de sa date
@@ -166,6 +176,7 @@ export function changeBlocked(table, id, patch){
   if (table === 'show_payments'){
     const row = byId('show_payments', id);
     if (!row) return '';
+    if (!counted(row)) return 'Ligne hors calcul (gardée pour la traçabilité) : elle ne se modifie plus.';
     const blank = v => v == null || String(v).trim() === '';
     // facture émise : ni numéro, ni date d'envoi, ni date de paiement, ni identifiant Pennylane ne s'efface (pas de déverrouillage)
     // commission de production versée en partie (lot D1) : « versée » seulement quand tout est transféré — une date de versement
@@ -256,7 +267,8 @@ export function financeOf(shows){
     }
     const bill = pays.filter(p => BILL_KINDS.includes(p.kind));
     const cashed = bill.filter(p => p.paid_at).reduce((t, p) => t + (payAmount(p) || 0), 0);
-    out.resteProd += Math.max(0, (Number(s.fee_ht) || 0) - cashed); out.datesProd++;
+    // coproduction : pas de cession à encaisser ; seules ses factures réelles (s'il y en a) restent à encaisser (27/10/2026)
+    out.resteProd += isCoproduction(s) ? bill.filter(p => !p.paid_at).reduce((t, p) => t + (payAmount(p) || 0), 0) : Math.max(0, (Number(s.fee_ht) || 0) - cashed); out.datesProd++;
     const due = bill.filter(p => isInvoiced(p) && !p.paid_at);
     out.impayesProd += due.reduce((t, p) => t + (payAmount(p) || 0), 0); out.factures += due.length;
   }
