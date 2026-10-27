@@ -898,7 +898,7 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .budget-table tr.cat-row td{background:var(--soft);font-size:13px;padding-top:9px;padding-bottom:7px;border-top:1px solid var(--line)}
 .budget-table tr.just-added td{background:#E8ECF3!important;transition:background .6s}
 /* v1.51 : coréalisation, taxe CNM, clôture d'une coproduction */
-.warn-list{margin:var(--sp-1) 0 var(--sp-2);padding-left:var(--sp-3);color:var(--warn);font-weight:600}
+.warn-list{margin:var(--sp-1) 0 var(--sp-2);padding-left:var(--sp-3)}   /* couleur : .warn-txt */
 .lock-set{border:0;margin:0;padding:0;min-width:0}
 .corea-block,.coprod-block{margin-top:var(--sp-3)}
 .cnm-block{margin:var(--sp-2) 0}

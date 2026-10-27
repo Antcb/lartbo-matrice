@@ -11,23 +11,17 @@ import { r2 } from './utils.js';
 import { commissionState, isCoproduction, isInvoiced, payAmount, paymentsOf } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { byId, setting, showCommissionPct, showsOfProject } from './selectors.js';
-import { cnmBearer, cnmOf } from './corea.js';
+import { cnmBearer, cnmOf, isAbroad, isCnmLine } from './corea.js';
 import { S } from './state.js';
 
 const num = v => v==null || v==='' ? null : Number(v);
 
 export const isProdShow = s => !!s && s.prod_mode !== 'booking';
 export const isFree = s => /gratuit/i.test(s?.ticketing_type || '');
-/** Date à l'étranger : département remplacé par un code pays (CH, BE…) ou structure hors de France */
-export const isAbroad = s => { const d = String(s?.department || '').trim().toUpperCase(), c = byId('structures', s?.structure_id)?.country;
-  if (d) return /^[A-Z]{2,}$/.test(d) && !/^2[AB]$/.test(d);   // le département du concert fait foi
-  return !!c && !/^france$/i.test(c); };
+export { isAbroad, isCnmLine, isSacemLine } from './corea.js';   // une seule définition (v1.51)
 /** Taxe CNM dans le budget de la date : en France, quand L'ArtBo en supporte le coût (v1.51 : structure saisie sur la date,
  *  sinon l'usage habituel — gratuit → L'ArtBo, payant → l'organisateur ; coréalisation payante : à attribuer) */
 export const cnmDue = s => cnmBearer(s) === 'artbo' && !isAbroad(s);
-/** Dépense CNM / SACEM saisie (ligne, pièce lue par l'IA…) : elle remplace la charge calculée, sans s'y ajouter (27/10/2026) */
-export const isCnmLine = l => l.auto === 'cnm' || /\bcnm\b/i.test(`${l.label || ''} ${l.supplier || ''}`);
-export const isSacemLine = l => /\bsacem\b/i.test(`${l.label || ''} ${l.supplier || ''}`);
 export const payslipCost = () => num(setting('movinmotion_payslip_cost')) ?? 20.3;
 export const cnmPct = () => num(setting('default_cnm_pct')) ?? 3.5;   // taux des Réglages ; taux d'une date : cnmRate (corea.js)
 
@@ -51,7 +45,8 @@ export function lineForecast(l){
   if (l.auto === 'movinmotion' && s) return r2(payslipCost() * staffQty(s.id));
   if (l.auto === 'cnm' && s){
     // une dépense CNM réelle saisie à part remplace le calcul (jamais les deux)
-    if (linesOf(s.id).some(x => x.id !== l.id && !x.auto && isCnmLine(x) && x.amount != null)) return 0;
+    // (B6) une ligne CNM saisie à la main, même seulement prévue, remplace aussi le calcul (copie d'une autre date…)
+    if (linesOf(s.id).some(x => x.id !== l.id && !x.auto && isCnmLine(x) && (x.amount != null || x.forecast != null))) return 0;
     return cnmDue(s) ? cnmOf(s).amount ?? 0 : 0;
   }
   if (l.auto === 'solde_artiste' && s){   // ce qui reste du cachet, moins les autres soldes déjà notés

@@ -17,7 +17,8 @@
  *   - charges déductibles : celles du contrat, saisies pour la date (chacune une fois) + la CNM si cnm_in_result.
  */
 import { r2 } from './utils.js';
-import { setting } from './selectors.js';
+import { byId, setting } from './selectors.js';
+import { S } from './state.js';
 
 const num = v => v == null || v === '' ? null : Number(v);
 export const isFreeShow = s => /gratuit/i.test(s?.ticketing_type || '');   // « Prix libre » = payant
@@ -25,8 +26,24 @@ export const isCorea = s => s?.contract_type === 'Co-Réalisation';
 export const HOLDERS = [['organisateur', 'L’organisateur (la structure)'], ['artbo', 'L’ArtBoristerie'], ['partenaire', 'Le coproducteur / partenaire']];
 export const holderLabel = k => (HOLDERS.find(h => h[0] === k) || [, 'non renseigné'])[1];
 
-/** Taux CNM de la date (%) : celui de la date, sinon l'ancien taux du budget de production, sinon les Réglages */
-export const cnmRate = s => num(s?.cnm_pct) ?? num(s?.production?.cnm_pct) ?? num(setting('default_cnm_pct')) ?? 3.5;
+/** Date à l'étranger : département remplacé par un code pays (CH, BE…) ou structure hors de France (pas de taxe CNM) */
+export const isAbroad = s => { const d = String(s?.department || '').trim().toUpperCase(), c = byId('structures', s?.structure_id)?.country;
+  if (d) return /^[A-Z]{2,}$/.test(d) && !/^2[AB]$/.test(d);   // le département du concert fait foi
+  return !!c && !/^france$/i.test(c); };
+/** Dépense CNM / SACEM saisie (ligne, pièce lue par l'IA…) : elle remplace la charge calculée, sans s'y ajouter (27/10/2026) */
+export const isCnmLine = l => l.auto === 'cnm' || /\bcnm\b/i.test(`${l.label || ''} ${l.supplier || ''}`);
+export const isSacemLine = l => /\bsacem\b/i.test(`${l.label || ''} ${l.supplier || ''}`);
+/** Dépense CNM réelle d'une date (lignes saisies, hors ligne calculée) : null s'il n'y en a pas */
+export function cnmRealOf(s){
+  const ls = (S.db.budget_lines || []).filter(l => l.show_id === s?.id && !l.auto && isCnmLine(l) && l.amount != null);
+  return ls.length ? r2(ls.reduce((a, l) => a + Number(l.amount), 0)) : null;
+}
+/** Taux CNM de la date (%) : celui de la date, sinon l'ancien taux du budget de production (vidé = 0, comme avant), sinon les Réglages */
+export function cnmRate(s){
+  if (num(s?.cnm_pct) != null) return num(s.cnm_pct);
+  if (s?.production && 'cnm_pct' in s.production) return num(s.production.cnm_pct) ?? 0;
+  return num(setting('default_cnm_pct')) ?? 3.5;
+}
 /** Structure qui supporte la taxe : saisie sur la date ; sinon l'usage habituel (payant → organisateur, gratuit → L'ArtBo) ;
  *  coréalisation payante : jamais supposée (null = à attribuer) */
 export function cnmBearer(s){
@@ -68,27 +85,36 @@ export function coreaCalc(s){
   // fourchette : les billets après le break sont les moins chers (min) ou les plus chers (max) ; prorata des ventes
   const fill = order => { let left = beyond || 0, v = 0; for (const t of [...tiers].sort(order)){ const n = Math.min(left, t.qty); v += n * t.unitHt; left -= n; } return r2(v); };
   const range = beyond == null || !sold ? null : {min: fill((a, b) => a.unitHt - b.unitHt), max: fill((a, b) => b.unitHt - a.unitHt), prorata: r2(ht * beyond / sold)};
-  const method = s.corea?.method?.kind === 'prorata' && s.corea?.method?.at ? 'prorata' : null;
+  // prorata validé pour CES chiffres : une modification des tarifs, des ventes ou du break demande une nouvelle validation
+  const sig = `${sold}|${ht}|${brk}`;
+  const method = s.corea?.method?.kind === 'prorata' && s.corea?.method?.at && s.corea.method.sig === sig ? 'prorata' : null;
   // ventes après le break saisies pour tous les tarifs mais incohérentes : rien n'est calculé tant qu'elles ne sont pas corrigées
   const revenue = !validated ? null : exact != null ? exact : allAfter ? null : method === 'prorata' && range ? range.prorata : null;
   // charges déductibles (contrat) : chacune une fois ; la CNM (sur la TOTALITÉ des recettes) seulement si le contrat le prévoit
   const charges = (s.corea?.charges || []).map(c => ({label: c.label || '', amount: num(c.amount) || 0}));
-  const cnm = r2(ht * cnmRate(s) / 100);
-  if (charges.some(c => /\bcnm\b/i.test(c.label))) issues.push('La CNM ne se saisit pas comme charge : coche « CNM déduite du résultat partagé »');
-  if (charges.some(c => /minimum garanti|\bmg\b/i.test(c.label))) issues.push('Le minimum garanti n’est jamais une charge du partage (il est acquis à part)');
-  const deducted = r2(charges.reduce((a, c) => a + c.amount, 0) + (s.cnm_in_result ? cnm : 0));
-  const net = revenue == null ? null : r2(revenue - deducted);
+  // CNM sur la TOTALITÉ des recettes ; une dépense CNM réelle saisie la remplace ; pas de CNM à l'étranger
+  const cnm = isAbroad(s) ? 0 : cnmRealOf(s) ?? r2(ht * cnmRate(s) / 100);
+  // doubles comptages bloquants : rien n'est calculé tant qu'ils ne sont pas corrigés (décision « aucun double comptage »)
+  const blocking = [];
+  if (charges.some(c => /\bcnm\b/i.test(c.label))) blocking.push('La CNM ne se saisit pas comme charge : coche « CNM déduite du résultat partagé »');
+  if (charges.some(c => /minimum garanti|\bmg\b/i.test(c.label))) blocking.push('Le minimum garanti n’est jamais une charge du partage (il est acquis à part)');
+  if (charges.some(c => c.amount < 0)) blocking.push('Une charge déductible ne peut pas être négative');
   const pct = num(s.cr_producer_pct);
+  if (pct != null && (pct < 0 || pct > 100)) blocking.push('% du résultat au producteur : entre 0 et 100');
+  issues.push(...blocking);
+  const deducted = r2(charges.reduce((a, c) => a + c.amount, 0) + (s.cnm_in_result ? cnm : 0));
+  const net = revenue == null || blocking.length ? null : r2(revenue - deducted);
   const share = net == null || pct == null ? null : r2(Math.max(0, net) * pct / 100);
   const mg = num(s.fee_ht) || 0;
   return {tiers, sold, ht, brk, validated, beyond, exact, range, method, revenue, charges, cnm, deducted, net, pct, share,
     partnerShare: net == null || share == null ? null : r2(Math.max(0, net) - share), mg, total: share == null ? null : r2(mg + share),
-    issues, needsMethod: validated && exact == null && !allAfter && !method};
+    issues, sig, needsMethod: validated && exact == null && !allAfter && !method};
 }
 
 /** Montant de la taxe CNM d'une date et ce qu'il recouvre (les montants payant viennent des recettes connues) */
 export function cnmOf(s, recettesHt = null){
-  const rate = cnmRate(s), free = isFreeShow(s);
+  const rate = cnmRate(s), free = isFreeShow(s), abroad = isAbroad(s);
   const base = free ? num(s?.fee_ht) || 0 : recettesHt ?? coreaCalc(s)?.ht ?? null;
-  return {rate, free, base, amount: base == null ? null : r2(base * rate / 100), bearer: cnmBearer(s), debtor: cnmDebtor(s)};
+  const real = cnmRealOf(s);
+  return {rate, free, abroad, base, real, amount: abroad ? 0 : real ?? (base == null ? null : r2(base * rate / 100)), bearer: cnmBearer(s), debtor: cnmDebtor(s)};
 }

@@ -99,15 +99,19 @@ export function coprodClose(s){
   if (share == null || share < 0 || share > 100) issues.push('Part de L’ArtBo : un pourcentage entre 0 et 100');
   else if (share < 100 && !s.partner_id) issues.push('Choisis le coproducteur de la date (sa part est de ' + r2(100 - share) + ' %)');
   const costLines = linesOf(s.id).filter(l => !r.taxLines.includes(l));
+  // taxes CNM / SACEM payées pour de vrai (lignes saisies) : comptées chez celui qui les a payées ; les taxes seulement
+  // calculées sont supposées payées par la structure qui encaisse (détentrice de la billetterie)
+  const taxPaidLines = r.taxLines.filter(l => l.amount != null && Number(l.amount) !== 0);
   const onlyPlanned = costLines.filter(l => l.amount == null && (lineForecast(l) || 0) !== 0);
   if (onlyPlanned.length) issues.push(`${onlyPlanned.length} dépense${onlyPlanned.length > 1 ? 's' : ''} seulement prévue${onlyPlanned.length > 1 ? 's' : ''} : saisis le montant réel (ou 0)`);
-  const realLines = costLines.filter(l => l.amount != null && Number(l.amount) !== 0);
+  const realLines = [...costLines.filter(l => l.amount != null && Number(l.amount) !== 0), ...taxPaidLines];
   const noPayer = realLines.filter(l => !['artbo', 'partenaire'].includes(l.payer));
   if (noPayer.length) issues.push(`${noPayer.length} dépense${noPayer.length > 1 ? 's' : ''} réelle${noPayer.length > 1 ? 's' : ''} sans payeur L’ArtBo / coproducteur : précise qui l’a payée`);
   const paidBy = who => r2(realLines.filter(l => l.payer === who && l.paid_at).reduce((a, l) => a + Number(l.amount), 0));
   const unpaid = r2(realLines.filter(l => !l.paid_at).reduce((a, l) => a + Number(l.amount), 0));
   if (unpaid) warnings.push(`Dépenses réelles pas encore payées : ${eur2(unpaid)} (non comptées dans les positions)`);
-  const net = r2(r.net + r.dlHt - r.promo);   // ce que garde la structure qui encaisse
+  const realTaxes = r2((r.cnmReal ?? 0) + (r.sacemReal ?? 0));
+  const net = r2(r.ht + r.dlHt - r.promo - (r.taxes - realTaxes));   // ce que garde la structure qui encaisse (taxes calculées payées par elle)
   const result = r.resultDl, artboPart = r2(result * (share ?? 0) / 100), partnerPart = r2(result - artboPart);
   const posArtbo = r2((holder === 'artbo' ? net : 0) - paidBy('artbo')), posPartner = r2((holder === 'partenaire' ? net : 0) - paidBy('partenaire'));
   const transfer = r2(artboPart - posArtbo);   // > 0 : le coproducteur reverse à L'ArtBo ; < 0 : L'ArtBo reverse au coproducteur

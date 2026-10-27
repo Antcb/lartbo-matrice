@@ -91,7 +91,7 @@ test('v1.51 coréalisation : break à valider, ventes exactes par tarif, sinon f
   k = await calc();
   // fourchette : 100 réduits = 1 000 ; 100 pleins = 2 000 ; prorata 100/500 × 8 000 = 1 600 ; rien n'est retenu sans validation
   expect([k.validated, k.range, k.revenue]).toEqual([true, { min: 1000, max: 2000, prorata: 1600 }, null]);
-  await set(page, 'co-1', { corea: { tiers, break_validated_at: '2026-10-27T20:00:00Z', break_value: 400, method: { kind: 'prorata', at: '2026-10-27T20:05:00Z', by: 'testeur@example.com' } } });
+  await set(page, 'co-1', { corea: { tiers, break_validated_at: '2026-10-27T20:00:00Z', break_value: 400, method: { kind: 'prorata', at: '2026-10-27T20:05:00Z', by: 'testeur@example.com', sig: '500|8000|400' } } });
   k = await calc();
   expect([k.revenue, k.net, k.share, k.total]).toEqual([1600, 1600, 960, 3960]);
   // ventes exactes : 70 pleins + 30 réduits après le break → 1 700 ; charges du contrat 200 + CNM (3,5 % de 8 000 = 280) → 1 220 ; 60 % = 732
@@ -173,7 +173,7 @@ test('v1.51 coproduction clôturée : saisies désactivées, réouverture avec m
   await seed(page, { partners: [{ id: 'pa-x', name: 'Coprod Fictive' }], shows: [{ ...COPRO, ticket_holder: 'artbo', result_closed_at: '2026-10-27T20:00:00Z', result_closed_by: 'testeur@example.com',
     result_closed: { result: 100, artbo_share: 50, artbo_part: 50, partner_part: 50, partner: 'Coprod Fictive', net_encaisse: 100, paid_artbo: 0, paid_partner: 0, transfer: 50, from: 'artbo', to: 'partenaire' } }] });
   await openBudget(page, 'cp-9');
-  await expect(page.locator('fieldset.lock-set[disabled]')).toHaveCount(1);
+  await expect(page.locator('fieldset.lock-set[disabled]')).toHaveCount(2);
   await expect(page.locator('fieldset.lock-set input').first()).toBeDisabled();
   await expect(page.locator('.coprod-block')).toContainText('Clôturé le 27/10/2026');
   await page.locator('[data-act="reopenResult"]').click();
@@ -182,5 +182,37 @@ test('v1.51 coproduction clôturée : saisies désactivées, réouverture avec m
   await expect.poll(() => page.evaluate(() => window.__calls.find(c => c.rpc === 'reopen_result')?.args)).toEqual({ p_show: 'cp-9', p_reason: 'Facture du technicien reçue après la clôture' });
   expect(await page.evaluate(async () => { const { S } = await import('./js/state.js'); const app = await import('./js/app.js');
     S.tab['prod:sh-1'] = 'factures'; S.openProd.add('sh-1'); app.render(); return document.querySelectorAll('[data-kind="cnm"]').length; })).toBe(0);
+  expectClean(ctx);
+});
+
+test('v1.51 relecture : taxes réelles payées par chacun (reversement juste), doubles comptages bloquants, prorata lié aux chiffres, étranger', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { partners: [{ id: 'pa-x', name: 'Coprod Fictive' }],
+    shows: [{ ...COPRO, id: 'cp-b', ticket_holder: 'partenaire' },
+      { ...BASE, id: 'co-b', date: `${Y}-09-03`, contract_type: 'Co-Réalisation', fee_ht: 3000, ticketing_type: 'Payant/Prix Libre', break_even: 400, cr_producer_pct: 50,
+        corea: { tiers: [{ label: 'Plein', price: 21.1, vat: 5.5, qty: 500 }], break_validated_at: '2026-10-27T20:00:00Z', break_value: 400 } },
+      { ...BASE, id: 'g-b', date: `${Y}-09-04`, contract_type: 'Cession', fee_ht: 10000, ticketing_type: 'Gratuit', department: 'CH' },
+      { ...BASE, id: 'g-c', date: `${Y}-09-05`, contract_type: 'Cession', fee_ht: 10000, ticketing_type: 'Gratuit' }],
+    budget_lines: [{ id: 'tx-1', show_id: 'cp-b', project_id: 'art-a', category: 'Taxes', label: 'SACEM', supplier: 'SACEM', amount: 880, payer: 'artbo', paid_at: `${Y}-10-02`, sort: 1 },
+      { id: 'cn-a', show_id: 'g-c', project_id: 'art-a', category: 'Taxes', label: 'Taxe CNM (entrée gratuite)', supplier: 'CNM', auto: 'cnm', sort: 1 },
+      { id: 'cn-m', show_id: 'g-c', project_id: 'art-a', category: 'Taxes', label: 'Taxe CNM', supplier: 'CNM', forecast: 300, sort: 2 }] });
+  const r = await page.evaluate(async () => {
+    const pb = await import('./js/production-budget.js'), c = await import('./js/corea.js'), b = await import('./js/budget.js'), { byId } = await import('./js/selectors.js');
+    const { S } = await import('./js/state.js');
+    const k = pb.coprodClose(byId('shows', 'cp-b')).snapshot;
+    const co = byId('shows', 'co-b'), out = { copro: [k.result, k.net_encaisse, k.paid_artbo, k.transfer, k.from, k.to] };
+    co.corea.method = { kind: 'prorata', at: 'x', sig: c.coreaCalc(co).sig }; out.prorata = c.coreaCalc(co).revenue;
+    co.corea.tiers[0].qty = 520; out.apresModif = c.coreaCalc(co).revenue;   // tarifs changés : nouvelle validation nécessaire
+    co.corea.tiers[0].qty = 500; co.corea.charges = [{ label: 'Taxe CNM', amount: 350 }]; out.cnmCharge = c.coreaCalc(co).net;
+    co.corea.charges = [{ label: 'MG artiste', amount: 3000 }]; out.mgCharge = c.coreaCalc(co).net;
+    co.corea.charges = []; co.cr_producer_pct = 120; out.pct = c.coreaCalc(co).share;
+    out.etranger = c.cnmOf(byId('shows', 'g-b')).amount;
+    out.copieDeBudget = b.lineForecast(S.db.budget_lines.find(l => l.id === 'cn-a'));
+    return out;
+  });
+  // 10 000 HT − CNM calculée 350 − SACEM réelle 880 = 8 770 ; 4 385 chacun. Le coproducteur encaisse et garde 10 000 − 350 = 9 650 ;
+  // L'ArtBo a payé la SACEM (880) → le coproducteur reverse 4 385 + 880 = 5 265 à L'ArtBo
+  expect(r.copro).toEqual([8770, 9650, 880, 5265, 'partenaire', 'artbo']);
+  expect([r.prorata, r.apresModif, r.cnmCharge, r.mgCharge, r.pct, r.etranger, r.copieDeBudget]).toEqual([2000, null, null, null, null, 0, 0]);
   expectClean(ctx);
 });
