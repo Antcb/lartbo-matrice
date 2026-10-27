@@ -92,7 +92,7 @@ export const BUDGET_ACTIONS = {
   // prorata des ventes : jamais appliqué sans validation explicite, pour cette date seulement
   coreaValidateProrata: async t => { const s = byId('shows', t.dataset.id), k = coreaCalc(s);
     if (!(await confirmAsk('Valider le prorata ?', `Les ventes après le break ne sont pas connues par tarif. Retenir pour cette date les recettes au prorata des ventes de chaque tarif : ${eur2(k.range.prorata)} HT (fourchette ${eur2(k.range.min)} à ${eur2(k.range.max)}) ?`, 'Valider le prorata'))) return;
-    saveCorea(s.id, c => { c.method = {kind: 'prorata', at: new Date().toISOString(), by: me()}; }); },
+    saveCorea(s.id, c => { c.method = {kind: 'prorata', at: new Date().toISOString(), by: me(), sig: k.sig}; }); },
   coreaClearMethod: t => saveCorea(t.dataset.id, c => { delete c.method; }),
   // part du résultat : ligne de facture préparée à la demande (rien n'est envoyé ni créé dans Pennylane)
   coreaPrepareInvoice: async t => { const s = byId('shows', t.dataset.id), k = coreaCalc(s);

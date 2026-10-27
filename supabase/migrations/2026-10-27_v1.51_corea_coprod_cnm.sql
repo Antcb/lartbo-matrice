@@ -149,6 +149,13 @@ begin
      and coalesce(current_setting('matrice.result_rpc', true), '') <> 'on' then
     raise exception 'Clôture et réouverture du résultat : utiliser les boutons « Clôturer le résultat » / « Rouvrir »';
   end if;
+  -- changement de mode de l'artiste propagé aux dates (project_mode_to_shows, Q10) : une date clôturée garde son mode, sans
+  -- faire échouer l'enregistrement du projet (relecture v1.51, B3)
+  if old.result_closed_at is not null and new.result_closed_at is not null and pg_trigger_depth() > 1
+     and new.prod_mode is distinct from old.prod_mode then
+    new.prod_mode := old.prod_mode;
+    new.prod_mode_manual := old.prod_mode_manual;
+  end if;
   if old.result_closed_at is not null and new.result_closed_at is not null and (
        new.production is distinct from old.production or new.fee_ht is distinct from old.fee_ht
     or new.partner_id is distinct from old.partner_id or new.partner_pct is distinct from old.partner_pct
@@ -163,15 +170,17 @@ create trigger result_lock_shows before update on public.shows for each row exec
 
 create or replace function public.result_lock_budget_lines() returns trigger
 language plpgsql set search_path = public as $$
-declare sid uuid := coalesce(new.show_id, old.show_id);
 begin
-  if sid is null or not exists (select 1 from shows where id = sid and result_closed_at is not null) then
+  -- l'ancienne ET la nouvelle date : une dépense ne quitte ni ne rejoint une date clôturée (relecture v1.51, B2)
+  if not exists (select 1 from shows where result_closed_at is not null
+                  and id in (case when tg_op <> 'INSERT' then old.show_id end, case when tg_op <> 'DELETE' then new.show_id end)) then
     return coalesce(new, old);
   end if;
   if tg_op in ('INSERT', 'DELETE') or new.show_id is distinct from old.show_id or new.amount is distinct from old.amount
      or new.forecast is distinct from old.forecast or new.qty is distinct from old.qty or new.unit_cost is distinct from old.unit_cost
      or new.category is distinct from old.category or new.payer is distinct from old.payer or new.vat_rate is distinct from old.vat_rate
-     or new.amount_ttc is distinct from old.amount_ttc or new.label is distinct from old.label then
+     or new.amount_ttc is distinct from old.amount_ttc or new.label is distinct from old.label
+     or new.supplier is distinct from old.supplier or new.auto is distinct from old.auto then
     raise exception 'Résultat clôturé : les dépenses de cette date sont verrouillées. Rouvre le résultat (avec un motif) pour les modifier.';
   end if;
   return new;

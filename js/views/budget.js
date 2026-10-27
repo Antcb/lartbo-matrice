@@ -245,7 +245,7 @@ const holderOpts = HOLDERS;
 function cnmBlock(s){
   const c = cnmOf(s), habit = cnmBearer({...s, cnm_bearer: null});
   return `<div class="steps prod-params cnm-block">
-    <label>Taxe CNM</label><span>${c.free ? 'Spectacle gratuit : sur le prix de cession HT' : 'Spectacle payant : sur la totalité des recettes de billetterie HT'}${c.amount != null ? ` · <b>${eur2(c.amount)}</b>` : ' · <span class="muted">recettes de billetterie non saisies</span>'}</span>
+    <label>Taxe CNM</label><span>${c.abroad ? 'Date à l’étranger : pas de taxe CNM' : `${c.free ? 'Spectacle gratuit : sur le prix de cession HT' : 'Spectacle payant : sur la totalité des recettes de billetterie HT'}${c.real != null ? ` · <b>${eur2(c.real)}</b> (dépense CNM saisie)` : c.amount != null ? ` · <b>${eur2(c.amount)}</b>` : ' · <span class="muted">recettes de billetterie non saisies</span>'}`}</span>
     <label>Taux de la date (%)</label><span>${cIn('shows', s.id, 'cnm_pct', s.cnm_pct, 'number', `class="narrow" placeholder="${esc(String(cnmPct()))}" title="Vide : taux des Réglages"`)} <span class="muted">${s.cnm_pct == null || s.cnm_pct === '' ? 'taux des Réglages' : ''}</span></span>
     <label>Billetterie encaissée par</label>${cSel('shows', s.id, 'ticket_holder', s.ticket_holder, holderOpts)}
     ${c.free ? '' : `<label>Redevable légal</label><span>${c.debtor ? esc(holderLabel(c.debtor)) + ' (détenteur de la billetterie)' : '<span class="muted">le détenteur de la billetterie (à renseigner ci-dessus)</span>'}</span>`}
@@ -270,7 +270,7 @@ function coreaBlock(s){
       <td class="num">${cin(s, `charges.${i}.amount`, x.amount, 'class="narrow" title="Montant HT"')}</td>
       <td><button class="btn icon sm ghost danger" data-act="coreaDelCharge" data-id="${s.id}" data-i="${i}" aria-label="Retirer cette charge">✕</button></td></tr>`).join('');
   const brk = s.break_even == null || s.break_even === '' ? '<span class="muted">à renseigner</span>'
-    : c.validated ? `<span class="badge ok">validé</span> <span class="muted">le ${who(co.break_validated_at, co.break_by)}</span>`
+    : c.validated ? `<span class="ok-badge">validé</span> <span class="muted">le ${who(co.break_validated_at, co.break_by)}</span>`
     : `<button class="btn sm" data-act="coreaValidateBreak" data-id="${s.id}">Valider le break</button> <span class="muted">obligatoire avant tout calcul</span>`;
   const rev = !c.validated ? '<p class="muted">Partage non calculé : le break doit être validé.</p>'
     : c.exact != null ? `<p>Recettes HT des billets vendus après le break : <b>${eur2(c.exact)}</b> <span class="muted">(ventes après le break connues pour chaque tarif)</span></p>`
@@ -296,7 +296,7 @@ function coreaBlock(s){
     <div class="tbl-wrap"><table class="budget-table"><tbody>${charges}
       ${s.cnm_in_result ? `<tr><td>Taxe CNM (sur la totalité des recettes HT)</td><td class="num nowrap">${eur2(c.cnm)}</td><td></td></tr>` : ''}</tbody></table></div>
     <div class="vh-actions mt-sm"><button class="btn sm" data-act="coreaAddCharge" data-id="${s.id}">Ajouter une charge</button></div>
-    ${c.issues.length ? `<ul class="warn-list">${c.issues.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+    ${c.issues.length ? `<ul class="warn-txt warn-list">${c.issues.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
     <div class="tbl-wrap"><table class="budget-table prod-table"><tbody>
       ${line('Recettes HT concernées (après le break)', c.revenue)}
       ${line('Charges déductibles', c.revenue == null ? null : -c.deducted)}
@@ -316,12 +316,12 @@ function coprodBlock(s){
   const side = w => w === 'artbo' ? 'L’ArtBoristerie' : esc(x.partner || 'le coproducteur');
   const row = (l, v, cls = '') => `<tr class="${cls}"><td>${l}</td><td class="num nowrap">${eur2(v)}</td></tr>`;
   return `<div class="coprod-block">
-    <h4 class="block-title">Clôture du résultat ${closed ? '<span class="badge ok">clôturé</span>' : ''}</h4>
+    <h4 class="block-title">Clôture du résultat ${closed ? '<span class="ok-badge">clôturé</span>' : ''}</h4>
     <div class="steps prod-params">
       <label>Recettes encaissées par</label>${closed ? `<span>${esc(holderLabel(s.ticket_holder))}</span>` : cSel('shows', s.id, 'ticket_holder', s.ticket_holder, holderOpts.filter(h => h[0] !== 'organisateur'))}
     </div>
     ${closed ? `<p>Clôturé le ${fmtDate(s.result_closed_at)}${s.result_closed_by ? ' par ' + esc(s.result_closed_by) : ''} : montants verrouillés.</p>` : ''}
-    ${!closed && k.issues.length ? `<ul class="warn-list">${k.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}
+    ${!closed && k.issues.length ? `<ul class="warn-txt warn-list">${k.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}
     ${k.warnings.length && !closed ? `<p class="muted">${k.warnings.map(esc).join(' · ')}</p>` : ''}
     <div class="tbl-wrap"><table class="budget-table prod-table"><tbody>
       ${row('<b>Résultat global réel (DL inclus)</b>', x.result, 'bill-total')}
@@ -367,7 +367,7 @@ export function productionBudgetHTML(s){
   const taxRow = (label, key, fv, rv, help) => `<tr><td>${label}</td><td class="num">${key ? pin(s, key, p[key], `class="narrow" title="${help || '%'}"`) + ' %' : ''}</td>${two(fv, R(rv))}</tr>`;
   const locked = !!s.result_closed_at;   // résultat clôturé (coproduction) : saisies désactivées, la base refuse aussi (v1.51)
   return `<div class="prod-budget prod-production">
-    <h3 class="block-title">Budget de production <span class="badge tag">${esc(s.contract_type)}</span>${locked ? ' <span class="badge ok">résultat clôturé</span>' : ''}</h3>
+    <h3 class="block-title">Budget de production <span class="badge tag">${esc(s.contract_type)}</span>${locked ? ' <span class="ok-badge">résultat clôturé</span>' : ''}</h3>
     <fieldset class="lock-set" ${locked ? 'disabled' : ''}>
     <div class="stat-row budget-stats">
       <div class="stat"><b>${eur2(f.ht)}</b><span>Recette billetterie HT (prévu)${hasReal ? ` · réel ${eur2(r.ht)}` : ''}</span></div>
@@ -405,9 +405,10 @@ export function productionBudgetHTML(s){
       <tr><td>Droits de location producteur (HT)</td><td></td>${two(f.dlHt, R(r.dlHt))}</tr>
     </tbody></table></div>
 
-    <h4 class="block-title">Coûts de production</h4>
+    </fieldset>
+    <h4 class="block-title">Coûts de production</h4>${locked ? '<p class="muted small">Résultat clôturé : les montants sont verrouillés (la base les refuse) ; les dates de paiement restent modifiables.</p>' : ''}
     <div class="tbl-wrap"><table class="budget-table">${HEAD}<tbody>${cats.map(c => { const ls = lines.filter(l => (l.category || 'Autres') === c); return ls.length ? `<tr class="cat-row"><td colspan="9"><b>${esc(c)}</b> <span class="muted">· prévu ${eur2(f.byCat[c] || 0)} · réel ${eur2(r.byCat[c] || 0)}</span></td></tr>` + ls.map(l => lineRow(l, proj, {qtyAll: true})).join('') : ''; }).join('')}</tbody></table></div>
-    <div class="vh-actions mt">
+    <div class="vh-actions mt" ${locked ? 'hidden' : ''}>
       <button class="btn sm" data-act="addBudgetLine" data-show="${s.id}" data-cat="Salle">Ajouter une ligne salle</button>
       <button class="btn sm" data-act="addBudgetLine" data-show="${s.id}" data-cat="Promoteur">Ajouter une ligne promoteur</button>
       ${lines.length ? '' : `<button class="btn sm primary" data-act="prefillProduction" data-id="${s.id}">Préremplir (modèle du budget de production)</button>`}
@@ -415,6 +416,7 @@ export function productionBudgetHTML(s){
     </div>
     ${dropZone(`data-budget-drop='${JSON.stringify({show_id:s.id})}'`, 'Glisse ici une facture ou un devis (ou sur une ligne précise) : l’IA la lit, met la ligne à jour et la range dans le Drive de la date (02_Finance).')}
 
+    <fieldset class="lock-set" ${locked ? 'disabled' : ''}>
     <h4 class="block-title">Résultat</h4>
     <div class="tbl-wrap"><table class="budget-table prod-table"><thead><tr><th></th><th class="num">Taux</th><th class="num">Prévu</th><th class="num">Réel</th></tr></thead><tbody>
       <tr><td>Recette nette de droits et taxes</td><td></td>${two(f.net, R(r.net))}</tr>

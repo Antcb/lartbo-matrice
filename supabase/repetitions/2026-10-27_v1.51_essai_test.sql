@@ -15,7 +15,7 @@ end $g$;
 --@@MIGRATION@@
 
 do $e$
-declare pa uuid; c1 uuid; c2 uuid; c3 uuid; l1 uuid; e text; n int; avant text; apres text; ok boolean;
+declare pa uuid; c1 uuid; c2 uuid; c3 uuid; l1 uuid; l2 uuid; e text; n int; avant text; apres text; ok boolean;
 begin
   select md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) into avant from show_payments x;
   insert into projects (name, mode) values ('ESSAI v1.51', 'production') returning id into pa;
@@ -52,6 +52,15 @@ begin
   if ok then raise exception 'ECHEC 3d : dépense modifiable après clôture'; end if;
   begin insert into budget_lines (project_id, show_id, category, label, amount) values (pa, c2, 'Salle', 'Ajout', 10); ok := true; exception when others then ok := false; end;
   if ok then raise exception 'ECHEC 3e : dépense ajoutée après clôture'; end if;
+  -- B2 : une dépense ne quitte ni ne rejoint une date clôturée
+  begin update budget_lines set show_id = c3 where id = l1; ok := true; exception when others then ok := false; end;
+  if ok then raise exception 'ECHEC 3f : dépense déplacée hors de la date clôturée'; end if;
+  insert into budget_lines (project_id, show_id, category, label, amount) values (pa, c3, 'Salle', 'Autre date', 5) returning id into l2;
+  begin update budget_lines set show_id = c2 where id = l2; ok := true; exception when others then ok := false; end;
+  if ok then raise exception 'ECHEC 3g : dépense ajoutée à la date clôturée par déplacement'; end if;
+  -- B3 : changement de mode de l'artiste : l'enregistrement du projet passe, la date clôturée garde son mode
+  update projects set mode = 'booking' where id = pa;
+  if (select prod_mode from shows where id = c2) is distinct from 'production' then raise exception 'ECHEC 3h : mode de la date clôturée changé'; end if;
   update budget_lines set paid_at = current_date where id = l1;   -- date de paiement : libre
   update shows set reversement_paid_at = current_date where id = c2;   -- paiement réel du reversement : libre
 
