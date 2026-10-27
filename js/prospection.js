@@ -6,11 +6,11 @@
  * « Relance » : réponse dans le même fil Gmail (l'historique reste), journal, nouvelle tâche de relance.
  */
 import { render } from './app.js';
-import { insert, save, sb, signedUrl } from './data.js';
+import { insert, purgeStored, remove, save, sb, signedUrl } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
 import { PROSPECT_TAGS, callScript, fill, tplLabel, tplProjects } from './mail.js';
-import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, linksOfStructure, logsOf, projIds, projName, prospectsOfStructure, setting, structName } from './selectors.js';
-import { S } from './state.js';
+import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName } from './selectors.js';
+import { S, touch } from './state.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { dateInput } from './ui/datefield.js';
 import { openModal } from './ui/modal.js';
@@ -321,6 +321,24 @@ async function relanceTask(st, pids, subject, sent, p, n, sentOn=today()){
   }
   await insert('tasks', {...base, title: `Relance — ${st.name}`, auto_kind: 'relance_mail',
     notes: `${n ? `Relance n°${n}` : 'Mail'} « ${subject || ''} » ${sent ? 'envoyé le ' + fmtDate(sentOn) : 'préparé en brouillon le ' + fmtDate(today())}. Relance n°${n + 1} sur ${MAIL_RELANCES} par mail : bouton « Relance » sur le suivi ou la fiche de la structure.`});
+}
+
+/** Question de suppression d'un suivi : nomme le suivi et ce qui part avec lui (§4.4) */
+export function prospectDeleteAsk(id){
+  const p = byId('prospects', id), n = logsOf(id).length, f = filesOf(id).filter(x => x.mime !== 'link').length;
+  const plus = [n ? `son journal (${n} échange${n > 1 ? 's' : ''})` : '', f ? `${f} fichier${f > 1 ? 's' : ''} joint${f > 1 ? 's' : ''}` : ''].filter(Boolean).join(' et ');
+  return {title: 'Supprimer le suivi ?', text: `Supprimer le suivi « ${prospectTitle(p)} »${plus ? ' avec ' + plus : ''} ? Les fichiers Google Drive ne sont pas touchés.`,
+    actions: [{value: 'del', label: 'Supprimer le suivi', danger: true}]};
+}
+/** Suppression d'un suivi (liste ou fenêtre) : lignes d'abord, puis ses fichiers stockés — jamais de fichier orphelin silencieux (v1.46b) */
+export async function deleteProspect(id){
+  const paths = filesOf(id).filter(f => f.mime !== 'link').map(f => f.path);
+  if (!(await remove('prospects', id))) return false;
+  S.db.prospect_logs = S.db.prospect_logs.filter(l => l.prospect_id !== id); S.db.prospect_files = S.db.prospect_files.filter(f => f.prospect_id !== id);
+  touch('prospect_logs'); touch('prospect_files');
+  if (S.suiviPage === id) S.suiviPage = null;
+  await purgeStored(paths);
+  return true;
 }
 
 /** Relance téléphone sans réponse : la tâche est fermée, le suivi est clos et le journal le note */

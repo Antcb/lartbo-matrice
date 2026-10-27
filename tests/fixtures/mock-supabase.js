@@ -138,7 +138,9 @@
         functions: { invoke: async (name, o) => { window.__calls.push({ fn: name, body: o && o.body, url: String(url) });
           const err = window.__FN_ERROR && window.__FN_ERROR[name];
           return err ? { data: null, error: { message: err } } : { data: { ok: true }, error: null }; } },
-        storage: { from: () => ({ upload: async () => ({ data: {}, error: null }), remove: async () => ({ data: [], error: null }),
+        storage: { from: bucket => ({ upload: async () => ({ data: {}, error: null }),
+          // fichiers effacés notés dans window.__calls ({ storageRemove: bucket, paths }) pour vérifier qu'aucun fichier ne reste orphelin
+          remove: async paths => { window.__calls.push({ storageRemove: bucket, paths: [...paths] }); return { data: [], error: null }; },
           createSignedUrl: async () => ({ data: { signedUrl: 'about:blank' }, error: null }), createSignedUrls: async p => ({ data: p.map(() => ({ signedUrl: 'about:blank' })), error: null }) }) },
         channel: () => { const c = { on: () => c, subscribe: () => c, unsubscribe: async () => 'ok' }; return c; },
         removeChannel: async () => 'ok',

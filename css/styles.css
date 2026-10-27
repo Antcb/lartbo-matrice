@@ -407,6 +407,9 @@ dialog::backdrop{background:rgba(16,24,42,.5)}
 .checks input{width:16px;height:16px;margin:0;accent-color:var(--brand)}
 .modal-foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--line-2)}
 .modal-foot .left{margin-right:auto}
+/* fenêtre de dialogue (js/ui/dialog.js, §9.1) : texte en une colonne */
+dialog.ask .modal-body{display:block}
+dialog.ask .modal-body p{margin:0 0 8px}
 
 /* Connexion */
 .login{max-width:400px;margin:12vh auto;padding:32px}

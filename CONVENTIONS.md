@@ -144,7 +144,7 @@ Une valeur par défaut est lue **à un seul endroit** — un réglage (`setting(
 ### 4.3 Terminer, clore, annuler — annulation pendant 5 secondes
 - [EN PLACE] `saveLinger(table, id, patch, message, {after, onUndo})` (`js/data.js`, `LINGER_MS` = 5 000) : l'élément reste visible 5 s, toast avec **Annuler** qui rétablit exactement l'état précédent.
 - [NOUVELLE] Tout passage à « terminé / clos / annulé » (tâche Faite ou Annulée, suivi Clos ou Confirmé, date Annulée ou Sans Suite) passe par `saveLinger` **depuis tous les chemins**.
-- [DÉCIDÉ Q17] Toute tâche qui passe à « Faite » (ou « Annulée ») enregistre **systématiquement** sa date et heure réelles de réalisation dans `tasks.done_at`, quel que soit le chemin (case, fenêtre, relance fermée automatiquement). Repasser la tâche « À faire » vide `done_at`. Les **547 anciennes tâches terminées sans date restent vides** : aucune date n'est inventée (ni `updated_at`, ni autre). [CORRECTION] la fenêtre de tâche ne remplit pas `done_at` et n'a pas d'Annuler ; fenêtre de suivi et `closeNoAnswer` sans Annuler.
+- [DÉCIDÉ Q17] Toute tâche qui passe à « Faite » (ou « Annulée ») enregistre **systématiquement** sa date et heure réelles de réalisation dans `tasks.done_at`, quel que soit le chemin (case, fenêtre, relance fermée automatiquement). Repasser la tâche « À faire » vide `done_at`. Les **547 anciennes tâches terminées sans date restent vides** : aucune date n'est inventée (ni `updated_at`, ni autre). [CORRIGÉ v1.46b] la fenêtre de tâche pose / efface `done_at` et passe par `saveLinger` (Annuler 5 s) en passant à « Faite » ou « Annulée ». [CORRECTION] fenêtre de suivi et `closeNoAnswer` sans Annuler.
 
 ### 4.4 Suppression [DÉCIDÉ Q18, Q19]
 Toute suppression (tâche, suivi, date, structure, contact, artiste, ligne de budget ou de facturation, pièce jointe, journal) suit **dans cet ordre** :
@@ -159,14 +159,14 @@ Toute suppression (tâche, suivi, date, structure, contact, artiste, ligne de bu
   3. tâche `pg_cron` toutes les 5 secondes qui exécute les attentes échues : suppression des lignes en base (avec leurs lignes liées), puis envoi des chemins de fichiers à une fonction edge qui les efface via l'API de stockage, avec reprise en cas d'échec (le fichier reste listé tant qu'il n'est pas effacé) ;
   4. côté application : les éléments en attente sont masqués partout (lecture de la table d'attente + temps réel) ; le délai effectif d'effacement est de 5 à 10 s après la confirmation, mais l'annulation est impossible dès 5 s.
 - [EN PLACE] Aujourd'hui : suppression immédiate et définitive après un `confirm()` natif.
-- [CORRECTION] suivi supprimé depuis sa fenêtre (`forms.js`) : fichiers orphelins ; tâche supprimée : fichiers des pièces jointes conservés ; `deleteProject` et suppression d'une date : nettoyage client non vérifié ; aucune suppression n'a de délai d'annulation.
+- [CORRIGÉ v1.46b] suivi supprimé (fenêtre ou liste : `deleteProspect`) et tâche supprimée (fenêtre) : lignes d'abord, puis fichiers stockés effacés (`purgeStored`, échec signalé). [CORRECTION] `deleteProject` et suppression d'une date : nettoyage client non vérifié ; aucune suppression n'a de délai d'annulation.
 
 ### 4.5 Fenêtres de dialogue [DÉCIDÉ Q20]
 - **Toutes** les fenêtres natives du navigateur sont remplacées par des fenêtres de l'application : `confirm()` (confirmations), `prompt()` (saisies, dont le **mot de passe**, toujours en champ masqué), `alert()` (alertes, rapports comme celui de la synchronisation Pennylane).
 - Composant à créer dans `js/ui/` (sur le modèle d'`openModal`, styles `DESIGN_SYSTEM.md` §9) : titre, texte de l'action et de ses conséquences, bouton d'action **explicite** (`.btn.danger` « Supprimer la tâche », `.btn.primary` « Clore le suivi »), et « Annuler ».
 - **« Annuler » (et Échap, et le clic hors de la fenêtre) ne déclenche jamais l'action** ni aucune partie de l'action. Une question à deux issues propose deux boutons nommés + « Annuler » ; jamais « OK/Annuler » pour deux actions différentes.
-- [NOUVELLE] D'ici la création du composant, tout nouveau code ne doit introduire **aucun** `confirm`, `prompt` ou `alert`.
-- [CORRECTION] ~30 `confirm()`, 5 `prompt()` (pôle, partenaire, mot de passe en clair, lien Drive, lien), 2 `alert()` ; dans `forms.js`, supprimer une tâche « Relance téléphone » : « Annuler » supprime quand même la tâche.
+- [EN PLACE v1.46b] Composant `ask({title, text, actions, cancel})` (`js/ui/dialog.js`) : renvoie la valeur du bouton choisi, `null` pour Annuler / Échap / clic dehors. Utilisé pour toute suppression depuis une fenêtre (`openModal` `deleteAsk` / `onDelete(choix)`) et la suppression d'un suivi. Tout nouveau code l'utilise ; **aucun** nouveau `confirm`, `prompt` ou `alert`.
+- [CORRECTION] ~30 `confirm()`, 5 `prompt()` (pôle, partenaire, mot de passe en clair, lien Drive, lien), 2 `alert()` ; [CORRIGÉ v1.46b] supprimer une tâche « Relance téléphone » : « Supprimer seulement la tâche » / « Supprimer et clore le suivi » / « Annuler » (qui ne supprime rien).
 
 ### 4.6 Fichiers associés [EN PLACE]
 - Envoi : `uploadFiles(owner, files)` (`js/data.js`) → bucket `suivi`, chemin `dossier/horodatage_nom-nettoyé` ; ouverture : `openStored(path)`.

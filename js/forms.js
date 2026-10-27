@@ -8,7 +8,7 @@ import { hasFinancialRecord } from './calc.js';
 import { render } from './app.js';
 import { CFG } from './config.js';
 import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PRIORITY_OPTS, PROSPECT, PROSPECT_OPTS, STATUSES, TASK_STATUS, TASK_STATUS_OPTS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
-import { insert, refreshFor, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
+import { insert, purgeStored, refreshFor, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode, geoFrance, searchPlaces } from './geo.js';
 import { contactMails, defaultCommission, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
 import { S, touch } from './state.js';
@@ -17,7 +17,7 @@ import { fileRow } from './ui/bits.js';
 import { hiddenFields, openModal } from './ui/modal.js';
 import { $, downloadCSV, esc, fmtDate, norm, toast, today, workDay } from './utils.js';
 import { driveHTML } from './views/production.js';
-import { cancelAutoRelances, closeNoAnswer } from './prospection.js';
+import { cancelAutoRelances, closeNoAnswer, deleteProspect, prospectDeleteAsk } from './prospection.js';
 import { afterFeeChange, askConfirmation, becameConfirmed } from './confirm-flow.js';
 
 const team = () => CFG.TEAM.map(e=>[e, TEAM_NAMES[e]||e]);
@@ -198,17 +198,35 @@ export function editTask(id, prefill={}){
       ...(files.length ? [{k:'_existing', type:'html', label:'Pièces jointes', full:true, html: files.map(f=>fileRow(f, 'openAttachment', 'delAttachment')).join('')}] : []),
       {k:'_files', label: files.length ? 'Ajouter des pièces jointes' : 'Pièces jointes', type:'files', full:true},
     ],
-    onDelete: id ? async () => {
-      const closeIt = t.auto_kind === 'relance_tel' && t.prospect_id && !isDone(t) && confirm('Relance téléphone supprimée : pas de réponse, on clôt le suivi ? (Annuler = supprimer seulement la tâche)');
-      if (closeIt) await closeNoAnswer(id, {deleted:true});
-      await removeWhere('attachments', 'task_id', id); return remove('tasks', id); } : null,
+    // suppression (Q20, v1.46b) : « Annuler » ne supprime jamais rien ; une relance téléphone ouverte propose deux issues nommées
+    deleteAsk: id ? () => {
+      const n = attachmentsOf('task_id', id).length, phone = t.auto_kind === 'relance_tel' && t.prospect_id && !isDone(t);
+      return {title: 'Supprimer la tâche ?', text: `Supprimer la tâche « ${t.title || 'sans titre'} »${n ? ` et ${n > 1 ? `ses ${n} pièces jointes` : 'sa pièce jointe'}` : ''} ?`
+          + (phone ? '\nRelance téléphone sans réponse : tu peux aussi clore le suivi (noté dans son journal).' : ''),
+        actions: phone ? [{value: 'task', label: 'Supprimer seulement la tâche', danger: true}, {value: 'close', label: 'Supprimer et clore le suivi', danger: true}]
+          : [{value: 'task', label: 'Supprimer la tâche', danger: true}]};
+    } : null,
+    onDelete: id ? async choice => {
+      if (choice === 'close') await closeNoAnswer(id, {deleted:true});
+      const paths = attachmentsOf('task_id', id).map(f => f.path);
+      if (!(await remove('tasks', id))) return false;
+      await removeWhere('attachments', 'task_id', id);
+      await purgeStored(paths);   // fichiers des pièces jointes effacés avec la tâche (§4.4)
+      return true; } : null,
     onSave: async v => {
       if (!v.title){ toast('Donne un nom à la tâche', true); return false; }
       v.prospect_id = v.prospect_id || null;
       const up = v._files || []; delete v._files; delete v._existing;
       v.project_id = v.project_ids[0] || null;
+      // date et heure réelles de réalisation (Q17, v1.46b) : posées en passant à « Faite » / « Annulée », effacées en revenant « À faire »
+      const wasDone = !!id && isDone(t), nowDone = isDone(v);
+      if (nowDone && !wasDone) v.done_at = new Date().toISOString();
+      else if (!nowDone && wasDone) v.done_at = null;
       let row = {id};
-      if (id) await save('tasks', id, v, {rerender:false}); else row = await insert('tasks', v);
+      if (id && nowDone && !wasDone){   // terminée depuis la fenêtre : 5 s pour annuler, comme la case (§4.3)
+        if (!(await saveLinger('tasks', id, v, v.status === 'Cancelled' ? 'Tâche annulée' : 'Tâche terminée'))) return false;
+      } else if (id){ if (!(await save('tasks', id, v, {rerender:false}))) return false; }
+      else row = await insert('tasks', v);
       if (row && up.length) await uploadFiles({task_id: row.id}, up);
     }
   });
@@ -382,7 +400,8 @@ export function editProspect(id){
         {k:'_kind', label:'Type d’échange', type:'select', options:['Appel','Mail','RDV','Note'], blank:false},
         {k:'_files', label:'Pièces jointes (PDF de mails…)', type:'files', full:true}]),
     ],
-    onDelete: id ? () => remove('prospects', id) : null,
+    deleteAsk: id ? () => prospectDeleteAsk(id) : null,
+    onDelete: id ? () => deleteProspect(id) : null,   // journal, pièces et fichiers stockés avec lui (v1.46b)
     onSave: async v => {
       if (!v.structure_id){ toast('Choisis ou crée la structure', true); return false; }
       const files = v._files || [], note = v._note, contact = v._contact, kind = v._kind || 'Appel';

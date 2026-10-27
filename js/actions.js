@@ -14,6 +14,7 @@ import { propagateCommission } from './commission.js';
 import { payerLabel } from './budget.js';
 import { S, localSet, setProjects, touch } from './state.js';
 import { MODALS, openModal } from './ui/modal.js';
+import { ask } from './ui/dialog.js';
 import { modalSaved } from './ui/drafts.js';
 import { applyAcompte, saveDepartments } from './views/settings.js';
 import { hasLogDraft, setLogDraft } from './views/suivi.js';
@@ -22,7 +23,7 @@ import { rtStyle, rtToolbar } from './ui/richtext.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
 import { exportShows } from './exports.js';
-import { callProspect, cancelAutoRelances, closeNoAnswer, markLogSent, openProspection, restoreRelances } from './prospection.js';
+import { callProspect, cancelAutoRelances, closeNoAnswer, deleteProspect, markLogSent, openProspection, prospectDeleteAsk, restoreRelances } from './prospection.js';
 import { EMP_ACTIONS, editEmployee } from './views/employees.js';
 import { BUDGET_ACTIONS } from './budget-actions.js';
 
@@ -67,7 +68,12 @@ export const ACTIONS = {
   ...BUDGET_ACTIONS,
   employeeCard: t => editEmployee(t.dataset.id),
   closeModal: t => (t.dataset.level==='2' ? $('#modal2') : $('#modal')).close(),
-  modalDelete: async t => { const lvl = Number(t.dataset.level||1); if (confirm('Supprimer définitivement ?')){ if ((await MODALS[lvl].onDelete()) === false) return; modalSaved(MODALS[lvl].dlg); MODALS[lvl].dlg.close(); render(); } },   // refus (garde-fou) : la fenêtre reste ouverte
+  // suppression depuis une fenêtre : fenêtre de dialogue de l'application (Q20) — Annuler, Échap ou clic dehors ne suppriment jamais rien
+  modalDelete: async t => { const lvl = Number(t.dataset.level||1), m = MODALS[lvl];
+    const q = m.deleteAsk ? m.deleteAsk() : {title: 'Supprimer ?', text: 'Cet élément sera supprimé définitivement.', actions: [{value: 'del', label: 'Supprimer', danger: true}]};
+    const choice = await ask(q); if (choice == null) return;
+    if ((await m.onDelete(choice)) === false) return;   // refus (garde-fou) : la fenêtre reste ouverte
+    modalSaved(m.dlg); m.dlg.close(); render(); },
   unlink: t => t.closest('.chip').remove(),
   subtab: t => { S.tab[t.dataset.key] = t.dataset.tab; render(); },
   fold: t => { const k = 'fold:'+t.dataset.key; S.tab[k] = t.getAttribute('aria-expanded')!=='true'; render(); },
@@ -295,9 +301,8 @@ export const ACTIONS = {
   noAnswerClose: async t => { if (confirm('Pas de réponse au téléphone : clore le suivi ? (noté dans le journal)')) await closeNoAnswer(t.dataset.id); },
   rmProj: async (t, e) => { e.stopPropagation(); const tb = t.dataset.t || 'prospects', r = byId(tb, t.dataset.id); const ids = projIds(r).filter(x=>x!==t.dataset.p);
     await save(tb, r.id, {project_ids: ids, project_id: ids[0]||null}); },
-  delProspect: async t => { if (!confirm('Supprimer ce suivi, son journal et ses fichiers ?')) return;
-    const fs=filesOf(t.dataset.id).filter(f=>f.mime!=='link').map(f=>f.path); if (fs.length) await sb.storage.from('suivi').remove(fs);
-    if (await remove('prospects', t.dataset.id)){ S.db.prospect_logs=S.db.prospect_logs.filter(l=>l.prospect_id!==t.dataset.id); S.db.prospect_files=S.db.prospect_files.filter(f=>f.prospect_id!==t.dataset.id); touch('prospect_logs'); touch('prospect_files'); if (S.suiviPage===t.dataset.id) S.suiviPage=null; render(); } },
+  delProspect: async t => { if (await ask(prospectDeleteAsk(t.dataset.id)) !== 'del') return;
+    if (await deleteProspect(t.dataset.id)) render(); },
   aiSummary: async t => {
     const id = t.dataset.id; t.disabled = true; t.textContent = 'Rédaction en cours…';
     // IA saturée : refreshSummary programme un nouvel essai automatique
