@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.45.0 — 27/10/2026
+- lot D1 : coproductions sans « reste artiste » prévisionnel dans le compte artiste ; droits TRUNCATE retirés aux rôles de l'API (migration v1.45)
+
+
 ## 1.44.2 — 27/10/2026
 - relecture D1 : le classement « hors calcul » n'est possible que sur une ligne artificielle d'import d'une coproduction (jamais sur une opération réelle)
 

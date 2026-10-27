@@ -9,7 +9,7 @@ import { byId } from '../selectors.js';
 import { S } from '../state.js';
 import { cIn, cSel } from '../ui/cells.js';
 import { esc, eur2, fmtDate, today } from '../utils.js';
-import { PROD_CATS, productionBudget } from '../production-budget.js';
+import { PROD_CATS, isProductionShow, productionBudget } from '../production-budget.js';
 
 const STATUS = {paid:['Payé','ok-badge'], doc:['Pièce reçue','warn-badge'], planned:['Prévu','badge']};
 const badge = l => { const [t,c] = STATUS[lineStatus(l)]; return `<span class="${c}">${t}</span>`; };
@@ -165,6 +165,22 @@ export function showBudgetHTML(s){
   </div>`;
 }
 
+/**
+ * Date produite par L'ArtBo (contrat Production / Co-Production) dans le tableau de l'artiste : son budget est un PRÉVISIONNEL
+ * à part (recettes, dépenses, répartition selon l'accord). Aucun « reste artiste » n'est calculé ici ; seuls les montants
+ * réalisés s'affichent (dépenses payées, versements réellement faits à l'artiste). Hors compte dédié (accountOf), hors totaux.
+ */
+function ownProdRow(s, b, missing){
+  const paidExp = r2(b.lines.filter(l => !isSolde(l) && (l.paid_at || l.reimbursed_at)).reduce((t, l) => t + lineValue(l), 0));
+  const ar = artistResult(s, b), kind = s.contract_type === 'Co-Production' ? 'Coproduction' : 'Production';
+  const dash = t => `<td class="num muted" title="${t}">—</td>`;
+  return `<tr class="own-prod-row"><td class="nowrap"><a href="#" data-act="openProdShow" data-id="${s.id}">${fmtDate(s.date)}</a></td><td>${esc(s.venue||'')}${s.city?` <span class="muted">(${esc(s.city)})</span>`:''} <span class="badge" title="Budget de production à part (onglet Budget de la date) : prévisionnel, répartition selon l’accord">${kind}</span></td>
+      ${dash('Pas de cession facturée par L’ArtBo à l’organisateur sur cette date')}${dash('Pas de commission calculée : répartition selon l’accord')}
+      <td class="num nowrap" title="Dépenses réellement payées ; le prévisionnel est dans le budget de la date">${eur2(paidExp)} <span class="muted tiny">payées</span></td>
+      ${dash('Pas de reste calculé : la part de l’artiste suit l’accord de production')}<td class="num">${ar.hasVerse ? eur2(ar.verse) : '<span class="muted">—</span>'}</td>
+      ${dash('Pas d’écart calculé sans reste prévu')}<td class="${missing?'late-cell':''}">${b.lines.length ? `${b.docsIn}/${b.docsAll}${missing?' ⚠︎':''}` : '<span class="muted">—</span>'}</td></tr>`;
+}
+
 /** Vue d'ensemble d'un artiste : compte dédié + toutes ses dates en production + frais hors date */
 export function projectBudgetHTML(projectId){
   const p = byId('projects', projectId); if (!p) return '';
@@ -176,11 +192,14 @@ export function projectBudgetHTML(projectId){
   if (!open) return `<div class="proj-budget-bar">${head}</div>`;
   const rows = shows.map(s => { const b = showBudget(s); const now = today();
     const missing = s.date && s.date < now && b.docsIn < b.docsAll;
+    if (isProductionShow(s)) return ownProdRow(s, b, missing);
     return `<tr><td class="nowrap"><a href="#" data-act="openProdShow" data-id="${s.id}">${fmtDate(s.date)}</a></td><td>${esc(s.venue||'')}${s.city?` <span class="muted">(${esc(s.city)})</span>`:''}</td>
       <td class="num">${eur2(b.fee)}</td><td class="num">${eur2(b.com)}</td><td class="num">${eur2(b.expenses)}</td><td class="num"><b>${eur2(b.available)}</b></td><td class="num">${(r => r.hasVerse ? eur2(r.verse) : '<span class="muted">—</span>')(artistResult(s, b))}</td>
       ${b.lines.length ? `<td class="num nowrap">${ecartHTML(artistResult(s, b).ecart)}</td>
       <td class="${missing?'late-cell':''}">${b.docsIn}/${b.docsAll}${missing?' ⚠︎':''}</td>` : '<td class="num muted">—</td><td><span class="warn-badge">Budget à faire</span></td>'}</tr>`; }).join('');
-  const tot = shows.reduce((t,s) => { const b = showBudget(s); ['fee','com','expenses','available'].forEach(k => t[k] += b[k]); const ar = artistResult(s, b); t.solde += ar.verse; if (ar.ecart != null) t.result += ar.ecart; return t; }, {fee:0,com:0,expenses:0,available:0,solde:0,result:0});
+  // dates produites par L'ArtBo (Production / Co-Production) : budget prévisionnel à part, hors totaux du cachet ; seul le versé réel compte
+  const tot = shows.reduce((t,s) => { const b = showBudget(s), ar = artistResult(s, b); t.solde += ar.verse; if (isProductionShow(s)) { t.own++; return t; }
+    ['fee','com','expenses','available'].forEach(k => t[k] += b[k]); if (ar.ecart != null) t.result += ar.ecart; return t; }, {fee:0,com:0,expenses:0,available:0,solde:0,result:0,own:0});
   const off = offLinesOf(projectId);
   const cats = Object.entries(a.byCat).filter(([,v]) => Math.abs(v) >= 0.01).sort((x,y) => y[1]-x[1]);
   return `<div class="proj-budget panel">
@@ -205,8 +224,8 @@ export function projectBudgetHTML(projectId){
       <label>Le solde artiste est versé à</label>${cIn('projects', p.id, 'artist_payee', p.artist_payee, 'text', 'placeholder="ex. Pipi"')}
     </div>
     <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Lieu</th><th class="num">Cachet HT</th><th class="num">Commission</th><th class="num">Dépenses</th><th class="num">Reste artiste</th><th class="num">Versé à l’artiste</th><th class="num" title="Reste calculé − versé : négatif = tu perds, positif = tu gagnes">Écart pour toi</th><th>Pièces</th></tr></thead>
-      <tbody>${rows}<tr class="total-row"><td colspan="2"><b>Total (${shows.length} dates)</b></td><td class="num"><b>${eur2(tot.fee)}</b></td><td class="num"><b>${eur2(tot.com)}</b></td><td class="num"><b>${eur2(tot.expenses)}</b></td><td class="num"><b>${eur2(tot.available)}</b></td><td class="num"><b>${eur2(tot.solde)}</b></td><td class="num nowrap">${ecartHTML(r2(tot.result))}</td><td></td></tr></tbody></table></div>
-    <p class="muted" style="font-size:13px;margin:6px 0 14px">Dépenses par catégorie : ${cats.map(([k,v]) => `${esc(k)} <b>${eur2(v)}</b>`).join(' · ') || '—'} · coût moyen par date : <b>${eur2(shows.length ? (tot.com + tot.expenses) / shows.length : 0)}</b></p>
+      <tbody>${rows}<tr class="total-row"><td colspan="2"><b>Total (${shows.length} dates)</b>${tot.own ? `<div class="muted tiny">dont ${tot.own} en production / coproduction : hors totaux du cachet, de la commission, des dépenses et du reste (budget prévisionnel à part) ; seul le versé réel est compté</div>` : ''}</td><td class="num"><b>${eur2(tot.fee)}</b></td><td class="num"><b>${eur2(tot.com)}</b></td><td class="num"><b>${eur2(tot.expenses)}</b></td><td class="num"><b>${eur2(tot.available)}</b></td><td class="num"><b>${eur2(tot.solde)}</b></td><td class="num nowrap">${ecartHTML(r2(tot.result))}</td><td></td></tr></tbody></table></div>
+    <p class="muted" style="font-size:13px;margin:6px 0 14px">Dépenses par catégorie : ${cats.map(([k,v]) => `${esc(k)} <b>${eur2(v)}</b>`).join(' · ') || '—'} · coût moyen par date : <b>${eur2(shows.length - tot.own ? (tot.com + tot.expenses) / (shows.length - tot.own) : 0)}</b></p>
     <h3 class="block-title">Frais hors date (affiches, avances…)</h3>
     <div class="tbl-wrap"><table class="budget-table">${HEAD}<tbody>${off.map(l => lineRow(l, p)).join('') || '<tr><td colspan="9" class="muted">Aucun frais hors date.</td></tr>'}</tbody></table></div>
     <div class="vh-actions mt"><button class="btn sm" data-act="addBudgetLine" data-project="${p.id}">Ajouter un frais hors date</button></div>
