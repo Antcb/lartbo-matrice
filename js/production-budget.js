@@ -120,6 +120,7 @@ export function coprodClose(s){
   // promotion locale (même décision) : jamais présumée supportée ni payée par la structure qui encaisse. Débiteur contractuel
   // (charge commune du résultat, ou L'ArtBo / le coproducteur seul) et payeur réel (avec sa date de paiement) saisis à part.
   const promo = r.promo, debtor = p.promo_debtor || null, payer = p.promo_payer || null, promoPaid = !!p.promo_paid_at;
+  if (promo < 0) issues.push('Promotion locale négative : vérifie ses pourcentages');
   if (promo){
     if (!PROMO_DEBTORS.some(d => d[0] === debtor)) issues.push('Promotion locale : indique à qui elle incombe selon le contrat (charge commune, L’ArtBo ou le coproducteur)');
     if (!['artbo', 'partenaire'].includes(payer)) issues.push('Promotion locale : indique qui l’a réellement payée (L’ArtBo ou le coproducteur)');
