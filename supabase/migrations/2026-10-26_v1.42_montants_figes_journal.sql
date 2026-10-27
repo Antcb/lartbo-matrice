@@ -217,7 +217,11 @@ create index if not exists finance_log_show on public.finance_log (show_id, at);
 alter table public.finance_log enable row level security;
 drop policy if exists finance_log_read on public.finance_log;
 create policy finance_log_read on public.finance_log for select to authenticated using (public.is_team());
-revoke insert, update, delete, truncate on public.finance_log from public, anon, authenticated;
+-- droits par défaut de Supabase : tout est accordé aux visiteurs sur une nouvelle table → tout leur est retiré (relecture D1, B1)
+revoke all on public.finance_log from public, anon;
+revoke insert, update, delete, truncate, references, trigger on public.finance_log from authenticated;
+grant select on public.finance_log to authenticated;
+revoke all on sequence public.finance_log_id_seq from public, anon, authenticated;
 
 create or replace function public.finance_actor() returns text
 language sql stable set search_path = public as $$
@@ -233,7 +237,8 @@ declare
   fields text[] := case tg_table_name when 'shows' then array['fee_ht', 'artbo_pct', 'partner_pct', 'vat_rate', 'prod_mode', 'contract_type']
                    else array['amount', 'pct', 'vat_rate', 'kind', 'show_id', 'payee', 'sent_at', 'paid_at', 'invoice_number', 'pennylane_id'] end;
   src text := case when coalesce(current_setting('matrice.regularisation', true), '') = 'gel' then 'régularisation contrôlée'
-                   when coalesce(current_setting('matrice.regularisation', true), '') = 'degel' then 'retour arrière de régularisation'
+                   when coalesce(current_setting('matrice.regularisation', true), '') in ('degel', 'retour_versement') then 'retour arrière de régularisation'
+                   when coalesce(current_setting('matrice.regularisation', true), '') = 'commission_partielle' then 'régularisation contrôlée (commission partielle)'
                    when coalesce(current_setting('request.jwt.claims', true), '') <> '' then 'application / fonction serveur'
                    else 'base (éditeur SQL, tâche planifiée)' end;
   sid uuid; fsrc text;

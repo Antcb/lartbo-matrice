@@ -82,7 +82,7 @@ export const isInvoiced = p => !!(p && (selfPaidCommission(p) ? filled(p.paid_at
 export const EMITTED_FIELDS = ['sent_at', 'paid_at', 'invoice_number', 'pennylane_id'];
 /** Date « engagée » : une de ses lignes porte une opération enregistrée (quel que soit le mode). Son mode ne change plus,
  *  ni directement ni par l'artiste (lot D1). Même règle côté base : show_has_financial_record. */
-export const hasFinancialRecord = showId => paymentsOf(showId).some(p => EMITTED_FIELDS.some(k => filled(p[k])));
+export const hasFinancialRecord = showId => paymentsOf(showId).some(p => EMITTED_FIELDS.some(k => filled(p[k])) || (p.kind === 'artbo' && transfersOf(p.id).length > 0));   // un versement de commission engage aussi la date (v1.43)
 /** Champs qui figent une ligne : commission de production = seulement sa date de versement */
 export const emittedFieldsOf = p => selfPaidCommission(p) ? ['paid_at'] : EMITTED_FIELDS;
 /** Acompte : 'facture' (émis), 'prevu' (au contrat, pas encore facturé), 'caduc' (jamais facturé alors que le solde l'est :

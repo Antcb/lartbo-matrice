@@ -188,3 +188,15 @@ test('compatibilité : commission marquée versée avant ce lot, sans versement 
   expect(await reminders(page, 'v-1')).toEqual([]);
   expectClean(ctx);
 });
+
+test('date engagée par un seul versement de commission : son mode ne change plus (relecture D1, B2)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [DATE, { ...DATE, id: 'v-2', venue: 'Salle Libre' }], show_payments: [COM, { ...COM, id: 'c-2', show_id: 'v-2' }] });
+  expect(await save(page, 'shows', 'v-1', { prod_mode: 'booking' }), 'commission non versée, aucune autre opération : accepté').toBe(true);
+  await save(page, 'shows', 'v-1', { prod_mode: 'production' });
+  await seed(page, { commission_transfers: [{ id: 't-b2', payment_id: 'c-2', amount: 100, transferred_at: `${Y}-10-01` }] });
+  expect(await save(page, 'shows', 'v-2', { prod_mode: 'booking' }), 'un versement noté : refusé').toBe(false);
+  expect(await page.evaluate(() => window.__DB.shows.find(s => s.id === 'v-2').prod_mode)).toBe('production');
+  expect(await toasts(page)).toMatch(/opérations financières enregistrées/);
+  expectClean(ctx);
+});
