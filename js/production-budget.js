@@ -89,7 +89,8 @@ export { lineValue };
  *   - la structure qui encaisse les recettes garde la recette nette (HT, après droits et taxes, DL inclus) ;
  *   - promotion locale : débiteur contractuel (charge commune, ou une partie seule : hors du résultat partagé, retirée de sa part)
  *     et payeur réel saisis à part, jamais présumés (v1.51) ; payée par l'un, elle compte dans sa position ;
- *   - toute dépense réelle (ou promo) pas encore payée bloque la clôture ;
+ *   - toute dépense réelle (ou promo) pas encore payée bloque la clôture, comme des recettes de billetterie pas encore encaissées ;
+ *   - avance (promo payée par l'un, due par l'autre) : comptée une fois dans la position du payeur, retirée de la part du débiteur ;
  *   - chacun a payé ses dépenses réelles (payeur « L'ArtBo » ou « coproducteur », date de paiement remplie) ;
  *   - reversement = part due − position réelle ; celui qui reçoit le reversement facture l'autre (facture préparée à la main).
  * Rien n'est payé ni facturé automatiquement ; un reversement n'est payé que quand sa date de paiement est notée.
@@ -120,6 +121,8 @@ export function coprodClose(s){
   // promotion locale (même décision) : jamais présumée supportée ni payée par la structure qui encaisse. Débiteur contractuel
   // (charge commune du résultat, ou L'ArtBo / le coproducteur seul) et payeur réel (avec sa date de paiement) saisis à part.
   const promo = r.promo, debtor = p.promo_debtor || null, payer = p.promo_payer || null, promoPaid = !!p.promo_paid_at;
+  // recettes attendues et intégrées au résultat (billetterie et DL, réelles) : encaissées avant la clôture définitive (27/10, 22 h 35)
+  if (r.ht + r.dlHt > 0 && !p.receipts_cashed_at) issues.push(`Recettes de billetterie (${eur2(r2(r.ht + r.dlHt))} HT) pas encore notées encaissées : note la date d’encaissement par ${holder === 'partenaire' ? 'le coproducteur' : holder === 'artbo' ? 'L’ArtBoristerie' : 'la structure qui encaisse'}`);
   if (promo < 0) issues.push('Promotion locale négative : vérifie ses pourcentages');
   if (promo){
     if (!PROMO_DEBTORS.some(d => d[0] === debtor)) issues.push('Promotion locale : indique à qui elle incombe selon le contrat (charge commune, L’ArtBo ou le coproducteur)');
@@ -138,7 +141,8 @@ export function coprodClose(s){
   const transfer = r2(artboPart - posArtbo);   // > 0 : le coproducteur reverse à L'ArtBo ; < 0 : L'ArtBo reverse au coproducteur
   return {r, issues, warnings, ok: !issues.length, snapshot: {
     holder, recettes_ht: r.ht, dl_ht: r.dlHt, taxes: r.taxes, cnm: r.cnm, sacem: r.sacem, costs: r.costs, promo: r.promo, result, shared_result: shared,
-    promo_debtor: debtor, promo_payer: payer, promo_paid_at: p.promo_paid_at || null,
+    promo_debtor: debtor, promo_payer: payer, promo_paid_at: p.promo_paid_at || null, receipts_cashed_at: p.receipts_cashed_at || null,
+    promo_advance: promo && payer && debtor && debtor !== 'commun' && payer !== debtor ? promo : 0,   // avance faite pour le compte de l'autre
     artbo_share: share, artbo_part: artboPart, partner_part: partnerPart, partner: r.partnerName,
     net_encaisse: net, paid_artbo: paidBy('artbo'), paid_partner: paidBy('partenaire'), unpaid, pos_artbo: posArtbo, pos_partner: posPartner,
     transfer: Math.abs(transfer), from: transfer > 0 ? 'partenaire' : transfer < 0 ? 'artbo' : null, to: transfer > 0 ? 'artbo' : transfer < 0 ? 'partenaire' : null,

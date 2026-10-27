@@ -25,7 +25,7 @@ import { exportContractPdf, generateContract, validateFiche } from './contract.j
 import { exportShows } from './exports.js';
 import { callProspect, cancelAutoRelances, closeNoAnswer, deleteProspect, markLogSent, openProspection, prospectDeleteAsk, restoreRelances } from './prospection.js';
 import { EMP_ACTIONS, editEmployee } from './views/employees.js';
-import { BUDGET_ACTIONS } from './budget-actions.js';
+import { BUDGET_ACTIONS, confirmProvisionalCommission } from './budget-actions.js';
 
 /** Nouveau suivi : créé tout de suite et ouvert dans l'espace de prospection (pas de fenêtre) */
 async function newSuivi(structureId){
@@ -47,13 +47,19 @@ setSaveGuard(changeBlocked);   // aucune facture émise ne change, par aucun éc
 setSaveComplement(freezeOnEmit);   // montant figé au moment où la ligne est émise ou versée (lot C1 solde, lot D1 toutes)
 // Avertissement (lot D1) : cachet, %, TVA ou mode d'une date qui a déjà des factures émises ou des commissions / parts versées.
 // Leurs montants sont figés et ne changeront pas ; on demande quand même une confirmation (fenêtre de l'application, jamais confirm()).
-const FINANCE_FIELDS = ['fee_ht', 'artbo_pct', 'partner_pct', 'vat_rate', 'prod_mode', 'corea_share'];
+// corea_share : pas ici — « Valider la part du résultat » montre déjà la commission figée et la régularisation (v1.51)
+const FINANCE_FIELDS = ['fee_ht', 'artbo_pct', 'partner_pct', 'vat_rate', 'prod_mode'];
 setSaveConfirm(async (table, id, patch) => {
+  // commission de coréalisation notée envoyée / numérotée / payée avant validation de la part : provisoire, confirmé (v1.51)
+  if (table === 'show_payments' && patch){ const p = byId('show_payments', id);
+    // déjà demandé par « Créer » (Pennylane) ou « Noter un versement » : pas une deuxième fois
+    if (p?.kind === 'artbo' && !isInvoiced(p) && isInvoiced({...p, ...patch}) && !('pennylane_id' in patch) && !(isProdCommission(p) && commissionState(p).transferred > 0)) return confirmProvisionalCommission(byId('shows', p.show_id), isProdCommission(p) ? 'versée' : 'facturée');
+    return true; }
   if (table !== 'shows' || !patch) return true;
   const s = byId('shows', id);
   const changed = FINANCE_FIELDS.filter(k => k in patch && String(patch[k] ?? '') !== String(s?.[k] ?? ''));
   // seulement les lignes concernées : la commission L'ArtBo dépend de son %, la part partenaire des deux % ; cachet, TVA, mode : toutes
-  const touches = p => changed.some(k => !['artbo_pct', 'partner_pct', 'corea_share'].includes(k) || ['artbo_pct', 'corea_share'].includes(k) && ['artbo', 'partner'].includes(p.kind) || k === 'partner_pct' && p.kind === 'partner');
+  const touches = p => changed.some(k => !['artbo_pct', 'partner_pct'].includes(k) || k === 'artbo_pct' && ['artbo', 'partner'].includes(p.kind) || k === 'partner_pct' && p.kind === 'partner');
   const lines = s && changed.length ? emittedLinesOf(id).filter(touches) : [];
   if (!lines.length) return true;
   const LABEL = {acompte: 'Acompte', solde: 'Solde', autre: 'Autre facture', artbo: 'Commission L’ArtBo', partner: 'Part partenaire'};
@@ -194,6 +200,7 @@ export const ACTIONS = {
     const p = byId('show_payments', t.dataset.id); if (!p) return;
     const st = commissionState(p);
     if (!isProdCommission(p) || st.legacy || st.remaining < 0.005) return toast('Rien à transférer sur cette commission.');
+    if (!(await confirmProvisionalCommission(byId('shows', p.show_id), 'versée'))) return;
     const level = MODALS[1]?.dlg?.open ? 2 : 1;
     const v = await openModal({title: 'Noter un versement de commission', level, saveLabel: 'Enregistrer le versement',
       fields: [{k: 'amount', label: 'Montant transféré HT (€)', type: 'number'}, {k: 'transferred_at', label: 'Date du transfert', type: 'date'},

@@ -12,7 +12,8 @@ import { filterBar, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cChk, cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { esc, eur2, fmtDate, matches, today, pct } from '../utils.js';
-import { payerLabel } from '../budget.js';
+import { coreaCommissionCheck, payerLabel } from '../budget.js';
+import { commissionPctOf, isCorea } from '../corea.js';
 import { commissionTransferCell, productionBudgetHTML, projectBudgetHTML, showBudgetHTML } from './budget.js';
 import { isProductionShow } from '../production-budget.js';
 
@@ -164,8 +165,35 @@ function conditionsTab(s, booking){
         <label>% partenaire</label>${cIn('shows',s.id,'partner_pct',s.partner_pct,'number')}`}
       </div>
       <p class="muted" style="font-size:13px;margin:8px 0 0">${booking ? `Commission : <b>${eur2(netArtbo(s))}</b>` : `Le % partenaire s'applique à la commission L'ArtBo. Net L'ArtBo : <b>${eur2(netArtbo(s))}</b>`}</p>
+      ${booking && isCorea(s) ? coreaBookingBlock(s) : ''}
       ${booking ? '<p class="mode-note">Booking seul : L\'ArtBoristerie envoie la conf + FT + kit, puis facture sa commission à l\'artiste une fois le contrat co-signé entre l\'artiste et l\'organisateur.</p>' : ''}
     </div>
+  </div>`;
+}
+
+/**
+ * Coréalisation en booking (décision d'Anthony du 27/10/2026, 22 h 36) : sans budget de production. MG HT (cachet), break
+ * contractuel (billets), part du résultat HT revenant à l'artiste saisie puis VALIDÉE ; commission provisoire (MG × taux) avant
+ * validation, définitive ((MG + part validée) × taux) après. Aucune facture créée ; l'onglet Factures reprend ces montants (payAmount).
+ */
+function coreaBookingBlock(s){
+  const c = s.corea || {}, mg = Number(s.fee_ht) || 0, rate = commissionPctOf(s), filled = v => v != null && v !== '';
+  const proposed = filled(c.booking_share) ? Number(c.booking_share) : null, validated = filled(s.corea_share) ? Number(s.corea_share) : null;
+  const stale = validated != null && proposed != null && Math.abs(proposed - validated) >= 0.005;
+  const q = coreaCommissionCheck(s);
+  return `<div class="corea-block mt-sm">
+    <h4 class="block-title">Coréalisation : part du résultat</h4>
+    <div class="steps">
+      <label>MG HT (cachet)</label><b>${eur2(mg)}</b>
+      <label>Break contractuel (billets)</label>${cIn('shows', s.id, 'break_even', s.break_even, 'number', 'class="narrow"')}
+      <label>Part du résultat HT revenant à l’artiste</label><input type="number" step="any" inputmode="decimal" class="narrow" data-corea-show="${s.id}" data-corea-path="booking_share" value="${esc(c.booking_share ?? '')}" placeholder="0 si break non dépassé">
+      <label>Part validée</label><span>${validated == null ? '<b>pas encore validée</b>' : `<b>${eur2(validated)}</b>${c.share_validated_at ? ` <span class="muted">le ${fmtDate(c.share_validated_at)}${c.share_validated_by ? ' par ' + esc(c.share_validated_by) : ''}</span>` : ''}`}${stale ? ' <span class="warn-txt">part modifiée depuis la validation : à valider de nouveau</span>' : ''}</span>
+      <label>Commission (${esc(pct(rate))})</label><span>${validated == null
+        ? `<b>${eur2(Math.round(mg * rate) / 100)}</b> <span class="muted">provisoire : sur le MG seul</span>`
+        : `<b>${eur2(Math.round((mg + validated) * rate) / 100)}</b> <span class="muted">définitive : (MG + part validée) × taux</span>`}</span>
+    </div>
+    ${q?.frozen ? `<p class="small ${Math.abs(q.gap) >= 0.005 ? 'warn-txt' : 'muted'}">Commission retenue : ${eur2(q.held)} · facturée : ${q.invoiced ? 'oui' : 'non'} · encaissée : ${eur2(q.cashed)}.${Math.abs(q.gap) >= 0.005 ? ` <b>Régularisation à prévoir : ${q.gap > 0 ? '+' : ''}${eur2(q.gap)}</b> (rien n’est fait automatiquement ; le montant historique reste).` : ''}</p>` : ''}
+    ${proposed != null && (validated == null || stale) ? `<div class="vh-actions mt-sm"><button class="btn sm" data-act="coreaValidateShare" data-id="${s.id}">Valider la part (${eur2(proposed)})</button> <span class="muted">aucune facture n’est créée</span></div>` : ''}
   </div>`;
 }
 
@@ -181,6 +209,7 @@ function suiviTab(s, booking, steps, late){
 function billingTab(s, booking, pays, late){
   return `<div class="prod-bill">
       <p class="tab-intro">${booking ? 'La facture de commission de L’ArtBo à l’artiste (et la part partenaire). Les factures d’acompte et de solde sont celles de l’artiste à l’organisateur : elles ne sont pas suivies ici.' : 'Ce que l’organisateur paie (acomptes facturés + solde = le cachet), et la commission de L’ArtBo.'} Montants HT ; saisis le %, le HT ou le TTC, les deux autres se calculent.</p>
+      ${isCorea(s) && pays.some(p => p.kind === 'artbo') ? `<p class="muted small">Commission de coréalisation : ${s.corea_share == null || s.corea_share === '' ? 'provisoire, sur le MG seul (part du résultat pas encore validée)' : `sur MG + part validée (${eur2(Number(s.fee_ht || 0) + Number(s.corea_share))} HT)`}.</p>` : ''}
       <div class="tbl-wrap"><table>
         <thead><tr><th>Ligne</th><th class="num">%</th><th class="num">Montant HT</th><th class="num">TVA</th><th class="num">TTC</th><th>Arrive sur</th><th>N° facture</th><th>Envoyée</th><th>Relancée</th><th>Payée</th><th>Pennylane</th><th></th></tr></thead>
         <tbody>${pays.map(p=>{ const a=payAmount(p), ov=p.amount!=null, selfPaid = !booking && p.kind==='artbo';   // production : pas de facture, L'ArtBo se verse sa commission

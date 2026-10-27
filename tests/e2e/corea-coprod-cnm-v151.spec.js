@@ -143,7 +143,7 @@ test('v1.51 coréalisation (écran) : valider le break puis le prorata ; la part
 });
 
 const COPRO = { ...BASE, id: 'cp-9', date: `${Y}-10-01`, contract_type: 'Co-Production', fee_ht: 0, partner_id: 'pa-x', capacity: 600,
-  production: { vat: 5.5, sacem_pct: 0, artbo_share: 50, tickets: [{ label: 'Plein', qty: 500, price: 21.1, real_qty: 500 }] } };
+  production: { vat: 5.5, sacem_pct: 0, artbo_share: 50, receipts_cashed_at: `${Y}-10-05`, tickets: [{ label: 'Plein', qty: 500, price: 21.1, real_qty: 500 }] } };
 
 test('v1.51 coproduction : clôture refusée tant que tout n’est pas cohérent ; synthèse, reversement, rpc close_result ; pas de devis Pennylane', async ({ page }) => {
   const ctx = await openApp(page);
@@ -288,6 +288,8 @@ test('v1.51 clôture de coproduction : une dépense restant à payer bloque ; pr
   const close = () => page.evaluate(async () => { const { coprodClose } = await import('./js/production-budget.js'), { byId } = await import('./js/selectors.js');
     const k = coprodClose(byId('shows', 'cp-9')); return { ok: k.ok, issues: k.issues.join(' | '), x: k.snapshot }; });
   let k = await close();
+  // recettes encaissées (date notée dans COPRO) : pas de blocage à ce titre
+  expect(k.issues).not.toContain('pas encore notées encaissées');
   // technique non payée + promo sans débiteur, payeur ni date : clôture bloquée ; le résultat prévisionnel reste calculé
   expect(k.ok).toBe(false);
   expect(k.issues).toContain('1 dépense réelle pas encore payée');
@@ -321,5 +323,109 @@ test('v1.51 clôture de coproduction : une dépense restant à payer bloque ; pr
   await set(page, 'cp-9', { production: { ...(await page.evaluate(() => window.__DB.shows.find(s => s.id === 'cp-9').production)), promo_net_pct: -10 } });
   k = await close();
   expect(k.ok).toBe(false); expect(k.issues).toContain('Promotion locale négative');
+  expectClean(ctx);
+});
+
+// ─────────── Décisions définitives du 27/10 (22 h 36) : coréalisation en booking, versement provisoire, régularisation ───────────
+const openTab = (page, id, tab) => page.evaluate(async ([i, t]) => {
+  const { S } = await import('./js/state.js'); const app = await import('./js/app.js');
+  app.go('production'); S.openProd.add(i); S.tab['prod:' + i] = t; app.render();
+}, [id, tab]);
+const BOOK = (id, project) => ({ ...BASE, id, project_id: project, prod_mode: 'booking', date: `${Y}-11-0${id.length}`, contract_type: 'Co-Réalisation', fee_ht: 3000, break_even: 400 });
+const PROJS = [{ id: 'art-p20', name: 'Artiste Vingt', active: true, mode: 'booking', default_artbo_pct: 20 }, { id: 'art-l', name: 'Artiste Lambda', active: true, mode: 'production', default_artbo_pct: 15 }];
+
+test('v1.51 coréalisation en booking (Conditions) : part saisie puis validée ; commission provisoire puis définitive ; 20 % et 15 % ; avec et sans break dépassé ; Factures cohérent', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { projects: PROJS, shows: [BOOK('b20', 'art-p20'), BOOK('b15', 'art-l'), BOOK('b20z', 'art-p20')],
+    show_payments: ['b20', 'b15', 'b20z'].map((id, i) => ({ id: 'cb-' + id, show_id: id, kind: 'artbo', sort: 90 + i })) });
+  const amounts = () => page.evaluate(async () => { const c = await import('./js/calc.js'), { byId } = await import('./js/selectors.js');
+    return ['b20', 'b15', 'b20z'].map(id => c.payAmount(byId('show_payments', 'cb-' + id))); });
+  // pas de budget de production imposé : pas d'onglet Budget en booking
+  await openTab(page, 'b20', 'conditions');
+  await expect(page.locator('[data-act="prodTab"][data-tab="budget"], .tabs [data-tab="budget"]')).toHaveCount(0);
+  const blk = page.locator('.corea-block');
+  await expect(blk).toContainText('MG HT (cachet)');
+  await expect(blk).toContainText(/600,00.*provisoire : sur le MG seul/);
+  expect(await amounts()).toEqual([600, 450, 600]);
+  // part saisie (break dépassé) puis validée explicitement : (3 000 + 1 000) × 20 % = 800
+  await blk.locator('input[data-corea-path="booking_share"]').fill('1000');
+  await blk.locator('input[data-corea-path="booking_share"]').dispatchEvent('change');
+  await expect.poll(() => page.evaluate(() => window.__DB.shows.find(s => s.id === 'b20').corea?.booking_share)).toBe(1000);
+  expect((await amounts())[0]).toBe(600);   // saisie seule : rien de définitif
+  await blk.locator('[data-act="coreaValidateShare"]').click();
+  await expect(page.locator('dialog.ask')).toContainText(/Commission L’ArtBo \(20\s?%\) : 800,00/);
+  await page.locator('dialog.ask button', { hasText: 'Valider la part' }).click();
+  await expect.poll(() => page.evaluate(() => window.__DB.shows.find(s => s.id === 'b20').corea_share)).toBe(1000);
+  await expect(blk).toContainText(/800,00.*définitive/);
+  // 15 % (paramétrage de l'artiste) : (3 000 + 1 000) × 15 % = 600 ; break non dépassé : part 0 → MG seul (600)
+  await set(page, 'b15', { corea_share: 1000, corea: { booking_share: 1000 } });
+  await set(page, 'b20z', { corea_share: 0, corea: { booking_share: 0 } });
+  expect(await amounts()).toEqual([800, 600, 600]);
+  // Factures reprend exactement les montants validés dans Conditions ; aucune facture créée
+  await openTab(page, 'b20', 'factures');
+  await expect(page.locator('.prod-bill')).toContainText('sur MG + part validée (4 000,00');
+  expect(await page.evaluate(() => window.__DB.show_payments.filter(p => p.show_id === 'b20').length)).toBe(1);
+  expect(await page.evaluate(() => window.__calls.filter(c => c.fn === 'pennylane').length)).toBe(0);
+  expectClean(ctx);
+});
+
+test('v1.51 versement / facturation avant validation : avertissement non bloquant, confirmation explicite ; régularisation affichée après validation, montant historique conservé', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { projects: PROJS, shows: [BOOK('b20', 'art-p20'), { ...COREA('p15', 'art-l', 500) }],
+    show_payments: [{ id: 'cb-b20', show_id: 'b20', kind: 'artbo', sort: 90 }, { id: 'cp-p15', show_id: 'p15', kind: 'artbo', sort: 90 }] });
+  // booking : facture notée envoyée avant validation → question ; « Annuler » n'écrit rien
+  await page.evaluate(async () => { const d = await import('./js/data.js'); window.__p = d.save('show_payments', 'cb-b20', { sent_at: '2026-10-20', invoice_number: 'F-TEST-9' }); });
+  await expect(page.locator('dialog.ask')).toContainText('n’est pas encore validée');
+  await page.locator('dialog.ask button', { hasText: 'Annuler' }).click();
+  await page.evaluate(() => window.__p);
+  expect(await page.evaluate(() => window.__DB.show_payments.find(p => p.id === 'cb-b20').sent_at ?? null)).toBeNull();
+  // confirmé à titre provisoire : enregistré, montant figé sur le MG seul (600)
+  await page.evaluate(async () => { const d = await import('./js/data.js'); window.__p = d.save('show_payments', 'cb-b20', { sent_at: '2026-10-20', invoice_number: 'F-TEST-9' }); });
+  await page.locator('dialog.ask button', { hasText: 'à titre provisoire' }).click();
+  await page.evaluate(() => window.__p);
+  await expect.poll(() => page.evaluate(() => { const p = window.__DB.show_payments.find(x => x.id === 'cb-b20'); return [p.sent_at, Number(p.amount)]; })).toEqual(['2026-10-20', 600]);
+  // production : versement de commission avant validation → même question, puis la fenêtre de versement
+  await openTab(page, 'p15', 'factures');
+  await page.locator('[data-act="addTransfer"][data-id="cp-p15"]').click();
+  await expect(page.locator('dialog.ask')).toContainText('commission versée maintenant ne porte que sur le MG');
+  await page.locator('dialog.ask button', { hasText: 'Annuler' }).click();
+  expect(await page.evaluate(() => window.__DB.commission_transfers.length)).toBe(0);
+  // validation de la part en booking après facturation : montant historique conservé, régularisation affichée (facturée / encaissée)
+  await set(page, 'b20', { corea: { booking_share: 1000 } });
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js'); for (const db of [S.db, window.__DB]) db.show_payments.find(p => p.id === 'cb-b20').paid_at = '2026-10-25'; touch('show_payments'); });
+  await openTab(page, 'b20', 'conditions');
+  await page.locator('.corea-block [data-act="coreaValidateShare"]').click();
+  await expect(page.locator('dialog.ask')).toContainText(/déjà facturée à 600,00.*\+200,00/);
+  await page.locator('dialog.ask button', { hasText: 'Valider la part' }).click();
+  await expect(page.locator('.corea-block')).toContainText(/Commission retenue : 600,00\s€ · facturée : oui · encaissée : 600,00\s€.*Régularisation à prévoir : \+200,00/);
+  expect(await page.evaluate(() => Number(window.__DB.show_payments.find(p => p.id === 'cb-b20').amount))).toBe(600);
+  expect(await page.evaluate(() => window.__DB.show_payments.filter(p => p.show_id === 'b20').length)).toBe(1);   // aucune régularisation créée
+  expectClean(ctx);
+});
+
+test('v1.51 clôture de coproduction : recettes pas encore encaissées bloquantes ; aucune promotion locale = pas de blocage ; avance comptée une fois', async ({ page }) => {
+  const ctx = await openApp(page);
+  const prod = { ...COPRO.production }; delete prod.receipts_cashed_at;
+  await seed(page, { partners: [{ id: 'pa-x', name: 'Coprod Fictive' }], shows: [{ ...COPRO, ticket_holder: 'partenaire', production: prod }],
+    budget_lines: [{ id: 'cl-1', show_id: 'cp-9', project_id: 'art-a', category: 'Salle', label: 'Location salle', amount: 3000, payer: 'partenaire', paid_at: `${Y}-10-02`, sort: 1 }] });
+  const close = () => page.evaluate(async () => { const { coprodClose } = await import('./js/production-budget.js'), { byId } = await import('./js/selectors.js');
+    const k = coprodClose(byId('shows', 'cp-9')); return { ok: k.ok, issues: k.issues.join(' | '), x: k.snapshot }; });
+  let k = await close();
+  expect(k.ok).toBe(false); expect(k.issues).toContain('pas encore notées encaissées : note la date d’encaissement par le coproducteur');
+  expect(k.x.result).toBe(6650);   // prévisionnel toujours calculé : 10 000 − 350 − 3 000
+  await openBudget(page, 'cp-9');
+  await expect(page.locator('.coprod-block')).toContainText('Aucune promotion locale');
+  await page.locator('.coprod-block input[data-prod-path="receipts_cashed_at"]').fill(`${Y}-10-06`);
+  await page.locator('.coprod-block input[data-prod-path="receipts_cashed_at"]').dispatchEvent('change');
+  await expect.poll(() => page.evaluate(() => window.__DB.shows.find(s => s.id === 'cp-9').production.receipts_cashed_at)).toBe(`${Y}-10-06`);
+  k = await close();
+  expect(k.ok).toBe(true);   // aucune promotion locale : rien à renseigner
+  // avance : promo due par le coproducteur seul, payée par L'ArtBo → comptée une fois (position de L'ArtBo), retirée de la part du coproducteur
+  await set(page, 'cp-9', { production: { ...(await page.evaluate(() => window.__DB.shows.find(s => s.id === 'cp-9').production)), promo_net_pct: 10, promo_debtor: 'partenaire', promo_payer: 'artbo', promo_paid_at: `${Y}-10-03` } });
+  k = await close();
+  // promo 965 ; résultat 6 650 − 965 = 5 685 ; partagé 6 650 → 3 325 / 3 325 − 965 = 2 360 ; positions : L'ArtBo −965, coproducteur 9 650 − 3 000 = 6 650
+  expect(k.ok).toBe(true);
+  expect(k.x).toMatchObject({ result: 5685, artbo_part: 3325, partner_part: 2360, promo_advance: 965, pos_artbo: -965, pos_partner: 6650, transfer: 4290, from: 'partenaire', to: 'artbo' });
+  expect(k.x.artbo_part + k.x.partner_part).toBe(k.x.pos_artbo + k.x.pos_partner);
   expectClean(ctx);
 });
