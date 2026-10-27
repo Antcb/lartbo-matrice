@@ -4,8 +4,8 @@
  */
 import { render } from './app.js';
 import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
-import { cnmDue, commissionOf, isFree, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
-import { coreaCalc } from './corea.js';
+import { cnmDue, commissionOf, coreaCommissionCheck, isFree, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
+import { commissionPctOf, coreaCalc, isCorea } from './corea.js';
 import { acompteState, isCoproduction, isInvoiced, paymentsOf, payAmount } from './calc.js';
 import { insert, mergeRows, openStored, refreshFor, remove, save, sb } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
@@ -56,7 +56,7 @@ document.addEventListener('change', async e => {
   e.stopPropagation();
   const path = el.dataset.prodPath.split('.'), raw = el.value.trim();
   // textes : libellés, débiteur / payeur / date de paiement de la promotion locale (v1.51)
-  const v = /label|^promo_(debtor|payer|paid_at)$/.test(path.at(-1)) ? (raw === '' && !/label/.test(path.at(-1)) ? null : raw) : (raw === '' ? null : Number(raw.replace(',', '.')));
+  const v = /label|^(promo_(debtor|payer|paid_at)|receipts_cashed_at)$/.test(path.at(-1)) ? (raw === '' && !/label/.test(path.at(-1)) ? null : raw) : (raw === '' ? null : Number(raw.replace(',', '.')));
   await saveProd(el.dataset.prodShow, p => { let o = p; path.slice(0, -1).forEach(k => { o = o[k]; }); o[path.at(-1)] = v; });
 }, true);
 
@@ -75,6 +75,12 @@ document.addEventListener('change', async e => {
   await saveCorea(el.dataset.coreaShow, c => { let o = c; path.slice(0, -1).forEach(k => { o = o[k]; }); o[path.at(-1)] = v; });
 }, true);
 const me = () => S.user?.email || '';
+/** Commission versée / facturée avant validation de la part du résultat (coréalisation) : avertissement NON bloquant, confirmation
+ *  explicite du caractère provisoire (décision d'Anthony du 27/10/2026, 22 h 36). Rien n'est modifié ensuite automatiquement. */
+export async function confirmProvisionalCommission(s, what = 'versée'){
+  if (!isCorea(s) || (s.corea_share != null && s.corea_share !== '')) return true;
+  return !!(await confirmAsk('Commission provisoire', `La part du résultat de cette coréalisation n’est pas encore validée : la commission ${what} maintenant ne porte que sur le MG. Son montant restera celui-ci ; après validation de la part, la régularisation éventuelle sera affichée (aucune modification automatique).`, `Confirmer (commission ${what} à titre provisoire)`));
+}
 const sideLabel = (x, w) => w === 'artbo' ? 'L’ArtBoristerie' : (x.partner || 'le coproducteur');
 
 export const BUDGET_ACTIONS = {
@@ -97,13 +103,17 @@ export const BUDGET_ACTIONS = {
   coreaClearMethod: t => saveCorea(t.dataset.id, c => { delete c.method; }),
   // part du résultat validée : elle entre dans la base de la commission (MG + part, décision du 27/10/2026 au soir) ; une commission
   // déjà figée (versement, facture) n'est jamais recalculée en silence : elle est signalée, la régularisation se décide à part
-  coreaValidateShare: async t => { const s = byId('shows', t.dataset.id), k = coreaCalc(s); if (k?.share == null) return;
-    const com = commissionOf(s), frozen = com && com.amount != null && com.amount !== '';
-    const text = [`Part du résultat retenue : ${eur2(k.share)} HT.`, `Rémunération brute de l’artiste : MG ${eur2(k.mg)} + part = ${eur2(k.total)}.`,
-      `Commission L’ArtBo (${pct(k.comPct)}) : ${eur2(k.com)} sur ce total.`,
-      frozen ? `Attention : la commission de cette date est déjà figée à ${eur2(Number(com.amount))} (versement ou facture). Elle ne sera pas modifiée ; l’écart se régularise à part.` : ''].filter(Boolean).join('\n');
+  coreaValidateShare: async t => { const s = byId('shows', t.dataset.id); if (!s) return;
+    // part proposée : saisie dans Conditions en booking (pas de budget de production), calculée dans le Budget en production
+    const booking = s.prod_mode === 'booking', raw = s.corea?.booking_share;
+    const share = booking ? (raw == null || raw === '' ? null : Number(raw)) : coreaCalc(s)?.share;
+    if (share == null || !isFinite(share) || share < 0) return toast(booking ? 'Saisis d’abord la part du résultat HT (0 si le break n’est pas dépassé)' : 'Part du résultat pas encore calculable', true);
+    const mg = Number(s.fee_ht) || 0, rate = commissionPctOf(s), com = Math.round((mg + share) * rate) / 100, q = coreaCommissionCheck(s);
+    const text = [`Part du résultat retenue : ${eur2(share)} HT.`, `Rémunération brute de l’artiste : MG ${eur2(mg)} + part = ${eur2(mg + share)}.`,
+      `Commission L’ArtBo (${pct(rate)}) : ${eur2(com)} sur ce total.`,
+      q?.frozen && Math.abs(com - q.held) >= 0.005 ? `Attention : la commission de cette date est déjà ${q.invoiced ? 'facturée' : q.cashed ? 'encaissée' : 'figée'} à ${eur2(q.held)}. Elle ne sera pas modifiée ; la régularisation (${com - q.held > 0 ? '+' : ''}${eur2(com - q.held)}) sera affichée, rien n’est fait automatiquement.` : ''].filter(Boolean).join('\n');
     if (!(await confirmAsk('Valider la part du résultat ?', text, 'Valider la part'))) return;
-    await save('shows', s.id, {corea_share: k.share}); },
+    await save('shows', s.id, {corea_share: share, corea: {...structuredClone(s.corea || {}), share_validated_at: new Date().toISOString(), share_validated_by: me()}}); },
   // part du résultat : ligne de facture préparée à la demande (rien n'est envoyé ni créé dans Pennylane) ; montant = part VALIDÉE
   coreaPrepareInvoice: async t => { const s = byId('shows', t.dataset.id), k = coreaCalc(s);
     if (k?.validatedShare == null) return toast('Valide d’abord la part du résultat', true);
@@ -253,6 +263,7 @@ export const BUDGET_ACTIONS = {
   },
   pennylaneInvoice: async t => {
     const p = byId('show_payments', t.dataset.id);
+    if (p?.kind === 'artbo' && !(await confirmProvisionalCommission(byId('shows', p.show_id), 'facturée'))) return;
     t.disabled = true; toast('Création de la facture en brouillon dans Pennylane…');
     try { const out = await pennylane('invoice', {payment_id: p.id}); await save('show_payments', p.id, {pennylane_id: String(out.id), pennylane_url: out.url || null}); toast(`Facture créée en brouillon dans Pennylane${out.headers === false ? ' (complète « Projet » et « Date de réalisation »)' : ''}`); }
     catch (err) { toast(err.message, true); }

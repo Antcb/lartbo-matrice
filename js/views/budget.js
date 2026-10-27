@@ -2,7 +2,7 @@
  * Budget dans l'onglet Production : le budget de chaque date (prévu / réel, pièces, qui paie)
  * et la vue d'ensemble d'un artiste (compte dédié, toutes les dates, frais hors date).
  */
-import { accountMoves, accountOf, availableForArtist, cnmPct, commissionAmount, commissionOf, isFree, isSolde, lineForecast, lineStatus, lineValue, linesOf, offLinesOf, payerLabel, payslipCost, prodShowsOf, showBudget } from '../budget.js';
+import { accountMoves, accountOf, availableForArtist, coreaCommissionCheck, cnmPct, commissionAmount, commissionOf, isFree, isSolde, lineForecast, lineStatus, lineValue, linesOf, offLinesOf, payerLabel, payslipCost, prodShowsOf, showBudget } from '../budget.js';
 import { BUDGET_CATS, PAYERS } from '../constants.js';
 import { commissionState, payAmount, paymentsOf } from '../calc.js';
 import { byId } from '../selectors.js';
@@ -102,7 +102,8 @@ function summaryTable(s, b, com, p){
   return `<div class="tbl-wrap"><table class="budget-sum"><thead><tr><th></th><th class="num">Prévu</th><th class="num" title="Montant réel quand il est connu, sinon le prévu">Réel / à jour</th><th class="num">Écart</th></tr></thead><tbody>
     ${row('Cachet HT', b.fee, b.fee, 0, (cashed >= b.fee - 0.01 && b.fee ? 'entièrement encaissé' : `encaissé : ${eur2(cashed)} sur ${eur2(b.fee)}`) + (unassigned ? ` · dont ${eur2(unassigned)} — compte non renseigné` : ''))}
     ${corea ? row('Part du résultat (coréalisation)', b.share, b.share, 0, shareTodo ? 'pas encore validée : la commission ne porte pour l’instant que sur le MG' : 'validée · comprise dans la base de la commission') : ''}
-    ${row('Commission L’ArtBo', b.com, b.com, 0, commissionStatus(com) + (corea ? ` · sur ${eur2(b.gross)} (MG${shareTodo ? ' seul, provisoire' : ' + part'})` : ''), {cost: true})}
+    ${row('Commission L’ArtBo', b.com, b.com, 0, commissionStatus(com) + (corea ? ` · sur ${eur2(b.gross)} (MG${shareTodo ? ' seul, provisoire' : ' + part'})` : '')
+      + ((q => q && Math.abs(q.gap) >= 0.005 ? ` · régularisation à prévoir : ${q.gap > 0 ? '+' : ''}${eur2(q.gap)} (montant historique conservé)` : '')(coreaCommissionCheck(s))), {cost: true})}
     ${row('Dépenses', b.forecastExp, expNow, expGap, !exp.length ? 'aucune ligne' : est.length ? `${eur2(realSum)} réels (${real.length} ligne${real.length > 1 ? 's' : ''}) + ${eur2(estSum)} encore au prévu (${est.length} ligne${est.length > 1 ? 's' : ''})` : 'toutes les lignes ont leur montant réel', {cost: true})}
     ${row('Reste pour l’artiste' + (p?.artist_payee ? ` (${esc(p.artist_payee)})` : ''), resteF, resteR, r2(resteR - resteF), est.length ? `${brut} · encore provisoire : ${est.length} dépense${est.length > 1 ? 's' : ''} au prévu` : `${brut} · définitif`, {strong: true})}
   </tbody></table></div>
@@ -312,6 +313,7 @@ function coreaBlock(s){
       ${line('<b>Rémunération nette de l’artiste</b>', c.total == null ? null : r2(c.total - c.com), 'bill-total')}
     </tbody></table></div>
     <p class="muted small">Part validée (base de la commission) : ${c.validatedShare == null ? '<b>pas encore validée</b> : la commission ne porte pour l’instant que sur le MG' : `<b>${eur2(c.validatedShare)}</b>${c.share == null ? ' <span class="warn-txt">la part n’est plus calculable (break, méthode ou ventes à revoir) : elle reste dans la base de la commission tant qu’une nouvelle part n’est pas validée</span>' : Math.abs(c.share - c.validatedShare) >= 0.005 ? ' <span class="warn-txt">différente de la part calculée : à valider de nouveau</span>' : ''}`}. La commission n’est jamais une charge du résultat partagé.</p>
+    ${(q => !q?.frozen ? '' : `<p class="small ${Math.abs(q.gap) >= 0.005 ? 'warn-txt' : 'muted'}">Commission retenue : ${eur2(q.held)}${q.booking ? ` · facturée : ${q.invoiced ? 'oui' : 'non'}` : ''} · encaissée : ${eur2(q.cashed)}. Commission due sur MG + part validée : ${eur2(q.due)}.${Math.abs(q.gap) >= 0.005 ? ` <b>Régularisation à prévoir : ${q.gap > 0 ? '+' : ''}${eur2(q.gap)}</b> (rien n’est fait automatiquement ; le montant historique reste).` : ''}</p>`)(coreaCommissionCheck(s))}
     ${c.share != null && (c.validatedShare == null || Math.abs(c.share - c.validatedShare) >= 0.005) ? `<div class="vh-actions mt-sm"><button class="btn sm" data-act="coreaValidateShare" data-id="${s.id}">Valider la part du résultat (${eur2(c.share)})</button> <span class="muted">elle entre alors dans la base de la commission</span></div>` : ''}
     ${c.validatedShare ? `<div class="vh-actions mt-sm"><button class="btn sm" data-act="coreaPrepareInvoice" data-id="${s.id}">Préparer la ligne de facture « Part du résultat »</button> <span class="muted">action volontaire, rien n’est envoyé</span></div>` : ''}
     <p class="muted small mt-sm">Le minimum garanti reste facturé par l’acompte et le solde ; seule la part du résultat s’y ajoute (jamais deux fois). Résultat négatif ou nul : pas de part, le MG reste acquis.</p>
@@ -328,6 +330,9 @@ function coprodBlock(s){
     <div class="steps prod-params">
       <label>Recettes encaissées par</label>${closed ? `<span>${esc(holderLabel(s.ticket_holder))}</span>` : cSel('shows', s.id, 'ticket_holder', s.ticket_holder, holderOpts.filter(h => h[0] !== 'organisateur'))}
     </div>
+    <div class="steps prod-params"><label>Recettes de billetterie encaissées le</label>${closed ? `<span>${x.receipts_cashed_at ? fmtDate(x.receipts_cashed_at) : '—'}</span>` : `<input type="date" data-prod-show="${s.id}" data-prod-path="receipts_cashed_at" value="${esc(k.r.p.receipts_cashed_at || '')}">`}</div>
+    ${!k.r.promo && !x.promo ? '<p class="muted small">Aucune promotion locale.</p>' : ''}
+    ${x.promo_advance ? `<p class="muted small">Dont avance de promotion locale : ${eur2(x.promo_advance)} payés par ${x.promo_payer === 'artbo' ? 'L’ArtBo' : 'le coproducteur'} pour le compte de ${x.promo_debtor === 'artbo' ? 'L’ArtBo' : 'le coproducteur'} (comptée une seule fois).</p>` : ''}
     ${k.r.promo || x.promo ? `<div class="steps prod-params">
       <label>Promotion locale (${eur2(x.promo)}) : à la charge de</label>${closed ? `<span>${esc((PROMO_DEBTORS.find(d => d[0] === x.promo_debtor) || [, '—'])[1])}</span>` : prodSel(s, 'promo_debtor', k.r.p.promo_debtor, PROMO_DEBTORS)}
       <label>Payée par</label>${closed ? `<span>${esc((PROMO_PAYERS.find(d => d[0] === x.promo_payer) || [, '—'])[1])}</span>` : prodSel(s, 'promo_payer', k.r.p.promo_payer, PROMO_PAYERS)}

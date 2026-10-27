@@ -8,10 +8,10 @@
  * Une date cochée « booking uniquement » (prod_mode = booking) n'a pas de budget : seulement la facture de commission.
  */
 import { r2 } from './utils.js';
-import { commissionState, isCoproduction, isInvoiced, payAmount, paymentsOf } from './calc.js';
+import { commissionState, isBookingShow, isCoproduction, isInvoiced, payAmount, paymentsOf } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { byId, setting, showCommissionPct, showsOfProject } from './selectors.js';
-import { cnmBearer, cnmOf, commissionBase, coreaShareOf, isAbroad, isCnmLine } from './corea.js';
+import { cnmBearer, cnmOf, commissionBase, commissionPctOf, coreaShareOf, isAbroad, isCnmLine, isCorea } from './corea.js';
 import { S } from './state.js';
 
 const num = v => v==null || v==='' ? null : Number(v);
@@ -31,6 +31,21 @@ export const offLinesOf = projectId => S.db.budget_lines.filter(l => !l.show_id 
 export const commissionOf = s => paymentsOf(s.id).find(p => p.kind === 'artbo');
 // coproduction sans ligne de commission réelle : aucune commission (jamais calculée sur le cachet, décision du 27/10/2026)
 export const commissionAmount = s => { const p = commissionOf(s); return p ? payAmount(p) || 0 : isCoproduction(s) ? 0 : r2(commissionBase(s) * showCommissionPct(s) / 100); };   // coréalisation : MG + part validée (v1.51)
+
+/**
+ * Commission d'une coréalisation (décision d'Anthony du 27/10/2026, 22 h 35) : due = (MG + part validée) × taux ; une commission
+ * déjà FACTURÉE (booking : envoyée, numérotée, liée à Pennylane) ou ENCAISSÉE (booking : payée ; production : versée à L'ArtBo)
+ * garde son montant historique ; l'écart éventuel est AFFICHÉ comme régularisation à prévoir, jamais fait automatiquement.
+ */
+const filledV = v => v != null && String(v).trim() !== '';
+export function coreaCommissionCheck(s){
+  const p = isCorea(s) ? commissionOf(s) : null; if (!p) return null;
+  const booking = isBookingShow(s), held = r2(payAmount(p) || 0), due = r2(Math.round(commissionBase(s) * commissionPctOf(s)) / 100);
+  const invoiced = booking && ['sent_at', 'invoice_number', 'pennylane_id'].some(k => filledV(p[k]));
+  const cashed = booking ? (filledV(p.paid_at) ? held : 0) : commissionState(p).transferred;
+  const frozen = filledV(p.amount) || isInvoiced(p) || cashed > 0;
+  return {booking, due, held, invoiced, cashed, frozen, gap: frozen ? r2(due - held) : 0};
+}
 
 /** Ligne de solde artiste (automatique ou ajoutée à la main / par une pièce) : comptée une seule fois, dans le solde */
 export const isSolde = l => l.auto === 'solde_artiste' || l.category === 'Solde artiste';
