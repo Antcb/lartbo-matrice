@@ -4,7 +4,7 @@
  */
 import { render } from './app.js';
 import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
-import { cnmDue, isFree, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
+import { cnmDue, commissionOf, isFree, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
 import { coreaCalc } from './corea.js';
 import { acompteState, isCoproduction, isInvoiced, paymentsOf, payAmount } from './calc.js';
 import { insert, mergeRows, openStored, refreshFor, remove, save, sb } from './data.js';
@@ -55,7 +55,8 @@ document.addEventListener('change', async e => {
   const el = e.target.closest?.('[data-prod-path]'); if (!el) return;
   e.stopPropagation();
   const path = el.dataset.prodPath.split('.'), raw = el.value.trim();
-  const v = /label/.test(path.at(-1)) ? raw : (raw === '' ? null : Number(raw.replace(',', '.')));
+  // textes : libellés, débiteur / payeur / date de paiement de la promotion locale (v1.51)
+  const v = /label|^promo_(debtor|payer|paid_at)$/.test(path.at(-1)) ? (raw === '' && !/label/.test(path.at(-1)) ? null : raw) : (raw === '' ? null : Number(raw.replace(',', '.')));
   await saveProd(el.dataset.prodShow, p => { let o = p; path.slice(0, -1).forEach(k => { o = o[k]; }); o[path.at(-1)] = v; });
 }, true);
 
@@ -94,11 +95,22 @@ export const BUDGET_ACTIONS = {
     if (!(await confirmAsk('Valider le prorata ?', `Les ventes après le break ne sont pas connues par tarif. Retenir pour cette date les recettes au prorata des ventes de chaque tarif : ${eur2(k.range.prorata)} HT (fourchette ${eur2(k.range.min)} à ${eur2(k.range.max)}) ?`, 'Valider le prorata'))) return;
     saveCorea(s.id, c => { c.method = {kind: 'prorata', at: new Date().toISOString(), by: me(), sig: k.sig}; }); },
   coreaClearMethod: t => saveCorea(t.dataset.id, c => { delete c.method; }),
-  // part du résultat : ligne de facture préparée à la demande (rien n'est envoyé ni créé dans Pennylane)
+  // part du résultat validée : elle entre dans la base de la commission (MG + part, décision du 27/10/2026 au soir) ; une commission
+  // déjà figée (versement, facture) n'est jamais recalculée en silence : elle est signalée, la régularisation se décide à part
+  coreaValidateShare: async t => { const s = byId('shows', t.dataset.id), k = coreaCalc(s); if (k?.share == null) return;
+    const com = commissionOf(s), frozen = com && com.amount != null && com.amount !== '';
+    const text = [`Part du résultat retenue : ${eur2(k.share)} HT.`, `Rémunération brute de l’artiste : MG ${eur2(k.mg)} + part = ${eur2(k.total)}.`,
+      `Commission L’ArtBo (${pct(k.comPct)}) : ${eur2(k.com)} sur ce total.`,
+      frozen ? `Attention : la commission de cette date est déjà figée à ${eur2(Number(com.amount))} (versement ou facture). Elle ne sera pas modifiée ; l’écart se régularise à part.` : ''].filter(Boolean).join('\n');
+    if (!(await confirmAsk('Valider la part du résultat ?', text, 'Valider la part'))) return;
+    await save('shows', s.id, {corea_share: k.share}); },
+  // part du résultat : ligne de facture préparée à la demande (rien n'est envoyé ni créé dans Pennylane) ; montant = part VALIDÉE
   coreaPrepareInvoice: async t => { const s = byId('shows', t.dataset.id), k = coreaCalc(s);
+    if (k?.validatedShare == null) return toast('Valide d’abord la part du résultat', true);
+    if (k.share == null || Math.abs(k.share - k.validatedShare) >= 0.005) return toast('La part calculée a changé depuis sa validation : valide-la de nouveau', true);
     if (paymentsOf(s.id).some(p => p.kind === 'autre' && /part du résultat/i.test(p.label || ''))) return toast('Une ligne « Part du résultat » existe déjà dans Factures', true);
-    if (!(await confirmAsk('Préparer la ligne de facture ?', `Ajouter dans Factures une ligne « Part du résultat (coréalisation) » de ${eur2(k.share)} HT, en plus de l’acompte et du solde du minimum garanti. Rien n’est envoyé.`, 'Préparer la ligne'))) return;
-    await insert('show_payments', {show_id: s.id, kind: 'autre', label: 'Part du résultat (coréalisation)', amount: k.share, sort: 60});
+    if (!(await confirmAsk('Préparer la ligne de facture ?', `Ajouter dans Factures une ligne « Part du résultat (coréalisation) » de ${eur2(k.validatedShare)} HT, en plus de l’acompte et du solde du minimum garanti. Rien n’est envoyé.`, 'Préparer la ligne'))) return;
+    await insert('show_payments', {show_id: s.id, kind: 'autre', label: 'Part du résultat (coréalisation)', amount: k.validatedShare, sort: 60});
     toast('Ligne ajoutée dans Factures'); },
   // coproduction : clôture du résultat (synthèse, confirmation, enregistrement daté par la base, montants verrouillés)
   closeResult: async t => { const s = byId('shows', t.dataset.id), k = coprodClose(s), x = k.snapshot;

@@ -7,7 +7,7 @@
 // Le jeton API est gardé côté serveur (Réglages › Pennylane). Appels depuis l'app (utilisateur connecté) :
 //   { action: 'status' } · { action: 'quote', show_id } · { action: 'invoice', payment_id } · { action: 'sync' }
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { acomptesFactures, caduc, emise, factureIsolee, figerMontant, isBooking, montantAcompte, montantAttendu, payable, pctCommission, rangeeDansLeDrive, relieAuDevis } from './regles.ts';
+import { acomptesFactures, baseCommission, caduc, emise, factureIsolee, figerMontant, isBooking, montantAcompte, montantAttendu, payable, pctCommission, rangeeDansLeDrive, relieAuDevis } from './regles.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -299,7 +299,7 @@ Deno.serve(async (req) => {
           const { data: defaut, error: eDef } = await admin.rpc('default_commission_pct', { p_show: s.id, p_mode: s.prod_mode });
           if (eDef) return json({ error: 'Commission par défaut illisible : ' + eDef.message }, 500);
           const pct = pctCommission(p.pct, s.artbo_pct, defaut);
-          if (pct != null) amount = Math.round(fee * pct) / 100;
+          if (pct != null) amount = Math.round(baseCommission(s) * pct) / 100;   // coréalisation : MG + part validée (v1.51)
         }
         else if (p.pct != null) amount = Math.round(fee * Number(p.pct)) / 100;
       }

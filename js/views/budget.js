@@ -10,7 +10,7 @@ import { S } from '../state.js';
 import { cChk, cIn, cSel } from '../ui/cells.js';
 import { HOLDERS, cnmBearer, cnmOf, coreaCalc, holderLabel, isCorea } from '../corea.js';
 import { esc, eur2, fmtDate, today, r2, pct as fmtPct } from '../utils.js';
-import { PROD_CATS, coprodClose, isProductionShow, productionBudget } from '../production-budget.js';
+import { PROD_CATS, PROMO_DEBTORS, PROMO_PAYERS, coprodClose, isProductionShow, productionBudget } from '../production-budget.js';
 
 const STATUS = {paid:['Payé','ok-badge'], doc:['Pièce reçue','warn-badge'], planned:['Prévu','badge']};
 const badge = l => { const [t,c] = STATUS[lineStatus(l)]; return `<span class="${c}">${t}</span>`; };
@@ -95,12 +95,16 @@ function summaryTable(s, b, com, p){
   const gapCell = (g, cost) => `<td class="num nowrap ${Math.abs(g) < 0.01 ? 'muted' : (g > 0) === cost ? 'neg' : 'pos'}">${Math.abs(g) < 0.01 ? eur2(0) : (g > 0 ? '+' : '') + eur2(g)}</td>`;
   const row = (label, f, r, gap, help, {cost = false, strong = false} = {}) => `<tr class="${strong ? 'bill-total' : ''}"><td>${strong ? `<b>${label}</b>` : label}${help ? `<div class="muted tiny">${help}</div>` : ''}</td>
       <td class="num nowrap">${strong ? `<b>${eur2(f)}</b>` : eur2(f)}</td><td class="num nowrap">${strong ? `<b>${eur2(r)}</b>` : eur2(r)}</td>${gapCell(gap, cost)}</tr>`;
-  const resteF = r2(b.fee - b.com - b.forecastExp), resteR = r2(b.fee - b.com - expNow);
+  const resteF = r2(b.gross - b.com - b.forecastExp), resteR = r2(b.gross - b.com - expNow);
+  // coréalisation : rémunération brute = MG + part du résultat validée ; la commission porte sur le tout (v1.51)
+  const corea = isCorea(s), shareTodo = corea && (s.corea_share == null || s.corea_share === '');
+  const brut = corea ? 'MG + part − commission − dépenses' : 'cachet − commission − dépenses';
   return `<div class="tbl-wrap"><table class="budget-sum"><thead><tr><th></th><th class="num">Prévu</th><th class="num" title="Montant réel quand il est connu, sinon le prévu">Réel / à jour</th><th class="num">Écart</th></tr></thead><tbody>
     ${row('Cachet HT', b.fee, b.fee, 0, (cashed >= b.fee - 0.01 && b.fee ? 'entièrement encaissé' : `encaissé : ${eur2(cashed)} sur ${eur2(b.fee)}`) + (unassigned ? ` · dont ${eur2(unassigned)} — compte non renseigné` : ''))}
-    ${row('Commission L’ArtBo', b.com, b.com, 0, commissionStatus(com), {cost: true})}
+    ${corea ? row('Part du résultat (coréalisation)', b.share, b.share, 0, shareTodo ? 'pas encore validée : la commission ne porte pour l’instant que sur le MG' : 'validée · comprise dans la base de la commission') : ''}
+    ${row('Commission L’ArtBo', b.com, b.com, 0, commissionStatus(com) + (corea ? ` · sur ${eur2(b.gross)} (MG${shareTodo ? ' seul, provisoire' : ' + part'})` : ''), {cost: true})}
     ${row('Dépenses', b.forecastExp, expNow, expGap, !exp.length ? 'aucune ligne' : est.length ? `${eur2(realSum)} réels (${real.length} ligne${real.length > 1 ? 's' : ''}) + ${eur2(estSum)} encore au prévu (${est.length} ligne${est.length > 1 ? 's' : ''})` : 'toutes les lignes ont leur montant réel', {cost: true})}
-    ${row('Reste pour l’artiste' + (p?.artist_payee ? ` (${esc(p.artist_payee)})` : ''), resteF, resteR, r2(resteR - resteF), est.length ? `cachet − commission − dépenses · encore provisoire : ${est.length} dépense${est.length > 1 ? 's' : ''} au prévu` : 'cachet − commission − dépenses · définitif', {strong: true})}
+    ${row('Reste pour l’artiste' + (p?.artist_payee ? ` (${esc(p.artist_payee)})` : ''), resteF, resteR, r2(resteR - resteF), est.length ? `${brut} · encore provisoire : ${est.length} dépense${est.length > 1 ? 's' : ''} au prévu` : `${brut} · définitif`, {strong: true})}
   </tbody></table></div>
   <p class="muted" style="font-size:12px;margin:6px 0 12px">Pièces reçues : ${b.docsIn}/${b.docsAll} · ${b.paid} payées.</p>`;
 }
@@ -132,7 +136,7 @@ function artistBlock(s, b, p){
   return `<div class="artist-result">
     <h4 class="block-title">Reste pour ${esc(who)}</h4>
     <div class="ar-grid">
-      <div class="stat"><b>${eur2(r.reste)}</b><span>calculé : cachet ${eur2(b.fee)} − commission ${eur2(b.com)} − dépenses ${eur2(b.expenses)}</span></div>
+      <div class="stat"><b>${eur2(r.reste)}</b><span>calculé : ${b.share ? `MG ${eur2(b.fee)} + part ${eur2(b.share)}` : `cachet ${eur2(b.fee)}`} − commission ${eur2(b.com)} − dépenses ${eur2(b.expenses)}</span></div>
       <div class="stat"><b>${r.hasVerse ? eur2(r.verse) : '—'}</b><span>versé à ${esc(who)}${r.todo ? ` · <b>${eur2(r.todo)}</b> encore à verser (pas de date)` : ''}</span></div>
       <div class="stat"><b>${ecartHTML(r.ecart)}</b><span>${r.ecart == null ? 'écart : quand le versement est noté' : r.ecart < -0.005 ? 'écart pour toi : versé plus que le reste, tu perds' : r.ecart > 0.005 ? 'écart pour toi : versé moins que le reste, tu gagnes' : 'écart pour toi : juste'}</span></div>
     </div>
@@ -198,12 +202,12 @@ export function projectBudgetHTML(projectId){
     const missing = s.date && s.date < now && b.docsIn < b.docsAll;
     if (isProductionShow(s)) return ownProdRow(s, b, missing);
     return `<tr><td class="nowrap"><a href="#" data-act="openProdShow" data-id="${s.id}">${fmtDate(s.date)}</a></td><td>${esc(s.venue||'')}${s.city?` <span class="muted">(${esc(s.city)})</span>`:''}</td>
-      <td class="num">${eur2(b.fee)}</td><td class="num">${eur2(b.com)}</td><td class="num">${eur2(b.expenses)}</td><td class="num"><b>${eur2(b.available)}</b></td><td class="num">${(r => r.hasVerse ? eur2(r.verse) : '<span class="muted">—</span>')(artistResult(s, b))}</td>
+      <td class="num"${b.share ? ` title="MG ${eur2(b.fee)} + part du résultat ${eur2(b.share)}"` : ''}>${eur2(b.gross)}</td><td class="num">${eur2(b.com)}</td><td class="num">${eur2(b.expenses)}</td><td class="num"><b>${eur2(b.available)}</b></td><td class="num">${(r => r.hasVerse ? eur2(r.verse) : '<span class="muted">—</span>')(artistResult(s, b))}</td>
       ${b.lines.length ? `<td class="num nowrap">${ecartHTML(artistResult(s, b).ecart)}</td>
       <td class="${missing?'late-cell':''}">${b.docsIn}/${b.docsAll}${missing?' ⚠︎':''}</td>` : '<td class="num muted">—</td><td><span class="warn-badge">Budget à faire</span></td>'}</tr>`; }).join('');
   // dates produites par L'ArtBo (Production / Co-Production) : budget prévisionnel à part, hors totaux du cachet ; seul le versé réel compte
   const tot = shows.reduce((t,s) => { const b = showBudget(s), ar = artistResult(s, b); t.solde += ar.verse; if (isProductionShow(s)) { t.own++; return t; }
-    ['fee','com','expenses','available'].forEach(k => t[k] += b[k]); if (ar.ecart != null) t.result += ar.ecart; return t; }, {fee:0,com:0,expenses:0,available:0,solde:0,result:0,own:0});
+    t.fee += b.gross; ['com','expenses','available'].forEach(k => t[k] += b[k]); if (ar.ecart != null) t.result += ar.ecart; return t; }, {fee:0,com:0,expenses:0,available:0,solde:0,result:0,own:0});
   const off = offLinesOf(projectId);
   const cats = Object.entries(a.byCat).filter(([,v]) => Math.abs(v) >= 0.01).sort((x,y) => y[1]-x[1]);
   return `<div class="proj-budget panel">
@@ -303,9 +307,13 @@ function coreaBlock(s){
       ${line('<b>Résultat net à partager</b>', c.net, 'bill-total')}
       ${line(`Part du producteur (${c.pct == null ? '% à renseigner' : esc(fmtPct(c.pct))})`, c.share)}
       ${line(`Part de la structure (${c.pct == null ? '—' : esc(fmtPct(100 - c.pct))})`, c.partnerShare)}
-      ${line('<b>Rémunération du producteur : MG + part</b>', c.total, 'bill-total')}
+      ${line('<b>Rémunération brute de l’artiste : MG + part</b>', c.total, 'bill-total')}
+      ${line(`Commission L’ArtBo (${esc(fmtPct(c.comPct))}, sur MG + part)`, c.total == null ? null : -c.com)}
+      ${line('<b>Rémunération nette de l’artiste</b>', c.total == null ? null : r2(c.total - c.com), 'bill-total')}
     </tbody></table></div>
-    ${c.share ? `<div class="vh-actions mt-sm"><button class="btn sm" data-act="coreaPrepareInvoice" data-id="${s.id}">Préparer la ligne de facture « Part du résultat »</button> <span class="muted">action volontaire, rien n’est envoyé</span></div>` : ''}
+    <p class="muted small">Part validée (base de la commission) : ${c.validatedShare == null ? '<b>pas encore validée</b> : la commission ne porte pour l’instant que sur le MG' : `<b>${eur2(c.validatedShare)}</b>${c.share != null && Math.abs(c.share - c.validatedShare) >= 0.005 ? ' <span class="warn-txt">différente de la part calculée : à valider de nouveau</span>' : ''}`}. La commission n’est jamais une charge du résultat partagé.</p>
+    ${c.share != null && (c.validatedShare == null || Math.abs(c.share - c.validatedShare) >= 0.005) ? `<div class="vh-actions mt-sm"><button class="btn sm" data-act="coreaValidateShare" data-id="${s.id}">Valider la part du résultat (${eur2(c.share)})</button> <span class="muted">elle entre alors dans la base de la commission</span></div>` : ''}
+    ${c.validatedShare ? `<div class="vh-actions mt-sm"><button class="btn sm" data-act="coreaPrepareInvoice" data-id="${s.id}">Préparer la ligne de facture « Part du résultat »</button> <span class="muted">action volontaire, rien n’est envoyé</span></div>` : ''}
     <p class="muted small mt-sm">Le minimum garanti reste facturé par l’acompte et le solde ; seule la part du résultat s’y ajoute (jamais deux fois). Résultat négatif ou nul : pas de part, le MG reste acquis.</p>
   </div>`;
 }
@@ -320,15 +328,21 @@ function coprodBlock(s){
     <div class="steps prod-params">
       <label>Recettes encaissées par</label>${closed ? `<span>${esc(holderLabel(s.ticket_holder))}</span>` : cSel('shows', s.id, 'ticket_holder', s.ticket_holder, holderOpts.filter(h => h[0] !== 'organisateur'))}
     </div>
+    ${k.r.promo || x.promo ? `<div class="steps prod-params">
+      <label>Promotion locale (${eur2(x.promo)}) : à la charge de</label>${closed ? `<span>${esc((PROMO_DEBTORS.find(d => d[0] === x.promo_debtor) || [, '—'])[1])}</span>` : prodSel(s, 'promo_debtor', k.r.p.promo_debtor, PROMO_DEBTORS)}
+      <label>Payée par</label>${closed ? `<span>${esc((PROMO_PAYERS.find(d => d[0] === x.promo_payer) || [, '—'])[1])}</span>` : prodSel(s, 'promo_payer', k.r.p.promo_payer, PROMO_PAYERS)}
+      <label>Payée le</label>${closed ? `<span>${x.promo_paid_at ? fmtDate(x.promo_paid_at) : '—'}</span>` : `<input type="date" data-prod-show="${s.id}" data-prod-path="promo_paid_at" value="${esc(k.r.p.promo_paid_at || '')}">`}
+    </div>` : ''}
     ${closed ? `<p>Clôturé le ${fmtDate(s.result_closed_at)}${s.result_closed_by ? ' par ' + esc(s.result_closed_by) : ''} : montants verrouillés.</p>` : ''}
     ${!closed && k.issues.length ? `<ul class="warn-txt warn-list">${k.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}
     ${k.warnings.length && !closed ? `<p class="muted">${k.warnings.map(esc).join(' · ')}</p>` : ''}
     <div class="tbl-wrap"><table class="budget-table prod-table"><tbody>
       ${row('<b>Résultat global réel (DL inclus)</b>', x.result, 'bill-total')}
+      ${x.shared_result != null && Math.abs(x.shared_result - x.result) >= 0.005 ? row(`Résultat partagé (promotion locale à la charge ${x.promo_debtor === 'artbo' ? 'de L’ArtBo' : 'du coproducteur'}, retirée de sa part)`, x.shared_result) : ''}
       ${row(`Part de L’ArtBo (${esc(fmtPct(x.artbo_share ?? 0))})`, x.artbo_part)}
       ${row(`Part de ${esc(x.partner || 'coproducteur')} (${esc(fmtPct(100 - (x.artbo_share ?? 0)))})`, x.partner_part)}
       ${row('Recette nette gardée par la structure qui encaisse', x.net_encaisse)}
-      ${row('Dépenses payées par L’ArtBo', -x.paid_artbo)}
+      ${row('Dépenses payées par L’ArtBo (promotion locale comprise si elle l’a payée)', -x.paid_artbo)}
       ${row('Dépenses payées par le coproducteur', -x.paid_partner)}
       <tr class="bill-total"><td><b>Reversement</b></td><td class="num nowrap">${x.from ? `<b>${eur2(x.transfer)}</b>` : 'aucun'}</td></tr>
     </tbody></table></div>
@@ -342,6 +356,7 @@ function coprodBlock(s){
 
 // ─────────────── Budget de production (contrat Production / Co-Production) ───────────────
 
+const prodSel = (s, path, v, opts) => `<select data-prod-show="${s.id}" data-prod-path="${path}"><option value="">—</option>${opts.map(([k, l]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
 const pin = (s, path, v, extra = '') => `<input type="${/label/.test(path) ? 'text' : 'number'}" ${/label/.test(path) ? '' : 'step="any" inputmode="decimal"'} data-prod-show="${s.id}" data-prod-path="${path}" value="${esc(v ?? '')}" ${extra}>`;
 const pct = v => v == null ? '—' : fmtPct(Math.round(v * 1000) / 10);   // taux 0–1 affiché « 87,5 % » (format officiel §2.4)
 const two = (f, r, cls = '') => `<td class="num nowrap ${cls}">${eur2(f)}</td><td class="num nowrap ${cls}">${r == null ? '—' : eur2(r)}</td>`;

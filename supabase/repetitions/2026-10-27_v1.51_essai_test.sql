@@ -4,7 +4,8 @@
 -- si le projet de test ne l'a pas encore (ordre réel de mise en ligne).
 -- Vérifie : plus de ligne « Taxe CNM » à la confirmation (coréalisation, production, coproduction) ; clôture du résultat
 -- réservée à l'équipe et aux coproductions ; montants verrouillés (date et dépenses), dates de paiement libres ; clôture
--- impossible hors fonction ; réouverture avec motif obligatoire, tracée ; aucune ligne existante modifiée.
+-- impossible hors fonction ; réouverture avec motif obligatoire, tracée ; commission en coréalisation sur MG + part validée
+-- (jamais pour un autre contrat ; part figée si une commission émise sans montant en dépend) ; aucune ligne existante modifiée.
 -- =====================================================================================================
 begin;
 do $g$ begin
@@ -72,10 +73,35 @@ begin
   if not exists (select 1 from result_closures where show_id = c2 and action = 'reopen' and reason = 'Facture reçue après la clôture' and snapshot ? 'result') then raise exception 'ECHEC 4c : réouverture non tracée'; end if;
   update budget_lines set amount = 2000 where id = l1;
 
+  -- 6. commission en coréalisation : MG + part validée ; jamais pour un autre contrat ; part figée si une commission émise sans montant en dépend
+  declare cl uuid; pc numeric; v numeric;
+  begin
+    select coalesce(x.artbo_pct, public.default_commission_pct(x.id, x.prod_mode)) into pc from shows x where x.id = c1;   -- % réel de la date (mode suivi du projet)
+    select id into cl from show_payments where show_id = c1 and kind = 'artbo' limit 1;
+    if cl is null then insert into show_payments (show_id, kind, sort) values (c1, 'artbo', 90) returning id into cl; end if;
+    select public.payment_amount_now(p) into v from show_payments p where id = cl;
+    if v is distinct from round(3000 * pc) / 100 then raise exception 'ECHEC 6 : commission avant validation % (attendu % sur le MG)', v, round(3000 * pc) / 100; end if;
+    update shows set corea_share = 1000 where id = c1;
+    select public.payment_amount_now(p) into v from show_payments p where id = cl;
+    if v is distinct from round(4000 * pc) / 100 then raise exception 'ECHEC 6b : commission % (attendu % sur MG + part)', v, round(4000 * pc) / 100; end if;
+    update shows set corea_share = 1000 where id = c3;   -- cession : la colonne n'entre jamais dans la base
+    if public.corea_share_of(c3) <> 0 then raise exception 'ECHEC 6c : part comptée hors coréalisation'; end if;
+    begin update shows set corea_share = -1 where id = c1; ok := true; exception when others then ok := false; end;
+    if ok then raise exception 'ECHEC 6d : part négative acceptée'; end if;
+    -- commission versée SANS montant figé (cas historique, créé hors déclencheurs) : la part ne change plus
+    set local session_replication_role = replica;
+    update show_payments set paid_at = current_date, amount = null where id = cl;
+    set local session_replication_role = origin;
+    begin update shows set corea_share = 1500 where id = c1; ok := true; exception when others then ok := false; e := sqlerrm; end;
+    if ok then raise exception 'ECHEC 6e : part changée alors qu''une commission émise sans montant en dépend'; end if;
+    begin update shows set contract_type = 'Cession' where id = c1; ok := true; exception when others then ok := false; end;
+    if ok then raise exception 'ECHEC 6f : contrat changé alors que la base de la commission émise en dépend'; end if;
+  end;
+
   -- 5. aucune ligne de facturation existante modifiée
   select md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) into apres from show_payments x where x.show_id not in (c1, c2, c3);
   if avant <> apres then raise exception 'ECHEC 5 : lignes de facturation existantes modifiées'; end if;
 
-  raise exception 'ESSAI v1.51 RÉUSSI : pas de ligne CNM à la confirmation, clôture réservée et tracée, montants verrouillés, paiements libres, réouverture motivée — transaction annulée';
+  raise exception 'ESSAI v1.51 RÉUSSI : pas de ligne CNM à la confirmation, clôture réservée et tracée, montants verrouillés, paiements libres, réouverture motivée, commission coréalisation sur MG + part validée — transaction annulée';
 end $e$;
 rollback;

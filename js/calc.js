@@ -4,6 +4,7 @@
 import { r2, eur2 } from './utils.js';
 import { byId, showCommissionPct } from './selectors.js';
 import { S } from './state.js';
+import { commissionBase } from './corea.js';
 
 /** Lignes financières d'une date QUI COMPTENT : une ligne « hors calcul » (coproduction, import — v1.44) est gardée pour la traçabilité
  *  mais n'entre dans aucun calcul, indicateur, compte, rappel ni opération Pennylane. Même règle côté base : payment_is_emitted, rappels. */
@@ -22,8 +23,9 @@ export function payAmount(p){
   // Un acompte seulement prévu ne le réduit pas. Un solde facturé garde son montant (jamais recalculé, §6.4).
   if (p.kind==='solde' && s && !isBookingShow(s) && !isInvoiced(p)) return soldeDue(p.show_id, p.id);
   // commission : % de la ligne > % de la date > % de l'artiste > Réglages selon le mode de la date (§6.3, v1.46a — plus de 0 ni de 15 en dur)
-  if (p.kind==='artbo')   return Math.round(fee * (filled(p.pct) ? Number(p.pct) : showCommissionPct(s))) / 100;
-  if (p.kind==='partner') return Math.round(fee * showCommissionPct(s) * (Number(p.pct ?? s.partner_pct)||0) / 100) / 100;
+  // base : cachet HT, plus la part du résultat validée en coréalisation (rémunération brute de l'artiste, v1.51)
+  if (p.kind==='artbo')   return Math.round(commissionBase(s) * (filled(p.pct) ? Number(p.pct) : showCommissionPct(s))) / 100;
+  if (p.kind==='partner') return Math.round(commissionBase(s) * showCommissionPct(s) * (Number(p.pct ?? s.partner_pct)||0) / 100) / 100;
   if (p.kind==='cnm' || p.pct==null || p.pct==='') return null;
   return Math.round(fee * Number(p.pct)) / 100;
 }
@@ -205,7 +207,8 @@ export function changeBlocked(table, id, patch){
   if (table === 'shows' && 'vat_rate' in patch && !sameVal(patch.vat_rate, byId('shows', id)?.vat_rate)
       && paymentsOf(id).some(p => isInvoiced(p) && !filled(p.vat_rate) && !['artbo', 'partner'].includes(p.kind)))
     return 'Des factures de cette date sont déjà émises avec la TVA de la date : la TVA ne change plus (leur montant TTC changerait). Une régularisation se décide à part.';
-  if (table === 'shows' && ['fee_ht', 'vat_rate', 'artbo_pct', 'partner_pct', 'prod_mode'].some(k => k in patch)){   // prod_mode : TVA de la commission
+  // corea_share / contract_type : base de la commission en coréalisation (MG + part validée, v1.51)
+  if (table === 'shows' && ['fee_ht', 'vat_rate', 'artbo_pct', 'partner_pct', 'prod_mode', 'corea_share', 'contract_type'].some(k => k in patch)){   // prod_mode : TVA de la commission
     const s = byId('shows', id), lines = s ? paymentsOf(id).filter(isInvoiced) : [];
     if (!lines.length) return '';
     const values = () => JSON.stringify(lines.map(p => { const a = payAmount(p); return [a, ttc(a, payVat(p))]; }));

@@ -39,6 +39,11 @@ export const factureIsolee = (p: Ligne, mode: string | null | undefined) => isBo
 export const pctCommission = (linePct: unknown, showPct: unknown, defaut: unknown): number | null =>
   plein(linePct) ? Number(linePct) : plein(showPct) ? Number(showPct) : plein(defaut) ? Number(defaut) : null;
 
+/** Base de la commission (v1.51, décision d'Anthony du 27/10/2026) : cachet HT ; en coréalisation, MG + part du résultat VALIDÉE
+ *  (shows.corea_share) — rémunération brute de l'artiste. Même règle : application (commissionBase), base (payment_amount_for). */
+export const baseCommission = (s: { fee_ht?: unknown; contract_type?: unknown; corea_share?: unknown }): number =>
+  (Number(s?.fee_ht) || 0) + (s?.contract_type === 'Co-Réalisation' && plein(s?.corea_share) ? Number(s.corea_share) : 0);
+
 const r2 = (n: number) => Math.round(n * 100) / 100;
 /** Montant HT prévu d'un acompte (saisi, ou % × cachet) */
 export const montantAcompte = (p: Ligne, fee: number) =>
