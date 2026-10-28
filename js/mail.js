@@ -78,6 +78,24 @@ export async function mailVars(showId, contactId){
 
 const scriptUrl = () => (setting('drive_webhook_url') || '').trim();
 
+/** Délivrabilité (lot V1.52) — pièces jointes : taille connue des fichiers cochés ; au-delà de ATT_WARN_MB, avertissement avant l'envoi
+ *  (un mail lourd arrive plus souvent en spam ou est refusé ; un lien de partage est souvent préférable). Fichiers Drive : taille inconnue. */
+export const ATT_WARN_MB = 5;
+export function attSize(list){
+  const on = (list || []).filter(f => f.on), known = on.filter(f => Number(f.size) > 0);
+  return {n: on.length, mb: Math.round(known.reduce((a, f) => a + Number(f.size), 0) / 104857.6) / 10, unknown: on.length - known.length};
+}
+export const attSizeHTML = list => { const s = attSize(list); if (!s.n) return '';
+  return `<span class="${s.mb > ATT_WARN_MB ? 'draft-note' : 'muted'}">${s.n} cochée${s.n > 1 ? 's' : ''} · ${s.mb.toLocaleString('fr-FR')} Mo${s.unknown ? ` (+ ${s.unknown} de taille inconnue)` : ''}${s.mb > ATT_WARN_MB ? ' : lourd pour un mail' : ''}</span>`; };
+/** Avant l'envoi : pièces jointes au-delà de ATT_WARN_MB → question ; true = on continue */
+export async function attOk(list){
+  const s = attSize(list); if (s.mb <= ATT_WARN_MB) return true;
+  return confirmAsk('Pièces jointes lourdes', `Les pièces jointes cochées pèsent ${s.mb.toLocaleString('fr-FR')} Mo. Au-delà de ${ATT_WARN_MB} Mo, le mail a plus de risques d’arriver en spam ou d’être refusé ; un lien de partage est souvent préférable.`, 'Continuer quand même');
+}
+/** Zones « [… à compléter] » restées dans un mail (balises vides des modèles, surlignées en jaune) */
+export const todoLeft = m => /\[[^\]\n]{1,40} à compléter\]/.test(`${m.html || ''} ${m.subject || ''}`);
+export const todoOk = async m => !todoLeft(m) || confirmAsk('Zones à compléter', 'Il reste des zones à compléter (en jaune) dans le mail. Elles partiront telles quelles.', 'Continuer quand même');
+
 /** Appel d'un script Google par le relais serveur « script-google » (lot Sécurité v1.47) : le code secret des scripts reste sur le
  *  serveur, jamais dans le navigateur. target : 'main' (production@) ou 'prospect' (script de prospection). Erreur → message français. */
 export async function callGoogle(target, action, payload = {}){
@@ -138,7 +156,8 @@ export async function prepareMail(showId, kind){
       if (!scriptUrl()){ toast('Le script Google (Apps Script) n’est pas encore installé (Réglages).', true); return false; }
       const m = current();
       if (!m.to) { toast('Indique le destinataire', true); return false; }
-      if (/\[\w+ à compléter\]/.test(m.html + m.subject) && !(await confirmAsk('Zones à compléter', 'Il reste des zones à compléter (en jaune) dans le mail. Elles partiront telles quelles.', 'Continuer quand même'))) return false;
+      if (!(await todoOk(m))) return false;
+      if (!(await attOk(files))) return false;   // délivrabilité (v1.52) : pièces jointes lourdes
       if (send && !(await confirmAsk('Envoyer le mail ?', `Le mail part maintenant à ${m.to}${m.cc ? ` (copie : ${m.cc})` : ''}, depuis production@.`, 'Envoyer le mail'))) return false;
       try {
         const out = await callScript('draft', {to: m.to, cc: m.cc, subject: m.subject, html: m.html, send,
@@ -155,7 +174,7 @@ export async function prepareMail(showId, kind){
   const current = () => ({to: $('#ml-to').value.trim(), cc: $('#ml-cc').value.trim(), subject: $('#ml-subj').value.trim(), html: wrapMail($('#ml-body').innerHTML)});
   // Pièces jointes : celles du modèle (cochées) + celles ajoutées pour ce mail (bouton ou glisser-déposer)
   let files = [];
-  const drawFiles = () => { $('#ml-files').innerHTML = files.map((f, i) => `<label class="att-chip"><input type="checkbox" data-att="${i}" ${f.on ? 'checked' : ''}> ${f.path ? '📎' : '🔗'} ${esc(f.name || 'Fichier Drive')}</label>`).join('') || '<span class="muted">aucune</span>'; };
+  const drawFiles = () => { $('#ml-files').innerHTML = files.length ? attSizeHTML(files) + ' ' + files.map((f, i) => `<label class="att-chip"><input type="checkbox" data-att="${i}" ${f.on ? 'checked' : ''}> ${f.path ? '📎' : '🔗'} ${esc(f.name || 'Fichier Drive')}</label>`).join('') : '<span class="muted">aucune</span>'; };
   const draw = () => {
     const t = byId('mail_templates', $('#ml-tpl').value);
     files = [...(t.attachments || []).map(a => ({...a, on: true})), ...files.filter(f => f.mine)]; drawFiles();
@@ -173,13 +192,13 @@ export async function prepareMail(showId, kind){
     $('#ml-to').value = vars.contact_email || ''; draw();
     if (contactId && contactId !== s.conf_contact_id) save('shows', s.id, {conf_contact_id: contactId}, {rerender:false});
   };
-  $('#ml-files').addEventListener('change', e => { const i = e.target.dataset.att; if (i != null) files[i].on = e.target.checked; });
+  $('#ml-files').addEventListener('change', e => { const i = e.target.dataset.att; if (i != null){ files[i].on = e.target.checked; drawFiles(); } });
   $('#ml-up').addEventListener('change', async e => {
     for (const f of e.target.files){
       const path = `mails/${s.id}/${Date.now()}_${f.name.replace(/[^\w.\-]+/g, '_')}`;
       const {error} = await sb.storage.from('suivi').upload(path, f, {contentType: f.type || 'application/octet-stream'});
       if (error){ toast('Envoi impossible : ' + error.message, true); continue; }
-      files.push({path, name: f.name, on: true, mine: true});
+      files.push({path, name: f.name, size: f.size, on: true, mine: true});
     }
     e.target.value = ''; drawFiles();
   });
