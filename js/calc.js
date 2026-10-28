@@ -163,7 +163,14 @@ export function freezeOnEmit(table, id, patch){
 /** Date qui a des lignes déjà émises ou versées : un changement de cachet / % / mode mérite un avertissement (lot D1) */
 export const emittedLinesOf = showId => paymentsOf(showId).filter(p => FROZEN_KINDS.includes(p.kind) && (isInvoiced(p) || (p.kind === 'artbo' && transfersOf(p.id).length)));
 
+/** Recette qualifiée d'une coproduction au résultat clôturé : verrouillée (même règle que la base : result_lock_payments, v1.51) */
+const closedReceiptLock = (p, patch) => { const s = p && byId('shows', p.show_id);
+  if (!s?.result_closed_at || (p.coprod_role == null && (patch == null || patch.coprod_role == null))) return '';
+  if (patch === null || ['coprod_role', 'coprod_holder', 'amount', 'pct', 'kind', 'show_id'].some(k => k in patch && String(patch[k] ?? '') !== String(p[k] ?? '')))
+    return 'Résultat clôturé : les recettes qualifiées de cette date sont verrouillées. Rouvre le résultat (avec un motif) pour les modifier.';
+  return ''; };
 export function changeBlocked(table, id, patch){
+  if (table === 'show_payments'){ const why = closedReceiptLock(byId('show_payments', id), patch); if (why) return why; }
   if (patch === null){
     if (table === 'show_payments' && !counted(byId('show_payments', id))) return 'Ligne hors calcul (gardée pour la traçabilité) : elle ne se supprime pas.';
     if (table === 'shows' && allPaymentsOf(id).some(p => !counted(p))) return 'Cette date garde des lignes hors calcul (traçabilité) : elle ne se supprime pas.';

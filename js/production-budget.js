@@ -10,6 +10,7 @@ import { eur2, r2 } from './utils.js';
 import { isCnmLine, isSacemLine, lineValue, lineForecast, linesOf } from './budget.js';
 import { cnmRate } from './corea.js';
 import { byId } from './selectors.js';
+import { payAmount, paymentsOf } from './calc.js';
 
 const num = v => v == null || v === '' ? null : Number(v);
 
@@ -29,6 +30,17 @@ export function prodOf(s){
   if (s?.production?.artbo_share == null) p.artbo_share = s?.contract_type === 'Co-Production' && s?.partner_id ? 50 : 100;
   return p;
 }
+
+/**
+ * Lignes de Factures d'une coproduction (décision d'Anthony du 28/10/2026) : qualifiées EXPLICITEMENT (show_payments.coprod_role) —
+ *   « recette » : recette complémentaire de coproduction, intégrée UNE fois au résultat, encaissée par L'ArtBo ou le coproducteur
+ *   (coprod_holder) ; « hors_resultat » : hors calcul du résultat ; « ailleurs » : déjà comptabilisée ailleurs (billetterie…), jamais
+ *   ajoutée. Aucune requalification automatique ; les lignes « hors calcul » historiques (v1.44) et les anciennes lignes « Taxe CNM »
+ *   ne sont pas concernées (taxes déjà dans les droits et taxes).
+ */
+export const COPROD_ROLES = [['recette', 'Recette complémentaire de coproduction'], ['hors_resultat', 'Hors calcul'], ['ailleurs', 'Déjà comptabilisée ailleurs']];
+export const coprodLines = s => s?.contract_type === 'Co-Production' ? paymentsOf(s.id).filter(p => p.kind !== 'cnm') : [];
+export const coprodReceipts = s => coprodLines(s).filter(p => p.coprod_role === 'recette');
 
 /** Calcul complet, en prévu (real=false) ou en réel (billets vendus, dépenses réelles) */
 export function productionBudget(s, real = false){
@@ -62,13 +74,15 @@ export function productionBudget(s, real = false){
   costLines.forEach(l => { byCat[l.category || 'Autres'] = r2((byCat[l.category || 'Autres'] || 0) + costOf(l)); });
   const costs = r2(costLines.reduce((a, l) => a + costOf(l), 0));
   const promo = r2(net * (num(p.promo_net_pct) || 0) / 100 + dlHt * (num(p.promo_dl_pct) || 0) / 100);
-  const result = r2(net - costs - promo);
-  const resultDl = r2(net + dlHt - costs - promo);
+  // recettes complémentaires de coproduction : une seule fois, prévu comme réel (montant de la ligne)
+  const receipts = coprodReceipts(s), extra = r2(receipts.reduce((a, x) => a + (payAmount(x) || 0), 0));
+  const result = r2(net - costs - promo + extra);
+  const resultDl = r2(net + dlHt - costs - promo + extra);
   const share = (num(p.artbo_share) ?? 100) / 100;
   return {p, tickets, paying, invitations, total: paying + invitations, capacity,
     fill: capacity ? (paying + invitations) / capacity : null, avgPrice: paying ? r2(grossTtc / paying) : 0,
     grossTtc, dlTtc, ht, dlHt, vatAmount: r2(grossTtc - ht), cnm, cnmCalc, cnmReal, cnmRate: cnmRate(s), sacemReal, taxLines, sacem, sacd, sacdMs, taxes, net, netPerTicket: paying ? r2(net / paying) : 0,
-    costs, byCat, promo, result, resultDl, artbo: r2(resultDl * share), partner: r2(resultDl * (1 - share)), share,
+    costs, byCat, promo, extra, receipts, result, resultDl, artbo: r2(resultDl * share), partner: r2(resultDl * (1 - share)), share,
     partnerName: byId('partners', s.partner_id)?.name || 'Coproducteur'};
 }
 
@@ -90,6 +104,8 @@ export { lineValue };
  *   - promotion locale : débiteur contractuel (charge commune, ou une partie seule : hors du résultat partagé, retirée de sa part)
  *     et payeur réel saisis à part, jamais présumés (v1.51) ; payée par l'un, elle compte dans sa position ;
  *   - toute dépense réelle (ou promo) pas encore payée bloque la clôture, comme des recettes de billetterie pas encore encaissées ;
+ *   - recettes complémentaires qualifiées (coprod_role) : dans le résultat une fois, dans la position de celle qui les encaisse ;
+ *     non encaissées, non qualifiées ou sans encaisseur : clôture bloquée ;
  *   - avance (promo payée par l'un, due par l'autre) : comptée une fois dans la position du payeur, retirée de la part du débiteur ;
  *   - chacun a payé ses dépenses réelles (payeur « L'ArtBo » ou « coproducteur », date de paiement remplie) ;
  *   - reversement = part due − position réelle ; celui qui reçoit le reversement facture l'autre (facture préparée à la main).
@@ -129,6 +145,15 @@ export function coprodClose(s){
     if (!['artbo', 'partenaire'].includes(payer)) issues.push('Promotion locale : indique qui l’a réellement payée (L’ArtBo ou le coproducteur)');
     if (!promoPaid) issues.push(`Promotion locale (${eur2(promo)}) pas encore payée : note sa date de paiement avant la clôture`);
   }
+  // recettes complémentaires : chaque ligne qualifiée ; encaisseur connu ; encaissée avant la clôture définitive
+  const unqualified = coprodLines(s).filter(x => !COPROD_ROLES.some(c => c[0] === x.coprod_role));
+  if (unqualified.length) issues.push(`${unqualified.length} ligne${unqualified.length > 1 ? 's' : ''} de Factures à qualifier (recette complémentaire, hors calcul ou déjà comptabilisée ailleurs)`);
+  const rec = r.receipts;
+  if (rec.some(x => !['artbo', 'partenaire'].includes(x.coprod_holder))) issues.push('Recette complémentaire : indique qui doit l’encaisser (L’ArtBo ou le coproducteur)');
+  if (rec.some(x => !(payAmount(x) > 0))) issues.push('Recette complémentaire sans montant HT');
+  const recTodo = rec.filter(x => !x.paid_at);
+  if (recTodo.length) issues.push(`${recTodo.length} recette${recTodo.length > 1 ? 's' : ''} complémentaire${recTodo.length > 1 ? 's' : ''} attendue${recTodo.length > 1 ? 's' : ''} pas encore encaissée${recTodo.length > 1 ? 's' : ''} (${eur2(r2(recTodo.reduce((a, x) => a + (payAmount(x) || 0), 0)))}) : note la date d’encaissement`);
+  const cashedBy = who => r2(rec.filter(x => x.coprod_holder === who && x.paid_at).reduce((a, x) => a + (payAmount(x) || 0), 0));
   const paidBy = who => r2(realLines.filter(l => l.payer === who && l.paid_at).reduce((a, l) => a + Number(l.amount), 0)
     + (promo && payer === who && promoPaid ? promo : 0));
   const realTaxes = r2((r.cnmReal ?? 0) + (r.sacemReal ?? 0));
@@ -137,11 +162,12 @@ export function coprodClose(s){
   // retirée de la part de cette partie
   const result = r.resultDl, own = promo && ['artbo', 'partenaire'].includes(debtor) ? promo : 0, shared = r2(result + own);
   const artboPart = r2(shared * (share ?? 0) / 100 - (debtor === 'artbo' ? own : 0)), partnerPart = r2(result - artboPart);
-  const posArtbo = r2((holder === 'artbo' ? net : 0) - paidBy('artbo')), posPartner = r2((holder === 'partenaire' ? net : 0) - paidBy('partenaire'));
+  const posArtbo = r2((holder === 'artbo' ? net : 0) + cashedBy('artbo') - paidBy('artbo')), posPartner = r2((holder === 'partenaire' ? net : 0) + cashedBy('partenaire') - paidBy('partenaire'));
   const transfer = r2(artboPart - posArtbo);   // > 0 : le coproducteur reverse à L'ArtBo ; < 0 : L'ArtBo reverse au coproducteur
   return {r, issues, warnings, ok: !issues.length, snapshot: {
     holder, recettes_ht: r.ht, dl_ht: r.dlHt, taxes: r.taxes, cnm: r.cnm, sacem: r.sacem, costs: r.costs, promo: r.promo, result, shared_result: shared,
     promo_debtor: debtor, promo_payer: payer, promo_paid_at: p.promo_paid_at || null, receipts_cashed_at: p.receipts_cashed_at || null,
+    extra_receipts: r.extra, cashed_artbo: cashedBy('artbo'), cashed_partner: cashedBy('partenaire'),
     promo_advance: promo && payer && debtor && debtor !== 'commun' && payer !== debtor ? promo : 0,   // avance faite pour le compte de l'autre
     artbo_share: share, artbo_part: artboPart, partner_part: partnerPart, partner: r.partnerName,
     net_encaisse: net, paid_artbo: paidBy('artbo'), paid_partner: paidBy('partenaire'), unpaid, pos_artbo: posArtbo, pos_partner: posPartner,

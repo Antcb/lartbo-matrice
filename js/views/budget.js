@@ -10,7 +10,7 @@ import { S } from '../state.js';
 import { cChk, cIn, cSel } from '../ui/cells.js';
 import { HOLDERS, cnmBearer, cnmOf, coreaCalc, holderLabel, isCorea } from '../corea.js';
 import { esc, eur2, fmtDate, today, r2, pct as fmtPct } from '../utils.js';
-import { PROD_CATS, PROMO_DEBTORS, PROMO_PAYERS, coprodClose, isProductionShow, productionBudget } from '../production-budget.js';
+import { COPROD_ROLES, PROD_CATS, PROMO_DEBTORS, PROMO_PAYERS, coprodClose, coprodLines, isProductionShow, productionBudget } from '../production-budget.js';
 
 const STATUS = {paid:['Payé','ok-badge'], doc:['Pièce reçue','warn-badge'], planned:['Prévu','badge']};
 const badge = l => { const [t,c] = STATUS[lineStatus(l)]; return `<span class="${c}">${t}</span>`; };
@@ -321,6 +321,19 @@ function coreaBlock(s){
 }
 
 /** Coproduction : structure qui encaisse, positions réelles, reversement, clôture du résultat (verrouillée, réouverture tracée) */
+/** Lignes de Factures d'une coproduction : qualification explicite, encaisseur, encaissement (décision du 28/10/2026) */
+function coprodReceiptsTable(s, closed){
+  const ls = coprodLines(s); if (!ls.length) return '';
+  const role = p => closed ? esc((COPROD_ROLES.find(c => c[0] === p.coprod_role) || [, 'non qualifiée'])[1]) : cSel('show_payments', p.id, 'coprod_role', p.coprod_role, COPROD_ROLES);
+  const who = p => p.coprod_role !== 'recette' ? '' : closed ? esc(p.coprod_holder === 'artbo' ? 'L’ArtBoristerie' : p.coprod_holder === 'partenaire' ? 'Le coproducteur' : '—')
+    : cSel('show_payments', p.id, 'coprod_holder', p.coprod_holder, [['artbo', 'L’ArtBoristerie'], ['partenaire', 'Le coproducteur']]);
+  return `<h5 class="block-title">Lignes de Factures de la date</h5>
+    <div class="tbl-wrap"><table class="budget-table"><thead><tr><th>Ligne</th><th class="num">Montant HT</th><th>Qualification</th><th>Encaissée par</th><th>Encaissée le</th></tr></thead><tbody>
+    ${ls.map(p => `<tr><td>${esc(p.label || p.kind)}</td><td class="num nowrap">${eur2(payAmount(p) || 0)}</td><td>${role(p)}</td><td>${who(p)}</td><td>${p.coprod_role !== 'recette' ? '' : p.paid_at ? fmtDate(p.paid_at) : '<span class="warn-txt">pas encore encaissée</span>'}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="muted small">Une recette complémentaire entre une seule fois dans le résultat ; « déjà comptabilisée ailleurs » et « hors calcul » n’y entrent pas. La date d’encaissement se note dans l’onglet Factures (« Payée »).</p>`;
+}
+
 function coprodBlock(s){
   const k = coprodClose(s), x = s.result_closed || k.snapshot, closed = !!s.result_closed_at;
   const side = w => w === 'artbo' ? 'L’ArtBoristerie' : esc(x.partner || 'le coproducteur');
@@ -330,6 +343,7 @@ function coprodBlock(s){
     <div class="steps prod-params">
       <label>Recettes encaissées par</label>${closed ? `<span>${esc(holderLabel(s.ticket_holder))}</span>` : cSel('shows', s.id, 'ticket_holder', s.ticket_holder, holderOpts.filter(h => h[0] !== 'organisateur'))}
     </div>
+    ${coprodReceiptsTable(s, closed)}
     <div class="steps prod-params"><label>Recettes de billetterie encaissées le</label>${closed ? `<span>${x.receipts_cashed_at ? fmtDate(x.receipts_cashed_at) : '—'}</span>` : `<input type="date" data-prod-show="${s.id}" data-prod-path="receipts_cashed_at" value="${esc(k.r.p.receipts_cashed_at || '')}">`}</div>
     ${!k.r.promo && !x.promo ? '<p class="muted small">Aucune promotion locale.</p>' : ''}
     ${x.promo_advance ? `<p class="muted small">Dont avance de promotion locale : ${eur2(x.promo_advance)} payés par ${x.promo_payer === 'artbo' ? 'L’ArtBo' : 'le coproducteur'} pour le compte de ${x.promo_debtor === 'artbo' ? 'L’ArtBo' : 'le coproducteur'} (comptée une seule fois).</p>` : ''}
@@ -347,6 +361,7 @@ function coprodBlock(s){
       ${row(`Part de L’ArtBo (${esc(fmtPct(x.artbo_share ?? 0))})`, x.artbo_part)}
       ${row(`Part de ${esc(x.partner || 'coproducteur')} (${esc(fmtPct(100 - (x.artbo_share ?? 0)))})`, x.partner_part)}
       ${row('Recette nette gardée par la structure qui encaisse', x.net_encaisse)}
+      ${x.extra_receipts ? row('Recettes complémentaires encaissées par L’ArtBo', x.cashed_artbo) + row('Recettes complémentaires encaissées par le coproducteur', x.cashed_partner) : ''}
       ${row('Dépenses payées par L’ArtBo (promotion locale comprise si elle l’a payée)', -x.paid_artbo)}
       ${row('Dépenses payées par le coproducteur', -x.paid_partner)}
       <tr class="bill-total"><td><b>Reversement</b></td><td class="num nowrap">${x.from ? `<b>${eur2(x.transfer)}</b>` : 'aucun'}</td></tr>
@@ -443,6 +458,7 @@ export function productionBudgetHTML(s){
       <tr><td>Coûts de production HT</td><td></td>${two(-f.costs, -r.costs)}</tr>
       <tr><td>Promo locale (sur la recette nette)</td><td class="num">${pin(s, 'promo_net_pct', p.promo_net_pct, 'class="narrow"')} %</td><td colspan="2"></td></tr>
       <tr><td>Promo locale (sur les DL)</td><td class="num">${pin(s, 'promo_dl_pct', p.promo_dl_pct, 'class="narrow"')} %</td>${two(-f.promo, R(-r.promo))}</tr>
+      ${f.extra ? `<tr><td>Recettes complémentaires de coproduction (lignes de Factures qualifiées)</td><td></td>${two(f.extra, R(r.extra))}</tr>` : ''}
       <tr><td><b>Résultat hors DL</b></td><td></td>${two(f.result, R(r.result), 'strong')}</tr>
       <tr class="bill-total"><td><b>Résultat DL inclus</b></td><td></td>${two(f.resultDl, R(r.resultDl), 'strong')}</tr>
       ${f.share < 1 ? `<tr><td>Part L’ArtBo (${esc(fmtPct(p.artbo_share))})</td><td></td>${two(f.artbo, R(r.artbo))}</tr>
