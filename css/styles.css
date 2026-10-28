@@ -436,7 +436,8 @@ td input.invalid,td input.invalid:hover,td input.invalid.invalid:focus,td textar
 
 /* 17 — Tablette & téléphone -------------------------------------------- */
 @media (max-width:1100px){
-  .booking,.workspace{grid-template-columns:1fr}
+  .booking{grid-template-columns:1fr}
+  .workspace{grid-template-columns:minmax(0,1fr)}   /* fiche de suivi : le contenu ne force plus la largeur (v1.52.1) */
   .side{position:static}
   .map-box{max-width:560px}
   .prod-body,.suivi-grid,.struct-hero{grid-template-columns:1fr}
@@ -488,7 +489,6 @@ td input.invalid,td input.invalid:hover,td input.invalid.invalid:focus,td textar
   .modal-body{max-height:none;flex:1}
   .modal-foot{position:sticky;bottom:0;background:var(--panel)}
   .suivi{padding:12px}
-  .workspace{grid-template-columns:minmax(0,1fr)}   /* fiche de suivi : plus de défilement horizontal de la page (v1.52.1) */
   .view-prospects .log-head{flex-wrap:wrap}   /* journal : date, interlocuteur et boutons passent à la ligne au lieu de déborder */
   .view-prospects .btn.icon{flex:none;min-width:var(--h-touch)}
 }
@@ -738,7 +738,7 @@ dialog.mail .mode-note{margin:0}
 }
 @media (pointer:coarse){
   dialog.mail .btn,dialog.mail .rt-btn,dialog.mail .rt-bar select,dialog.mail .mail-grid select,dialog.mail .mail-grid input:not([type=checkbox]),
-  .view-prospects .btn,.view-prospects select,.view-prospects .search{min-height:var(--h-touch)}
+  .view-prospects select,.view-prospects .search{min-height:var(--h-touch)}
   dialog.mail .pills label,dialog.mail .att-chip{min-height:var(--h-touch)}
   dialog.mail input[type=checkbox]{width:var(--chk-touch);height:var(--chk-touch)}
 }
@@ -917,6 +917,8 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
   #main .badge{white-space:normal;height:auto;text-align:left}
   #main .btn{white-space:normal;height:auto;min-height:var(--h);text-align:left}
   #main .btn.sm{min-height:var(--h-xs)}
+  /* Suivi au doigt (v1.52.1, DS §11.1) : même sélecteur #main que ci-dessus, sinon la hauteur minimale de 28 / 36 px l'emporte */
+  @media (pointer:coarse){ #main.view-prospects .btn{min-height:var(--h-touch)} }
   .secret-line{flex-wrap:wrap}
   .tabs,.subtabs{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent)}
 }

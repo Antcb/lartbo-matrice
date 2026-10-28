@@ -30,6 +30,9 @@ for (const [w, h] of [[375, 667], [390, 844], [430, 932]]) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(w);
       // 9. historique (journal) consultable
       await expect(page.locator('main')).toContainText('Journal des échanges');
+      // boutons de la vue Suivi au doigt : 40 px au moins (DS §11.1), petits boutons compris
+      const small = await page.evaluate(() => [...document.querySelectorAll('#main .btn')].filter(b => b.offsetParent && b.getBoundingClientRect().height < 40).map(b => b.textContent.trim()));
+      expect(small).toEqual([]);
       // 3. fenêtre de rédaction : plein écran, une colonne
       await page.evaluate(async () => { (await import('./js/prospection.js')).openProspection('st-1'); });
       const dlg = page.locator('#modal');
