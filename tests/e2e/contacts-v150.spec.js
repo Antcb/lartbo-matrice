@@ -4,7 +4,11 @@ import { test, expect } from '@playwright/test';
 import { openApp, expectClean } from './helpers.js';
 
 const contacts = page => page.evaluate(() => window.__DB.contacts.map(c => ({ id: c.id, email: c.email || null, name: c.display_name })));
-const openContact = (page, id) => page.evaluate(async i => { (await import('./js/forms.js')).editContact(i); }, id);
+const openContact = async (page, id) => {
+  await page.evaluate(async i => { (await import('./js/forms.js')).editContact(i); }, id);
+  // nouveau contact : le curseur se place dans le premier champ 30 ms après l'ouverture ; on attend avant de saisir
+  if (id == null) await expect(page.locator('#modal [name=first_name]')).toBeFocused();
+};
 
 test('v1.50 fenêtre contact : mail invalide refusé sous le champ (pas de bulle du navigateur), rien n’est enregistré', async ({ page }) => {
   const ctx = await openApp(page);
@@ -56,6 +60,8 @@ test('v1.50 création rapide d’un contact (depuis une autre fenêtre) : « Uti
   const ctx = await openApp(page);
   const avant = (await contacts(page)).length;
   const pending = page.evaluate(async () => { const { CREATORS } = await import('./js/ui/autocomplete.js'); await import('./js/forms.js'); return CREATORS.contacts('Camille Ex'); });
+  // la fenêtre place le curseur dans le premier champ 30 ms après l'ouverture : on attend avant de saisir (sinon le texte peut y atterrir)
+  await expect(page.locator('#modal2 [name=first_name]')).toBeFocused();
   await page.locator('#modal2 [name=email]').fill('camille@example.com');
   await page.locator('#modal2 button[type=submit]').click();
   await page.locator('dialog.ask button', { hasText: 'Utiliser ce contact' }).click();

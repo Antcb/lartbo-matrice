@@ -48,10 +48,26 @@ function blobs_(list) {
   }).filter(Boolean);
 }
 
+/** Version texte du mail (délivrabilité, lot V1.52) : mêmes liens que le HTML (« texte (adresse) »), listes, paragraphes, entités */
 function plain_(html) {
-  return String(html || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p)>/gi, '\n').replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\n{3,}/g, '\n\n').trim();
+  return String(html || '')
+    .replace(/<(style|script)[\s\S]*?<\/\1>/gi, '')
+    .replace(/<(title|head)[\s\S]*?<\/\1>/gi, '')
+    .replace(/<a\s[^>]*?\bhref\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi, function (m, q, href, txt) {
+      var t = txt.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim(), h = href.replace(/&amp;/g, '&').replace(/^mailto:/i, '');
+      return !h ? t : !t || t === h ? h : t + ' (' + h + ')';   // lien sans adresse : le texte seul
+    })
+    .replace(/<\/li>/gi, '').replace(/<li[^>]*>/gi, '\n- ').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p|tr|h[1-6]|blockquote|table|ul|ol)>/gi, '\n').replace(/<\/t[dh]>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&#(\d+);/g, function (m, n) { return cp_(Number(n), m); })
+    .replace(/&#x([0-9a-f]+);/gi, function (m, n) { return cp_(parseInt(n, 16), m); })
+    .replace(/&eacute;/g, 'é').replace(/&egrave;/g, 'è').replace(/&agrave;/g, 'à').replace(/&ccedil;/g, 'ç').replace(/&rsquo;/g, '’').replace(/&euro;/g, '€').replace(/&amp;/g, '&')
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
+
+/** Caractère d'une entité numérique ; code invalide : l'entité reste telle quelle (jamais d'erreur qui bloquerait l'envoi) */
+function cp_(n, raw) { return n > 0 && n <= 0x10FFFF ? String.fromCodePoint(n) : raw; }
 
 /** Encodage MIME (Gmail API) : tout le texte en UTF-8, pour garder les accents et les émojis */
 function b64_(bytes) { return Utilities.base64Encode(bytes).replace(/(.{76})/g, '$1\r\n'); }

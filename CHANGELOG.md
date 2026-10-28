@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.52.0 — 28/10/2026
+- Délivrabilité des e-mails (lot V1.52) — pièces jointes du modèle non cochées au premier mail de prospection, taille affichée et question au-delà de 5 Mo, zones « à compléter » contrôlées en prospection, version texte des mails qui garde les liens (scripts Google à redéployer) ; relances inchangées (historique entier) ; test de contacts stabilisé ; anomalies connues de la V1.51 consignées
+
+
 ## 1.51.0 — 27/10/2026
 - Coréalisation, coproduction, taxe CNM (lot V1.51) — tarifs et partage au-delà du break (MG + part du résultat net), clôture du résultat d'une coproduction avec reversements, taxe CNM calculée dans le budget (taux par date, structure qui la supporte, plus de ligne de facturation automatique)
 

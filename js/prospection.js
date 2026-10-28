@@ -9,7 +9,7 @@ import { confirmAsk } from './ui/dialog.js';
 import { render } from './app.js';
 import { insert, purgeStored, remove, save, sb, signedUrl } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
-import { PROSPECT_TAGS, callGoogle, callScript, fill, tplLabel, tplProjects } from './mail.js';
+import { PROSPECT_TAGS, attOk, attSizeHTML, callGoogle, callScript, fill, todoOk, tplLabel, tplProjects } from './mail.js';
 import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName } from './selectors.js';
 import { S, touch } from './state.js';
 import { CONFIRMED_PROD } from './constants.js';
@@ -125,6 +125,9 @@ export async function openProspection(structureId, {prospectId=null}={}){
       if (!m.to) { toast('Indique le destinataire', true); return false; }
       if (!pids.length) { toast('Coche au moins un artiste', true); return false; }
       if (!relance && !m.subject) { toast('Indique l’objet du mail', true); return false; }
+      // délivrabilité (v1.52) : zones « à compléter » restées, pièces jointes lourdes
+      if (!(await todoOk(m))) return false;
+      if (!(await attOk(files))) return false;
       if (send && !(await confirmAsk('Envoyer le mail ?', `Le mail part maintenant à ${m.to}${m.cc ? ` (copie : ${m.cc})` : ''}, depuis ${fromAddr()}.`, 'Envoyer le mail'))) return false;
       try {
         const attachments = await Promise.all(files.filter(f => f.on).map(async f => f.id ? {id: f.id} : {url: await signedUrl(f.path), name: f.name}));
@@ -139,7 +142,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
     }});
   const $ = sel => document.querySelector('#modal ' + sel);
   const current = () => ({to: $('#pr-to').value.trim(), cc: $('#pr-cc').value.trim(), subject: $('#pr-subj')?.value.trim() || '', html: wrapMail($('#pr-body').innerHTML), date: $('#pr-date')?.value || null});
-  const drawFiles = () => { $('#pr-files').innerHTML = files.map((f, i) => `<label class="att-chip"><input type="checkbox" data-att="${i}" ${f.on ? 'checked' : ''}> ${f.path ? '📎' : '🔗'} ${esc(f.name || 'Fichier Drive')}</label>`).join('') || '<span class="muted">aucune</span>'; };
+  const drawFiles = () => { $('#pr-files').innerHTML = files.length ? attSizeHTML(files) + ' ' + files.map((f, i) => `<label class="att-chip"><input type="checkbox" data-att="${i}" ${f.on ? 'checked' : ''}> ${f.path ? '📎' : '🔗'} ${esc(f.name || 'Fichier Drive')}</label>`).join('') : '<span class="muted">aucune</span>'; };
   const drawTpls = () => {
     const list = tplsFor(), cur = $('#pr-tpl').value;
     const grp = {0: 'Artistes cochés', 1: 'Tous les artistes', 2: 'Autres artistes'};
@@ -163,7 +166,9 @@ export async function openProspection(structureId, {prospectId=null}={}){
     const vars = prospectVars(st, {pids, contact, date: $('#pr-date')?.value || null, show: $('#modal .pr-concert')?.hidden ? null : byId('shows', $('#pr-show').value)});   // concert : seulement pour un modèle d'invitation
     if ($('#pr-subj') && (force || !dirty)) $('#pr-subj').value = t ? fill(t.subject, vars, false) : '';
     if (force || !dirty) $('#pr-body').innerHTML = (t ? fill(t.html, vars, true) : '') + signatureOf(sender);
-    if (force){ dirty = false; files = [...(t?.attachments || []).map(a => ({...a, on: true})), ...files.filter(f => f.mine)]; drawFiles(); if (t?.cc) $('#pr-cc').value = t.cc; }
+    // délivrabilité (v1.52) : au premier mail de prospection, les pièces jointes du modèle ne sont pas cochées d'office
+    if (force){ dirty = false; const was = new Map(files.map(f => [f.path || f.id, f.on]));   // cases déjà cochées gardées (changement d'expéditeur…)
+      files = [...(t?.attachments || []).map(a => ({...a, on: was.get(a.path || a.id) ?? !!relance})), ...files.filter(f => f.mine)]; drawFiles(); if (t?.cc) $('#pr-cc').value = t.cc; }
   };
   drawTpls(); if (!pids.length) syncArtists(); $('#pr-tpl').dataset.prev = $('#pr-tpl').value; draw(true);
   // modèle choisi → ses artistes sont cochés (un modèle « tous les artistes » garde la sélection)
@@ -193,13 +198,13 @@ export async function openProspection(structureId, {prospectId=null}={}){
   $('#pr-from').onchange = e => { const before = signatureOf(sender); sender = e.target.value; $('#pr-from-addr').textContent = fromAddr();
     // la signature suit l'expéditeur, sans toucher au texte déjà retouché
     const body = $('#pr-body'); if (before && body.innerHTML.endsWith(before)) body.innerHTML = body.innerHTML.slice(0, -before.length) + signatureOf(sender); else if (!dirty) draw(true); };
-  $('#pr-files').addEventListener('change', e => { const i = e.target.dataset.att; if (i != null) files[i].on = e.target.checked; });
+  $('#pr-files').addEventListener('change', e => { const i = e.target.dataset.att; if (i != null){ files[i].on = e.target.checked; drawFiles(); } });
   $('#pr-up').addEventListener('change', async e => {
     for (const f of e.target.files){
       const path = `mails/prospection/${st.id}/${Date.now()}_${f.name.replace(/[^\w.\-]+/g, '_')}`;
       const {error} = await sb.storage.from('suivi').upload(path, f, {contentType: f.type || 'application/octet-stream'});
       if (error){ toast('Envoi impossible : ' + error.message, true); continue; }
-      files.push({path, name: f.name, on: true, mine: true});
+      files.push({path, name: f.name, size: f.size, on: true, mine: true});
     }
     e.target.value = ''; drawFiles();
   });
