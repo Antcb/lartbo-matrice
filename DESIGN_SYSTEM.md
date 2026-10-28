@@ -259,7 +259,7 @@ Seuils officiels [DÉCIDÉ Q30, Q35] — les autres (900, 720, 640) sont ramené
 | ≤ 1100 px | grilles en une colonne, panneau latéral sous le contenu |
 | ≤ 1023 px | tableaux transformés en fiches empilées |
 | ≤ 760 px (téléphone) | en-tête compact, fenêtres plein écran, champs 16 px, marges 12 px |
-| `pointer:coarse` (écran tactile) | cibles tactiles ≥ 40 px, pas de sélection ni de focus automatiques, calendrier natif |
+| `pointer:coarse` (écran tactile) | cibles tactiles ≥ 40 px (jeton `--h-touch`, v1.52.1), pas de sélection ni de focus automatiques, calendrier natif |
 
 **Tablettes en paysage [DÉCIDÉ Q35]** : de 1 024 à 1 100 px (iPad en paysage compris), les **tableaux classiques sont conservés** (pas de fiches). Ils doivent rester lisibles : aucune information coupée (pas de texte tronqué sans moyen de le lire, pas de colonne masquée) ; si le tableau est plus large que l'écran, **défilement horizontal** dans son cadre `.tbl-wrap` (`overflow:auto`), la page elle-même ne défile jamais horizontalement. [CORRECTION] aujourd'hui les fiches s'appliquent dès 1 024 px (`@media (max-width:1024px)`).
 [NOUVELLE] Un nouveau code n'introduit aucun autre seuil.
@@ -274,8 +274,8 @@ Seuils officiels [DÉCIDÉ Q30, Q35] — les autres (900, 720, 640) sont ramené
 - Les règles ≤ 1024 de l'en-tête écrasent celles ≤ 760.
 - `.view-head .search` garde 180–220 px sur téléphone ; `.near-form .search` 260 px.
 - `.side` garde un défilement interne en tablette.
-- `dialog.mail` à 96vw au lieu de 100vw sur téléphone.
-- Boutons `.btn.sm` à 28 px au doigt (cible trop petite).
+- ~~`dialog.mail` à 96vw au lieu de 100vw sur téléphone.~~ Corrigé v1.52.1 (fenêtre de mail plein écran, une colonne, contenu qui défile).
+- Boutons `.btn.sm` à 28 px au doigt (cible trop petite). Corrigé v1.52.1 pour la Prospection (vue Suivi et fenêtre de mail) : jeton `--h-touch` (40 px) sur écran tactile ; reste à étendre aux autres vues.
 
 ---
 
