@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.52.1 — 28/10/2026
+- Prospection sur iPhone (V1.52.1) — fenêtre de mail plein écran en une colonne : le choix du modèle n’est plus hors de l’écran, tout le contenu défile, boutons Envoyer / Brouillon / Annuler toujours visibles en bas, cibles tactiles de 40 px ; fiche de suivi sans défilement horizontal. Interface seulement : aucun circuit d’envoi modifié
+
+
 ## 1.52.0 — 28/10/2026
 - Délivrabilité des e-mails (lot V1.52) — pièces jointes du modèle non cochées au premier mail de prospection, taille affichée et question au-delà de 5 Mo, zones « à compléter » contrôlées en prospection, version texte des mails qui garde les liens (scripts Google à redéployer) ; relances inchangées (historique entier) ; test de contacts stabilisé ; anomalies connues de la V1.51 consignées
 
