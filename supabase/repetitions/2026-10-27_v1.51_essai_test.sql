@@ -117,7 +117,8 @@ begin
     update show_payments set paid_at = current_date where id = r1;   -- encaissement : libre
     insert into show_payments (show_id, kind, label, amount, sort) values (c2, 'autre', 'Facture du reversement', 500, 70) returning id into r2;   -- non qualifiée : libre
     perform public.reopen_result(c2, 'Essai v1.51 partie 7');
-    update show_payments set amount = 2100 where id = r1;
+    update show_payments set coprod_role = 'hors_resultat' where id = r2;   -- rouvert : qualification de nouveau libre
+    -- (r1, encaissée = facture émise : son montant reste verrouillé par show_payments_emitted_guard, comme toute facture payée)
   end;
 
   -- 5. aucune ligne de facturation existante modifiée
