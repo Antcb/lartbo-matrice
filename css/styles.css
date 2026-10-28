@@ -20,7 +20,7 @@
   /* hauteurs communes : champ et bouton (36), champ dans un tableau (32), petit bouton (28), pastille (26) */
   --fs-h1:34px; --fs-h2:22px; --fs-h3:18px;
   --sp-1:6px; --sp-2:12px; --sp-3:18px;
-  --h:36px; --h-sm:32px; --h-xs:28px; --h-pill:26px; --h-touch:40px;   /* cible tactile minimale (DS §11.1) */
+  --h:36px; --h-sm:32px; --h-xs:28px; --h-pill:26px; --h-touch:40px; --chk-touch:20px;   /* cible tactile minimale, case à cocher au doigt (DS §11.1) */
   --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235B677D'/%3E%3C/svg%3E");
 }
 
@@ -488,6 +488,9 @@ td input.invalid,td input.invalid:hover,td input.invalid.invalid:focus,td textar
   .modal-body{max-height:none;flex:1}
   .modal-foot{position:sticky;bottom:0;background:var(--panel)}
   .suivi{padding:12px}
+  .workspace{grid-template-columns:minmax(0,1fr)}   /* fiche de suivi : plus de défilement horizontal de la page (v1.52.1) */
+  .view-prospects .log-head{flex-wrap:wrap}   /* journal : date, interlocuteur et boutons passent à la ligne au lieu de déborder */
+  .view-prospects .btn.icon{flex:none;min-width:var(--h-touch)}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
@@ -710,8 +713,35 @@ dialog.mail .rt-bar{margin-top:2px}
 dialog.mail .mail-preview{flex:1 1 auto;min-height:160px;overflow:auto}
 dialog.mail .help{font-size:12px;margin:0}
 dialog.mail .mode-note{margin:0}
-@media (max-width:900px){ dialog.mail .mail-grid{grid-template-columns:96px minmax(0,1fr)} dialog.mail .mail-grid>.pr-arts,dialog.mail .mail-grid>.mail-to,dialog.mail .mail-grid>.pr-concert{grid-column:auto} }
-@media (max-width:720px){ dialog.mail{height:100dvh} dialog.mail .mail-grid{grid-template-columns:1fr} dialog.mail .mail-preview{min-height:240px} }
+@media (max-width:900px){ dialog.mail .mail-grid{grid-template-columns:96px minmax(0,1fr)} dialog.mail .mail-grid>.pr-arts,dialog.mail .mail-grid>.mail-to,dialog.mail .mail-grid>.pr-concert,dialog.mail .mail-grid>.pr-date{grid-column:auto} }   /* .pr-date : ne force plus 3 colonnes (v1.52.1) */
+/* téléphone (v1.52.1, seuil officiel 760 — remplace l'ancienne règle à 720) : plein écran, une colonne, tout le contenu défile,
+   boutons d'action en bas toujours dans l'écran ; écran tactile : cibles de 40 px (DS §11.1) */
+@media (max-width:760px){
+  dialog.mail,dialog.mail.wide{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh}
+  dialog.mail .modal-head{padding:calc(var(--sp-2) + env(safe-area-inset-top)) var(--sp-2) var(--sp-2)}
+  dialog.mail .modal-head h2{font-size:var(--fs-h3);overflow-wrap:anywhere}
+  dialog.mail .modal-body{overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:var(--sp-2)}
+  dialog.mail .mail-wrap{flex:none}
+  dialog.mail .mail-grid{grid-template-columns:minmax(0,1fr)}
+  dialog.mail .mail-grid>*{grid-column:1/-1;min-width:0}
+  dialog.mail .mail-grid>label{margin-top:var(--sp-1)}
+  dialog.mail .mail-grid select,dialog.mail .mail-grid input:not([type=checkbox]):not(.dt-val),dialog.mail .mail-to select{width:100%;min-width:0;max-width:100%;height:var(--h-touch);padding:0 10px;border:1px solid var(--line);border-radius:var(--r);background-color:var(--panel);color:var(--ink)}   /* 10 px : marge habituelle des champs (.field) */
+  dialog.mail .mail-grid select:disabled{background-color:var(--soft);color:var(--muted)}
+  dialog.mail .rt-bar select,dialog.mail .rt-btn{height:var(--h-touch)}
+  dialog.mail .pr-date,dialog.mail .pr-concert{flex-wrap:wrap}
+  dialog.mail .mail-preview{flex:none;min-height:240px;overflow:visible}   /* 240 px : hauteur déjà retenue pour le téléphone avant la v1.52.1 */
+  dialog.mail .ml-att{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center}
+  dialog.mail .att-chip{max-width:100%;overflow-wrap:anywhere}
+  dialog.mail .modal-foot{flex-wrap:wrap;padding:var(--sp-2) var(--sp-2) calc(var(--sp-2) + env(safe-area-inset-bottom))}
+  dialog.mail .modal-foot .btn{flex:1 1 40%;height:var(--h-touch)}
+  dialog.mail .modal-foot .btn.primary{order:-1;flex-basis:100%}
+}
+@media (pointer:coarse){
+  dialog.mail .btn,dialog.mail .rt-btn,dialog.mail .rt-bar select,dialog.mail .mail-grid select,dialog.mail .mail-grid input:not([type=checkbox]),
+  .view-prospects .btn,.view-prospects select,.view-prospects .search{min-height:var(--h-touch)}
+  dialog.mail .pills label,dialog.mail .att-chip{min-height:var(--h-touch)}
+  dialog.mail input[type=checkbox]{width:var(--chk-touch);height:var(--chk-touch)}
+}
 .log-mail{margin-top:8px;padding:12px 14px;border:1px solid var(--line-2);border-radius:var(--r);background:#fff;color:#000;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.45;overflow-x:auto;isolation:isolate;contain:paint}
 .log-mail img{max-width:100%;height:auto}
 .draft-bar{grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--r);background:#FFF1D6;color:#8A5A00;font-size:13px;font-weight:600}
@@ -902,37 +932,3 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .lock-set{border:0;margin:0;padding:0;min-width:0}
 .corea-block,.coprod-block{margin-top:var(--sp-3)}
 .cnm-block{margin:var(--sp-2) 0}
-
-/* ── Prospection sur téléphone (v1.52.1) — DS §11 : fenêtre de mail plein écran, une seule colonne, tout le contenu défile,
-   boutons d'action en bas toujours visibles, cibles tactiles ≥ 40 px. Ordinateur inchangé (règles limitées à ≤ 760 px / tactile). ── */
-@media (max-width:900px){ dialog.mail .mail-grid>.pr-date{grid-column:auto} }   /* « Date proposée » ne force plus 3 colonnes */
-@media (max-width:760px){
-  dialog.mail,dialog.mail.wide{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh}
-  dialog.mail .modal-head{padding:calc(var(--sp-2) + env(safe-area-inset-top)) var(--sp-2) var(--sp-2)}
-  dialog.mail .modal-head h2{font-size:var(--fs-h3);overflow-wrap:anywhere}
-  dialog.mail .modal-body{overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:var(--sp-2)}
-  dialog.mail .mail-wrap{flex:none}
-  dialog.mail .mail-grid{grid-template-columns:minmax(0,1fr)}
-  dialog.mail .mail-grid>*{grid-column:1/-1;min-width:0}
-  dialog.mail .mail-grid>label{margin-top:var(--sp-1)}
-  dialog.mail .mail-grid select,dialog.mail .mail-grid input:not([type=checkbox]):not(.dt-val),dialog.mail .mail-to select{width:100%;min-width:0;max-width:100%;height:var(--h-touch);padding:0 10px;border:1px solid var(--line);border-radius:var(--r);background-color:var(--panel);color:var(--ink)}
-  dialog.mail .mail-grid select:disabled{background-color:var(--soft);color:var(--muted)}
-  dialog.mail .rt-bar select,dialog.mail .rt-btn{height:var(--h-touch)}
-  dialog.mail .modal-foot .btn{height:var(--h-touch)}
-  dialog.mail .pr-date,dialog.mail .pr-concert{flex-wrap:wrap}
-  dialog.mail .mail-preview{flex:none;min-height:240px;overflow:visible}
-  dialog.mail .ml-att{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center}
-  dialog.mail .att-chip{max-width:100%;overflow-wrap:anywhere}
-  dialog.mail .modal-foot{flex-wrap:wrap;padding:var(--sp-2) var(--sp-2) calc(var(--sp-2) + env(safe-area-inset-bottom))}
-  dialog.mail .modal-foot .btn{flex:1 1 40%}
-  dialog.mail .modal-foot .btn.primary{order:-1;flex-basis:100%}
-  .workspace{grid-template-columns:minmax(0,1fr)}   /* fiche de suivi : plus de défilement horizontal de la page */
-  .view-prospects .log-head{flex-wrap:wrap}   /* journal : date, interlocuteur et boutons passent à la ligne au lieu de déborder */
-  .view-prospects .btn.icon{flex:none;min-width:var(--h-touch)}
-}
-@media (pointer:coarse){
-  dialog.mail .btn,dialog.mail .rt-btn,dialog.mail .rt-bar select,dialog.mail .mail-grid select,dialog.mail .mail-grid input:not([type=checkbox]),
-  .view-prospects .btn,.view-prospects select,.view-prospects .search{min-height:var(--h-touch)}
-  dialog.mail .pills label,dialog.mail .att-chip{min-height:var(--h-touch)}
-  dialog.mail input[type=checkbox]{width:20px;height:20px}
-}
