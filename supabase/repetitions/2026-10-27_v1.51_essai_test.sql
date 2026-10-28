@@ -98,10 +98,32 @@ begin
     if ok then raise exception 'ECHEC 6f : contrat changé alors que la base de la commission émise en dépend'; end if;
   end;
 
+  -- 7. recettes complémentaires de coproduction : qualification libre avant clôture, verrouillée après ; date d'encaissement libre ;
+  --    ligne non qualifiée (ex. facture du reversement) libre après clôture
+  declare r1 uuid; r2 uuid;
+  begin
+    insert into show_payments (show_id, kind, label, amount, sort, coprod_role, coprod_holder) values (c2, 'autre', 'Apport coproducteur', 2000, 60, 'recette', 'partenaire') returning id into r1;
+    begin update show_payments set coprod_role = 'invente' where id = r1; ok := true; exception when others then ok := false; end;
+    if ok then raise exception 'ECHEC 7 : qualification inconnue acceptée'; end if;
+    perform public.close_result(c2, '{"result":1}');
+    begin update show_payments set amount = 3000 where id = r1; ok := true; exception when others then ok := false; end;
+    if ok then raise exception 'ECHEC 7b : montant d''une recette qualifiée modifié après clôture'; end if;
+    begin update show_payments set coprod_role = 'ailleurs' where id = r1; ok := true; exception when others then ok := false; end;
+    if ok then raise exception 'ECHEC 7c : requalification après clôture'; end if;
+    begin delete from show_payments where id = r1; ok := true; exception when others then ok := false; end;
+    if ok then raise exception 'ECHEC 7d : recette qualifiée supprimée après clôture'; end if;
+    begin insert into show_payments (show_id, kind, label, amount, coprod_role) values (c2, 'autre', 'Ajout', 10, 'recette'); ok := true; exception when others then ok := false; end;
+    if ok then raise exception 'ECHEC 7e : recette ajoutée après clôture'; end if;
+    update show_payments set paid_at = current_date where id = r1;   -- encaissement : libre
+    insert into show_payments (show_id, kind, label, amount, sort) values (c2, 'autre', 'Facture du reversement', 500, 70) returning id into r2;   -- non qualifiée : libre
+    perform public.reopen_result(c2, 'Essai v1.51 partie 7');
+    update show_payments set amount = 2100 where id = r1;
+  end;
+
   -- 5. aucune ligne de facturation existante modifiée
   select md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) into apres from show_payments x where x.show_id not in (c1, c2, c3);
   if avant <> apres then raise exception 'ECHEC 5 : lignes de facturation existantes modifiées'; end if;
 
-  raise exception 'ESSAI v1.51 RÉUSSI : pas de ligne CNM à la confirmation, clôture réservée et tracée, montants verrouillés, paiements libres, réouverture motivée, commission coréalisation sur MG + part validée — transaction annulée';
+  raise exception 'ESSAI v1.51 RÉUSSI : pas de ligne CNM à la confirmation, clôture réservée et tracée, montants verrouillés, paiements libres, réouverture motivée, commission coréalisation sur MG + part validée, recettes complémentaires verrouillées après clôture — transaction annulée';
 end $e$;
 rollback;

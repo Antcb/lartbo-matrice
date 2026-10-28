@@ -429,3 +429,50 @@ test('v1.51 clôture de coproduction : recettes pas encore encaissées bloquante
   expect(k.x.artbo_part + k.x.partner_part).toBe(k.x.pos_artbo + k.x.pos_partner);
   expectClean(ctx);
 });
+
+// ─────────── Décision du 28/10/2026 : recettes complémentaires de coproduction qualifiées explicitement ───────────
+test('v1.51 coproduction : recettes complémentaires qualifiées — impayée bloquante malgré la billetterie encaissée ; une seule fois ; « ailleurs » et « hors calcul » sans effet ; deux encaisseurs ; historique intact', async ({ page }) => {
+  const ctx = await openApp(page);
+  const P = (id, label, amount, extra = {}) => ({ id, show_id: 'cp-9', kind: 'autre', label, amount, sort: 60, ...extra });
+  await seed(page, { partners: [{ id: 'pa-x', name: 'Coprod Fictive' }], shows: [{ ...COPRO, ticket_holder: 'artbo' }],
+    budget_lines: [{ id: 'cl-1', show_id: 'cp-9', project_id: 'art-a', category: 'Salle', label: 'Location salle', amount: 3000, payer: 'partenaire', paid_at: `${Y}-10-02`, sort: 1 }],
+    show_payments: [P('r1', 'Apport coproducteur', 2000, { coprod_role: 'recette', coprod_holder: 'partenaire' }),
+      P('r2', 'Subvention', 1000, { coprod_role: 'recette', coprod_holder: 'artbo', paid_at: `${Y}-10-04` }),
+      P('r3', 'Billetterie reversée par la salle', 500, { coprod_role: 'ailleurs' }), P('r4', 'Divers', 300, { coprod_role: 'hors_resultat' }),
+      P('u1', 'Ligne à qualifier', 700), P('h1', 'Ancien acompte (import)', 999, { kind: 'acompte', hors_calcul: 'Import historique' })] });
+  const before = await page.evaluate(() => JSON.stringify(window.__DB.show_payments.filter(p => p.id !== 'u1')));
+  const close = () => page.evaluate(async () => { const { coprodClose } = await import('./js/production-budget.js'), { byId } = await import('./js/selectors.js');
+    const k = coprodClose(byId('shows', 'cp-9')); return { ok: k.ok, issues: k.issues.join(' | '), x: k.snapshot }; });
+  let k = await close();
+  // ligne non qualifiée : jamais ajoutée d'office ; à qualifier avant la clôture
+  expect(k.issues).toContain('1 ligne de Factures à qualifier');
+  // billetterie encaissée (date notée) mais apport du coproducteur pas encore encaissé : clôture refusée
+  expect(k.issues).toMatch(/1 recette complémentaire attendue pas encore encaissée \(2\s000,00/);
+  expect(k.issues).not.toContain('pas encore notées encaissées');
+  // résultat prévisionnel consultable : 10 000 − 350 − 3 000 + 2 000 + 1 000 = 9 650 (500 « ailleurs », 300 « hors calcul », 999 hors calcul historique et 700 non qualifiés exclus)
+  expect([k.ok, k.x.result, k.x.extra_receipts]).toEqual([false, 9650, 3000]);
+  // qualification explicite à l'écran
+  await openBudget(page, 'cp-9');
+  await page.locator('.coprod-block select[data-id="u1"][data-f="coprod_role"]').selectOption('ailleurs');
+  await expect.poll(() => page.evaluate(() => window.__DB.show_payments.find(p => p.id === 'u1').coprod_role)).toBe('ailleurs');
+  await expect(page.locator('.coprod-block')).toContainText('pas encore encaissée');
+  // apport encaissé : clôture possible ; une seule fois dans le résultat ; position de chaque structure encaissante
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js'); for (const db of [S.db, window.__DB]) db.show_payments.find(p => p.id === 'r1').paid_at = '2026-10-07'; touch('show_payments'); });
+  k = await close();
+  // parts 4 825 / 4 825 ; L'ArtBo : 9 650 net billetterie + 1 000 subvention = 10 650 ; coproducteur : 2 000 − 3 000 payés = −1 000 ; L'ArtBo reverse 5 825
+  expect(k.ok).toBe(true);
+  expect(k.x).toMatchObject({ result: 9650, extra_receipts: 3000, artbo_part: 4825, partner_part: 4825, cashed_artbo: 1000, cashed_partner: 2000,
+    pos_artbo: 10650, pos_partner: -1000, transfer: 5825, from: 'artbo', to: 'partenaire' });
+  expect(k.x.pos_artbo + k.x.pos_partner).toBe(k.x.result);
+  // historique intact : aucune ligne requalifiée ni modifiée automatiquement
+  expect(await page.evaluate(() => JSON.stringify(window.__DB.show_payments.filter(p => p.id !== 'u1').map(p => p.id === 'r1' ? { ...p, paid_at: undefined } : p))))
+    .toBe(JSON.stringify(JSON.parse(before).map(p => p.id === 'r1' ? { ...p, paid_at: undefined } : p)));
+  // après clôture : recette qualifiée verrouillée (montant, qualification) ; encaissement et ligne non qualifiée libres (comme la base)
+  await set(page, 'cp-9', { result_closed_at: '2026-10-28T08:00:00Z' });
+  const locks = await page.evaluate(async () => { const c = await import('./js/calc.js');
+    return [c.changeBlocked('show_payments', 'r1', { amount: 1 }), c.changeBlocked('show_payments', 'r1', { coprod_role: 'ailleurs' }), c.changeBlocked('show_payments', 'r1', null),
+      c.changeBlocked('show_payments', 'r1', { paid_at: '2026-10-08' }), c.changeBlocked('show_payments', 'u1', { label: 'x' })]; });
+  expect(locks.slice(0, 3).every(m => /recettes qualifiées de cette date sont verrouillées/.test(m))).toBe(true);
+  expect(locks.slice(3)).toEqual(['', '']);
+  expectClean(ctx);
+});

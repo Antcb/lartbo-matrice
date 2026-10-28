@@ -8,6 +8,7 @@
 -- 3. Coproduction : « Clôturer le résultat » (résultat définitif enregistré, montants verrouillés), réouverture explicite,
 --    motivée et tracée (table result_closures, jamais modifiée ni effacée) ; date de paiement réel du reversement.
 -- 4. Commission en coréalisation : base = MG + part du résultat validée (shows.corea_share) ; payment_amount_for mise à jour.
+-- 5. Coproduction : qualification explicite des lignes de Factures (show_payments.coprod_role / coprod_holder), verrou après clôture.
 -- Aucune donnée existante n'est modifiée (colonnes ajoutées vides ; aucun update / delete).
 -- Retour arrière : voir la fin du fichier.
 -- =====================================================================================================
@@ -263,9 +264,41 @@ revoke all on function public.corea_share_guard() from public, anon, authenticat
 drop trigger if exists corea_share_guard on public.shows;
 create trigger corea_share_guard before update of corea_share, contract_type on public.shows for each row execute function public.corea_share_guard();
 
+-- ─────────────── 5. Coproduction : recettes complémentaires qualifiées explicitement (décision d'Anthony du 28/10/2026) ───────────────
+-- Une ligne de Factures d'une coproduction ne devient JAMAIS d'office une recette du résultat : elle est qualifiée à la main
+-- (recette complémentaire / hors calcul / déjà comptabilisée ailleurs) ; une recette complémentaire a sa structure qui l'encaisse.
+-- Colonnes ajoutées vides : aucune ligne existante requalifiée. Après clôture, une ligne qualifiée est verrouillée (montant,
+-- qualification, encaisseur), sa date d'encaissement reste libre ; une ligne non qualifiée (ex. facture du reversement) reste libre.
+alter table public.show_payments add column if not exists coprod_role text check (coprod_role is null or coprod_role in ('recette', 'hors_resultat', 'ailleurs'));
+alter table public.show_payments add column if not exists coprod_holder text check (coprod_holder is null or coprod_holder in ('artbo', 'partenaire'));
+comment on column public.show_payments.coprod_role is 'Coproduction : recette (complémentaire, dans le résultat une fois) / hors_resultat / ailleurs (déjà comptée) ; vide = non qualifiée';
+comment on column public.show_payments.coprod_holder is 'Coproduction : structure qui doit encaisser la recette complémentaire (artbo / partenaire)';
+
+create or replace function public.result_lock_payments() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if not exists (select 1 from shows where result_closed_at is not null
+                  and id in (case when tg_op <> 'INSERT' then old.show_id end, case when tg_op <> 'DELETE' then new.show_id end)) then
+    return coalesce(new, old);
+  end if;
+  if (tg_op = 'INSERT' and new.coprod_role is not null) or (tg_op = 'DELETE' and old.coprod_role is not null)
+     or (tg_op = 'UPDATE' and (old.coprod_role is not null or new.coprod_role is not null) and (
+          new.coprod_role is distinct from old.coprod_role or new.coprod_holder is distinct from old.coprod_holder
+       or new.amount is distinct from old.amount or new.pct is distinct from old.pct or new.kind is distinct from old.kind
+       or new.show_id is distinct from old.show_id)) then
+    raise exception 'Résultat clôturé : les recettes qualifiées de cette date sont verrouillées. Rouvre le résultat (avec un motif) pour les modifier.';
+  end if;
+  return coalesce(new, old);
+end $$;
+revoke all on function public.result_lock_payments() from public, anon, authenticated, service_role;
+drop trigger if exists result_lock_payments on public.show_payments;
+create trigger result_lock_payments before insert or update or delete on public.show_payments
+  for each row execute function public.result_lock_payments();
+
 -- Retour arrière (après accord) :
 --   drop trigger result_lock_budget_lines on budget_lines ; drop trigger result_lock_shows on shows ;
 --   drop function result_lock_budget_lines(), result_lock_shows(), close_result(uuid, jsonb), reopen_result(uuid, text) ;
+--   drop trigger result_lock_payments on show_payments ; drop function result_lock_payments() ;
 --   drop trigger corea_share_guard on shows ; drop function corea_share_guard() ; recréer payment_amount_for dans sa version v1.46
 --   (la colonne corea_share vide redonne de toute façon le calcul sur le cachet seul) ; puis drop function corea_share_of(uuid) ;
 --   recréer on_show_confirmed dans sa version v1.46 (supabase/migrations/2026-10-27_v1.46_finances.sql) ;
