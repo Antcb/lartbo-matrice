@@ -165,13 +165,16 @@ test('v1.56 projets les plus utilisés en premier : filtre, champ « Artiste »,
 
 // Contrôles indépendants de la police (la police Geist n'est pas chargée pendant les tests : polices de remplacement différentes
 // selon la machine — relecture V1.56, B1) : on compare la largeur du texte à celle de son champ, dans la police réellement utilisée.
-const coupes = page => page.evaluate(() => [...document.querySelectorAll('main input[type=number], main input.num-in')]
-  .filter(i => i.value && i.offsetParent && i.scrollWidth > i.clientWidth + 1).map(i => `${i.dataset.f}=${i.value}`));
+const coupes = page => page.evaluate(() => [...document.querySelectorAll('main input[type=number], main input.num-in, main input.dt-txt')]
+  .filter(i => i.value && i.offsetParent && i.scrollWidth > i.clientWidth + 1).map(i => `${i.dataset.f || i.className}=${i.value}`));
 async function grandsNombres(page) {
   await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
     for (const db of [S.db, window.__DB]) for (const s of db.shows) Object.assign(s, { fee_ht: 1234567.89, capacity: 12500, tickets_sold: 12345, break_even: 4500, invitations: 250,
       ticketing_enabled: true, status: s.status === 'Intérêt Salle' ? s.status : 'Confirmée Salle' });
-    touch('shows'); });
+    // dates remplies (envoyée, relancée, payée) : « 06/11/2026 » doit rester entier (relecture V1.56.1)
+    for (const db of [S.db, window.__DB]) for (const p of db.show_payments) if (['acompte', 'solde'].includes(p.kind)) Object.assign(p, { sent_at: '2026-11-06', reminded_at: '2026-11-28', paid_at: '2026-12-08' });
+    for (const db of [S.db, window.__DB]) db.budget_lines.push({ id: 'bl-gros', show_id: 'sh-1', category: 'Technique', label: 'Location son', qty: 2, unit_cost: 1234.56 });
+    touch('shows'); touch('show_payments'); touch('budget_lines'); });
 }
 const ouvrir = (page, view, tab) => page.evaluate(async ([view, tab]) => { const { S } = await import('./js/state.js'); const app = await import('./js/app.js');
   app.go(view); if (tab){ S.openProd = new Set(['sh-1']); S.tab['prod:sh-1'] = tab; } app.render(); }, [view, tab]);
@@ -179,13 +182,14 @@ const ouvrir = (page, view, tab) => page.evaluate(async ([view, tab]) => { const
 test('v1.56 visuel : grands montants et grandes jauges lisibles en entier (factures, budget, Ticketing) sur ordinateur', async ({ page }) => {
   const ctx = await openApp(page);
   await grandsNombres(page);
-  for (const [v, t] of [['production', 'factures'], ['production', 'budget'], ['ticketing']]) {
+  for (const [v, t] of [['production', 'factures'], ['production', 'budget'], ['ticketing'], ['todo']]) {
     await ouvrir(page, v, t);
     await expect(page.locator('main')).toBeVisible();
     expect(await coupes(page), `${v} ${t || ''}`).toEqual([]);
   }
   await ouvrir(page, 'production', 'factures');
-  expect(await page.locator('.prod-bill input[data-f=amount_ttc]').evaluateAll(l => l.map(i => i.value))).toContain('1302469.12');
+  expect(await page.locator('.prod-bill input[data-f=amount_ttc]').evaluateAll(l => l.map(i => i.value))).toContain('651234.56');
+  expect(await page.locator('.prod-bill input.dt-txt').evaluateAll(l => l.filter(i => i.value === '06/11/2026').length)).toBeGreaterThan(0);   // dates bien contrôlées
   expectClean(ctx);
 });
 
@@ -194,7 +198,7 @@ test.describe('téléphone', () => {
   test('v1.56 visuel : grands montants et jauge à 5 chiffres lisibles sur téléphone (fiches)', async ({ page }) => {
     const ctx = await openApp(page);
     await grandsNombres(page);
-    for (const [v, t] of [['production', 'factures'], ['production', 'budget'], ['ticketing']]) {
+    for (const [v, t] of [['production', 'factures'], ['production', 'budget'], ['ticketing'], ['todo']]) {
       await ouvrir(page, v, t);
       await expect(page.locator('main')).toBeVisible();
       expect(await coupes(page), `${v} ${t || ''}`).toEqual([]);

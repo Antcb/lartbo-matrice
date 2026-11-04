@@ -214,7 +214,7 @@ td.num > :is(input,.dt){margin-right:-9px}
 /* Date : saisie au clavier + calendrier */
 .dt{display:inline-flex;align-items:center;position:relative;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--panel);height:var(--h-sm)}
 td .dt{border-color:transparent;background:transparent}
-@media (min-width:1025px){ td .dt-txt{width:calc(9ch + 8px)} .prod-bill td :is(input[type=number],input.num-in).narrow{width:calc(5ch + 20px)} }   /* tableaux (hors fiches) : date entière (8 chiffres et 2 barres ≤ 9 ch) ; factures : % et TVA (« 33,33 » au plus) plus étroits */
+@media (min-width:1025px){ .prod-bill td :is(input[type=number],input.num-in).narrow{width:calc(5ch + 20px)} }   /* factures sur ordinateur : % et TVA (« 33,33 » au plus) plus étroits ; dates de tableau inchangées (96 px, entières dans toutes les polices — relecture V1.56.1) */
 td .dt:hover{border-color:var(--line)}
 .dt:focus-within{border-color:var(--brand-2);background:var(--panel)}
 .dt-txt{border:0!important;background:transparent!important;width:96px;padding:0 0 0 8px!important;font-variant-numeric:tabular-nums;outline:none;height:100%}
@@ -880,7 +880,7 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .budget-table .qty-line{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .budget-table .qty-line .x{color:var(--muted)}
 .budget-table .qty-line b{min-width:76px;text-align:right;font-variant-numeric:tabular-nums}
-.budget-table input.narrow2{width:74px}
+.budget-table input.narrow2{width:calc(7ch + 20px)}   /* prix unitaire « 1234,56 » entier, quelle que soit la police */
 .budget-table input.doc-no{min-width:80px;width:110px}
 .budget-table tr.has-doc td{background:#FFF9EC}
 .budget-table .calc-note{font-size:11px;margin-top:2px}
