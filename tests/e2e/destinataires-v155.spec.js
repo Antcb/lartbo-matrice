@@ -75,8 +75,11 @@ test('v1.55.1 relecture B1 : après un brouillon restauré, les pastilles disent
   await seed(page, DATA);
   await open(page, 'sd-show-1');
   const to = page.locator('#ml-to'), alex = page.locator('[data-rcpt-for="ml-to"][data-rcpt-add="alex@exemple.invalid"]');
+  // le suivi du brouillon démarre 60 ms après l'ouverture (js/ui/drafts.js watchModal) : on attend qu'il soit en place
+  await page.waitForTimeout(200);
   await alex.click();
   await expect(to).toHaveValue('alex@exemple.invalid');
+  await expect.poll(() => page.evaluate(() => Object.keys(localStorage).some(k => k.includes('draft.') && localStorage.getItem(k).includes('alex@exemple.invalid')))).toBe(true);
   await page.locator('#modal [data-act=closeModal]').first().click();
   // réouverture : brouillon restauré, la pastille indique bien l'adresse présente
   await open(page, 'sd-show-1');
