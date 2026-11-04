@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.56.1 — 04/11/2026
+- Relecture V1.56 : largeurs des champs indépendantes de la police (montants, dates), jauges à 5 chiffres entières sur téléphone
+
+
 ## 1.56.0 — 04/11/2026
 - Suite du 04/11 : structures inactives hors des nouvelles sélections de suivi, artiste sélectionné visible et désélectionnable, textes saisis jamais remplacés sans question, montants lisibles dans les factures et le budget d'une date
 

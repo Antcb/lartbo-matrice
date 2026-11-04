@@ -163,17 +163,42 @@ test('v1.56 projets les plus utilisés en premier : filtre, champ « Artiste »,
   expectClean(ctx);
 });
 
-test('v1.56 visuel : grands montants lisibles en entier dans les factures d’une date, tableau sans défilement à 1 440 px', async ({ page }) => {
-  const ctx = await openApp(page);
+// Contrôles indépendants de la police (la police Geist n'est pas chargée pendant les tests : polices de remplacement différentes
+// selon la machine — relecture V1.56, B1) : on compare la largeur du texte à celle de son champ, dans la police réellement utilisée.
+const coupes = page => page.evaluate(() => [...document.querySelectorAll('main input[type=number], main input.num-in')]
+  .filter(i => i.value && i.offsetParent && i.scrollWidth > i.clientWidth + 1).map(i => `${i.dataset.f}=${i.value}`));
+async function grandsNombres(page) {
   await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
-    for (const db of [S.db, window.__DB]) Object.assign(db.shows.find(s => s.id === 'sh-1'), { fee_ht: 1234567.89 }); touch('shows');
-    const app = await import('./js/app.js'); app.go('production'); S.openProd = new Set(['sh-1']); S.tab['prod:sh-1'] = 'factures'; app.render(); });
-  await expect(page.locator('.prod-bill table')).toBeVisible();
-  const r = await page.evaluate(() => ({
-    tronques: [...document.querySelectorAll('.prod-bill input[type=number]')].filter(i => (i.value || i.placeholder) && i.scrollWidth > i.clientWidth + 1).length,
-    champs: [...document.querySelectorAll('.prod-bill input[data-f=amount_ttc]')].map(i => i.value),
-    defile: (w => w.scrollWidth > w.clientWidth + 1)(document.querySelector('.prod-bill .tbl-wrap')) }));
-  expect(r.champs).toContain('1302469.12');
-  expect(r).toMatchObject({ tronques: 0, defile: false });
+    for (const db of [S.db, window.__DB]) for (const s of db.shows) Object.assign(s, { fee_ht: 1234567.89, capacity: 12500, tickets_sold: 12345, break_even: 4500, invitations: 250,
+      ticketing_enabled: true, status: s.status === 'Intérêt Salle' ? s.status : 'Confirmée Salle' });
+    touch('shows'); });
+}
+const ouvrir = (page, view, tab) => page.evaluate(async ([view, tab]) => { const { S } = await import('./js/state.js'); const app = await import('./js/app.js');
+  app.go(view); if (tab){ S.openProd = new Set(['sh-1']); S.tab['prod:sh-1'] = tab; } app.render(); }, [view, tab]);
+
+test('v1.56 visuel : grands montants et grandes jauges lisibles en entier (factures, budget, Ticketing) sur ordinateur', async ({ page }) => {
+  const ctx = await openApp(page);
+  await grandsNombres(page);
+  for (const [v, t] of [['production', 'factures'], ['production', 'budget'], ['ticketing']]) {
+    await ouvrir(page, v, t);
+    await expect(page.locator('main')).toBeVisible();
+    expect(await coupes(page), `${v} ${t || ''}`).toEqual([]);
+  }
+  await ouvrir(page, 'production', 'factures');
+  expect(await page.locator('.prod-bill input[data-f=amount_ttc]').evaluateAll(l => l.map(i => i.value))).toContain('1302469.12');
   expectClean(ctx);
+});
+
+test.describe('téléphone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  test('v1.56 visuel : grands montants et jauge à 5 chiffres lisibles sur téléphone (fiches)', async ({ page }) => {
+    const ctx = await openApp(page);
+    await grandsNombres(page);
+    for (const [v, t] of [['production', 'factures'], ['production', 'budget'], ['ticketing']]) {
+      await ouvrir(page, v, t);
+      await expect(page.locator('main')).toBeVisible();
+      expect(await coupes(page), `${v} ${t || ''}`).toEqual([]);
+    }
+    expectClean(ctx);
+  });
 });
