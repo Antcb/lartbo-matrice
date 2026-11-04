@@ -87,7 +87,10 @@ export async function openProspection(structureId, {prospectId=null}={}){
   const kind = relance ? 'relance' : 'prospection';
   const contacts = linksOfStructure(st.id);
   const active = S.db.projects.filter(x => x.active).sort(byUsage);
-  let pids = relance ? projIds(p) : (S.project && byId('projects', S.project)?.active ? [S.project] : []);
+  // artiste(s) du mail : choisis explicitement dans la fenêtre — jamais repris du filtre d'affichage (v1.53, décision d'Anthony :
+  // un artiste choisi dans Production ne doit pas partir implicitement dans une prospection) ; une relance garde ceux du suivi
+  let pids = relance ? projIds(p) : [];
+  const filterName = !relance && S.project ? byId('projects', S.project)?.name : null;
   let contact = relance ? contacts.find(c => p.mail_to && [c.email, c.email_2].some(e => e && p.mail_to.toLowerCase().includes(e.toLowerCase()))) : contacts.find(c => contactMails(c));
   // tous les modèles du type : ceux des artistes cochés d'abord, puis les génériques, puis les autres (choisir un modèle coche ses artistes)
   const rank = t => { const ids = tplProjects(t); return ids.some(id => pids.includes(id)) ? 0 : !ids.length ? 1 : 2; };
@@ -98,6 +101,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
 
   const extra = `<div class="mail-wrap">
     ${relance ? `<p class="mode-note">Réponse dans le fil « ${esc(p.mail_subject || '')} » envoyé à ${esc(p.mail_to || '')}${p.mail_sent_at ? ` le ${fmtDate(p.mail_sent_at)}` : ''} : l’historique reste en dessous du mail.</p>` : ''}
+    ${relance ? '' : `<p class="mode-note" id="pr-art-note">Coche le ou les artistes concernés par ce mail${filterName ? ` (le filtre d’affichage « ${esc(filterName)} » n’est pas repris d’office)` : ''}.</p>`}
     <div class="mail-grid">
       <label>Artiste(s)</label><div class="checks pills pr-arts">${active.map(a => `<label><input type="checkbox" data-pr-art="${a.id}" ${pids.includes(a.id) ? 'checked' : ''}> ${esc(a.name)}</label>`).join('')}</div>
       <label for="pr-from">Envoyé par</label><select id="pr-from" ${relance ? 'disabled title="La relance part de la boîte qui a envoyé la prospection"' : ''}>${Object.entries(SENDERS).map(([k, l]) => `<option value="${k}" ${k === sender ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
@@ -170,7 +174,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
     if (force){ dirty = false; const was = new Map(files.map(f => [f.path || f.id, f.on]));   // cases déjà cochées gardées (changement d'expéditeur…)
       files = [...(t?.attachments || []).map(a => ({...a, on: was.get(a.path || a.id) ?? !!relance})), ...files.filter(f => f.mine)]; drawFiles(); if (t?.cc) $('#pr-cc').value = t.cc; }
   };
-  drawTpls(); if (!pids.length) syncArtists(); $('#pr-tpl').dataset.prev = $('#pr-tpl').value; draw(true);
+  drawTpls(); $('#pr-tpl').dataset.prev = $('#pr-tpl').value; draw(true);   // aucun artiste coché d'office (v1.53)
   // modèle choisi → ses artistes sont cochés (un modèle « tous les artistes » garde la sélection)
   function syncArtists(){
     const ids = tplProjects(byId('mail_templates', $('#pr-tpl').value)); if (!ids.length || relance) return;

@@ -82,10 +82,10 @@ function prodRow(s){
 function prodBody(s, booking, steps, pays, late){
   const key = 'prod:' + s.id;
   // dans l'ordre du travail : conditions, suivi administratif (contrat…), factures, puis budget
-  const tabs = [['conditions', 'Conditions'], ['suivi', 'Suivi admin', late.size ? '⚠︎' : ''], ['factures', 'Factures', pays.length], ...(booking ? [] : [['budget', 'Budget']])];
+  const tabs = [['conditions', 'Conditions'], ['suivi', 'Suivi admin', late.size ? '⚠︎' : ''], ['factures', 'Factures', pays.length], ...(booking ? [] : [['budget', 'Budget']]), ['notes', 'Notes', s.notes ? '•' : '']];
   const cur = tabs.some(([k]) => k === S.tab[key]) ? S.tab[key] : 'conditions';
   const body = {conditions: () => conditionsTab(s, booking), factures: () => billingTab(s, booking, pays, late),
-    budget: () => isProductionShow(s) ? productionBudgetHTML(s) : showBudgetHTML(s), suivi: () => suiviTab(s, booking, steps, late)}[cur]();
+    budget: () => isProductionShow(s) ? productionBudgetHTML(s) : showBudgetHTML(s), suivi: () => suiviTab(s, booking, steps, late), notes: () => notesTab(s)}[cur]();
   return `<div class="prod-body">
     ${actionsBar(s, booking)}
     ${tabsBar(key, tabs.map(([k, l, n]) => [k, l, n]))}
@@ -195,6 +195,12 @@ function coreaBookingBlock(s){
     ${q?.frozen ? `<p class="small ${Math.abs(q.gap) >= 0.005 ? 'warn-txt' : 'muted'}">Commission retenue : ${eur2(q.held)} · facturée : ${q.invoiced ? 'oui' : 'non'} · encaissée : ${eur2(q.cashed)}.${Math.abs(q.gap) >= 0.005 ? ` <b>Régularisation à prévoir : ${q.gap > 0 ? '+' : ''}${eur2(q.gap)}</b> (rien n’est fait automatiquement ; le montant historique reste).` : ''}</p>` : ''}
     ${proposed != null && (validated == null || stale) ? `<div class="vh-actions mt-sm"><button class="btn sm" data-act="coreaValidateShare" data-id="${s.id}">Valider la part (${eur2(proposed)})</button> <span class="muted">aucune facture n’est créée</span></div>` : ''}
   </div>`;
+}
+
+/** Notes de la date (v1.53) : le champ « Notes » qui existait déjà (fenêtre de la date), enregistré en quittant le champ */
+function notesTab(s){
+  return `<div class="date-notes"><p class="tab-intro">Notes propres à cette date, visibles par toute l’équipe (les mêmes que dans la fenêtre de la date).</p>
+    <textarea class="cell-ta date-notes-ta" data-t="shows" data-id="${s.id}" data-f="notes" aria-label="Notes de la date" placeholder="Accès, horaires, contacts sur place, points d’attention…">${esc(s.notes ?? '')}</textarea></div>`;
 }
 
 /** Suivi admin : les étapes datées et les rappels */

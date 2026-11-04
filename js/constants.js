@@ -20,6 +20,10 @@ export const stClass = s => !s ? 'book' : s.startsWith('Intérêt') ? 'int' : s.
 export const isOff = s => s==='Annulée' || s==='Sans Suite';
 
 export const CONFIRMED_PROD = ['Confirmée Salle','Confirmée Festival'];
+/** Dates qui ne passent pas par L'ArtBoristerie (« Option Artiste », « Confirmée Artiste ») : visibles partout dans le planning,
+ *  jamais comptées dans ses finances (décision d'Anthony du 01/11/2026, v1.53) */
+export const ARTIST_ONLY = ['Option Artiste','Confirmée Artiste'];
+export const viaArtbo = s => !ARTIST_ONLY.includes(s?.status);
 
 export const CONTRACTS = ['Cession','Co-Réalisation','Production','Co-Production','N.C'];
 

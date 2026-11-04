@@ -9,7 +9,7 @@ import { templateForm } from '../budget-template.js';
 import { ALL_FIELDS as AF_FIELDS, ficheText, fieldText, input as afInput, listClick, migrateInfo, read as afRead } from '../artist-form.js';
 import { netArtbo } from '../calc.js';
 import { templatesList, tplProjects } from '../mail.js';
-import { CONFIRMED_PROD, LOG_ICON, stClass } from '../constants.js';
+import { CONFIRMED_PROD, LOG_ICON, stClass, viaArtbo } from '../constants.js';
 import { save, sb, signedCached, signedUrl } from '../data.js';
 import { defaultCommission, projectCommission, publicLink, setting, suiviClosed, attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, structName, tasksOfProject } from '../selectors.js';
 import { S, touch } from '../state.js';
@@ -97,9 +97,9 @@ function overview(p, {shows, tasks, suivis}){
   return `<div class="tbl-wrap year-tbl"><table><thead><tr><th>Exercice (01/10 → 30/09)</th><th class="num">Confirmées</th><th class="num">Options</th><th class="num">Intérêts</th><th class="num">Dates</th><th class="num">Cachets confirmés</th><th class="num">Commissions L'ArtBo nettes</th></tr></thead><tbody>
     ${Object.entries(byYear).sort((a,b)=>b[0].localeCompare(a[0])).map(([y,l])=>{ const conf = l.filter(s=>stClass(s.status)==='conf');
       return `<tr><td><b>${y}</b>${y.includes('-')?`<span class="sub">01/10/${y.slice(0,4)} → 30/09/${y.slice(5)}</span>`:''}</td><td class="num">${conf.length}</td><td class="num">${l.filter(s=>stClass(s.status)==='opt').length}</td><td class="num">${l.filter(s=>stClass(s.status)==='int').length}</td><td class="num">${l.length}</td>
-      <td class="num">${eur(conf.reduce((a,s)=>a+(Number(s.fee_ht)||0),0))}</td><td class="num"><b>${eur(l.filter(s=>CONFIRMED_PROD.includes(s.status)).reduce((a,s)=>a+netArtbo(s),0))}</b></td></tr>`;}).join('') || '<tr><td colspan="7" class="empty">Aucune date.</td></tr>'}
+      <td class="num">${eur(conf.filter(viaArtbo).reduce((a,s)=>a+(Number(s.fee_ht)||0),0))}</td><td class="num"><b>${eur(l.filter(s=>CONFIRMED_PROD.includes(s.status)).reduce((a,s)=>a+netArtbo(s),0))}</b></td></tr>`;}).join('') || '<tr><td colspan="7" class="empty">Aucune date.</td></tr>'}
   </tbody></table></div>
-  <p class="help">Commissions nettes = commission L'ArtBo moins la part reversée aux partenaires (ex. Pyrprod), sur les dates confirmées salle / festival.</p>
+  <p class="help">Cachets confirmés : dates confirmées salle / festival seulement (les dates « Confirmée Artiste », qui ne passent pas par L’ArtBoristerie, restent comptées dans « Confirmées » mais pas dans les montants). Commissions nettes = commission L'ArtBo moins la part reversée aux partenaires (ex. Pyrprod), sur les dates confirmées salle / festival.</p>
   <div class="panel pad mt-lg"><h3 class="block-title">Accueil <span class="muted title-note">· repris dans les contrats et les mails ({{personnes}}, {{chambres}}, {{montage}}), enregistré dès que tu quittes le champ</span></h3>
     <div class="steps kv-grid">
       <label>Personnes sur la route (= repas)</label>${cIn('projects', p.id, 'road_people', p.road_people, 'number', 'class="narrow"')}

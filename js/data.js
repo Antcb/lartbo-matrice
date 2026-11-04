@@ -253,15 +253,22 @@ export async function uploadFiles(owner, files){
   const table = owner.prospect_id ? 'prospect_files' : 'attachments';
   const folder = owner.prospect_id || (owner.task_id ? 'task/' + owner.task_id : 'project/' + owner.project_id);
   toast(`Envoi de ${files.length} fichier(s)…`);
-  let ok = 0;
+  let ok = 0; const done = [], failed = [];
   for (const file of files){
     const path = `${folder}/${Date.now()}_${safeName(file.name)}`;
+    if (!file.size){ failed.push([file.name, 'fichier vide ou illisible (un élément glissé depuis une messagerie n’est pas toujours un vrai fichier)']); continue; }
     const {error} = await sb.storage.from('suivi').upload(path, file, {contentType: file.type||'application/octet-stream', upsert:false});
-    if (error){ toast(`${file.name} : ${error.message}`, true); continue; }
-    if (await insert(table, {...owner, name:file.name, path, size:file.size, mime:file.type||null})) ok++;
+    if (error){ failed.push([file.name, error.message]); continue; }
+    if (await insert(table, {...owner, name:file.name, path, size:file.size, mime:file.type||null})){ ok++; done.push(file.name); }
+    else failed.push([file.name, 'enregistrement refusé (voir le message affiché)']);
     if (owner.prospect_id) await emlToJournal(owner.prospect_id, file);
   }
-  if (ok) toast(`${ok} fichier(s) ajouté(s)`);
+  // bilan qui reste affiché tant qu'on ne le ferme pas : fichiers ajoutés et refusés, avec le motif (v1.53, aucune perte silencieuse)
+  if (failed.length){
+    const {inform} = await import('./ui/dialog.js');
+    await inform({title: `${ok} fichier${ok > 1 ? 's' : ''} ajouté${ok > 1 ? 's' : ''}, ${failed.length} refusé${failed.length > 1 ? 's' : ''}`,
+      text: [...done.map(n => `✓ ${n}`), ...failed.map(([n, why]) => `✗ ${n} — ${why}`)].join('\n')});
+  } else if (ok) toast(`${ok} fichier${ok > 1 ? 's' : ''} ajouté${ok > 1 ? 's' : ''} : ${done.join(', ')}`);
   return ok;
 }
 
