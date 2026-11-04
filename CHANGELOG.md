@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.54.0 — 04/11/2026
+- Structures et contacts (lot V1.54) — structure marquée inactive au lieu d’être supprimée (gardée avec tout son historique, cachée par défaut, retrouvée par un filtre, réactivable) ; contact existant rattaché à une autre structure sans copie, avec sa fonction propre à chaque structure (migration : colonne structures.inactive_at)
+
+
 ## 1.53.0 — 04/11/2026
 - Corrections (lot V1.53) — dates « Option / Confirmée Artiste » hors des montants de L’ArtBoristerie (Booking, fiche artiste), prospection sans artiste coché d’office, filtre des types de structures en OU, onglet Notes dans chaque date, pièces jointes choisies en plusieurs fois gardées et bilan des fichiers ajoutés / refusés ; test intermittent de clôture corrigé
 

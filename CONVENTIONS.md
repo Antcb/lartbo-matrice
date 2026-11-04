@@ -365,6 +365,10 @@ Les factures de l'artiste sur les dates booking n'entrent dans **aucun** des tro
 - **Notes d'une date** : onglet « Notes » de la date = le champ `shows.notes` existant (même contenu que la fenêtre de la date).
 - **Pièces jointes** : fichiers choisis en plusieurs fois gardés (sans doublon) ; après un envoi avec un refus, **bilan affiché** jusqu'à fermeture (fichiers ajoutés ✓, refusés ✗ avec le motif) ; un fichier vide (élément glissé qui n'est pas un vrai fichier) est refusé avec explication.
 
+### 6.15 Structures inactives et contacts multi-structures [DÉCIDÉ 04/11/2026, EN PLACE v1.54]
+- **Structure inactive** (fermée) : `structures.inactive_at` (date) ; jamais supprimée, contacts, suivis, dates, documents et historique gardés et affichés. Cachée par défaut dans la liste des structures (case « Afficher les structures inactives »), signalée « Inactive », proposée en dernier dans la recherche de structure, question avant une prospection ou une relance. Réactivable (« Réactiver »).
+- **Contact rattaché à plusieurs structures** : depuis une fiche structure, « Rattacher un contact existant » ajoute un lien (`contact_structures`) sans retirer le contact de ses autres structures ni copier sa fiche. **Fonction propre à chaque structure** : `contact_structures.role` (« Fonction ici ») ; les fonctions générales du contact (`contacts.roles`) restent.
+
 ## 7. Supabase
 
 ### 7.1 Nommage

@@ -4,10 +4,10 @@
  */
 import { importMovinmotion } from './views/employees.js';
 import { render } from './app.js';
-import { insert, save, sb, uploadFiles } from './data.js';
+import { insert, save, sb, syncLinks, uploadFiles } from './data.js';
 import { geocode } from './geo.js';
-import { byId, projIds } from './selectors.js';
-import { S, localSet, setProjects } from './state.js';
+import { byId, linksOfContact, projIds } from './selectors.js';
+import { S, localSet, setProjects, touch } from './state.js';
 import { MAIL_MSG, fieldError, mailOk, parseCSV, toast, today } from './utils.js';
 import { setLogDraft } from './views/suivi.js';
 import { clearDraft } from './ui/drafts.js';
@@ -108,6 +108,27 @@ document.addEventListener('change', async e => {
   const p = byId('projects', t.dataset.pid), f = t.dataset.plink, list = (p[f]||[]).map(x=>({...x}));
   list[Number(t.dataset.i)][t.dataset.k] = t.value.trim();
   await save('projects', p.id, {[f]: list});
+});
+
+// Rattacher un contact existant à une structure (v1.54) : un lien de plus, sans déplacer ni copier le contact
+document.addEventListener('change', async e => {
+  const t = e.target; if (!t.dataset?.attachContact || !t.value) return;
+  const sid = t.dataset.attachContact, cid = t.value, c = byId('contacts', cid); t.value = '';
+  if (!c) return;
+  if (S.db.contact_structures.some(l => l.contact_id === cid && l.structure_id === sid)){ toast(`${c.display_name} est déjà rattaché(e) à cette structure`); return render(); }
+  const ids = [...new Set([...linksOfContact(cid).map(x => x.id), sid])];
+  await syncLinks('contact', cid, ids);
+  const others = linksOfContact(cid).filter(x => x.id !== sid);
+  toast(`${c.display_name} rattaché(e)${others.length ? ` (reste aussi lié(e) à ${others.map(x => x.name).join(', ')})` : ''}`);
+  render();
+});
+// Fonction d'un contact dans une structure (contact_structures.role, v1.54)
+document.addEventListener('change', async e => {
+  const t = e.target; if (!t.dataset?.linkRole) return;
+  const role = t.value.trim() || null, l = S.db.contact_structures.find(x => x.contact_id === t.dataset.c && x.structure_id === t.dataset.s); if (!l) return;
+  const {error} = await sb.from('contact_structures').update({role}).eq('contact_id', l.contact_id).eq('structure_id', l.structure_id);
+  if (error) return toast('Fonction non enregistrée : ' + error.message, true);
+  l.role = role; touch('contact_structures'); toast('Enregistré');
 });
 
 // Coordonnées administratives d'une structure (champ JSON « admin »)
