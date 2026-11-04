@@ -23,7 +23,7 @@ export function dedupe(input){
 export function recipientsHelp(target, structureId){
   const opts = linksOfStructure(structureId).flatMap(c => mailParts(contactMails(c)).map(m => ({c, m})));
   return `<div class="rcpt-sug" data-rcpt-box="${esc(target)}">
-    ${opts.map(({c, m}) => `<button type="button" class="rcpt-chip" data-rcpt-add="${esc(m)}" data-rcpt-for="${esc(target)}" aria-pressed="false" title="${esc(m)}">${esc(c.display_name)} · ${esc(m)}</button>`).join('')}
+    ${opts.map(({c, m}) => `<button type="button" class="tag-chip" data-rcpt-add="${esc(m)}" data-rcpt-for="${esc(target)}" aria-pressed="false" title="${esc(m)}">${esc(c.display_name)} · ${esc(m)}</button>`).join('')}
     <span class="rcpt-search">${acInput('contacts', {attrs: `data-rcpt-search="${esc(target)}" aria-label="Chercher un contact de la base"`, placeholder: 'Chercher un contact de la base…'})}</span></div>`;
 }
 /** Met à jour l'état des pastilles (adresse présente ou non dans le champ) */
@@ -37,9 +37,14 @@ document.addEventListener('click', e => {
   e.preventDefault();
   const input = document.getElementById(b.dataset.rcptFor); if (!input) return;
   const m = b.dataset.rcptAdd;
-  set(input, has(input, m) ? mailParts(input.value).filter(p => addrOf(p) !== m.toLowerCase()) : [...mailParts(input.value), m]);
+  // le clic fait ce que la pastille AFFICHE (relecture V1.55, B1) : « + » ne fait qu'ajouter (rien si l'adresse y est déjà, par
+  // exemple après un brouillon restauré), « ✓ » ne fait que retirer — jamais l'inverse de ce que l'on voit
+  if (b.classList.contains('on')) set(input, mailParts(input.value).filter(p => addrOf(p) !== m.toLowerCase()));
+  else if (!has(input, m)) set(input, [...mailParts(input.value), m]);
   syncChips(b.closest('dialog') || document);
 });
+// brouillon restauré (js/ui/drafts.js, sans événement « input » sur les champs) : pastilles remises à jour
+document.addEventListener('draft-applied', e => syncChips(e.target.closest?.('dialog') || document));
 // recherche dans la base : l'adresse du contact choisi est ajoutée (sans doublon)
 document.addEventListener('change', e => {
   const t = e.target; if (!t.dataset?.rcptSearch || !t.value) return;
