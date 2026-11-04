@@ -3,7 +3,7 @@
  * et enchaînements réels (dates d'un même artiste séparées d'un jour off au maximum).
  * La carte (Leaflet) est créée une seule fois et déplacée d'un affichage à l'autre (attachMap).
  */
-import { STATUS_COLOR, STATUSES, isOff, stColor } from '../constants.js';
+import { STATUS_COLOR, STATUSES, isOff, stColor, viaArtbo } from '../constants.js';
 import { lingering } from '../data.js';
 import { route, routeCached } from '../geo.js';
 import { byId, projName, showCoords, showsFiltered, visibleShow } from '../selectors.js';
@@ -16,7 +16,7 @@ export function viewBooking(){
   const shows = all.filter(visibleShow);
   const nOff = all.filter(s => isOff(s.status)).length;
   const n = k => shows.filter(s => (s.status||'').startsWith(k)).length;
-  const totalConf = shows.filter(s=>(s.status||'').startsWith('Confirmée')).reduce((a,s)=>a+(Number(s.fee_ht)||0),0);
+  const totalConf = shows.filter(s=>(s.status||'').startsWith('Confirmée') && viaArtbo(s)).reduce((a,s)=>a+(Number(s.fee_ht)||0),0);   // hors « Confirmée Artiste » (v1.53)
   let lastMonth = '', list = '';
   for (const s of shows){
     const m = s.date ? new Date(s.date+'T12:00:00').toLocaleDateString('fr-FR',{month:'long',year:'numeric'}) : 'Sans date';

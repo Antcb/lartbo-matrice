@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.53.0 — 04/11/2026
+- Corrections (lot V1.53) — dates « Option / Confirmée Artiste » hors des montants de L’ArtBoristerie (Booking, fiche artiste), prospection sans artiste coché d’office, filtre des types de structures en OU, onglet Notes dans chaque date, pièces jointes choisies en plusieurs fois gardées et bilan des fichiers ajoutés / refusés ; test intermittent de clôture corrigé
+
+
 ## 1.52.1 — 28/10/2026
 - Prospection sur iPhone (V1.52.1) — fenêtre de mail plein écran en une colonne : le choix du modèle n’est plus hors de l’écran, tout le contenu défile, boutons Envoyer / Brouillon / Annuler toujours visibles en bas, cibles tactiles de 40 px ; fiche de suivi sans défilement horizontal. Interface seulement : aucun circuit d’envoi modifié
 

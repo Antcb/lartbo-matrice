@@ -71,7 +71,7 @@ document.addEventListener('submit', async e => {
 // Pièces jointes : bouton « Ajouter un fichier »
 document.addEventListener('change', async e => {
   const t = e.target;
-  if (t.dataset?.filelist){ showPicked(t); return; }
+  if (t.dataset?.filelist){ keepPicked(t); showPicked(t); return; }
   if (!t.dataset?.uploadOwner) return;
   const files = [...t.files]; if (!files.length) return;
   await uploadFiles(JSON.parse(t.dataset.uploadOwner), files);
@@ -144,6 +144,12 @@ document.addEventListener('change', async e => {
 });
 
 
+/** Fichiers choisis en plusieurs fois (bouton puis bouton, ou bouton puis glisser) : les premiers sont gardés, sans doublon (v1.53) */
+const fileKey = f => `${f.name}|${f.size}|${f.lastModified}`;
+function keepPicked(input){
+  const seen = new Set(), all = [...(input._kept || []), ...input.files].filter(f => { const k = fileKey(f); if (seen.has(k)) return false; seen.add(k); return true; });
+  const dt = new DataTransfer(); all.forEach(f => dt.items.add(f)); input.files = dt.files; input._kept = all;
+}
 /** Fichiers choisis dans un formulaire (pas encore envoyés) : liste avec ✕ pour en retirer un */
 function showPicked(input){
   const el = document.getElementById('fl-'+input.dataset.filelist); if (!el) return;
@@ -155,7 +161,7 @@ document.addEventListener('click', e => {
   e.preventDefault(); e.stopPropagation();
   const input = document.querySelector(`input[data-filelist="${b.dataset.rmpick}"]`); if (!input) return;
   const dt = new DataTransfer(); [...input.files].forEach((f,i) => { if (i !== Number(b.dataset.i)) dt.items.add(f); });
-  input.files = dt.files; showPicked(input);
+  input.files = dt.files; input._kept = [...input.files]; showPicked(input);
 }, true);
 
 // Brouillon des notes d'échange : enregistré à chaque frappe

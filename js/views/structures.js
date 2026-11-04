@@ -150,7 +150,7 @@ export function viewStructures(){
   const words = norm(S.search.structures).split(/\s+/).filter(Boolean);
   const sel = S.structTags || [];
   let rows = S.db.structures;
-  if (sel.length) rows = rows.filter(s => sel.every(t => (s.tags||[]).includes(t)));   // toutes les étiquettes choisies
+  if (sel.length) rows = rows.filter(s => sel.some(t => (s.tags||[]).includes(t)));   // au moins un des types choisis (OU, décision d'Anthony du 01/11/2026)
   if (words.length) rows = rows.filter(s => { const hay = hayOf([s.name,...eventsOfStructure(s.id).map(e=>e.name),s.address,s.city,s.postal_code,s.department_code,s.department_name,s.region,s.country,...(s.tags||[]),
       // les contacts de la structure : nom, mails, téléphones (on retrouve une structure par le mail d'un de ses contacts)
       ...linksOfStructure(s.id).flatMap(c => [c.display_name, c.email, c.email_2, c.phone, c.phone_2])].join(' '));

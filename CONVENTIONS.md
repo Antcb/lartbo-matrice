@@ -358,6 +358,13 @@ Les factures de l'artiste sur les dates booking n'entrent dans **aucun** des tro
 - La CNM entre dans le budget de la date quand **L'ArtBo en supporte le coût** (en France) ; budget de production : toujours dans les droits et taxes. **Une dépense CNM réelle saisie remplace la charge calculée**, sans s'y ajouter ; même principe pour la SACEM ; une ligne CNM / SACEM n'est jamais aussi comptée dans les coûts.
 - **Plus de création automatique** de ligne de facturation « Taxe CNM » (confirmation, bouton « Ajouter la taxe CNM » retiré : aucune fonction n'en dépendait) ; les lignes existantes restent intactes, affichées « Taxe CNM (historique) ».
 
+### 6.14 Dates hors L'ArtBoristerie, prospection, pièces jointes [DÉCIDÉ 01/11 et 04/11/2026, EN PLACE v1.53]
+- Les dates **« Option Artiste »** et **« Confirmée Artiste »** ne passent pas par L'ArtBoristerie : visibles partout dans le planning (Booking, carte, Ticketing, Communication, exports de dates), **jamais dans ses montants** (total « cachets confirmés » de Booking, « Cachets confirmés » de la fiche artiste ; elles étaient déjà hors Production, factures, commissions, rappels). Fonction `viaArtbo` (`js/constants.js`). Un mouvement réel déjà noté sur le compte dédié reste compté (aucun aujourd'hui).
+- **Prospection** : le ou les artistes du mail sont **cochés explicitement** dans la fenêtre ; le filtre d'affichage n'est jamais repris d'office (une relance garde les artistes du suivi).
+- **Types de structures** : plusieurs types choisis = structures qui ont **au moins un** de ces types (OU).
+- **Notes d'une date** : onglet « Notes » de la date = le champ `shows.notes` existant (même contenu que la fenêtre de la date).
+- **Pièces jointes** : fichiers choisis en plusieurs fois gardés (sans doublon) ; après un envoi avec un refus, **bilan affiché** jusqu'à fermeture (fichiers ajoutés ✓, refusés ✗ avec le motif) ; un fichier vide (élément glissé qui n'est pas un vrai fichier) est refusé avec explication.
+
 ## 7. Supabase
 
 ### 7.1 Nommage

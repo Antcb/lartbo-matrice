@@ -167,6 +167,8 @@ test('v1.51 coproduction : clôture refusée tant que tout n’est pas cohérent
   await blk.locator('[data-act="closeResult"]').click();
   await expect(page.locator('dialog.ask')).toContainText(/Résultat global réel : 5\s650,00/);
   await page.locator('dialog.ask button', { hasText: 'Clôturer le résultat' }).click();
+  // l'appel part après la fermeture de la question : on l'attend (test intermittent corrigé, v1.53)
+  await expect.poll(() => page.evaluate(() => !!window.__calls.find(c => c.rpc === 'close_result'))).toBe(true);
   const call = await page.evaluate(() => window.__calls.find(c => c.rpc === 'close_result'));
   expect(call.args.p_show).toBe('cp-9');
   expect(call.args.p_snapshot).toMatchObject({ result: 5650, artbo_part: 2825, partner_part: 2825, transfer: 5825, from: 'artbo', to: 'partenaire', holder: 'artbo' });
