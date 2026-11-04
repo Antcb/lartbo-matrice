@@ -196,8 +196,8 @@ td input:not([type=checkbox]):not([type=radio]):not(.dt-txt):not(.dt-val):not(.t
 .cell-ta.is-url{min-width:180px;font-size:13px;overflow-wrap:anywhere;color:var(--brand-2)}
 td input:hover,td select:hover,td textarea:hover,.cell-ta:hover{border-color:var(--line)}
 td input:focus,td select:focus,td textarea:focus,.cell-ta:focus{border-color:var(--brand-2);background:var(--panel);outline:none}
-td :is(input[type=number],input.num-in){text-align:right;width:112px}   /* 112 px : un montant à 7 chiffres et ses centimes (1234567,89) reste lisible en entier */
-td :is(input[type=number],input.num-in).narrow{width:60px}   /* %, TVA : « 33,33 » au plus */
+td :is(input[type=number],input.num-in){text-align:right;width:calc(10ch + 20px)}   /* un montant à 7 chiffres et ses centimes (1234567,89) lisible en entier, quelle que soit la police (relecture V1.56) */
+td :is(input[type=number],input.num-in).narrow{width:72px}
 td input[type=checkbox]{width:16px;height:16px;accent-color:var(--brand)}
 /* chiffres sans flèches +/- (partout) */
 :is(input[type=number],input.num-in){-moz-appearance:textfield;appearance:textfield}
@@ -214,7 +214,7 @@ td.num > :is(input,.dt){margin-right:-9px}
 /* Date : saisie au clavier + calendrier */
 .dt{display:inline-flex;align-items:center;position:relative;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--panel);height:var(--h-sm)}
 td .dt{border-color:transparent;background:transparent}
-@media (min-width:1025px){ td .dt-txt{width:88px} }   /* tableaux (hors fiches) : « jj/mm/aaaa » entier, factures sans défilement à 1 440 px */
+@media (min-width:1025px){ td .dt-txt{width:calc(9ch + 8px)} .prod-bill td :is(input[type=number],input.num-in).narrow{width:calc(5ch + 20px)} }   /* tableaux (hors fiches) : date entière (8 chiffres et 2 barres ≤ 9 ch) ; factures : % et TVA (« 33,33 » au plus) plus étroits */
 td .dt:hover{border-color:var(--line)}
 .dt:focus-within{border-color:var(--brand-2);background:var(--panel)}
 .dt-txt{border:0!important;background:transparent!important;width:96px;padding:0 0 0 8px!important;font-variant-numeric:tabular-nums;outline:none;height:100%}
@@ -555,7 +555,8 @@ input[type=range]{accent-color:var(--brand);flex:1;min-width:120px}
 .mini-task input[type=checkbox]{width:16px;height:16px;accent-color:var(--brand)}
 .prod-body{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .prod-bill{grid-column:1/-1}
-.prod-bill .cell-ta[data-f=invoice_number]{min-width:76px}   /* remplace un style en ligne (DS §10) */
+.prod-bill .cell-ta[data-f=invoice_number]{min-width:9ch}   /* remplace un style en ligne (DS §10) */
+@media (min-width:1025px){ .prod-bill :is(th,td){padding-left:var(--sp-1);padding-right:var(--sp-1)} }   /* tableau dense (12 colonnes) : tient à 1 440 px sans défilement */
 /* 18 — Mails, modèles et fiche (v1.10) --------------------------------- */
 .prod-mails{grid-column:1/-1;border-top:1px solid var(--line-2);padding-top:14px}
 .mail-btns{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
@@ -669,7 +670,7 @@ button.add-proj{cursor:pointer}
 .budget-stats{gap:22px}
 .budget-stats .stat b{font-size:22px}
 .budget-table td{vertical-align:middle}
-.budget-table :is(input[type=number],input.num-in){width:112px}
+.budget-table :is(input[type=number],input.num-in){width:calc(10ch + 20px)}
 .budget-table input.narrow{width:54px}
 .budget-table tr.is-paid td{background:#F4FAF6}
 .budget-table tr.budget-over td{background:var(--brand-tint);outline:2px dashed var(--brand-2);outline-offset:-2px}
