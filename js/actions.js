@@ -30,8 +30,8 @@ import { BUDGET_ACTIONS, confirmProvisionalCommission } from './budget-actions.j
 /** Nouveau suivi : créé tout de suite et ouvert dans l'espace de prospection (pas de fenêtre) */
 async function newSuivi(structureId){
   await cleanupDraft();
-  const pid = S.project && byId('projects', S.project)?.active ? S.project : null;
-  const row = await insert('prospects', {name:'Suivi', status:'Mailed', last_contact: today(), structure_id: structureId || null, project_ids: pid ? [pid] : [], project_id: pid});
+  // artiste(s) choisi(s) explicitement dans le suivi : jamais repris du filtre d'affichage (v1.56, comme la prospection v1.53)
+  const row = await insert('prospects', {name:'Suivi', status:'Mailed', last_contact: today(), structure_id: structureId || null, project_ids: [], project_id: null});
   if (!row) return;
   S.draftSuivi = row.id; S.view='prospects'; S.suiviPage=row.id; S.wsTarget=undefined; S.wsFor=null; S.wsProject=null;
   render(); window.scrollTo(0,0);
@@ -100,6 +100,7 @@ export const ACTIONS = {
   // Booking
   toggleCancelled: () => { S.showCancelled=!S.showCancelled; render(); },
   resetTodoFilters: () => { S.todoWho = ''; localSet('todoWho', ''); S.todoDept = ''; S.search.todo = ''; setProjects([]); render(); },
+  clearArtists: () => { setProjects([]); render(); },
   toggleInactive: () => { S.showInactive = !S.showInactive; localSet('showInactive', S.showInactive ? '1' : ''); render(); },
   pick: (t, e) => { e.stopPropagation(); const p=t.dataset.p; S.routePick[p] = S.routePick[p]===t.dataset.id ? null : t.dataset.id; render(); },
   clearPick: () => { S.routePick = {a:null, b:null}; render(); },
@@ -305,7 +306,10 @@ export const ACTIONS = {
 
   // Suivis
   newProspect: () => newSuivi(null), editProspect: t => editProspect(t.dataset.id),
-  newSuiviFor: t => newSuivi(t.dataset.id),
+  newSuiviFor: async t => { const st = byId('structures', t.dataset.id);
+    // structure inactive (v1.56) : nouveau suivi seulement sur choix explicite, comme la prospection
+    if (st?.inactive_at && !(await confirmAsk('Structure inactive', `« ${st.name} » est marquée inactive (fermée). Créer quand même un nouveau suivi ?`, 'Continuer'))) return;
+    newSuivi(t.dataset.id); },
   openSuivi: async t => { await cleanupDraft(); S.view='prospects'; S.suiviPage=t.dataset.id; S.wsTarget=undefined; S.wsFor=null; S.wsProject=null; render(); window.scrollTo(0,0); },
   closeSuivi: async () => { await cleanupDraft(); S.suiviPage=null; render(); },
   wsSetTarget: t => { S.wsTarget = t.dataset.d; render(); },

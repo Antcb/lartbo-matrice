@@ -417,10 +417,10 @@ CREATORS.contacts = async name => {
 
 /* ------------------------------------------------------------------ Suivis */
 export function editProspect(id){
-  const p = id ? byId('prospects', id) : {status:'Mailed', project_ids: S.project && byId('projects',S.project)?.active ? [S.project] : [], name:'Suivi', structure_id:S.newSuiviStructure||null, last_contact: today()};
+  const p = id ? byId('prospects', id) : {status:'Mailed', project_ids: [], name:'Suivi', structure_id:S.newSuiviStructure||null, last_contact: today()};
   openModal({ title: id ? prospectTitle(p) : 'Nouveau suivi', values: {...p, project_ids: projIds(p)},
     fields: [
-      {k:'structure_id', label:'Structure — tape le nom, ou crée-la si elle n’existe pas', type:'ac', kind:'structures', create:true, full:true},
+      {k:'structure_id', label:'Structure — tape le nom, ou crée-la si elle n’existe pas', type:'ac', kind:'structures', create:true, activeOnly:true, full:true},
       {k:'project_ids', label:'Artiste(s) concerné(s)', type:'checks', options:activeProjects(projIds(p)), full:true},
       {k:'status', label:'Statut', type:'select', options:PROSPECT_OPTS, blank:false},
       {k:'last_contact', label:'Dernier contact', type:'date'},

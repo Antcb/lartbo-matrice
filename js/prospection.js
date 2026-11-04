@@ -193,6 +193,8 @@ export async function openProspection(structureId, {prospectId=null}={}){
       $('#pr-tpl').value = next; }
     syncArtists(); const cur = $('#pr-tpl').value; drawTpls(); $('#pr-tpl').value = cur; $('#pr-tpl').dataset.prev = cur; draw(true); };
   $('#pr-body').addEventListener('input', () => { dirty = true; });
+  // objet retouché à la main (v1.56) : comme le texte, jamais réécrit en silence (artiste coché, date, contact…)
+  $('#pr-subj')?.addEventListener('input', () => { dirty = true; });
   document.querySelector('#modal .pr-arts').addEventListener('change', e => {
     const id = e.target.dataset.prArt; if (!id) return;
     pids = e.target.checked ? [...pids, id] : pids.filter(x => x !== id);

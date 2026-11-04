@@ -191,15 +191,30 @@ export async function prepareMail(showId, kind){
     $('#ml-subj').value = fill(t.subject, vars, false);
     // date en booking uniquement : pas de fiche de renseignements (les parties s'arrangent entre elles après le mail)
     $('#ml-body').innerHTML = fill(expandAcomptes(booking ? withoutFiche(t.html) : t.html, s), vars, true) + sig;
+    filled = texts();
     syncChips(document.querySelector('#modal'));
   };
+  let filled = null;
+  const texts = () => [$('#ml-subj').value, $('#ml-body').innerHTML, $('#ml-cc').value].join('\u0000');
+  const edited = () => filled !== null && texts() !== filled;
   draw();
-  $('#ml-tpl').onchange = draw;
+  // texte retouché (objet, texte, copie : à la main, par une pastille ou par un brouillon restauré) : jamais remplacé sans le
+  // demander (v1.56) — comparé à ce que le modèle a rempli la dernière fois
+  const replaceOk = async () => !edited() || await confirmAsk('Remplacer le texte retouché ?', 'L’objet, le texte ou la copie que tu as retouchés seront remplacés par le modèle.', 'Remplacer le texte', {danger: true});
+  $('#ml-tpl').dataset.prev = $('#ml-tpl').value;
+  $('#ml-tpl').onchange = async e => {
+    if (!e.isTrusted){ $('#ml-tpl').dataset.prev = $('#ml-tpl').value; return draw(); }   // brouillon restauré : ses textes reviennent ensuite
+    const next = $('#ml-tpl').value; $('#ml-tpl').value = $('#ml-tpl').dataset.prev;   // en attendant la réponse, le modèle d'avant reste affiché
+    if (!(await replaceOk())) return;
+    $('#ml-tpl').value = $('#ml-tpl').dataset.prev = next; draw();
+  };
   $('#ml-contact').onchange = async e => {
     contactId = e.target.value; vars = await mailVars(showId, contactId);
     // brouillon en cours de restauration (événement non déclenché par un clic) : on garde l'adresse, l'objet et le texte restaurés
     if (!e.isTrusted) return;
-    $('#ml-to').value = vars.contact_email || ''; draw(); document.querySelector('#modal .rcpt-note')?.remove();
+    $('#ml-to').value = vars.contact_email || ''; document.querySelector('#modal .rcpt-note')?.remove();
+    // l'adresse suit toujours le contact ; le texte (salutation…) n'est réécrit que s'il n'a pas été retouché, ou avec accord
+    if (await replaceOk()) draw(); else syncChips(document.querySelector('#modal'));
     if (contactId && contactId !== s.conf_contact_id) save('shows', s.id, {conf_contact_id: contactId}, {rerender:false});
   };
   $('#ml-files').addEventListener('change', e => { const i = e.target.dataset.att; if (i != null){ files[i].on = e.target.checked; drawFiles(); } });

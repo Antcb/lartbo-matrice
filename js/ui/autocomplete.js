@@ -7,6 +7,7 @@
  *   - kind  : une des SOURCES ci-dessous
  *   - attrs : attributs posés sur l'input caché qui porte l'identifiant (name="…" ou data-t/data-id/data-f)
  *   - fill  : pour les adresses, préfixe des champs du formulaire à remplir automatiquement
+ *   - activeOnly : structures — les inactives (v1.54) ne sont pas proposées ; une ligne « Afficher aussi … » les montre sur demande
  * Au choix, l'input caché reçoit l'identifiant et déclenche « change » (enregistrement direct ou formulaire).
  */
 import { byId, isInactive, linksOfStructure, showLabel, structName } from '../selectors.js';
@@ -35,7 +36,7 @@ export const SOURCES = {
     search: q => rank(S.db.structures, q, s => `${s.name} — ${[s.city, s.department_code].filter(Boolean).join(' ')}${q.includes('@') ? ' ' + linksOfStructure(s.id).flatMap(c => [c.email, c.email_2]).filter(Boolean).join(' ') : ''}`)
       // structures inactives (v1.54) : toujours trouvables, mais après les autres et signalées
       .sort((a, b) => isInactive(a) - isInactive(b))
-      .map(s => ({id:s.id, label:s.name, hint:[s.city, s.department_code && '('+s.department_code+')', isInactive(s) && 'inactive'].filter(Boolean).join(' ')})),
+      .map(s => ({id:s.id, label:s.name, inactive:isInactive(s), hint:[s.city, s.department_code && '('+s.department_code+')', isInactive(s) && 'inactive'].filter(Boolean).join(' ')})),
   },
   contacts: {
     label: id => byId('contacts', id)?.display_name || '',
@@ -69,9 +70,9 @@ function knownCities(q){
     hint: `${s.department_code} ${s.department_name || ''}`.trim()}));
 }
 
-export function acInput(kind, {value='', text, attrs='', placeholder='Rechercher…', create=false, fill=false}={}){
+export function acInput(kind, {value='', text, attrs='', placeholder='Rechercher…', create=false, fill=false, activeOnly=false}={}){
   const label = text ?? (value ? SOURCES[kind].label(value) : '');
-  return `<span class="ac" data-ac="${kind}" ${create?'data-create="1"':''} ${fill!==false && fill!=null ?`data-fill="${esc(fill)}"`:''}>
+  return `<span class="ac" data-ac="${kind}" ${create?'data-create="1"':''} ${activeOnly?'data-active-only="1"':''} ${fill!==false && fill!=null ?`data-fill="${esc(fill)}"`:''}>
     <input type="text" class="ac-input" value="${esc(label)}" placeholder="${esc(placeholder)}" autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" role="combobox" aria-expanded="false" aria-autocomplete="list">
     <input type="hidden" class="ac-val" value="${esc(value||'')}" ${attrs}></span>`;
 }
@@ -102,7 +103,7 @@ function place(list, input){
 
 function draw(){
   const {list, items, idx} = OPEN;
-  list.innerHTML = items.length ? items.map((it,i) => `<div class="ac-item ${i===idx?'on':''} ${it.create?'create':''}" data-i="${i}" role="option">
+  list.innerHTML = items.length ? items.map((it,i) => `<div class="ac-item ${i===idx?'on':''} ${it.create||it.more?'create':''}" data-i="${i}" role="option">
       <span>${esc(it.label)}</span>${it.hint?`<small>${esc(it.hint)}</small>`:''}</div>`).join('')
     : `<div class="ac-empty">${OPEN.loading ? 'Recherche…' : 'Aucun résultat'}</div>`;
 }
@@ -130,6 +131,12 @@ async function update(input){
     items = local.concat(items.filter(x => !seen.has(norm(x.city || '') + '|' + (x.department_code || '')))).slice(0, 10);
   }
   else items = src.search(q);
+  // nouvelle prospection (v1.56) : structures inactives masquées par défaut, montrées seulement sur demande explicite
+  if (box.dataset.activeOnly && !box._showInactive){
+    const n = items.filter(it => it.inactive).length;
+    items = items.filter(it => !it.inactive);
+    if (n) items.push({more:true, label:`Afficher aussi ${n} structure${n>1?'s':''} inactive${n>1?'s':''}`, hint:'fermée(s), gardée(s) avec leur historique'});
+  }
   if (box.dataset.create) items = items.concat([{create:true, label:`+ Créer « ${q} »`, q}]);
   OPEN.items = items; OPEN.idx = 0; draw();
 }
@@ -137,6 +144,7 @@ async function update(input){
 async function choose(i){
   if (!OPEN) return;
   const {box, input, items} = OPEN; const it = items[i]; if (!it) return;
+  if (it.more){ box._showInactive = true; return update(input); }   // la liste reste ouverte, inactives comprises (signalées)
   close();
   let chosen = it;
   if (it.create){

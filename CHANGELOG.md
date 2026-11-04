@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.56.0 — 04/11/2026
+- Suite du 04/11 : structures inactives hors des nouvelles sélections de suivi, artiste sélectionné visible et désélectionnable, textes saisis jamais remplacés sans question, montants lisibles dans les factures et le budget d'une date
+
+
 ## 1.55.1 — 04/11/2026
 - Destinataires : relecture V1.55 — pastilles fiables après un brouillon restauré, composant de pastille commun et cible tactile de 40 px
 

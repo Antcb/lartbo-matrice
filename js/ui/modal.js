@@ -25,7 +25,7 @@ export function field(f, v){
   else if (f.type==='project') input = projPicker(v, {attrs:`name="${f.k}" id="${id}"`, allLabel: f.allLabel||'', cls:'sel pp-field'});
   else if (f.type==='textarea') input = `<textarea id="${id}" name="${f.k}" ${f.rows?`rows="${f.rows}"`:''}>${esc(v??'')}</textarea>`;
   else if (f.type==='date') input = dateInput(v, `name="${f.k}" id="${id}"`);
-  else if (f.type==='ac') input = acInput(f.kind, {value:v, attrs:`name="${f.k}"`, create:f.create, placeholder:f.placeholder||'Taper pour chercher…'});
+  else if (f.type==='ac') input = acInput(f.kind, {value:v, attrs:`name="${f.k}"`, create:f.create, activeOnly:f.activeOnly, placeholder:f.placeholder||'Taper pour chercher…'});
   else if (f.type==='fulladdr') input = acInput('fulladdr', {value:v, text:v||'', attrs:`name="${f.k}"`, placeholder:f.placeholder||'Taper une adresse…'});
   else if (f.type==='place' || f.type==='city') input = acInput(f.type==='city'?'cities':'places', {value:v, text:v||'', attrs:`name="${f.k}"`, fill:f.fill??'', placeholder:f.placeholder||(f.type==='city'?'Taper une ville…':'Taper une adresse ou une ville…')});
   else if (f.type==='tags') input = tagPicker({id, name: f.k, values: Array.isArray(v) ? v : (v ? String(v).split(',').map(x=>x.trim()).filter(Boolean) : []), suggestions: typeof f.suggest === 'function' ? f.suggest() : (f.suggest || [])});

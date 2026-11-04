@@ -166,7 +166,7 @@ function suiviPage(p){
       <button class="btn" data-act="wsTask" data-id="${p.id}">Nouvelle tâche</button>
       <button class="btn primary" data-act="wsShow" data-id="${p.id}" ${st?'':'disabled title="Choisis d’abord la structure"'}>Poser une date</button>`})}
   <div class="panel pad ws-who">
-    <div class="field"><label>Structure</label>${cAc('structures','prospects',p.id,'structure_id',p.structure_id,{create:true, placeholder:'Chercher ou créer la structure (salle, festival…)'})}</div>
+    <div class="field"><label>Structure</label>${cAc('structures','prospects',p.id,'structure_id',p.structure_id,{create:true, activeOnly:true, placeholder:'Chercher ou créer la structure (salle, festival…)'})}</div>
     <div class="field"><label>Contacts de la structure</label><div class="proj-chips">${contacts.map(c=>`<a href="#" class="chip" data-act="editContact" data-id="${c.id}" style="padding-right:10px">${esc(c.display_name)}</a>`).join('')}
       ${st?`<button type="button" class="btn sm" data-act="newContactFor" data-id="${st.id}">+ Contact</button>`:'<span class="muted">Choisis la structure</span>'}</div></div>
   </div>
