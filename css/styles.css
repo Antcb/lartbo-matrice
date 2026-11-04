@@ -84,6 +84,7 @@ main{padding:20px 24px 60px;max-width:1560px;margin:0 auto}
 .view-head{margin:4px 0 18px}
 .vh-top{display:flex;align-items:center;gap:12px 16px;flex-wrap:wrap}
 .vh-filters{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;margin-top:14px}
+.artist-ctx{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;font-size:13px;color:var(--muted);margin:var(--sp-2) 0 0}
 .vh-title{display:flex;align-items:baseline;gap:4px 14px;flex-wrap:wrap;flex:1 1 260px;min-width:0}
 .view-head h1{font-size:var(--fs-h1)}
 .view-head .sub{color:var(--muted)}
@@ -195,8 +196,8 @@ td input:not([type=checkbox]):not([type=radio]):not(.dt-txt):not(.dt-val):not(.t
 .cell-ta.is-url{min-width:180px;font-size:13px;overflow-wrap:anywhere;color:var(--brand-2)}
 td input:hover,td select:hover,td textarea:hover,.cell-ta:hover{border-color:var(--line)}
 td input:focus,td select:focus,td textarea:focus,.cell-ta:focus{border-color:var(--brand-2);background:var(--panel);outline:none}
-td :is(input[type=number],input.num-in){text-align:right;width:90px}
-td :is(input[type=number],input.num-in).narrow{width:72px}
+td :is(input[type=number],input.num-in){text-align:right;width:112px}   /* 112 px : un montant à 7 chiffres et ses centimes (1234567,89) reste lisible en entier */
+td :is(input[type=number],input.num-in).narrow{width:60px}   /* %, TVA : « 33,33 » au plus */
 td input[type=checkbox]{width:16px;height:16px;accent-color:var(--brand)}
 /* chiffres sans flèches +/- (partout) */
 :is(input[type=number],input.num-in){-moz-appearance:textfield;appearance:textfield}
@@ -213,6 +214,7 @@ td.num > :is(input,.dt){margin-right:-9px}
 /* Date : saisie au clavier + calendrier */
 .dt{display:inline-flex;align-items:center;position:relative;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--panel);height:var(--h-sm)}
 td .dt{border-color:transparent;background:transparent}
+@media (min-width:1025px){ td .dt-txt{width:88px} }   /* tableaux (hors fiches) : « jj/mm/aaaa » entier, factures sans défilement à 1 440 px */
 td .dt:hover{border-color:var(--line)}
 .dt:focus-within{border-color:var(--brand-2);background:var(--panel)}
 .dt-txt{border:0!important;background:transparent!important;width:96px;padding:0 0 0 8px!important;font-variant-numeric:tabular-nums;outline:none;height:100%}
@@ -479,7 +481,7 @@ td input.invalid,td input.invalid:hover,td input.invalid.invalid:focus,td textar
   .stat-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   .stat b{font-size:22px}
   .steps{grid-template-columns:1fr auto}
-  .view-settings .steps{grid-template-columns:minmax(0,1fr)} .view-settings .steps label{margin-top:6px}
+  .view-settings .steps,.steps.prod-params{grid-template-columns:minmax(0,1fr)} .view-settings .steps label,.steps.prod-params label{margin-top:6px}   /* paramètres du budget aussi : libellé au-dessus (v1.56) */
   .mini-grid .ac,.mini-grid .ac-input,.mini-grid .cell-ta{width:100%;min-width:0}
   .qty-line{flex-wrap:wrap;justify-content:flex-end}
   .pcard{grid-template-columns:minmax(0,1fr) 84px} .pcard .photo{width:84px}
@@ -553,6 +555,7 @@ input[type=range]{accent-color:var(--brand);flex:1;min-width:120px}
 .mini-task input[type=checkbox]{width:16px;height:16px;accent-color:var(--brand)}
 .prod-body{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .prod-bill{grid-column:1/-1}
+.prod-bill .cell-ta[data-f=invoice_number]{min-width:76px}   /* remplace un style en ligne (DS §10) */
 /* 18 — Mails, modèles et fiche (v1.10) --------------------------------- */
 .prod-mails{grid-column:1/-1;border-top:1px solid var(--line-2);padding-top:14px}
 .mail-btns{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
@@ -666,7 +669,7 @@ button.add-proj{cursor:pointer}
 .budget-stats{gap:22px}
 .budget-stats .stat b{font-size:22px}
 .budget-table td{vertical-align:middle}
-.budget-table :is(input[type=number],input.num-in){width:96px}
+.budget-table :is(input[type=number],input.num-in){width:112px}
 .budget-table input.narrow{width:54px}
 .budget-table tr.is-paid td{background:#F4FAF6}
 .budget-table tr.budget-over td{background:var(--brand-tint);outline:2px dashed var(--brand-2);outline-offset:-2px}
@@ -774,12 +777,12 @@ dialog.mail .mode-note{margin:0}
 .prod-tab .prod-budget,.prod-tab .prod-bill{border:0;padding:0;margin:0}
 .tab-intro{margin:0 0 12px;font-size:13px;color:var(--muted);line-height:1.8}
 .tab-intro .btn{margin-left:8px}
-.tbl-wrap:has(>.budget-sum){max-width:760px}
+.tbl-wrap:has(>.budget-sum){max-width:720px}   /* cadre aligné sur le tableau (DS §5, correction 760 → 720) */
 .date-notes-ta{width:100%;min-height:calc(var(--h) * 5);resize:vertical}   /* onglet Notes d'une date (v1.53) */
 .prod-cols{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:28px}
 @media (max-width:900px){ .prod-cols{grid-template-columns:1fr} }
 /* Budget : prévu / réel / écart */
-.budget-sum{max-width:720px}
+.budget-sum{width:100%}
 .budget-sum td,.budget-sum th{padding:7px 10px}
 .budget-sum .neg{color:var(--danger);font-weight:600}
 .budget-sum .pos{color:var(--ok);font-weight:600}
@@ -911,6 +914,7 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
   table.cards .cell-ta{text-align:left}
   table.cards td input,table.cards td select,table.cards .ac-input{border-color:var(--line)}
   table.cards .dt{border-color:var(--line)}
+  table.cards td :is(input[type=number],input.num-in):not(.narrow,.narrow2){width:min(100%,160px)}   /* montants entiers lisibles sur téléphone */
   table.cards .proj-chips{justify-content:flex-end}
   table.cards td > :is(input,select,.dt,.ac,textarea),table.cards .task-title .cell-ta,table.cards .due-cell .urg{margin-left:0!important;margin-right:0!important}
   /* case à cocher (tâche faite…) : en haut à droite de la fiche */

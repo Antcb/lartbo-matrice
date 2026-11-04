@@ -56,7 +56,15 @@ export const fileRow = (f, act='openFile', del='delFile') => `<div class="file-r
 
 /** En-tête de page commun à tout le site : titre et actions sur la première ligne, filtres en dessous */
 export const viewHead = (title, {sub='', filters='', actions=''}={}) =>
-  `<div class="view-head"><div class="vh-top"><div class="vh-title"><h1>${title}</h1>${sub?`<span class="sub">${sub}</span>`:''}</div><span class="spacer"></span>${actions?`<div class="vh-actions">${actions}</div>`:''}</div>${filters?`<div class="vh-filters">${filters}</div>`:''}</div>`;
+  `<div class="view-head"><div class="vh-top"><div class="vh-title"><h1>${title}</h1>${sub?`<span class="sub">${sub}</span>`:''}</div><span class="spacer"></span>${actions?`<div class="vh-actions">${actions}</div>`:''}</div>${filters?`<div class="vh-filters">${filters}</div>`:''}${filters.includes('pp-btn') ? '' : artistContext()}</div>`;
+
+/** Artiste(s) sélectionné(s) dans le filtre (v1.56) : rappelé sur les pages sans filtre artiste, car il sert de valeur par défaut
+ *  aux nouvelles fiches (date, tâche) ; « Désélectionner » le retire partout, à tout moment */
+export function artistContext(){
+  const names = S.projects.map(id => projName(id)).filter(Boolean);
+  if (!names.length) return '';
+  return `<p class="artist-ctx">Artiste sélectionné${names.length > 1 ? 's' : ''} : <b>${esc(names.join(', '))}</b> <button type="button" class="btn sm ghost" data-act="clearArtists">Désélectionner</button></p>`;
+}
 
 /** Bloc repliable */
 export const fold = (key, title, inner, {open=false, count=null}={}) => {

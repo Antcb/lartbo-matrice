@@ -62,7 +62,7 @@ export function structurePage(st){
   return `<button class="btn ghost back" data-act="closeStructure">← Structures</button>
   ${isInactive(st) ? `<p class="mode-note">Structure <b>inactive</b> depuis le ${fmtDate(String(st.inactive_at).slice(0, 10))} : gardée avec ses contacts, suivis, dates et documents ; plus proposée par défaut. <button class="btn sm" data-act="setStructureInactive" data-id="${st.id}" data-on="0">Réactiver</button></p>` : ''}
   ${viewHead(esc(st.name), {sub: esc([st.city, st.department_code && '('+st.department_code+')', st.region, st.country && st.country!=='France' ? st.country : ''].filter(Boolean).join(' · ')),
-    actions:`<button class="btn primary" data-act="prospection" data-id="${st.id}" title="Mail de prospection depuis un modèle : brouillon ou envoi, suivi et relance créés automatiquement">Prospection</button>
+    actions:`<button class="btn ${isInactive(st) ? '' : 'primary'}" data-act="prospection" data-id="${st.id}" title="Mail de prospection depuis un modèle : brouillon ou envoi, suivi et relance créés automatiquement">Prospection</button>
       ${(m => m ? `<button class="btn" data-act="relance" data-id="${m.id}" title="Relance en réponse au mail « ${esc(m.mail_subject || '')} »">Relance${m.relances ? ` (${m.relances + 1}e)` : ''}</button>` : '')(lastProspectMail(st.id))}
       <button class="btn" data-act="editStructure" data-id="${st.id}">Modifier la fiche</button>
       <button class="btn" data-act="newShowFor" data-id="${st.id}">Nouvelle date</button>
