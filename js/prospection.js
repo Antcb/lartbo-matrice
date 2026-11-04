@@ -13,6 +13,7 @@ import { PROSPECT_TAGS, attOk, attSizeHTML, callGoogle, callScript, fill, todoOk
 import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName } from './selectors.js';
 import { S, touch } from './state.js';
 import { CONFIRMED_PROD } from './constants.js';
+import { recipientsHelp, syncChips } from './ui/recipients.js';
 import { dateInput } from './ui/datefield.js';
 import { openModal } from './ui/modal.js';
 import { rtStyle, rtToolbar, wrapMail } from './ui/richtext.js';
@@ -111,7 +112,9 @@ export async function openProspection(structureId, {prospectId=null}={}){
       <label for="pr-show" class="pr-concert" hidden>Concert</label><span class="pr-concert" hidden><select id="pr-show"></select><small class="muted">remplit la date, la ville, le lieu, la date limite de réponse et les liens</small></span>
       <label for="pr-contact">Destinataire</label><span class="mail-to"><select id="pr-contact"><option value="">— autre adresse —</option>${contacts.map(c => `<option value="${c.id}" ${c.id === contact?.id ? 'selected' : ''}>${esc(c.display_name)}${contactMails(c) ? ` · ${esc(contactMails(c))}` : ' (pas de mail)'}</option>`).join('')}</select>
         <input id="pr-to" type="email" multiple placeholder="adresse@exemple.fr (plusieurs : séparées par des virgules)" value="${esc(relance ? (p.mail_to || '') : contactMails(contact))}"></span>
+      ${recipientsHelp('pr-to', st.id)}
       <label for="pr-cc">Copie</label><input id="pr-cc" data-mails>
+      ${recipientsHelp('pr-cc', st.id)}
       ${relance ? '' : `<label for="pr-subj">Objet</label><input id="pr-subj">
       <label>Date proposée</label><span class="pr-date">${dateInput('', 'id="pr-date"')}<small class="muted">facultatif : crée la date en « Intérêt » pour chaque artiste</small></span>`}
     </div>
@@ -177,6 +180,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
       files = [...(t?.attachments || []).map(a => ({...a, on: was.get(a.path || a.id) ?? !!relance})), ...files.filter(f => f.mine)]; drawFiles(); if (t?.cc) $('#pr-cc').value = t.cc; }
   };
   drawTpls(); $('#pr-tpl').dataset.prev = $('#pr-tpl').value; draw(true);   // aucun artiste coché d'office (v1.53)
+  syncChips(document.querySelector('#modal'));
   // modèle choisi → ses artistes sont cochés (un modèle « tous les artistes » garde la sélection)
   function syncArtists(){
     const ids = tplProjects(byId('mail_templates', $('#pr-tpl').value)); if (!ids.length || relance) return;
@@ -198,7 +202,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
     $('#pr-tpl').dataset.prev = $('#pr-tpl').value;
     if ($('#pr-tpl').value !== before && !dirty) draw(true); else draw();
   });
-  $('#pr-contact').onchange = e => { contact = byId('contacts', e.target.value) || null; if (contactMails(contact)) $('#pr-to').value = contactMails(contact); draw(); };
+  $('#pr-contact').onchange = e => { contact = byId('contacts', e.target.value) || null; if (contactMails(contact)) $('#pr-to').value = contactMails(contact); draw(); syncChips(document.querySelector('#modal')); };
   $('#pr-date')?.addEventListener('change', () => draw());
   $('#pr-show').onchange = async () => { if (dirty && !(await confirmAsk('Remplacer le texte retouché ?', 'Le texte du mail que tu as retouché sera réécrit avec ce concert.', 'Remplacer le texte', {danger: true}))) return; draw(true); };
   $('#pr-from').onchange = e => { const before = signatureOf(sender); sender = e.target.value; $('#pr-from-addr').textContent = fromAddr();

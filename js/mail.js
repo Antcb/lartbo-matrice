@@ -14,6 +14,7 @@ import { byId, contactMails, linksOfStructure, projectOptions, setting } from '.
 import { S } from './state.js';
 import { openModal } from './ui/modal.js';
 import { rtStyle, rtToolbar, wrapMail } from './ui/richtext.js';
+import { recipientsHelp, syncChips } from './ui/recipients.js';
 import { esc, fmtDate, toast, today, eur2, pct } from './utils.js';
 
 export const MAIL_KINDS = { confirmation: 'Confirmation', boucle_tech: 'Boucle accueil & technique', boucle_com: 'Boucle communication', prospection: 'Prospection', relance: 'Relance de prospection', autre: 'Autre' };
@@ -125,7 +126,12 @@ export async function prepareMail(showId, kind){
   const tpls = templatesFor(s, kind);
   if (!tpls.length) return toast(`Aucun modèle « ${MAIL_KINDS[kind]} » pour cet artiste. Ajoute-le dans Réglages › Modèles de mail.`, true);
   const contacts = linksOfStructure(s.structure_id);
-  let contactId = s.conf_contact_id && contacts.some(c=>c.id===s.conf_contact_id) ? s.conf_contact_id : (contacts.find(c=>contactMails(c))?.id || '');
+  // destinataire (v1.55, décision d'Anthony) : en confirmation, jamais « le premier contact de la structure » — le contact déjà choisi
+  // pour la date, sinon celui du suivi de la date s'il est lié à la structure ; sinon on demande de choisir. Autres mails : inchangé.
+  const linked = id => id && contacts.some(c => c.id === id) ? id : '';
+  const suiviContact = linked(byId('prospects', s.prospect_id)?.contact_id);
+  let contactId = linked(s.conf_contact_id) || (kind === 'confirmation' ? suiviContact : (contacts.find(c=>contactMails(c))?.id || ''));
+  const mustPick = kind === 'confirmation' && !contactId;
   let vars = await mailVars(showId, contactId);
   const log = s.mail_log?.[kind];
   const booking = isBookingOnly(s);
@@ -139,7 +145,10 @@ export async function prepareMail(showId, kind){
       <label>Envoyé par</label><span class="ml-from">${esc(PROD_MAIL)}${sig ? ' <span class="muted">· avec la signature production@</span>' : ' <span class="muted">· pas de signature (Réglages › Prospection, signature de Chloé)</span>'}</span>
       <label for="ml-contact">Destinataire</label><span class="mail-to"><select id="ml-contact"><option value="">— autre adresse —</option>${contacts.map(c=>`<option value="${c.id}" ${c.id===contactId?'selected':''}>${esc(c.display_name)}${contactMails(c)?` · ${esc(contactMails(c))}`:' (pas de mail)'}</option>`).join('')}</select>
         <input id="ml-to" type="text" data-mails inputmode="email" placeholder="adresse@exemple.fr (plusieurs : séparées par des virgules)" value="${esc(vars.contact_email||'')}"></span>
+      ${mustPick ? `<p class="mode-note rcpt-note">${contacts.filter(c => contactMails(c)).length ? 'Plusieurs contacts possibles et aucun n’est lié à cette date ou à son suivi' : 'Aucun contact identifié pour cette date'} : choisis le destinataire ci-dessus ou dans les suggestions.</p>` : ''}
+      ${recipientsHelp('ml-to', s.structure_id)}
       <label for="ml-cc">Copie</label><input id="ml-cc" type="text" data-mails placeholder="Nom <adresse@…>, …">
+      ${recipientsHelp('ml-cc', s.structure_id)}
       <label for="ml-subj">Objet</label><input id="ml-subj">
     </div>
     ${rtToolbar('ml-body')}<div class="mail-preview" id="ml-body" contenteditable="true" style="${rtStyle()}" aria-label="Texte du mail (modifiable)"></div>
@@ -182,6 +191,7 @@ export async function prepareMail(showId, kind){
     $('#ml-subj').value = fill(t.subject, vars, false);
     // date en booking uniquement : pas de fiche de renseignements (les parties s'arrangent entre elles après le mail)
     $('#ml-body').innerHTML = fill(expandAcomptes(booking ? withoutFiche(t.html) : t.html, s), vars, true) + sig;
+    syncChips(document.querySelector('#modal'));
   };
   draw();
   $('#ml-tpl').onchange = draw;
@@ -189,7 +199,7 @@ export async function prepareMail(showId, kind){
     contactId = e.target.value; vars = await mailVars(showId, contactId);
     // brouillon en cours de restauration (événement non déclenché par un clic) : on garde l'adresse, l'objet et le texte restaurés
     if (!e.isTrusted) return;
-    $('#ml-to').value = vars.contact_email || ''; draw();
+    $('#ml-to').value = vars.contact_email || ''; draw(); document.querySelector('#modal .rcpt-note')?.remove();
     if (contactId && contactId !== s.conf_contact_id) save('shows', s.id, {conf_contact_id: contactId}, {rerender:false});
   };
   $('#ml-files').addEventListener('change', e => { const i = e.target.dataset.att; if (i != null){ files[i].on = e.target.checked; drawFiles(); } });

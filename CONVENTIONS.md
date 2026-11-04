@@ -369,6 +369,10 @@ Les factures de l'artiste sur les dates booking n'entrent dans **aucun** des tro
 - **Structure inactive** (fermée) : `structures.inactive_at` (date) ; jamais supprimée, contacts, suivis, dates, documents et historique gardés et affichés. Cachée par défaut dans la liste des structures (case « Afficher les structures inactives »), signalée « Inactive », proposée en dernier dans la recherche de structure, question avant une prospection ou une relance. Réactivable (« Réactiver »).
 - **Contact rattaché à plusieurs structures** : depuis une fiche structure, « Rattacher un contact existant » ajoute un lien (`contact_structures`) sans retirer le contact de ses autres structures ni copier sa fiche. **Fonction propre à chaque structure** : `contact_structures.role` (« Fonction ici ») ; les fonctions générales du contact (`contacts.roles`) restent.
 
+### 6.16 Destinataires, copies et confirmations [DÉCIDÉ 04/11/2026, EN PLACE v1.55]
+- Sous « Destinataire » et « Copie » des mails (dates et prospection) : les adresses des contacts de la structure à ajouter / retirer d'un clic (✓ = présente), une recherche dans tous les contacts de la base, la saisie libre de plusieurs adresses ; **aucun doublon** (même adresse, majuscules comprises, retirée en quittant le champ). Le champ d'adresses reste visible, modifiable et **seul lu à l'envoi** : circuits Gmail / scripts Google / Brevo inchangés (`js/ui/recipients.js`).
+- **Confirmation** : jamais le premier contact de la structure d'office. Destinataire = contact déjà choisi pour la date (`conf_contact_id`), sinon le contact du **suivi lié à la date** s'il est rattaché à la structure ; sinon rien n'est présélectionné et un message demande de choisir (plusieurs contacts possibles ou aucun identifié). Les autres mails des dates et la prospection gardent leur présélection actuelle.
+
 ## 7. Supabase
 
 ### 7.1 Nommage
