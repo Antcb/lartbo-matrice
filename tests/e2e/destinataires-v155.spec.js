@@ -69,3 +69,44 @@ test('v1.55 destinataires et copies : adresses de la structure d’un clic, rech
   expect(await page.evaluate(() => window.__calls.filter(c => c.fn === 'script-google').length)).toBe(0);
   expectClean(ctx);
 });
+
+test('v1.55.1 relecture B1 : après un brouillon restauré, les pastilles disent vrai et un clic ne fait jamais l’inverse de ce qui est affiché', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, DATA);
+  await open(page, 'sd-show-1');
+  const to = page.locator('#ml-to'), alex = page.locator('[data-rcpt-for="ml-to"][data-rcpt-add="alex@exemple.invalid"]');
+  await alex.click();
+  await expect(to).toHaveValue('alex@exemple.invalid');
+  await page.locator('#modal [data-act=closeModal]').first().click();
+  // réouverture : brouillon restauré, la pastille indique bien l'adresse présente
+  await open(page, 'sd-show-1');
+  await expect(page.locator('#modal .draft-bar')).toBeVisible();
+  await expect(to).toHaveValue('alex@exemple.invalid');
+  await expect(alex).toHaveClass(/\bon\b/);
+  // pastille affichée « + » alors que l'adresse est déjà là (affichage en retard) : le clic n'ajoute rien et ne retire surtout rien
+  await alex.evaluate(b => b.classList.remove('on'));
+  await alex.click();
+  await expect(to).toHaveValue('alex@exemple.invalid');
+  await expect(alex).toHaveClass(/\bon\b/);
+  // pastille « ✓ » : le clic retire
+  await alex.click();
+  await expect(to).toHaveValue('');
+  expect(await page.evaluate(() => window.__calls.filter(c => c.fn === 'script-google').length)).toBe(0);
+  expectClean(ctx);
+});
+
+test.describe('téléphone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  test('v1.55.1 relecture B2 : pastilles d’adresses = composant .tag-chip, cible tactile de 40 px', async ({ page }) => {
+    const ctx = await openApp(page);
+    await seed(page, DATA);
+    await open(page, 'sd-show-1');
+    const chips = page.locator('#modal [data-rcpt-add]');
+    await expect(chips.first()).toBeVisible();
+    for (const c of await chips.all()) {
+      await expect(c).toHaveClass(/\btag-chip\b/);
+      expect((await c.boundingBox()).height).toBeGreaterThanOrEqual(40);
+    }
+    expectClean(ctx);
+  });
+});

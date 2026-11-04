@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.55.1 — 04/11/2026
+- Destinataires : relecture V1.55 — pastilles fiables après un brouillon restauré, composant de pastille commun et cible tactile de 40 px
+
+
 ## 1.55.0 — 04/11/2026
 - Destinataires (lot V1.55) — sous Destinataire et Copie : adresses des contacts de la structure d’un clic, recherche dans toute la base, plusieurs adresses sans doublon ; confirmation : plus jamais le premier contact d’office (contact de la date, sinon celui du suivi lié, sinon choix demandé) ; circuits d’envoi inchangés
 

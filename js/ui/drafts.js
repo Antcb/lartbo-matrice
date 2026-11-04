@@ -57,6 +57,7 @@ function apply(form, d){
     if (e.classList.contains('tp-val')) fire(e, 'tp-set');
   }));
   Object.entries(d.h || {}).forEach(([id, html]) => { const el = form.querySelector('#' + CSS.escape(id)); if (el && el.innerHTML !== html){ el.innerHTML = html; fire(el, 'input'); } });
+  fire(form, 'draft-applied');   // affichages qui dépendent des champs (pastilles d'adresses…) remis à jour
   };
   const gen = form._draftGen = (form._draftGen || 0) + 1;   // une restauration plus récente (ex. « repartir de zéro ») annule celle-ci
   texts();

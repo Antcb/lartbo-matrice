@@ -595,10 +595,9 @@ input[type=range]{accent-color:var(--brand);flex:1;min-width:120px}
 /* destinataires et copies (v1.55) : adresses de la structure à ajouter / retirer, recherche dans la base */
 .rcpt-sug{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;min-width:0}
 .mail-grid>.rcpt-sug{grid-column:2/-1}
-.rcpt-chip{display:inline-flex;align-items:center;max-width:100%;min-height:var(--h-pill);padding:0 10px;border:1px dashed var(--line);border-radius:999px;background:var(--panel);color:var(--muted);font:inherit;font-size:12px;cursor:pointer;overflow-wrap:anywhere;text-align:left}
-.rcpt-chip::before{content:'+ '}
-.rcpt-chip.on{border-style:solid;border-color:var(--brand);background:var(--brand-tint);color:var(--brand)}
-.rcpt-chip.on::before{content:'✓ '}
+.rcpt-sug .tag-chip{max-width:100%;overflow-wrap:anywhere;text-align:left}   /* pastille d'adresse = .tag-chip (DS §227) ; adresses longues sur téléphone */
+.rcpt-sug .tag-chip::before{content:'+ '}
+.rcpt-sug .tag-chip.on::before{content:'✓ '}
 .rcpt-search .ac{min-width:0;width:240px;max-width:100%}
 .rcpt-note{grid-column:1/-1}
 .warn-badge{background:#FFF1D6;color:#8A5A00;border-radius:999px;padding:3px 10px;font-weight:600;font-size:12px}
@@ -750,7 +749,7 @@ dialog.mail .mode-note{margin:0}
 @media (pointer:coarse){
   dialog.mail .btn,dialog.mail .rt-btn,dialog.mail .rt-bar select,dialog.mail .mail-grid select,dialog.mail .mail-grid input:not([type=checkbox]),
   .view-prospects select,.view-prospects .search{min-height:var(--h-touch)}
-  dialog.mail .pills label,dialog.mail .att-chip{min-height:var(--h-touch)}
+  dialog.mail .pills label,dialog.mail .att-chip,dialog.mail .tag-chip{min-height:var(--h-touch)}
   dialog.mail input[type=checkbox]{width:var(--chk-touch);height:var(--chk-touch)}
 }
 .log-mail{margin-top:8px;padding:12px 14px;border:1px solid var(--line-2);border-radius:var(--r);background:#fff;color:#000;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.45;overflow-x:auto;isolation:isolate;contain:paint}
