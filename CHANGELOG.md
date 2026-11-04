@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.55.0 — 04/11/2026
+- Destinataires (lot V1.55) — sous Destinataire et Copie : adresses des contacts de la structure d’un clic, recherche dans toute la base, plusieurs adresses sans doublon ; confirmation : plus jamais le premier contact d’office (contact de la date, sinon celui du suivi lié, sinon choix demandé) ; circuits d’envoi inchangés
+
+
 ## 1.54.0 — 04/11/2026
 - Structures et contacts (lot V1.54) — structure marquée inactive au lieu d’être supprimée (gardée avec tout son historique, cachée par défaut, retrouvée par un filtre, réactivable) ; contact existant rattaché à une autre structure sans copie, avec sa fonction propre à chaque structure (migration : colonne structures.inactive_at)
 
