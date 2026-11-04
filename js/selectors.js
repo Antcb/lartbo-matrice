@@ -154,6 +154,10 @@ export const contactMails = c => [c?.email, c?.email_2].map(e => String(e || '')
 
 export function linksOfContact(id){ return (byCol('contact_structures','contact_id').get(id)||[]).map(l=>byId('structures',l.structure_id)).filter(Boolean); }
 
+/** Structure fermée / inactive (v1.54) : gardée avec tout son historique, plus proposée par défaut */
+export const isInactive = st => !!st?.inactive_at;
+/** Fonction d'un contact dans une structure donnée (contact_structures.role, v1.54) — à côté de ses fonctions générales */
+export const linkRole = (contactId, structureId) => (S.db.contact_structures.find(l => l.contact_id === contactId && l.structure_id === structureId)?.role) || '';
 export function linksOfStructure(id){ return (byCol('contact_structures','structure_id').get(id)||[]).map(l=>byId('contacts',l.contact_id)).filter(Boolean); }
 
 export const optsOf = (t, label='name') => S.db[t].slice().sort((a,b)=>String(a[label]).localeCompare(String(b[label]))).map(r=>[r.id, r[label]]);

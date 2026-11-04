@@ -9,7 +9,7 @@
  *   - fill  : pour les adresses, préfixe des champs du formulaire à remplir automatiquement
  * Au choix, l'input caché reçoit l'identifiant et déclenche « change » (enregistrement direct ou formulaire).
  */
-import { byId, linksOfStructure, showLabel, structName } from '../selectors.js';
+import { byId, isInactive, linksOfStructure, showLabel, structName } from '../selectors.js';
 import { S } from '../state.js';
 import { esc, fmtDate, hayOf, norm } from '../utils.js';
 import { searchPlaces } from '../geo.js';
@@ -33,7 +33,9 @@ export const SOURCES = {
   structures: {
     label: id => structName(id),
     search: q => rank(S.db.structures, q, s => `${s.name} — ${[s.city, s.department_code].filter(Boolean).join(' ')}${q.includes('@') ? ' ' + linksOfStructure(s.id).flatMap(c => [c.email, c.email_2]).filter(Boolean).join(' ') : ''}`)
-      .map(s => ({id:s.id, label:s.name, hint:[s.city, s.department_code && '('+s.department_code+')'].filter(Boolean).join(' ')})),
+      // structures inactives (v1.54) : toujours trouvables, mais après les autres et signalées
+      .sort((a, b) => isInactive(a) - isInactive(b))
+      .map(s => ({id:s.id, label:s.name, hint:[s.city, s.department_code && '('+s.department_code+')', isInactive(s) && 'inactive'].filter(Boolean).join(' ')})),
   },
   contacts: {
     label: id => byId('contacts', id)?.display_name || '',

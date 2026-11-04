@@ -354,6 +354,8 @@ td .ac-input:hover{border-color:var(--line)}
 .facts small{color:var(--muted);font-size:12px}
 .contact-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:8px 0;border-top:1px solid var(--line-2);font-size:14px}
 .contact-row:first-of-type{border-top:0}
+.contact-row .link-role{height:var(--h-sm);min-width:0;max-width:220px;font-size:13px}   /* fonction dans cette structure (v1.54) */
+.attach-contact .ac{width:100%;max-width:420px}
 .contact-row .links{display:flex;flex-wrap:wrap;gap:4px 12px;grid-column:1/-1;font-size:13px}
 .admin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px 18px}
 

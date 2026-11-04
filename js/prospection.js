@@ -79,6 +79,8 @@ export async function openProspection(structureId, {prospectId=null}={}){
   const p = prospectId ? byId('prospects', prospectId) : null;
   const relance = !!p;
   const st = byId('structures', structureId || p?.structure_id); if (!st) return;
+  // structure inactive (v1.54) : plus proposée par défaut ; on demande avant d'écrire
+  if (st.inactive_at && !(await confirmAsk('Structure inactive', `« ${st.name} » est marquée inactive (fermée). Préparer quand même ce mail ?`, 'Continuer'))) return;
   if (relance && !p.mail_thread_id) return toast('Ce suivi n’a pas de mail de prospection envoyé depuis la Matrice', true);
   if (relance && !p.mail_sent_at){
     await checkProspect(p, true);

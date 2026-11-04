@@ -282,6 +282,11 @@ export const ACTIONS = {
   // Contacts & structures
   newContact: () => editContact(null), editContact: t => editContact(t.dataset.id),
   newContactFor: t => editContact(null, {_structures:[t.dataset.id]}),
+  // structure fermée (v1.54) : marquée inactive (date), jamais supprimée ; réactivable
+  setStructureInactive: async t => { const st = byId('structures', t.dataset.id); if (!st) return; const on = t.dataset.on === '1';
+    if (on && !(await confirmAsk('Marquer la structure inactive ?', `« ${st.name} » reste enregistrée avec ses contacts, suivis, dates et documents. Elle n’est plus proposée par défaut (liste des structures, prospection) ; tu la retrouves avec « Afficher les structures inactives » et tu peux la réactiver à tout moment.`, 'Marquer inactive'))) return;
+    if (await save('structures', st.id, {inactive_at: on ? new Date().toISOString() : null})) toast(on ? 'Structure marquée inactive' : 'Structure réactivée'); },
+  toggleInactiveStructs: () => { S.showInactiveStructs = !S.showInactiveStructs; render(); },
   // filtre par étiquette : clic = ajoute / retire ; depuis une fiche ou une ligne = uniquement cette étiquette
   filterTag: (t, e) => { e?.stopPropagation(); const tg = t.dataset.tag; const cur = S.structTags || [];
     S.structTags = !tg ? [] : t.dataset.only ? [tg] : cur.includes(tg) ? cur.filter(x => x !== tg) : [...cur, tg];
