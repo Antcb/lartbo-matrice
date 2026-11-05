@@ -128,8 +128,10 @@ document.addEventListener('change', async e => {
 document.addEventListener('keydown', e => {
   const t = e.target; if (!t.dataset?.linkRole) return;
   if (e.key === 'Enter'){ e.preventDefault(); t.closest('.role-edit')?.querySelector('[data-act=saveLinkRole]')?.click(); }
-  else if (e.key === 'Escape'){ e.preventDefault(); S.editRole = null; render(); }
+  else if (e.key === 'Escape'){ e.preventDefault(); S.editRole = null; S.editRoleDraft = null; S.editRoleBase = null; S.editRoleWarn = false; render(); }
 });
+// saisie en cours gardée en mémoire (jamais enregistrée) : un réaffichage automatique (temps réel, autre action) ne la perd pas
+document.addEventListener('input', e => { if (e.target.dataset?.linkRole) S.editRoleDraft = e.target.value; });
 
 // Coordonnées administratives d'une structure (champ JSON « admin »)
 document.addEventListener('change', async e => {
