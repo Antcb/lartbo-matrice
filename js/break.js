@@ -61,7 +61,8 @@ export function productionBreaks(s){
   const p = prodOf(s);
   const tiers = p.tickets.map(t => ({q: Math.max(0, Math.floor(num(t.qty) || 0)), unit: (num(t.price) || 0) + (num(t.dl_prod) || 0)}));
   const Q = tiers.reduce((a, t) => a + t.q, 0);
-  const coprod = s.contract_type === 'Co-Production';
+  // partage du résultat (coproduction, ou part de L'ArtBo < 100 %) : trois lectures ; sinon une seule
+  const coprod = s.contract_type === 'Co-Production' || (num(p.artbo_share) ?? 100) < 100;
   const base = {coprod, quota: Q, scenarios: SCENARIOS};
   if (!Q) return {...base, missing: 'Billets prévus par tarif (quotas) : à saisir pour calculer l’équilibre'};
   // budget prévu pour n billets (même calcul que le budget de la date : taxes, coûts, promotion, recettes complémentaires)

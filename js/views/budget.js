@@ -341,8 +341,10 @@ function coprodBlock(s){
   const side = w => w === 'artbo' ? 'L’ArtBoristerie' : esc(x.partner || 'le coproducteur');
   const row = (l, v, cls = '') => `<tr class="${cls}"><td>${l}</td><td class="num nowrap">${v == null ? '<span class="warn-txt">information manquante</span>' : eur2(v)}</td></tr>`;
   // perte : % des pertes du contrat (jamais déduit du % des bénéfices, décision du 05/11/2026)
-  const loss = (x.shared_result ?? x.result) < 0, pA = loss ? x.artbo_loss_share : x.artbo_share;
-  const pctTxt = v => v == null ? '% non renseigné' : esc(fmtPct(v));
+  // synthèse clôturée avant la v1.58 (sans artbo_loss_share) : la perte a été répartie au % de l'époque, affiché tel quel
+  const legacy = closed && !('artbo_loss_share' in x);
+  const loss = (x.shared_result ?? x.result) < 0, pA = loss && !legacy ? x.artbo_loss_share : x.artbo_share;
+  const pctTxt = v => v == null ? '% non renseigné' : esc(fmtPct(v)) + (loss && legacy ? ', % appliqué à la clôture' : '');
   return `<div class="coprod-block">
     <h4 class="block-title">Clôture du résultat ${closed ? '<span class="ok-badge">clôturé</span>' : ''}</h4>
     <div class="steps prod-params">
@@ -396,7 +398,7 @@ function productionBreaksHTML(s){
   const k = productionBreaks(s); if (!k) return '';
   const head = '<h4 class="block-title">Points d’équilibre (calculés sur le prévu)</h4>';
   if (k.missing) return `${head}<p class="muted">${esc(k.missing)}</p>`;
-  return `${head}<div class="tbl-wrap"><table class="budget-table prod-table break-table"><thead><tr><th>Billets payants nécessaires</th>${k.scenarios.map(([, l]) => `<th class="num">${esc(l)}</th>`).join('')}</tr></thead>
+  return `${head}<div class="tbl-wrap"><table class="budget-table prod-table"><thead><tr><th>Billets payants nécessaires</th>${k.scenarios.map(([, l]) => `<th class="num">${esc(l)}</th>`).join('')}</tr></thead>
     <tbody>${k.readings.map(r => `<tr><td>${esc(r.label)}</td>${k.scenarios.map(([sc]) => `<td class="num nowrap">${brkCell(r.byScenario[sc], k.quota)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
     <p class="muted small">Billet par billet, dans les quotas prévus de chaque tarif (${k.quota} billets payants ; invitations non comptées), avec les droits et taxes, les coûts prévus, la promotion locale et les recettes complémentaires. Les avances ne sont pas des charges. ${k.coprod ? 'Trois lectures distinctes, jamais additionnées : la part de L’ArtBo retire une seule fois la promotion à sa seule charge ; sous l’équilibre partagé, elle dépend du % des pertes du contrat. ' : ''}Calcul indicatif : il ne remplace pas un break prévu au contrat.</p>`;
 }
@@ -408,7 +410,7 @@ function coreaBreaksHTML(s){
       <label>Équilibre du spectacle</label><span class="warn-txt">${esc(k.spectacle)}</span>
       <label>Break du contrat</label><span>${c.value == null ? '<span class="muted">à renseigner</span>' : `<b>${c.value}</b> billets ${c.validated ? '<span class="ok-badge">validé</span>' : '<span class="warn-txt">à valider</span>'}`}${c.text ? ` <span class="muted">« ${esc(c.text)} »</span>` : ''} <span class="muted">seuil du partage prévu au contrat, ce n’est pas un équilibre économique</span></span>
     </div>
-    ${k.missing ? `<p class="muted">${esc(k.missing)}</p>` : `<div class="tbl-wrap"><table class="budget-table prod-table break-table"><thead><tr><th>Équilibre de L’ArtBoristerie : billets vendus nécessaires</th>${k.scenarios.map(([, l]) => `<th class="num">${esc(l)}</th>`).join('')}</tr></thead>
+    ${k.missing ? `<p class="muted">${esc(k.missing)}</p>` : `<div class="tbl-wrap"><table class="budget-table prod-table"><thead><tr><th>Équilibre de L’ArtBoristerie : billets vendus nécessaires</th>${k.scenarios.map(([, l]) => `<th class="num">${esc(l)}</th>`).join('')}</tr></thead>
       <tbody><tr><td>MG ${eur2(k.mg)} + part du résultat au-delà du break ≥ dépenses prévues de la date ${eur2(k.costs)}</td>${k.scenarios.map(([sc]) => `<td class="num nowrap">${k.byScenario[sc].n == null ? `<span class="warn-txt">non atteint dans la jauge (${k.capacity})</span>` : `<b>${k.byScenario[sc].n}</b>`}</td>`).join('')}</tr></tbody></table></div>
       <p class="muted small">${k.coveredByMg ? 'Le minimum garanti couvre déjà les dépenses prévues de la date. ' : ''}Dépenses prévues de la date hors solde artiste et hors commission ; charges déductibles du contrat (et la CNM seulement si elle est déduite du résultat partagé). Calcul indicatif.</p>`}`;
 }

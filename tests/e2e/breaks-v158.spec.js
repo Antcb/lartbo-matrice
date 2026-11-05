@@ -110,3 +110,27 @@ test('v1.58 coréalisation : équilibre du spectacle non calculable, break du co
   await expect(page.locator('.prod-budget')).toContainText('ce n’est pas un équilibre économique');
   expectClean(ctx);
 });
+
+test('v1.58.1 relecture : clôture d’avant la v1.58 en perte affichée au % de l’époque ; production avec partenaire de commission : L’ArtBo porte la perte ; % hors 0–100 refusé', async ({ page }) => {
+  const ctx = await openApp(page);
+  const snap = { result: -1000, shared_result: -1000, artbo_share: 60, artbo_part: -600, partner_part: -400, partner: 'Coprod Fictif', net_encaisse: 0, paid_artbo: 0, paid_partner: 0, transfer: 0, from: null, to: null };
+  await seed(page, { shows: [
+      { ...BASE, id: 'bk-7', date: `${Y}-03-16`, contract_type: 'Co-Production', partner_id: 'part-1', production: PROD({ artbo_share: 60 }),
+        result_closed: snap, result_closed_at: `${Y}-03-17T10:00:00Z`, result_closed_by: 'equipe@exemple.invalid' },
+      { ...BASE, id: 'bk-8', date: `${Y}-03-18`, contract_type: 'Production', partner_id: 'part-1', production: PROD({ tickets: [{ label: 'Plein', qty: 100, price: 21.1 }] }) }],
+    budget_lines: [{ id: 'bk-l8', project_id: 'art-a', show_id: 'bk-8', category: 'Salle', label: 'Coûts', forecast: 5000, payer: 'artbo' }] });
+  await openBudget(page, 'bk-7');
+  const blk = page.locator('.coprod-block');
+  await expect(blk).toContainText('pertes : 60 %, % appliqué à la clôture');
+  await expect(blk).not.toContainText('% non renseigné');
+  // production (pas une coproduction) : le partenaire de commission ne partage pas le résultat ; perte portée par L'ArtBo
+  const f = await page.evaluate(async () => { const p = await import('./js/production-budget.js'); const { byId } = await import('./js/selectors.js');
+    const b = p.productionBudget(byId('shows', 'bk-8')); return { artbo: b.artbo, partner: b.partner, lossMissing: b.lossMissing }; });
+  expect(f).toEqual({ artbo: -3000, partner: 0, lossMissing: false });
+  await openBudget(page, 'bk-8');
+  const lossIn = page.locator('[data-prod-show="bk-8"][data-prod-path="artbo_loss_share"]');
+  await lossIn.fill('150'); await lossIn.dispatchEvent('change');
+  await expect(page.locator('.toast')).toContainText('entre 0 et 100');
+  expect(await page.evaluate(() => window.__DB.shows.find(s => s.id === 'bk-8').production.artbo_loss_share ?? null)).toBeNull();
+  expectClean(ctx);
+});
