@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.57.0 — 05/11/2026
+- Spectacles d'un artiste (lot 1a) — budget type par spectacle (jauge ouverte ≤ 300 places, coût employeur, brut indicatif), spectacle choisi sur chaque nouvelle date, coût Movinmotion figé à la création de la ligne, suppression d'un artiste qui a des spectacles refusée avant toute modification, sauvegarde JSON de la nouvelle table
+
+
 ## 1.56.8 — 06/11/2026
 - Production : date d'envoi de la boucle communication affichée et modifiable sous le bouton (même donnée que l'onglet Communication), distincte du mail préparé dans L'ArtBotrice
 

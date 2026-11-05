@@ -5,16 +5,16 @@
  */
 import { copyText } from '../ui/dialog.js';
 import { ARTIST_DOCS, ARTIST_SECTIONS, PHOTO_CREDITS } from '../artist-fields.js';
-import { templateForm } from '../budget-template.js';
+import { spectacleForm, spectMissing, templateForm } from '../budget-template.js';
 import { ALL_FIELDS as AF_FIELDS, ficheText, fieldText, input as afInput, listClick, migrateInfo, read as afRead } from '../artist-form.js';
 import { netArtbo } from '../calc.js';
 import { templatesList, tplProjects } from '../mail.js';
 import { CONFIRMED_PROD, LOG_ICON, stClass, viaArtbo } from '../constants.js';
 import { save, sb, signedCached, signedUrl } from '../data.js';
-import { defaultCommission, projectCommission, publicLink, setting, suiviClosed, attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, structName, tasksOfProject } from '../selectors.js';
+import { defaultCommission, projectCommission, publicLink, setting, suiviClosed, attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, spectaclesOf, structName, tasksOfProject } from '../selectors.js';
 import { S, touch } from '../state.js';
 import { curTab, dropZone, fileRow, fold, pstBadge, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
-import { cAc, cIn } from '../ui/cells.js';
+import { cAc, cChk, cIn } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { badMails, checkMails, esc, eur, fmtDate, md, toast, today, url, pct } from '../utils.js';
 import { adminForm } from './structures.js';
@@ -108,6 +108,7 @@ function overview(p, {shows, tasks, suivis}){
       <label>Chambres twin</label>${cIn('projects', p.id, 'rooms_twin', p.rooms_twin, 'number', 'class="narrow"')}
       <label>Commission L'ArtBo (%)</label>${cIn('projects', p.id, 'default_artbo_pct', p.default_artbo_pct, 'number', `class="narrow" placeholder="${defaultCommission(p.mode)}"`)}
     </div></div>
+  ${spectaclesPanel(p)}
   ${p.mode === 'booking' ? '' : `<div class="panel pad mt-lg"><h3 class="block-title">Budget type <span class="muted title-note">· budget prévisionnel posé sur chaque nouvelle date confirmée</span></h3>${templateForm(p.id)}</div>`}
   <div class="struct-hero mt-lg">
     <div class="panel pad"><h3 class="block-title">Prochaines dates</h3>${next.map(s=>`<div class="plan-row click" data-act="editShow" data-id="${s.id}"><span class="d">${fmtDate(s.date)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span>${stSelect(s)}</div>`).join('') || '<p class="muted m0">Aucune date à venir.</p>'}</div>
@@ -266,3 +267,15 @@ document.addEventListener('click', async e => {
     await copyText(txt, 'Fiche copiée : colle-la où tu veux', 'Fiche de l’artiste'); }
 });
 export const artistLink = p => publicLink('artiste', p.artist_token);   // en test : « &test », le lien ouvre la base de test
+
+/** Spectacles de l'artiste (v1.57) : chacun son budget type ; une date peut être rattachée à l'un d'eux */
+function spectaclesPanel(p){
+  const list = spectaclesOf(p.id), n = id => showsOfProject(p.id).filter(s => s.spectacle_id === id).length;
+  return `<div class="panel pad mt-lg"><h3 class="block-title">Spectacles <span class="count">${list.length}</span> <span class="muted title-note">· chacun son budget type ; choisi sur chaque date</span><span class="spacer"></span><button class="btn sm" data-act="newSpectacle" data-id="${p.id}">Nouveau spectacle</button></h3>
+    ${list.length ? list.map(sp => fold('spectacle-' + sp.id, `${esc(sp.name)}${sp.active ? '' : ' <span class="badge">archivé</span>'}${spectMissing(sp).length ? ' <span class="warn-badge">à compléter</span>' : ''} <span class="muted">· ${n(sp.id)} date${n(sp.id) > 1 ? 's' : ''}</span>`,
+      `<div class="steps kv-grid"><label>Nom</label>${cIn('spectacles', sp.id, 'name', sp.name, 'text', 'aria-label="Nom du spectacle"')}
+        <label>Proposé pour les nouvelles dates</label>${cChk('spectacles', sp.id, 'active', sp.active, 'actif')}</div>
+       <h4 class="block-title mt">Budget type du spectacle</h4>${spectacleForm(sp)}`)).join('')
+      : '<p class="muted m0">Aucun spectacle : les dates prennent le budget type de l’artiste (ci-dessous). Les dates existantes ne sont rattachées à aucun spectacle tant que tu ne le choisis pas.</p>'}
+  </div>`;
+}

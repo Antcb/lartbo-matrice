@@ -196,6 +196,15 @@ for (const f of JS.filter(p => !p.endsWith('js/utils.js'))) {
   if (/toLocaleString\(\s*['"]fr-FR['"]\s*,\s*\{\s*style:\s*['"]currency/.test(src)) fail('formats', `${rel(f)} : montant formaté à la main (utiliser eur2 / eur)`);
 }
 
+// 10. Sauvegarde JSON (v1.57) : chaque table chargée par l'application figure dans l'export de sauvegarde (backup-export) —
+// une nouvelle table oubliée ne serait pas sauvegardée en JSON (la copie complète chiffrée, elle, prend toutes les tables)
+{
+  const list = src => [...(src.match(/TABLES\s*=\s*\[([\s\S]*?)\]/)?.[1] || '').matchAll(/'([a-z_]+)'/g)].map(m => m[1]);
+  const app = list(readFileSync(join(ROOT, 'js/state.js'), 'utf8')), backup = list(readFileSync(join(ROOT, 'supabase/functions/backup-export/index.ts'), 'utf8'));
+  if (!app.length || !backup.length) fail('sauvegarde', 'liste des tables introuvable (js/state.js ou backup-export)');
+  for (const t of app) if (!backup.includes(t)) fail('sauvegarde', `table « ${t} » chargée par l'application mais absente de l'export de sauvegarde (supabase/functions/backup-export)`);
+}
+
 // Bilan
 console.log(`Contrôles statiques : ${JS.length} modules, version ${version}, ${total(now)} fenêtre(s) native(s) tolérée(s), ${scanned.length} fichiers examinés pour les secrets.`);
 if (problems.length) { console.error(`\n${problems.length} problème(s) :\n` + problems.map(p => ' - ' + p).join('\n')); process.exit(1); }
