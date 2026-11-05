@@ -283,6 +283,12 @@ export const ACTIONS = {
   // Contacts & structures
   newContact: () => editContact(null), editContact: t => editContact(t.dataset.id),
   newContactFor: t => editContact(null, {_structures:[t.dataset.id]}),
+  // fonction d'un contact dans une structure : édition à la demande ; « Fonctions du contact » efface la fonction propre (05/11/2026)
+  editLinkRole: t => { S.editRole = t.dataset.key || null; render(); if (S.editRole) document.querySelector('.role-edit .link-role')?.focus(); },
+  resetLinkRole: async t => { const l = S.db.contact_structures.find(x => x.contact_id === t.dataset.c && x.structure_id === t.dataset.s); if (!l) return;
+    const {error} = await sb.from('contact_structures').update({role: null}).eq('contact_id', l.contact_id).eq('structure_id', l.structure_id);
+    if (error) return toast('Fonction non enregistrée : ' + error.message, true);
+    l.role = null; touch('contact_structures'); toast('Fonctions du contact reprises'); render(); },
   // structure fermée (v1.54) : marquée inactive (date), jamais supprimée ; réactivable
   setStructureInactive: async t => { const st = byId('structures', t.dataset.id); if (!st) return; const on = t.dataset.on === '1';
     if (on && !(await confirmAsk('Marquer la structure inactive ?', `« ${st.name} » reste enregistrée avec ses contacts, suivis, dates et documents. Elle n’est plus proposée par défaut (liste des structures, prospection) ; tu la retrouves avec « Afficher les structures inactives » et tu peux la réactiver à tout moment.`, 'Marquer inactive'))) return;

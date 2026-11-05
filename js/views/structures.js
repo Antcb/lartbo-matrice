@@ -103,9 +103,8 @@ function homeTab(st, contacts, events){
     </div>
     <div class="panel pad"><h3 class="block-title">Contacts <span class="count">${contacts.length}</span><span class="spacer"></span><button class="btn sm" data-act="newContactFor" data-id="${st.id}">Nouveau contact</button></h3>
       <div class="attach-contact mb">${acInput('contacts', {attrs: `data-attach-contact="${st.id}" aria-label="Rattacher un contact existant"`, placeholder: 'Rattacher un contact existant (nom ou mail)…'})}</div>
-      ${contacts.map(c=>`<div class="contact-row"><a href="#" data-act="editContact" data-id="${c.id}"><b>${esc(c.display_name)}</b></a>
-        <span class="muted">${esc((c.roles||[]).join(', '))}</span>
-        <input class="inp link-role" data-link-role="1" data-c="${c.id}" data-s="${st.id}" value="${esc(linkRole(c.id, st.id))}" placeholder="Fonction ici" aria-label="Fonction de ${esc(c.display_name)} dans cette structure">
+      ${contacts.map(c=>`<div class="contact-row"><a href="#" data-act="editContact" data-id="${c.id}"><b>${esc(c.display_name)}</b>${(c.roles||[]).includes('★')?' <span title="Contact principal">★</span>':''}</a>
+        ${roleCell(c, st)}
         ${(others => others.length ? `<span class="muted small">aussi : ${others.map(o => esc(o.name)).join(', ')}</span>` : '')(linksOfContact(c.id).filter(o => o.id !== st.id))}
         <span class="links">${[c.email, c.email_2].filter(Boolean).map(m => `<a href="mailto:${esc(m)}">${esc(m)}</a>`).join('')}${[c.phone, c.phone_2].filter(Boolean).map(t => `<a href="tel:${esc(t.replace(/\s/g,''))}">${esc(t)}</a>`).join('')}</span></div>`).join('') || '<div class="muted">Aucun contact lié.</div>'}
     </div></div>`;
@@ -205,4 +204,22 @@ export function viewStructures(){
       <td class="num">${[...new Set(eventsOfStructure(s.id).map(e=>e.capacity).filter(Boolean))].join(' / ')}</td>
       <td class="num">${linksOfStructure(s.id).length||''}</td><td>${ps.map(x=>pstBadge(x.status)).join(' ')}</td></tr>`; }).join('') || '<tr><td colspan="6" class="empty">Aucune structure ne correspond. Crée-la avec « Nouvelle structure ».</td></tr>'}
     </tbody></table>${rows.length>300?`<p class="muted" style="padding:10px 12px;margin:0">300 premiers résultats affichés — affine la recherche.</p>`:''}</div>`;
+}
+
+/**
+ * Fonction d'un contact dans une structure (correction du 05/11/2026) : les fonctions du contact (contacts.roles, « Poste(s) »)
+ * restent la référence et s'affichent ; une fonction propre à CETTE structure (contact_structures.role) n'est saisie que si besoin,
+ * ne touche ni la fiche du contact ni ses autres structures, et s'efface pour revenir à la référence. Aucune recopie automatique.
+ */
+export const refRoles = c => (c.roles || []).filter(r => r !== '★').join(', ');   // ★ = contact principal, pas une fonction
+function roleCell(c, st){
+  const own = linkRole(c.id, st.id), ref = refRoles(c), key = `${c.id}|${st.id}`;
+  if (S.editRole === key) return `<span class="role-edit"><input class="inp link-role" data-link-role="1" data-c="${c.id}" data-s="${st.id}" value="${esc(own || ref)}" placeholder="Fonction dans cette structure" aria-label="Fonction de ${esc(c.display_name)} dans cette structure">
+      <button type="button" class="btn sm ghost" data-act="editLinkRole" data-key="">Annuler</button></span>`;
+  return own
+    ? `<span class="role-view"><span title="Fonction propre à cette structure${ref ? ` (fonctions du contact : ${esc(ref)})` : ''}">${esc(own)} <span class="muted small">· ici</span></span>
+        <button type="button" class="btn sm ghost" data-act="editLinkRole" data-key="${esc(key)}">Modifier</button>
+        <button type="button" class="btn sm ghost" data-act="resetLinkRole" data-c="${c.id}" data-s="${st.id}" title="Revenir aux fonctions du contact${ref ? ` : ${esc(ref)}` : ''}">Fonctions du contact</button></span>`
+    : `<span class="role-view"><span class="muted">${ref ? esc(ref) : 'Fonction non renseignée'}</span>
+        <button type="button" class="btn sm ghost" data-act="editLinkRole" data-key="${esc(key)}">Modifier la fonction dans cette structure</button></span>`;
 }
