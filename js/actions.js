@@ -7,7 +7,7 @@ import { go, render } from './app.js';
 import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
 import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
-import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, projectPhoto, showPrefillFromStructure } from './forms.js';
+import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showsFiltered, structName } from './selectors.js';
 import { CFG } from './config.js';
 import { propagateCommission } from './commission.js';
@@ -320,6 +320,7 @@ export const ACTIONS = {
       l.role = cur?.role ?? null; touch('contact_structures'); render();
       return toast(`Rien n'a été effacé : la fonction a été modifiée ailleurs entre-temps (maintenant : ${l.role || 'fonctions du contact'}).`, true); }
     l.role = null; touch('contact_structures'); toast('Fonctions du contact reprises'); render(); },
+  newSpectacle: t => newSpectacle(t.dataset.id),
   // structure fermée (v1.54) : marquée inactive (date), jamais supprimée ; réactivable
   setStructureInactive: async t => { const st = byId('structures', t.dataset.id); if (!st) return; const on = t.dataset.on === '1';
     if (on && !(await confirmAsk('Marquer la structure inactive ?', `« ${st.name} » reste enregistrée avec ses contacts, suivis, dates et documents. Elle n’est plus proposée par défaut (liste des structures, prospection) ; tu la retrouves avec « Afficher les structures inactives » et tu peux la réactiver à tout moment.`, 'Marquer inactive'))) return;

@@ -5,7 +5,7 @@
  */
 import { BILL_KINDS, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
-import { byId, projName, setting, showsFiltered, structName } from '../selectors.js';
+import { byId, projName, setting, showsFiltered, spectacleName, structName } from '../selectors.js';
 import { followedInvoice, lateSteps, remindersOf } from '../reminders.js';
 import { S } from '../state.js';
 import { filterBar, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
@@ -70,7 +70,7 @@ function prodRow(s){
   return `<div class="prod-row ${open?'open':''}" id="prod-${s.id}">
     <div class="prod-head" data-act="toggleProd" data-id="${s.id}" aria-expanded="${open}">
       <div class="day"><b>${d?String(d.getDate()).padStart(2,'0'):'—'}</b><span>${d?d.toLocaleDateString('fr-FR',{month:'short', year:'2-digit'}):''}</span></div>
-      <div class="what"><b>${esc(s.venue)}</b> ${booking?'<span class="badge tag">Booking seul</span>':''}${s.structure_id?` <a href="#" class="struct-link" data-act="openStructure" data-id="${s.structure_id}" title="Ouvrir la fiche de la structure">${esc(structName(s.structure_id))} ↗</a>`:''}<div class="sub">${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))} · ${esc(s.contract_type||'Contrat ?')} · ${eur2(s.fee_ht)} HT · ${eur2(ttc(s.fee_ht, showVat(s)))} TTC${billWarn(s, booking)}${(n => n ? ` <span class="warn-badge" title="Factures déposées sans ligne sûre : onglet Factures">${n} pièce${n > 1 ? 's' : ''} à rattacher</span>` : '')(piecesToAttach(s).length)}</div></div>
+      <div class="what"><b>${esc(s.venue)}</b> ${booking?'<span class="badge tag">Booking seul</span>':''}${s.structure_id?` <a href="#" class="struct-link" data-act="openStructure" data-id="${s.structure_id}" title="Ouvrir la fiche de la structure">${esc(structName(s.structure_id))} ↗</a>`:''}<div class="sub">${s.spectacle_id ? `${esc(spectacleName(s.spectacle_id))} · ` : ''}${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))} · ${esc(s.contract_type||'Contrat ?')} · ${eur2(s.fee_ht)} HT · ${eur2(ttc(s.fee_ht, showVat(s)))} TTC${billWarn(s, booking)}${(n => n ? ` <span class="warn-badge" title="Factures déposées sans ligne sûre : onglet Factures">${n} pièce${n > 1 ? 's' : ''} à rattacher</span>` : '')(piecesToAttach(s).length)}</div></div>
       <div class="progress" title="${checks.filter(c=>c.ok).length}/${checks.length} étapes faites${late.size?` · ${late.size} en retard`:''}">${checks.map(c=>`<i class="${c.ok?'ok':c.late?'late':''}"></i>`).join('')}</div>
       ${stSelect(s)}
       <span class="chev" aria-hidden="true">▸</span>

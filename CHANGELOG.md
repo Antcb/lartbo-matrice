@@ -5,6 +5,8 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.57.0 — 05/11/2026
+- Spectacles d'un artiste (lot 1a) — budget type par spectacle (jauge ouverte ≤ 300 places, coût employeur, brut indicatif), spectacle choisi sur chaque nouvelle date, coût Movinmotion figé à la création de la ligne, suppression d'un artiste qui a des spectacles refusée avant toute modification, sauvegarde JSON de la nouvelle table
 ## 1.56.9 — 07/11/2026
 - Pennylane : une facture faite depuis le devis n'est jamais reliée automatiquement au solde quand elle a le montant d'un acompte déjà noté à la main sur la date ; jamais de rapprochement sur le seul montant quand plusieurs factures ou plusieurs lignes correspondent (facture signalée « à rattacher »)
 - Pennylane : action « Rattacher… » / « Corriger » sur la date — document, montant et lien affichés, ligne d'acompte ou de solde choisie explicitement, motif obligatoire pour une correction, confirmation, historique des rattachements ; aucun document Pennylane modifié, aucune facture en double ; le choix est gardé aux synchronisations suivantes

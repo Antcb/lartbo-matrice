@@ -10,7 +10,7 @@ import { acompteState, isCoproduction, isInvoiced, paymentsOf, payAmount } from 
 import { insert, mergeRows, openStored, refreshFor, remove, save, sb } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
 import { callScript } from './mail.js';
-import { applyTemplate } from './budget-template.js';
+import { applyTemplate, spectacleStaffRows } from './budget-template.js';
 import { exportArtistBudget } from './artist-export.js';
 import { S, touch } from './state.js';
 import { openModal } from './ui/modal.js';
@@ -147,10 +147,14 @@ export const BUDGET_ACTIONS = {
       saveProd(t.dataset.id, p => { p.tickets.splice(Number(t.dataset.i), 1); }); },
   prefillProduction: async t => {
     const s = byId('shows', t.dataset.id); let sort = nextSort(s.id);
-    const rows = PROD_LINES.map(([category, label]) => ({project_id: s.project_id, show_id: s.id, category, label, payer: 'artbo', sort: sort++}));
+    // date d'un spectacle (v1.57) : les cachets de son budget type (jauge ouverte) remplacent la ligne générique « Cachet artiste »
+    const sp = s.spectacle_id ? byId('spectacles', s.spectacle_id) : null, staff = sp ? spectacleStaffRows(sp, s) : [];
+    const rows = [...PROD_LINES.filter(([c, l]) => !(staff.length && c === 'Promoteur' && l === 'Cachet artiste')).map(([category, label]) => ({category, label})), ...staff]
+      .map(r => ({...r, project_id: s.project_id, show_id: s.id, payer: 'artbo', sort: sort++}));
     const {data, error} = await sb.from('budget_lines').insert(rows).select();
     if (error) return toast('Préremplissage impossible : ' + error.message, true);
     mergeRows('budget_lines', data);
+    if (staff.length) await syncMovinmotionLine(s.id);   // frais Movinmotion des bulletins (coût figé, v1.57)
     if (!s.production) await saveProd(s.id, () => {});
     render(); toast('Budget de production prérempli : indique les quantités et prix unitaires');
   },
