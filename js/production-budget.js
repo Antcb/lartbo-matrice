@@ -78,12 +78,29 @@ export function productionBudget(s, real = false){
   const receipts = coprodReceipts(s), extra = r2(receipts.reduce((a, x) => a + (payAmount(x) || 0), 0));
   const result = r2(net - costs - promo + extra);
   const resultDl = r2(net + dlHt - costs - promo + extra);
-  const share = (num(p.artbo_share) ?? 100) / 100;
+  const share = (num(p.artbo_share) ?? 100) / 100, sp = coprodSplit(s, p, resultDl, promo);
   return {p, tickets, paying, invitations, total: paying + invitations, capacity,
     fill: capacity ? (paying + invitations) / capacity : null, avgPrice: paying ? r2(grossTtc / paying) : 0,
     grossTtc, dlTtc, ht, dlHt, vatAmount: r2(grossTtc - ht), cnm, cnmCalc, cnmReal, cnmRate: cnmRate(s), sacemReal, taxLines, sacem, sacd, sacdMs, taxes, net, netPerTicket: paying ? r2(net / paying) : 0,
-    costs, byCat, promo, extra, receipts, result, resultDl, artbo: r2(resultDl * share), partner: r2(resultDl * (1 - share)), share,
+    costs, byCat, promo, extra, receipts, result, resultDl, shared: sp.shared, artbo: sp.artbo, partner: sp.partner, lossMissing: sp.lossMissing, share,
     partnerName: byId('partners', s.partner_id)?.name || 'Coproducteur'};
+}
+
+/**
+ * Partage du résultat entre L'ArtBo et le coproducteur (décisions d'Anthony du 27/10 et du 05/11/2026) :
+ *   - promotion locale à la charge d'une seule partie : hors du résultat partagé (rajoutée au résultat global), puis retirée de la
+ *     part de cette partie — jamais déduite deux fois ;
+ *   - bénéfice : % du contrat (artbo_share) ; PERTE : % des pertes du contrat (artbo_loss_share), saisi date par date, jamais déduit
+ *     du % des bénéfices ; absent alors qu'il est nécessaire (résultat partagé négatif) → parts non calculées, information manquante ;
+ *   - L'ArtBo seule productrice (100 %, aucun coproducteur) : elle porte tout, bénéfice comme perte.
+ */
+export function coprodSplit(s, p, result, promo){
+  const debtor = p.promo_debtor || null, own = promo && ['artbo', 'partenaire'].includes(debtor) ? promo : 0;
+  const shared = r2(result + own), gain = num(p.artbo_share) ?? 100, sole = gain >= 100 && !s?.partner_id;
+  const lossPct = sole ? 100 : num(p.artbo_loss_share), pctA = shared >= 0 ? gain : lossPct;
+  const lossMissing = shared < 0 && pctA == null;
+  const artbo = pctA == null ? null : r2(shared * pctA / 100 - (debtor === 'artbo' ? own : 0));
+  return {shared, own, debtor, lossPct, lossMissing, artbo, partner: artbo == null ? null : r2(result - artbo)};
 }
 
 /** Lignes de coûts proposées pour une nouvelle production (reprises du tableau Cabaret Sauvage, montants à saisir) */
@@ -160,16 +177,19 @@ export function coprodClose(s){
   const net = r2(r.ht + r.dlHt - (r.taxes - realTaxes));   // ce que garde la structure qui encaisse (taxes calculées payées par elle ; promo à part)
   // résultat global (promo déduite, quel que soit son débiteur) ; promo à la charge d'une seule partie : hors du résultat partagé,
   // retirée de la part de cette partie
-  const result = r.resultDl, own = promo && ['artbo', 'partenaire'].includes(debtor) ? promo : 0, shared = r2(result + own);
-  const artboPart = r2(shared * (share ?? 0) / 100 - (debtor === 'artbo' ? own : 0)), partnerPart = r2(result - artboPart);
+  const result = r.resultDl, sp = coprodSplit(s, p, result, promo), shared = sp.shared;
+  const lossIn = num(p.artbo_loss_share);
+  if (lossIn != null && (lossIn < 0 || lossIn > 100)) issues.push('Part des pertes de L’ArtBo : un pourcentage entre 0 et 100');
+  if (sp.lossMissing) issues.push('Résultat partagé négatif : indique la part des pertes supportée par L’ArtBo selon le contrat (elle ne se déduit pas du partage des bénéfices)');
+  const artboPart = sp.artbo, partnerPart = sp.partner;
   const posArtbo = r2((holder === 'artbo' ? net : 0) + cashedBy('artbo') - paidBy('artbo')), posPartner = r2((holder === 'partenaire' ? net : 0) + cashedBy('partenaire') - paidBy('partenaire'));
-  const transfer = r2(artboPart - posArtbo);   // > 0 : le coproducteur reverse à L'ArtBo ; < 0 : L'ArtBo reverse au coproducteur
+  const transfer = artboPart == null ? 0 : r2(artboPart - posArtbo);   // > 0 : le coproducteur reverse à L'ArtBo ; < 0 : L'ArtBo reverse au coproducteur
   return {r, issues, warnings, ok: !issues.length, snapshot: {
     holder, recettes_ht: r.ht, dl_ht: r.dlHt, taxes: r.taxes, cnm: r.cnm, sacem: r.sacem, costs: r.costs, promo: r.promo, result, shared_result: shared,
     promo_debtor: debtor, promo_payer: payer, promo_paid_at: p.promo_paid_at || null, receipts_cashed_at: p.receipts_cashed_at || null,
     extra_receipts: r.extra, cashed_artbo: cashedBy('artbo'), cashed_partner: cashedBy('partenaire'),
     promo_advance: promo && payer && debtor && debtor !== 'commun' && payer !== debtor ? promo : 0,   // avance faite pour le compte de l'autre
-    artbo_share: share, artbo_part: artboPart, partner_part: partnerPart, partner: r.partnerName,
+    artbo_share: share, artbo_loss_share: sp.lossPct, artbo_part: artboPart, partner_part: partnerPart, partner: r.partnerName,
     net_encaisse: net, paid_artbo: paidBy('artbo'), paid_partner: paidBy('partenaire'), unpaid, pos_artbo: posArtbo, pos_partner: posPartner,
     transfer: Math.abs(transfer), from: transfer > 0 ? 'partenaire' : transfer < 0 ? 'artbo' : null, to: transfer > 0 ? 'artbo' : transfer < 0 ? 'partenaire' : null,
   }};

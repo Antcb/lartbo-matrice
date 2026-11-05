@@ -10,6 +10,7 @@ import { S } from '../state.js';
 import { cChk, cIn, cSel } from '../ui/cells.js';
 import { HOLDERS, cnmBearer, cnmOf, coreaCalc, holderLabel, isCorea } from '../corea.js';
 import { esc, eur2, fmtDate, today, r2, pct as fmtPct } from '../utils.js';
+import { coreaBreaks, productionBreaks } from '../break.js';
 import { COPROD_ROLES, PROD_CATS, PROMO_DEBTORS, PROMO_PAYERS, coprodClose, coprodLines, isProductionShow, productionBudget } from '../production-budget.js';
 
 const STATUS = {paid:['Payé','ok-badge'], doc:['Pièce reçue','warn-badge'], planned:['Prévu','badge']};
@@ -317,6 +318,7 @@ function coreaBlock(s){
     ${c.share != null && (c.validatedShare == null || Math.abs(c.share - c.validatedShare) >= 0.005) ? `<div class="vh-actions mt-sm"><button class="btn sm" data-act="coreaValidateShare" data-id="${s.id}">Valider la part du résultat (${eur2(c.share)})</button> <span class="muted">elle entre alors dans la base de la commission</span></div>` : ''}
     ${c.validatedShare ? `<div class="vh-actions mt-sm"><button class="btn sm" data-act="coreaPrepareInvoice" data-id="${s.id}">Préparer la ligne de facture « Part du résultat »</button> <span class="muted">action volontaire, rien n’est envoyé</span></div>` : ''}
     <p class="muted small mt-sm">Le minimum garanti reste facturé par l’acompte et le solde ; seule la part du résultat s’y ajoute (jamais deux fois). Résultat négatif ou nul : pas de part, le MG reste acquis.</p>
+    ${coreaBreaksHTML(s)}
   </div>`;
 }
 
@@ -337,7 +339,10 @@ function coprodReceiptsTable(s, closed){
 function coprodBlock(s){
   const k = coprodClose(s), x = s.result_closed || k.snapshot, closed = !!s.result_closed_at;
   const side = w => w === 'artbo' ? 'L’ArtBoristerie' : esc(x.partner || 'le coproducteur');
-  const row = (l, v, cls = '') => `<tr class="${cls}"><td>${l}</td><td class="num nowrap">${eur2(v)}</td></tr>`;
+  const row = (l, v, cls = '') => `<tr class="${cls}"><td>${l}</td><td class="num nowrap">${v == null ? '<span class="warn-txt">information manquante</span>' : eur2(v)}</td></tr>`;
+  // perte : % des pertes du contrat (jamais déduit du % des bénéfices, décision du 05/11/2026)
+  const loss = (x.shared_result ?? x.result) < 0, pA = loss ? x.artbo_loss_share : x.artbo_share;
+  const pctTxt = v => v == null ? '% non renseigné' : esc(fmtPct(v));
   return `<div class="coprod-block">
     <h4 class="block-title">Clôture du résultat ${closed ? '<span class="ok-badge">clôturé</span>' : ''}</h4>
     <div class="steps prod-params">
@@ -358,8 +363,8 @@ function coprodBlock(s){
     <div class="tbl-wrap"><table class="budget-table prod-table"><tbody>
       ${row('<b>Résultat global réel (DL inclus)</b>', x.result, 'bill-total')}
       ${x.shared_result != null && Math.abs(x.shared_result - x.result) >= 0.005 ? row(`Résultat partagé (promotion locale à la charge ${x.promo_debtor === 'artbo' ? 'de L’ArtBo' : 'du coproducteur'}, retirée de sa part)`, x.shared_result) : ''}
-      ${row(`Part de L’ArtBo (${esc(fmtPct(x.artbo_share ?? 0))})`, x.artbo_part)}
-      ${row(`Part de ${esc(x.partner || 'coproducteur')} (${esc(fmtPct(100 - (x.artbo_share ?? 0)))})`, x.partner_part)}
+      ${row(`Part de L’ArtBo (${loss ? 'pertes : ' : ''}${pctTxt(pA)})`, x.artbo_part)}
+      ${row(`Part de ${esc(x.partner || 'coproducteur')} (${loss ? 'pertes : ' : ''}${pctTxt(pA == null ? null : 100 - pA)})`, x.partner_part)}
       ${row('Recette nette gardée par la structure qui encaisse', x.net_encaisse)}
       ${x.extra_receipts ? row('Recettes complémentaires encaissées par L’ArtBo', x.cashed_artbo) + row('Recettes complémentaires encaissées par le coproducteur', x.cashed_partner) : ''}
       ${row('Dépenses payées par L’ArtBo (promotion locale comprise si elle l’a payée)', -x.paid_artbo)}
@@ -380,6 +385,33 @@ const prodSel = (s, path, v, opts) => `<select data-prod-show="${s.id}" data-pro
 const pin = (s, path, v, extra = '') => `<input type="${/label/.test(path) ? 'text' : 'number'}" ${/label/.test(path) ? '' : 'step="any" inputmode="decimal"'} data-prod-show="${s.id}" data-prod-path="${path}" value="${esc(v ?? '')}" ${extra}>`;
 const pct = v => v == null ? '—' : fmtPct(Math.round(v * 1000) / 10);   // taux 0–1 affiché « 87,5 % » (format officiel §2.4)
 const two = (f, r, cls = '') => `<td class="num nowrap ${cls}">${eur2(f)}</td><td class="num nowrap ${cls}">${r == null ? '—' : eur2(r)}</td>`;
+// parts : null = information manquante (partage des pertes non renseigné), distinct de « pas encore de réel » (—)
+const miss = '<span class="warn-txt">information manquante</span>';
+const two2 = (f, r, hasReal) => `<td class="num nowrap">${f == null ? miss : eur2(f)}</td><td class="num nowrap">${!hasReal ? '—' : r == null ? miss : eur2(r)}</td>`;
+
+// ─────────────── Points d'équilibre calculés (décisions du 04/11 et du 05/11/2026 : cas de travail, calcul indicatif) ───────────────
+const brkCell = (r, quota) => r.lossMissing ? '<span class="warn-txt">information manquante : part des pertes du contrat</span>'
+  : r.n == null ? `<span class="warn-txt">non atteint avec les ${quota} billets prévus</span>` : `<b>${r.n}</b> billet${r.n > 1 ? 's' : ''}`;
+function productionBreaksHTML(s){
+  const k = productionBreaks(s); if (!k) return '';
+  const head = '<h4 class="block-title">Points d’équilibre (calculés sur le prévu)</h4>';
+  if (k.missing) return `${head}<p class="muted">${esc(k.missing)}</p>`;
+  return `${head}<div class="tbl-wrap"><table class="budget-table prod-table break-table"><thead><tr><th>Billets payants nécessaires</th>${k.scenarios.map(([, l]) => `<th class="num">${esc(l)}</th>`).join('')}</tr></thead>
+    <tbody>${k.readings.map(r => `<tr><td>${esc(r.label)}</td>${k.scenarios.map(([sc]) => `<td class="num nowrap">${brkCell(r.byScenario[sc], k.quota)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+    <p class="muted small">Billet par billet, dans les quotas prévus de chaque tarif (${k.quota} billets payants ; invitations non comptées), avec les droits et taxes, les coûts prévus, la promotion locale et les recettes complémentaires. Les avances ne sont pas des charges. ${k.coprod ? 'Trois lectures distinctes, jamais additionnées : la part de L’ArtBo retire une seule fois la promotion à sa seule charge ; sous l’équilibre partagé, elle dépend du % des pertes du contrat. ' : ''}Calcul indicatif : il ne remplace pas un break prévu au contrat.</p>`;
+}
+function coreaBreaksHTML(s){
+  const k = coreaBreaks(s); if (!k) return '';
+  const c = k.contract;
+  return `<h4 class="block-title">Points d’équilibre</h4>
+    <div class="steps prod-params">
+      <label>Équilibre du spectacle</label><span class="warn-txt">${esc(k.spectacle)}</span>
+      <label>Break du contrat</label><span>${c.value == null ? '<span class="muted">à renseigner</span>' : `<b>${c.value}</b> billets ${c.validated ? '<span class="ok-badge">validé</span>' : '<span class="warn-txt">à valider</span>'}`}${c.text ? ` <span class="muted">« ${esc(c.text)} »</span>` : ''} <span class="muted">seuil du partage prévu au contrat, ce n’est pas un équilibre économique</span></span>
+    </div>
+    ${k.missing ? `<p class="muted">${esc(k.missing)}</p>` : `<div class="tbl-wrap"><table class="budget-table prod-table break-table"><thead><tr><th>Équilibre de L’ArtBoristerie : billets vendus nécessaires</th>${k.scenarios.map(([, l]) => `<th class="num">${esc(l)}</th>`).join('')}</tr></thead>
+      <tbody><tr><td>MG ${eur2(k.mg)} + part du résultat au-delà du break ≥ dépenses prévues de la date ${eur2(k.costs)}</td>${k.scenarios.map(([sc]) => `<td class="num nowrap">${k.byScenario[sc].n == null ? `<span class="warn-txt">non atteint dans la jauge (${k.capacity})</span>` : `<b>${k.byScenario[sc].n}</b>`}</td>`).join('')}</tr></tbody></table></div>
+      <p class="muted small">${k.coveredByMg ? 'Le minimum garanti couvre déjà les dépenses prévues de la date. ' : ''}Dépenses prévues de la date hors solde artiste et hors commission ; charges déductibles du contrat (et la CNM seulement si elle est déduite du résultat partagé). Calcul indicatif.</p>`}`;
+}
 
 /** Budget d'une date produite par L'ArtBo : billetterie, droits et taxes, coûts, résultat partagé avec le coproducteur */
 export function productionBudgetHTML(s){
@@ -416,7 +448,8 @@ export function productionBudgetHTML(s){
       <label>Jauge (fiche de la date)</label>${cIn('shows', s.id, 'capacity', s.capacity, 'number', 'class="narrow"')}
       <label>Représentations</label>${pin(s, 'reps', p.reps, 'class="narrow"')}
       <label>TVA billetterie (%)</label>${pin(s, 'vat', p.vat, 'class="narrow"')}
-      ${s.contract_type === 'Co-Production' || s.partner_id ? `<label>Part de L’ArtBo (%)</label><span>${pin(s, 'artbo_share', p.artbo_share, 'class="narrow"')} <span class="muted">· ${esc(f.partnerName)} : ${esc(fmtPct(100 - (Number(p.artbo_share) || 0)))}</span></span>` : ''}
+      ${s.contract_type === 'Co-Production' || s.partner_id ? `<label>Part de L’ArtBo (%) des bénéfices</label><span>${pin(s, 'artbo_share', p.artbo_share, 'class="narrow"')} <span class="muted">· ${esc(f.partnerName)} : ${esc(fmtPct(100 - (Number(p.artbo_share) || 0)))}</span></span>
+      <label>Part de L’ArtBo (%) des pertes</label><span>${pin(s, 'artbo_loss_share', p.artbo_loss_share, 'class="narrow" placeholder="selon le contrat"')} <span class="muted">selon le contrat de la date ; jamais déduite du partage des bénéfices</span></span>` : ''}
     </div>
 
     <h4 class="block-title">Recettes : billetterie</h4>
@@ -461,10 +494,13 @@ export function productionBudgetHTML(s){
       ${f.extra ? `<tr><td>Recettes complémentaires de coproduction (lignes de Factures qualifiées)</td><td></td>${two(f.extra, R(r.extra))}</tr>` : ''}
       <tr><td><b>Résultat hors DL</b></td><td></td>${two(f.result, R(r.result), 'strong')}</tr>
       <tr class="bill-total"><td><b>Résultat DL inclus</b></td><td></td>${two(f.resultDl, R(r.resultDl), 'strong')}</tr>
-      ${f.share < 1 ? `<tr><td>Part L’ArtBo (${esc(fmtPct(p.artbo_share))})</td><td></td>${two(f.artbo, R(r.artbo))}</tr>
-      <tr><td>Part ${esc(f.partnerName)} (${esc(fmtPct(100 - p.artbo_share))})</td><td></td>${two(f.partner, R(r.partner))}</tr>` : ''}
+      ${f.share < 1 || s.partner_id ? `${Math.abs(f.shared - f.resultDl) >= 0.005 ? `<tr><td>Résultat partagé <span class="muted">(promotion locale à la charge ${p.promo_debtor === 'artbo' ? 'de L’ArtBo' : 'du coproducteur'} : hors partage, retirée de sa part)</span></td><td></td>${two(f.shared, R(r.shared))}</tr>` : ''}
+      <tr><td>Part L’ArtBo <span class="muted">(bénéfice ${esc(fmtPct(p.artbo_share))} · perte ${p.artbo_loss_share == null || p.artbo_loss_share === '' ? 'non renseignée' : esc(fmtPct(p.artbo_loss_share))})</span></td><td></td>${two2(f.artbo, R(r.artbo), hasReal)}</tr>
+      <tr><td>Part ${esc(f.partnerName)}</td><td></td>${two2(f.partner, R(r.partner), hasReal)}</tr>
+      ${f.lossMissing || (hasReal && r.lossMissing) ? '<tr><td colspan="4" class="warn-txt">Résultat partagé négatif : parts non calculées. Renseigne la part des pertes supportée par L’ArtBo selon le contrat (paramètres ci-dessus).</td></tr>' : ''}` : ''}
     </tbody></table></div>
     </fieldset>
+    ${productionBreaksHTML(s)}
     ${s.contract_type === 'Co-Production' ? coprodBlock(s) : ''}
     <p class="muted small mt-sm">Montants HT sauf la billetterie (TTC). Le réel se remplit avec les billets vendus et les montants réels des pièces ; tant qu’aucun billet vendu n’est saisi, les recettes réelles restent vides. Une date produite par L’ArtBo n’entre pas dans le compte dédié de l’artiste.</p>
   </div>`;

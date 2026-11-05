@@ -125,7 +125,7 @@ export const BUDGET_ACTIONS = {
   // coproduction : clôture du résultat (synthèse, confirmation, enregistrement daté par la base, montants verrouillés)
   closeResult: async t => { const s = byId('shows', t.dataset.id), k = coprodClose(s), x = k.snapshot;
     if (!k.ok) return inform({title: 'Clôture impossible', text: k.issues.join('\n')});
-    const text = [`Résultat global réel : ${eur2(x.result)}`, `Part de L’ArtBo (${pct(x.artbo_share)}) : ${eur2(x.artbo_part)}`, `Part de ${x.partner} : ${eur2(x.partner_part)}`,
+    const text = [`Résultat global réel : ${eur2(x.result)}`, `Part de L’ArtBo (${x.shared_result < 0 ? 'pertes : ' + pct(x.artbo_loss_share) : pct(x.artbo_share)}) : ${eur2(x.artbo_part)}`, `Part de ${x.partner} : ${eur2(x.partner_part)}`,
       `Recettes encaissées par ${sideLabel(x, x.holder)} : ${eur2(x.net_encaisse)} (nettes)`, `Dépenses payées : L’ArtBo ${eur2(x.paid_artbo)} · coproducteur ${eur2(x.paid_partner)}`,
       x.from ? `Reversement : ${sideLabel(x, x.from)} reverse ${eur2(x.transfer)} à ${sideLabel(x, x.to)}` : 'Aucun reversement', ...k.warnings,
       'Après clôture, les montants de la date sont verrouillés ; la réouverture demande un motif.'].join('\n');
