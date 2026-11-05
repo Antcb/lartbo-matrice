@@ -389,6 +389,13 @@ Les factures de l'artiste sur les dates booking n'entrent dans **aucun** des tro
 - **Movinmotion** : frais par bulletin (Réglages, 20,30 €) séparés du coût employeur ; **coût figé sur la ligne** à sa création (`unit_cost`, JS et SQL `ensure_movinmotion`) ; les lignes antérieures (sans coût figé) suivent encore le réglage : leur gel sera présenté avant tout changement du réglage.
 - Production / coproduction : « Préremplir (modèle du budget de production) » pose les cachets du spectacle à la place de la ligne générique « Cachet artiste ».
 
+### 6.19 Points d'équilibre calculés et partage des pertes [DÉCIDÉ 04/11 et 05/11/2026, EN PLACE v1.58 — cas de travail]
+- **Où** : production, coproduction, coréalisation ; **jamais** en cession ni pour une date « booking uniquement ». Calcul **indicatif** sur le budget **prévu** (`js/break.js`) : il ne remplace jamais le break contractuel (`shows.break_even`, §6.12).
+- **Méthode** : billet par billet, dans les **quotas** prévus de chaque tarif (invitations non comptées) ; trois scénarios : répartition prévue, billets les moins chers d'abord, les plus chers d'abord. Même calcul que le budget de la date (droits et taxes, coûts, promotion locale, recettes complémentaires). Les **avances ne sont pas des charges**.
+- **Coproduction** : trois lectures distinctes, jamais additionnées — **résultat partagé** (promotion à la charge d'une seule partie exclue), **part de L'ArtBo** (promotion à sa seule charge retirée **une seule fois**), **résultat économique global** (promotion comprise). Même règle dans le budget (`productionBudget` : `shared`, `artbo`, `partner`) et la clôture (`coprodClose`), via `coprodSplit`.
+- **Pertes** : le partage des bénéfices et celui des pertes viennent du **contrat, date par date** (`production.artbo_share` / `production.artbo_loss_share`). Le % des pertes ne se **déduit jamais** du % des bénéfices ; absent alors que le résultat partagé est négatif → parts **« information manquante »**, clôture bloquée, break de L'ArtBo non calculé. L'ArtBo seule productrice (100 %, sans coproducteur) porte tout. Les résultats déjà clôturés gardent leur synthèse enregistrée.
+- **Coréalisation** : « **Équilibre du spectacle non calculable : données manquantes** » (recettes et coûts de la salle inconnus) ; le **break du contrat** est affiché à part (seuil du partage, pas un équilibre économique) ; **équilibre de L'ArtBo** = premier nombre de billets vendus pour lequel MG + % du résultat net au-delà du break **validé** (charges déductibles ; CNM seulement si cochée) couvre les dépenses prévues de la date (hors solde artiste et commission). Il faut : tarifs, jauge, break validé, % au producteur, charges correctes ; sinon la liste de ce qui manque.
+
 ## 7. Supabase
 
 ### 7.1 Nommage
