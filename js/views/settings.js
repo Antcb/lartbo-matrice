@@ -4,7 +4,7 @@
 import { confirmAsk } from '../ui/dialog.js';
 import { APP_VERSION } from '../config.js';
 import { sb } from '../data.js';
-import { defaultAcompte, departments, setting } from '../selectors.js';
+import { departments, setting, settingAcompte } from '../selectors.js';
 import { fetchAll } from '../data.js';
 import { S, touch } from '../state.js';
 import { isCoproduction, isInvoiced, paymentsOf } from '../calc.js';
@@ -17,7 +17,7 @@ import { templateForm } from '../budget-template.js';
 import { FONTS, SIZES, mailFont, rtStyle, rtToolbar } from '../ui/richtext.js';
 
 export function viewSettings(){
-  const acRaw = setting('default_acompte_pct'), ac = defaultAcompte(), acShown = acRaw == null || String(acRaw).trim() === '' ? '' : ac;   // vide : affiché vide (50 % appliqué), jamais 0 (§6.4)
+  const acRaw = setting('default_acompte_pct'), ac = settingAcompte(), acShown = acRaw == null || String(acRaw).trim() === '' ? '' : ac;   // vide : affiché vide (50 % appliqué), jamais 0 (§6.4)
   return viewHead('Réglages') + `
   <div class="grid-cards" style="grid-template-columns:repeat(auto-fill,minmax(360px,1fr))">
     <div class="panel pad"><h3 class="panel-title">Pourcentages par défaut</h3>
@@ -205,14 +205,16 @@ document.addEventListener('change', async e => {
 });
 
 export async function applyAcompte(){
-  const ac = defaultAcompte();   // 0 % gardé tel quel ; 50 seulement si le réglage est vide (§6.4)
+  const ac = settingAcompte();   // 0 % gardé tel quel ; 50 seulement si le réglage est vide (§6.4)
   // 0 % = date SANS acompte (§6.4) : jamais d'acompte à 0 % posé en lot, et aucune ligne supprimée en lot sans décision (relecture v1.46a)
   if (ac === 0) return toast('Acompte par défaut à 0 % : les prochaines dates confirmées n’auront pas d’acompte. Les dates déjà confirmées gardent le leur ; pour en retirer un, « Valider les conditions » de la date › 0 acompte.');
-  if (!(await confirmAsk('Appliquer aux dates à venir ?', `Mettre ${pct(ac)} d’acompte et ${pct(100-ac)} de solde sur les dates à venir dont les conditions ne sont pas validées et dont rien n’est facturé ni saisi à la main.`, `Appliquer ${pct(ac)} / ${pct(100-ac)}`))) return;
+  if (!(await confirmAsk('Appliquer aux dates à venir ?', `Mettre ${pct(ac)} d’acompte et ${pct(100-ac)} de solde sur les dates à venir dont les conditions ne sont pas validées et dont rien n’est facturé ni saisi à la main. Les artistes qui ont leur propre acompte par défaut gardent le leur.`, `Appliquer ${pct(ac)} / ${pct(100-ac)}`))) return;
   // seulement l'acompte et le solde créés à la confirmation (pas les acomptes ajoutés à la main)
   // dates à venir dont les conditions ne sont pas validées, avec un seul acompte et rien d'envoyé / payé / saisi à la main
   const now = today();
-  const ids = S.db.shows.filter(s => !s.terms_validated_at && s.prod_mode !== 'booking' && !isCoproduction(s) && (!s.date || s.date >= now)).map(s => s.id).filter(id => {   // coproduction : pas d'acompte / solde par défaut (v1.44)
+  // artiste avec son propre acompte par défaut (v1.59) : ses dates ne suivent pas le réglage général
+  const ownAc = new Set(S.db.projects.filter(p => p.default_acompte_pct != null && p.default_acompte_pct !== '').map(p => p.id));
+  const ids = S.db.shows.filter(s => !s.terms_validated_at && s.prod_mode !== 'booking' && !isCoproduction(s) && !ownAc.has(s.project_id) && (!s.date || s.date >= now)).map(s => s.id).filter(id => {   // coproduction : pas d'acompte / solde par défaut (v1.44)
     const p = paymentsOf(id).filter(x => ['acompte','solde'].includes(x.kind));
     return p.filter(x => x.kind === 'acompte').length === 1 && p.every(x => !isInvoiced(x) && (x.amount == null || x.amount === ''));   // aucune facture émise (§6.4)
   });

@@ -11,7 +11,7 @@ import { CFG } from './config.js';
 import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PRIORITY_OPTS, PROSPECT, PROSPECT_OPTS, STATUSES, TASK_STATUS, TASK_STATUS_OPTS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
 import { insert, purgeStored, refreshFor, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode, geoFrance, searchPlaces } from './geo.js';
-import { contactMails, contactsWithMail, defaultCommission, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle, spectaclesOf } from './selectors.js';
+import { contactMails, contactsWithMail, defaultCommission, settingAcompte, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle, spectaclesOf } from './selectors.js';
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow } from './ui/bits.js';
@@ -142,6 +142,7 @@ export function editProject(id){
       {k:'mode', label:'Type de suivi', type:'select', blank:false, options:[['production','Production (L’ArtBo produit les dates)'],['booking','Booking seul (commission facturée à l’artiste)']],
         help:'Les dates existantes suivent, sauf celles réglées à la main et celles qui ont des opérations financières enregistrées (facture, versement, numéro, lien Pennylane).'},
       {k:'default_artbo_pct', label:"Commission L'ArtBo (%)", type:'number', help:'Par défaut : booking ' + pct(defaultCommission('booking')) + ', production ' + pct(defaultCommission('production')) + ' (Réglages › Pourcentages par défaut).'},
+      {k:'default_acompte_pct', label:'Acompte par défaut (% du cachet)', type:'number', placeholder: String(settingAcompte()), help:'Vide : Réglages (' + pct(settingAcompte()) + '). 0 : sans acompte. Une date garde l’acompte posé sur elle ; s’applique aux prochaines dates confirmées.'},
       {k:'default_partner_id', label:'Co-producteur par défaut', type:'select', options:S.db.partners.map(x=>[x.id,x.name])},
       {k:'default_partner_pct', label:'% partenaire sur la commission', type:'number'},
       ...(p.drive_artist_folder_id ? [] : [{k:'_make_folder', label:'Créer son dossier Drive à son nom (à partir du modèle artiste)', type:'checkbox', full:true}]),
@@ -161,6 +162,7 @@ export function editProject(id){
     onDelete: id ? () => deleteProject(id) : null,
     onSave: async v => {
       if (!v.name) return false;
+      if (v.default_acompte_pct != null && v.default_acompte_pct !== '' && !(Number(v.default_acompte_pct) >= 0 && Number(v.default_acompte_pct) <= 100)){ toast('L’acompte doit être entre 0 et 100 %', true); return false; }
       const makeFolder = v._make_folder; delete v._make_folder;
       if (v.drive_artist_folder_id) v.drive_artist_folder_id = driveId(v.drive_artist_folder_id);
       ['contract_template_cc','contract_template_cr'].forEach(k => { if (v[k]) v[k] = (String(v[k]).match(/[-\w]{25,}/) || [v[k]])[0]; });
