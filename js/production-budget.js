@@ -96,7 +96,9 @@ export function productionBudget(s, real = false){
  */
 export function coprodSplit(s, p, result, promo){
   const debtor = p.promo_debtor || null, own = promo && ['artbo', 'partenaire'].includes(debtor) ? promo : 0;
-  const shared = r2(result + own), gain = num(p.artbo_share) ?? 100, sole = gain >= 100 && !s?.partner_id;
+  // L'ArtBo seule productrice : 100 % des bénéfices, hors coproduction avec un coproducteur (un partenaire de commission ne
+  // partage pas le résultat) — elle porte alors aussi 100 % des pertes
+  const shared = r2(result + own), gain = num(p.artbo_share) ?? 100, sole = gain >= 100 && !(s?.contract_type === 'Co-Production' && s?.partner_id);
   const lossPct = sole ? 100 : num(p.artbo_loss_share), pctA = shared >= 0 ? gain : lossPct;
   const lossMissing = shared < 0 && pctA == null;
   const artbo = pctA == null ? null : r2(shared * pctA / 100 - (debtor === 'artbo' ? own : 0));
