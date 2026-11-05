@@ -122,27 +122,13 @@ document.addEventListener('change', async e => {
   toast(`${c.display_name} rattaché(e)${others.length ? ` (reste aussi lié(e) à ${others.map(x => x.name).join(', ')})` : ''}`);
   render();
 });
-// Fonction d'un contact dans une structure (contact_structures.role, v1.54)
-document.addEventListener('change', async e => {
-  const t = e.target; if (!t.dataset?.linkRole || t.dataset.cancel) return;   // « Annuler » : rien n'est enregistré (relecture v1.56.3)
-  const c = byId('contacts', t.dataset.c), ref = (c?.roles || []).filter(r => r !== '★').join(', ');
-  // identique aux fonctions du contact = pas de fonction propre (rien n'est figé)
-  const v = t.value.trim(), role = !v || v === ref ? null : v, l = S.db.contact_structures.find(x => x.contact_id === t.dataset.c && x.structure_id === t.dataset.s); if (!l) return;
-  const {error} = await sb.from('contact_structures').update({role}).eq('contact_id', l.contact_id).eq('structure_id', l.structure_id);
-  if (error) return toast('Fonction non enregistrée : ' + error.message, true);
-  l.role = role; touch('contact_structures'); S.editRole = null; toast(role ? 'Fonction propre à cette structure enregistrée' : 'Fonctions du contact reprises'); render();
-});
-
-// fonction dans une structure : « Annuler » garde le focus dans le champ (pas d'enregistrement par la perte du focus) ; Entrée valide,
-// Échap annule
-document.addEventListener('pointerdown', e => {
-  const b = e.target.closest?.('.role-edit [data-act=editLinkRole]'); if (!b) return;
-  const inp = b.closest('.role-edit').querySelector('.link-role'); if (inp){ inp.dataset.cancel = '1'; e.preventDefault(); }
-});
+// Fonction d'un contact dans une structure (contact_structures.role, v1.54 ; corrections du 05/11/2026) : enregistrement EXPLICITE
+// seulement (bouton « Enregistrer » ou Entrée) ; la perte du focus n'enregistre jamais rien (Tab vers « Annuler », geste interrompu…) ;
+// Échap annule. Aucun état caché : l'édition se termine par Enregistrer ou Annuler, rien d'autre.
 document.addEventListener('keydown', e => {
   const t = e.target; if (!t.dataset?.linkRole) return;
-  if (e.key === 'Enter'){ e.preventDefault(); t.blur(); }
-  else if (e.key === 'Escape'){ e.preventDefault(); t.dataset.cancel = '1'; S.editRole = null; render(); }
+  if (e.key === 'Enter'){ e.preventDefault(); t.closest('.role-edit')?.querySelector('[data-act=saveLinkRole]')?.click(); }
+  else if (e.key === 'Escape'){ e.preventDefault(); S.editRole = null; render(); }
 });
 
 // Coordonnées administratives d'une structure (champ JSON « admin »)

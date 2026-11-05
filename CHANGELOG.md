@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.56.5 — 05/11/2026
+- Fonction dans une structure : enregistrement explicite (Enregistrer ou Entrée), Annuler / Échap / Tab / geste interrompu n'enregistrent rien, cibles de 40 px au doigt
+
+
 ## 1.56.4 — 05/11/2026
 - Fonction dans une structure : « Annuler » et Échap n'enregistrent rien, Entrée valide (relecture v1.56.3)
 
