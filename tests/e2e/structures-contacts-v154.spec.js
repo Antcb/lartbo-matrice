@@ -53,7 +53,7 @@ test('v1.54 rattacher un contact existant à une autre structure : un lien de pl
   // fonction dans cette structure, sans toucher à l'autre lien
   await page.locator('.contact-row [data-act=editLinkRole]').click();   // v1.56.3 : édition à la demande
   await page.locator('.contact-row input[data-link-role]').fill('Programmatrice');
-  await page.locator('.contact-row input[data-link-role]').blur();
+  await page.locator('.contact-row [data-act=saveLinkRole]').click();
   await expect.poll(() => page.evaluate(() => window.__DB.contact_structures.find(l => l.contact_id === 'ct-1' && l.structure_id === 'sc-2')?.role)).toBe('Programmatrice');
   expect(await page.evaluate(() => window.__DB.contact_structures.find(l => l.contact_id === 'ct-1' && l.structure_id === 'st-1').role ?? null)).toBeNull();
   // déjà rattaché : rien en double

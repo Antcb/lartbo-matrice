@@ -215,6 +215,7 @@ export const refRoles = c => (c.roles || []).filter(r => r !== '★').join(', ')
 function roleCell(c, st){
   const own = linkRole(c.id, st.id), ref = refRoles(c), key = `${c.id}|${st.id}`;
   if (S.editRole === key) return `<span class="role-edit"><input class="inp link-role" data-link-role="1" data-c="${c.id}" data-s="${st.id}" value="${esc(own || ref)}" placeholder="Fonction dans cette structure" aria-label="Fonction de ${esc(c.display_name)} dans cette structure">
+      <button type="button" class="btn sm primary" data-act="saveLinkRole" data-c="${c.id}" data-s="${st.id}">Enregistrer</button>
       <button type="button" class="btn sm ghost" data-act="editLinkRole" data-key="">Annuler</button></span>`;
   return own
     ? `<span class="role-view"><span title="Fonction propre à cette structure${ref ? ` (fonctions du contact : ${esc(ref)})` : ''}">${esc(own)} <span class="muted small">· ici</span></span>

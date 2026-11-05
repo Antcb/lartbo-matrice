@@ -359,6 +359,7 @@ td .ac-input:hover{border-color:var(--line)}
 .contact-row .link-role{height:var(--h-sm);min-width:0;max-width:220px;font-size:13px}   /* fonction dans cette structure (v1.54) */
 .contact-row :is(.role-view,.role-edit){display:inline-flex;align-items:center;flex-wrap:wrap;gap:4px 8px;justify-self:end;text-align:right}
 @media (max-width:760px){ .contact-row :is(.role-view,.role-edit){grid-column:1/-1;justify-self:start;text-align:left} }   /* téléphone : fonction sous le nom, pleine largeur */
+@media (pointer:coarse){ #main .contact-row :is(.role-view,.role-edit) :is(.btn,.link-role){height:auto;min-height:var(--h-touch)} }   /* fonction dans une structure : cibles de 40 px au doigt (DS §11.1) ; #main comme les règles téléphone, sinon 28 px l'emporte */
 .attach-contact .ac{width:100%;max-width:420px}
 .contact-row .links{display:flex;flex-wrap:wrap;gap:4px 12px;grid-column:1/-1;font-size:13px}
 .admin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px 18px}

@@ -285,6 +285,14 @@ export const ACTIONS = {
   newContactFor: t => editContact(null, {_structures:[t.dataset.id]}),
   // fonction d'un contact dans une structure : édition à la demande ; « Fonctions du contact » efface la fonction propre (05/11/2026)
   editLinkRole: t => { S.editRole = t.dataset.key || null; render(); if (S.editRole) document.querySelector('.role-edit .link-role')?.focus(); },
+  // enregistrement explicite (bouton ou Entrée) : identique aux fonctions du contact ou vide = pas de fonction propre (rien n'est figé)
+  saveLinkRole: async t => { const inp = t.closest('.role-edit')?.querySelector('.link-role'), c = byId('contacts', t.dataset.c); if (!inp) return;
+    const l = S.db.contact_structures.find(x => x.contact_id === t.dataset.c && x.structure_id === t.dataset.s); if (!l) return;
+    const ref = (c?.roles || []).filter(r => r !== '★').join(', '), v = inp.value.trim(), role = !v || v === ref ? null : v;
+    t.disabled = true;
+    const {error} = await sb.from('contact_structures').update({role}).eq('contact_id', l.contact_id).eq('structure_id', l.structure_id);
+    if (error){ t.disabled = false; return toast('Fonction non enregistrée : ' + error.message, true); }
+    l.role = role; touch('contact_structures'); S.editRole = null; toast(role ? 'Fonction propre à cette structure enregistrée' : 'Fonctions du contact reprises'); render(); },
   resetLinkRole: async t => { const l = S.db.contact_structures.find(x => x.contact_id === t.dataset.c && x.structure_id === t.dataset.s); if (!l) return;
     const {error} = await sb.from('contact_structures').update({role: null}).eq('contact_id', l.contact_id).eq('structure_id', l.structure_id);
     if (error) return toast('Fonction non enregistrée : ' + error.message, true);
