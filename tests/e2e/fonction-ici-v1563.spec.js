@@ -51,3 +51,26 @@ test('v1.56.3 fonction ici : fonctions du contact affichées par défaut, foncti
   await expect(page.locator('.contact-row', { hasText: 'Eli Local' })).toContainText('Administration');
   expectClean(ctx);
 });
+
+test('v1.56.3 relecture B1 : saisie puis « Annuler » ou Échap = rien d’enregistré ; Entrée enregistre', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { structures: [{ id: 'fs-a', name: 'Zz Salle A', city: 'A' }],
+    contacts: [{ id: 'fc-1', display_name: 'Dana Partagée', email: 'dana@exemple.invalid', roles: ['Direction'] }],
+    contact_structures: [{ contact_id: 'fc-1', structure_id: 'fs-a' }] });
+  await openStruct(page, 'fs-a');
+  const row = page.locator('.contact-row', { hasText: 'Dana Partagée' });
+  for (const how of ['clic', 'echap']) {
+    await row.locator('[data-act=editLinkRole]').click();
+    await row.locator('input.link-role').fill('Brouillon tapé');
+    if (how === 'clic') await row.locator('.role-edit [data-act=editLinkRole]').click(); else await row.locator('input.link-role').press('Escape');
+    await expect(row.locator('input.link-role')).toHaveCount(0);
+    await page.waitForTimeout(200);
+    expect(await role(page, 'fc-1', 'fs-a'), how).toBeNull();
+    expect(await page.evaluate(() => window.__calls.filter(c => c.table === 'contact_structures' && c.op === 'update').length), how).toBe(0);
+  }
+  await row.locator('[data-act=editLinkRole]').click();
+  await row.locator('input.link-role').fill('Programmation');
+  await row.locator('input.link-role').press('Enter');
+  await expect.poll(() => role(page, 'fc-1', 'fs-a')).toBe('Programmation');
+  expectClean(ctx);
+});
