@@ -158,3 +158,39 @@ test('v1.56.6 saisie en cours gardée au réaffichage, jamais enregistrée seule
   expect(await role(page, 'fc-1', 'fs-a')).toBe('Production');
   expectClean(ctx, { allowErrorToasts: true });
 });
+
+test('v1.56.7 après un conflit, une Entrée réflexe ne remplace rien ; « Fonctions du contact » n’efface pas une fonction modifiée ailleurs', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { structures: [{ id: 'fs-a', name: 'Zz Salle A', city: 'A' }],
+    contacts: [{ id: 'fc-1', display_name: 'Dana Partagée', email: 'dana@exemple.invalid', roles: ['Direction'] },
+      { id: 'fc-2', display_name: 'Eli Local', email: 'eli@exemple.invalid', roles: ['Administration'] }],
+    contact_structures: [{ contact_id: 'fc-1', structure_id: 'fs-a' }, { contact_id: 'fc-2', structure_id: 'fs-a', role: 'Régie générale' }] });
+  await openStruct(page, 'fs-a');
+  const row = page.locator('.contact-row', { hasText: 'Dana Partagée' }), inp = row.locator('input.link-role');
+  const setServer = (c, v) => page.evaluate(([c, v]) => { window.__DB.contact_structures.find(l => l.contact_id === c).role = v; }, [c, v]);
+  // conflit pas encore reçu + deux Entrée de suite : la valeur de l'autre poste reste
+  await row.locator('[data-act=editLinkRole]').click();
+  await inp.fill('Saisie 2');
+  await setServer('fc-1', 'Autre poste');
+  await inp.press('Enter');
+  await expect(row).toContainText('Modifiée ailleurs entre-temps : « Autre poste »');
+  await inp.press('Enter');
+  await page.waitForTimeout(300);
+  expect(await role(page, 'fc-1', 'fs-a')).toBe('Autre poste');
+  await expect(inp).toHaveValue('Saisie 2');
+  // une fois l'avertissement affiché depuis un moment, Entrée (ou le bouton) remplace explicitement
+  await page.waitForTimeout(1600);
+  await inp.press('Enter');
+  await expect.poll(() => role(page, 'fc-1', 'fs-a')).toBe('Saisie 2');
+  // « Fonctions du contact » sur une valeur déjà changée ailleurs : rien n'est effacé, la valeur actuelle est affichée
+  await setServer('fc-2', 'Production (autre poste)');
+  const eli = page.locator('.contact-row', { hasText: 'Eli Local' });
+  await eli.locator('[data-act=resetLinkRole]').click();
+  await expect(page.locator('.toast')).toContainText('Rien n\'a été effacé');
+  expect(await role(page, 'fc-2', 'fs-a')).toBe('Production (autre poste)');
+  await expect(eli).toContainText('Production (autre poste)');
+  // sans conflit, le bouton efface bien
+  await eli.locator('[data-act=resetLinkRole]').click();
+  await expect.poll(() => role(page, 'fc-2', 'fs-a')).toBeNull();
+  expectClean(ctx);
+});
