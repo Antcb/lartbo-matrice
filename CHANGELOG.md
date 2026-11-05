@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.58.1 — 05/11/2026
+- Points d'équilibre (relecture v1.58.0) — clôture enregistrée avant la v1.58 en perte : % de l'époque affiché ; production avec un partenaire de commission : L'ArtBo porte la perte ; parts de L'ArtBo hors 0–100 % refusées à la saisie ; trois lectures aussi pour une production dont la part de L'ArtBo est inférieure à 100 %
+
+
 ## 1.58.0 — 05/11/2026
 - Points d'équilibre calculés (production, coproduction, coréalisation ; cas de travail du 04/11 et du 05/11/2026) — billet par billet dans les quotas, fourchette ; coproduction : résultat partagé, part de L'ArtBo, résultat global distincts, promotion à la charge d'une seule partie retirée une seule fois ; partage des pertes saisi selon le contrat, jamais déduit du partage des bénéfices (information manquante sinon) ; coréalisation : équilibre du spectacle non calculable, break du contrat à part, équilibre de L'ArtBo selon ses conditions
 

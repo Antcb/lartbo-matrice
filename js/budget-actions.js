@@ -57,6 +57,8 @@ document.addEventListener('change', async e => {
   const path = el.dataset.prodPath.split('.'), raw = el.value.trim();
   // textes : libellés, débiteur / payeur / date de paiement de la promotion locale (v1.51)
   const v = /label|^(promo_(debtor|payer|paid_at)|receipts_cashed_at)$/.test(path.at(-1)) ? (raw === '' && !/label/.test(path.at(-1)) ? null : raw) : (raw === '' ? null : Number(raw.replace(',', '.')));
+  // parts de L'ArtBo (bénéfices, pertes) : un pourcentage de 0 à 100, sinon rien n'est enregistré
+  if (/^artbo_(loss_)?share$/.test(path.at(-1)) && v != null && !(v >= 0 && v <= 100)){ toast('Un pourcentage entre 0 et 100 est attendu', true); render(); return; }
   await saveProd(el.dataset.prodShow, p => { let o = p; path.slice(0, -1).forEach(k => { o = o[k]; }); o[path.at(-1)] = v; });
 }, true);
 
