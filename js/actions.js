@@ -284,15 +284,30 @@ export const ACTIONS = {
   newContact: () => editContact(null), editContact: t => editContact(t.dataset.id),
   newContactFor: t => editContact(null, {_structures:[t.dataset.id]}),
   // fonction d'un contact dans une structure : édition à la demande ; « Fonctions du contact » efface la fonction propre (05/11/2026)
-  editLinkRole: t => { S.editRole = t.dataset.key || null; render(); if (S.editRole) document.querySelector('.role-edit .link-role')?.focus(); },
+  // ouverture : on retient la fonction propre de départ (S.editRoleBase) pour ne jamais écraser en silence une modification faite
+  // ailleurs entre-temps ; la saisie en cours (S.editRoleDraft) survit aux réaffichages automatiques, sans être enregistrée
+  editLinkRole: t => { const key = t.dataset.key || null, [cid, sid] = (key || '').split('|');
+    S.editRole = key; S.editRoleDraft = null; S.editRoleWarn = false;
+    S.editRoleBase = key ? (S.db.contact_structures.find(x => x.contact_id === cid && x.structure_id === sid)?.role ?? null) : null;
+    render(); if (S.editRole) document.querySelector('.role-edit .link-role')?.focus(); },
   // enregistrement explicite (bouton ou Entrée) : identique aux fonctions du contact ou vide = pas de fonction propre (rien n'est figé)
   saveLinkRole: async t => { const inp = t.closest('.role-edit')?.querySelector('.link-role'), c = byId('contacts', t.dataset.c); if (!inp) return;
     const l = S.db.contact_structures.find(x => x.contact_id === t.dataset.c && x.structure_id === t.dataset.s); if (!l) return;
     const ref = (c?.roles || []).filter(r => r !== '★').join(', '), v = inp.value.trim(), role = !v || v === ref ? null : v;
+    const base = S.editRoleBase ?? null;
     t.disabled = true;
-    const {error} = await sb.from('contact_structures').update({role}).eq('contact_id', l.contact_id).eq('structure_id', l.structure_id);
+    // écriture CONDITIONNELLE : seulement si la fonction propre est toujours celle trouvée à l'ouverture (sinon : rien n'est écrasé)
+    let q = sb.from('contact_structures').update({role}).eq('contact_id', l.contact_id).eq('structure_id', l.structure_id);
+    q = base === null ? q.is('role', null) : q.eq('role', base);
+    const {data, error} = await q.select();
     if (error){ t.disabled = false; return toast('Fonction non enregistrée : ' + error.message, true); }
-    l.role = role; touch('contact_structures'); S.editRole = null; toast(role ? 'Fonction propre à cette structure enregistrée' : 'Fonctions du contact reprises'); render(); },
+    if (!data?.length){   // modifiée ailleurs entre-temps : on relit la valeur actuelle, la saisie reste à l'écran, rien n'est écrit
+      const {data: cur} = await sb.from('contact_structures').select('role').eq('contact_id', l.contact_id).eq('structure_id', l.structure_id).maybeSingle();
+      l.role = cur?.role ?? null; touch('contact_structures'); S.editRoleDraft = v; S.editRoleBase = l.role; S.editRoleWarn = true;
+      toast(`Fonction non enregistrée : elle a été modifiée ailleurs entre-temps (maintenant : ${l.role || 'fonctions du contact'}). Ta saisie est conservée ; vérifie puis clique « Enregistrer » pour la remplacer.`, true);
+      render(); document.querySelector('.role-edit .link-role')?.focus(); return; }
+    l.role = role; touch('contact_structures'); S.editRole = null; S.editRoleDraft = null; S.editRoleBase = null; S.editRoleWarn = false;
+    toast(role ? 'Fonction propre à cette structure enregistrée' : 'Fonctions du contact reprises'); render(); },
   resetLinkRole: async t => { const l = S.db.contact_structures.find(x => x.contact_id === t.dataset.c && x.structure_id === t.dataset.s); if (!l) return;
     const {error} = await sb.from('contact_structures').update({role: null}).eq('contact_id', l.contact_id).eq('structure_id', l.structure_id);
     if (error) return toast('Fonction non enregistrée : ' + error.message, true);

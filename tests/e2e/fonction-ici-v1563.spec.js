@@ -110,3 +110,51 @@ test.describe('téléphone', () => {
     expectClean(ctx);
   });
 });
+
+test('v1.56.6 saisie en cours gardée au réaffichage, jamais enregistrée seule ; modification faite ailleurs jamais écrasée en silence', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { structures: [{ id: 'fs-a', name: 'Zz Salle A', city: 'A' }],
+    contacts: [{ id: 'fc-1', display_name: 'Dana Partagée', email: 'dana@exemple.invalid', roles: ['Direction'] }],
+    contact_structures: [{ contact_id: 'fc-1', structure_id: 'fs-a' }] });
+  await openStruct(page, 'fs-a');
+  const row = page.locator('.contact-row', { hasText: 'Dana Partagée' }), inp = row.locator('input.link-role');
+  const writes = () => page.evaluate(() => window.__calls.filter(c => c.table === 'contact_structures' && c.op === 'update').length);
+  const rerender = () => page.evaluate(async () => { (await import('./js/app.js')).render(); });
+  // 1. réaffichage automatique : la saisie reste, rien n'est écrit
+  await row.locator('[data-act=editLinkRole]').click();
+  await inp.fill('En cours');
+  await page.locator('body').click({ position: { x: 5, y: 5 } });
+  await rerender();
+  await expect(inp).toHaveValue('En cours');
+  expect(await writes()).toBe(0);
+  // 2. modifiée sur un autre poste (temps réel reçu) : signalée, la saisie reste, « Enregistrer » n'écrase pas en silence
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
+    window.__DB.contact_structures.find(l => l.contact_id === 'fc-1').role = 'Régie'; S.db.contact_structures.find(l => l.contact_id === 'fc-1').role = 'Régie'; touch('contact_structures');
+    (await import('./js/app.js')).render(); });
+  await expect(row).toContainText('Modifiée ailleurs entre-temps : « Régie »');
+  await expect(inp).toHaveValue('En cours');
+  // l'écriture est conditionnelle : la valeur de départ (vide) n'est plus celle de la base → aucune ligne modifiée
+  await row.locator('[data-act=saveLinkRole]').click();
+  await expect(page.locator('.toast')).toContainText('modifiée ailleurs');
+  expect(await role(page, 'fc-1', 'fs-a')).toBe('Régie');
+  await expect(inp).toHaveValue('En cours');
+  // après ce signalement, un nouvel « Enregistrer » explicite remplace la valeur
+  await row.locator('[data-act=saveLinkRole]').click();
+  await expect.poll(() => role(page, 'fc-1', 'fs-a')).toBe('En cours');
+  await expect(inp).toHaveCount(0);
+  // 3. changement en base pas encore reçu par ce poste : rien n'est écrasé, la valeur actuelle est relue et affichée
+  await row.locator('[data-act=editLinkRole]').click();
+  await inp.fill('Autre saisie');
+  await page.evaluate(() => { window.__DB.contact_structures.find(l => l.contact_id === 'fc-1').role = 'Production'; });
+  await row.locator('[data-act=saveLinkRole]').click();
+  await expect(row).toContainText('Modifiée ailleurs entre-temps : « Production »');
+  expect(await role(page, 'fc-1', 'fs-a')).toBe('Production');
+  await expect(inp).toHaveValue('Autre saisie');
+  // 4. Échap abandonne la saisie : à la réouverture, la valeur enregistrée revient
+  await inp.press('Escape');
+  await row.locator('[data-act=editLinkRole]').click();
+  await expect(inp).toHaveValue('Production');
+  await row.locator('button', { hasText: 'Annuler' }).click();
+  expect(await role(page, 'fc-1', 'fs-a')).toBe('Production');
+  expectClean(ctx, { allowErrorToasts: true });
+});
