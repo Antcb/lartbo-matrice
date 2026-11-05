@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.59.0 — 05/11/2026
+- Acompte par défaut propre à un artiste (priorité date > artiste > Réglages, décision du 04/11/2026) — fiche artiste, « Valider les conditions », création des lignes à la confirmation, fiche publique et mails ; « Appliquer aux dates à venir » ne touche pas les artistes qui ont le leur
+
+
 ## 1.58.1 — 05/11/2026
 - Points d'équilibre (relecture v1.58.0) — clôture enregistrée avant la v1.58 en perte : % de l'époque affiché ; production avec un partenaire de commission : L'ArtBo porte la perte ; parts de L'ArtBo hors 0–100 % refusées à la saisie ; trois lectures aussi pour une production dont la part de L'ArtBo est inférieure à 100 %
 

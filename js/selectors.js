@@ -136,7 +136,11 @@ export function showCommissionPct(s){
   return defaultCommission(s.prod_mode || p?.mode || 'production');
 }
 /** Acompte par défaut (§6.4, v1.46a) : le réglage tel quel, 0 % compris (= date sans acompte) ; 50 seulement si le réglage est absent ou vide */
-export const defaultAcompte = () => { const v = setting('default_acompte_pct'); return filled(v) && Number.isFinite(Number(v)) ? Number(v) : 50; };
+/** Acompte par défaut (% du cachet) : priorité date > artiste > Réglages (décision du 04/11/2026, v1.59) — ici l'artiste puis les
+ *  Réglages (la date, elle, porte sa propre ligne d'acompte) ; 0 gardé tel quel (= sans acompte), 50 seulement si le réglage est vide.
+ *  Même règle côté base : public.default_acompte_for. */
+export const settingAcompte = () => { const v = setting('default_acompte_pct'); return filled(v) && Number.isFinite(Number(v)) ? Number(v) : 50; };
+export const defaultAcompte = projectId => { const v = byId('projects', projectId)?.default_acompte_pct; return filled(v) && Number.isFinite(Number(v)) ? Number(v) : settingAcompte(); };
 
 /** Suivi terminé : clos (Closed) ou confirmé (Confirmed) — rangé dans « suivis clos », plus de relance */
 export const suiviClosed = p => p?.status === 'Closed' || p?.status === 'Confirmed';

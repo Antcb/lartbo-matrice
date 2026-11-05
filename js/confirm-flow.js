@@ -63,7 +63,7 @@ export async function validateTerms(showId){
   const acs = acomptesOf(showId);
   const locked = isInvoiced;                       // facture émise : envoyée, payée, numérotée ou dans Pennylane (§6.4)
   const soldeLock = !booking && soldeInvoiced(showId);   // solde facturé : plus aucun acompte ne change (§6.4)
-  const def = defaultAcompte();   // 0 % gardé tel quel (= sans acompte) ; 50 seulement si le réglage est vide (§6.4)
+  const def = defaultAcompte(s.project_id);   // artiste, sinon Réglages (v1.59) ; 0 % gardé tel quel (= sans acompte) ; 50 si le réglage est vide (§6.4)
   // coproduction (décision du 27/10/2026) : aucun acompte proposé par défaut — seulement ceux qui existent réellement
   const pcts = acs.length ? acs.map(p => ({v: r2(billPct(p) ?? 0), due: p.due_label || ''})) : isCoproduction(s) || def === 0 ? [] : [{v: def, due: ''}];   // réglage à 0 % : date sans acompte
   // chaque acompte : son % et son échéance (le 1er : à la signature du contrat, sauf autre choix)
