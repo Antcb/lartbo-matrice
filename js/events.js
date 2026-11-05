@@ -127,7 +127,10 @@ document.addEventListener('change', async e => {
 // Échap annule. Aucun état caché : l'édition se termine par Enregistrer ou Annuler, rien d'autre.
 document.addEventListener('keydown', e => {
   const t = e.target; if (!t.dataset?.linkRole) return;
-  if (e.key === 'Enter'){ e.preventDefault(); t.closest('.role-edit')?.querySelector('[data-act=saveLinkRole]')?.click(); }
+  if (e.key === 'Enter'){ e.preventDefault();
+    // juste après un avertissement « modifiée ailleurs » : une Entrée réflexe (ou maintenue) ne remplace pas la valeur de l'autre poste
+    if (e.repeat || (S.editRoleWarn && Date.now() - S.editRoleWarn < 1500)) return;
+    t.closest('.role-edit')?.querySelector('[data-act=saveLinkRole]')?.click(); }
   else if (e.key === 'Escape'){ e.preventDefault(); S.editRole = null; S.editRoleDraft = null; S.editRoleBase = null; S.editRoleWarn = false; render(); }
 });
 // saisie en cours gardée en mémoire (jamais enregistrée) : un réaffichage automatique (temps réel, autre action) ne la perd pas

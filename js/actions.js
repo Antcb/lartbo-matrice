@@ -303,14 +303,22 @@ export const ACTIONS = {
     if (error){ t.disabled = false; return toast('Fonction non enregistrée : ' + error.message, true); }
     if (!data?.length){   // modifiée ailleurs entre-temps : on relit la valeur actuelle, la saisie reste à l'écran, rien n'est écrit
       const {data: cur} = await sb.from('contact_structures').select('role').eq('contact_id', l.contact_id).eq('structure_id', l.structure_id).maybeSingle();
-      l.role = cur?.role ?? null; touch('contact_structures'); S.editRoleDraft = v; S.editRoleBase = l.role; S.editRoleWarn = true;
+      l.role = cur?.role ?? null; touch('contact_structures'); S.editRoleDraft = v; S.editRoleBase = l.role; S.editRoleWarn = Date.now();
       toast(`Fonction non enregistrée : elle a été modifiée ailleurs entre-temps (maintenant : ${l.role || 'fonctions du contact'}). Ta saisie est conservée ; vérifie puis clique « Enregistrer » pour la remplacer.`, true);
       render(); document.querySelector('.role-edit .link-role')?.focus(); return; }
     l.role = role; touch('contact_structures'); S.editRole = null; S.editRoleDraft = null; S.editRoleBase = null; S.editRoleWarn = false;
     toast(role ? 'Fonction propre à cette structure enregistrée' : 'Fonctions du contact reprises'); render(); },
+  // « Fonctions du contact » : n'efface que la fonction propre AFFICHÉE ; modifiée ailleurs entre-temps → rien n'est effacé, valeur relue
   resetLinkRole: async t => { const l = S.db.contact_structures.find(x => x.contact_id === t.dataset.c && x.structure_id === t.dataset.s); if (!l) return;
-    const {error} = await sb.from('contact_structures').update({role: null}).eq('contact_id', l.contact_id).eq('structure_id', l.structure_id);
+    const shown = l.role ?? null;
+    let q = sb.from('contact_structures').update({role: null}).eq('contact_id', l.contact_id).eq('structure_id', l.structure_id);
+    q = shown === null ? q.is('role', null) : q.eq('role', shown);
+    const {data, error} = await q.select();
     if (error) return toast('Fonction non enregistrée : ' + error.message, true);
+    if (!data?.length){
+      const {data: cur} = await sb.from('contact_structures').select('role').eq('contact_id', l.contact_id).eq('structure_id', l.structure_id).maybeSingle();
+      l.role = cur?.role ?? null; touch('contact_structures'); render();
+      return toast(`Rien n'a été effacé : la fonction a été modifiée ailleurs entre-temps (maintenant : ${l.role || 'fonctions du contact'}).`, true); }
     l.role = null; touch('contact_structures'); toast('Fonctions du contact reprises'); render(); },
   // structure fermée (v1.54) : marquée inactive (date), jamais supprimée ; réactivable
   setStructureInactive: async t => { const st = byId('structures', t.dataset.id); if (!st) return; const on = t.dataset.on === '1';
