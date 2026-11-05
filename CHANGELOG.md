@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.56.3 — 05/11/2026
+- Fonction d'un contact dans une structure : fonctions du contact affichées par défaut, fonction propre seulement si besoin, retour à la référence
+
+
 ## 1.56.2 — 04/11/2026
 - Relecture V1.56.1 : dates de tableau entières dans toutes les polices (largeur d'origine), prix unitaire du budget entier
 

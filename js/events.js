@@ -125,10 +125,12 @@ document.addEventListener('change', async e => {
 // Fonction d'un contact dans une structure (contact_structures.role, v1.54)
 document.addEventListener('change', async e => {
   const t = e.target; if (!t.dataset?.linkRole) return;
-  const role = t.value.trim() || null, l = S.db.contact_structures.find(x => x.contact_id === t.dataset.c && x.structure_id === t.dataset.s); if (!l) return;
+  const c = byId('contacts', t.dataset.c), ref = (c?.roles || []).filter(r => r !== '★').join(', ');
+  // identique aux fonctions du contact = pas de fonction propre (rien n'est figé)
+  const v = t.value.trim(), role = !v || v === ref ? null : v, l = S.db.contact_structures.find(x => x.contact_id === t.dataset.c && x.structure_id === t.dataset.s); if (!l) return;
   const {error} = await sb.from('contact_structures').update({role}).eq('contact_id', l.contact_id).eq('structure_id', l.structure_id);
   if (error) return toast('Fonction non enregistrée : ' + error.message, true);
-  l.role = role; touch('contact_structures'); toast('Enregistré');
+  l.role = role; touch('contact_structures'); S.editRole = null; toast(role ? 'Fonction propre à cette structure enregistrée' : 'Fonctions du contact reprises'); render();
 });
 
 // Coordonnées administratives d'une structure (champ JSON « admin »)
