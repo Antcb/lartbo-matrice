@@ -11,7 +11,7 @@ import { CFG } from './config.js';
 import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PRIORITY_OPTS, PROSPECT, PROSPECT_OPTS, STATUSES, TASK_STATUS, TASK_STATUS_OPTS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
 import { insert, purgeStored, refreshFor, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode, geoFrance, searchPlaces } from './geo.js';
-import { contactMails, contactsWithMail, defaultCommission, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle } from './selectors.js';
+import { contactMails, contactsWithMail, defaultCommission, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle, spectaclesOf } from './selectors.js';
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow } from './ui/bits.js';
@@ -20,6 +20,7 @@ import { $, downloadCSV, esc, fmtDate, norm, toast, today, workDay, addDays, pct
 import { driveHTML } from './views/production.js';
 import { cancelAutoRelances, closeNoAnswer, deleteProspect, prospectDeleteAsk } from './prospection.js';
 import { afterFeeChange, askConfirmation, becameConfirmed } from './confirm-flow.js';
+import { spectFields, spectValue } from './budget-template.js';
 
 const team = () => CFG.TEAM.map(e=>[e, TEAM_NAMES[e]||e]);
 const activeProjects = keep => projectOptions(true, keep).map(x=>[x.id, x.name]);
@@ -30,6 +31,7 @@ export function showFields(s){
     {k:'structure_id', label:'Structure (salle, festival, organisateur)', type:'ac', kind:'structures', create:true, full:true},
     {k:'venue', label:'Nom du lieu / festival', full:true},
     {k:'project_id', label:'Artiste', type:'project'},
+    {k:'spectacle_id', label:'Spectacle', type:'select', blank:false, options: spectacleOptions(s.project_id, s.spectacle_id)},
     {k:'status', label:'Statut', type:'select', options:STATUSES.includes(s.status)||!s.status ? STATUSES : [s.status, ...STATUSES], blank:false},
     {k:'date', label:'Date', type:'date'}, {k:'date_end', label:'Fin (si plusieurs jours)', type:'date'},
     {k:'city', label:'Ville', type:'city', fill:''}, {k:'department', label:'Département (ou pays)', placeholder:'ex. 69, CH, BE'},
@@ -42,6 +44,29 @@ export function showFields(s){
     {k:'communication_enabled', label:'Concernée par la communication', type:'checkbox'},
     {k:'notes', label:'Notes', type:'textarea', full:true},
   ];
+}
+
+/** Spectacles proposés pour une date (v1.57) : ceux de l'artiste encore actifs, plus celui déjà choisi ; « non précisé » toujours possible
+ *  pour une date existante (jamais d'attribution automatique) */
+export function spectacleOptions(projectId, current){
+  const list = spectaclesOf(projectId).filter(x => x.active || x.id === current);
+  return [['', list.length ? '— choisir le spectacle —' : 'Non précisé (aucun spectacle pour cet artiste)'], ...list.map(x => [x.id, x.name + (x.active ? '' : ' (inactif)')])];
+}
+
+/** Nouveau spectacle d'un artiste : nom et budget type dès la création (v1.57) ; montants vides = non renseignés */
+export function newSpectacle(projectId){
+  const nums = spectFields().map(([k, label]) => ({k, label, type: 'text', placeholder: 'vide = non renseigné'}));
+  return openModal({title: `Nouveau spectacle · ${projName(projectId)}`, values: {},
+    fields: [{k: 'name', label: 'Nom du spectacle (ex. « Jeune public »)', full: true}, ...nums],
+    onSave: async v => {
+      if (!v.name){ toast('Indique le nom du spectacle', true); return false; }
+      const t = {};
+      for (const [k, label] of spectFields()){ const r = spectValue(v[k]); if (!r.ok){ toast(`${label} : nombre positif ou vide`, true); return false; } if (r.v != null) t[k] = r.v; }
+      const sort = Math.max(0, ...spectaclesOf(projectId).map(x => x.sort || 0)) + 1;
+      const row = await insert('spectacles', {project_id: projectId, name: v.name, active: true, budget_template: t, sort});
+      if (row){ S.tab['fold:spectacle-' + row.id] = true; toast('Spectacle créé'); }
+      return row;
+    }});
 }
 
 /** Valeurs d'une nouvelle date posée depuis une structure : ville et département de la fiche (pas de l'adresse administrative) */
@@ -60,6 +85,9 @@ export function editShow(id, projectId, prefill={}){
     onSave: async v => {
       if (!v.venue) { toast('Indique le nom du lieu ou du festival', true); return false; }
       if (!v.project_id) { toast('Choisis l’artiste', true); return false; }
+      // spectacle (v1.57) : il doit appartenir à l'artiste de la date ; une nouvelle date d'un artiste qui a des spectacles en demande un
+      if (v.spectacle_id && byId('spectacles', v.spectacle_id)?.project_id !== v.project_id) { toast('Ce spectacle n’est pas celui de cet artiste : choisis-en un autre', true); return false; }
+      if (!id && !v.spectacle_id && spectaclesOf(v.project_id).some(x => x.active)) { toast('Choisis le spectacle de cette date', true); return false; }
       const st = byId('structures', v.structure_id);
       if (!v.city && st) v.city = st.city;
       const placeChanged = !id || v.city!==s.city || v.structure_id!==s.structure_id;
@@ -92,7 +120,16 @@ export function editShow(id, projectId, prefill={}){
     if (f.lat){ f.lat.value = st.lat ?? ''; f.lng.value = st.lng ?? ''; }
   };
   dlg.addEventListener('ac-chosen', onChosen);
-  dlg.addEventListener('close', () => dlg.removeEventListener('ac-chosen', onChosen), {once:true});
+  // autre artiste choisi → ses spectacles (v1.57) ; le spectacle choisi reste seulement s'il est aussi le sien
+  const onProject = e => {
+    if (e.target.id !== 'fld-project_id') return;
+    const sel = dlg.querySelector('#fld-spectacle_id'); if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = spectacleOptions(e.target.value, null).map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+    if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+  };
+  dlg.addEventListener('change', onProject);
+  dlg.addEventListener('close', () => { dlg.removeEventListener('ac-chosen', onChosen); dlg.removeEventListener('change', onProject); }, {once:true});
   return p;
 }
 
@@ -577,6 +614,9 @@ export { touch, render };
 
 /** Supprimer un artiste : ses modèles de mail partagés avec d'autres artistes restent (réattribués), seuls les siens partent */
 async function deleteProject(id){
+  // spectacles (v1.57) : la base refuse de supprimer un artiste qui en a ; on le dit AVANT de toucher aux modèles de mail (relecture V1.57)
+  const sp = spectaclesOf(id);
+  if (sp.length){ toast(`Cet artiste a ${sp.length} spectacle${sp.length > 1 ? 's' : ''} (${sp.map(x => x.name).join(', ')}) : il ne peut pas être supprimé. Passe-le en inactif.`, true); return false; }
   for (const t of (S.db.mail_templates || []).filter(t => (t.project_ids || []).includes(id) && t.project_ids.length > 1)){
     const ids = t.project_ids.filter(x => x !== id);
     await save('mail_templates', t.id, {project_ids: ids, project_id: ids[0]}, {rerender: false});

@@ -57,7 +57,8 @@ export function lineForecast(l){
   if (l.forecast != null && !isSolde(l)) return Number(l.forecast);   // le solde artiste n'a pas de prévu saisi : c'est toujours le reste calculé
   if (!l.auto && l.qty != null && l.unit_cost != null) return r2(Number(l.qty) * Number(l.unit_cost));   // quantité × prix unitaire (salariés, salle, promoteur…)
   const s = byId('shows', l.show_id);
-  if (l.auto === 'movinmotion' && s) return r2(payslipCost() * staffQty(s.id));
+  // coût par bulletin figé sur la ligne (v1.57) ; ancienne ligne sans coût figé : le réglage du moment, comme avant
+  if (l.auto === 'movinmotion' && s) return r2((l.unit_cost != null ? Number(l.unit_cost) : payslipCost()) * staffQty(s.id));
   if (l.auto === 'cnm' && s){
     // une dépense CNM réelle saisie à part remplace le calcul (jamais les deux)
     // (B6) une ligne CNM saisie à la main, même seulement prévue, remplace aussi le calcul (copie d'une autre date…)

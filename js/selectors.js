@@ -22,6 +22,10 @@ const groupBy = (rows, col) => { const m = new Map(); for (const r of rows){ con
 export const byId = (t,id) => id ? cached('id.'+t, [t], () => new Map(S.db[t].map(r => [r.id, r]))).get(id) : undefined;
 
 export const projName = id => byId('projects', id)?.name || '';
+/** Spectacles d'un artiste (v1.57) : actifs d'abord (sauf all=false), dans l'ordre choisi puis par nom */
+export const spectaclesOf = (projectId, {all = true} = {}) => (S.db.spectacles || []).filter(x => x.project_id === projectId && (all || x.active))
+  .sort((a, b) => (b.active - a.active) || ((a.sort ?? 1e9) - (b.sort ?? 1e9)) || a.name.localeCompare(b.name));
+export const spectacleName = id => byId('spectacles', id)?.name || '';
 
 export const structName = id => byId('structures', id)?.name || '';
 

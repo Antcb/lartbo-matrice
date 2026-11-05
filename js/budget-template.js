@@ -6,12 +6,20 @@
  *  - péage, essence : forfait par date
  *  - Movinmotion (coût par bulletin × nombre de bulletins), taxe CNM si entrée gratuite, solde artiste : calculés seuls
  * Ensuite on ajoute / retire les lignes à la main.
+ *
+ * Spectacles (v1.57, décisions d'Anthony du 04/11/2026) : une date rattachée à un spectacle prend le budget type DE CE SPECTACLE
+ * (effectifs musiciens / multi-instrumentistes / techniciens, coût employeur charges comprises selon la jauge OUVERTE de la date :
+ * jusqu'à 300 places incluses = petite jauge ; technicien : coût fixe ; brut affiché pour information, jamais compté). Les montants
+ * sont saisis dans le spectacle, jamais inventés. Sans spectacle : le budget type de l'artiste (ci-dessus), comme avant.
+ * La jauge est toujours celle ouverte pour la date (shows.capacity), jamais la capacité de la salle ou du festival : sans jauge, le
+ * cachet est posé sans tarif (« jauge à renseigner »). Movinmotion : coût par bulletin du moment, figé sur la ligne (non rétroactif).
+ * Le modèle n'est copié que dans un budget VIDE : le modifier ne change jamais les budgets existants.
  */
 import { render } from './app.js';
-import { cnmDue, isFree, linesOf } from './budget.js';
+import { cnmDue, isFree, linesOf, payslipCost } from './budget.js';
 import { save, sb, mergeRows } from './data.js';
 import { isProductionShow } from './production-budget.js';
-import { byId, eventsOfStructure, setting } from './selectors.js';
+import { byId, setting } from './selectors.js';
 import { S, touch } from './state.js';
 import { esc, eur2, toast } from './utils.js';
 
@@ -32,26 +40,60 @@ export function templateOf(project){
   for (const k of [...BT_FIELDS.map(f => f[0]), ...TIER_KEYS]) out[k] = num(own[k]) ?? num(g[k]) ?? 0;
   return out;
 }
-/** Jauge d'une date : celle de la date, sinon celle du festival / de la salle */
+/** Jauge du tarif : la jauge OUVERTE pour la date (v1.57 : plus la capacité de la salle ou du festival), sinon inconnue */
 export function jaugeOf(s){
-  if (num(s.capacity)) return Number(s.capacity);
-  const caps = eventsOfStructure(s.structure_id).map(e => num(e.capacity)).filter(Boolean);
-  return caps.length ? Math.max(...caps) : null;
+  return num(s?.capacity) ? Number(s.capacity) : null;
 }
+/** Cachet du budget type de l'artiste selon la jauge ; jauge inconnue : pas de tarif (à renseigner) */
 export function cachetFor(t, jauge){
-  if (jauge == null) return t.t2 || t.t1 || t.t3;
+  if (jauge == null) return null;
   return jauge <= t.t1max ? t.t1 : jauge <= t.t2max ? t.t2 : t.t3;
 }
 
-/** Lignes du budget type pour une date */
-export function templateLines(s){
-  const p = byId('projects', s.project_id), t = templateOf(p), jauge = jaugeOf(s), cachet = cachetFor(t, jauge);
+/** Petite jauge : jusqu'à 300 places ouvertes incluses (décision d'Anthony du 04/11/2026) */
+export const PETITE_JAUGE_MAX = 300;
+/** Budget type d'un spectacle : [clé, libellé] — montants en coût employeur (charges comprises) ; « brut » pour information */
+export const SPECT_COUNTS = [['mus_n', 'Musiciens (nombre)'], ['multi_n', 'Multi-instrumentistes (nombre)'], ['tech_n', 'Techniciens (nombre)']];
+export const SPECT_RATES = [
+  ['mus', 'Musicien', true], ['multi', 'Multi-instrumentiste', true], ['tech', 'Technicien', false],   // true : selon la jauge
+];
+export const SPECT_EXTRA = [['peage', 'Péage par date (€)'], ['essence', 'Essence par date (€)']];
+/** Valeurs d'un budget type de spectacle (vides = non renseignées, jamais remplacées par une autre valeur) */
+export const spectTemplate = sp => sp?.budget_template || {};
+/** Lignes de cachets d'un spectacle pour une date : [{label, qty, unit_cost (null = à renseigner)}] */
+export function spectacleStaffRows(sp, s){
+  const t = spectTemplate(sp), jauge = jaugeOf(s), small = jauge == null ? null : jauge <= PETITE_JAUGE_MAX;
+  const tier = small == null ? 'jauge à renseigner' : small ? `petite jauge, ${jauge} places` : `grande jauge, ${jauge} places`;
   const rows = [];
-  if (t.artists > 0) rows.push({category: 'Staff', label: `Cachets artistes${jauge ? ` (jauge ${jauge})` : ''}`, qty: t.artists, unit_cost: cachet});
-  if (t.techs > 0) rows.push({category: 'Staff', label: 'Cachets techniciens', qty: t.techs, unit_cost: t.payslip});
-  if (t.peage > 0) rows.push({category: 'VHR', label: 'Péage', forecast: t.peage});
-  if (t.essence > 0) rows.push({category: 'VHR', label: 'Essence', forecast: t.essence});
-  rows.push({category: 'Movinmotion', label: 'Commission bulletins de paie', supplier: 'Movinmotion', auto: 'movinmotion'});
+  for (const [k, label, byJauge] of SPECT_RATES){
+    const n = num(t[k + '_n']); if (!n || n <= 0) continue;
+    const key = byJauge ? (small == null ? null : k + (small ? '_small' : '_large')) : k;
+    const cost = key ? num(t[key]) : null, gross = key ? num(t[key + '_brut']) : null;
+    const plural = {mus: 'musiciens', multi: 'multi-instrumentistes', tech: 'techniciens'}[k];
+    rows.push({category: 'Staff', label: `Cachets ${plural}${byJauge ? ` (${tier})` : ''}${cost == null ? ' — coût à renseigner' : ''}${gross != null ? ` — brut indicatif ${eur2(gross)} par cachet, non compté` : ''}`,
+      qty: n, unit_cost: cost});
+  }
+  return rows;
+}
+
+/** Lignes du budget type pour une date : celui du spectacle de la date, sinon celui de l'artiste */
+export function templateLines(s){
+  const p = byId('projects', s.project_id), sp = s.spectacle_id ? byId('spectacles', s.spectacle_id) : null;
+  const rows = [];
+  if (sp){
+    const t = spectTemplate(sp);
+    rows.push(...spectacleStaffRows(sp, s));
+    if (num(t.peage) > 0) rows.push({category: 'VHR', label: 'Péage', forecast: num(t.peage)});
+    if (num(t.essence) > 0) rows.push({category: 'VHR', label: 'Essence', forecast: num(t.essence)});
+  } else {
+    const t = templateOf(p), jauge = jaugeOf(s), cachet = cachetFor(t, jauge);
+    if (t.artists > 0) rows.push({category: 'Staff', label: `Cachets artistes${jauge ? ` (jauge ${jauge})` : ' (jauge à renseigner)'}`, qty: t.artists, unit_cost: cachet});
+    if (t.techs > 0) rows.push({category: 'Staff', label: 'Cachets techniciens', qty: t.techs, unit_cost: t.payslip});
+    if (t.peage > 0) rows.push({category: 'VHR', label: 'Péage', forecast: t.peage});
+    if (t.essence > 0) rows.push({category: 'VHR', label: 'Essence', forecast: t.essence});
+  }
+  // frais Movinmotion : coût par bulletin du moment, figé sur la ligne (un changement du réglage ne touche pas ce budget)
+  rows.push({category: 'Movinmotion', label: 'Commission bulletins de paie', supplier: 'Movinmotion', auto: 'movinmotion', unit_cost: payslipCost()});
   if (cnmDue(s)) rows.push({category: 'Taxes', label: isFree(s) ? 'Taxe CNM (entrée gratuite)' : 'Taxe CNM (billetterie)', supplier: 'CNM', auto: 'cnm'});
   if (p?.artist_payee) rows.push({category: 'Solde artiste', label: 'Solde artiste', supplier: p.artist_payee, auto: 'solde_artiste'});
   return rows;
@@ -108,6 +150,56 @@ document.addEventListener('change', e => {
       const cur = {...(p.budget_template || {})}; if (v == null) delete cur[k]; else cur[k] = v;
       if (await save('projects', scope, {budget_template: cur}, {rerender: false})) toast('Budget type de l’artiste enregistré');
     }
+    render();
+  });
+}, true);
+
+/* ───────────── Budget type d'un spectacle (v1.57) ───────────── */
+/** Champs du budget type d'un spectacle : [clé, libellé] (montants en € ; coût employeur charges comprises ; brut pour information) */
+export function spectFields(){
+  const out = SPECT_COUNTS.map(([k, l]) => [k, l]);
+  for (const [k, l, byJauge] of SPECT_RATES){
+    if (byJauge){
+      out.push([k + '_small', `${l} — petite jauge (≤ ${PETITE_JAUGE_MAX} places) : coût employeur (€)`], [k + '_small_brut', `${l} — petite jauge : brut (€, pour information)`],
+        [k + '_large', `${l} — grande jauge (> ${PETITE_JAUGE_MAX} places) : coût employeur (€)`], [k + '_large_brut', `${l} — grande jauge : brut (€, pour information)`]);
+    } else out.push([k, `${l} — coût employeur, toutes jauges (€)`], [k + '_brut', `${l} — brut (€, pour information)`]);
+  }
+  return out.concat(SPECT_EXTRA);
+}
+/** Champs encore vides d'un budget type de spectacle, parmi ceux qui servent (effectif renseigné) : jamais complétés par l'artiste ou
+ *  les Réglages — affichés « à renseigner » */
+export function spectMissing(sp){
+  const t = spectTemplate(sp), miss = [];
+  if (!SPECT_COUNTS.some(([k]) => num(t[k]) > 0)) miss.push('effectifs (musiciens, multi-instrumentistes, techniciens)');
+  for (const [k, l, byJauge] of SPECT_RATES){
+    if (!(num(t[k + '_n']) > 0)) continue;
+    for (const key of byJauge ? [k + '_small', k + '_large'] : [k]) if (num(t[key]) == null)
+      miss.push(`${l.toLowerCase()} — ${key.endsWith('_small') ? 'petite jauge' : key.endsWith('_large') ? 'grande jauge' : 'coût'}`);
+  }
+  return miss;
+}
+/** Formulaire du budget type d'un spectacle (enregistré champ par champ) */
+export function spectacleForm(sp){
+  const t = spectTemplate(sp), miss = spectMissing(sp);
+  const inp = (k, label) => `<label class="bt-row"><span>${esc(label)}</span><input type="number" step="any" min="0" inputmode="decimal" class="narrow2" data-spt="${k}" data-spt-id="${esc(sp.id)}" value="${esc(t[k] ?? '')}" aria-label="${esc(label)}"></label>`;
+  return `${miss.length ? `<p class="mode-note">À renseigner : ${esc(miss.join(' ; '))}. Rien n’est repris du budget type de l’artiste ni des Réglages.</p>` : ''}
+    <div class="bt-form">${spectFields().map(([k, l]) => inp(k, l)).join('')}</div>
+    <p class="help mt-sm">Coûts employeur, charges comprises ; le brut est affiché sur les lignes pour information et n’est jamais ajouté aux dépenses. Frais Movinmotion (${eur2(payslipCost())} par bulletin, Réglages) ajoutés à part. Copié dans le budget vide d’une date de ce spectacle ; le modifier ne change pas les budgets existants. Spectacle décoché « actif » = archivé : plus proposé pour les nouvelles dates, ses dates le gardent.</p>`;
+}
+/** Valeur saisie → nombre ≥ 0, ou null (vide) ; refus d'un nombre négatif ou illisible */
+export function spectValue(raw){
+  const s = String(raw ?? '').trim().replace(',', '.'); if (s === '') return {ok: true, v: null};
+  const v = Number(s); return isNaN(v) || v < 0 ? {ok: false} : {ok: true, v};
+}
+document.addEventListener('change', e => {
+  const el = e.target; if (!el.dataset?.spt) return;
+  e.stopPropagation();
+  const sp = byId('spectacles', el.dataset.sptId), k = el.dataset.spt, r = spectValue(el.value);
+  if (!sp) return;
+  if (!r.ok){ toast('Montant ou nombre invalide (positif ou vide)', true); el.value = spectTemplate(sp)[k] ?? ''; return; }
+  queue = queue.then(async () => {
+    const cur = {...spectTemplate(byId('spectacles', sp.id))}; if (r.v == null) delete cur[k]; else cur[k] = r.v;
+    if (await save('spectacles', sp.id, {budget_template: cur}, {rerender: false})) toast('Budget type du spectacle enregistré');
     render();
   });
 }, true);
