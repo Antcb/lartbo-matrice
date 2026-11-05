@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.56.4 — 05/11/2026
+- Fonction dans une structure : « Annuler » et Échap n'enregistrent rien, Entrée valide (relecture v1.56.3)
+
+
 ## 1.56.3 — 05/11/2026
 - Fonction d'un contact dans une structure : fonctions du contact affichées par défaut, fonction propre seulement si besoin, retour à la référence
 
