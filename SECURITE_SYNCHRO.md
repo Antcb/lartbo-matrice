@@ -2,7 +2,7 @@
 
 Décision d'Anthony du 06/11/2026 : l'absence de session utilisateur pour un appel automatique ne rend pas la fonction publique.
 Le réglage de la passerelle Supabase (vérification du jeton désactivée pour accepter l'appel de la tâche planifiée) **n'est pas**
-la protection : chaque fonction contrôle elle-même chaque appel, avant toute lecture ou écriture.
+la protection : chaque fonction contrôle elle-même chaque appel, avant de renvoyer ou d'écrire quoi que ce soit.
 
 ## Deux justificatifs acceptés, rien d'autre
 | Appelant | Justificatif | Contrôle dans la fonction |
@@ -10,8 +10,9 @@ la protection : chaque fonction contrôle elle-même chaque appel, avant toute l
 | Tâche planifiée de la base (toutes les 5 min) | en-tête `x-hook-secret` = secret serveur **dédié** (`mail_sync_hook` / `cal_sync_hook`) | secret lu côté serveur (`import_secret`, réservé au rôle serveur), comparaison à temps constant |
 | Membre de l'équipe dans l'application (« Actualiser », choix d'un agenda…) | session Supabase de l'utilisateur (`Authorization: Bearer …`) | `is_team()` exécuté **avec la session de l'appelant** |
 
-Tout autre appel (aucun justificatif, secret faux ou vide, session d'un compte hors équipe, session expirée) → **403**, rien n'est lu
-ni écrit. Les actions réservées à l'équipe (liste des agendas) refusent aussi le secret de la tâche planifiée.
+Tout autre appel (aucun justificatif, secret faux ou vide, session d'un compte hors équipe, session expirée) → **403** : rien n'est
+renvoyé ni écrit (la fonction lit seulement ses réglages et le secret pour décider). Le secret de la tâche planifiée ne permet QUE la synchronisation planifiée : les actions de l'application (relire des conversations
+précises, liste des agendas, actualisation d'un seul artiste) exigent une session de l'équipe.
 
 ## Le secret dédié
 - Tiré au hasard par la migration (environ 244 bits aléatoires), rangé dans `private.import_secrets` (schéma privé, comme le jeton Pennylane) ;
