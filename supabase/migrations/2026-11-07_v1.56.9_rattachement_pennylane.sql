@@ -226,7 +226,7 @@ begin
     perform set_config('matrice.regularisation', '', true);
   end if;
   update show_payments set pennylane_id = p_pennylane_id,
-      pennylane_url = coalesce(src.pennylane_url, pend.url), invoice_number = coalesce(src.invoice_number, pend.invoice_number),
+      pennylane_url = coalesce(src.pennylane_url, pend.url), invoice_number = coalesce(nullif(btrim(tgt.invoice_number), ''), src.invoice_number, pend.invoice_number),   -- n° déjà noté : gardé tel quel
       invoiced_on = coalesce(src.invoiced_on, pend.invoice_date), sent_at = coalesce(tgt.sent_at, src.sent_at),
       reminded_at = coalesce(tgt.reminded_at, src.reminded_at), drive_file_id = coalesce(tgt.drive_file_id, src.drive_file_id),
       -- montant : celui de la facture si la ligne n'en a pas ET n'est pas encore émise ; une ligne émise garde le sien (§7.3)
