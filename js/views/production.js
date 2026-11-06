@@ -232,7 +232,7 @@ function billingTab(s, booking, pays, late){
           const st = acompteState(p), soldeCalc = p.kind === 'solde' && !isInvoiced(p) && !ov;   // solde calculé : cession − acomptes facturés
           const pctLock = lock || (soldeCalc ? 'disabled title="Calculé : cession − acomptes effectivement facturés (saisis un montant HT pour le fixer)"' : '');
           return `<tr class="${st === 'caduc' ? 'muted' : ''}">
-          <td>${cIn('show_payments',p.id,'label',p.label)}${st === 'prevu' ? ` <span class="badge" title="Prévu au contrat (${pct(billPct(p))}), pas encore facturé : il ne réduit pas le solde">prévu, non facturé</span>` : st === 'caduc' ? ' <span class="badge" title="Jamais facturé alors que le solde l’est : plus réclamé, historique conservé">caduc</span>' : ''}</td>
+          <td>${cIn('show_payments',p.id,'label',p.label)}${soldeCalc && !booking ? ` <span class="badge" title="Montant calculé (cession − acomptes effectivement facturés) : aucune facture de solde n’est encore émise">calculé, non facturé</span>` : ''}${st === 'prevu' ? ` <span class="badge" title="Prévu au contrat (${pct(billPct(p))}), pas encore facturé : il ne réduit pas le solde">prévu, non facturé</span>` : st === 'caduc' ? ' <span class="badge" title="Jamais facturé alors que le solde l’est : plus réclamé, historique conservé">caduc</span>' : ''}</td>
           <td class="num">${BILL_KINDS.includes(p.kind) ? `<input type="number" step="any" inputmode="decimal" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="pct" value="${pctVal(billedPct(p))}" aria-label="% du cachet" ${pctLock}>`
             : ['cnm','autre'].includes(p.kind) ? cIn('show_payments',p.id,'pct',p.pct,'number','class="narrow"') : `<span class="muted">${payPct(p)??'—'}</span>`}</td>
           <td class="num"><input type="number" step="any" data-t="show_payments" data-id="${p.id}" data-f="amount" value="${ov?p.amount:''}" placeholder="${a==null?'à saisir':a}" ${lock || 'title="Laisse vide pour le calcul automatique"'} class="${ov?'override':''}"></td>
@@ -250,6 +250,7 @@ function billingTab(s, booking, pays, late){
         </tbody>${booking || isCoproduction(s) ? '' : billFoot(s)}</table></div>
       ${isCoproduction(s) ? `<p class="help mt-sm">Coproduction : aucune facture de cession, aucun acompte ni solde, aucune commission L’ArtBo ni part partenaire générés. Ajoute une ligne seulement pour une opération réelle.</p>` : ''}
       ${horsCalculHTML(s)}
+      ${booking ? '' : pendingPennylaneHTML(s)}
       <div class="vh-actions mt">
         ${booking ? '' : `<button class="btn sm" data-act="addPay" data-kind="acompte" data-id="${s.id}">Ajouter un acompte</button>`}
         ${booking ? '' : `<button class="btn sm" data-act="addPay" data-kind="autre" data-id="${s.id}">Autre ligne</button>
@@ -314,9 +315,21 @@ function payeeCell(s, p, booking){
  * la Matrice crée le devis, puis « Synchroniser Pennylane » reprend tout seul le numéro et le paiement de chaque facture.
  * Commission et autres lignes : brouillon de facture créé directement.
  */
+/** Factures du devis que la synchronisation n'a pas reliées seule (v1.56.9) : choix explicite de la ligne, rien d'automatique */
+function pendingPennylaneHTML(s){
+  const list = S.db.pennylane_a_rattacher.filter(r => r.show_id === s.id && !r.resolved_at);
+  if (!list.length) return '';
+  return `<div class="mt" role="status"><p class="m0 warn-txt"><b>Facture${list.length > 1 ? 's' : ''} Pennylane à rattacher</b> : la synchronisation ne l’a pas reliée seule (rien n’a été modifié).</p>
+    ${list.map(r => `<div class="file-row"><span>${esc(r.invoice_number || 'Facture ' + r.pennylane_id)} · ${eur2(r.amount_ht)} HT${r.invoice_date ? ' · ' + fmtDate(r.invoice_date) : ''} — <span class="muted">${esc(r.reason)}</span></span>
+      ${r.url ? `<a class="btn sm ghost" href="${esc(r.url)}" target="_blank" rel="noopener">Voir ↗</a>` : ''}
+      <button class="btn sm" data-act="pennylaneAttach" data-pid="${esc(r.pennylane_id)}" data-show="${s.id}">Rattacher…</button></div>`).join('')}</div>`;
+}
+
 function pennylaneCell(p, s){
   if (!['acompte','solde','artbo','autre'].includes(p.kind)) return '';
-  if (p.pennylane_id) return p.pennylane_url ? `<a class="btn sm ghost" href="${esc(p.pennylane_url)}" target="_blank" rel="noopener">Facture ↗</a>` : '<span class="ok-badge">Facture créée</span>';
+  // acompte / solde relié à une facture du devis : rattachement corrigeable (confirmation, motif, historique ; v1.56.9)
+  const fix = ['acompte','solde'].includes(p.kind) && !p.paid_at ? ` <button class="btn sm ghost" data-act="pennylaneAttach" data-pid="${esc(p.pennylane_id)}" data-show="${p.show_id}" title="La facture est sur la mauvaise ligne ? Choisir la bonne (le document Pennylane n’est pas modifié)">Corriger</button>` : '';
+  if (p.pennylane_id) return (p.pennylane_url ? `<a class="btn sm ghost" href="${esc(p.pennylane_url)}" target="_blank" rel="noopener">Facture ↗</a>` : '<span class="ok-badge">Facture créée</span>') + fix;
   if (['acompte','solde'].includes(p.kind)){
     if (p.invoice_number || acompteState(p) === 'caduc') return '';   // acompte caduc : ne se facture plus (lot C1)
     return s?.pennylane_quote_id

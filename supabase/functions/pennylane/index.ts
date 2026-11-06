@@ -185,7 +185,8 @@ Deno.serve(async (req) => {
       // factures faites dans Pennylane depuis le devis créé par la Matrice (acompte puis solde) : reconnues par leur devis et leur montant HT
       const byQuote: Record<string, any[]> = {};
       for (const x of Object.values(byId)) if (x.quote?.id && x.status !== 'cancelled') (byQuote[String(x.quote.id)] ||= []).push(x);
-      const linked: any[] = [], caducs: string[] = [], douteux: string[] = [], erreurs: string[] = [];   // erreurs : écritures refusées (jamais comptées comme faites)
+      const linked: any[] = [], caducs: string[] = [], douteux: string[] = [], erreurs: string[] = [];
+      let aRattacher = 0;   // erreurs : écritures refusées (jamais comptées comme faites)
       if (Object.keys(byQuote).length) {
         const open = (await readAll(() => admin.from('show_payments').select('id, show_id, kind, pct, amount, sort, invoice_number, pennylane_id, sent_at, paid_at, shows!inner(fee_ht, pennylane_quote_id, prod_mode)')
           .in('kind', ['acompte', 'solde']).is('invoice_number', null).is('pennylane_id', null).is('hors_calcul', null).not('shows.pennylane_quote_id', 'is', null)) || [])
@@ -197,30 +198,61 @@ Deno.serve(async (req) => {
         for (const id of ids) { const fee = Number((open.find((p: any) => p.show_id === id) as any)?.shows?.fee_ht) || 0; facture[id as string] = acomptesFactures((acs || []).filter((a: any) => a.show_id === id), fee); }
         const taken = await readAll(() => admin.from('show_payments').select('id, pennylane_id, invoice_number').or('invoice_number.not.is.null,pennylane_id.not.is.null'));
         const used = new Set<string>(); for (const t of taken || []) { if (t.pennylane_id) used.add('id:' + t.pennylane_id); if (t.invoice_number) used.add('n:' + norm(t.invoice_number)); }
-        const order = (a: any, b: any) => (a.kind === b.kind ? (a.sort || 0) - (b.sort || 0) : a.kind === 'acompte' ? -1 : 1);
-        for (const p of (open || []).sort(order)) {
-          const sh = (p as any).shows, fee = Number(sh.fee_ht) || 0;
-          const want = montantAttendu(p, fee, facture[p.show_id] || 0); if (!want) continue;
+        // factures déjà choisies à la main (historique des rattachements) : plus jamais reliées automatiquement
+        const manual = new Set(((await readAll(() => admin.from('pennylane_rattachements').select('id, pennylane_id'))) || []).map((r: any) => String(r.pennylane_id)));
+        const free = (c: any) => !used.has('id:' + c.id) && !(c.invoice_number && used.has('n:' + norm(c.invoice_number))) && !manual.has(String(c.id));
+        const pending = new Map<string, { x: any; show_id: string; reason: string }>();
+        const flag = (x: any, show_id: string, reason: string) => { if (!pending.has(String(x.id))) pending.set(String(x.id), { x, show_id, reason }); };
+        // par date : une facture n'est reliée seule que si elle correspond à UNE seule ligne et que cette ligne n'a qu'UNE facture
+        // possible (jamais sur le seul montant quand plusieurs correspondances existent — décision d'Anthony du 06/11/2026) ;
+        // après chaque acompte relié, le solde attendu est recalculé (cession − acomptes facturés) et on recommence
+        const byShow: Record<string, any[]> = {};
+        for (const p of open || []) (byShow[p.show_id] ||= []).push(p);
+        for (const [sid, lines] of Object.entries(byShow)) {
+          const sh = lines[0].shows, fee = Number(sh.fee_ht) || 0, acsDate = (acs || []).filter((a: any) => a.show_id === sid);
           const cands = (byQuote[String(sh.pennylane_quote_id)] || []).sort((a, b) => Number(a.id) - Number(b.id));
-          const x = cands.find(c => !used.has('id:' + c.id) && !(c.invoice_number && used.has('n:' + norm(c.invoice_number))) && Math.abs(Number(c.currency_amount_before_tax) - want) < 0.05);
-          if (!x) continue;
-          // acompte caduc (solde déjà facturé) : une facture Pennylane lui correspond, mais il n'est jamais relié automatiquement
-          // (la date serait facturée au-delà de sa cession) — signalé dans le rapport, à examiner (relecture C1, B3)
-          if (caduc(p, (acs || []).filter((a: any) => a.show_id === p.show_id))) { caducs.push(x.invoice_number || String(x.id)); continue; }
-          // facture qui peut être un acompte déjà noté à la main : jamais reliée au solde sans choix de l'utilisateur
-          if (soldeDouteux(p, Number(x.currency_amount_before_tax), (acs || []).filter((a: any) => a.show_id === p.show_id), fee)) { douteux.push(x.invoice_number || String(x.id)); continue; }
-          // acompte / solde relié pas encore émis : son montant est figé sur celui de la facture Pennylane (plus jamais recalculé,
-          // lots C1 et D1 — le montant réel de la facture fait référence) ;
-          // déjà émis (ex. marqué envoyé) : montant inchangé (protection A1) — seuls le numéro et le lien sont repris
-          const fige = figerMontant(p) ? { amount: Number(x.currency_amount_before_tax) } : {};
-          // jour de la facture (date Pennylane) : départ du rappel « Facture à envoyer » (v1.46) — la date d'envoi reste saisie à la main
-          const { error: e1 } = await admin.from('show_payments').update({ pennylane_id: String(x.id), pennylane_url: await invoicePage(x.id) || linkOf(x), invoice_number: x.invoice_number || null, ...(x.date ? { invoiced_on: x.date } : {}), ...fige }).eq('id', p.id);
-          if (e1) { erreurs.push(`${x.invoice_number || x.id} : ${e1.message}`); continue; }   // refusée : ni reliée, ni comptée
-          used.add('id:' + x.id); if (x.invoice_number) used.add('n:' + norm(x.invoice_number));
-          // compte pour le solde suivant : le montant réel de la facture quand l'acompte vient d'être figé dessus (lot D1)
-          if (p.kind === 'acompte') facture[p.show_id] = (facture[p.show_id] || 0) + ('amount' in fige ? Number((fige as any).amount) : (montantAcompte(p, fee) || 0));
-          linked.push(x.invoice_number);
+          let rest = [...lines];
+          for (let round = 0; round < 6 && rest.length; round++) {
+            const want = new Map(rest.map((p: any) => [p.id, montantAttendu(p, fee, facture[sid] || 0)]));
+            const fits = (p: any, c: any) => { const w = want.get(p.id); return !!w && Math.abs(Number(c.currency_amount_before_tax) - w) < 0.05; };
+            const pairs: [any, any][] = [];
+            for (const p of rest) {
+              const cs = cands.filter(c => free(c) && fits(p, c));
+              if (cs.length !== 1) { if (cs.length > 1) cs.forEach(c => flag(c, sid, `Plusieurs factures du devis ont le montant attendu pour « ${p.label || p.kind} » : à choisir`)); continue; }
+              const others = rest.filter((q: any) => q.id !== p.id && fits(q, cs[0]));
+              if (others.length) { flag(cs[0], sid, `Le montant correspond à plusieurs lignes (${[p, ...others].map((q: any) => q.label || q.kind).join(', ')}) : à choisir`); continue; }
+              pairs.push([p, cs[0]]);
+            }
+            if (!pairs.length) break;
+            // un acompte à la fois (le solde dépend des acomptes facturés), sinon toutes les paires uniques du tour
+            const step = pairs.some(([p]) => p.kind === 'acompte') ? [pairs.find(([p]) => p.kind === 'acompte')!] : pairs;
+            for (const [p, x] of step) {
+              rest = rest.filter((q: any) => q.id !== p.id);
+              // acompte caduc (solde déjà facturé) : jamais relié automatiquement (relecture C1, B3)
+              if (caduc(p, acsDate)) { caducs.push(x.invoice_number || String(x.id)); flag(x, sid, 'Acompte caduc (solde déjà facturé) : la date serait facturée au-delà de sa cession'); continue; }
+              // facture qui peut être un acompte déjà noté à la main : jamais reliée au solde sans choix de l'utilisateur
+              if (soldeDouteux(p, Number(x.currency_amount_before_tax), acsDate, fee)) { douteux.push(x.invoice_number || String(x.id)); flag(x, sid, 'Même montant qu’un acompte déjà noté à la main : est-ce cet acompte ou le solde ?'); continue; }
+              // acompte / solde relié pas encore émis : montant figé sur celui de la facture (lots C1 et D1) ; déjà émis : inchangé (A1)
+              const fige = figerMontant(p) ? { amount: Number(x.currency_amount_before_tax) } : {};
+              const { error: e1 } = await admin.from('show_payments').update({ pennylane_id: String(x.id), pennylane_url: await invoicePage(x.id) || linkOf(x), invoice_number: x.invoice_number || null, ...(x.date ? { invoiced_on: x.date } : {}), ...fige }).eq('id', p.id).is('pennylane_id', null).is('invoice_number', null);
+              if (e1) { erreurs.push(`${x.invoice_number || x.id} : ${e1.message}`); continue; }   // refusée : ni reliée, ni comptée
+              used.add('id:' + x.id); if (x.invoice_number) used.add('n:' + norm(x.invoice_number));
+              if (p.kind === 'acompte') facture[sid] = (facture[sid] || 0) + ('amount' in fige ? Number((fige as any).amount) : (montantAcompte(p, fee) || 0));
+              linked.push(x.invoice_number);
+            }
+          }
+          // factures du devis restées sans ligne : signalées aussi (rien n'est relié sur un montant qui ne correspond à aucune ligne)
+          for (const c of cands) if (free(c) && !c.credited_invoice && Number(c.currency_amount_before_tax) > 0 && !pending.has(String(c.id))) flag(c, sid, 'Aucune ligne d’acompte ou de solde de ce montant : à rattacher ou à vérifier');
         }
+        // « à rattacher » : enregistrées pour l'action de l'onglet Factures (jamais un document Pennylane modifié) ;
+        // une facture déjà traitée garde sa décision
+        for (const { x, show_id, reason } of pending.values()) {
+          const row = { pennylane_id: String(x.id), show_id, invoice_number: x.invoice_number || null, amount_ht: Number(x.currency_amount_before_tax),
+            invoice_date: x.date || null, url: await invoicePage(x.id) || linkOf(x), reason, last_seen_at: new Date().toISOString() };
+          const { error: e5 } = await admin.from('pennylane_a_rattacher').upsert(row, { onConflict: 'pennylane_id' });
+          if (e5) erreurs.push(`${x.invoice_number || x.id} : signalement impossible (${e5.message})`);
+        }
+        aRattacher = pending.size;
       }
       // paiements repris : acomptes / soldes / autres lignes de PRODUCTION, et factures de commission BOOKING (lot C1) ;
       // jamais les factures de l'artiste en booking, ni la commission de production (pas une facture)
@@ -254,7 +286,7 @@ Deno.serve(async (req) => {
         }
       }
       const filed = await fileInvoices(toFile);
-      return json({ ok: true, updated, pennylaneLate, linked, caducs, douteux, erreurs, filed });
+      return json({ ok: true, updated, pennylaneLate, linked, caducs, douteux, aRattacher, erreurs, filed });
     }
 
     if (body.action === 'quote') {
