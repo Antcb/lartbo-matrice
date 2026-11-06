@@ -6,7 +6,7 @@
 import { copyText } from '../ui/dialog.js';
 import { ARTIST_DOCS, ARTIST_SECTIONS, PHOTO_CREDITS } from '../artist-fields.js';
 import { spectacleForm, spectMissing, templateForm } from '../budget-template.js';
-import { ALL_FIELDS as AF_FIELDS, ficheText, fieldText, input as afInput, listClick, migrateInfo, read as afRead } from '../artist-form.js';
+import { ADM_LABEL, ALL_FIELDS as AF_FIELDS, ficheText, fieldText, fromAdmin, input as afInput, listClick, migrateInfo, read as afRead } from '../artist-form.js';
 import { netArtbo } from '../calc.js';
 import { templatesList, tplProjects } from '../mail.js';
 import { CONFIRMED_PROD, LOG_ICON, stClass, viaArtbo } from '../constants.js';
@@ -206,9 +206,15 @@ function mailsTab(p){
 /** Fiche artiste : ce que l'artiste a rempli via son lien, modifiable ici, avec « Copier » sur chaque champ */
 function artistTab(p){
   // une modification pas encore enregistrée (échec d'enregistrement) reste affichée pour pouvoir réessayer
-  const info = AF_UNSAVED.get(p.id) || migrateInfo(p.artist_info), docs = p.artist_docs || [];
+  // structure administrative = référence (05/11/2026) : informations légales reprises de la structure ; réponses différentes listées
+  const adm = byId('structures', p.admin_structure_id), ad = fromAdmin(migrateInfo(p.artist_info), adm?.admin);
+  const info = AF_UNSAVED.get(p.id) || ad.values, docs = p.artist_docs || [];
   const label = k => (ARTIST_DOCS.find(d => d[0] === k) || [k, k])[1];
-  const sections = ARTIST_SECTIONS.map(sec => `<section class="af-sec"><h3 class="block-title">${esc(sec.title)}</h3>
+  const admNote = sec => !sec.fields.some(f => f.k.startsWith('adm_')) ? '' : !adm
+    ? '<p class="help">Aucune structure administrative liée à l’artiste (onglet Administratif) : ces réponses ne sont reprises nulle part.</p>'
+    : `<p class="help">Informations légales reprises de la structure « ${esc(adm.name)} », qui fait référence (onglet Administratif). Une valeur différente saisie ici est signalée, jamais appliquée à la structure.</p>
+       ${ad.conflicts.length ? `<div class="warn-txt"><b>À vérifier : la fiche diffère de la structure</b><ul>${ad.conflicts.map(c => `<li>${esc(ADM_LABEL(c.k))} : fiche « ${esc(c.fiche)} », structure « ${esc(c.structure)} »</li>`).join('')}</ul></div>` : ''}`;
+  const sections = ARTIST_SECTIONS.map(sec => `<section class="af-sec"><h3 class="block-title">${esc(sec.title)}</h3>${admNote(sec)}
     <div class="fiche-grid${sec.cols ? ` cols${sec.cols} even` : ''}">${sec.fields.map(f => afInput(f, info[f.k] ?? '', {copy: true, prefix: 'af-' + p.id.slice(0, 6) + '-'})).join('')}</div></section>`).join('');
   return `<div class="panel pad">
     <p class="tab-intro">Envoie ce lien à l’artiste : il remplit sa fiche et dépose ses fichiers (photos, logos, fiche technique, titres…), rangés tout seuls dans son dossier Drive. Il peut revenir sur le même lien pour corriger.

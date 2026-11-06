@@ -397,6 +397,13 @@ Les factures de l'artiste sur les dates booking n'entrent dans **aucun** des tro
 - **Pertes** : le partage des bénéfices et celui des pertes viennent du **contrat, date par date** (`production.artbo_share` / `production.artbo_loss_share`). Le % des pertes ne se **déduit jamais** du % des bénéfices ; absent alors que le résultat partagé est négatif → parts **« information manquante »**, clôture bloquée, break de L'ArtBo non calculé. L'ArtBo seule productrice (100 %, sans coproducteur) porte tout. Les résultats déjà clôturés gardent leur synthèse enregistrée.
 - **Coréalisation** : « **Équilibre du spectacle non calculable : données manquantes** » (recettes et coûts de la salle inconnus) ; le **break du contrat** est affiché à part (seuil du partage, pas un équilibre économique) ; **équilibre de L'ArtBo** = premier nombre de billets vendus pour lequel MG + % du résultat net au-delà du break **validé** (charges déductibles ; CNM seulement si cochée) couvre les dépenses prévues de la date (hors solde artiste et commission). Il faut : tarifs, jauge, break validé, % au producteur, charges correctes ; sinon la liste de ce qui manque.
 
+### 6.20 Structure administrative de l'artiste = référence [DÉCIDÉ 05/11/2026, EN PLACE v1.60]
+- La structure liée à l'artiste (`projects.admin_structure_id`, onglet Administratif) fait **référence** pour les informations légales (raison sociale, forme, SIRET, APE, RNA, TVA intracommunautaire, siège, signataire…) et le **régime de TVA** (`admin.vat_subject`).
+- La **fiche artiste** (lien public `artiste.html` via `artist_get`, et onglet « Fiche artiste ») **reprend** ces informations, sans ressaisie (remarques internes exclues).
+- **Aucun écrasement silencieux** : une valeur de la fiche différente de celle de la structure n'est **jamais appliquée** ; elle est listée dans l'onglet (« À vérifier ») et notifiée à l'équipe (`artist_sync`, envoi par l'artiste comme enregistrement par l'équipe) ; seules les informations **manquantes** de la structure sont complétées. SIRET, TVA et APE sont comparés sans espaces ni ponctuation.
+- **TVA** : une date en **booking** dont la structure administrative n'est pas soumise à la TVA et dont la TVA n'est pas 0 % est signalée « à vérifier (TTC = HT) » (date, « Valider les conditions ») ; **aucune correction automatique** des dates.
+- Ne jamais saisir un numéro de TVA calculé par un annuaire à partir du SIREN.
+
 ## 7. Supabase
 
 ### 7.1 Nommage

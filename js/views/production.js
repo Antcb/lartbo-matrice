@@ -3,7 +3,7 @@
  * Chaque date se déplie : suivi admin, commissions, dossier Drive, facturation.
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
-import { BILL_KINDS, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
+import { vatConflict, BILL_KINDS, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
 import { byId, projName, setting, showsFiltered, spectacleName, structName } from '../selectors.js';
 import { followedInvoice, lateSteps, remindersOf } from '../reminders.js';
@@ -16,6 +16,8 @@ import { coreaCommissionCheck, payerLabel } from '../budget.js';
 import { commissionPctOf, isCorea } from '../corea.js';
 import { commissionTransferCell, productionBudgetHTML, projectBudgetHTML, showBudgetHTML } from './budget.js';
 import { isProductionShow } from '../production-budget.js';
+
+const vatWarn = s => vatConflict(s) ? ' <span class="warn-txt small">Structure administrative de l’artiste non soumise à la TVA : à vérifier (TTC = HT)</span>' : '';
 
 export function viewProduction(){
   const q = S.search.production || '';
@@ -155,7 +157,7 @@ function conditionsTab(s, booking){
       <div class="steps">
         <label>Contrat</label><span>${esc(s.contract_type || '—')}</span>
         <label>Cachet HT</label>${cIn('shows',s.id,'fee_ht',s.fee_ht,'number')}
-        <label>TVA du cachet (%)</label>${cIn('shows',s.id,'vat_rate',s.vat_rate,'number','placeholder="5.5" class="narrow"')}
+        <label>TVA du cachet (%)</label><span>${cIn('shows',s.id,'vat_rate',s.vat_rate,'number','placeholder="5.5" class="narrow"')}${vatWarn(s)}</span>
         <label>Cachet TTC</label><b>${eur2(ttc(s.fee_ht, showVat(s)))}</b>
         ${booking ? '' : `<label>Acomptes</label><span>${plan.filter(p => p.kind === 'acompte').map(p => `${esc(p.label || 'Acompte')} ${pct(billPct(p))}${p.due_label ? ` <span class="muted">(${esc(p.due_label)})</span>` : ''}`).join(' · ') || '<span class="muted">aucun</span>'}${plan.some(p => p.kind === 'solde') ? ` · solde ${pct(billPct(plan.find(p => p.kind === 'solde')))}` : ''}</span>`}
         <label>Heure de passage</label>${cIn('shows',s.id,'show_time',s.show_time,'text','placeholder="ex. 22h30" class="narrow"')}
