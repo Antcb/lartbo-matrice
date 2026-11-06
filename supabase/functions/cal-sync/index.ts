@@ -18,6 +18,10 @@ const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { sta
 const scriptUrlOk = (u: string) => /^https:\/\/script\.google\.com\/(a\/macros\/[\w.-]+|macros)\/s\/[\w-]+\/exec$/.test(u);
 const DAY = 86_400_000;
 
+/** Erreur expliquée à l'utilisateur (message rédigé ici) ; toute autre erreur n'est montrée que sous une forme générique
+ *  (détail technique seulement dans le journal du serveur — CodeQL « stack trace exposure ») */
+class Explique extends Error {}
+const shown = (e: unknown) => e instanceof Explique ? e.message.slice(0, 500) : 'Erreur interne de la synchronisation (détail dans le journal du serveur).';
 function same(a: string, b: string) {
   if (!a || !b || a.length !== b.length) return false;
   let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
@@ -27,11 +31,11 @@ async function script(url: string, secret: string, action: string, payload: Reco
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 110_000);
   try {
     const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ ...payload, action, secret }), signal: ctl.signal });
-    let j: any; try { j = JSON.parse(await r.text()); } catch { throw new Error('Réponse illisible du script des calendriers'); }
-    if (!j?.ok) throw new Error(j?.error || 'Le script des calendriers a refusé la demande');
+    let j: any; try { j = JSON.parse(await r.text()); } catch { throw new Explique('Réponse illisible du script des calendriers'); }
+    if (!j?.ok) throw new Explique(String(j?.error || '').slice(0, 300) || 'Le script des calendriers a refusé la demande');
     return j;
   } catch (e) {
-    if (ctl.signal.aborted) throw new Error('Le script des calendriers met trop de temps : reprise au prochain passage.');
+    if (ctl.signal.aborted) throw new Explique('Le script des calendriers met trop de temps : reprise au prochain passage.');
     throw e;
   } finally { clearTimeout(timer); }
 }
@@ -77,7 +81,7 @@ async function syncOne(cal: any, url: string, secret: string) {
     }
     for (let i = 0; i < rows.length; i += 500) {
       const { error } = await admin.from('artist_calendar_events').upsert(rows.slice(i, i + 500), { onConflict: 'calendar_ref,gcal_event_id' });
-      if (error) throw new Error('Enregistrement des événements : ' + error.message);
+      if (error) { console.error('Enregistrement des événements', error.message); throw new Explique('Enregistrement des événements impossible pour le moment.'); }
     }
     // occurrences de la fenêtre absentes de Google : supprimées dans l'agenda → marquées, jamais effacées
     const seen = new Set(rows.map((r) => r.gcal_event_id));
@@ -89,7 +93,8 @@ async function syncOne(cal: any, url: string, secret: string) {
     await admin.from('artist_calendars').update({ last_ok_at: new Date().toISOString(), last_error: null, mode: j.mode }).eq('id', cal.id);
     return { project_id: cal.project_id, ok: true, events: rows.length, removed: gone.length };
   } catch (e) {
-    const msg = String((e as Error)?.message || e).slice(0, 500);
+    if (!(e instanceof Explique)) console.error(e);
+    const msg = shown(e);
     await admin.from('artist_calendars').update({ last_error: msg }).eq('id', cal.id);
     return { project_id: cal.project_id, ok: false, error: msg };
   }
@@ -124,11 +129,12 @@ Deno.serve(async (req) => {
     let q = admin.from('artist_calendars').select('*').eq('status', 'actif');
     if (team && body?.project_id) q = q.eq('project_id', String(body.project_id));
     const { data: cals, error } = await q;
-    if (error) throw new Error(error.message);
+    if (error) { console.error('Lecture des agendas', error.message); throw new Explique('Lecture des agendas impossible pour le moment.'); }
     const results = [];
     for (const c of cals || []) results.push(await syncOne(c, url, secret));
     return json({ ok: results.every((r) => r.ok), results, error: results.find((r) => !r.ok)?.error });
   } catch (e) {
-    return json({ ok: false, error: String((e as Error)?.message || e).slice(0, 500) });
+    if (!(e instanceof Explique)) console.error(e);
+    return json({ ok: false, error: shown(e) });
   }
 });
