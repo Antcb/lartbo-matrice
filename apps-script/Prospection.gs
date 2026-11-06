@@ -385,10 +385,26 @@ function compose_(b) {
   var rfc = base ? hdr_(base.payload.headers, 'Message-ID') : '', refs = base ? ((hdr_(base.payload.headers, 'References') || '') + ' ' + rfc).trim() : '';
   var reply = mode === 'reply' || mode === 'reply_all';
   var out = mimeDraft_({ to: b.to, cc: b.cc, bcc: b.bcc, subject: subject, html: (b.html || '') + quoted,
-    attachments: blobs_(b.attachments).concat(extra), threadId: reply ? String(b.thread_id) : (b.thread_id && mode === 'forward' ? String(b.thread_id) : null),
+    attachments: strictBlobs_(b.attachments).concat(extra), threadId: reply ? String(b.thread_id) : (b.thread_id && mode === 'forward' ? String(b.thread_id) : null),
     inReplyTo: reply ? rfc : null, references: reply ? refs : null, fromName: b.from_name || "L'ArtBoristerie Productions",
     send: !!b.send, draftId: b.draft_id || null });
   out.ok = true; out.subject = subject;
+  return out;
+}
+
+/** Pièces jointes de la messagerie : vraies pièces jointes, jamais de lien ; une pièce illisible arrête l'envoi (rien ne part sans elle) */
+function strictBlobs_(list) {
+  var total = 0, out = (list || []).map(function (f) {
+    var blob;
+    try {
+      if (f.url) blob = UrlFetchApp.fetch(f.url).getBlob().setName(f.name || 'piece-jointe');
+      else if (f.id) blob = DriveApp.getFileById(f.id).getBlob();
+    } catch (err) { throw new Error('Pièce jointe illisible : ' + (f.name || f.id || '?') + ' (' + err.message + '). Rien n’est parti.'); }
+    if (!blob) throw new Error('Pièce jointe introuvable : ' + (f.name || '?') + '. Rien n’est parti.');
+    total += blob.getBytes().length;
+    return blob;
+  });
+  if (total > 24 * 1024 * 1024) throw new Error('Pièces jointes trop lourdes pour Gmail (plus de 24 Mo au total). Rien n’est parti.');
   return out;
 }
 

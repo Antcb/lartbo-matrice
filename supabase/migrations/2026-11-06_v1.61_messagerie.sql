@@ -68,6 +68,10 @@ create table if not exists public.mail_sync_state (
 );
 comment on table public.mail_sync_state is 'Synchronisation de la messagerie : point de reprise Gmail, dernier passage, dernière erreur (v1.61)';
 
+-- message Gmail d'une ligne du journal écrite par L'ArtBotrice (prospection, relance, réponse) : la synchronisation la reconnaît (aucun doublon)
+alter table public.prospect_logs add column if not exists gmail_message_id text;
+create index if not exists prospect_logs_gmail_message on public.prospect_logs (gmail_message_id) where gmail_message_id is not null;
+
 do $$ declare t text; begin
   foreach t in array array['mail_threads', 'mail_messages', 'mail_sync_state'] loop
     execute format('alter table public.%I enable row level security', t);
@@ -131,14 +135,33 @@ begin
   if not found or t.prospect_id is null then return 0; end if;
   select s.name into st_name from structures s where s.id = t.structure_id;
   for m in select * from mail_messages where thread_id = p_thread and prospect_log_id is null order by sent_at for update loop
-    insert into prospect_logs (prospect_id, date, kind, contact_name, body, author)
+    -- mail envoyé depuis L'ArtBotrice : déjà au journal. Reconnu par son identifiant Gmail ; pour les lignes d'avant la v1.61 (sans
+    -- identifiant), par une ligne « Mail » du même suivi écrite par l'équipe le même jour (ou brouillon sans date), pas encore reliée.
+    log_id := null;
+    if m.direction = 'out' then
+      select l.id into log_id from prospect_logs l where l.prospect_id = t.prospect_id and l.gmail_message_id = m.gmail_message_id limit 1;
+      if log_id is null then
+        select l.id into log_id from prospect_logs l
+          where l.prospect_id = t.prospect_id and l.kind = 'Mail' and coalesce(l.author, '') <> 'Messagerie' and l.gmail_message_id is null
+            and (l.date is null or l.date = (coalesce(m.sent_at, now()) at time zone 'Europe/Paris')::date)
+            and l.created_at <= coalesce(m.sent_at, now()) + interval '1 day'
+            and not exists (select 1 from mail_messages x where x.prospect_log_id = l.id)
+          order by l.created_at desc limit 1;
+      end if;
+      if log_id is not null then
+        update mail_messages set prospect_log_id = log_id where id = m.id;
+        update prospect_logs set gmail_message_id = m.gmail_message_id where id = log_id and gmail_message_id is null;
+        continue;
+      end if;
+    end if;
+    insert into prospect_logs (prospect_id, date, kind, contact_name, body, author, gmail_message_id)
     values (t.prospect_id, (coalesce(m.sent_at, now()) at time zone 'Europe/Paris')::date, 'Mail',
       case when m.direction = 'in' then coalesce(nullif(m.from_name, ''), m.from_addr) end,
       (case when m.direction = 'in' then 'Mail reçu de ' || coalesce(m.from_addr, '?') else 'Mail envoyé à ' || array_to_string(m.to_addrs || m.cc_addrs, ', ') end)
         || ' — « ' || coalesce(m.subject, '') || ' »'
         || case when jsonb_array_length(m.attachments) > 0 then ' — pièces jointes : ' || (select string_agg(a->>'name', ', ') from jsonb_array_elements(m.attachments) a) else '' end
         || case when coalesce(m.snippet, '') <> '' then E'\n' || m.snippet else '' end,
-      'Messagerie')
+      'Messagerie', m.gmail_message_id)
     returning id into log_id;
     update mail_messages set prospect_log_id = log_id where id = m.id;
     n := n + 1;
@@ -152,10 +175,13 @@ begin
             || to_char(coalesce(m.sent_at, now()) at time zone 'Europe/Paris', 'DD/MM/YYYY') || ' (' || coalesce(m.from_addr, '?') || ').'
           where id = rt.id;
       end loop;
+      -- signalement : seulement pour une réponse récente (pas pour l'historique repris à la première synchronisation)
+      if coalesce(m.sent_at, now()) > now() - interval '3 days' then
       insert into notifications (kind, title, body, dedupe_key)
         values ('suivi', 'Réponse reçue — ' || coalesce(st_name, 'suivi'), coalesce(m.from_addr, '') || ' : « ' || coalesce(m.subject, '') || ' »',
           'mail-reponse:' || m.id)
         on conflict (dedupe_key) do nothing;
+      end if;
     end if;
   end loop;
   return n;

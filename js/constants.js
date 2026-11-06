@@ -84,7 +84,7 @@ export const FOLLOW_DATES = {
 export const INVOICE_DATES = { sent_at: 'Envoyée', reminded_at: 'Relancée', paid_at: 'Payée' };
 
 export const VIEWS = [
-  ['todo','To Do'], ['booking','Booking'], ['prospects','Suivi'], ['production','Production'], ['ticketing','Ticketing'], ['communication','Communication'],
+  ['todo','To Do'], ['booking','Booking'], ['prospects','Suivi'], ['mails','Mails'], ['production','Production'], ['ticketing','Ticketing'], ['communication','Communication'],
   ['structures','Structures'], ['contacts','Contacts'], ['projects','Projets'], ['employees','Salariés'],
 ];
 
