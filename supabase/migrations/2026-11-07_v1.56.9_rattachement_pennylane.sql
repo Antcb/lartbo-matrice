@@ -67,28 +67,29 @@ end $$;
 create or replace function public.pennylane_rattacher(p_pennylane_id text, p_payment uuid, p_motif text default null)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
-  me text := coalesce(auth.jwt() ->> 'email', ''); figee boolean := false; tgt record; src record; pend record; sh record; amt numeric; before_j jsonb; after_j jsonb;
+  me text := coalesce(auth.jwt() ->> 'email', ''); figee boolean := false; has_src boolean; has_pend boolean; tgt record; src record; pend record; sh record; amt numeric; before_j jsonb; after_j jsonb;
 begin
   if not public.is_team() then raise exception 'Réservé à l''équipe'; end if;
   if coalesce(btrim(p_pennylane_id), '') = '' or p_payment is null then raise exception 'Facture et ligne à choisir'; end if;
+  -- (un enregistrement PL/pgSQL « is null » n'est vrai que si TOUS ses champs sont vides : présence testée par FOUND)
   select * into tgt from show_payments where id = p_payment for update;
-  if tgt is null or tgt.kind not in ('acompte', 'solde') or tgt.hors_calcul is not null then raise exception 'Ligne d''acompte ou de solde introuvable'; end if;
+  if not found or tgt.kind not in ('acompte', 'solde') or tgt.hors_calcul is not null then raise exception 'Ligne d''acompte ou de solde introuvable'; end if;
   select id, prod_mode, pennylane_quote_id into sh from shows where id = tgt.show_id;
   if sh.prod_mode = 'booking' then raise exception 'Date en booking : les factures d''acompte et de solde sont celles de l''artiste'; end if;
-  select * into src from show_payments where pennylane_id = p_pennylane_id and id <> p_payment for update;
-  select * into pend from pennylane_a_rattacher where pennylane_id = p_pennylane_id;
-  if src is null and pend is null then raise exception 'Facture inconnue : lance d''abord « Synchroniser Pennylane »'; end if;
+  select * into src from show_payments where pennylane_id = p_pennylane_id and id <> p_payment for update; has_src := found;
+  select * into pend from pennylane_a_rattacher where pennylane_id = p_pennylane_id; has_pend := found;
+  if not has_src and not has_pend then raise exception 'Facture inconnue : lance d''abord « Synchroniser Pennylane »'; end if;
   if coalesce(src.show_id, pend.show_id) is distinct from tgt.show_id then raise exception 'Cette facture appartient à une autre date'; end if;
   if tgt.pennylane_id = p_pennylane_id then raise exception 'La facture est déjà sur cette ligne'; end if;
   if tgt.pennylane_id is not null or nullif(btrim(tgt.invoice_number), '') is not null or tgt.paid_at is not null then
     raise exception 'La ligne choisie a déjà sa facture (ou un paiement) : corrige d''abord cette ligne-là';
   end if;
-  if src is not null and coalesce(btrim(p_motif), '') = '' then raise exception 'Motif obligatoire pour corriger un rattachement'; end if;
-  if src is not null and src.paid_at is not null then raise exception 'La ligne d''origine est payée : correction à faire à la main avec ta comptabilité'; end if;
+  if has_src and coalesce(btrim(p_motif), '') = '' then raise exception 'Motif obligatoire pour corriger un rattachement'; end if;
+  if has_src and src.paid_at is not null then raise exception 'La ligne d''origine est payée : correction à faire à la main avec ta comptabilité'; end if;
   amt := coalesce(src.amount, pend.amount_ht);
-  before_j := jsonb_build_object('source', case when src is null then null else to_jsonb(src) end, 'cible', to_jsonb(tgt));
+  before_j := jsonb_build_object('source', case when has_src then to_jsonb(src) end, 'cible', to_jsonb(tgt));
 
-  if src is not null then
+  if has_src then
     -- montant figé par la synchronisation ? (dernière écriture du montant faite par le serveur, à la valeur actuelle — journal financier)
     select coalesce((select f.actor = 'service_role' and f.new_value ~ '^-?[0-9]+(\.[0-9]+)?$' and f.new_value::numeric = src.amount from finance_log f
       where f.table_name = 'show_payments' and f.row_id::text = src.id::text and f.field = 'amount' order by f.at desc, f.id desc limit 1), false) into figee;
