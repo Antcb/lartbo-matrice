@@ -5,8 +5,9 @@
 --   - artist_calendar_events : occurrences lues dans Google (récurrences développées), une ligne par occurrence (aucun doublon) ;
 --     un événement supprimé dans Google est marqué « supprimé » (jamais effacé en silence) ; « Show » + ville → repère de carte ;
 --     association EXPLICITE possible avec une date « Option / Confirmée artiste » existante (jamais de conversion).
---   - cal_sync_tick : appelée par la tâche planifiée « cal-sync » ; ne fait RIEN tant que le réglage « cal_sync_url » est vide.
--- Retour arrière : désactiver la tâche planifiée (ou vider cal_sync_url) ; tables vides = aucun effet.
+--   - cal_sync_tick : appelée par la tâche planifiée « cal-sync » ; ne fait RIEN tant que l'adresse de la fonction n'est pas inscrite dans
+--     private.sync_urls (schéma privé : aucun compte connecté ne peut l'écrire, le code des scripts Google ne part jamais ailleurs).
+-- Retour arrière : désactiver la tâche planifiée (ou retirer la ligne de private.sync_urls) ; tables vides = aucun effet.
 -- =====================================================================================================
 create table if not exists public.artist_calendars (
   id uuid primary key default gen_random_uuid(),
@@ -66,9 +67,11 @@ drop trigger if exists artist_calendars_touch on public.artist_calendars;
 create trigger artist_calendars_touch before update on public.artist_calendars for each row execute function public.touch_updated_at();
 
 -- ── Synchronisation planifiée (toutes les 5 min) : appel de la fonction serveur « cal-sync » ; inactive tant que cal_sync_url est vide ──
+create table if not exists private.sync_urls (key text primary key, url text not null);
+revoke all on private.sync_urls from public, anon, authenticated;
 create or replace function public.cal_sync_tick() returns void
 language plpgsql security definer set search_path = public as $$
-declare u text := nullif(btrim(coalesce(public.setting_text('cal_sync_url'), '')), ''); sec text := public.setting_text('drive_webhook_secret');
+declare u text := (select url from private.sync_urls where key = 'cal-sync'); sec text := public.setting_text('drive_webhook_secret');
 begin
   if u is null or u !~ '^https://[a-z0-9]+\.supabase\.co/functions/v1/cal-sync$' or coalesce(sec, '') = '' then return; end if;
   if not exists (select 1 from artist_calendars where status = 'actif') then return; end if;
