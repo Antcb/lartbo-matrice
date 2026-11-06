@@ -251,7 +251,7 @@ export const BUDGET_ACTIONS = {
     if (pend?.cancelled_at) return toast('Facture annulée dans Pennylane : elle ne se rattache plus', true);
     // lignes possibles : sans facture Pennylane ; un n° noté à la main seulement s'il est celui de ce document (cas Monestier) ;
     // jamais une ligne payée sans n°, ni un acompte caduc (même règle que la base : pennylane_rattacher)
-    const same = n => String(n || '').replace(/\s/g, '').toUpperCase() === String(num).replace(/\s/g, '').toUpperCase();
+    const same = n => String(n || '').replace(/[^a-z0-9]/gi, '').toUpperCase() === String(num).replace(/[^a-z0-9]/gi, '').toUpperCase();   // comme la synchronisation (norm)
     // (acompte « caduc » seulement parce que CETTE facture est sur le solde : il redevient possible — c'est la correction attendue)
     const targets = lines.filter(p => p.id !== cur?.id && !p.pennylane_id && (acompteState(p) !== 'caduc' || cur?.kind === 'solde')
       && (!String(p.invoice_number || '').trim() ? !p.paid_at : same(p.invoice_number)));
