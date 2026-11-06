@@ -23,6 +23,10 @@ type Thread = { id: string; missing?: boolean; subject: string; snippet: string;
   labels: string[]; participants: Addr[]; messages: Msg[] };
 
 /** Égalité à temps constant (code partagé avec la tâche planifiée) */
+/** Erreur expliquée à l'utilisateur (message rédigé ici) ; toute autre erreur n'est montrée que sous une forme générique
+ *  (détail technique seulement dans le journal du serveur — CodeQL « stack trace exposure ») */
+class Explique extends Error {}
+const shown = (e: unknown) => e instanceof Explique ? e.message.slice(0, 500) : 'Erreur interne de la synchronisation (détail dans le journal du serveur).';
 function same(a: string, b: string) {
   if (!a || !b || a.length !== b.length) return false;
   let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
@@ -34,11 +38,11 @@ async function script(url: string, secret: string, action: string, payload: Reco
   try {
     const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ ...payload, action, secret }), signal: ctl.signal });
     const txt = await r.text();
-    let j: any; try { j = JSON.parse(txt); } catch { throw new Error('Réponse illisible du script de prospection'); }
-    if (!j?.ok) throw new Error(j?.error || 'Le script de prospection a refusé la demande');
+    let j: any; try { j = JSON.parse(txt); } catch { throw new Explique('Réponse illisible du script de prospection'); }
+    if (!j?.ok) throw new Explique(String(j?.error || '').slice(0, 300) || 'Le script de prospection a refusé la demande');
     return j;
   } catch (e) {
-    if (ctl.signal.aborted) throw new Error('Le script de prospection met plus de 2 minutes : synchronisation reprise au prochain passage.');
+    if (ctl.signal.aborted) throw new Explique('Le script de prospection met plus de 2 minutes : synchronisation reprise au prochain passage.');
     throw e;
   } finally { clearTimeout(timer); }
 }
@@ -52,7 +56,7 @@ async function store(threads: Thread[]) {
       participants: [...new Set((t.participants || []).map((p) => String(p.email || '').toLowerCase()).filter(Boolean))],
       last_message_at: t.last_at, message_count: t.count || 0, unread: !!t.unread, labels: t.labels || [] };
     const { data, error } = await admin.from('mail_threads').upsert(row, { onConflict: 'mailbox,gmail_thread_id' }).select('id').single();
-    if (error) throw new Error('Enregistrement d’une conversation : ' + error.message);
+    if (error) { console.error('Enregistrement d’une conversation', error.message); throw new Explique('Enregistrement d’une conversation impossible pour le moment.'); }
     ids.push(data.id);
     const msgs = (t.messages || []).map((m) => ({ thread_id: data.id, mailbox: MAILBOX, gmail_message_id: m.id, rfc_message_id: m.rfc_id || null,
       direction: m.direction === 'out' ? 'out' : 'in', from_addr: String(m.from?.email || '').toLowerCase() || null, from_name: m.from?.name || null,
@@ -62,7 +66,7 @@ async function store(threads: Thread[]) {
     if (msgs.length) {
       // message déjà connu : libellés / pièces jointes mis à jour ; son lien avec le journal (prospect_log_id, non envoyé ici) est gardé
       const { error: e2 } = await admin.from('mail_messages').upsert(msgs, { onConflict: 'mailbox,gmail_message_id' });
-      if (e2) throw new Error('Enregistrement des messages : ' + e2.message);
+      if (e2) { console.error('Enregistrement des messages', e2.message); throw new Explique('Enregistrement des messages impossible pour le moment.'); }
     }
   }
   return ids;
@@ -119,7 +123,7 @@ Deno.serve(async (req) => {
     }
     const ids = await store(threads);
     const { data: processed, error: pe } = ids.length ? await admin.rpc('mail_process', { p_threads: ids }) : { data: 0, error: null };
-    if (pe) throw new Error('Rattachement / journal : ' + pe.message);
+    if (pe) { console.error('Rattachement / journal', pe.message); throw new Explique('Rattachement / journal impossible pour le moment.'); }
     if (mode === 'sync') {
       const patch: Record<string, unknown> = { mailbox: MAILBOX, last_ok_at: new Date().toISOString(), last_error: null, pending: pendingAfter };
       if (historyId) patch.history_id = historyId;
@@ -127,7 +131,8 @@ Deno.serve(async (req) => {
     }
     return json({ ok: true, threads: ids.length, journal: processed ?? 0, remaining });
   } catch (e) {
-    const msg = String((e as Error)?.message || e).slice(0, 500);
+    if (!(e instanceof Explique)) console.error(e);
+    const msg = shown(e);
     console.error('mail-sync', msg);
     if (mode === 'sync') await admin.from('mail_sync_state').upsert({ mailbox: MAILBOX, last_error: msg, last_run_at: now }, { onConflict: 'mailbox' });
     return json({ ok: false, error: msg });
