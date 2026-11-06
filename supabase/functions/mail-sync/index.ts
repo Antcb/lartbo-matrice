@@ -1,5 +1,5 @@
 // Messagerie intégrée (v1.61) — synchronisation de la boîte anthony@ (Gmail = référence) vers L'ArtBotrice.
-//   - tâche planifiée de la base (toutes les 5 min, en-tête x-hook-secret = code des scripts Google) : { mode: 'sync' }
+//   - tâche planifiée de la base (toutes les 5 min, en-tête x-hook-secret = secret serveur dédié « mail_sync_hook ») : { mode: 'sync' }
 //   - équipe connectée (is_team) : { mode: 'sync' } (« Actualiser ») ou { mode: 'threads', ids: [...] } (conversations ouvertes /
 //     trouvées par une recherche Gmail : relues côté serveur, jamais reprises telles que fournies par le navigateur).
 // Le script de prospection lit Gmail ; cette fonction enregistre conversations et messages (identifiants Gmail uniques : aucun doublon),
@@ -76,8 +76,11 @@ Deno.serve(async (req) => {
   const val = (k: string) => String(st?.find((r: any) => r.key === k)?.value ?? '').trim();
   const url = val('prospect_script_url'), secret = val('drive_webhook_secret');
   // accès : tâche planifiée (code partagé) ou compte de l'équipe
+  // appel automatique : secret serveur DÉDIÉ (« mail_sync_hook », créé par la migration dans le schéma privé, jamais affiché, jamais
+  // dans le navigateur, une adresse ou un journal) ; sinon compte de l'équipe. Sans justificatif ou justificatif faux : 403.
   const hook = req.headers.get('x-hook-secret') || '';
-  let allowed = !!hook && same(hook, secret);
+  const { data: hookSecret } = hook ? await admin.rpc('import_secret', { k: 'mail_sync_hook' }) : { data: null };
+  let allowed = !!hook && !!hookSecret && same(hook, String(hookSecret));
   if (!allowed) {
     const user = createClient(URL_, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization') || '' } }, auth: { persistSession: false } });
     const { data: team } = await user.rpc('is_team');
