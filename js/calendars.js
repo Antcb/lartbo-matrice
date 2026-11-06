@@ -17,10 +17,10 @@ import { ask, confirmAsk, copyText } from './ui/dialog.js';
 import { esc, fmtDate, toast } from './utils.js';
 import { isOff } from './constants.js';
 
-const STALE_MIN = 30;
+const STALE_MIN = 30;   // au-delà de 30 min sans synchronisation réussie (passage toutes les 5 min) : disponibilités plus à jour
 /** Pays proposés pour les lieux sans pays écrit (France par défaut, décision du 06/11/2026) — mêmes codes que cal-sync/regles.ts */
 export const CAL_COUNTRIES = [['FR', 'France'], ['BE', 'Belgique'], ['CH', 'Suisse'], ['LU', 'Luxembourg'], ['ES', 'Espagne'], ['IT', 'Italie'], ['DE', 'Allemagne'],
-  ['PT', 'Portugal'], ['NL', 'Pays-Bas'], ['GB', 'Royaume-Uni'], ['CA', 'Canada'], ['US', 'États-Unis']];   // au-delà de 30 min sans synchronisation réussie (passage toutes les 5 min) : disponibilités plus à jour
+  ['PT', 'Portugal'], ['NL', 'Pays-Bas'], ['GB', 'Royaume-Uni'], ['CA', 'Canada'], ['US', 'États-Unis']];
 export const calOf = projectId => S.db.artist_calendars.find(c => c.project_id === projectId) || null;
 /** Jour (AAAA-MM-JJ) d'un instant dans un fuseau (fuseau inconnu ou invalide : Paris) */
 const dayIn = (iso, tz) => { if (!iso) return null; try { return new Date(iso).toLocaleDateString('sv-SE', {timeZone: tz || 'Europe/Paris'}); } catch { return new Date(iso).toLocaleDateString('sv-SE', {timeZone: 'Europe/Paris'}); } };

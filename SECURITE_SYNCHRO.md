@@ -14,7 +14,7 @@ Tout autre appel (aucun justificatif, secret faux ou vide, session d'un compte h
 ni écrit. Les actions réservées à l'équipe (liste des agendas) refusent aussi le secret de la tâche planifiée.
 
 ## Le secret dédié
-- Tiré au hasard par la migration (256 bits), rangé dans `private.import_secrets` (schéma privé, comme le jeton Pennylane) ;
+- Tiré au hasard par la migration (environ 244 bits aléatoires), rangé dans `private.import_secrets` (schéma privé, comme le jeton Pennylane) ;
   jamais saisi, jamais affiché, distinct du code des scripts Google (`drive_webhook_secret`) et d'une fonction à l'autre.
 - Lu seulement par : la fonction de la tâche planifiée (`mail_sync_tick` / `cal_sync_tick`, SECURITY DEFINER, interdite aux
   rôles `anon` et `authenticated`) et la fonction serveur (`import_secret`, rôle serveur seulement).
