@@ -2,7 +2,7 @@
  * Toutes les actions déclenchées par un clic (boutons data-act="…"),
  * et les « crochets » d'enregistrement direct (clé 'change:table.champ').
  */
-import { CAL_ACTIONS } from './calendars.js';
+import { CAL_ACTIONS, calCheckBeforeSave } from './calendars.js';
 import { afterFeeChange, askConfirmation, becameConfirmed, sendConfirmation, validateTerms } from './confirm-flow.js';
 import { go, render } from './app.js';
 import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
@@ -523,8 +523,10 @@ for (const f of ['sent_at', 'reminded_at'])
   };
 // Date annulée / sans suite : reste visible 5 s
 ACTIONS['change:shows.status'] = async (t, v) => {
-  const before = byId('shows', t.dataset.id)?.status;
+  const show = byId('shows', t.dataset.id), before = show?.status;
   if (isOff(v)) return saveLinger('shows', t.dataset.id, {status:v}, `Date passée en « ${v} »`);
+  // agenda Google de l'artiste : même avertissement que dans la fenêtre de la date (date qui s'engage sur un jour indisponible)
+  if (show && !(await calCheckBeforeSave({...show, status: v}, show))) { render(); return; }
   await save('shows', t.dataset.id, {status:v});
   if (becameConfirmed(before, v)) askConfirmation(t.dataset.id);   // envoyer la confirmation maintenant ?
 };

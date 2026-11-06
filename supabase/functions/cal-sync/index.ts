@@ -36,19 +36,30 @@ async function script(url: string, secret: string, action: string, payload: Reco
 }
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-/** Ville d'un lieu : premier résultat « ville » de Photon (gratuit, déjà utilisé par l'application) dont le nom figure dans le lieu
- *  saisi ; sinon null (« localisation à préciser ») — jamais de repère approximatif */
+/** Ville d'un lieu (relecture B1 : jamais de repère approximatif). Règle stricte :
+ *  - on ne lit que le DERNIER segment du lieu (après la dernière virgule ; code postal retiré ; un pays écrit en dernier sert d'indice) ;
+ *  - Photon (gratuit, déjà utilisé par l'application) doit renvoyer une ville dont le nom est EXACTEMENT ce segment ;
+ *  - plusieurs villes de ce nom éloignées (> 30 km) et pas de pays pour trancher → null (« localisation à préciser »). */
+const COUNTRIES: Record<string, string> = { france: 'FR', belgique: 'BE', suisse: 'CH', espagne: 'ES', italie: 'IT', allemagne: 'DE', 'royaume uni': 'GB',
+  angleterre: 'GB', portugal: 'PT', 'pays bas': 'NL', luxembourg: 'LU', canada: 'CA', 'etats unis': 'US', usa: 'US' };
+const km = (a: number[], b: number[]) => { const r = Math.PI / 180, x = (b[0] - a[0]) * r * Math.cos((a[1] + b[1]) / 2 * r), y = (b[1] - a[1]) * r; return Math.sqrt(x * x + y * y) * 6371; };
 async function cityOf(location: string): Promise<{ city: string; lat: number; lng: number } | null> {
+  const parts = location.split(',').map((x) => x.replace(/\b\d{4,5}\b/g, '').trim()).filter(Boolean);
+  let country: string | null = null;
+  if (parts.length > 1 && COUNTRIES[norm(parts[parts.length - 1])]) country = COUNTRIES[norm(parts.pop()!)];
+  const seg = parts[parts.length - 1];
+  if (!seg || norm(seg).length < 2) return null;
   try {
-    const r = await fetch(`https://photon.komoot.io/api/?limit=5&lang=fr&layer=city&q=${encodeURIComponent(location)}`);
+    const r = await fetch(`https://photon.komoot.io/api/?limit=10&lang=fr&layer=city&q=${encodeURIComponent(seg)}`);
     if (!r.ok) return null;
-    const j = await r.json(), loc = ` ${norm(location)} `;
-    for (const f of j.features || []) {
-      const name = f.properties?.name || f.properties?.city;
-      if (name && loc.includes(` ${norm(name)} `)) return { city: name, lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] };
-    }
-  } catch { /* service de lieux indisponible : à préciser */ }
-  return null;
+    const j = await r.json();
+    let c = (j.features || []).filter((f: any) => norm(f.properties?.name || '') === norm(seg));
+    if (country) c = c.filter((f: any) => String(f.properties?.countrycode || '').toUpperCase() === country);
+    if (!c.length) return null;
+    const p0 = c[0].geometry.coordinates;
+    if (c.some((f: any) => km(p0, f.geometry.coordinates) > 30)) return null;   // homonymes : à préciser
+    return { city: c[0].properties.name, lat: p0[1], lng: p0[0] };
+  } catch { return null; }   // service de lieux indisponible : à préciser
 }
 
 type Ev = { id: string; recurring_id?: string | null; title?: string | null; location?: string | null; start?: string | null; end?: string | null;
