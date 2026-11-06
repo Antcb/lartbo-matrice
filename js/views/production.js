@@ -317,7 +317,7 @@ function payeeCell(s, p, booking){
  */
 /** Factures du devis que la synchronisation n'a pas reliées seule (v1.56.9) : choix explicite de la ligne, rien d'automatique */
 function pendingPennylaneHTML(s){
-  const list = S.db.pennylane_a_rattacher.filter(r => r.show_id === s.id && !r.resolved_at);
+  const list = S.db.pennylane_a_rattacher.filter(r => r.show_id === s.id && !r.resolved_at && !r.cancelled_at);
   if (!list.length) return '';
   return `<div class="mt" role="status"><p class="m0 warn-txt"><b>Facture${list.length > 1 ? 's' : ''} Pennylane à rattacher</b> : la synchronisation ne l’a pas reliée seule (rien n’a été modifié).</p>
     ${list.map(r => `<div class="file-row"><span>${esc(r.invoice_number || 'Facture ' + r.pennylane_id)} · ${eur2(r.amount_ht)} HT${r.invoice_date ? ' · ' + fmtDate(r.invoice_date) : ''} — <span class="muted">${esc(r.reason)}</span></span>
