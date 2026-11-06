@@ -221,6 +221,7 @@ export const BUDGET_ACTIONS = {
       const lines = [out.linked?.length ? `${out.linked.length} facture(s) faite(s) depuis le devis, numéro repris : ${out.linked.filter(Boolean).join(', ')}\n` : '', out.updated.length ? `${out.updated.length} facture(s) marquée(s) payée(s) :\n- ` + out.updated.map(u => u.label).join('\n- ') : (out.linked?.length || out.filed?.done?.length) ? '' : 'Rien de nouveau : la Matrice est à jour.',
         out.erreurs?.length ? `\nÉcritures REFUSÉES (rien n’a été modifié pour ces lignes) — à examiner :\n- ` + out.erreurs.join('\n- ') : '',
         out.caducs?.length ? `\nFacture(s) Pennylane d’acompte NON reliée(s) : l’acompte est caduc (solde déjà facturé), la date serait facturée au-delà de sa cession — à examiner :\n- ` + out.caducs.join('\n- ') : '',
+        out.douteux?.length ? `\nFacture(s) Pennylane NON reliée(s) au solde : même montant qu’un acompte déjà noté à la main sur la date (numéro, envoi ou paiement) — à rattacher à la main à la bonne ligne :\n- ` + out.douteux.join('\n- ') : '',
         out.pennylaneLate.length ? `\nPayées dans la Matrice mais pas encore dans Pennylane (à mettre à jour dans Pennylane) :\n- ` + out.pennylaneLate.join('\n- ') : '',
         // PDF des factures rangés dans le Drive (compta + dossier de la date)
         out.filed?.done?.length ? `\n${out.filed.done.length} facture(s) rangée(s) dans le Drive (compta › D - Factures de ventes et 02_Finance de la date) :\n- ` + out.filed.done.join('\n- ') : '',
