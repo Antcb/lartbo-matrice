@@ -43,10 +43,11 @@ export async function mailSync(ids = null){
   return out;
 }
 
-export async function loadLabels(force = false){
-  if (M.labels && !force) return M.labels;
-  try { M.labels = (await callProspect('labels', {})).labels || []; } catch (e) { M.labels = []; M.error = e.message; }
-  return M.labels;
+let labelsLoading = null;   // une seule lecture des libellés à la fois (plusieurs réaffichages pendant l'attente)
+export function loadLabels(force = false){
+  if (M.labels && !force) return Promise.resolve(M.labels);
+  return labelsLoading ||= callProspect('labels', {}).then(r => { M.labels = r.labels || []; }, e => { M.labels = []; M.error = e.message; })
+    .then(() => { labelsLoading = null; return M.labels; });
 }
 
 /** Conversations de la liste, selon le filtre choisi et la recherche dans la page */
@@ -174,10 +175,10 @@ export async function compose(mode, row = null, msg = null){
   const extra = `<div class="mail-wrap">
     ${base ? `<p class="mode-note">${mode === 'forward' ? 'Transfert' : 'Réponse dans le fil'} « ${esc(base.subject || '')} » (${esc(base.from?.email || '')}, ${fmtDate(base.date)}) : le message d’origine est cité sous le texte.</p>` : ''}
     <div class="mail-grid">
-      <label for="mc-to">À</label><input id="mc-to" data-mails value="${esc(saved.to ?? targets.to)}">
+      <label for="mc-to">À</label><input id="mc-to" class="mc-wide" data-mails value="${esc(saved.to ?? targets.to)}">
       ${recipientsHelp('mc-to', ctx.structure_id || null)}
       <label for="mc-cc">Copie</label><input id="mc-cc" data-mails value="${esc(saved.cc ?? targets.cc)}">
-      <label for="mc-bcc">Copie cachée</label><input id="mc-bcc" data-mails value="${esc(saved.bcc || '')}">
+      <label for="mc-bcc">Copie cachée</label><input id="mc-bcc" class="mc-wide" data-mails value="${esc(saved.bcc || '')}">
       <label for="mc-subj">Objet</label><input id="mc-subj" value="${esc(saved.subject ?? subjectDefault)}" ${mode === 'reply' || mode === 'reply_all' ? 'readonly title="Une réponse garde l’objet du fil"' : ''}>
       <label for="mc-proj">Artiste</label><select id="mc-proj"><option value="">—</option>${projs.map(p => `<option value="${p.id}" ${p.id === ctx.project_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
       <label for="mc-contact">Contact (balises)</label><select id="mc-contact"><option value="">—</option>${contacts.map(c => `<option value="${c.id}" ${c.id === ctx.contact_id ? 'selected' : ''}>${esc(c.display_name)}</option>`).join('')}</select>

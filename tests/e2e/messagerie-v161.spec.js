@@ -1,6 +1,9 @@
 // v1.61 : messagerie intégrée (boîte anthony@) — données et réponses Gmail FICTIVES (script et synchronisation simulés).
 import { test, expect } from '@playwright/test';
-import { openApp, expectClean } from './helpers.js';
+import { openApp, expectClean as clean } from './helpers.js';
+
+// Le cadre de lecture est isolé (sandbox, sans script) : le navigateur signale qu'il BLOQUE le script du mail fictif — c'est l'effet voulu
+const expectClean = ctx => clean({ ...ctx, errors: ctx.errors.filter(e => !/about:srcdoc|context is sandboxed/.test(e)) });
 
 const THREADS = [
   { id: 'mt-a', mailbox: 'anthony', gmail_thread_id: 'aaa111', subject: 'Disponibilités printemps', snippet: 'Bonjour, avez-vous…', participants: ['inconnu@example.org'],
@@ -74,6 +77,9 @@ test('v1.61 : lecture isolée (aucun script du mail exécuté), réponse dans le
   await expect(page.locator('#mc-body')).toContainText('Bonjour');
   await expect(page.locator('#mc-to')).toHaveValue('prog@example.com');   // destinataires inchangés
   await page.locator('#modal button[type=submit]').click();
+  // balise sans valeur ({{contact}} : aucun contact choisi) : signalée avant l'envoi
+  await expect(page.locator('dialog[open]', { hasText: 'Zones à compléter' })).toBeVisible();
+  await page.locator('dialog[open] button', { hasText: 'Continuer quand même' }).click();
   await page.locator('dialog[open] button', { hasText: 'Envoyer le mail' }).click();
   await expect.poll(() => syncs(page)).toContainEqual({ mode: 'threads', ids: ['bbb222'] });
   const compose = await page.evaluate(() => window.__script.find(b => b.action === 'compose').payload);
