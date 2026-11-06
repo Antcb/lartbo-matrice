@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.61.0 — 06/11/2026
+- Messagerie intégrée (boîte anthony@) : onglet Mails, lecture, rattachement, réponse avec modèles et documents, journal du suivi, rangement Gmail, relance
+
+
 ## 1.60.1 — 06/11/2026
 - Structure administrative (relecture v1.60.0) — une réponse de l'artiste différente de la structure reste dans la fiche et n'est plus remplacée en silence lors d'un enregistrement ; le lien public ne reçoit que les champs de la fiche ; rappel TVA dans la fenêtre des mails
 
