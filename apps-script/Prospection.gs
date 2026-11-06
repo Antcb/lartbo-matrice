@@ -174,6 +174,7 @@ function utf8_(s) { return Utilities.newBlob('').setDataFromString(String(s || '
  * GmailApp.createDraft abîme les émojis : on passe par l'API Gmail (service « Gmail API » du script).
  * o : { to, cc, subject, html, attachments: [blobs], threadId, inReplyTo, references, fromName, send }
  */
+var MAX_MESSAGE_BYTES_ = 25 * 1024 * 1024;
 function mimeDraft_(o) {
   if (typeof Gmail === 'undefined') throw new Error('Active « Gmail API » dans le script Google (Services › + › Gmail API), puis redéploie');
   var me = Session.getEffectiveUser().getEmail();
@@ -195,7 +196,10 @@ function mimeDraft_(o) {
       'Content-Disposition: attachment; filename="' + enc_(f.getName()) + '"', 'Content-Transfer-Encoding: base64', '', b64_(f.getBytes()));
   });
   L.push('--' + mixed + '--');
-  var message = { raw: Utilities.base64EncodeWebSafe(Utilities.newBlob(L.join('\r\n')).getBytes()) };
+  var mime = Utilities.newBlob(L.join('\r\n')).getBytes();
+  // limite de Gmail : 25 Mo pour le message ENCODÉ (pièces jointes en base64, textes, en-têtes) — mesurée ici, au-delà rien n'est créé ni envoyé
+  if (mime.length > MAX_MESSAGE_BYTES_) throw new Error('Message trop lourd pour Gmail : ' + (mime.length / 1048576).toFixed(1).replace('.', ',') + ' Mo une fois encodé (25 Mo au plus). Rien n’est parti.');
+  var message = { raw: Utilities.base64EncodeWebSafe(mime) };
   if (o.threadId) message.threadId = o.threadId;
   // brouillon déjà enregistré (messagerie) : mis à jour, jamais dupliqué
   var draft = o.draftId ? Gmail.Users.Drafts.update({ message: message }, 'me', o.draftId) : Gmail.Users.Drafts.create({ message: message }, 'me');
@@ -394,7 +398,7 @@ function compose_(b) {
 
 /** Pièces jointes de la messagerie : vraies pièces jointes, jamais de lien ; une pièce illisible arrête l'envoi (rien ne part sans elle) */
 function strictBlobs_(list) {
-  var total = 0, out = (list || []).map(function (f) {
+  var total = 0, out = (list || []).map(function (f) {   // taille brute ; la limite réelle est vérifiée sur le message encodé (mimeDraft_)
     var blob;
     try {
       if (f.url) blob = UrlFetchApp.fetch(f.url).getBlob().setName(f.name || 'piece-jointe');
@@ -404,7 +408,7 @@ function strictBlobs_(list) {
     total += blob.getBytes().length;
     return blob;
   });
-  if (total > 24 * 1024 * 1024) throw new Error('Pièces jointes trop lourdes pour Gmail (plus de 24 Mo au total). Rien n’est parti.');
+  if (total * 4 / 3 > MAX_MESSAGE_BYTES_) throw new Error('Pièces jointes trop lourdes pour Gmail (plus de 25 Mo une fois encodées). Rien n’est parti.');
   return out;
 }
 

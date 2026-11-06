@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 import { openApp, expectClean as clean } from './helpers.js';
 
 // Le cadre de lecture est isolé (sandbox, sans script) : le navigateur signale qu'il BLOQUE le script du mail fictif — c'est l'effet voulu
-const expectClean = ctx => clean({ ...ctx, errors: ctx.errors.filter(e => !/about:srcdoc|context is sandboxed/.test(e)) });
+const expectClean = ctx => clean({ ...ctx, errors: ctx.errors.filter(e => !/about:srcdoc|context is sandboxed|violates the following Content Security Policy/.test(e)) });
 
 const THREADS = [
   { id: 'mt-a', mailbox: 'anthony', gmail_thread_id: 'aaa111', subject: 'Disponibilités printemps', snippet: 'Bonjour, avez-vous…', participants: ['inconnu@example.org'],
@@ -14,7 +14,7 @@ const THREADS = [
 const MSG = { id: 'm-2', thread_id: 'bbb222', from: { name: 'Camille Exemple', email: 'camille@example.com' }, reply_to: [{ email: 'prog@example.com', name: '' }],
   to: [{ email: 'anthony@lartboristerie.com' }], cc: [{ email: 'collegue@example.org' }], subject: 'Re: Proposition Artiste Alpha', date: '2026-11-04T09:00:00Z',
   snippet: 'Merci', direction: 'in', attachments: [{ name: 'fiche.pdf', size: 120000, mime: 'application/pdf', id: 'att-1' }],
-  html: '<p>Merci pour votre mail</p><script>window.parent.__pirate = 1</script><img src="x" onerror="window.parent.__pirate = 2">' };
+  html: '<p>Merci pour votre mail</p><img src="https://pixel.example.net/ouverture.png" alt=""><div style="background:url(https://pixel.example.net/fond.png)">x</div><script>window.parent.__pirate = 1</script><img src="x" onerror="window.parent.__pirate = 2">' };
 
 async function preparer(page, { sent = true } = {}) {
   await page.evaluate(async ([threads, msg, sent]) => {
@@ -61,7 +61,8 @@ test('v1.61 : lecture isolée (aucun script du mail exécuté), réponse dans le
   const ctx = await openApp(page);
   await preparer(page);
   await page.locator('.mail-row', { hasText: 'Proposition' }).click();
-  await expect(page.locator('iframe.mail-frame')).toHaveAttribute('sandbox', '');
+  const sb = await page.locator('iframe.mail-frame').getAttribute('sandbox');
+  expect(sb).not.toMatch(/allow-scripts|allow-same-origin|allow-forms|allow-top-navigation/);   // aucun script, aucune origine partagée
   await page.waitForTimeout(300);
   expect(await page.evaluate(() => window.__pirate || 0)).toBe(0);
   await expect(page.locator('.mail-msg')).toContainText('fiche.pdf');
@@ -111,4 +112,28 @@ test('v1.61 : ouvrir une conversation non lue la marque lue dans Gmail ; corbeil
   await page.locator('dialog[open] button', { hasText: 'Annuler' }).click();
   expect(await page.evaluate(() => window.__script.filter(b => b.payload?.trash).length)).toBe(0);
   expectClean(ctx);
+});
+
+test('v1.61 : images distantes bloquées à l’ouverture (pixel de suivi), affichées seulement sur demande pour ce message', async ({ page }) => {
+  const ctx = await openApp(page);
+  // requête réellement partie (une tentative refusée par la politique du cadre échoue avec « csp » et ne quitte pas le navigateur)
+  const vus = []; page.context().on('requestfinished', r => { if (/pixel\.example\.net/.test(r.url())) vus.push(r.url()); });
+  await preparer(page);
+  await page.locator('.mail-row', { hasText: 'Proposition' }).click();
+  await expect(page.locator('.mail-img-note')).toContainText('Images distantes bloquées');
+  await page.waitForTimeout(800);
+  expect(vus, 'aucune image distante chargée à l’ouverture').toEqual([]);
+  await page.locator('[data-act=mailImages]').click();
+  await expect(page.locator('.mail-img-note')).toContainText('Affichées pour ce message');
+  await expect.poll(() => vus.length).toBeGreaterThan(0);
+  expectClean(ctx);
+});
+
+test('v1.61 : limite de Gmail calculée sur le message encodé (base64), pas sur la taille brute des fichiers', async ({ page }) => {
+  await openApp(page);
+  const r = await page.evaluate(async () => { const { encodedSize } = await import('./js/mailbox.js'); const Mo = 1048576;
+    return { brut18: encodedSize([18.5 * Mo]) / Mo, brut17: encodedSize([17 * Mo]) / Mo, deux: encodedSize([9.5 * Mo, 9.5 * Mo], 200000) / Mo }; });
+  expect(r.brut18).toBeGreaterThan(25);   // 18,5 Mo bruts (< 25)  dépassent 25 Mo une fois encodés : refusé
+  expect(r.brut17).toBeLessThan(25);
+  expect(r.deux).toBeGreaterThan(25);
 });

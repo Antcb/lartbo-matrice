@@ -10,6 +10,16 @@ import { esc, fmtDate } from '../utils.js';
 
 const when = iso => { if (!iso) return ''; const d = new Date(iso);
   return d.toLocaleString('fr-FR', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris'}).replace(' ', ' à '); };
+/**
+ * Document du cadre de lecture : aucun script (sandbox sans allow-scripts) ET aucune ressource distante (politique de sécurité du
+ * document : images, polices, feuilles de style externes bloquées — pixels de suivi compris). Images intégrées au mail (data:) seules,
+ * sauf « Afficher les images » demandé explicitement pour ce message. Liens ouverts dans un nouvel onglet.
+ */
+export function frameDoc(html, remoteImages = false){
+  const csp = `default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:${remoteImages ? ' https:' : ''}; form-action 'none'; base-uri 'none'`;
+  return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><base target="_blank">${html || ''}`;
+}
+const hasRemote = html => /<img[^>]+src\s*=\s*["']?\s*(https?:)?\/\//i.test(html || '') || /url\(\s*["']?\s*(https?:)?\/\//i.test(html || '');
 const HIDDEN_LABELS = /^(CATEGORY_|CHAT$|DRAFT$|UNREAD$|IMPORTANT$|STARRED$|SENT$|INBOX$|SPAM$|TRASH$)/;
 
 /** Dernière synchronisation et erreur (toujours visibles) ; jamais « à jour » si le dernier passage a échoué */
@@ -59,7 +69,9 @@ function reader(){
         <header class="mail-msg-head"><b>${esc(m.from?.name || m.from?.email || '')}</b> <span class="muted">&lt;${esc(m.from?.email || '')}&gt;</span>
           <span class="spacer"></span><span class="muted">${esc(when(m.date))}</span></header>
         <p class="muted mail-msg-to">À : ${esc((m.to || []).map(a => a.email).join(', '))}${m.cc?.length ? ` · Copie : ${esc(m.cc.map(a => a.email).join(', '))}` : ''}</p>
-        <iframe class="mail-frame" sandbox="" referrerpolicy="no-referrer" title="Message de ${esc(m.from?.email || '')}" srcdoc="${esc(m.html || '')}"></iframe>
+        ${hasRemote(m.html) ? `<p class="muted mail-img-note">Images distantes bloquées (elles peuvent signaler l’ouverture du mail à l’expéditeur).
+          ${M.images.has(m.id) ? '<b>Affichées pour ce message.</b>' : `<button class="btn sm ghost" data-act="mailImages" data-msg="${esc(m.id)}">Afficher les images</button>`}</p>` : ''}
+        <iframe class="mail-frame" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" title="Message de ${esc(m.from?.email || '')}" srcdoc="${esc(frameDoc(m.html, M.images.has(m.id)))}"></iframe>
         ${m.attachments?.length ? `<div class="ml-att">${m.attachments.map((a, i) => `<span class="att-chip">📎 ${esc(a.name)} <span class="muted">${fmtSize(a.size)}</span>
           <button class="btn sm ghost" data-act="mailAttPreview" data-msg="${esc(m.id)}" data-i="${i}">Ouvrir</button>
           <button class="btn sm ghost" data-act="mailAttKeep" data-msg="${esc(m.id)}" data-i="${i}">Conserver dans le suivi</button></span>`).join('')}</div>` : ''}
