@@ -35,8 +35,8 @@ test('agendas : indisponibilités dans Booking (origine Google), privé = « Ind
   await expect(rows.filter({ hasText: 'Annulé dans Google' })).toHaveCount(0);
   await expect(rows.first()).toContainText('Google');
   // les indisponibilités ne comptent jamais dans les chiffres de Booking
-  const sub = await page.locator('.vh-sub, .view-head p').first().textContent();
-  expect(sub).not.toMatch(/Vacances/);
+  const nDates = await page.evaluate(async Y => { const { S } = await import('./js/state.js'); return S.db.shows.filter(s => (s.date || '').startsWith(String(Y))).length; }, Y);
+  await expect(page.locator('.gig:not(.cal-unav)')).toHaveCount(nDates);   // ce ne sont pas des dates : rien n'est compté en plus
   // séance de nuit : 23 h → 3 h à Paris = deux jours
   const span = await page.evaluate(async () => { const { evSpan } = await import('./js/calendars.js'); const { S } = await import('./js/state.js');
     return evSpan(S.db.artist_calendar_events.find(e => e.id === 'e-nuit')); });
