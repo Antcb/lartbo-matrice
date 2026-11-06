@@ -69,3 +69,22 @@ test('v1.56.9 : solde calculé clairement « non facturé » ; disparaît quand 
   await expect(page.locator('tr', { hasText: 'Solde' }).first()).not.toContainText('calculé, non facturé');
   expectClean(ctx);
 });
+
+test('v1.56.9 : acompte noté à la main avec le même n° (cas Monestier) — l’acompte est proposé ; facture annulée : plus rattachable', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page);
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
+    for (const db of [S.db, window.__DB]) { Object.assign(db.show_payments.find(p => p.id === 'pa'), { invoice_number: 'F-TEST-108', sent_at: '2026-11-06' });
+      db.pennylane_a_rattacher[0].reason = 'Même montant qu’un acompte déjà noté à la main : est-ce cet acompte ou le solde ?'; }
+    touch('show_payments'); touch('pennylane_a_rattacher'); (await import('./js/app.js')).render(); });
+  await page.locator('[data-act=pennylaneAttach]').first().click();
+  const opts = await page.locator('#modal select[name=to] option').allTextContents();
+  expect(opts.some(o => /Acompte .*noté à la main/.test(o))).toBe(true);
+  expect(opts.some(o => /^Solde/.test(o))).toBe(true);
+  await page.keyboard.press('Escape');
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
+    for (const db of [S.db, window.__DB]) db.pennylane_a_rattacher[0].cancelled_at = '2026-11-07T10:00:00Z';
+    touch('pennylane_a_rattacher'); (await import('./js/app.js')).render(); });
+  await expect(page.locator('main')).not.toContainText('Facture Pennylane à rattacher');
+  expectClean(ctx);
+});

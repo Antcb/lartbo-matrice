@@ -248,8 +248,14 @@ export const BUDGET_ACTIONS = {
     const lines = paymentsOf(s.id).filter(p => ['acompte', 'solde'].includes(p.kind) && p.hors_calcul == null);
     const cur = lines.find(p => p.pennylane_id === pid);
     const num = cur?.invoice_number || pend?.invoice_number || 'Facture ' + pid, amt = pend?.amount_ht ?? cur?.amount;
-    const targets = lines.filter(p => p.id !== cur?.id && !p.pennylane_id && !String(p.invoice_number || '').trim() && !p.paid_at);
-    if (!targets.length) return toast('Aucune ligne libre : chaque acompte / solde a déjà sa facture (ou est payé). Corrige d’abord la ligne concernée.', true);
+    if (pend?.cancelled_at) return toast('Facture annulée dans Pennylane : elle ne se rattache plus', true);
+    // lignes possibles : sans facture Pennylane ; un n° noté à la main seulement s'il est celui de ce document (cas Monestier) ;
+    // jamais une ligne payée sans n°, ni un acompte caduc (même règle que la base : pennylane_rattacher)
+    const same = n => String(n || '').replace(/\s/g, '').toUpperCase() === String(num).replace(/\s/g, '').toUpperCase();
+    // (acompte « caduc » seulement parce que CETTE facture est sur le solde : il redevient possible — c'est la correction attendue)
+    const targets = lines.filter(p => p.id !== cur?.id && !p.pennylane_id && (acompteState(p) !== 'caduc' || cur?.kind === 'solde')
+      && (!String(p.invoice_number || '').trim() ? !p.paid_at : same(p.invoice_number)));
+    if (!targets.length) return toast('Aucune ligne possible : chaque acompte / solde a déjà une autre facture (ou un paiement sans n°). Corrige d’abord la ligne concernée.', true);
     const assoc = lines.map(p => `<li>${esc(p.label || p.kind)} · ${eur2(payAmount(p) || 0)} HT · ${p.pennylane_id ? `facture ${esc(p.invoice_number || p.pennylane_id)}` : p.invoice_number ? `n° ${esc(p.invoice_number)} (noté à la main)` : '<span class="muted">aucune facture</span>'}${p.paid_at ? ' · payée' : ''}</li>`).join('');
     const hist = S.db.pennylane_rattachements.filter(h => h.pennylane_id === pid).sort((a, b) => String(b.at).localeCompare(String(a.at)))
       .map(h => `<li>${fmtDate(String(h.at).slice(0, 10))} · ${esc(h.actor || '')} · ${esc(lineName(h.from_payment_id) || '—')} → ${esc(lineName(h.to_payment_id) || '—')}${h.motif ? ' · « ' + esc(h.motif) + ' »' : ''}</li>`).join('');
@@ -260,7 +266,7 @@ export const BUDGET_ACTIONS = {
         <p class="m0 mt-sm">Lignes de la date :</p><ul class="warn-list">${assoc}</ul>
         ${hist ? `<p class="m0">Historique de cette facture :</p><ul class="warn-list">${hist}</ul>` : ''}
         <p class="m0">Le document Pennylane n’est pas modifié. Le numéro, le lien, la date de facture et la date d’envoi suivent la facture.</p></div>`,
-      fields: [{k: 'to', label: 'Ligne de cette facture', type: 'select', full: true, options: targets.map(p => [p.id, `${p.label || p.kind} · ${eur2(payAmount(p) || 0)} HT${acompteState(p) === 'prevu' ? ' (prévu)' : ''}`])},
+      fields: [{k: 'to', label: 'Ligne de cette facture', type: 'select', full: true, options: targets.map(p => [p.id, `${p.label || p.kind} · ${eur2(payAmount(p) || 0)} HT${p.invoice_number ? ` · n° ${p.invoice_number} noté à la main` : acompteState(p) === 'prevu' ? ' (prévu)' : ''}`])},
         {k: 'motif', label: cur ? 'Motif de la correction (obligatoire)' : 'Motif (facultatif)', type: 'textarea', full: true, rows: 2}],
       onSave: async v => {
         if (!v.to){ toast('Choisis la ligne', true); return false; }
