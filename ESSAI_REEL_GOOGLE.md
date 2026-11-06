@@ -10,8 +10,9 @@ Base : projet Supabase **de test**, après la séance V1.57 → V1.60 (son état
 | **T2** | joue les **correspondants** (organisateurs) et l'**artiste** (propriétaire des agendas partagés) | une réponse doit venir d'un AUTRE expéditeur (fil, rattachement, suspension de relance) ; un agenda ne se partage pas avec soi-même |
 
 **B1 et B3 sur un même compte (T1) : oui, sans compromettre les scénarios.** Les deux rôles n'ont rien en commun dans le code :
-- deux projets Apps Script distincts sur T1 (« Prospection » et « Agendas »), deux déploiements, deux adresses, et deux secrets distincts
-  (propriété WEBHOOK_SECRET de chaque projet) ;
+- deux projets Apps Script distincts sur T1 (« Prospection » et « Agendas »), deux déploiements, deux adresses ; leur propriété
+  WEBHOOK_SECRET porte le même code que les autres scripts Google (`drive_webhook_secret`), comme en production — c'est le code avec
+  lequel le serveur les appelle ; le secret des appels automatiques (`mail_sync_hook` / `cal_sync_hook`) est, lui, propre au serveur ;
 - le script Agendas n'a que l'accès « lecture des agendas » (manifeste en lecture seule) ; le script Prospection garde ses accès Gmail ;
 - les agendas de T1 lui-même (principal) sont exclus du choix ; seuls ceux partagés par T2 sont proposés ;
 - seule différence avec la production (deux comptes distincts) : les invitations de partage d'agenda arrivent dans la boîte de T1
@@ -25,7 +26,8 @@ Destinataires d'essai : T2 et ses alias (`T2+salle@…`, `T2+copie@…`) uniquem
    habituels du script), **lecture des agendas** seulement (Agendas).
 3. Sur T2 : créer deux agendas « Artiste essai A » (partagé avec T1 : « Afficher tous les détails des événements ») et « Artiste essai B »
    (partagé avec T1 : « Afficher uniquement les disponibilités »).
-4. Saisir lui-même, dans Réglages du projet de test, le secret de chaque script (jamais dans la conversation).
+4. Reporter lui-même le code des scripts Google du projet de test (Supabase › Table Editor › `settings` › `drive_webhook_secret` ;
+   jamais affiché dans l'application, jamais dans la conversation) dans la propriété WEBHOOK_SECRET de chacun des deux scripts.
 
 ## Scénarios
 Messagerie (détail : ESSAI_GMAIL_REEL.md) : réponse et réponse à tous dans le bon fil ; brouillon et reprise ; documents joints réellement
