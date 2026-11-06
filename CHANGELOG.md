@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.56.8 — 06/11/2026
+- Production : date d'envoi de la boucle communication affichée et modifiable sous le bouton (même donnée que l'onglet Communication), distincte du mail préparé dans L'ArtBotrice
+
+
 ## 1.56.7 — 05/11/2026
 - Fonction dans une structure (relecture v1.56.6) — juste après un avertissement « modifiée ailleurs », une Entrée réflexe ne remplace rien ; « Fonctions du contact » n'efface pas une fonction modifiée ailleurs entre-temps
 

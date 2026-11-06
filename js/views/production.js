@@ -100,6 +100,15 @@ function actionsBar(s, booking){
     const sent = l.sent || (kind === 'confirmation' ? s.conf_kit_sent : s[kind]);
     return `<small class="${sent ? 'ok-txt' : 'muted'}">${sent ? '✓ envoyé' : 'brouillon'} le ${fmtDate(sent && typeof sent === 'string' && sent.length === 10 ? sent : l.at)}</small>`; };
   const mailBtn = (kind, label) => `<span class="pa-item"><button class="btn sm ${log[kind] ? '' : 'primary'}" data-act="prepareMail" data-kind="${kind}" data-id="${s.id}">${label}</button>${state(kind)}</span>`;
+  // Boucle communication (06/11/2026) : la date d'envoi est la donnée de l'onglet Communication (shows.boucle_com), affichée et
+  // modifiable ici même si le mail est parti hors de L'ArtBotrice ; le statut « mail préparé » est distinct (préparer ≠ envoyer)
+  const comLog = log.boucle_com;
+  const comPrep = !comLog ? '' : comLog.sent
+    ? `<small class="ok-txt">Envoyé depuis L’ArtBotrice le ${fmtDate(comLog.at)}</small>`
+    : `<small class="muted">Mail préparé dans L’ArtBotrice le ${fmtDate(comLog.at)} (brouillon : n’indique pas l’envoi)</small>`;
+  const comBtn = `<span class="pa-item pa-stack"><button class="btn sm ${comLog || s.boucle_com ? '' : 'primary'}" data-act="prepareMail" data-kind="boucle_com" data-id="${s.id}">Boucle communication</button>
+      <span class="pa-date"><small class="${s.boucle_com ? 'ok-txt' : 'muted'}">${s.boucle_com ? '✓ Envoyée le' : 'Date d’envoi'}</small>${cIn('shows', s.id, 'boucle_com', s.boucle_com, 'date')}</span>
+      ${comPrep}</span>`;
   const fiche = s.fiche_validated_at
     ? `<span class="pa-item"><button class="btn sm ghost" data-act="validateFiche" data-id="${s.id}">Fiche de renseignements</button><small class="ok-txt">✓ validée le ${fmtDate(s.fiche_validated_at)}</small></span>`
     : s.fiche_submitted_at
@@ -113,7 +122,7 @@ function actionsBar(s, booking){
   return `<div class="prod-actions">
     <div class="pa-row">
       ${mailBtn('confirmation', 'Envoyer la confirmation')}
-      ${booking ? '' : mailBtn('boucle_tech', 'Boucle accueil & technique') + mailBtn('boucle_com', 'Boucle communication')}
+      ${booking ? '' : mailBtn('boucle_tech', 'Boucle accueil & technique') + comBtn}
     </div>
     <div class="pa-row">
       ${booking ? '' : fiche + contract}
