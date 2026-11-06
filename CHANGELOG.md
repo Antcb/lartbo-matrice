@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.61.0 — 06/11/2026
+- Agendas Google des artistes (lecture seule) : agenda relié dans la fiche artiste, indisponibilités dans Booking avec avertissement de chevauchement, « Show » sur la carte, association explicite avec une date existante
+
+
 ## 1.60.1 — 06/11/2026
 - Structure administrative (relecture v1.60.0) — une réponse de l'artiste différente de la structure reste dans la fiche et n'est plus remplacée en silence lors d'un enregistrement ; le lien public ne reçoit que les champs de la fiche ; rappel TVA dans la fenêtre des mails
 
