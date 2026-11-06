@@ -188,7 +188,9 @@
         // window.__FN_ERROR = { nom: 'message' } : la fonction serveur répond par cette erreur (essais de la file des résumés IA)
         functions: { invoke: async (name, o) => { window.__calls.push({ fn: name, body: o && o.body, url: String(url) });
           const err = window.__FN_ERROR && window.__FN_ERROR[name];
-          return err ? { data: null, error: { message: err } } : { data: { ok: true }, error: null }; } },
+          // window.__FN_REPLY = { nom: corps => réponse } : réponse simulée d'une fonction serveur (messagerie v1.61 : script-google, mail-sync)
+          const rep = window.__FN_REPLY && window.__FN_REPLY[name];
+          return err ? { data: null, error: { message: err } } : { data: rep ? clone(await rep(o && o.body)) : { ok: true }, error: null }; } },
         storage: { from: bucket => ({ upload: async () => ({ data: {}, error: null }),
           // fichiers effacés notés dans window.__calls ({ storageRemove: bucket, paths }) pour vérifier qu'aucun fichier ne reste orphelin
           remove: async paths => { window.__calls.push({ storageRemove: bucket, paths: [...paths] }); return { data: [], error: null }; },

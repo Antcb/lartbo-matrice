@@ -98,9 +98,9 @@ declare t mail_threads%rowtype; pr record; n_contacts int; n_struct int; st uuid
 begin
   select * into t from mail_threads where id = p_thread for update;
   if not found or t.link_status in ('auto', 'manuel') then return; end if;
-  select id, structure_id, project_id into pr from prospects where mail_thread_id = t.gmail_thread_id order by created_at limit 1;
+  select id, structure_id, project_id, project_ids into pr from prospects where mail_thread_id = t.gmail_thread_id order by created_at limit 1;
   if pr.id is not null then
-    update mail_threads set prospect_id = pr.id, structure_id = pr.structure_id, project_id = coalesce(project_id, pr.project_id),
+    update mail_threads set prospect_id = pr.id, structure_id = pr.structure_id, project_id = coalesce(project_id, pr.project_id, pr.project_ids[1]),
       link_status = 'auto', link_reason = 'Fil de prospection envoyé depuis L''ArtBotrice' where id = p_thread;
     return;
   end if;
