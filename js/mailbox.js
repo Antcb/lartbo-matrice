@@ -21,12 +21,18 @@ import { getDraft, setDraft, clearDraft } from './ui/drafts.js';
 import { addDays, esc, fmtDate, toast, today, workDay } from './utils.js';
 
 export const MAILBOX_ADDR = () => String(setting('prospect_from') || 'anthony@lartboristerie.com').toLowerCase();
-const GMAIL_MAX_MB = 24;   // Gmail : 25 Mo par message, encodage compris — marge gardée
+const GMAIL_MAX_BYTES = 25 * 1024 * 1024;   // Gmail : 25 Mo pour le message ENCODÉ (vérifié aussi, exactement, par le script)
+/** Taille du message une fois encodé : pièces jointes en base64 (4/3, lignes de 76 caractères + retour), texte HTML et texte brut
+ *  en base64, en-têtes et séparateurs (marge de 16 Ko par pièce + 32 Ko). Estimation par excès : le script mesure le message réel. */
+export const encodedSize = (fileBytes, htmlChars = 0) => {
+  const b64 = n => Math.ceil(n / 3) * 4 * 78 / 76;
+  return Math.ceil(fileBytes.reduce((a, n) => a + b64(Number(n) || 0) + 16384, 0) + 2 * b64(htmlChars * 3) + 32768);
+};
 const SYSTEM_LABELS = {INBOX: 'Boîte de réception', SENT: 'Envoyés', STARRED: 'Suivis', IMPORTANT: 'Important', UNREAD: 'Non lu', TRASH: 'Corbeille', SPAM: 'Spam', DRAFT: 'Brouillons'};
 export const LINK_LABEL = {auto: 'Rattaché automatiquement', manuel: 'Rattaché à la main', a_rattacher: 'À rattacher'};
 
 /** État de l'espace Mails (mémoire de la page) */
-export const M = {filter: 'inbox', label: '', labels: null, search: null, open: null, thread: null, loading: false, error: ''};
+export const M = {filter: 'inbox', label: '', labels: null, search: null, open: null, thread: null, loading: false, error: '', images: new Set()};
 
 export const fmtSize = n => !n ? '' : n > 1e6 ? (n / 1048576).toFixed(1).replace('.', ',') + ' Mo' : Math.max(1, Math.round(n / 1024)) + ' Ko';
 export const labelName = id => SYSTEM_LABELS[id] || (M.labels || []).find(l => l.id === id)?.name || id;
@@ -195,7 +201,8 @@ export async function compose(mode, row = null, msg = null){
   const $ = sel => document.querySelector('#modal ' + sel);
   const current = () => ({to: $('#mc-to').value.trim(), cc: $('#mc-cc').value.trim(), bcc: $('#mc-bcc').value.trim(), subject: $('#mc-subj').value.trim(), html: $('#mc-body').innerHTML});
   const keep = () => { setDraft(key, {...current(), files, draft_id: draftId}); };
-  const totalMb = () => (files.filter(f => f.on).reduce((a, f) => a + (Number(f.size) || 0), 0) + ($('#mc-keep')?.checked ? keepFwd.reduce((a, f) => a + (Number(f.size) || 0), 0) : 0)) / 1048576;
+  const sizes = () => [...files.filter(f => f.on).map(f => f.size), ...($('#mc-keep')?.checked ? keepFwd.map(f => f.size) : [])];
+  const totalMb = () => encodedSize(sizes(), $('#mc-body').innerHTML.length + (base?.html?.length || 0)) / 1048576;
   const drawFiles = () => { $('#mc-files').innerHTML = files.length ? attSizeHTML(files) + ' ' + files.map((f, i) => `<label class="att-chip"><input type="checkbox" data-att="${i}" ${f.on ? 'checked' : ''}> 📎 ${esc(f.name)} <span class="muted">${fmtSize(f.size) || 'taille inconnue'}</span></label>`).join('') : '<span class="muted">aucune</span>'; keep(); };
   const done = openModal({title: `${title}${row?.subject ? ' · ' + row.subject : ''}`, fields: [], extra, mail: true, wide: true, saveLabel: 'Envoyer', footExtra: '<button type="button" class="btn" id="mc-draft">Enregistrer en brouillon</button>',
     onSave: async () => {
@@ -204,7 +211,7 @@ export async function compose(mode, row = null, msg = null){
       if (!m.subject && mode === 'new') { toast('Indique l’objet du mail', true); return false; }
       if (!(await todoOk(m))) return false;
       if (files.some(f => f.on && !f.size)) { toast('Une pièce jointe a une taille inconnue : retire-la ou ajoute le fichier lui-même', true); return false; }
-      if (totalMb() > GMAIL_MAX_MB) { toast(`Pièces jointes trop lourdes : ${totalMb().toFixed(1).replace('.', ',')} Mo (Gmail : ${GMAIL_MAX_MB} Mo au plus). Rien n’est parti.`, true); return false; }
+      if (totalMb() * 1048576 > GMAIL_MAX_BYTES) { toast(`Message trop lourd : environ ${totalMb().toFixed(1).replace('.', ',')} Mo une fois encodé, pièces jointes comprises (Gmail : 25 Mo au plus). Rien n’est parti.`, true); return false; }
       if (!(await attOk(files))) return false;
       if (send && !(await confirmAsk('Envoyer le mail ?', `Le mail part maintenant à ${m.to}${m.cc ? ` (copie : ${m.cc})` : ''}${m.bcc ? ` (copie cachée : ${m.bcc})` : ''}, depuis ${MAILBOX_ADDR()}.`, 'Envoyer le mail'))) return false;
       try {
@@ -303,6 +310,7 @@ export const MAIL_ACTIONS = {
     catch (e) { toast(e.message, true); }
     render(); },
   mailOpen: t => openThread(t.dataset.id),
+  mailImages: t => { M.images.add(t.dataset.msg); render(); },   // images distantes : seulement sur demande, pour ce message
   mailBack: () => { M.open = null; M.thread = null; render(); },
   mailCompose: t => compose(t.dataset.mode, M.open ? byId('mail_threads', M.open) : null, t.dataset.msg ? M.thread?.messages.find(m => m.id === t.dataset.msg) : null),
   mailLink: t => linkThread(t.dataset.id || M.open),
