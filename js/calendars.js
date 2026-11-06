@@ -10,11 +10,12 @@
  *   - dates « Option / Confirmée Artiste » existantes : jamais converties ; association explicite proposée (pas de double affichage).
  */
 import { render } from './app.js';
-import { save, sb } from './data.js';
+import { insert, save, sb } from './data.js';
 import { byId, projName } from './selectors.js';
 import { S } from './state.js';
-import { ask, confirmAsk } from './ui/dialog.js';
+import { ask, confirmAsk, copyText } from './ui/dialog.js';
 import { esc, fmtDate, toast } from './utils.js';
+import { isOff } from './constants.js';
 
 const STALE_MIN = 30;   // au-delà de 30 min sans synchronisation réussie (passage toutes les 5 min) : disponibilités plus à jour
 export const calOf = projectId => S.db.artist_calendars.find(c => c.project_id === projectId) || null;
@@ -48,9 +49,14 @@ export function calOverlaps(v){
 }
 
 /** Avant d'enregistrer une option / une date : avertissement si l'agenda de l'artiste est occupé (ou plus à jour) ; true = poursuivre */
+/** Engagement d'une date : 0 annulée / sans suite, 1 intérêt, 2 option ou confirmée */
+const level = st => isOff(st) ? 0 : /^Intérêt/.test(st || '') ? 1 : 2;
 export async function calCheckBeforeSave(v, before = null){
-  if (!v.project_id || !v.date || /^(Annulée|Sans Suite)/.test(v.status || '')) return true;
-  if (before && before.date === v.date && (before.date_end || null) === (v.date_end || null) && before.project_id === v.project_id) return true;   // date inchangée
+  if (!v.project_id || !v.date || isOff(v.status)) return true;
+  // même règle sur tous les chemins (fenêtre de date, prospection, statut changé dans la liste) : on avertit quand une date est créée,
+  // déplacée, change d'artiste, ou s'engage davantage (annulée → active, intérêt → option / confirmée) ; sinon rien à redemander
+  if (before && before.date === v.date && (before.date_end || null) === (v.date_end || null) && before.project_id === v.project_id
+      && level(v.status) <= level(before.status)) return true;
   const cal = calOf(v.project_id); if (!cal || cal.status === 'deconnecte') return true;
   const hits = calOverlaps(v), stale = !calFresh(cal);
   if (!hits.length && !stale) return true;
@@ -76,12 +82,12 @@ export function calPanelHTML(projectId){
   const n = calEvents([projectId]).length, fresh = calFresh(cal);
   return `<div class="cal-panel">
     <p class="m0"><b>${esc(cal.calendar_name || cal.calendar_id)}</b> ${cal.mode === 'disponibilites' ? '<span class="badge">disponibilités seulement</span>' : ''}
-      <span class="${fresh ? 'ok-txt' : 'warn-txt'}">${fresh ? '✓ à jour' : '⚠︎ disponibilités plus à jour'}</span></p>
+      <span class="${fresh ? 'ok-txt' : 'warn-txt'}">${cal.status === 'deconnecte' ? 'déconnecté (événements non affichés)' : fresh ? '✓ à jour' : '⚠︎ disponibilités plus à jour'}</span></p>
     <p class="help m0">Dernière synchronisation réussie : ${cal.last_ok_at ? esc(new Date(cal.last_ok_at).toLocaleString('fr-FR', {timeZone: 'Europe/Paris'})) : 'aucune'} · ${n} événement${n > 1 ? 's' : ''}
       ${cal.last_error ? `<br><span class="warn-txt">Erreur : ${esc(cal.last_error)}</span>` : ''}${cal.status === 'pause' ? '<br>Synchronisation suspendue.' : ''}</p>
     <div class="cal-actions">
       ${cal.status === 'actif' ? `<button type="button" class="btn sm" data-act="calRefresh" data-id="${projectId}">Actualiser</button><button type="button" class="btn sm" data-act="calPause" data-id="${projectId}">Suspendre</button>`
-        : `<button type="button" class="btn sm" data-act="calResume" data-id="${projectId}">Reprendre</button>`}
+        : `<button type="button" class="btn sm" data-act="calResume" data-id="${projectId}">${cal.status === 'deconnecte' ? 'Reconnecter' : 'Reprendre'}</button>`}
       <button type="button" class="btn sm" data-act="calConnect" data-id="${projectId}">Changer d’agenda</button>
       ${cal.status !== 'deconnecte' ? `<button type="button" class="btn sm ghost danger" data-act="calDisconnect" data-id="${projectId}">Déconnecter</button>` : ''}</div></div>`;
 }
@@ -97,8 +103,8 @@ async function reload(){
 }
 
 export const CAL_ACTIONS = {
-  copyCalendarScript: async () => { try { await navigator.clipboard.writeText(await (await fetch('apps-script/calendrier/Calendrier.gs?v=' + Date.now())).text()); toast('Code copié : colle-le dans Code.gs du projet « Matrice Agendas »'); } catch (err) { toast('Copie impossible : ' + err.message, true); } },
-  copyCalendarManifest: async () => { try { await navigator.clipboard.writeText(await (await fetch('apps-script/calendrier/appsscript.json?v=' + Date.now())).text()); toast('appsscript.json copié : remplace le contenu du manifeste du projet « Matrice Agendas »'); } catch (err) { toast('Copie impossible : ' + err.message, true); } },
+  copyCalendarScript: async () => { try { await copyText(await (await fetch('apps-script/calendrier/Calendrier.gs?v=' + Date.now())).text(), 'Code copié : colle-le dans Code.gs du projet « Matrice Agendas »'); } catch (err) { toast('Copie impossible : ' + err.message, true); } },
+  copyCalendarManifest: async () => { try { await copyText(await (await fetch('apps-script/calendrier/appsscript.json?v=' + Date.now())).text(), 'appsscript.json copié : remplace le contenu du manifeste du projet « Matrice Agendas »'); } catch (err) { toast('Copie impossible : ' + err.message, true); } },
   testCalendarScript: async () => { const out = await invoke({mode: 'calendars'}); toast(out.ok ? `Script des agendas OK : ${out.calendars.length} agenda${out.calendars.length > 1 ? 's' : ''} visible${out.calendars.length > 1 ? 's' : ''} par production@` : out.error, !out.ok); },
   /** Choix explicite de l'agenda parmi ceux partagés avec production@ */
   calConnect: async t => {
@@ -117,7 +123,7 @@ export const CAL_ACTIONS = {
       if (cur.calendar_id !== c.id && !(await confirmAsk('Changer d’agenda ?', 'Les événements de l’ancien agenda ne seront plus affichés (rien n’est modifié dans Google).', 'Changer'))) return;
       await save('artist_calendars', cur.id, row, {rerender: false});
       if (cur.calendar_id !== c.id){ const {error} = await sb.from('artist_calendar_events').update({deleted_at: new Date().toISOString()}).eq('calendar_ref', cur.id).is('deleted_at', null); if (error) toast(error.message, true); }
-    } else { const {error} = await sb.from('artist_calendars').insert(row); if (error) return toast('Liaison impossible : ' + error.message, true); }
+    } else if (!(await insert('artist_calendars', row))) return;
     await reload(); render();
     await CAL_ACTIONS.calRefresh({dataset: {id: pid}});
   },
@@ -164,7 +170,7 @@ export function calRowHTML({e, span: [a, b]}, showArtist){
 
 /** Repères de carte des « Show » d'agenda (ville reconnue) et liste « localisation à préciser » */
 export function calMapPoints(projectIds, year){
-  const ev = calEvents(projectIds).filter(e => e.is_show && !e.show_id && (evSpan(e)[0] || '').startsWith(String(year)));
+  const ev = calEvents(projectIds || S.db.projects.filter(p => p.active || S.showInactive).map(p => p.id)).filter(e => e.is_show && !e.show_id && (evSpan(e)[0] || '').startsWith(String(year)));
   return {points: ev.filter(e => e.geo_status === 'ok' && e.lat != null).map(e => ({lat: e.lat, lng: e.lng, color: '#FFFFFF', gcal: true, hover: true,
     label: `<b>Date artiste — calendrier Google</b><br>${esc(e.title || '')}<br>${fmtDate(evSpan(e)[0])} — ${esc(e.city || '')} · ${esc(projName(e.project_id))}`})),
     toLocate: ev.filter(e => e.geo_status !== 'ok')};

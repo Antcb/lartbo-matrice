@@ -18,7 +18,7 @@ function doPost(e) {
     var body = JSON.parse(e.postData.contents || '{}');
     var secret = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET') || '';
     if (!secret || body.secret !== secret) return json_({ ok: false, error: 'Code secret du script des calendriers incorrect' });
-    if (body.action === 'ping') out = { ok: true, account: Session.getEffectiveUser().getEmail() };
+    if (body.action === 'ping') out = { ok: true };
     else if (body.action === 'calendars') out = calendars_();
     else if (body.action === 'events') out = events_(String(body.calendar_id || ''), body.time_min, body.time_max);
     else out = { ok: false, error: 'Action inconnue' };
@@ -57,7 +57,10 @@ function events_(id, tmin, tmax) {
     } while (token);
     return { ok: true, mode: 'details', events: out };
   } catch (err) {
-    // agenda partagé en « disponibilités seulement » : les détails sont refusés → périodes occupées, sans titre ni lieu
+    // agenda partagé en « disponibilités seulement » : SEUL un refus d'accès bascule en périodes occupées (sans titre ni lieu) ;
+    // toute autre erreur (quota, panne passagère) remonte : l'agenda passe en « disponibilités plus à jour », rien n'est réécrit
+    var code = err && err.details && err.details.code || (/\b(403|404)\b/.exec(String(err && err.message)) || [])[1];
+    if (String(code) !== '403' && String(code) !== '404') throw err;
     var fb = Calendar.Freebusy.query({ timeMin: tmin, timeMax: tmax, items: [{ id: id }] });
     var cal = fb.calendars && fb.calendars[id];
     if (!cal || (cal.errors && cal.errors.length)) throw new Error('Agenda inaccessible (partage retiré ?) : ' + (cal && cal.errors ? cal.errors.map(function (x) { return x.reason; }).join(', ') : err.message));
