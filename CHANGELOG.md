@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.56.9 — 06/11/2026
+- Pennylane : une facture faite depuis le devis n'est jamais reliée automatiquement au solde quand elle a le montant d'un acompte déjà noté à la main sur la date (signalée « à rattacher »)
+
+
 ## 1.56.8 — 06/11/2026
 - Production : date d'envoi de la boucle communication affichée et modifiable sous le bouton (même donnée que l'onglet Communication), distincte du mail préparé dans L'ArtBotrice
 

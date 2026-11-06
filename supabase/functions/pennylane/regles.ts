@@ -57,3 +57,12 @@ export function montantAttendu(p: Ligne, fee: number, dejaFactures: number): num
   if (p.kind === 'solde') return Math.max(0, r2(fee - dejaFactures));
   return montantAcompte(p, fee);
 }
+
+/**
+ * Solde douteux (Monestier, 06/11/2026) : la facture Pennylane faite depuis le devis a le montant d'un acompte de la date DÉJÀ
+ * compté comme facturé dans la Matrice sans être relié à Pennylane (numéro, envoi ou paiement noté à la main). Elle peut être cet
+ * acompte : elle n'est jamais reliée automatiquement au solde — signalée « à rattacher » (le choix revient à l'utilisateur).
+ */
+export const soldeDouteux = (p: Ligne, montantFacture: number, lignesDeLaDate: Ligne[], fee: number) =>
+  p.kind === 'solde' && lignesDeLaDate.some(a => a.kind === 'acompte' && emise(a) && !plein(a.pennylane_id)
+    && Math.abs((montantAcompte(a, fee) ?? -1) - Number(montantFacture)) < 0.05);

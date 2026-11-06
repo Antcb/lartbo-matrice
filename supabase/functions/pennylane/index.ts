@@ -7,7 +7,7 @@
 // Le jeton API est gardé côté serveur (Réglages › Pennylane). Appels depuis l'app (utilisateur connecté) :
 //   { action: 'status' } · { action: 'quote', show_id } · { action: 'invoice', payment_id } · { action: 'sync' }
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { acomptesFactures, baseCommission, caduc, emise, factureIsolee, figerMontant, isBooking, montantAcompte, montantAttendu, payable, pctCommission, rangeeDansLeDrive, relieAuDevis } from './regles.ts';
+import { acomptesFactures, baseCommission, caduc, emise, factureIsolee, figerMontant, isBooking, montantAcompte, montantAttendu, payable, pctCommission, rangeeDansLeDrive, relieAuDevis, soldeDouteux } from './regles.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -185,7 +185,7 @@ Deno.serve(async (req) => {
       // factures faites dans Pennylane depuis le devis créé par la Matrice (acompte puis solde) : reconnues par leur devis et leur montant HT
       const byQuote: Record<string, any[]> = {};
       for (const x of Object.values(byId)) if (x.quote?.id && x.status !== 'cancelled') (byQuote[String(x.quote.id)] ||= []).push(x);
-      const linked: any[] = [], caducs: string[] = [], erreurs: string[] = [];   // erreurs : écritures refusées (jamais comptées comme faites)
+      const linked: any[] = [], caducs: string[] = [], douteux: string[] = [], erreurs: string[] = [];   // erreurs : écritures refusées (jamais comptées comme faites)
       if (Object.keys(byQuote).length) {
         const open = (await readAll(() => admin.from('show_payments').select('id, show_id, kind, pct, amount, sort, invoice_number, pennylane_id, sent_at, paid_at, shows!inner(fee_ht, pennylane_quote_id, prod_mode)')
           .in('kind', ['acompte', 'solde']).is('invoice_number', null).is('pennylane_id', null).is('hors_calcul', null).not('shows.pennylane_quote_id', 'is', null)) || [])
@@ -207,6 +207,8 @@ Deno.serve(async (req) => {
           // acompte caduc (solde déjà facturé) : une facture Pennylane lui correspond, mais il n'est jamais relié automatiquement
           // (la date serait facturée au-delà de sa cession) — signalé dans le rapport, à examiner (relecture C1, B3)
           if (caduc(p, (acs || []).filter((a: any) => a.show_id === p.show_id))) { caducs.push(x.invoice_number || String(x.id)); continue; }
+          // facture qui peut être un acompte déjà noté à la main : jamais reliée au solde sans choix de l'utilisateur
+          if (soldeDouteux(p, Number(x.currency_amount_before_tax), (acs || []).filter((a: any) => a.show_id === p.show_id), fee)) { douteux.push(x.invoice_number || String(x.id)); continue; }
           // acompte / solde relié pas encore émis : son montant est figé sur celui de la facture Pennylane (plus jamais recalculé,
           // lots C1 et D1 — le montant réel de la facture fait référence) ;
           // déjà émis (ex. marqué envoyé) : montant inchangé (protection A1) — seuls le numéro et le lien sont repris
@@ -252,7 +254,7 @@ Deno.serve(async (req) => {
         }
       }
       const filed = await fileInvoices(toFile);
-      return json({ ok: true, updated, pennylaneLate, linked, caducs, erreurs, filed });
+      return json({ ok: true, updated, pennylaneLate, linked, caducs, douteux, erreurs, filed });
     }
 
     if (body.action === 'quote') {

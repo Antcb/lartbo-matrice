@@ -2,11 +2,19 @@
 // Lancé par « npm test » (node --experimental-strip-types). Module testé : supabase/functions/pennylane/regles.ts
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { acomptesFactures, baseCommission, caduc, emise, factureIsolee, figerMontant, rangeeDansLeDrive, montantAttendu, payable, pctCommission, relieAuDevis } from '../../supabase/functions/pennylane/regles.ts';
+import { acomptesFactures, baseCommission, caduc, emise, factureIsolee, figerMontant, rangeeDansLeDrive, montantAttendu, payable, pctCommission, relieAuDevis, soldeDouteux } from '../../supabase/functions/pennylane/regles.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
 
+t('solde douteux (Monestier) : facture du montant d’un acompte noté à la main → jamais reliée au solde', () => {
+  const ac = { kind: 'acompte', pct: 50, invoice_number: 'SAISI-A-LA-MAIN' };
+  assert.equal(soldeDouteux({ kind: 'solde' }, 3750, [ac], 7500), true);
+  assert.equal(soldeDouteux({ kind: 'solde' }, 3750, [{ ...ac, pennylane_id: '1' }], 7500), false);   // acompte déjà relié à Pennylane : pas de doute
+  assert.equal(soldeDouteux({ kind: 'solde' }, 3750, [{ kind: 'acompte', pct: 50 }], 7500), false);   // acompte pas encore facturé
+  assert.equal(soldeDouteux({ kind: 'solde' }, 6000, [{ kind: 'acompte', pct: 20, sent_at: '2026-11-01' }], 7500), false);   // montants différents
+  assert.equal(soldeDouteux({ kind: 'acompte' }, 3750, [ac], 7500), false);
+});
 t('booking : seule la commission se reprend (payée / numéro) ; jamais les factures de l’artiste', () => {
   assert.equal(payable({ kind: 'artbo' }, 'booking'), true);
   for (const k of ['acompte', 'solde', 'autre', 'partner']) assert.equal(payable({ kind: k }, 'booking'), false, k);
