@@ -12,7 +12,7 @@ const TABLES = ['app_users', 'settings', 'partners', 'projects', 'structures', '
   'finance_log', 'commission_transfers',   // journal des modifications financières (lot D1) : à déployer APRÈS la migration v1.42 (sinon la sauvegarde échoue)
   'pennylane_a_rattacher', 'pennylane_rattachements',   // rattachements Pennylane (v1.56.9) : à déployer APRÈS la migration v1.56.9
   'spectacles',   // spectacles d'un artiste (v1.57) : à déployer APRÈS la migration v1.57 (sinon la sauvegarde échoue)
-  'artist_calendars', 'artist_calendar_events'];   // agendas des artistes : à déployer APRÈS la migration des calendriers   // spectacles d'un artiste (v1.57) : à déployer APRÈS la migration v1.57 (sinon la sauvegarde échoue)
+  'artist_calendars', 'artist_calendar_events'];   // agendas des artistes : à déployer APRÈS la migration des agendas
 // colonne(s) de tri pour lire les grandes tables page par page
 const ORDER: Record<string, string[]> = { app_users: ['email'], settings: ['key'], contact_structures: ['contact_id', 'structure_id'] };
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });

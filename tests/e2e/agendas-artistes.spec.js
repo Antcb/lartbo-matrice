@@ -95,3 +95,30 @@ test('agendas : « Show » avec ville sur la carte (repère distinct), sinon « 
   expect(await page.evaluate(() => window.__calls.filter(c => c.table === 'shows' && c.op !== 'select').length)).toBe(0);   // date existante jamais modifiée
   expectClean(ctx);
 });
+
+test('agendas : même avertissement sur tous les chemins — intérêt → option sur un jour indisponible, statut changé dans la liste', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page);
+  // date existante en « Intérêt » sur un jour indisponible : la passer en option (même jour) avertit
+  const r = page.evaluate(async Y => { const { calCheckBeforeSave } = await import('./js/calendars.js'); const { S } = await import('./js/state.js');
+    const before = { project_id: S.db.projects[0].id, date: `${Y}-03-11`, status: 'Intérêt Salle' };
+    return calCheckBeforeSave({ ...before, status: 'Option Salle' }, before); }, Y);
+  await expect(page.locator('dialog[open]', { hasText: 'Artiste indisponible ?' })).toBeVisible();
+  await page.locator('dialog[open] button', { hasText: 'Annuler' }).click();
+  expect(await r).toBe(false);
+  // option → intérêt (moins engagée), même jour : rien à redemander
+  expect(await page.evaluate(async Y => { const { calCheckBeforeSave } = await import('./js/calendars.js'); const { S } = await import('./js/state.js');
+    const before = { project_id: S.db.projects[0].id, date: `${Y}-03-11`, status: 'Option Salle' };
+    return calCheckBeforeSave({ ...before, status: 'Intérêt Salle' }, before); }, Y)).toBe(true);
+  // statut changé dans la liste Booking : avertissement, et rien d'enregistré si on annule
+  await page.evaluate(async Y => { const { S, touch } = await import('./js/state.js');
+    for (const db of [S.db, window.__DB]) db.shows.push({ id: 'sh-v', project_id: S.db.projects[0].id, venue: 'Salle Témoin', city: 'Testville', date: `${Y}-03-11`, status: 'Intérêt Salle' });
+    touch('shows'); (await import('./js/app.js')).render(); }, Y);
+  const sel = page.locator('.gig', { hasText: 'Salle Témoin' }).locator('select');
+  await sel.selectOption('Option Salle');
+  await expect(page.locator('dialog[open]', { hasText: 'Artiste indisponible ?' })).toBeVisible();
+  await page.locator('dialog[open] button', { hasText: 'Annuler' }).click();
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => window.__calls.filter(c => c.table === 'shows' && c.op === 'update').length)).toBe(0);
+  expectClean(ctx);
+});
