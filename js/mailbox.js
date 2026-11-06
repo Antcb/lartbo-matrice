@@ -95,12 +95,11 @@ export function candidates(row){
 export async function linkThread(id){
   const row = byId('mail_threads', id); if (!row) return;
   const cand = candidates(row);
-  const stOpts = [...cand.structures, ...S.db.structures.filter(s => !cand.structures.includes(s))];
   const values = {structure_id: row.structure_id || (cand.structures.length === 1 ? cand.structures[0].id : ''), prospect_id: row.prospect_id || '', project_id: row.project_id || '', show_id: row.show_id || ''};
   const suiviOpts = st => prospectsOfStructure(st).map(p => [p.id, prospectTitle(p) + (suiviClosed(p) ? ' (clos)' : '')]);
   const showOpts = st => S.db.shows.filter(s => s.structure_id === st).sort((a, b) => String(b.date).localeCompare(String(a.date))).map(s => [s.id, `${fmtDate(s.date)} · ${projName(s.project_id)}`]);
   const help = cand.structures.length ? `Structures trouvées par les adresses exactes : ${cand.structures.map(s => esc(s.name)).join(', ')}.` : 'Aucune structure trouvée par les adresses exactes des participants.';
-  return openModal({title: 'Rattacher la conversation', fields: [
+  const done = openModal({title: 'Rattacher la conversation', fields: [
     {k: 'structure_id', label: 'Structure', type: 'ac', kind: 'structures', create: true},
     {k: 'prospect_id', label: 'Suivi', type: 'select', options: values.structure_id ? suiviOpts(values.structure_id) : [], help: 'Les échanges de la conversation entrent dans le journal de ce suivi.'},
     {k: 'project_id', label: 'Artiste / projet', type: 'project'},
@@ -115,6 +114,12 @@ export async function linkThread(id){
       toast(v.structure_id || v.prospect_id ? 'Conversation rattachée' : 'Rattachement retiré');
       return true;
     }});
+  // structure changée : suivis et dates proposés relus pour la structure choisie (jamais ceux d'une autre)
+  const dlg = document.querySelector('#modal'), stOf = () => dlg.querySelector('[name="structure_id"]')?.value || '';
+  const refill = (name, opts) => { const sel = dlg.querySelector(`select[name="${name}"]`); if (!sel) return; const cur = sel.value, list = stOf() ? opts(stOf()) : [];
+    sel.innerHTML = '<option value="">—</option>' + list.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(l)}</option>`).join(''); };
+  for (const [name, opts] of [['prospect_id', suiviOpts], ['show_id', showOpts]]) dlg.querySelector(`select[name="${name}"]`)?.addEventListener('focus', () => refill(name, opts));
+  return done;
 }
 
 // ── Rédaction ───────────────────────────────────────────────────────────────────────────────────────────────────────────
