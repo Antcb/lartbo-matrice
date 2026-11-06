@@ -84,15 +84,18 @@ Deno.serve(async (req) => {
   // dans le navigateur, une adresse ou un journal) ; sinon compte de l'équipe. Sans justificatif ou justificatif faux : 403.
   const hook = req.headers.get('x-hook-secret') || '';
   const { data: hookSecret } = hook ? await admin.rpc('import_secret', { k: 'mail_sync_hook' }) : { data: null };
+  let teamOk = false;
   let allowed = !!hook && !!hookSecret && same(hook, String(hookSecret));
   if (!allowed) {
     const user = createClient(URL_, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization') || '' } }, auth: { persistSession: false } });
     const { data: team } = await user.rpc('is_team');
-    allowed = team === true;
+    allowed = teamOk = team === true;
   }
   if (!allowed) return json({ ok: false, error: 'Accès refusé : connecte-toi avec un compte de l’équipe.' }, 403);
   const body = await req.json().catch(() => ({}));
   const mode = body?.mode === 'threads' ? 'threads' : 'sync';
+  // le secret de la tâche planifiée ne sert qu'à la synchronisation planifiée ; relire des conversations précises = compte de l'équipe
+  if (mode === 'threads' && !teamOk) return json({ ok: false, error: 'Réservé à l’équipe' }, 403);
   if (!url) return json({ ok: false, error: 'Le script de prospection n’est pas encore installé : Réglages › Prospection.' });
   if (!scriptUrlOk(url)) return json({ ok: false, error: 'L’adresse du script de prospection n’est pas une adresse de script publiée (…/exec).' });
 
