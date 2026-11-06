@@ -124,7 +124,10 @@
       contract_type: 'Cession', fee_ht: 6000, vat: 5.5, fee_ttc: 6330, acompte_pct: 50, payments: [{ label: 'Acompte', kind: 'acompte', pct: 50, ht: 3000 }, { label: 'Solde', kind: 'solde', pct: 50, ht: 3000 }],
       structure: { name: 'Festival Fictif' }, fiche: {}, submitted_at: null, locked: false } : null,
     rh_get: a => a.p_token === 'jeton-rh-test-00000001' ? { first_name: 'Dominique', last_name: 'EXEMPLE', email: 'dominique@example.com', info: {}, docs: [], submitted_at: null } : null,
-    artist_get: a => a.p_token === 'jeton-artiste-test-0001' ? { name: 'Artiste Alpha', info: {}, docs: [], submitted_at: null } : null,
+    artist_get: a => a.p_token === 'jeton-artiste-test-0001' ? { name: 'Artiste Alpha', info: {}, docs: [], submitted_at: null }
+      // v1.60 : structure administrative liée (référence) — données fictives
+      : a.p_token === 'jeton-artiste-admin-01' ? { name: 'Artiste Gamma', info: { adm_city: 'Ancienneville' }, docs: [], submitted_at: null,
+          admin: { legal_name: 'ASSOCIATION FICTIVE', siret: '00000000000000', city: 'Villefictive', vat_subject: 'Non' } } : null,
   };
 
   window.supabase = {

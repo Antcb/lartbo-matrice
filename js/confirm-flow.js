@@ -8,7 +8,7 @@
  */
 import { render } from './app.js';
 import { applyTemplate } from './budget-template.js';
-import { BILL_KINDS, billPct, isCoproduction, isInvoiced, payAmount, paymentsOf, soldeInvoiced } from './calc.js';
+import { BILL_KINDS, billPct, isCoproduction, isInvoiced, payAmount, paymentsOf, soldeInvoiced, vatConflict } from './calc.js';
 import { CONFIRMED_PROD, CONTRACTS } from './constants.js';
 import { insert, refreshShowSide, remove, save } from './data.js';
 import { isBookingOnly, prepareMail } from './mail.js';
@@ -86,7 +86,7 @@ export async function validateTerms(showId){
     fields: [
       {k: 'contract_type', label: 'Type de contrat', type: 'select', options: CONTRACTS, blank: false},
       {k: 'fee_ht', label: 'Cachet HT (€)', type: 'number'},
-      {k: 'vat_rate', label: 'TVA du cachet (%)', type: 'number', placeholder: '5.5'},
+      {k: 'vat_rate', label: 'TVA du cachet (%)', type: 'number', placeholder: '5.5', ...(vatConflict(s) ? {help: 'Structure administrative de l’artiste non soumise à la TVA : à vérifier (TTC = HT).'} : {})},
       {k: 'artbo_pct', label: 'Commission L’ArtBo (%)', type: 'number', placeholder: String(showCommissionPct({...s, artbo_pct: null}))},   // vide : % de l'artiste, sinon Réglages selon le mode de la date (§6.3)
       {k: 'show_time', label: 'Heure de passage', placeholder: 'ex. 22h30'},
       {k: 'set_length', label: 'Durée du set', placeholder: 'ex. 1h15'},

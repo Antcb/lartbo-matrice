@@ -78,6 +78,12 @@ export const tracked = p => !!p && !(isBookingShow(byId('shows', p.show_id)) && 
 
 /** TVA : 5,5 % sur les cachets (cession, co-réalisation…), 20 % sur les commissions. Modifiable par date / par ligne. */
 export const showVat = s => s?.vat_rate ?? 5.5;
+/** Régime de TVA : la structure administrative de l'artiste fait référence (05/11/2026). En booking, c'est elle qui contractualise :
+ *  « non soumise » alors que la date n'est pas à 0 % → à vérifier (TTC = HT attendu), jamais corrigé automatiquement. */
+export const vatConflict = s => { if (s?.prod_mode !== 'booking') return false;
+  const adm = byId('structures', byId('projects', s.project_id)?.admin_structure_id)?.admin;
+  return /^\s*non\b/i.test(adm?.vat_subject || '') && Number(s.vat_rate ?? 5.5) !== 0; };
+
 /** TVA d'une ligne. En production, la commission L'ArtBo n'est pas facturée (L'ArtBo se la verse) : pas de TVA. */
 export const selfPaidCommission = p => p.kind === 'artbo' && byId('shows', p.show_id)?.prod_mode !== 'booking';
 export const payVat = p => selfPaidCommission(p) ? 0 : p.vat_rate ?? (['artbo','partner'].includes(p.kind) ? 20 : showVat(byId('shows', p.show_id)));

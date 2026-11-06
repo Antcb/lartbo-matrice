@@ -12,7 +12,7 @@ import './ui/dropfiles.js';
 import './ui/filepick.js';
 import './ui/autogrow.js';
 import { ARTIST_DOCS, ARTIST_SECTIONS, PHOTO_CREDITS } from './artist-fields.js';
-import { input, migrateInfo, read, wireLists } from './artist-form.js';
+import { fromAdmin, input, migrateInfo, read, wireLists } from './artist-form.js';
 
 const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {auth: {persistSession: false}});
 const root = document.getElementById('fiche');
@@ -27,8 +27,11 @@ async function load(){
   if (!data) return fail('Ce lien n’est pas valide. Écris-nous à production@lartboristerie.com.');
   let draft = {}; try { draft = JSON.parse(localGet(DRAFT, {page: true}) || '{}'); } catch {}
   // ancienne version de la fiche : la structure administrative était une ligne de « l'équipe pro » → reprise dans ses nouveaux champs
-  const values = migrateInfo({...(data.info || {}), ...draft});
-  draw(data, values);
+  // structure administrative de l'artiste (référence, 05/11/2026) : ses informations légales sont reprises, sans ressaisie ; ce que
+  // l'artiste change ici avant d'envoyer reste visible et sera signalé à l'équipe, jamais appliqué à la structure
+  const ad = fromAdmin(migrateInfo(data.info || {}), data.admin);
+  data.admTaken = ad.taken;
+  draw(data, {...ad.values, ...draft});
 }
 function fail(msg){ root.innerHTML = `<div class="panel pad fiche-msg">${esc(msg)}</div>`; }
 
@@ -41,6 +44,7 @@ function draw(d, values){
       ${d.submitted_at ? `<p class="fiche-engage">Fiche déjà envoyée le ${fmtDate(d.submitted_at)}. Tes réponses sont reprises ci-dessous.</p>` : ''}</section>
     <form id="artist-form" class="fiche-form" novalidate>
       ${ARTIST_SECTIONS.map(sec => `<section class="panel pad"><h2>${esc(sec.title)}</h2>${sec.help ? `<p class="help">${esc(sec.help)}</p>` : ''}
+        ${d.admTaken?.length && sec.fields.some(f => f.k.startsWith('adm_')) ? '<p class="help fiche-engage">Ces informations viennent de la fiche de ta structure chez nous. Si l’une d’elles a changé, corrige-la ici : nous la vérifierons avant de mettre à jour nos fiches.</p>' : ''}
         <div class="fiche-grid${sec.cols ? ` cols${sec.cols} even` : ''}">${sec.fields.map(f => input(f, values[f.k] ?? '')).join('')}</div></section>`).join('')}
       <section class="panel pad"><h2>${ARTIST_SECTIONS.length + 1}. Photos et fichiers</h2><p class="help">Photos récentes de préférence. Glisse tes fichiers sur la bonne ligne ou clique pour les choisir : ils sont rangés directement dans ton dossier chez nous.</p>
         <div class="fiche-grid">${ARTIST_DOCS.map(([k, l, help, , accept, min, one, more]) => { const n = have.filter(x => x.kind === k).length;

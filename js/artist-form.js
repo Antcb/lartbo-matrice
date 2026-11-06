@@ -92,6 +92,27 @@ export function migrateInfo(info){
   return v;
 }
 
+/**
+ * Structure administrative de l'artiste = référence pour les informations légales et le régime de TVA (décision du 05/11/2026) :
+ * la fiche reprend ses valeurs sans ressaisie ; une réponse différente déjà donnée est listée (contradiction à vérifier), jamais
+ * appliquée à la structure. `admin` = coordonnées administratives de la structure (fiche structure › onglet administratif).
+ */
+const ADM_KEYS = ARTIST_SECTIONS.flatMap(s => s.fields).map(f => f.k).filter(k => k.startsWith('adm_'));
+const admNorm = (k, v) => ['adm_siret', 'adm_vat', 'adm_ape'].includes(k) ? String(v ?? '').toUpperCase().replace(/[^0-9A-Z]/g, '')
+  : String(v ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+export function fromAdmin(values, admin){
+  const out = {...values}, taken = [], conflicts = [];
+  for (const k of ADM_KEYS){
+    const ref = admin?.[k.slice(4)];
+    if (ref == null || String(ref).trim() === '') continue;
+    const cur = values[k];
+    if (cur != null && String(cur).trim() !== '' && admNorm(k, cur) !== admNorm(k, ref)) conflicts.push({k, fiche: String(cur), structure: String(ref)});
+    out[k] = String(ref); taken.push(k);
+  }
+  return {values: out, taken, conflicts};
+}
+export const ADM_LABEL = k => ALL_FIELDS.find(f => f.k === k)?.label || k;
+
 /** Texte d'une réponse, prêt à coller (listes : une ligne par élément) */
 export function fieldText(f, v){
   if (f.type === 'roles') return Object.entries(v || {}).map(([r, o]) => `${r} : ${f.cols.map(c => o?.[c.k]).filter(Boolean).join(' · ')}`).join('\n');

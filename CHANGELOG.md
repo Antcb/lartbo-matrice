@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.60.0 — 06/11/2026
+- Structure administrative de l'artiste = référence (décision du 05/11/2026) — la fiche artiste (lien public et onglet) reprend ses informations légales sans ressaisie ; une valeur différente est signalée, jamais appliquée ; TVA d'une date en booking à vérifier quand la structure n'est pas soumise ; champ N° RNA
+
+
 ## 1.59.0 — 05/11/2026
 - Acompte par défaut propre à un artiste (priorité date > artiste > Réglages, décision du 04/11/2026) — fiche artiste, « Valider les conditions », création des lignes à la confirmation, fiche publique et mails ; « Appliquer aux dates à venir » ne touche pas les artistes qui ont le leur
 

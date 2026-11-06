@@ -17,7 +17,7 @@ import { taskSection } from './todo.js';
 
 // Coordonnées administratives (champ admin de la structure) : [clé, libellé, pleine largeur ?]
 export const ADMIN_FIELDS = [
-  ['legal_name','Raison sociale'], ['legal_form','Forme juridique'], ['siret','SIRET'], ['ape','Code APE / NAF'],
+  ['legal_name','Raison sociale'], ['legal_form','Forme juridique'], ['siret','SIRET'], ['ape','Code APE / NAF'], ['rna','N° RNA (association)'],
   ['vat','N° TVA intracommunautaire'], ['licence','Licence(s) d’entrepreneur de spectacles'],
   ['address','Adresse du siège',true], ['postal_code','Code postal'], ['city','Ville'], ['country','Pays'],
   ['vat_subject','Soumise à la TVA (Oui / Non)'],
