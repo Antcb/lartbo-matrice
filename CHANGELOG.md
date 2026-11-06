@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.62.0 — 07/11/2026
+- Agendas Google des artistes (lecture seule) : numéro distinct de la messagerie (1.61) pour une livraison séparée ; pays par défaut France réglable, « show » en mot entier, jour local de l'événement, conflits sur les instants réels
+
+
 ## 1.61.0 — 06/11/2026
 - Agendas Google des artistes (lecture seule) : agenda relié dans la fiche artiste, indisponibilités dans Booking avec avertissement de chevauchement, « Show » sur la carte, association explicite avec une date existante
 

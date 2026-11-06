@@ -41,6 +41,19 @@ export function evSpan(e){
   const a = dayIn(e.start_at, e.time_zone), b = dayIn(e.end_at ? new Date(new Date(e.end_at).getTime() - 1).toISOString() : e.start_at, e.time_zone);
   return [a, b < a ? a : b];
 }
+/** Occurrences visibles (agenda actif ou en pause, non déconnecté ; non supprimées dans Google) */
+export function calEvents(projectIds = null){
+  const live = new Set(S.db.artist_calendars.filter(c => c.status !== 'deconnecte').map(c => c.id));
+  return S.db.artist_calendar_events.filter(e => !e.deleted_at && live.has(e.calendar_ref) && (!projectIds || projectIds.includes(e.project_id)));
+}
+/** Agenda à jour ? false = « disponibilités plus à jour » (pause, erreur, accès perdu, synchronisation trop ancienne) */
+export function calFresh(cal){
+  if (!cal || cal.status !== 'actif' || cal.last_error || !cal.last_ok_at) return false;
+  return Date.now() - new Date(cal.last_ok_at).getTime() < STALE_MIN * 60000;
+}
+export const evLabel = e => e.private || !e.title ? 'Indisponible' : e.title;
+
+/** Indisponibilités (occupé seulement) qui chevauchent une date de l'artiste */
 export function calOverlaps(v){
   if (!v?.project_id || !v.date) return [];
   const a = v.date, b = v.date_end && v.date_end > v.date ? v.date_end : v.date;
