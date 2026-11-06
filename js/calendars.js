@@ -97,6 +97,9 @@ async function reload(){
 }
 
 export const CAL_ACTIONS = {
+  copyCalendarScript: async () => { try { await navigator.clipboard.writeText(await (await fetch('apps-script/calendrier/Calendrier.gs?v=' + Date.now())).text()); toast('Code copié : colle-le dans Code.gs du projet « Matrice Agendas »'); } catch (err) { toast('Copie impossible : ' + err.message, true); } },
+  copyCalendarManifest: async () => { try { await navigator.clipboard.writeText(await (await fetch('apps-script/calendrier/appsscript.json?v=' + Date.now())).text()); toast('appsscript.json copié : remplace le contenu du manifeste du projet « Matrice Agendas »'); } catch (err) { toast('Copie impossible : ' + err.message, true); } },
+  testCalendarScript: async () => { const out = await invoke({mode: 'calendars'}); toast(out.ok ? `Script des agendas OK : ${out.calendars.length} agenda${out.calendars.length > 1 ? 's' : ''} visible${out.calendars.length > 1 ? 's' : ''} par production@` : out.error, !out.ok); },
   /** Choix explicite de l'agenda parmi ceux partagés avec production@ */
   calConnect: async t => {
     const pid = t.dataset.id, out = await invoke({mode: 'calendars'});

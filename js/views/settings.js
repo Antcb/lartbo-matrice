@@ -82,6 +82,18 @@ export function viewSettings(){
       <div class="vh-actions"><button class="btn sm" data-act="renameAudit">Vérifier les noms</button>
         ${setting('rename_sheet_url') ? `<a class="btn sm" href="${esc(setting('rename_sheet_url'))}" target="_blank" rel="noopener">Ouvrir le dernier tableau</a>` : ''}
         <button class="btn sm" data-act="renameApply">Appliquer les renommages cochés</button></div></div>
+    <div class="panel pad"><h3 class="panel-title">Agendas des artistes (lecture seule)</h3>
+      <p class="help mb">Les artistes partagent leur agenda Google avec <b>production@</b>. Un petit script <b>séparé</b>, installé sur ce compte, les lit sans pouvoir rien y écrire (accès « lecture seule » aux agendas) :</p>
+      <ol class="help steps-list">
+        <li><button class="btn sm" data-act="copyCalendarScript">Copier le code du script</button> et <button class="btn sm" data-act="copyCalendarManifest">Copier le fichier appsscript.json</button></li>
+        <li>Sur <a href="https://script.google.com/home/projects/create" target="_blank" rel="noopener">script.google.com</a> connecté avec production@ : nouveau projet « Matrice Agendas », colle le code dans Code.gs.</li>
+        <li>Paramètres du projet › coche « Afficher le fichier manifeste appsscript.json », puis remplace son contenu par le fichier copié (accès en lecture seule).</li>
+        <li>Paramètres du projet › Propriétés du script › <b>WEBHOOK_SECRET</b> : la même valeur que pour le script principal.</li>
+        <li>Déployer › Nouveau déploiement › <b>Application Web</b> · Exécuter en tant que : <b>moi</b> · Accès : <b>Tout le monde</b> › Déployer, autorise l’accès, puis colle l’adresse (…/exec) ici :</li>
+      </ol>
+      <div class="steps"><label for="set-cscript">Adresse du script des agendas</label><input id="set-cscript" data-setting-text="calendar_script_url" value="${esc(setting('calendar_script_url')||'')}" placeholder="https://script.google.com/macros/s/…/exec"></div>
+      <div class="vh-actions mt"><button class="btn sm" data-act="testCalendarScript">Tester</button></div>
+      <p class="help mt">Ensuite, dans la fiche de chaque artiste : « Relier son agenda Google ». Synchronisation toutes les 5 minutes une fois activée, ou « Actualiser ».</p></div>
     <div class="panel pad"><h3 class="panel-title">Prospection</h3>
       <p class="help mb">Les mails de prospection et les relances partent du Gmail de <b>${esc(setting('prospect_from') || 'anthony@lartboristerie.com')}</b> grâce à un petit script installé sur ce compte (une seule fois) :</p>
       <ol class="help" style="margin:0 0 12px;padding-left:18px">
@@ -176,7 +188,7 @@ document.addEventListener('change', async e => {
     if (/_id$/.test(kt) && kt !== 'brevo_list_id') v = (v.match(/[-\w]{25,}/) || [v])[0];   // un lien Drive collé → son identifiant
     if (kt === 'brevo_list_id') v = (v.match(/\d+/g) || []).join(', ');   // « #2 » → 2
     // adresses où le serveur envoie le code secret : seulement un script Google publié (même contrôle que la base et script-google, v1.47)
-    if (['drive_webhook_url', 'prospect_script_url'].includes(kt) && v && !/^https:\/\/script\.google\.com\/(a\/macros\/[\w.-]+|macros)\/s\/[\w-]+\/exec$/.test(v)){
+    if (['drive_webhook_url', 'prospect_script_url', 'calendar_script_url'].includes(kt) && v && !/^https:\/\/script\.google\.com\/(a\/macros\/[\w.-]+|macros)\/s\/[\w-]+\/exec$/.test(v)){
       toast('Colle l’adresse du déploiement du script Google : elle commence par https://script.google.com/ et finit par /exec', true); e.target.value = setting(kt) || ''; return; }
     // adresse du script de la boîte anthony@ : la base n'en accepte la modification que de son titulaire (messagerie v1.63) ;
     // vérifié ici d'abord pour dire pourquoi, sans toucher au réglage
