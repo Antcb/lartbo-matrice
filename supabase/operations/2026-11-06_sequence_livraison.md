@@ -15,8 +15,9 @@ Prérequis : séance sur le projet de test réussie (appels 1 à 5 de `essai/pla
 | 5a | **Fusion PR #28** (v1.57 → v1.59), « Rebase and merge » | arbre publié = arbre relu (`8995fe3`) ; `tests` verts sur `main` ; GitHub Pages publié |
 | 5b | **PR #29** recalée sur `main` (contenu identique vérifié), puis fusion | arbre publié = arbre relu ; `tests` verts ; Pages publié ; version affichée 1.60.1 |
 | 6 | **POGO TANGO** : `supabase/operations/2026-11-06_pogo_tango_structure_administrative.sql` | « La Pignata », ses 4 contacts et ses 27 dates inchangés ; aucun numéro de TVA ; RNA et représentant « à compléter » |
-| 7A | **TVA bloc A** (5 dates avec cachet → 0 %, HT inchangé) — *approuvable séparément* | 5 dates à 0 %, cachets inchangés ; Le Bayou et L'Atelier des Môles : kit de confirmation envoyé en juin, à vérifier, aucun renvoi automatique |
-| 7B | **TVA bloc B** (8 dates sans cachet → 0 %) — *approuvable séparément* | 8 dates à 0 %, aucun montant ni document |
+| 7A1 | **TVA groupe A1** (La Rayonne, Cabaret Sauvage, Le Family → 0 %, HT inchangé) — *approuvable séparément* | 3 dates à 0 %, cachets inchangés |
+| 7A2 | **TVA groupe A2** (Le Bayou, L’Atelier des Môles) — *seulement après accord d’Anthony sur les confirmations de juin* | 2 dates à 0 %, cachets inchangés, aucun renvoi automatique |
+| 7B | **TVA groupe B** (8 dates sans cachet → 0 %) — *approuvable séparément* | 8 dates à 0 %, aucun montant ni document |
 | 8 | **Vérifications après publication** (lecture seule) | ouverture de l'application, onglets Spectacles / Budget / Fiche artiste, alerte TVA disparue pour La Pigñata, sauvegarde de la nuit suivante « Conforme » |
 
 Non concernés : scripts Google (aucune modification dans ces lots), Pennylane (aucune facture ni brouillon modifié ; prochaines commissions booking de La Pigñata adressées à POGO TANGO).
