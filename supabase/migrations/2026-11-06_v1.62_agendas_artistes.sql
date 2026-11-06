@@ -20,6 +20,7 @@ create table if not exists public.artist_calendars (
   last_ok_at timestamptz,
   last_error text,
   mode text,                                     -- 'details' ou 'disponibilites' (lu au dernier passage)
+  default_country text not null default 'FR',    -- pays retenu quand le lieu d'un événement n'en écrit pas (France par défaut, réglable)
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -43,6 +44,8 @@ create table if not exists public.artist_calendar_events (
   is_show boolean not null default false,        -- titre contenant « show » (sans tenir compte de la casse)
   city text, lat double precision, lng double precision,
   geo_status text not null default 'sans_lieu' check (geo_status in ('ok', 'a_preciser', 'sans_lieu')),
+  geo_key text,                                  -- pays par défaut | lieu ayant servi à la localisation (recalcul si l'un change)
+  time_zone text,                                -- fuseau de l'événement à l'heure (jour local affiché ; conflits sur les instants)
   show_id uuid references public.shows(id) on delete set null,   -- association explicite avec une date existante
   deleted_at timestamptz,                        -- supprimé dans Google (ou hors agenda) : gardé, plus affiché
   updated_at timestamptz not null default now(),
