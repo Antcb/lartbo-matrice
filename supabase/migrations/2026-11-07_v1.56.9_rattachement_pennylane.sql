@@ -196,7 +196,8 @@ begin
   -- noté à la main est bien ce document) ; une ligne payée sans n° n'est jamais choisie (paiement d'un autre document ?)
   if tgt.pennylane_id is not null then raise exception 'La ligne choisie a déjà sa facture Pennylane : corrige d''abord cette ligne-là'; end if;
   if nullif(btrim(tgt.invoice_number), '') is not null
-     and upper(regexp_replace(tgt.invoice_number, '\s', '', 'g')) <> upper(regexp_replace(coalesce(src.invoice_number, pend.invoice_number, ''), '\s', '', 'g')) then
+     -- même comparaison que la synchronisation (norm : lettres et chiffres seuls, sans casse) : « F2026108 » = « F-2026-108 »
+     and upper(regexp_replace(tgt.invoice_number, '[^A-Za-z0-9]', '', 'g')) <> upper(regexp_replace(coalesce(src.invoice_number, pend.invoice_number, ''), '[^A-Za-z0-9]', '', 'g')) then
     raise exception 'La ligne choisie porte déjà le n° % (cette facture : %) : ce n''est pas le même document', tgt.invoice_number, coalesce(src.invoice_number, pend.invoice_number, '?');
   end if;
   if tgt.paid_at is not null and nullif(btrim(tgt.invoice_number), '') is null then
