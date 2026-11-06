@@ -6,9 +6,10 @@
 --   - mail_messages : une ligne par message Gmail (boîte + identifiant uniques → aucun doublon aux synchronisations et reprises) ;
 --   - mail_sync_state : dernier passage, point de reprise Gmail (historyId), dernière erreur — affichés dans l'espace Mails ;
 --   - mail_link_thread : rattachement (règles d'Anthony) ; mail_journal : journal du suivi + relances suspendues à la réponse ;
---   - mail_sync_tick : appelée toutes les 5 min par la tâche planifiée « mail-sync » ; ne fait RIEN tant que le réglage
---     « mail_sync_url » est vide (activation en production seulement sur autorisation).
--- Retour arrière : désactiver la tâche planifiée (ou vider mail_sync_url) ; les tables peuvent rester (vides = aucun effet).
+--   - mail_sync_tick : appelée toutes les 5 min par la tâche planifiée « mail-sync » ; ne fait RIEN tant que l'adresse de la fonction
+--     n'est pas inscrite dans private.sync_urls (schéma privé : ni l'application ni un compte de l'équipe ne peuvent l'écrire, donc le
+--     code des scripts Google ne peut pas être envoyé ailleurs — relecture v1.61, B2). Activation en production seulement sur autorisation.
+-- Retour arrière : désactiver la tâche planifiée (ou retirer la ligne de private.sync_urls) ; les tables peuvent rester (vides = aucun effet).
 -- =====================================================================================================
 create table if not exists public.mail_threads (
   id uuid primary key default gen_random_uuid(),
@@ -64,8 +65,10 @@ create table if not exists public.mail_sync_state (
   last_run_at timestamptz,
   last_ok_at timestamptz,
   last_error text,
+  pending text[] not null default '{}',                 -- conversations changées restant à lire (plus de 30 à la fois : lues aux passages suivants)
   updated_at timestamptz not null default now()
 );
+alter table public.mail_sync_state add column if not exists pending text[] not null default '{}';
 comment on table public.mail_sync_state is 'Synchronisation de la messagerie : point de reprise Gmail, dernier passage, dernière erreur (v1.61)';
 
 -- message Gmail d'une ligne du journal écrite par L'ArtBotrice (prospection, relance, réponse) : la synchronisation la reconnaît (aucun doublon)
@@ -116,10 +119,10 @@ begin
   else
     select count(*), min(id::text)::uuid into n_suivis, su from prospects where structure_id = st and coalesce(status, '') not in ('Closed', 'Confirmed');
     if n_suivis > 1 then reason := 'Plusieurs suivis ouverts pour cette structure : à choisir';
+    elsif n_suivis = 0 then reason := 'Aucun suivi ouvert pour cette structure : à choisir ou à créer';
     else
       update mail_threads set structure_id = st, prospect_id = su, link_status = 'auto',
-        link_reason = case when su is null then 'Contact connu d''une seule structure (aucun suivi ouvert)' else 'Contact connu d''une seule structure et d''un seul suivi ouvert' end
-        where id = p_thread;
+        link_reason = 'Contact connu d''une seule structure et d''un seul suivi ouvert' where id = p_thread;
       return;
     end if;
   end if;
@@ -143,6 +146,7 @@ begin
       if log_id is null then
         select l.id into log_id from prospect_logs l
           where l.prospect_id = t.prospect_id and l.kind = 'Mail' and coalesce(l.author, '') <> 'Messagerie' and l.gmail_message_id is null
+            and l.body like '**%'   -- ligne écrite par un envoi de L'ArtBotrice (« **Prospection… », « **Relance… », « **… envoyée** »), jamais une note
             and (l.date is null or l.date = (coalesce(m.sent_at, now()) at time zone 'Europe/Paris')::date)
             and l.created_at <= coalesce(m.sent_at, now()) + interval '1 day'
             and not exists (select 1 from mail_messages x where x.prospect_log_id = l.id)
@@ -207,6 +211,13 @@ begin
   if p_prospect is not null and p_structure is not null and not exists (select 1 from prospects where id = p_prospect and structure_id = p_structure) then
     raise exception 'Ce suivi n''appartient pas à cette structure';
   end if;
+  -- suivi corrigé : les lignes écrites par la messagerie suivent la conversation (les lignes écrites par l'équipe restent où elles sont)
+  update prospect_logs l set prospect_id = p_prospect
+    where p_prospect is not null and l.author = 'Messagerie' and l.prospect_id is distinct from p_prospect
+      and l.id in (select prospect_log_id from mail_messages where thread_id = p_thread and prospect_log_id is not null);
+  update mail_messages set prospect_log_id = null
+    where thread_id = p_thread and prospect_log_id in (select id from prospect_logs where author is distinct from 'Messagerie')
+      and p_prospect is distinct from (select prospect_id from mail_threads where id = p_thread);
   update mail_threads set structure_id = p_structure, prospect_id = p_prospect, project_id = p_project, show_id = p_show,
     link_status = case when p_structure is null and p_prospect is null then 'a_rattacher' else 'manuel' end,
     link_reason = case when p_structure is null and p_prospect is null then 'Rattachement retiré' else 'Rattaché à la main' end
@@ -220,9 +231,12 @@ revoke all on function public.mail_link_manual(uuid, uuid, uuid, uuid, uuid) fro
 grant execute on function public.mail_link_manual(uuid, uuid, uuid, uuid, uuid) to authenticated, service_role;
 
 -- ── Synchronisation toutes les 5 minutes : appel de la fonction serveur « mail-sync » ; inactive tant que mail_sync_url est vide ──
+-- adresses des fonctions appelées par les tâches planifiées : schéma privé (inaccessible à l'application et aux comptes de l'équipe)
+create table if not exists private.sync_urls (key text primary key, url text not null);
+revoke all on private.sync_urls from public, anon, authenticated;
 create or replace function public.mail_sync_tick() returns void
 language plpgsql security definer set search_path = public as $$
-declare u text := nullif(btrim(coalesce(public.setting_text('mail_sync_url'), '')), ''); sec text := public.setting_text('drive_webhook_secret');
+declare u text := (select url from private.sync_urls where key = 'mail-sync'); sec text := public.setting_text('drive_webhook_secret');
 begin
   if u is null or u !~ '^https://[a-z0-9]+\.supabase\.co/functions/v1/mail-sync$' or coalesce(sec, '') = '' then return; end if;
   perform net.http_post(url := u, headers := jsonb_build_object('Content-Type', 'application/json', 'x-hook-secret', sec),

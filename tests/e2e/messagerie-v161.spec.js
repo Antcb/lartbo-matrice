@@ -137,3 +137,19 @@ test('v1.61 : limite de Gmail calculée sur le message encodé (base64), pas sur
   expect(r.brut17).toBeLessThan(25);
   expect(r.deux).toBeGreaterThan(25);
 });
+
+test('v1.61 : un modèle inséré ne remplace jamais un texte sélectionné (relecture B3)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page);
+  await page.locator('.mail-row', { hasText: 'Proposition' }).click();
+  await page.locator('.mail-actions [data-act=mailCompose][data-mode=reply]').first().click();
+  await page.locator('#mc-body').evaluate(el => { el.innerHTML = '<p>TEXTE IMPORTANT</p>'; el.focus();
+    const r = document.createRange(); r.selectNodeContents(el.firstChild); const s = getSelection(); s.removeAllRanges(); s.addRange(r); });
+  await page.locator('#mc-tpl').selectOption('mt-1');
+  await page.locator('#mc-ins').click();
+  await expect(page.locator('#mc-body')).toContainText('TEXTE IMPORTANT');
+  await expect(page.locator('#mc-body')).toContainText('Bonjour');
+  const order = await page.locator('#mc-body').innerText();
+  expect(order.indexOf('TEXTE IMPORTANT')).toBeLessThan(order.indexOf('Bonjour'));   // inséré après la sélection
+  expectClean(ctx);
+});

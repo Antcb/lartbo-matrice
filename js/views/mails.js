@@ -17,7 +17,8 @@ const when = iso => { if (!iso) return ''; const d = new Date(iso);
  */
 export function frameDoc(html, remoteImages = false){
   const csp = `default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:${remoteImages ? ' https:' : ''}; form-action 'none'; base-uri 'none'`;
-  return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><base target="_blank">${html || ''}`;
+  const clean = String(html || '').replace(/<script\b[\s\S]*?(<\/script\s*>|$)/gi, '');   // en plus du cadre sans script : retirés d'avance
+  return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><base target="_blank">${clean}`;
 }
 const hasRemote = html => /<img[^>]+src\s*=\s*["']?\s*(https?:)?\/\//i.test(html || '') || /url\(\s*["']?\s*(https?:)?\/\//i.test(html || '');
 const HIDDEN_LABELS = /^(CATEGORY_|CHAT$|DRAFT$|UNREAD$|IMPORTANT$|STARRED$|SENT$|INBOX$|SPAM$|TRASH$)/;

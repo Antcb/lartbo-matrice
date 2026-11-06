@@ -1024,3 +1024,5 @@ dialog.mail .mail-grid>input.mc-wide{grid-column:span 3}
   .mail-who{grid-area:who}.mail-date{grid-area:date}.mail-subj{grid-area:subj;white-space:normal}.mail-meta{grid-area:meta}
 }
 .mail-img-note{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;font-size:12px;margin:0 0 var(--sp-1)}
+.mail-msg .ml-att{display:flex;flex-wrap:wrap;gap:var(--sp-1)}
+.mail-msg .att-chip{flex-wrap:wrap;max-width:100%;min-width:0;overflow-wrap:anywhere}
