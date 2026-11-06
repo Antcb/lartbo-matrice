@@ -55,6 +55,31 @@ do $$ declare t text; begin
   end loop;
 end $$;
 
+
+-- Protection des factures émises (§7.3, show_payments_emitted_guard) : seule exception ajoutée — la CORRECTION d'un rattachement
+-- faite par pennylane_rattacher (transaction annoncée « rattachement_pennylane ») peut libérer une ligne d'acompte / de solde NON
+-- payée de sa facture (n°, lien, envoi) ; rien d'autre ne change (%, TVA, date, nature), le montant ne peut que revenir au calcul.
+-- Garde : la fonction de production doit être exactement la version attendue (empreinte), sinon la migration s'arrête.
+do $m$
+declare n text; anchor text := '  if (old.paid_at is not null and new.paid_at is null)';
+begin
+  n := pg_get_functiondef('public.show_payments_emitted_guard'::regproc);
+  if md5(n) is distinct from '208e21f521e534840b603225af5e5a06' then
+    raise exception 'v1.56.9 : show_payments_emitted_guard n''est pas la version attendue (empreinte %) : migration arrêtée, rien n''est appliqué', md5(n);
+  end if;
+  if (length(n) - length(replace(n, anchor, ''))) / length(anchor) <> 1 then raise exception 'v1.56.9 : point d''insertion introuvable : migration arrêtée'; end if;
+  n := replace(n, anchor, $x$  if not self_paid and coalesce(current_setting('matrice.regularisation', true), '') = 'rattachement_pennylane'
+     and old.kind in ('acompte', 'solde') and old.paid_at is null and new.paid_at is null
+     and new.pennylane_id is null and new.invoice_number is null and new.sent_at is null
+     and new.pct is not distinct from old.pct and new.vat_rate is not distinct from old.vat_rate
+     and new.show_id is not distinct from old.show_id and new.kind is not distinct from old.kind
+     and (new.amount is not distinct from old.amount or new.amount is null) then
+    return new;   -- correction d'un rattachement Pennylane (v1.56.9), jamais une ligne payée
+  end if;
+$x$ || anchor);
+  execute n;
+end $m$;
+
 /**
  * Rattache (ou rattache autrement) une facture Pennylane du devis à une ligne d'acompte ou de solde de la MÊME date.
  *   p_pennylane_id : facture ; p_payment : ligne choisie ; p_motif : obligatoire pour une correction (facture déjà sur une autre ligne).
@@ -90,6 +115,7 @@ begin
   before_j := jsonb_build_object('source', case when has_src then to_jsonb(src) end, 'cible', to_jsonb(tgt));
 
   if has_src then
+    perform set_config('matrice.regularisation', 'rattachement_pennylane', true);   -- exception de la protection, pour cette transaction
     -- montant figé par la synchronisation ? (dernière écriture du montant faite par le serveur, à la valeur actuelle — journal financier)
     select coalesce((select f.actor = 'service_role' and f.new_value ~ '^-?[0-9]+(\.[0-9]+)?$' and f.new_value::numeric = src.amount from finance_log f
       where f.table_name = 'show_payments' and f.row_id::text = src.id::text and f.field = 'amount' order by f.at desc, f.id desc limit 1), false) into figee;
@@ -99,6 +125,7 @@ begin
       reminded_at = null, drive_file_id = null,
       amount = case when figee then null else amount end
       where id = src.id;
+    perform set_config('matrice.regularisation', '', true);
   end if;
   update show_payments set pennylane_id = p_pennylane_id,
       pennylane_url = coalesce(src.pennylane_url, pend.url), invoice_number = coalesce(src.invoice_number, pend.invoice_number),
