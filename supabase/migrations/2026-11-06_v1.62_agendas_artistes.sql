@@ -69,9 +69,16 @@ create trigger artist_calendars_touch before update on public.artist_calendars f
 -- ── Synchronisation planifiée (toutes les 5 min) : appel de la fonction serveur « cal-sync » ; inactive tant que cal_sync_url est vide ──
 create table if not exists private.sync_urls (key text primary key, url text not null);
 revoke all on private.sync_urls from public, anon, authenticated;
+-- secret serveur DÉDIÉ des appels automatiques (« cal_sync_hook ») : tiré au hasard ici, rangé dans le schéma privé (comme le jeton
+-- Pennylane), lu seulement par la tâche planifiée et par la fonction serveur (import_secret, réservé au rôle serveur).
+-- Personne ne le saisit ni ne le voit ; il n'est jamais envoyé au navigateur, placé dans une adresse ou écrit dans un journal.
+insert into private.import_secrets (key, value)
+  values ('cal_sync_hook', replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''))
+  on conflict (key) do nothing;
+
 create or replace function public.cal_sync_tick() returns void
 language plpgsql security definer set search_path = public as $$
-declare u text := (select url from private.sync_urls where key = 'cal-sync'); sec text := public.setting_text('drive_webhook_secret');
+declare u text := (select url from private.sync_urls where key = 'cal-sync'); sec text := (select value from private.import_secrets where key = 'cal_sync_hook');
 begin
   if u is null or u !~ '^https://[a-z0-9]+\.supabase\.co/functions/v1/cal-sync$' or coalesce(sec, '') = '' then return; end if;
   if not exists (select 1 from artist_calendars where status = 'actif') then return; end if;
