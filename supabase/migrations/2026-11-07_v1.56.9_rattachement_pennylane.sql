@@ -64,6 +64,7 @@ do $m$
 declare n text; anchor text := '  if (old.paid_at is not null and new.paid_at is null)';
 begin
   n := pg_get_functiondef('public.show_payments_emitted_guard'::regproc);
+  if position('rattachement_pennylane' in n) > 0 then raise notice 'v1.56.9 : protection déjà à jour (2e passage)'; return; end if;
   if md5(n) is distinct from '208e21f521e534840b603225af5e5a06' then
     raise exception 'v1.56.9 : show_payments_emitted_guard n''est pas la version attendue (empreinte %) : migration arrêtée, rien n''est appliqué', md5(n);
   end if;
