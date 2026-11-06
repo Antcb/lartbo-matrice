@@ -60,7 +60,8 @@ async function store(threads: Thread[]) {
       subject: m.subject || null, snippet: m.snippet || null, sent_at: m.date || null,
       attachments: (m.attachments || []).map((a) => ({ name: a.name, size: a.size, mime: a.mime })) }));
     if (msgs.length) {
-      const { error: e2 } = await admin.from('mail_messages').upsert(msgs, { onConflict: 'mailbox,gmail_message_id', ignoreDuplicates: true });
+      // message déjà connu : libellés / pièces jointes mis à jour ; son lien avec le journal (prospect_log_id, non envoyé ici) est gardé
+      const { error: e2 } = await admin.from('mail_messages').upsert(msgs, { onConflict: 'mailbox,gmail_message_id' });
       if (e2) throw new Error('Enregistrement des messages : ' + e2.message);
     }
   }
@@ -90,7 +91,7 @@ Deno.serve(async (req) => {
 
   const now = new Date().toISOString();
   try {
-    let threads: Thread[] = [], historyId: string | null = null, remaining = 0;
+    let threads: Thread[] = [], historyId: string | null = null, remaining = 0, pendingAfter: string[] = [];
     if (mode === 'threads') {
       const ids = (Array.isArray(body.ids) ? body.ids : []).map(String).filter((s: string) => /^[0-9a-f]{6,32}$/i.test(s)).slice(0, 25);
       for (const id of ids) {
@@ -98,18 +99,26 @@ Deno.serve(async (req) => {
         threads.push(j.thread);
       }
     } else {
-      const { data: state } = await admin.from('mail_sync_state').select('history_id').eq('mailbox', MAILBOX).maybeSingle();
+      // plus de 30 conversations changées : le reste est gardé (pending) et lu aux passages suivants, le point de reprise avance
+      // toujours (relecture v1.61, B1 : jamais deux fois les mêmes 30, plus de balayage complet sans fin)
+      const { data: state } = await admin.from('mail_sync_state').select('history_id, pending').eq('mailbox', MAILBOX).maybeSingle();
       await admin.from('mail_sync_state').upsert({ mailbox: MAILBOX, last_run_at: now }, { onConflict: 'mailbox' });
-      const j = await script(url, secret, 'history', { start_history_id: state?.history_id || null, max: 30 });
-      threads = j.threads || []; remaining = (j.remaining || []).length;
-      // conversations restantes : point de reprise inchangé, elles reviennent au prochain passage
-      historyId = remaining ? (state?.history_id || null) : (j.history_id ? String(j.history_id) : null);
+      const pending: string[] = state?.pending || [];
+      if (pending.length) {
+        const j = await script(url, secret, 'history', { ids: pending.slice(0, 30) });
+        threads = j.threads || []; pendingAfter = pending.slice(30);
+      } else {
+        const j = await script(url, secret, 'history', { start_history_id: state?.history_id || null, max: 30 });
+        threads = j.threads || []; pendingAfter = (j.remaining || []).map(String);
+        historyId = j.history_id ? String(j.history_id) : null;
+      }
+      remaining = pendingAfter.length;
     }
     const ids = await store(threads);
     const { data: processed, error: pe } = ids.length ? await admin.rpc('mail_process', { p_threads: ids }) : { data: 0, error: null };
     if (pe) throw new Error('Rattachement / journal : ' + pe.message);
     if (mode === 'sync') {
-      const patch: Record<string, unknown> = { mailbox: MAILBOX, last_ok_at: new Date().toISOString(), last_error: null };
+      const patch: Record<string, unknown> = { mailbox: MAILBOX, last_ok_at: new Date().toISOString(), last_error: null, pending: pendingAfter };
       if (historyId) patch.history_id = historyId;
       await admin.from('mail_sync_state').upsert(patch, { onConflict: 'mailbox' });
     }

@@ -88,7 +88,9 @@ function utf8_(s) { return Utilities.newBlob('').setDataFromString(String(s || '
  * o : { to, cc, subject, html, attachments: [blobs], threadId, inReplyTo, references, fromName, send }
  */
 var MAX_MESSAGE_BYTES_ = 25 * 1024 * 1024;
+function oneLine_(v) { return String(v || '').replace(/[\r\n]+/g, ' ').trim(); }   // en-têtes : jamais de retour à la ligne glissé
 function mimeDraft_(o) {
+  o.to = oneLine_(o.to); o.cc = oneLine_(o.cc); o.bcc = oneLine_(o.bcc); o.subject = oneLine_(o.subject);
   if (typeof Gmail === 'undefined') throw new Error('Active « Gmail API » dans le script Google (Services › + › Gmail API), puis redéploie');
   var me = Session.getEffectiveUser().getEmail();
   var mixed = 'mix' + Date.now(), alt = 'alt' + Date.now();
@@ -190,6 +192,10 @@ function addrs_(v) {
   });
   return out;
 }
+/** Conversation sans corps de message, mais avec la structure des parties (noms et tailles des pièces jointes) */
+var META_FIELDS_ = 'id,messages(id,threadId,labelIds,internalDate,snippet,payload(mimeType,filename,headers,body(size,attachmentId),'
+  + 'parts(mimeType,filename,body(size,attachmentId),parts(mimeType,filename,body(size,attachmentId),parts(mimeType,filename,body(size,attachmentId))))))';
+function threadLight_(id) { return Gmail.Users.Threads.get('me', id, { format: 'full', fields: META_FIELDS_ }); }
 function me_() { return Session.getEffectiveUser().getEmail().toLowerCase(); }
 function b64dec_(data) { return Utilities.newBlob(Utilities.base64DecodeWebSafe(data)).getDataAsString('UTF-8'); }
 
@@ -226,8 +232,7 @@ function threads_(b) {
   if (b.page_token) opt.pageToken = String(b.page_token);
   var res = Gmail.Users.Threads.list('me', opt), list = [];
   (res.threads || []).forEach(function (t) {
-    var full = Gmail.Users.Threads.get('me', t.id, { format: 'metadata', metadataHeaders: ['From', 'To', 'Cc', 'Subject', 'Date', 'Reply-To', 'Message-ID'] });
-    list.push(threadMeta_(full, me));
+    list.push(threadMeta_(threadLight_(t.id), me));
   });
   return { ok: true, threads: list, next_page_token: res.nextPageToken || null, account: me };
 }
@@ -338,6 +343,11 @@ function attachment_(b) {
  */
 function history_(b) {
   var me = me_(), profile = Gmail.Users.getProfile('me'), ids = {}, full = false;
+  if (b.ids && b.ids.length) {   // conversations restées en attente au passage précédent : lues telles quelles, sans historique
+    var out0 = [];
+    b.ids.slice(0, 50).forEach(function (id) { try { out0.push(threadMeta_(threadLight_(String(id)), me)); } catch (err) { out0.push({ id: String(id), missing: true }); } });
+    return { ok: true, account: me, threads: out0, remaining: [] };
+  }
   if (b.start_history_id) {
     try {
       var token = null;
@@ -363,7 +373,7 @@ function history_(b) {
   }
   var list = Object.keys(ids), limit = Math.min(Number(b.max) || 30, 50), out = [];
   list.slice(0, limit).forEach(function (id) {
-    try { out.push(threadMeta_(Gmail.Users.Threads.get('me', id, { format: 'metadata', metadataHeaders: ['From', 'To', 'Cc', 'Subject', 'Date', 'Reply-To', 'Message-ID'] }), me)); }
+    try { out.push(threadMeta_(threadLight_(id), me)); }
     catch (err) { out.push({ id: id, missing: true }); }   // conversation supprimée définitivement depuis Gmail
   });
   return { ok: true, account: me, history_id: String(profile.historyId), threads: out, remaining: list.slice(limit), full: full };

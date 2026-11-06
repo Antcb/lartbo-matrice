@@ -191,7 +191,7 @@ export async function compose(mode, row = null, msg = null){
       <label for="mc-tpl">Modèle</label><span class="mail-to"><select id="mc-tpl"><option value="">— choisir —</option>${tpls.map(x => `<option value="${x.id}">${esc(x.name || 'Modèle')} · ${esc(tplLabel(x))}</option>`).join('')}</select>
         <button type="button" class="btn sm" id="mc-ins">Insérer</button></span>
     </div>
-    <p class="help">Insérer un modèle ajoute son texte à l’endroit du curseur (sinon à la fin) : rien de ce qui est déjà écrit, ni les destinataires, ni les pièces jointes ne sont remplacés. Balises vides : surlignées « à compléter ».</p>
+    <p class="help">Insérer un modèle ajoute son texte à l’endroit du curseur, après un texte sélectionné (sinon en haut du texte) : rien de ce qui est déjà écrit, ni les destinataires, ni les pièces jointes ne sont remplacés. Balises vides : surlignées « à compléter ».</p>
     ${rtToolbar('mc-body')}<div class="mail-preview" id="mc-body" contenteditable="true" style="${rtStyle()}" aria-label="Texte du mail">${saved.html ?? (sig ? '<br><br>' + sig : '')}</div>
     <div class="ml-att"><b class="fiche-lbl">Pièces jointes</b> <span id="mc-files"></span>
       <button type="button" class="btn sm" id="mc-docs">Ajouter depuis un projet/spectacle</button>
@@ -241,7 +241,8 @@ export async function compose(mode, row = null, msg = null){
     const tp = byId('mail_templates', $('#mc-tpl').value); if (!tp) return toast('Choisis un modèle', true);
     const vars = await contextVars(ctx), html = fill(tp.html, vars, true);
     const node = document.createElement('div'); node.innerHTML = html;
-    if (range){ range.deleteContents(); range.insertNode(node); range = null; } else $('#mc-body').insertBefore(node, $('#mc-body').firstChild);
+    // jamais de remplacement : une sélection reste en place, le modèle s'insère juste après (au curseur), sinon en haut du texte
+    if (range){ range.collapse(false); range.insertNode(node); range = null; } else $('#mc-body').insertBefore(node, $('#mc-body').firstChild);
     // objet vide (nouveau mail, transfert) : celui du modèle ; un objet déjà écrit n'est jamais remplacé
     if (!$('#mc-subj').readOnly && !$('#mc-subj').value.trim() && tp.subject) $('#mc-subj').value = fill(tp.subject, vars, false);
     // copie du modèle : ajoutée aux copies existantes, jamais à leur place
@@ -330,7 +331,11 @@ export const MAIL_ACTIONS = {
     await modify(r, on ? {remove: [choice]} : {add: [choice]}, on ? 'Libellé retiré' : 'Libellé ajouté'); },
   mailRelance: () => { const r = byId('mail_threads', M.open); if (r) scheduleRelance(r); },
   mailAttPreview: async t => { try { const f = await fetchAttachment(t.dataset.msg, M.thread.messages.find(m => m.id === t.dataset.msg).attachments[Number(t.dataset.i)]);
-    const u = URL.createObjectURL(f); window.open(u, '_blank', 'noopener'); setTimeout(() => URL.revokeObjectURL(u), 60000); } catch (e) { toast(e.message, true); } },
+    // affichés seulement : PDF et images courantes ; tout le reste (HTML, SVG, XML…) est téléchargé, jamais ouvert comme une page
+    const u = URL.createObjectURL(f);
+    if (/^(application\/pdf|image\/(png|jpeg|gif|webp))$/i.test(f.type)) window.open(u, '_blank', 'noopener');
+    else { const a = document.createElement('a'); a.href = u; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }
+    setTimeout(() => URL.revokeObjectURL(u), 60000); } catch (e) { toast(e.message, true); } },
   mailAttKeep: async t => { const r = byId('mail_threads', M.open); if (!r?.prospect_id) return toast('Rattache d’abord la conversation à un suivi', true);
     const att = M.thread.messages.find(m => m.id === t.dataset.msg).attachments[Number(t.dataset.i)];
     if (!(await confirmAsk('Conserver la pièce jointe ?', `« ${att.name} » (${fmtSize(att.size)}) est copiée dans les fichiers du suivi « ${prospectTitle(byId('prospects', r.prospect_id))} ».`, 'Conserver'))) return;
