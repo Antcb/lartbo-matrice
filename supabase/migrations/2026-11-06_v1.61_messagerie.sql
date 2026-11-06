@@ -234,9 +234,16 @@ grant execute on function public.mail_link_manual(uuid, uuid, uuid, uuid, uuid) 
 -- adresses des fonctions appelées par les tâches planifiées : schéma privé (inaccessible à l'application et aux comptes de l'équipe)
 create table if not exists private.sync_urls (key text primary key, url text not null);
 revoke all on private.sync_urls from public, anon, authenticated;
+-- secret serveur DÉDIÉ des appels automatiques (« mail_sync_hook ») : tiré au hasard ici, rangé dans le schéma privé (comme le jeton
+-- Pennylane), lu seulement par la tâche planifiée et par la fonction serveur (import_secret, réservé au rôle serveur).
+-- Personne ne le saisit ni ne le voit ; il n'est jamais envoyé au navigateur, placé dans une adresse ou écrit dans un journal.
+insert into private.import_secrets (key, value)
+  values ('mail_sync_hook', replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''))
+  on conflict (key) do nothing;
+
 create or replace function public.mail_sync_tick() returns void
 language plpgsql security definer set search_path = public as $$
-declare u text := (select url from private.sync_urls where key = 'mail-sync'); sec text := public.setting_text('drive_webhook_secret');
+declare u text := (select url from private.sync_urls where key = 'mail-sync'); sec text := (select value from private.import_secrets where key = 'mail_sync_hook');
 begin
   if u is null or u !~ '^https://[a-z0-9]+\.supabase\.co/functions/v1/mail-sync$' or coalesce(sec, '') = '' then return; end if;
   perform net.http_post(url := u, headers := jsonb_build_object('Content-Type', 'application/json', 'x-hook-secret', sec),
