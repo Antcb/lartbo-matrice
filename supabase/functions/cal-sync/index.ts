@@ -2,7 +2,7 @@
 // (projet Apps Script distinct, accès calendar.readonly : il ne peut rien écrire dans un agenda).
 //   - équipe connectée (is_team) : { mode: 'calendars' } (agendas partagés avec production@, pour le choix explicite dans la fiche artiste)
 //     ou { mode: 'sync', project_id? } (« Actualiser ») ;
-//   - tâche planifiée (toutes les 5 min, en-tête x-hook-secret = code des scripts Google) : { mode: 'sync' }.
+//   - tâche planifiée (toutes les 5 min, en-tête x-hook-secret = secret serveur dédié « cal_sync_hook ») : { mode: 'sync' }.
 // Fenêtre lue : 30 jours en arrière → 18 mois en avant, relue en entier à chaque passage (récurrences et exceptions développées par
 // Google, créations, modifications, suppressions) ; une ligne par occurrence (aucun doublon). Une occurrence disparue de Google est
 // marquée supprimée (gardée, plus affichée). Événements privés ou agenda « disponibilités seulement » : ni titre ni lieu enregistrés.
@@ -116,8 +116,11 @@ Deno.serve(async (req) => {
   if (se) return json({ ok: false, error: 'Réglages illisibles pour le moment.' }, 500);
   const val = (k: string) => String(st?.find((r: any) => r.key === k)?.value ?? '').trim();
   const url = val('calendar_script_url'), secret = val('drive_webhook_secret');
+  // appel automatique : secret serveur DÉDIÉ (« cal_sync_hook », créé par la migration dans le schéma privé, jamais affiché, jamais
+  // dans le navigateur, une adresse ou un journal) ; sinon compte de l'équipe. Sans justificatif ou justificatif faux : 403.
   const hook = req.headers.get('x-hook-secret') || '';
-  let team = false, allowed = !!hook && same(hook, secret);
+  const { data: hookSecret } = hook ? await admin.rpc('import_secret', { k: 'cal_sync_hook' }) : { data: null };
+  let team = false, allowed = !!hook && !!hookSecret && same(hook, String(hookSecret));
   if (!allowed) {
     const user = createClient(URL_, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization') || '' } }, auth: { persistSession: false } });
     const { data } = await user.rpc('is_team'); team = allowed = data === true;
