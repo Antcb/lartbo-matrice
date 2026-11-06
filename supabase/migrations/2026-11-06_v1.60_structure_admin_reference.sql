@@ -17,8 +17,10 @@ begin
     ('artist_get', 'c7b58127a7703658238b92470faa2d6a',
      $x$    'submitted_at', p.artist_submitted_at);$x$,
      $x$    'submitted_at', p.artist_submitted_at,
-    -- structure administrative de l'artiste = référence (décision du 05/11/2026) : reprise dans la fiche, sans ressaisie (remarques internes exclues)
-    'admin', (select coalesce(st.admin, '{}') - 'notes' from structures st where st.id = p.admin_structure_id));$x$),
+    -- structure administrative de l'artiste = référence (décision du 05/11/2026) : reprise dans la fiche, sans ressaisie (seulement les champs de la fiche)
+    'admin', (select coalesce(jsonb_object_agg(e.key, e.value), '{}') from structures st cross join jsonb_each(coalesce(st.admin, '{}')) e
+               where st.id = p.admin_structure_id and e.key in ('legal_name', 'legal_form', 'siret', 'ape', 'vat', 'licence', 'address', 'postal_code',
+                 'city', 'country', 'vat_subject', 'signatory', 'signatory_role', 'email', 'phone', 'billing_email')));   -- seulement les champs de la fiche$x$),
     ('artist_sync', '29ab064e3fb965d0e13c58ba7a8b8668',
      $x$declare p projects%rowtype; m jsonb; adm jsonb := '{}'; k text; st_id uuid; dup_id uuid; mem_id uuid; bd date;$x$,
      $x$declare p projects%rowtype; m jsonb; adm jsonb := '{}'; k text; st_id uuid; dup_id uuid; mem_id uuid; bd date; diffs jsonb;$x$),

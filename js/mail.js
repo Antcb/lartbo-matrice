@@ -7,7 +7,7 @@
  * (réglage drive_webhook_url) ; sans lui, on copie le mail pour le coller dans Gmail.
  */
 import { confirmAsk } from './ui/dialog.js';
-import { billPct, isCoproduction, paymentsOf } from './calc.js';
+import { billPct, isCoproduction, paymentsOf, vatConflict } from './calc.js';
 import { ENV } from './config.js';
 import { insert, remove, save, sb } from './data.js';
 import { byId, contactMails, linksOfStructure, projectOptions, setting } from './selectors.js';
@@ -140,6 +140,7 @@ export async function prepareMail(showId, kind){
   const extra = `<div class="mail-wrap">
     ${log ? `<p class="mode-note">${log.sent ? 'Envoyé' : 'Déjà préparé'} le ${fmtDate(log.at)}${log.to?` à ${esc(log.to)}`:''}${log.draft?' (brouillon Gmail)':''}.</p>` : ''}
     ${checks}
+    ${vatConflict(s) ? '<p class="mode-note">Structure administrative de l’artiste non soumise à la TVA, mais la TVA de la date n’est pas à 0 % : le TTC affiché dans ce mail est à vérifier (TTC = HT attendu).</p>' : ''}
     <div class="mail-grid">
       <label for="ml-tpl">Modèle</label><select id="ml-tpl">${tpls.map(t=>`<option value="${t.id}">${esc(t.name||MAIL_KINDS[t.kind])}${tplProjects(t).length?'':' · générique'}</option>`).join('')}</select>
       <label>Envoyé par</label><span class="ml-from">${esc(PROD_MAIL)}${sig ? ' <span class="muted">· avec la signature production@</span>' : ' <span class="muted">· pas de signature (Réglages › Prospection, signature de Chloé)</span>'}</span>

@@ -101,12 +101,14 @@ const ADM_KEYS = ARTIST_SECTIONS.flatMap(s => s.fields).map(f => f.k).filter(k =
 const admNorm = (k, v) => ['adm_siret', 'adm_vat', 'adm_ape'].includes(k) ? String(v ?? '').toUpperCase().replace(/[^0-9A-Z]/g, '')
   : String(v ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 export function fromAdmin(values, admin){
+  // une réponse de l'artiste différente de la structure RESTE dans la fiche (affichée, listée « À vérifier ») : un enregistrement
+  // ultérieur d'un autre champ ne doit jamais la remplacer en silence par la valeur de la structure (relecture v1.60.0)
   const out = {...values}, taken = [], conflicts = [];
   for (const k of ADM_KEYS){
     const ref = admin?.[k.slice(4)];
     if (ref == null || String(ref).trim() === '') continue;
     const cur = values[k];
-    if (cur != null && String(cur).trim() !== '' && admNorm(k, cur) !== admNorm(k, ref)) conflicts.push({k, fiche: String(cur), structure: String(ref)});
+    if (cur != null && String(cur).trim() !== '' && admNorm(k, cur) !== admNorm(k, ref)){ conflicts.push({k, fiche: String(cur), structure: String(ref)}); continue; }
     out[k] = String(ref); taken.push(k);
   }
   return {values: out, taken, conflicts};
