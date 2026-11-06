@@ -10,7 +10,7 @@ Préparé le 06/11/2026. **Aucun contact réel, aucune boîte réelle d'Anthony,
 | Base | projet Supabase **de test**, après la séance V1.57 → V1.60 (pour ne pas modifier l'état de départ de cette séance) : migration v1.61, fonction `mail-sync`, réglage `prospect_script_url` = adresse du script de B1 |
 | Application | version de la branche, environnement **test** (bandeau « TEST ») |
 | Données | structures, contacts et suivis fictifs dont les adresses sont celles de B2 |
-| Tâche planifiée | activée sur le projet de test seulement (`mail_sync_url` du projet de test) ; jamais en production |
+| Tâche planifiée | activée sur le projet de test seulement (adresse inscrite dans `private.sync_urls` du projet de test) ; jamais en production |
 
 ## Scénarios et preuve attendue
 | # | Scénario | Preuve |
