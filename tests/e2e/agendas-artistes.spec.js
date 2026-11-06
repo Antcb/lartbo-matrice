@@ -122,3 +122,25 @@ test('agendas : même avertissement sur tous les chemins — intérêt → optio
   expect(await page.evaluate(() => window.__calls.filter(c => c.table === 'shows' && c.op === 'update').length)).toBe(0);
   expectClean(ctx);
 });
+
+test('agendas : jour local de l’événement affiché ; conflit comparé sur les instants réels (fuseaux) ; journée entière sans décalage', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page);
+  const r = await page.evaluate(async Y => {
+    const { evSpan, calOverlaps } = await import('./js/calendars.js'); const { S, touch } = await import('./js/state.js');
+    const ART = S.db.projects[0].id;
+    // concert à New York le 10/06 à 20 h (heure locale) = 11/06 à 2 h à Paris
+    const ny = { id: 'e-ny', calendar_ref: 'cal-1', project_id: ART, gcal_event_id: 'e-ny', busy: true, all_day: false, deleted_at: null,
+      start_at: `${Y}-06-11T00:00:00Z`, end_at: `${Y}-06-11T03:00:00Z`, time_zone: 'America/New_York', title: 'Show New York', is_show: true };
+    const jour = { id: 'e-j', calendar_ref: 'cal-1', project_id: ART, gcal_event_id: 'e-j', busy: true, all_day: true, start_date: `${Y}-07-14`, end_date: `${Y}-07-15`, deleted_at: null, title: 'Fête' };
+    S.db.artist_calendar_events.push(ny, jour); touch('artist_calendar_events');
+    const ov = d => calOverlaps({ project_id: ART, date: d, status: 'Option Salle' }).map(e => e.id);
+    return { span: evSpan(ny), le10: ov(`${Y}-06-10`), le11: ov(`${Y}-06-11`), jour: evSpan(jour), j14: ov(`${Y}-07-14`), j15: ov(`${Y}-07-15`) };
+  }, Y);
+  expect(r.span).toEqual([`${Y}-06-10`, `${Y}-06-10`]);   // affiché le 10/06, jour local à New York
+  expect(r.le10).not.toContain('e-ny');                    // à Paris, l'instant réel tombe le 11/06
+  expect(r.le11).toContain('e-ny');
+  expect(r.jour).toEqual([`${Y}-07-14`, `${Y}-07-14`]);     // journée entière : dates calendaires, sans décalage
+  expect(r.j14).toContain('e-j'); expect(r.j15).not.toContain('e-j');
+  expectClean(ctx);
+});

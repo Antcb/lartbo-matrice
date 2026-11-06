@@ -17,35 +17,39 @@ import { ask, confirmAsk, copyText } from './ui/dialog.js';
 import { esc, fmtDate, toast } from './utils.js';
 import { isOff } from './constants.js';
 
-const STALE_MIN = 30;   // au-delà de 30 min sans synchronisation réussie (passage toutes les 5 min) : disponibilités plus à jour
+const STALE_MIN = 30;
+/** Pays proposés pour les lieux sans pays écrit (France par défaut, décision du 06/11/2026) — mêmes codes que cal-sync/regles.ts */
+export const CAL_COUNTRIES = [['FR', 'France'], ['BE', 'Belgique'], ['CH', 'Suisse'], ['LU', 'Luxembourg'], ['ES', 'Espagne'], ['IT', 'Italie'], ['DE', 'Allemagne'],
+  ['PT', 'Portugal'], ['NL', 'Pays-Bas'], ['GB', 'Royaume-Uni'], ['CA', 'Canada'], ['US', 'États-Unis']];   // au-delà de 30 min sans synchronisation réussie (passage toutes les 5 min) : disponibilités plus à jour
 export const calOf = projectId => S.db.artist_calendars.find(c => c.project_id === projectId) || null;
-const parisDay = iso => iso ? new Date(iso).toLocaleDateString('sv-SE', {timeZone: 'Europe/Paris'}) : null;
+/** Jour (AAAA-MM-JJ) d'un instant dans un fuseau (fuseau inconnu ou invalide : Paris) */
+const dayIn = (iso, tz) => { if (!iso) return null; try { return new Date(iso).toLocaleDateString('sv-SE', {timeZone: tz || 'Europe/Paris'}); } catch { return new Date(iso).toLocaleDateString('sv-SE', {timeZone: 'Europe/Paris'}); } };
+/** Décalage (ms) d'un fuseau à un instant donné */
+const offsetAt = (ms, tz) => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'}).formatToParts(new Date(ms)).map(x => [x.type, x.value]));
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - Math.floor(ms / 1000) * 1000; };
+/** Minuit d'un jour dans un fuseau, en instant réel (changements d'heure compris) */
+export const midnightIn = (day, tz = 'Europe/Paris') => { const [y, m, d] = day.split('-').map(Number), guess = Date.UTC(y, m - 1, d);
+  let t = guess - offsetAt(guess, tz); t = guess - offsetAt(t, tz); return t; };
 const nextDay = d => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
 const prevDay = d => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() - 1); return x.toISOString().slice(0, 10); };
 
 /** Jours couverts par une occurrence (AAAA-MM-JJ, inclus) : journée entière → fin EXCLUE chez Google ; à l'heure → jours de Paris */
 export function evSpan(e){
+  // journée(s) entière(s) : dates calendaires telles quelles, sans fuseau (fin exclue chez Google)
   if (e.all_day) return [e.start_date, e.end_date ? prevDay(e.end_date) : e.start_date];
-  const a = parisDay(e.start_at), b = parisDay(e.end_at ? new Date(new Date(e.end_at).getTime() - 1).toISOString() : e.start_at);
+  // à l'heure : jour LOCAL de l'événement (son fuseau) pour l'affichage comme date artiste et sur la carte
+  const a = dayIn(e.start_at, e.time_zone), b = dayIn(e.end_at ? new Date(new Date(e.end_at).getTime() - 1).toISOString() : e.start_at, e.time_zone);
   return [a, b < a ? a : b];
 }
-/** Occurrences visibles (agenda actif ou en pause, non déconnecté ; non supprimées dans Google) */
-export function calEvents(projectIds = null){
-  const live = new Set(S.db.artist_calendars.filter(c => c.status !== 'deconnecte').map(c => c.id));
-  return S.db.artist_calendar_events.filter(e => !e.deleted_at && live.has(e.calendar_ref) && (!projectIds || projectIds.includes(e.project_id)));
-}
-/** Agenda à jour ? false = « disponibilités plus à jour » (pause, erreur, accès perdu, synchronisation trop ancienne) */
-export function calFresh(cal){
-  if (!cal || cal.status !== 'actif' || cal.last_error || !cal.last_ok_at) return false;
-  return Date.now() - new Date(cal.last_ok_at).getTime() < STALE_MIN * 60000;
-}
-export const evLabel = e => e.private || !e.title ? 'Indisponible' : e.title;
-
-/** Indisponibilités (occupé seulement) qui chevauchent une date de l'artiste */
 export function calOverlaps(v){
   if (!v?.project_id || !v.date) return [];
   const a = v.date, b = v.date_end && v.date_end > v.date ? v.date_end : v.date;
-  return calEvents([v.project_id]).filter(e => e.busy && !e.show_id && (([x, y]) => x && x <= b && y >= a)(evSpan(e)));
+  // la date de booking couvre ses journées à Paris ; un événement à l'heure se compare sur ses INSTANTS réels (fuseaux compris),
+  // une journée entière sur ses dates calendaires
+  const from = midnightIn(a), to = midnightIn(nextDay(b));
+  return calEvents([v.project_id]).filter(e => e.busy && !e.show_id && (e.all_day
+    ? (([x, y]) => x && x <= b && y >= a)(evSpan(e))
+    : e.start_at && new Date(e.start_at).getTime() < to && new Date(e.end_at || e.start_at).getTime() > from));
 }
 
 /** Avant d'enregistrer une option / une date : avertissement si l'agenda de l'artiste est occupé (ou plus à jour) ; true = poursuivre */
@@ -85,6 +89,10 @@ export function calPanelHTML(projectId){
       <span class="${fresh ? 'ok-txt' : 'warn-txt'}">${cal.status === 'deconnecte' ? 'déconnecté (événements non affichés)' : fresh ? '✓ à jour' : '⚠︎ disponibilités plus à jour'}</span></p>
     <p class="help m0">Dernière synchronisation réussie : ${cal.last_ok_at ? esc(new Date(cal.last_ok_at).toLocaleString('fr-FR', {timeZone: 'Europe/Paris'})) : 'aucune'} · ${n} événement${n > 1 ? 's' : ''}
       ${cal.last_error ? `<br><span class="warn-txt">Erreur : ${esc(cal.last_error)}</span>` : ''}${cal.status === 'pause' ? '<br>Synchronisation suspendue.' : ''}</p>
+    <p class="help m0"><label for="cal-cc-${esc(cal.id)}">Pays des lieux sans pays écrit</label>
+      <select id="cal-cc-${esc(cal.id)}" class="sel" data-t="artist_calendars" data-id="${esc(cal.id)}" data-f="default_country">
+        ${CAL_COUNTRIES.map(([cc, l]) => `<option value="${cc}" ${cc === (cal.default_country || 'FR') ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      — sert à placer les « Show » sur la carte (appliqué à la synchronisation suivante).</p>
     <div class="cal-actions">
       ${cal.status === 'actif' ? `<button type="button" class="btn sm" data-act="calRefresh" data-id="${projectId}">Actualiser</button><button type="button" class="btn sm" data-act="calPause" data-id="${projectId}">Suspendre</button>`
         : `<button type="button" class="btn sm" data-act="calResume" data-id="${projectId}">${cal.status === 'deconnecte' ? 'Reconnecter' : 'Reprendre'}</button>`}
@@ -155,6 +163,11 @@ export const CAL_ACTIONS = {
   },
 };
 
+/** Heure locale de l'événement (son fuseau), avec le fuseau s'il n'est pas celui de Paris */
+const localTime = e => { const tz = e.time_zone || 'Europe/Paris'; let h;
+  try { h = new Date(e.start_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit', timeZone: tz}); } catch { h = new Date(e.start_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris'}); }
+  return tz === 'Europe/Paris' ? h : `${h} (heure locale, ${tz.split('/').pop().replace(/_/g, ' ')})`; };
+
 /** Lignes d'indisponibilité pour la liste Booking (affichées à part, origine Google) */
 export function calBookingRows(projectIds, year){
   return calEvents(projectIds).filter(e => e.busy && !e.show_id).map(e => ({e, span: evSpan(e)})).filter(x => x.span[0] && x.span[0].slice(0, 4) <= String(year) && x.span[1].slice(0, 4) >= String(year))
@@ -164,7 +177,7 @@ export function calRowHTML({e, span: [a, b]}, showArtist){
   const cal = byId('artist_calendars', e.calendar_ref), stale = !calFresh(cal);
   return `<div class="gig cal-unav" title="Indisponibilité lue dans l’agenda Google de l’artiste (lecture seule)">
     <div class="day"><b>${a.slice(8)}</b><span>${new Date(a + 'T12:00:00').toLocaleDateString('fr-FR', {weekday: 'short'})}</span></div>
-    <div class="what"><b>${esc(evLabel(e))}</b><small>Agenda Google${showArtist ? ' · ' + esc(projName(e.project_id)) : ''}${b !== a ? ' · jusqu’au ' + fmtDate(b) : ''}${e.all_day ? '' : ' · ' + new Date(e.start_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris'})}${stale ? ' · <span class="warn-txt">disponibilités plus à jour</span>' : ''}</small></div>
+    <div class="what"><b>${esc(evLabel(e))}</b><small>Agenda Google${showArtist ? ' · ' + esc(projName(e.project_id)) : ''}${b !== a ? ' · jusqu’au ' + fmtDate(b) : ''}${e.all_day ? '' : ' · ' + localTime(e)}${stale ? ' · <span class="warn-txt">disponibilités plus à jour</span>' : ''}</small></div>
     <div class="right">${e.is_show ? `<button type="button" class="btn sm ghost" data-act="calAssociate" data-id="${e.id}">${e.show_id ? 'Dissocier' : 'Associer à une date'}</button>` : ''}<span class="badge cal-badge">📅 Google</span></div></div>`;
 }
 

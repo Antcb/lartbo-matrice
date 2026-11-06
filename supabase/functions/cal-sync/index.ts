@@ -9,6 +9,7 @@
 // « Show » (titre, sans casse) + lieu qui désigne une ville → repère de carte ; sinon « localisation à préciser », jamais approximatif.
 // Aucune ligne financière, aucune date de booking créée ou modifiée.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
+import { chooseCity, isShowTitle } from './regles.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -35,34 +36,15 @@ async function script(url: string, secret: string, action: string, payload: Reco
   } finally { clearTimeout(timer); }
 }
 
-const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-/** Ville d'un lieu (relecture B1 : jamais de repère approximatif). Règle stricte :
- *  - on ne lit que le DERNIER segment du lieu (après la dernière virgule ; code postal retiré ; un pays écrit en dernier sert d'indice) ;
- *  - Photon (gratuit, déjà utilisé par l'application) doit renvoyer une ville dont le nom est EXACTEMENT ce segment ;
- *  - plusieurs villes de ce nom éloignées (> 30 km) et pas de pays pour trancher → null (« localisation à préciser »). */
-const COUNTRIES: Record<string, string> = { france: 'FR', belgique: 'BE', suisse: 'CH', espagne: 'ES', italie: 'IT', allemagne: 'DE', 'royaume uni': 'GB',
-  angleterre: 'GB', portugal: 'PT', 'pays bas': 'NL', luxembourg: 'LU', canada: 'CA', 'etats unis': 'US', usa: 'US' };
-const km = (a: number[], b: number[]) => { const r = Math.PI / 180, x = (b[0] - a[0]) * r * Math.cos((a[1] + b[1]) / 2 * r), y = (b[1] - a[1]) * r; return Math.sqrt(x * x + y * y) * 6371; };
-async function cityOf(location: string): Promise<{ city: string; lat: number; lng: number } | null> {
-  const parts = location.split(',').map((x) => x.replace(/\b\d{4,5}\b/g, '').trim()).filter(Boolean);
-  let country: string | null = null;
-  if (parts.length > 1 && COUNTRIES[norm(parts[parts.length - 1])]) country = COUNTRIES[norm(parts.pop()!)];
-  const seg = parts[parts.length - 1];
-  if (!seg || norm(seg).length < 2) return null;
-  try {
-    const r = await fetch(`https://photon.komoot.io/api/?limit=10&lang=fr&layer=city&q=${encodeURIComponent(seg)}`);
-    if (!r.ok) return null;
-    const j = await r.json();
-    let c = (j.features || []).filter((f: any) => norm(f.properties?.name || '') === norm(seg));
-    if (country) c = c.filter((f: any) => String(f.properties?.countrycode || '').toUpperCase() === country);
-    if (!c.length) return null;
-    const p0 = c[0].geometry.coordinates;
-    if (c.some((f: any) => km(p0, f.geometry.coordinates) > 30)) return null;   // homonymes : à préciser
-    return { city: c[0].properties.name, lat: p0[1], lng: p0[0] };
-  } catch { return null; }   // service de lieux indisponible : à préciser
+/** Ville d'un lieu : règles dans regles.ts (pays écrit, sinon pays par défaut de l'agenda ; élément exact ; code postal) */
+async function photon(q: string): Promise<any[]> {
+  const r = await fetch(`https://photon.komoot.io/api/?limit=10&lang=fr&layer=city&q=${encodeURIComponent(q)}`);
+  if (!r.ok) throw new Error('service de lieux indisponible');
+  return (await r.json()).features || [];
 }
+async function cityOf(location: string, country: string | null) { try { return await chooseCity(location, country, photon); } catch { return null; } }   // indisponible : à préciser
 
-type Ev = { id: string; recurring_id?: string | null; title?: string | null; location?: string | null; start?: string | null; end?: string | null;
+type Ev = { id: string; time_zone?: string | null; recurring_id?: string | null; title?: string | null; location?: string | null; start?: string | null; end?: string | null;
   start_date?: string | null; end_date?: string | null; transparency?: string; visibility?: string; type?: string };
 
 async function syncOne(cal: any, url: string, secret: string) {
@@ -71,22 +53,26 @@ async function syncOne(cal: any, url: string, secret: string) {
   try {
     const j = await script(url, secret, 'events', { calendar_id: cal.calendar_id, time_min: tmin, time_max: tmax });
     const fb = j.mode === 'disponibilites';
-    const { data: old } = await admin.from('artist_calendar_events').select('gcal_event_id, location, city, lat, lng, geo_status').eq('calendar_ref', cal.id);
+    const { data: old } = await admin.from('artist_calendar_events').select('gcal_event_id, location, city, lat, lng, geo_status, geo_key').eq('calendar_ref', cal.id);
+    const country = String(cal.default_country || 'FR').toUpperCase();
     const prev = new Map((old || []).map((o: any) => [o.gcal_event_id, o]));
     const rows = [];
     for (const e of (j.events || []) as Ev[]) {
       const priv = fb || e.visibility === 'private' || e.visibility === 'confidential';
       const title = priv ? null : (e.title || null), location = priv ? null : (e.location || null);
-      const isShow = !!title && /show/i.test(title);
-      let geo: any = { city: null, lat: null, lng: null, geo_status: location ? 'a_preciser' : 'sans_lieu' };
+      const isShow = isShowTitle(title);
+      let geo: any = { city: null, lat: null, lng: null, geo_key: null, geo_status: location ? 'a_preciser' : 'sans_lieu' };
       if (isShow && location) {
         const p: any = prev.get(e.id);
-        if (p && p.location === location && p.geo_status !== 'sans_lieu') geo = { city: p.city, lat: p.lat, lng: p.lng, geo_status: p.geo_status };
-        else { const c = await cityOf(location); if (c) geo = { ...c, geo_status: 'ok' }; }
+        // déjà localisé avec le même lieu ET le même pays par défaut : repris tel quel ; sinon recalculé
+        if (p && p.geo_key === country + '|' + location && p.geo_status !== 'sans_lieu') geo = { city: p.city, lat: p.lat, lng: p.lng, geo_status: p.geo_status };
+        else { const c = await cityOf(location, country); if (c) geo = { city: c.city, lat: c.lat, lng: c.lng, geo_status: 'ok' }; }
+        geo.geo_key = country + '|' + location;
       }
       const allDay = !!e.start_date;
       rows.push({ calendar_ref: cal.id, project_id: cal.project_id, gcal_event_id: e.id, recurring_id: e.recurring_id || null,
         all_day: allDay, start_at: allDay ? null : e.start, end_at: allDay ? null : e.end, start_date: allDay ? e.start_date : null, end_date: allDay ? e.end_date : null,
+        time_zone: allDay ? null : (e.time_zone || null),   // jour local de l'événement (affichage) ; conflits comparés sur les instants
         busy: e.transparency !== 'transparent', private: priv, title, location, is_show: isShow, ...geo, deleted_at: null, updated_at: new Date().toISOString() });
     }
     for (let i = 0; i < rows.length; i += 500) {
