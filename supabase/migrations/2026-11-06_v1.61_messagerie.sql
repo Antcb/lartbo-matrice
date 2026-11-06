@@ -230,7 +230,7 @@ grant execute on function public.mail_link_thread(uuid), public.mail_journal(uui
 revoke all on function public.mail_link_manual(uuid, uuid, uuid, uuid, uuid) from public, anon;
 grant execute on function public.mail_link_manual(uuid, uuid, uuid, uuid, uuid) to authenticated, service_role;
 
--- ── Synchronisation toutes les 5 minutes : appel de la fonction serveur « mail-sync » ; inactive tant que mail_sync_url est vide ──
+-- ── Synchronisation toutes les 5 minutes : appel de la fonction serveur « mail-sync » ; inactive tant que private.sync_urls n'a pas son adresse ──
 -- adresses des fonctions appelées par les tâches planifiées : schéma privé (inaccessible à l'application et aux comptes de l'équipe)
 create table if not exists private.sync_urls (key text primary key, url text not null);
 revoke all on private.sync_urls from public, anon, authenticated;
