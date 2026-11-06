@@ -83,6 +83,7 @@ export async function confirmProvisionalCommission(s, what = 'versée'){
 }
 const sideLabel = (x, w) => w === 'artbo' ? 'L’ArtBoristerie' : (x.partner || 'le coproducteur');
 
+const lineName = id => { const p = id && byId('show_payments', id); return p ? (p.label || p.kind) : ''; };
 export const BUDGET_ACTIONS = {
   coreaAddTier: t => saveCorea(t.dataset.id, c => { c.tiers.push({label: '', price: null, vat: 5.5, qty: null, after: null}); }),
   coreaDelTier: async t => { const lab = byId('shows', t.dataset.id)?.corea?.tiers?.[Number(t.dataset.i)]?.label;
@@ -217,11 +218,13 @@ export const BUDGET_ACTIONS = {
       for (const sid of new Set(out.updated.map(u => S.db.show_payments.find(p => p.id === u.id)?.show_id).filter(Boolean))) await refreshShowSide(sid);
       // factures d'acompte / de solde faites depuis le devis : leur numéro vient d'être repris
       if (out.linked?.length) await refreshFor('show_payments', 'show_id', S.db.shows.filter(x => x.pennylane_quote_id).map(x => x.id));
+      if (out.aRattacher || out.linked?.length){ const {fetchAll} = await import('./data.js'); S.db.pennylane_a_rattacher = await fetchAll('pennylane_a_rattacher'); touch('pennylane_a_rattacher'); }
       render();
       const lines = [out.linked?.length ? `${out.linked.length} facture(s) faite(s) depuis le devis, numéro repris : ${out.linked.filter(Boolean).join(', ')}\n` : '', out.updated.length ? `${out.updated.length} facture(s) marquée(s) payée(s) :\n- ` + out.updated.map(u => u.label).join('\n- ') : (out.linked?.length || out.filed?.done?.length) ? '' : 'Rien de nouveau : la Matrice est à jour.',
         out.erreurs?.length ? `\nÉcritures REFUSÉES (rien n’a été modifié pour ces lignes) — à examiner :\n- ` + out.erreurs.join('\n- ') : '',
         out.caducs?.length ? `\nFacture(s) Pennylane d’acompte NON reliée(s) : l’acompte est caduc (solde déjà facturé), la date serait facturée au-delà de sa cession — à examiner :\n- ` + out.caducs.join('\n- ') : '',
         out.douteux?.length ? `\nFacture(s) Pennylane NON reliée(s) au solde : même montant qu’un acompte déjà noté à la main sur la date (numéro, envoi ou paiement) — à rattacher à la main à la bonne ligne :\n- ` + out.douteux.join('\n- ') : '',
+        out.aRattacher ? `\n${out.aRattacher} facture(s) du devis NON reliée(s) automatiquement (plusieurs correspondances possibles, ou montant sans ligne) : « Rattacher… » dans l’onglet Factures de la date.` : '',
         out.pennylaneLate.length ? `\nPayées dans la Matrice mais pas encore dans Pennylane (à mettre à jour dans Pennylane) :\n- ` + out.pennylaneLate.join('\n- ') : '',
         // PDF des factures rangés dans le Drive (compta + dossier de la date)
         out.filed?.done?.length ? `\n${out.filed.done.length} facture(s) rangée(s) dans le Drive (compta › D - Factures de ventes et 02_Finance de la date) :\n- ` + out.filed.done.join('\n- ') : '',
@@ -233,6 +236,44 @@ export const BUDGET_ACTIONS = {
       await inform({title: 'Synchronisation Pennylane', text: lines.join('\n')});
     } catch (err) { toast(err.message, true); }
     t.disabled = false;
+  },
+  /**
+   * Rattacher (ou corriger le rattachement d') une facture Pennylane du devis à une ligne d'acompte ou de solde de la date (v1.56.9).
+   * Choix explicite de la ligne ; document, montant et associations affichés ; motif obligatoire pour une correction ; confirmation ;
+   * écriture et historique côté serveur (pennylane_rattacher) ; le document Pennylane n'est jamais modifié.
+   */
+  pennylaneAttach: async t => {
+    const s = byId('shows', t.dataset.show), pid = t.dataset.pid; if (!s || !pid) return;
+    const pend = S.db.pennylane_a_rattacher.find(r => r.pennylane_id === pid);
+    const lines = paymentsOf(s.id).filter(p => ['acompte', 'solde'].includes(p.kind) && p.hors_calcul == null);
+    const cur = lines.find(p => p.pennylane_id === pid);
+    const num = cur?.invoice_number || pend?.invoice_number || 'Facture ' + pid, amt = pend?.amount_ht ?? cur?.amount;
+    const targets = lines.filter(p => p.id !== cur?.id && !p.pennylane_id && !String(p.invoice_number || '').trim() && !p.paid_at);
+    if (!targets.length) return toast('Aucune ligne libre : chaque acompte / solde a déjà sa facture (ou est payé). Corrige d’abord la ligne concernée.', true);
+    const assoc = lines.map(p => `<li>${esc(p.label || p.kind)} · ${eur2(payAmount(p) || 0)} HT · ${p.pennylane_id ? `facture ${esc(p.invoice_number || p.pennylane_id)}` : p.invoice_number ? `n° ${esc(p.invoice_number)} (noté à la main)` : '<span class="muted">aucune facture</span>'}${p.paid_at ? ' · payée' : ''}</li>`).join('');
+    const hist = S.db.pennylane_rattachements.filter(h => h.pennylane_id === pid).sort((a, b) => String(b.at).localeCompare(String(a.at)))
+      .map(h => `<li>${fmtDate(String(h.at).slice(0, 10))} · ${esc(h.actor || '')} · ${esc(lineName(h.from_payment_id) || '—')} → ${esc(lineName(h.to_payment_id) || '—')}${h.motif ? ' · « ' + esc(h.motif) + ' »' : ''}</li>`).join('');
+    await openModal({title: cur ? 'Corriger le rattachement' : 'Rattacher la facture', saveLabel: cur ? 'Corriger' : 'Rattacher',
+      extraTop: `<div class="help full"><p class="m0"><b>${esc(num)}</b> · ${amt != null ? eur2(amt) + ' HT' : 'montant inconnu'}${pend?.invoice_date ? ' · ' + fmtDate(pend.invoice_date) : ''}
+          ${(pend?.url || cur?.pennylane_url) ? ` · <a href="${esc(pend?.url || cur?.pennylane_url)}" target="_blank" rel="noopener">voir le document dans Pennylane ↗</a>` : ''}</p>
+        ${pend?.reason && !pend.resolved_at ? `<p class="m0 warn-txt">${esc(pend.reason)}</p>` : ''}
+        <p class="m0 mt-sm">Lignes de la date :</p><ul class="warn-list">${assoc}</ul>
+        ${hist ? `<p class="m0">Historique de cette facture :</p><ul class="warn-list">${hist}</ul>` : ''}
+        <p class="m0">Le document Pennylane n’est pas modifié. Le numéro, le lien, la date de facture et la date d’envoi suivent la facture.</p></div>`,
+      fields: [{k: 'to', label: 'Ligne de cette facture', type: 'select', full: true, options: targets.map(p => [p.id, `${p.label || p.kind} · ${eur2(payAmount(p) || 0)} HT${acompteState(p) === 'prevu' ? ' (prévu)' : ''}`])},
+        {k: 'motif', label: cur ? 'Motif de la correction (obligatoire)' : 'Motif (facultatif)', type: 'textarea', full: true, rows: 2}],
+      onSave: async v => {
+        if (!v.to){ toast('Choisis la ligne', true); return false; }
+        if (cur && !String(v.motif || '').trim()){ toast('Indique le motif de la correction', true); return false; }
+        const to = byId('show_payments', v.to);
+        if (!(await confirmAsk(cur ? 'Corriger le rattachement ?' : 'Rattacher la facture ?', `${num} (${amt != null ? eur2(amt) + ' HT' : 'montant inconnu'}) ${cur ? `passe de « ${cur.label || cur.kind} » à` : 'est rattachée à'} « ${to?.label || to?.kind} ». ${cur ? 'La ligne quittée redevient « non facturée ». ' : ''}Le document Pennylane n’est pas modifié ; le choix est gardé aux synchronisations suivantes.`, cur ? 'Corriger' : 'Rattacher'))) return false;
+        const {data, error} = await sb.rpc('pennylane_rattacher', {p_pennylane_id: pid, p_payment: v.to, p_motif: v.motif || null});
+        if (error){ toast(error.message, true); return false; }
+        await refreshFor('show_payments', 'show_id', [s.id]);
+        for (const tb of ['pennylane_a_rattacher', 'pennylane_rattachements']){ const {fetchAll} = await import('./data.js'); S.db[tb] = await fetchAll(tb); touch(tb); }
+        toast(`${data?.invoice_number || num} rattachée à « ${to?.label || to?.kind} »`); render();
+        return true;
+      }});
   },
   testPennylane: async () => { try { const out = await pennylane('status', {}); toast(`Pennylane OK : ${out.company || 'compte connecté'}`); } catch (err) { toast(err.message, true); } },
   pennylaneQuote: async t => {
