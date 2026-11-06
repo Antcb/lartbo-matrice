@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.60.1 — 06/11/2026
+- Structure administrative (relecture v1.60.0) — une réponse de l'artiste différente de la structure reste dans la fiche et n'est plus remplacée en silence lors d'un enregistrement ; le lien public ne reçoit que les champs de la fiche ; rappel TVA dans la fenêtre des mails
+
+
 ## 1.60.0 — 06/11/2026
 - Structure administrative de l'artiste = référence (décision du 05/11/2026) — la fiche artiste (lien public et onglet) reprend ses informations légales sans ressaisie ; une valeur différente est signalée, jamais appliquée ; TVA d'une date en booking à vérifier quand la structure n'est pas soumise ; champ N° RNA
 

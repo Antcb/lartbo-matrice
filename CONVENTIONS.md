@@ -399,9 +399,9 @@ Les factures de l'artiste sur les dates booking n'entrent dans **aucun** des tro
 
 ### 6.20 Structure administrative de l'artiste = référence [DÉCIDÉ 05/11/2026, EN PLACE v1.60]
 - La structure liée à l'artiste (`projects.admin_structure_id`, onglet Administratif) fait **référence** pour les informations légales (raison sociale, forme, SIRET, APE, RNA, TVA intracommunautaire, siège, signataire…) et le **régime de TVA** (`admin.vat_subject`).
-- La **fiche artiste** (lien public `artiste.html` via `artist_get`, et onglet « Fiche artiste ») **reprend** ces informations, sans ressaisie (remarques internes exclues).
+- La **fiche artiste** (lien public `artiste.html` via `artist_get`, et onglet « Fiche artiste ») **reprend** ces informations, sans ressaisie (seulement les champs de la fiche : ni remarques, ni coordonnées du signataire, ni RNA). Une réponse déjà donnée **différente** reste affichée telle quelle et listée « À vérifier » : elle n'est ni remplacée par la valeur de la structure, ni appliquée à la structure.
 - **Aucun écrasement silencieux** : une valeur de la fiche différente de celle de la structure n'est **jamais appliquée** ; elle est listée dans l'onglet (« À vérifier ») et notifiée à l'équipe (`artist_sync`, envoi par l'artiste comme enregistrement par l'équipe) ; seules les informations **manquantes** de la structure sont complétées. SIRET, TVA et APE sont comparés sans espaces ni ponctuation.
-- **TVA** : une date en **booking** dont la structure administrative n'est pas soumise à la TVA et dont la TVA n'est pas 0 % est signalée « à vérifier (TTC = HT) » (date, « Valider les conditions ») ; **aucune correction automatique** des dates.
+- **TVA** : une date en **booking** dont la structure administrative n'est pas soumise à la TVA et dont la TVA n'est pas 0 % est signalée « à vérifier (TTC = HT) » (date, « Valider les conditions », fenêtre des mails de la date) ; **aucune correction automatique** des dates.
 - Ne jamais saisir un numéro de TVA calculé par un annuaire à partir du SIREN.
 
 ## 7. Supabase
