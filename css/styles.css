@@ -976,3 +976,11 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .lock-set{border:0;margin:0;padding:0;min-width:0}
 .corea-block,.coprod-block{margin-top:var(--sp-3)}
 .cnm-block{margin:var(--sp-2) 0}
+/* Agendas Google des artistes (lecture seule) */
+.gig.cal-unav{--c:var(--muted);background:var(--soft);border-style:dashed;cursor:default}
+.gig.cal-unav .what b{color:var(--muted)}
+.cal-badge{font-size:11px}
+.cal-legend{display:flex;flex-direction:column;gap:var(--sp-1);font-size:12px;margin:var(--sp-1) 0}
+.cal-dot{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px dashed var(--brand);background:var(--panel);vertical-align:middle}
+.cal-panel{display:flex;flex-direction:column;gap:var(--sp-1)}
+.cal-actions{display:flex;flex-wrap:wrap;gap:var(--sp-1)}
