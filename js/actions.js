@@ -5,7 +5,7 @@
 import { afterFeeChange, askConfirmation, becameConfirmed, sendConfirmation, validateTerms } from './confirm-flow.js';
 import { go, render } from './app.js';
 import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
-import { CONFIRMED_PROD, FOLLOW_DATES, PAY_KINDS, isOff } from './constants.js';
+import { CONFIRMED_PROD, FOLLOW_DATES, INVOICE_DATES, PAY_KINDS, isOff } from './constants.js';
 import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
 import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure, showPrefillFromSuivi } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showLabel, showsFiltered, structName } from './selectors.js';
@@ -464,22 +464,36 @@ ACTIONS['change:prospects.status'] = async (t, v) => {
 // Date retirée du ticketing / de la communication : reste visible 5 s
 for (const f of ['ticketing_enabled','communication_enabled'])
   ACTIONS['change:shows.'+f] = async (t, v) => v ? save('shows', t.dataset.id, {[f]:true}) : saveLinger('shows', t.dataset.id, {[f]:false}, f==='ticketing_enabled' ? 'Date retirée du ticketing' : 'Date retirée de la communication');
-// Dates de suivi (Production › Suivi admin, Communication — v1.60.3, demande d'Anthony du 07/11/2026) : une date déjà renseignée
-// ne se modifie ni ne s'efface sans confirmation (ancienne et nouvelle valeur) ; « Annuler » garde l'ancienne ; un champ vide se
-// remplit sans question. Saisies manuelles seulement : un envoi réel (mail.js, contrat) écrit par save(), sans passer par ce crochet.
+/**
+ * Date déjà renseignée modifiée ou effacée à la main (v1.60.3, décisions d'Anthony du 07/11/2026) : confirmation avec l'ancienne et la
+ * nouvelle valeur ; « Annuler » (Échap, clic dehors) n'écrit rien et la case reprend l'ancienne valeur ; un champ vide se remplit sans
+ * question. Seulement les saisies dans les cases (crochets change:…) : les écritures d'un événement réellement effectué (envoi d'un mail,
+ * contrat, synchronisation Pennylane, versement noté) passent par save() sans question. Changement refusé par la protection des factures
+ * émises (changeBlocked) : pas de question, save() affiche son message de refus. Renvoie true = enregistrer.
+ */
+async function dateChangeOk(t, table, f, v, label, context){
+  const old = byId(table, t.dataset.id)?.[f] || null;
+  if (!old || old === v || changeBlocked(table, t.dataset.id, {[f]: v})) return true;
+  const ok = await confirmAsk(v ? `Modifier la date « ${label} » ?` : `Effacer la date « ${label} » ?`,
+    `${context}\nAncienne valeur : ${fmtNum(old)}\nNouvelle valeur : ${v ? fmtNum(v) : 'aucune (date effacée)'}`,
+    v ? 'Modifier la date' : 'Effacer la date', {danger: !v});
+  if (ok) return true;
+  t.value = old; const txt = t.parentElement?.querySelector('.dt-txt'); if (txt){ txt.value = fmtNum(old); txt.classList.remove('bad'); txt.title = ''; }
+  render(); return false;
+}
+// Dates de suivi d'une date (Production › Suivi admin, Communication)
 for (const [f, label] of Object.entries(FOLLOW_DATES))
   ACTIONS['change:shows.'+f] = async (t, v) => {
-    const id = t.dataset.id, s = byId('shows', id), old = s?.[f] || null;
-    if (old && old !== v){
-      const ok = await confirmAsk(v ? `Modifier la date « ${label} » ?` : `Effacer la date « ${label} » ?`,
-        `${showLabel(s)}\nAncienne valeur : ${fmtNum(old)}\nNouvelle valeur : ${v ? fmtNum(v) : 'aucune (date effacée)'}`,
-        v ? 'Modifier la date' : 'Effacer la date', {danger: !v});
-      if (!ok){   // Annuler, Échap, clic dehors : rien n'est écrit, la case reprend l'ancienne valeur
-        t.value = old; const txt = t.parentElement?.querySelector('.dt-txt'); if (txt){ txt.value = fmtNum(old); txt.classList.remove('bad'); txt.title = ''; }
-        render(); return;
-      }
-    }
-    await save('shows', id, {[f]: v}, {rerender: t.dataset.rr !== '0'});
+    if (!(await dateChangeOk(t, 'shows', f, v, label, showLabel(byId('shows', t.dataset.id))))) return;
+    await save('shows', t.dataset.id, {[f]: v}, {rerender: t.dataset.rr !== '0'});
+  };
+/** Contexte d'une ligne de facture dans la question : date de concert et libellé de la ligne */
+const payContext = p => [showLabel(byId('shows', p?.show_id)), p?.label || PAY_KINDS[p?.kind] || p?.kind].filter(Boolean).join(' · ');
+// Dates de facture envoyée / relancée (Production › Factures) ; « Payée » : crochet plus bas (compte d'encaissement)
+for (const f of ['sent_at', 'reminded_at'])
+  ACTIONS['change:show_payments.'+f] = async (t, v) => {
+    if (!(await dateChangeOk(t, 'show_payments', f, v, INVOICE_DATES[f], payContext(byId('show_payments', t.dataset.id))))) return;
+    await save('show_payments', t.dataset.id, {[f]: v});
   };
 // Date annulée / sans suite : reste visible 5 s
 ACTIONS['change:shows.status'] = async (t, v) => {
@@ -548,6 +562,7 @@ ACTIONS['change:show_payments.amount_ttc'] = async (t, v) => {
 // « Non renseigné » (compté dans la date et l'artiste, dans aucun compte), il réintègre le bon compte dès qu'il est choisi.
 ACTIONS['change:show_payments.paid_at'] = async (t, v) => {
   const pay = byId('show_payments', t.dataset.id);
+  if (!(await dateChangeOk(t, 'show_payments', 'paid_at', v, INVOICE_DATES.paid_at, payContext(pay)))) return;
   if (!(await save('show_payments', pay.id, {paid_at: v}, {rerender: false}))) { render(); return; }
   render();
   const s = byId('shows', pay.show_id), proj = byId('projects', s?.project_id);
