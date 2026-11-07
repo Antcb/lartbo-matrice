@@ -34,5 +34,24 @@ export function setProjects(ids){ S.projects = [...new Set((ids || []).filter(Bo
 // Préférences et brouillons du navigateur : séparés entre production et test (js/storage.js)
 export { localDel, localGet, localSet };
 
+/**
+ * Dates archivées (v1.60.3, réponse d'Anthony du 07/11) : la date et ses lignes de facturation et de budget sont gardées ici,
+ * HORS de S.db — elles sortent ainsi de toutes les listes, de tous les totaux, comptes, commissions, rappels, cartes, calendriers
+ * et exports (tout le code lit S.db), sans condition à ajouter écran par écran. Consultables et restaurables dans Booking
+ * (« Dates archivées »). Une ligne arrivée dans S.db (chargement, temps réel, relecture) remplace sa copie gardée ici.
+ */
+export const ARCHIVED = {shows: [], show_payments: [], budget_lines: []};
+function splitArchived(){
+  const merge = t => { const seen = new Set(S.db[t].map(r => r.id)); return S.db[t].concat(ARCHIVED[t].filter(r => !seen.has(r.id))); };
+  const shows = merge('shows'), off = new Set(shows.filter(x => x.archived_at).map(x => x.id));
+  if (!off.size && !ARCHIVED.shows.length && !ARCHIVED.show_payments.length && !ARCHIVED.budget_lines.length) return;
+  for (const t of ['shows', 'show_payments', 'budget_lines']){
+    const rows = t === 'shows' ? shows : merge(t), isOut = r => off.has(t === 'shows' ? r.id : r.show_id);
+    const keep = rows.filter(r => !isOut(r)), out = rows.filter(isOut);
+    if (keep.length !== S.db[t].length || out.length !== ARCHIVED[t].length || keep.some((r, i) => S.db[t][i] !== r)){
+      S.db[t] = keep; ARCHIVED[t] = out; S.rev[t] = (S.rev[t]||0) + 1; }
+  }
+}
+
 /** Signale qu'une table a changé (les index en cache seront recalculés). */
-export function touch(table){ S.rev[table] = (S.rev[table]||0) + 1; }
+export function touch(table){ S.rev[table] = (S.rev[table]||0) + 1; if (table in ARCHIVED) splitArchived(); }
