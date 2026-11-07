@@ -7,7 +7,7 @@ import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
 import { cnmDue, commissionOf, coreaCommissionCheck, isFree, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
 import { commissionPctOf, coreaCalc, isCorea } from './corea.js';
 import { acompteState, isCoproduction, isInvoiced, paymentsOf, payAmount } from './calc.js';
-import { insert, mergeRows, openStored, refreshFor, remove, save, sb } from './data.js';
+import { contentTypeOf, insert, mergeRows, openStored, refreshFor, remove, save, sb } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
 import { callScript } from './mail.js';
 import { applyTemplate, spectacleStaffRows } from './budget-template.js';
@@ -344,7 +344,7 @@ export async function readPieces(ctx, files){
     const folder = `budget/${show?.id || line?.show_id || 'projet-' + project_id}`;
     const path = `${folder}/${Date.now()}_${safeName(file.name)}`;
     toast(`Lecture de « ${file.name} » par l’IA…`);
-    const {error: upErr} = await sb.storage.from('suivi').upload(path, file, {contentType: file.type || 'application/octet-stream'});
+    const {error: upErr} = await sb.storage.from('suivi').upload(path, file, {contentType: contentTypeOf(file)});
     if (upErr){ toast(`${file.name} : ${upErr.message}`, true); continue; }
     let doc = null;
     const {data, error} = await sb.functions.invoke('lire-piece', {body:{path, show_id: show?.id || line?.show_id || null, project_id}});
