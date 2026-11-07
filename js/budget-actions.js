@@ -15,7 +15,7 @@ import { exportArtistBudget } from './artist-export.js';
 import { S, touch } from './state.js';
 import { openModal } from './ui/modal.js';
 import { ask, askText, confirmAsk, inform } from './ui/dialog.js';
-import { coprodClose } from './production-budget.js';
+import { PROMO_LEGACY_LABEL, coprodClose } from './production-budget.js';
 import { esc, eur2, fmtDate, norm, pct, toast, today } from './utils.js';
 
 const nextSort = showId => Math.max(0, ...linesOf(showId).map(l => l.sort || 0)) + 1;
@@ -130,6 +130,7 @@ export const BUDGET_ACTIONS = {
     if (!k.ok) return inform({title: 'Clôture impossible', text: k.issues.join('\n')});
     const text = [`Résultat global réel : ${eur2(x.result)}`, `Part de L’ArtBo (${x.shared_result < 0 ? 'pertes : ' + pct(x.artbo_loss_share) : pct(x.artbo_share)}) : ${eur2(x.artbo_part)}`, `Part de ${x.partner} : ${eur2(x.partner_part)}`,
       `Recettes encaissées par ${sideLabel(x, x.holder)} : ${eur2(x.net_encaisse)} (nettes)`, `Dépenses payées : L’ArtBo ${eur2(x.paid_artbo)} · coproducteur ${eur2(x.paid_partner)}`,
+      ...(x.promo_debtor_rule === 'commun_historique' ? [`Promotion locale : ${PROMO_LEGACY_LABEL}`] : []),
       x.from ? `Reversement : ${sideLabel(x, x.from)} reverse ${eur2(x.transfer)} à ${sideLabel(x, x.to)}` : 'Aucun reversement', ...k.warnings,
       'Après clôture, les montants de la date sont verrouillés ; la réouverture demande un motif.'].join('\n');
     if (await ask({title: 'Clôturer le résultat ?', text, actions: [{value: 'ok', label: 'Clôturer le résultat'}]}) !== 'ok') return;

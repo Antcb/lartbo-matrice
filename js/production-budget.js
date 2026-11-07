@@ -133,6 +133,22 @@ export { lineValue };
 /** Promotion locale d'une coproduction : à qui elle incombe selon le contrat (v1.51) */
 export const PROMO_DEBTORS = [['commun', 'Charge commune (déduite du résultat partagé)'], ['artbo', 'L’ArtBoristerie seule'], ['partenaire', 'Le coproducteur seul']];
 export const PROMO_PAYERS = [['artbo', 'L’ArtBoristerie'], ['partenaire', 'Le coproducteur']];
+/**
+ * Partie qui supporte la promotion locale sans choix explicite (décision d'Anthony du 07/11/2026) :
+ *   - dossier EXISTANT : calcul historique conservé (charge commune, le résultat partagé la contient), affiché « charge commune —
+ *     règle existante à confirmer » ; la clôture n'est pas bloquée à ce titre ;
+ *   - NOUVEAU dossier avec une promotion : le choix est demandé avant la clôture (bloquant).
+ * Critère vérifiable de « nouveau dossier » : date créée (shows.created_at, rempli par la base) à partir du 07/11/2026 0 h (heure de
+ * Paris), ou date de création inconnue (cas le plus sûr : le choix est demandé). Les résultats déjà clôturés gardent leur synthèse.
+ */
+export const PROMO_CHOICE_FROM = '2026-11-06T23:00:00Z';
+export const PROMO_LEGACY_LABEL = 'Charge commune — règle existante à confirmer';
+export const promoDebtorLegacy = s => !!s?.created_at && new Date(s.created_at).getTime() < Date.parse(PROMO_CHOICE_FROM);
+/** Débiteur de la promotion : choix explicite, sinon « commun » historique pour un dossier existant (assumed), sinon null */
+export function promoDebtorOf(s, p = prodOf(s)){
+  if (PROMO_DEBTORS.some(d => d[0] === p.promo_debtor)) return {debtor: p.promo_debtor, assumed: false};
+  return promoDebtorLegacy(s) ? {debtor: 'commun', assumed: true} : {debtor: null, assumed: false};
+}
 export function coprodClose(s){
   const r = productionBudget(s, true), p = r.p, issues = [], warnings = [];
   const holder = s.ticket_holder, share = num(p.artbo_share);
@@ -160,7 +176,7 @@ export function coprodClose(s){
   if (r.ht + r.dlHt > 0 && !p.receipts_cashed_at) issues.push(`Recettes de billetterie (${eur2(r2(r.ht + r.dlHt))} HT) pas encore notées encaissées : note la date d’encaissement par ${holder === 'partenaire' ? 'le coproducteur' : holder === 'artbo' ? 'L’ArtBoristerie' : 'la structure qui encaisse'}`);
   if (promo < 0) issues.push('Promotion locale négative : vérifie ses pourcentages');
   if (promo){
-    if (!PROMO_DEBTORS.some(d => d[0] === debtor)) issues.push('Promotion locale : indique à qui elle incombe selon le contrat (charge commune, L’ArtBo ou le coproducteur)');
+    if (!PROMO_DEBTORS.some(d => d[0] === debtor) && !promoDebtorLegacy(s)) issues.push('Promotion locale : indique à qui elle incombe selon le contrat (charge commune, L’ArtBo seule ou le coproducteur seul) — choix obligatoire avant la clôture pour une date créée depuis le 07/11/2026');
     if (!['artbo', 'partenaire'].includes(payer)) issues.push('Promotion locale : indique qui l’a réellement payée (L’ArtBo ou le coproducteur)');
     if (!promoPaid) issues.push(`Promotion locale (${eur2(promo)}) pas encore payée : note sa date de paiement avant la clôture`);
   }
@@ -196,7 +212,7 @@ export function coprodClose(s){
   if (onlyPlanned.length) pending.push('montant réel de dépenses seulement prévues');
   if (noPayer.length) pending.push('payeur de dépenses réelles');
   if (unpaidLines.length) pending.push('date de paiement de dépenses réelles');
-  if (promo && !PROMO_DEBTORS.some(d => d[0] === debtor)) pending.push('partie qui supporte la promotion locale');
+  if (promo && !PROMO_DEBTORS.some(d => d[0] === debtor) && !promoDebtorLegacy(s)) pending.push('partie qui supporte la promotion locale');
   if (promo && !['artbo', 'partenaire'].includes(payer)) pending.push('payeur de la promotion locale');
   if (promo && !promoPaid) pending.push('date de paiement de la promotion locale');
   if (unqualified.length) pending.push('qualification de lignes de Factures');
@@ -204,7 +220,7 @@ export function coprodClose(s){
   if (recTodo.length) pending.push('date d’encaissement de recettes complémentaires');
   return {r, issues, warnings, ok: !issues.length, pending, provisional: !!pending.length, snapshot: {
     holder, recettes_ht: r.ht, dl_ht: r.dlHt, taxes: r.taxes, cnm: r.cnm, sacem: r.sacem, costs: r.costs, promo: r.promo, result, shared_result: shared,
-    promo_debtor: debtor, promo_payer: payer, promo_paid_at: p.promo_paid_at || null, receipts_cashed_at: p.receipts_cashed_at || null,
+    promo_debtor: debtor, ...(promo && !PROMO_DEBTORS.some(d => d[0] === debtor) && promoDebtorLegacy(s) ? {promo_debtor_rule: 'commun_historique'} : {}), promo_payer: payer, promo_paid_at: p.promo_paid_at || null, receipts_cashed_at: p.receipts_cashed_at || null,
     extra_receipts: r.extra, cashed_artbo: cashedBy('artbo'), cashed_partner: cashedBy('partenaire'),
     promo_advance: promo && payer && debtor && debtor !== 'commun' && payer !== debtor ? promo : 0,   // avance faite pour le compte de l'autre
     artbo_share: share, artbo_loss_share: sp.lossPct, artbo_part: artboPart, partner_part: partnerPart, partner: r.partnerName,

@@ -24,7 +24,7 @@ const setProd = (page, id, patch) => page.evaluate(async ([i, p]) => {
 }, [id, patch]);
 const openBudget = (page, id) => page.evaluate(async i => {
   const { S } = await import('./js/state.js'); const app = await import('./js/app.js');
-  app.go('production'); S.openProd.add(i); S.tab['prod:' + i] = 'budget'; app.render();
+  app.go('production'); S.openProd.clear(); S.openProd.add(i); S.tab['prod:' + i] = 'budget'; app.render();
 }, id);
 const forecast = page => page.evaluate(async () => { const { productionBudget } = await import('./js/production-budget.js'), { byId } = await import('./js/selectors.js');
   const f = productionBudget(byId('shows', 'cp-p')); return { promo: f.promo, result: f.resultDl, shared: f.shared, artbo: f.artbo, partner: f.partner }; });
@@ -45,7 +45,7 @@ test('v1.60.3 promotion locale : supportée par L’ArtBo seule choisie dès le 
   const sel = page.locator('fieldset.lock-set select[data-prod-path="promo_debtor"]');
   await expect(sel).toHaveCount(1);
   await expect(page.locator('fieldset.lock-set', { hasText: 'Résultat hors DL' })).toContainText('Promo locale supportée par');
-  await expect(page.locator('fieldset.lock-set', { hasText: 'Résultat hors DL' })).toContainText('Non renseigné');
+  await expect(page.locator('fieldset.lock-set', { hasText: 'Résultat hors DL' })).toContainText('à choisir avant la clôture');   // date sans created_at : nouveau dossier (cas le plus sûr)
   // clôture : aucun billet vendu saisi → promotion PRÉVUE affichée, pas « Aucune promotion locale »
   await expect(page.locator('.coprod-block')).not.toContainText('Aucune promotion locale');
   await expect(page.locator('.coprod-block')).toContainText(/Promotion locale \(prévue 965,00\s€ ; réel calculé quand les billets vendus seront saisis\)/);
@@ -57,7 +57,7 @@ test('v1.60.3 promotion locale : supportée par L’ArtBo seule choisie dès le 
     return [s.production.promo_debtor, s.production.promo_payer ?? null, s.ticket_holder, s.production.promo_net_pct]; })).toEqual(['artbo', null, 'partenaire', 10]);
   // hors du résultat partagé (5 685 + 965 = 6 650 → 3 325 chacun), retirée une seule fois de la part de L'ArtBo : 2 360
   expect(await forecast(page)).toEqual({ promo: 965, result: 5685, shared: 6650, artbo: 2360, partner: 3325 });
-  await expect(page.locator('fieldset.lock-set', { hasText: 'Résultat hors DL' })).not.toContainText('Non renseigné');
+  await expect(page.locator('fieldset.lock-set', { hasText: 'Résultat hors DL' })).not.toContainText('à choisir avant la clôture');
   await expect(page.locator('fieldset.lock-set', { hasText: 'Résultat hors DL' })).toContainText('Résultat partagé');
   await expect(page.locator('.coprod-block select[data-prod-path="promo_debtor"]')).toHaveValue('artbo');
   // coproducteur seul : symétrique
@@ -104,5 +104,52 @@ test('v1.60.3 reversement provisoire tant que paiements ou encaissements manquen
   expect(k.x.artbo_part).toBeNull();
   await openBudget(page, 'cp-p');
   await expect(page.locator('.coprod-block tr.bill-total', { hasText: 'Reversement' })).toContainText('information manquante');
+  expectClean(ctx);
+});
+
+// Décision d'Anthony du 07/11/2026 : dossiers existants sans choix explicite = calcul historique (charge commune), affiché
+// « charge commune — règle existante à confirmer », clôture non bloquée à ce titre ; nouveaux dossiers (créés depuis le 07/11/2026,
+// ou création inconnue) : choix obligatoire avant la clôture ; résultats déjà clôturés inchangés.
+test('v1.60.3 promotion sans choix : dossier existant = charge commune à confirmer (non bloquant) ; nouveau dossier = choix exigé ; clôturé inchangé', async ({ page }) => {
+  const ctx = await openApp(page);
+  const ready = { ...COPRO.production, receipts_cashed_at: `${Y}-10-05`, promo_payer: 'partenaire', promo_paid_at: `${Y}-10-03`, tickets: [{ label: 'Plein', qty: 500, price: 21.1, real_qty: 500 }] };
+  const line = id => ({ ...LINE, id: 'pl-' + id, show_id: id, amount: 3000, payer: 'partenaire', paid_at: `${Y}-10-02` });
+  const snap = { holder: 'partenaire', promo: 965, result: 5685, shared_result: 5685, promo_debtor: 'commun', promo_payer: 'partenaire', artbo_share: 50, artbo_loss_share: 30,
+    artbo_part: 2842.5, partner_part: 2842.5, partner: 'Coprod Témoin', net_encaisse: 9650, paid_artbo: 0, paid_partner: 3965, pos_artbo: 0, pos_partner: 5685, transfer: 2842.5, from: 'partenaire', to: 'artbo' };
+  await seed(page, { partners: [{ id: 'pa-y', name: 'Coprod Témoin' }],
+    shows: [{ ...COPRO, id: 'cp-old', created_at: '2026-10-20T10:00:00Z', production: ready },
+      { ...COPRO, id: 'cp-new', created_at: '2026-11-07T09:00:00Z', production: ready },
+      { ...COPRO, id: 'cp-done', created_at: '2026-10-20T10:00:00Z', production: { ...ready, promo_debtor: 'commun' }, result_closed_at: `${Y}-10-10T10:00:00Z`, result_closed: snap }],
+    budget_lines: [line('cp-old'), line('cp-new'), line('cp-done')] });
+  const k = await page.evaluate(async () => { const { coprodClose, productionBudget } = await import('./js/production-budget.js'), { byId } = await import('./js/selectors.js');
+    const one = id => { const s = byId('shows', id), c = coprodClose(s), f = productionBudget(s); return { ok: c.ok, provisional: c.provisional, issues: c.issues.join(' | '), x: c.snapshot, shared: f.shared }; };
+    return { old: one('cp-old'), neu: one('cp-new') }; });
+  // existant : calcul historique (charge commune : résultat partagé = résultat global), clôture possible, règle tracée dans la synthèse
+  expect(k.old.issues).toBe(''); expect(k.old.ok).toBe(true); expect(k.old.provisional).toBe(false);
+  expect(k.old.x).toMatchObject({ result: 5685, shared_result: 5685, artbo_part: 2842.5, partner_part: 2842.5, promo_debtor: null, promo_debtor_rule: 'commun_historique' });
+  expect(k.old.shared).toBe(5685);
+  // nouveau : mêmes montants, mais clôture bloquée tant que le choix n'est pas fait ; reversement provisoire
+  expect(k.neu.ok).toBe(false); expect(k.neu.provisional).toBe(true);
+  expect(k.neu.issues).toContain('Promotion locale : indique à qui elle incombe selon le contrat');
+  expect(k.neu.issues).toContain('choix obligatoire avant la clôture');
+  expect(k.neu.x.promo_debtor_rule).toBeUndefined();
+  await openBudget(page, 'cp-old');
+  await expect(page.locator('fieldset.lock-set', { hasText: 'Résultat hors DL' })).toContainText('Charge commune — règle existante à confirmer');
+  await expect(page.locator('.coprod-block')).toContainText('Charge commune — règle existante à confirmer');
+  await expect(page.locator('.coprod-block [data-act="closeResult"]')).toBeEnabled();
+  await openBudget(page, 'cp-new');
+  await expect(page.locator('fieldset.lock-set', { hasText: 'Résultat hors DL' })).toContainText('à choisir avant la clôture');
+  await expect(page.locator('.coprod-block [data-act="closeResult"]')).toBeDisabled();
+  // un choix explicite sur un dossier existant remplace la règle historique
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
+    for (const db of [S.db, window.__DB]) db.shows.find(s => s.id === 'cp-old').production.promo_debtor = 'artbo'; touch('shows'); });
+  expect(await page.evaluate(async () => { const { coprodClose } = await import('./js/production-budget.js'), { byId } = await import('./js/selectors.js');
+    const x = coprodClose(byId('shows', 'cp-old')).snapshot; return [x.promo_debtor, x.promo_debtor_rule ?? null, x.shared_result, x.artbo_part]; })).toEqual(['artbo', null, 6650, 2360]);
+  // déjà clôturé : synthèse enregistrée affichée telle quelle
+  await openBudget(page, 'cp-done');
+  await expect(page.locator('.coprod-block')).toContainText('Charge commune (déduite du résultat partagé)');
+  await expect(page.locator('.coprod-block tr.bill-total', { hasText: 'Reversement' })).toContainText('2 842,50');
+  await expect(page.locator('.coprod-block .warn-badge', { hasText: 'provisoire' })).toHaveCount(0);
+  expect(await page.evaluate(() => window.__DB.shows.find(s => s.id === 'cp-done').result_closed)).toEqual(snap);
   expectClean(ctx);
 });
