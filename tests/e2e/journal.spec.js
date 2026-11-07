@@ -36,9 +36,8 @@ test('ouvrir « Modifier » puis annuler ne réécrit pas le mail', async ({ pag
 });
 
 // Règle demandée par Anthony (22/10/2026) : changer la date d'un échange ne doit pas réenregistrer le mail non modifié.
-// Pas encore développé (lot dédié) : ce test est marqué « échec attendu » ; il deviendra un test normal avec la correction.
-test('changer seulement la date ne réenregistre pas le mail (à corriger, lot dédié)', async ({ page }) => {
-  test.fail(true, 'comportement actuel : le mail est réenregistré à chaque enregistrement de la fenêtre');
+// Corrigé en v1.60.2 (js/actions.js editLog) : le mail et le texte ne sont envoyés que s'ils ont changé.
+test('changer seulement la date ne réenregistre pas le mail', async ({ page }) => {
   const ctx = await openApp(page);
   await ouvrirSuivi(page);
   await page.locator('[data-act="editLog"][data-id="lg-2"]').click();
@@ -47,6 +46,35 @@ test('changer seulement la date ne réenregistre pas le mail (à corriger, lot d
   await expect.poll(() => page.evaluate(() => window.__DB.prospect_logs.find(l => l.id === 'lg-2').date)).toBe('2027-01-15');
   const ecrit = await page.evaluate(() => window.__calls.filter(c => c.table === 'prospect_logs' && c.op === 'update').map(c => Object.keys(c.patch)));
   expect(ecrit.flat(), 'le contenu du mail ne doit pas faire partie de l’enregistrement').not.toContain('body_html');
+  expectClean(ctx);
+});
+
+test('modifier le texte du mail le réenregistre (mail et texte du journal)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await ouvrirSuivi(page);
+  await page.locator('[data-act="editLog"][data-id="lg-2"]').click();
+  const zone = page.locator('#modal #log-html');
+  await zone.click(); await page.keyboard.press('ControlOrMeta+End'); await page.keyboard.type(' Ajout test');
+  await page.locator('#modal button[type=submit]').click();
+  await expect.poll(() => stocke(page)).toContain('Ajout test');
+  const ecrit = await page.evaluate(() => window.__calls.filter(c => c.table === 'prospect_logs' && c.op === 'update').map(c => Object.keys(c.patch)));
+  expect(ecrit.flat()).toEqual(expect.arrayContaining(['body_html', 'body']));
+  expect(await page.evaluate(() => window.__DB.prospect_logs.find(l => l.id === 'lg-2').body)).toContain('Ajout test');
+  expectClean(ctx);
+});
+
+test('modifier seulement l’en-tête met à jour le texte sans réenregistrer le mail', async ({ page }) => {
+  const ctx = await openApp(page);
+  const avant = await stocke(page);
+  await ouvrirSuivi(page);
+  await page.locator('[data-act="editLog"][data-id="lg-2"]').click();
+  await page.locator('#modal [name="body"]').fill('En-tête modifié');
+  await page.locator('#modal button[type=submit]').click();
+  await expect.poll(() => page.evaluate(() => window.__DB.prospect_logs.find(l => l.id === 'lg-2').body)).toMatch(/^En-tête modifié\n\n/);
+  const ecrit = await page.evaluate(() => window.__calls.filter(c => c.table === 'prospect_logs' && c.op === 'update').map(c => Object.keys(c.patch)));
+  expect(ecrit.flat()).toContain('body');
+  expect(ecrit.flat()).not.toContain('body_html');
+  expect(await stocke(page)).toBe(avant);
   expectClean(ctx);
 });
 

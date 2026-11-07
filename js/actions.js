@@ -394,14 +394,23 @@ ${p.content_md||'(aucune)'}`;
   editLog: t => { const l = byId('prospect_logs', t.dataset.id);
     // un mail envoyé depuis la Matrice se modifie avec sa mise en forme
     const mail = !!l.body_html, head = String(l.body || '').split('\n\n')[0];
-    openModal({ title: `Échange du ${l.date ? fmtDate(l.date) : '—'}`, values: mail ? {...l, body: head} : l,
+    // mail tel qu'affiché à l'ouverture (avant un éventuel brouillon) : sert à savoir s'il a vraiment été modifié
+    let html0 = null;
+    const done = openModal({ title: `Échange du ${l.date ? fmtDate(l.date) : '—'}`, values: mail ? {...l, body: head} : l,
       fields:[{k:'date', label:'Date', type:'date'}, {k:'kind', label:'Type', type:'select', options:['Appel','Mail','RDV','Note'], blank:false}, {k:'contact_name', label:'Interlocuteur', full:true},
         {k:'body', label: mail ? 'En-tête (objet, artistes…)' : 'Notes', type:'textarea', full:true, rows: mail ? 3 : 10}],
       extra: mail ? `<div class="field full"><label>Mail</label>${rtToolbar('log-html')}<div class="mail-preview" id="log-html" contenteditable="true" style="${rtStyle()}">${safeHtml(l.body_html)}</div></div>` : '',
       onSave: async v => {
-        if (mail){ const html = document.querySelector('#modal #log-html').innerHTML, div = document.createElement('div'); div.innerHTML = html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p)>/gi, '\n');
-          v.body_html = html; v.body = (v.body || '') + '\n\n' + div.textContent.replace(/\n{3,}/g, '\n\n').trim(); }
-        await save('prospect_logs', l.id, v, {rerender:false}); } }); },
+        if (mail){ const html = document.querySelector('#modal #log-html').innerHTML;
+          // règle d'Anthony (22/10/2026) : changer la date, le type ou l'interlocuteur ne réenregistre pas le mail non modifié
+          const htmlChanged = html !== html0, headChanged = (v.body ?? null) !== (head.trim() || null);
+          if (!htmlChanged && !headChanged) delete v.body;
+          else { const div = document.createElement('div'); div.innerHTML = html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p)>/gi, '\n');
+            if (htmlChanged) v.body_html = html;
+            v.body = (v.body || '') + '\n\n' + div.textContent.replace(/\n{3,}/g, '\n\n').trim(); } }
+        await save('prospect_logs', l.id, v, {rerender:false}); } });
+    if (mail) html0 = document.querySelector('#modal #log-html')?.innerHTML ?? null;
+    return done; },
   // brouillon de prospection / relance envoyé depuis Gmail : noté « envoyé » à la main
   markLogSent: async t => { await markLogSent(t.dataset.id); },
   createArtistFolder: t => createArtistFolder(t.dataset.id),
