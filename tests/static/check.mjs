@@ -11,6 +11,7 @@
 // Usage : node static/check.mjs            (contrôle)
 //         node static/check.mjs --baseline (réécrit la référence des fenêtres natives, seulement si leur nombre a BAISSÉ)
 import { execFileSync } from 'node:child_process';
+import vm from 'node:vm';
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { parse, tokenizer } from 'acorn';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -215,6 +216,20 @@ for (const f of JS.filter(p => !p.endsWith('js/utils.js'))) {
   // question avant « Renommer » : exacte (v1.60.3) — seuls les dossiers cochés, jamais les contrats ; plus « tous les éléments cochés »
   const act = readFileSync(join(ROOT, 'js/actions.js'), 'utf8');
   if (/Tous les éléments cochés dans le tableau de renommage/.test(act) || !/Seuls les dossiers cochés[^']*Les contrats ne sont jamais renommés/.test(act)) fail('renommage', 'js/actions.js renameApply : la question doit dire que seuls les dossiers cochés sont renommés et jamais les contrats');
+  // récap quotidien (dailyJob, relecture v1.60.3) : repli sur la lecture sans withdrawn_at SEULEMENT si la colonne manque (42703) ;
+  // toute autre erreur arrête le récap (jamais de notifications retirées renvoyées). Exécution réelle de Code.gs, services Google simulés.
+  const recap = err => { const sent = [], ctx = { Logger: { log() {} }, GmailApp: { sendEmail: (...a) => sent.push(a) }, Utilities: { formatDate: () => '07/11' } };
+    vm.createContext(ctx); vm.runInContext(gs, ctx);
+    Object.assign(ctx, { rhFileDocs_() {}, artistFileDocs_() {}, setting_: () => '' });
+    ctx.sb_ = (m, path) => { if (m === 'GET' && /withdrawn_at=is\.null/.test(path)) throw new Error(err);
+      return m === 'GET' && path.startsWith('notifications') ? [{ id: 'n1', kind: 'x', title: 'Notification' }] : null; };
+    let thrown = null; try { ctx.dailyJob(); } catch (e) { thrown = String(e); } return { sent: sent.length, thrown }; };
+  try {
+    const absent = recap('Supabase 400 : {"code":"42703","message":"column notifications.withdrawn_at does not exist"}');
+    const autre = recap('Supabase 503 : service indisponible');
+    if (absent.sent !== 1 || absent.thrown) fail('renommage', `apps-script/Code.gs dailyJob : colonne withdrawn_at absente → lecture d'avant attendue (${JSON.stringify(absent)})`);
+    if (autre.sent !== 0 || !/Récap quotidien non envoyé/.test(autre.thrown || '')) fail('renommage', `apps-script/Code.gs dailyJob : autre erreur → récap arrêté attendu, sans repli (${JSON.stringify(autre)})`);
+  } catch (e) { fail('renommage', 'apps-script/Code.gs dailyJob : exécution simulée impossible (' + e + ')'); }
   if (!/var SCRIPT_VERSION = 'v\d+\.\d+\.\d+'/.test(gs) || !/version: SCRIPT_VERSION/.test(gs)) fail('renommage', 'apps-script/Code.gs : version du code absente du « ping »');
 }
 

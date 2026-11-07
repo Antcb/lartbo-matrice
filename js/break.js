@@ -2,8 +2,8 @@
  * ⚖️ Points d'équilibre (« breaks ») calculés — décisions d'Anthony du 04/11 et du 05/11/2026 (cas de travail, pas des règles
  * universelles ; calcul indicatif à partir du budget PRÉVU, qui ne remplace jamais le break contractuel saisi sur la date).
  *   - Production, coproduction et coréalisation ; jamais en cession ni pour une date « booking uniquement ».
- *   - Billet par billet : on ajoute les billets un à un et on cherche le premier nombre de billets payants pour lequel le résultat
- *     devient positif ou nul. Trois scénarios : la répartition prévue entre les tarifs, et une fourchette (billets les moins chers
+ *   - Billet par billet : on cherche le plus petit nombre de billets payants à partir duquel le résultat reste positif ou nul
+ *     jusqu'à la jauge (une zone positive isolée avant n'est pas un équilibre, relecture v1.60.3). Trois scénarios : la répartition prévue entre les tarifs, et une fourchette (billets les moins chers
  *     d'abord, les plus chers d'abord), toujours dans les quotas prévus de chaque tarif. Les invitations ne comptent pas.
  *   - Les avances ne sont pas des charges : seules les lignes du budget (coûts) et les droits et taxes entrent dans le résultat.
  *   - Coproduction : trois lectures distinctes, jamais additionnées — résultat PARTAGÉ (promotion locale à la charge d'une seule
@@ -47,17 +47,19 @@ export const allocate = (tiers, n, scenario) => { const out = tiers.map(() => 0)
 const SCENARIOS = [['mix', 'répartition prévue (quotas)'], ['low', 'billets les moins chers d’abord'], ['high', 'billets les plus chers d’abord']];
 const SALES = ['sales', 'selon les ventes saisies'];
 
-/** Premier n (0..Q) pour lequel value(n) ≥ 0. value(n) = null : information manquante pour ce nombre de billets ; on ne
- *  conclut alors rien (le résultat aurait pu être positif plus tôt) → {missing: true} */
+/** Équilibre = plus petit n (0..Q) tel que value(m) ≥ 0 pour TOUT m de n à Q (relecture v1.60.3) : un résultat non monotone
+ *  (ex. coréalisation, CNM à la seule charge de L'ArtBo : positif à 0 billet, négatif ensuite jusqu'au-delà du break) n'affiche
+ *  jamais une zone positive isolée comme équilibre. Parcours de Q vers 0 : on s'arrête au premier résultat négatif.
+ *  value(m) = null : information manquante pour ce nombre de billets ; on ne conclut alors rien → {missing: true} */
 function firstPositive(Q, value){
-  let last = null;
-  for (let n = 0; n <= Q; n++){
+  let found = null, at = null;
+  for (let n = Q; n >= 0; n--){
     const v = value(n);
     if (v == null) return {n: null, value: null, missing: true};
-    last = v;
-    if (v >= 0) return {n, value: v, missing: false};
+    if (v < 0) return found == null ? {n: null, value: v, missing: false} : {n: found, value: at, missing: false};
+    found = n; at = v;
   }
-  return {n: null, value: last, missing: false};
+  return {n: found, value: at, missing: false};
 }
 
 /** Production / coproduction : lectures et scénarios (null si la date n'est pas concernée) */

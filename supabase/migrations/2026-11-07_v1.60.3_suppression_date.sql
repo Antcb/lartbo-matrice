@@ -53,7 +53,8 @@
 -- Retour arrière (après accord) : ne plus appeler delete_show (l'application revient alors à la suppression directe) ;
 --   drop function public.delete_show(uuid), public.show_deletion_state(uuid), public.archive_show(uuid, text),
 --   public.restore_show(uuid) ; drop trigger shows_archive_guard on public.shows ; drop function public.shows_archive_guard() ;
---   recréer generate_reminders (v1.49), fiche_get (v1.60.2) et fiche_submit (v1.11) ; drop trigger show_payments_archived_alert,
+--   recréer generate_reminders (v1.49) puis drop function public.reminder_candidates(uuid, boolean), recréer fiche_get (v1.60.2)
+--   et fiche_submit (v1.11) ; drop trigger show_payments_archived_alert,
 --   pennylane_archived_alert ; la table show_deletions et les colonnes ajoutées restent (historique).
 -- =====================================================================================================
 
@@ -61,7 +62,7 @@
 do $m$
 declare b text := (select prosrc from pg_proc where oid = 'public.generate_reminders()'::regprocedure);
 begin
-  if md5(b) <> '1e39731b4ae42784cad558380e0ec253' and position('archived_at' in b) = 0 then
+  if md5(b) <> '1e39731b4ae42784cad558380e0ec253' and position('archived_at' in b) = 0 and position('reminder_candidates' in b) = 0 then
     raise exception 'v1.60.3 : generate_reminders n''est pas la version v1.49 attendue (empreinte du corps %) : migration arrêtée, rien n''est appliqué', md5(b);
   end if;
   -- fiche publique : fiche_get après la migration v1.60.2 lieux (texte de production v1.59 → empreinte 5ad948…, puis remplacement
@@ -291,7 +292,7 @@ grant execute on function public.restore_show(uuid) to authenticated;
 -- propres (celles d'avant l'archivage ont été retirées) ; aucune ne part avant l'échéance choisie ni avant son échéance d'origine.
 create or replace function public.reactivate_reminders(p_show uuid, p_next jsonb) returns void
 language plpgsql security definer set search_path = public as $$
-declare s shows%rowtype; who text := coalesce(auth.jwt() ->> 'email', ''); k text; v text; jour date := (now() at time zone 'Europe/Paris')::date;
+declare s shows%rowtype; who text := coalesce(auth.jwt() ->> 'email', ''); k text; v text; manque text; jour date := (now() at time zone 'Europe/Paris')::date;
 begin
   if not public.is_team() then raise exception 'Accès refusé' using errcode = 'P0001'; end if;
   select * into s from shows where id = p_show for update;
@@ -304,6 +305,12 @@ begin
     if k !~ '^[a-z_]+$' or v !~ '^\d{4}-\d{2}-\d{2}$' then raise exception 'Prochaine échéance illisible (%).', k using errcode = 'P0001'; end if;
     if v::date < jour then raise exception 'Choisis une prochaine échéance à partir d’aujourd’hui.' using errcode = 'P0001'; end if;
   end loop;
+  -- relecture v1.60.3 : une échéance choisie pour CHAQUE relance concernée (mêmes règles que generate_reminders, reminder_candidates),
+  -- sinon une relance d'échéance passée partirait dès le lendemain matin ; des relances en plus (proposées par l'application) sont acceptées
+  select string_agg(distinct c.r, ', ' order by c.r) into manque from public.reminder_candidates(p_show, true) c where c.raw is not null and not (p_next ? c.r);
+  if manque is not null then
+    raise exception 'Choisis la prochaine échéance de chaque relance (manquante : %).', manque using errcode = 'P0001';
+  end if;
   perform set_config('matrice.archive_rpc', 'on', true);
   update shows set reminders_suspended_at = null, reminders_reactivated_at = now(), reminders_next = p_next,
          archive_history = coalesce(archive_history, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('action', 'reactivate_reminders', 'at', now(), 'by', who, 'next', p_next))
@@ -314,16 +321,15 @@ revoke all on function public.reactivate_reminders(uuid, jsonb) from public, ano
 grant execute on function public.reactivate_reminders(uuid, jsonb) to authenticated;
 
 -- ─────────────── 5. Rappels : aucune date archivée (generate_reminders RÉÉCRITE ENTIÈREMENT, §7.5) ───────────────
--- Texte de la v1.49 (migration 2026-10-27_v1.49_dates_formats.sql) + une seule condition (sh.archived_at is null).
+-- Texte de la v1.49 (migration 2026-10-27_v1.49_dates_formats.sql) + la condition sh.archived_at is null ; relecture v1.60.3 : les
+-- relances candidates sont calculées par une seule fonction, reminder_candidates, utilisée par generate_reminders (envoi) et par
+-- reactivate_reminders (relances concernées d'une date restaurée) — une seule règle, jamais recopiée.
 -- Garde en tête du fichier (§0) : corps en base ni v1.49 (empreinte 1e39731b4ae42784cad558380e0ec253) ni cette version → arrêt.
-create or replace function public.generate_reminders()
- returns integer
- language plpgsql
- security definer
- set search_path to 'public'
+-- p_show : une seule date (null = toutes) ; p_all : relances concernées même si elles sont suspendues (date restaurée)
+create or replace function public.reminder_candidates(p_show uuid default null, p_all boolean default false)
+ returns table (r text, show_id uuid, k text, raw date, w boolean, t text, venue text, proj text, date date, city text, nxt jsonb, reactiv text)
+ language sql stable security definer set search_path to 'public'
 as $function$
-declare n integer;
-begin
   with s as (
     select sh.id, sh.date, sh.venue, sh.city, coalesce(sh.prod_mode,'production') mode, coalesce(pr.name,'') proj,
       -- rappels administratifs (étapes, boucles, factures à faire, partenaire) : dates passées de plus de 120 jours exclues ;
@@ -350,7 +356,8 @@ begin
     left join lateral (select * from show_payments x where x.show_id = sh.id and x.hors_calcul is null and x.kind = 'partner' order by sort limit 1) pt on true
     where sh.status in ('Confirmée Salle','Confirmée Festival')
       and sh.archived_at is null   -- v1.60.3 : une date archivée ne produit aucun rappel (comme dans js/reminders.js)
-      and sh.reminders_suspended_at is null   -- v1.60.3 : date restaurée, relances pas encore réactivées
+      and (p_all or sh.reminders_suspended_at is null)   -- v1.60.3 : date restaurée, relances pas encore réactivées (p_all : relances concernées malgré la suspension)
+      and (p_show is null or sh.id = p_show)
   ), f as (
     -- factures suivies : production = acomptes, soldes, autres lignes ; booking = facture de commission (jamais acompte / solde)
     select x.id, x.show_id, x.kind, x.sent_at, x.paid_at, x.reminded_at, x.reminders_paused,
@@ -384,19 +391,33 @@ begin
                      from s where mode <> 'booking' and recent and cashed is not null and pt_id is not null and (pt_sent is null or pt_paid is null)
     union all select 'boucle_accueil', id, id::text, (date - interval '4 months')::date, false, 'Boucle accueil & technique à envoyer (J-4 mois)' from s where mode <> 'booking' and date is not null and boucle_tech is null and (date is null or date >= current_date)
     union all select 'boucle_com', id, id::text, contract_cosigned_sent, false, 'Boucle communication à envoyer' from s where mode <> 'booking' and contract_cosigned_sent is not null and boucle_com is null and (date is null or date >= current_date)
-  ), ins as (
+  )
+  select c.r, c.id, c.k, c.raw, c.w, c.t, s.venue, s.proj, s.date, s.city, s.nxt, s.reactiv from cand c join s on s.id = c.id
+$function$;
+revoke all on function public.reminder_candidates(uuid, boolean) from public, anon, authenticated, service_role;
+
+create or replace function public.generate_reminders()
+ returns integer
+ language plpgsql
+ security definer
+ set search_path to 'public'
+as $function$
+declare n integer;
+begin
+  -- relances candidates : reminder_candidates (dates confirmées, sans date archivée — archived_at — ni relances suspendues)
+  with ins as (
     insert into notifications (kind, title, body, show_id, dedupe_key)
-    select c.r, c.t || ' — ' || s.venue,
-           concat_ws(' · ', nullif(s.proj,''), to_char(s.date, 'DD/MM/YYYY'), s.city),
-           s.id, c.r || ':' || c.k || ':' || c.raw || coalesce(':a' || s.reactiv, '')   -- v1.60.3 : clés propres après réactivation
-    from cand c join s on s.id = c.id
+    select c.r, c.t || ' — ' || c.venue,
+           concat_ws(' · ', nullif(c.proj,''), to_char(c.date, 'DD/MM/YYYY'), c.city),
+           c.show_id, c.r || ':' || c.k || ':' || c.raw || coalesce(':a' || c.reactiv, '')   -- v1.60.3 : clés propres après réactivation
+    from public.reminder_candidates(null, false) c
     -- échéance : J+n décalée au lundi (w) ; boucle accueil & technique (4 mois calendaires) : samedi / dimanche → vendredi précédent
     -- (Q12, v1.49 — même règle que js/reminders.js workDayBefore) ; la clé anti-doublon garde la date brute (aucune notification en double)
     -- v1.60.3 : relances réactivées après une restauration — la relance ne part qu'à la prochaine échéance choisie pour elle
     -- (reminders_next), jamais avant son échéance d'origine (greatest)
     where c.raw is not null and greatest(case when c.w then public.workday(c.raw)
                                       when c.r = 'boucle_accueil' then c.raw - (case extract(isodow from c.raw) when 6 then 1 when 7 then 2 else 0 end)::int
-                                      else c.raw end, (s.nxt ->> c.r)::date) <= current_date
+                                      else c.raw end, (c.nxt ->> c.r)::date) <= current_date
     on conflict (dedupe_key) do nothing
     returning 1
   ) select count(*) into n from ins;

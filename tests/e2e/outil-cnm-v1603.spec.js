@@ -2,7 +2,9 @@
 // et calcul corrigé, solde déjà versé, payeur effectif seulement d'après une ligne payée. Aucun accès réseau extérieur.
 import { test, expect } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 test('v1.60.3 outil de rapprochement CNM : lignes, double déduction, solde versé, payeur effectif, lecture seule', async () => {
@@ -18,4 +20,23 @@ test('v1.60.3 outil de rapprochement CNM : lignes, double déduction, solde vers
   expect(rows['fx-c']).toMatchObject({ double_deduction: 'non', depenses_actuel: '2000' });
   expect(rows['fx-e']).toMatchObject({ double_deduction: 'oui', solde_verse: 'oui', solde_verse_montant: '1000', payeur_effectif: 'L\'ArtBo le 2026-05-20 (280)', remboursement: 'remboursé le 2026-05-25', ecart_apres_versement: '88' });
   expect(readFileSync(dir + src, 'utf8')).toBe(before);   // extrait inchangé
+});
+
+test('v1.60.3 outil de rapprochement CNM : texte commençant par = + - @ neutralisé dans le CSV (relecture), nombres inchangés', async () => {
+  test.setTimeout(120_000);
+  const dir = fileURLToPath(new URL('..', import.meta.url));
+  const data = JSON.parse(readFileSync(dir + 'fixtures/rapprochement-cnm-fictif.json', 'utf8'));
+  const pieges = { 'fx-a': '=HYPERLINK("http://exemple.invalid")', 'fx-b': '+33 Salle', 'fx-c': '-Salle', 'fx-e': '@Salle' };
+  data.shows.forEach(s => { if (pieges[s.id]) s.venue = pieges[s.id]; });
+  const tmp = join(mkdtempSync(join(tmpdir(), 'cnm-')), 'extrait.json'); writeFileSync(tmp, JSON.stringify(data));
+  const res = execFileSync(process.execPath, ['outils/rapprochement-cnm.mjs', tmp], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 100_000 });
+  const [head, ...lines] = res.replace(/^\ufeff/, '').trim().split('\n');
+  const cols = head.split(';'), lieu = cols.indexOf('lieu'), id = cols.indexOf('id');
+  const byId = Object.fromEntries(lines.map(l => [l.split(';')[id], l]));
+  expect(byId['fx-a'].split(';')[lieu]).toBe('"\'=HYPERLINK(""http://exemple.invalid"")"');   // guillemets doublés, cellule entre guillemets
+  expect(byId['fx-b'].split(';')[lieu]).toBe("'+33 Salle");
+  expect(byId['fx-c'].split(';')[lieu]).toBe("'-Salle");
+  expect(byId['fx-e'].split(';')[lieu]).toBe("'@Salle");
+  expect(lines.every(l => !l.split(';').some(c => /^[=+@]/.test(c)))).toBe(true);
+  expect(byId['fx-e'].split(';')[cols.indexOf('ecart_apres_versement')]).toBe('88');   // nombres inchangés
 });
