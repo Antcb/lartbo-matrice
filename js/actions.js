@@ -8,11 +8,11 @@ import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, em
 import { CONFIRMED_PROD, FOLLOW_DATES, INVOICE_DATES, PAY_KINDS, isOff } from './constants.js';
 import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, restoreShow, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
 import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure, showPrefillFromSuivi } from './forms.js';
-import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showLabel, showsFiltered, structName } from './selectors.js';
+import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showLabel, showsFiltered, structName, unreadNotifs } from './selectors.js';
 import { CFG } from './config.js';
 import { propagateCommission } from './commission.js';
 import { payerLabel } from './budget.js';
-import { ARCHIVED, S, localSet, setProjects, touch } from './state.js';
+import { S, localSet, setProjects, touch } from './state.js';
 import { MODALS, openModal } from './ui/modal.js';
 import { ask, askText, confirmAsk, copyText } from './ui/dialog.js';
 import { modalSaved } from './ui/drafts.js';
@@ -90,11 +90,13 @@ export const ACTIONS = {
   toggleNotifs: () => { S.notifOpen = !S.notifOpen; S.userOpen = false; render(); },
   toggleUser: () => { S.userOpen = !S.userOpen; S.notifOpen = false; render(); },
   readAllNotifs: async () => { const me = S.user.email;
-    for (const n of S.db.notifications.filter(n=>!(n.read_by||[]).includes(me))) await save('notifications', n.id, {read_by:[...(n.read_by||[]), me]}, {rerender:false});
+    for (const n of unreadNotifs()) await save('notifications', n.id, {read_by:[...(n.read_by||[]), me]}, {rerender:false});
     render(); },
   openNotif: async t => { const n = byId('notifications', t.dataset.id); const me = S.user.email;
     if (!(n.read_by||[]).includes(me)) await save('notifications', n.id, {read_by:[...(n.read_by||[]), me]}, {rerender:false});
     S.notifOpen = false;
+    // date archivée (alerte « facture sur une date archivée », v1.60.3) : ouverte dans Booking › Dates archivées
+    if (n.show_id && byId('shows', n.show_id)?.archived_at){ S.view = 'booking'; S.showArchived = true; render(); return; }
     if (n.show_id){ const s = byId('shows', n.show_id); if (s){ S.view='production'; S.year = Number((s.date||'').slice(0,4)) || S.year; S.openProd.add(s.id); render(); document.getElementById('prod-'+s.id)?.scrollIntoView({block:'center'}); return; } }
     if (n.task_id){ S.view='todo'; render(); return; }
     render(); },
@@ -103,8 +105,8 @@ export const ACTIONS = {
   toggleCancelled: () => { S.showCancelled=!S.showCancelled; render(); },
   toggleArchived: () => { S.showArchived = !S.showArchived; render(); },
   // date archivée (v1.60.3) : restaurée après confirmation — elle revient dans les listes, totaux, comptes et relances
-  restoreShow: async t => { const s = ARCHIVED.shows.find(x => x.id === t.dataset.id); if (!s) return;
-    if (!(await confirmAsk('Restaurer la date ?', `La date « ${[s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · ')} » revient dans les listes, les totaux, les comptes, les relances, la carte et les calendriers.`, 'Restaurer la date'))) return;
+  restoreShow: async t => { const s = byId('shows', t.dataset.id); if (!s?.archived_at) return;
+    if (!(await confirmAsk('Restaurer la date ?', `La date « ${[s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · ')} » revient dans les listes de travail, la carte et les calendriers ; sa fiche publique se rouvre. Ses relances reprennent après un délai de 7 jours (aucune relance accumulée envoyée d’un coup).`, 'Restaurer la date'))) return;
     if (await restoreShow(s.id)){ toast('Date restaurée'); render(); } },
   resetTodoFilters: () => { S.todoWho = ''; localSet('todoWho', ''); S.todoDept = ''; S.search.todo = ''; setProjects([]); render(); },
   clearArtists: () => { setProjects([]); render(); },

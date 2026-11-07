@@ -15,6 +15,7 @@
  *    suspension possible à la main, ligne par ligne (reminders_paused)
  *  - 10 j après le premier encaissement (acompte ou solde) : commission L'ArtBo pas encore versée (pas de facture en production) ; facture partenaire pas envoyée / payée
  * Booking seul : après le contrat co-signé, faire la facture de commission ; puis mêmes règles d'envoi et de paiement.
+ * Date archivée : aucune relance ; date restaurée : échéances reportées au plus tôt 7 jours après la restauration (v1.60.3).
  *   Jamais de relance d'acompte ni de solde (factures de l'artiste à l'organisateur).
  */
 import { commissionState, isInvoiced, paymentsOf } from './calc.js';
@@ -53,11 +54,16 @@ function invoiceRules(pays, booking, rule){
   }
 }
 
+/** Date restaurée (v1.60.3) : aucune relance accumulée d'un coup — échéance au plus tôt 7 jours après la restauration (jour ouvré),
+ *  même règle que generate_reminders (migration v1.60.3) ; null pour une date jamais restaurée */
+export const restoreGrace = s => s?.restored_at ? workDay(addDays(new Date(s.restored_at).toLocaleDateString('sv-SE', {timeZone: 'Europe/Paris'}), 7)) : null;
+
 export function remindersOf(s){
-  if (!CONFIRMED_PROD.includes(s.status)) return [];
-  const out = [], pays = paymentsOf(s.id), now = today();
+  // date archivée (v1.60.3) : relances suspendues (même règle que generate_reminders)
+  if (!CONFIRMED_PROD.includes(s.status) || s.archived_at) return [];
+  const out = [], pays = paymentsOf(s.id), now = today(), grace = restoreGrace(s);
   const first = k => pays.find(p => p.kind===k);
-  const rule = (step, due, title) => out.push({step, due, title, late: due <= now});
+  const rule = (step, due, title) => { if (grace && due < grace) due = grace; out.push({step, due, title, late: due <= now}); };
   if (s.prod_mode === 'booking'){
     const com = first('artbo');
     if (s.contract_cosigned_sent && com && !isInvoiced(com)) rule('artbo', s.contract_cosigned_sent, 'Facture de commission à faire (contrat co-signé)');

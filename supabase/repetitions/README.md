@@ -21,4 +21,5 @@ ailleurs que sur le projet de test (contrôle de l'adresse des fonctions, absenc
   `2026-11-07_v1.60.3_suppression_date_essai.sql` : suppression contrôlée d'une date (date rouverte supprimée avec son historique
   archivé, refus : résultat clôturé, facture émise, versement, devis / facture Pennylane, rattachement, pièce à rattacher, hors calcul ;
   journal en lecture seule ; tâches détachées annotées ; archivage / restauration et leurs refus ; aucun rappel pour une date
-  archivée ; garde de generate_reminders). Données fictives uniquement.
+  archivée ; gardes de generate_reminders, fiche_get et fiche_submit ; fiche publique « Dossier indisponible » ; notifications
+  retirées ; restauration sans relance accumulée ; alerte de facture sur une date archivée). Données fictives uniquement.
