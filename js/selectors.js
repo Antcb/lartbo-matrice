@@ -96,14 +96,15 @@ const isFrance = c => !c || /^\s*france\s*$/i.test(c);
 /** Lieu d'une fiche structure (sa propre adresse, pas l'adresse administrative) */
 export const placeOfStructure = st => st ? {venue: st.name, address: st.address || null, postal_code: st.postal_code || null, city: st.city || null,
   department: st.department_code || (!isFrance(st.country) ? st.country : null), lat: st.lat ?? null, lng: st.lng ?? null} : null;
-/** Lieu d'un festival / d'une salle / d'un événement d'une structure : son nom et sa ville ; l'adresse, le code postal et les
- *  coordonnées de la structure ne sont jamais repris (décision du 07/11/2026 : l'adresse de la structure n'est le lieu que sur
- *  confirmation, case de la date) — adresse à compléter, repère de la structure « lieu à confirmer » sur la carte */
+/** Lieu d'un festival / d'une salle / d'un événement d'une structure, sélectionné : SES propres données (nom, « Lieu (si différent) »
+ *  repris comme adresse, ville ; la table structure_events n'a ni code postal ni coordonnées) — jamais l'adresse, le code postal,
+ *  la ville ni les coordonnées de l'organisateur (décisions du 07/11/2026). Département : celui de la structure seulement si
+ *  l'événement est indiqué dans la même ville qu'elle. */
 export function placeOfEvent(e){
   if (!e) return null;
   const st = byId('structures', e.structure_id), sp = placeOfStructure(st);
-  const sameCity = !!sp && (!e.city || norm(e.city) === norm(st.city || ''));
-  return {venue: e.name, address: null, postal_code: null, city: e.city || st?.city || null, department: sameCity ? sp.department : null, lat: null, lng: null};
+  const sameCity = !!sp && !!e.city && norm(e.city) === norm(st.city || '');
+  return {venue: e.name, address: (e.place || '').trim() || null, postal_code: null, city: e.city || null, department: sameCity ? sp.department : null, lat: null, lng: null};
 }
 /** Lieu propre d'un suivi (null s'il n'en a pas : c'est alors la structure qui sert de repère) */
 export const placeOfSuivi = p => p && (p.venue || p.address || p.city) ? {venue: p.venue || null, address: p.address || null, postal_code: p.postal_code || null,

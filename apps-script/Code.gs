@@ -571,7 +571,7 @@ function createShowFolder_(showId, force) {
   lock.waitLock(30000);
   try {
     var show = sb_('GET', 'shows?id=eq.' + showId +
-      '&select=id,venue,date,city,department,drive_folder_id,project:projects(id,name,drive_artist_folder_id),structure:structures(postal_code,city)')[0];
+      '&select=id,venue,date,city,department,postal_code,venue_is_structure,drive_folder_id,project:projects(id,name,drive_artist_folder_id),structure:structures(postal_code,department_code,city)')[0];
     if (!show) throw new Error('Date introuvable : ' + showId);
 
     // Déjà créé et toujours présent → on ne refait rien
@@ -614,13 +614,16 @@ function createShowFolder_(showId, force) {
  * sinon le département de la date (pays à l'étranger : CH, BE…).
  */
 function dept_(show) {
-  // 1. le département de la date (lieu du concert) ; 2. à défaut le CP de la structure, seulement si elle est dans la même ville
-  //    (le siège d'un producteur est souvent ailleurs : 3AG à Clermont, RPO à Grenoble…)
+  // Même source de lieu que l'adresse (décisions d'Anthony du 07/11/2026 ; = venueSource dans js/fiche-fields.js et lieu_departement en SQL) :
+  // 1. le département de la date ; 2. le code postal de la date ; 3. la structure SEULEMENT si elle est confirmée comme lieu de
+  // représentation (venue_is_structure) — jamais le siège d'un organisateur non confirmé (3AG à Clermont, RPO à Grenoble…)
   var d = String(show.department || '').trim();
   if (d) return /^\d$/.test(d) ? '0' + d : (/^\d{5}$/.test(d) ? cpDept_(d) : d.toUpperCase());
-  var st = show.structure || {};
-  var same = st.city && show.city && rhNorm_(st.city) === rhNorm_(show.city);
-  return same ? cpDept_(st.postal_code) : '';
+  var own = cpDept_(show.postal_code);
+  if (own) return own;
+  if (!show.venue_is_structure) return '';
+  var st = show.structure || {}, sd = String(st.department_code || '').trim();
+  return sd ? (/^\d$/.test(sd) ? '0' + sd : sd.toUpperCase()) : (cpDept_(st.postal_code) || '');
 }
 
 function cpDept_(cp) {
@@ -835,7 +838,7 @@ function contractName_(show, artist) {
  */
 function renameAudit() {
   var p = props_();
-  var shows = sb_('GET', 'shows?select=id,project_id,date,status,venue,city,department,contract_type,drive_folder_id,structure:structures(postal_code,city)&date=not.is.null') || [];
+  var shows = sb_('GET', 'shows?select=id,project_id,date,status,venue,city,department,postal_code,venue_is_structure,contract_type,drive_folder_id,structure:structures(postal_code,department_code,city)&date=not.is.null') || [];
   var projects = sb_('GET', 'projects?select=id,name,drive_artist_folder_id') || [];
   var rows = [['Appliquer', 'Type', 'Artiste', 'Dossier', 'Nom actuel', 'Nom proposé', 'ID']];
   var root = DriveApp.getFolderById(p.ARTISTS_ROOT_ID), artists = root.getFolders();

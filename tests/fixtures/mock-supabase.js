@@ -125,8 +125,8 @@
       address: '12 rue du Lieu Réel', postal_code: '30200', cp: '75011', contract_type: 'Cession', fee_ht: 6000, vat: 5.5, fee_ttc: 6330, acompte_pct: 50, payments: [],
       structure: { name: 'Structure Organisatrice', address: '1 avenue du Siège', postal_code: '75011', city: 'Paris' }, fiche: {}, submitted_at: null, locked: false }
     // décision du 07/11/2026 : date sans adresse propre — adresse de la structure reprise seulement si venue_is_structure (case cochée)
-    : ['jeton-fiche-lieu-00002', 'jeton-fiche-lieu-00003'].includes(a.p_token) ? { artist: 'Artiste Alpha', date: inYear('06-17'), date_label: 'date de test', venue: 'Salle Sans Adresse', city: 'Paris',
-      address: null, postal_code: null, venue_is_structure: a.p_token === 'jeton-fiche-lieu-00003', cp: '75', contract_type: 'Cession', fee_ht: 6000, vat: 5.5, fee_ttc: 6330, acompte_pct: 50, payments: [],
+    : ['jeton-fiche-lieu-00002', 'jeton-fiche-lieu-00003'].includes(a.p_token) ? { artist: 'Artiste Alpha', date: inYear('06-17'), date_label: 'date de test', venue: 'Salle Sans Adresse', city: null, department: null,
+      address: null, postal_code: null, venue_is_structure: a.p_token === 'jeton-fiche-lieu-00003', cp: a.p_token === 'jeton-fiche-lieu-00003' ? '75' : null, contract_type: 'Cession', fee_ht: 6000, vat: 5.5, fee_ttc: 6330, acompte_pct: 50, payments: [],
       structure: { name: 'Structure Organisatrice', address: '1 avenue du Siège', postal_code: '75011', city: 'Paris', admin: { address: '1 avenue du Siège', postal_code: '75011' } }, fiche: {}, submitted_at: null, locked: false }
     : a.p_token === 'jeton-fiche-test-0001' ? { artist: 'Artiste Alpha', date: inYear('06-15'), date_label: 'date de test', venue: 'Festival Fictif', city: 'Bourg-Test',
       contract_type: 'Cession', fee_ht: 6000, vat: 5.5, fee_ttc: 6330, acompte_pct: 50, payments: [{ label: 'Acompte', kind: 'acompte', pct: 50, ht: 3000 }, { label: 'Solde', kind: 'solde', pct: 50, ht: 3000 }],

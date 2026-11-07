@@ -85,7 +85,8 @@ function knownPlaces(q){
     .sort((a, b) => isInactive(a.st || byId('structures', a.ev.structure_id)) - isInactive(b.st || byId('structures', b.ev.structure_id)))
     .map(x => { const pl = x.st ? placeOfStructure(x.st) : placeOfEvent(x.ev); if (!pl?.venue) return null;
       const where = [pl.address, [pl.postal_code, pl.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-      return {...pl, id: pl.venue, label: pl.venue, street: pl.address, postcode: pl.postal_code, department_code: pl.department,
+      // place_structure : la structure elle-même choisie comme lieu (vaut confirmation de son adresse, décision du 07/11/2026)
+      return {...pl, id: pl.venue, label: pl.venue, street: pl.address, place_structure: x.st ? x.st.id : null, postcode: pl.postal_code, department_code: pl.department,
         hint: [x.ev ? [x.ev.place, 'événement de ' + structName(x.ev.structure_id)].filter(Boolean).join(', ') : '', where, isInactive(x.st) ? 'inactive' : ''].filter(Boolean).join(' · ')}; })
     .filter(Boolean);
 }
