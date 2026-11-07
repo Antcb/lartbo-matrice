@@ -13,7 +13,7 @@ import { CONFIRMED_PROD, LOG_ICON, stClass, viaArtbo } from '../constants.js';
 import { save, sb, signedCached, signedUrl } from '../data.js';
 import { defaultCommission, projectCommission, publicLink, setting, suiviClosed, attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, spectaclesOf, structName, tasksOfProject } from '../selectors.js';
 import { S, touch } from '../state.js';
-import { curTab, dropZone, fileRow, fold, pstBadge, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
+import { archivedTag, curTab, dropZone, fileRow, fold, pstBadge, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cAc, cChk, cIn } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { badMails, checkMails, esc, eur, fmtDate, md, toast, today, url, pct } from '../utils.js';
@@ -93,13 +93,14 @@ export const fiscalYear = d => { if (!d) return 'Sans date'; const y = Number(d.
 function overview(p, {shows, tasks, suivis}){
   const byYear = {};
   shows.forEach(s=>{ const y=fiscalYear(s.date); (byYear[y]=byYear[y]||[]).push(s); });
-  const next = shows.filter(s => s.date >= today() && stClass(s.status)!=='off').slice(0, 6);
+  const next = shows.filter(s => s.date >= today() && stClass(s.status)!=='off' && !s.archived_at).slice(0, 6);   // liste de travail : sans les dates archivées (v1.60.3)
   return `<div class="tbl-wrap year-tbl"><table><thead><tr><th>Exercice (01/10 → 30/09)</th><th class="num">Confirmées</th><th class="num">Options</th><th class="num">Intérêts</th><th class="num">Dates</th><th class="num">Cachets confirmés</th><th class="num">Commissions L'ArtBo nettes</th></tr></thead><tbody>
     ${Object.entries(byYear).sort((a,b)=>b[0].localeCompare(a[0])).map(([y,l])=>{ const conf = l.filter(s=>stClass(s.status)==='conf');
       return `<tr><td><b>${y}</b>${y.includes('-')?`<span class="sub">01/10/${y.slice(0,4)} → 30/09/${y.slice(5)}</span>`:''}</td><td class="num">${conf.length}</td><td class="num">${l.filter(s=>stClass(s.status)==='opt').length}</td><td class="num">${l.filter(s=>stClass(s.status)==='int').length}</td><td class="num">${l.length}</td>
       <td class="num">${eur(conf.filter(viaArtbo).reduce((a,s)=>a+(Number(s.fee_ht)||0),0))}</td><td class="num"><b>${eur(l.filter(s=>CONFIRMED_PROD.includes(s.status)).reduce((a,s)=>a+netArtbo(s),0))}</b></td></tr>`;}).join('') || '<tr><td colspan="7" class="empty">Aucune date.</td></tr>'}
   </tbody></table></div>
   <p class="help">Cachets confirmés : dates confirmées salle / festival seulement (les dates « Confirmée Artiste », qui ne passent pas par L’ArtBoristerie, restent comptées dans « Confirmées » mais pas dans les montants). Commissions nettes = commission L'ArtBo moins la part reversée aux partenaires (ex. Pyrprod), sur les dates confirmées salle / festival.</p>
+  ${shows.some(s => s.archived_at) ? `<p class="help">Dont ${shows.filter(s => s.archived_at).length} date(s) archivée(s) : comptées dans ces montants (l’archivage ne change aucun chiffre), absentes des prochaines dates.</p>` : ''}
   <div class="panel pad mt-lg"><h3 class="block-title">Accueil <span class="muted title-note">· repris dans les contrats et les mails ({{personnes}}, {{chambres}}, {{montage}}), enregistré dès que tu quittes le champ</span></h3>
     <div class="steps kv-grid">
       <label>Personnes sur la route (= repas)</label>${cIn('projects', p.id, 'road_people', p.road_people, 'number', 'class="narrow"')}
@@ -121,7 +122,7 @@ function overview(p, {shows, tasks, suivis}){
 function datesTab(p, {shows}){
   const list = shows.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   return `<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Lieu</th><th>Structure</th><th>Statut</th><th class="num">Cachet</th><th>Contrat</th></tr></thead><tbody>
-    ${list.map(s=>`<tr class="click" data-act="editShow" data-id="${s.id}"><td class="nowrap">${fmtDate(s.date)}</td><td><b>${esc(s.venue)}</b><span class="sub">${esc(s.city||'')}</span></td><td>${esc(structName(s.structure_id))}</td><td>${stSelect(s)}</td><td class="num">${eur(s.fee_ht)}</td><td>${esc(s.contract_type||'')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aucune date.</td></tr>'}
+    ${list.map(s=>`<tr class="click" data-act="editShow" data-id="${s.id}"><td class="nowrap">${fmtDate(s.date)}</td><td><b>${esc(s.venue)}</b>${archivedTag(s)}<span class="sub">${esc(s.city||'')}</span></td><td>${esc(structName(s.structure_id))}</td><td>${stSelect(s)}</td><td class="num">${eur(s.fee_ht)}</td><td>${esc(s.contract_type||'')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aucune date.</td></tr>'}
   </tbody></table></div>`;
 }
 

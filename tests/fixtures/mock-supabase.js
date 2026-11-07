@@ -130,8 +130,10 @@
       for (const t of ['result_closures', 'show_payments', 'budget_lines']) { const keep = DB[t].filter(r => r.show_id !== id); DB[t].length = 0; DB[t].push(...keep); }
       const keep = DB.shows.filter(x => x.id !== id); DB.shows.length = 0; DB.shows.push(...keep);
       return { ...st, task_ids: ids }; },
-    archive_show: a => { const s = DB.shows.find(x => x.id === a.p_show); Object.assign(s, { archived_at: new Date().toISOString(), archived_by: USER, archived_reason: a.p_reason }); return null; },
-    restore_show: a => { const s = DB.shows.find(x => x.id === a.p_show); Object.assign(s, { archived_at: null, archived_by: null, archived_reason: null }); return null; },
+    // archivage : notifications de la date retirées (gardées) ; restauration : date de restauration notée (délai avant relance)
+    archive_show: a => { const s = DB.shows.find(x => x.id === a.p_show); Object.assign(s, { archived_at: new Date().toISOString(), archived_by: USER, archived_reason: a.p_reason });
+      DB.notifications.forEach(n => { if (n.show_id === a.p_show && !n.withdrawn_at) Object.assign(n, { withdrawn_at: new Date().toISOString(), withdrawn_reason: 'Date archivée' }); }); return null; },
+    restore_show: a => { const s = DB.shows.find(x => x.id === a.p_show); Object.assign(s, { archived_at: null, archived_by: null, archived_reason: null, restored_at: new Date().toISOString() }); return null; },
     mail_vars: () => ({ artiste: 'Artiste Alpha', date: 'mardi 1er juin 2027', ville: 'Bourg-Test', lieu: 'Festival Fictif', cachet_ht: '6 000 €', contact: 'Camille',
       lien_fiche: 'https://exemple.invalid/fiche.html?t=jeton-fiche-test-0001' }),
     // v1.40 (A2) : fiche d'une date booking / production avec le mode transmis par le serveur (migration 2026-10-25_v1.40_fiche_mode)

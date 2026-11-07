@@ -144,7 +144,7 @@ export function suiviTasks(p){
 /** Dates rattachées à un suivi : liées explicitement, ou même structure et même artiste */
 export function showsOfSuivi(p){
   const ids = projIds(p);
-  return S.db.shows.filter(s => s.prospect_id === p.id || (p.structure_id && s.structure_id === p.structure_id && ids.includes(s.project_id)))
+  return S.db.shows.filter(s => !s.archived_at && (s.prospect_id === p.id || (p.structure_id && s.structure_id === p.structure_id && ids.includes(s.project_id))))   // liste de travail : sans les dates archivées (v1.60.3)
     .sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999'));
 }
 
@@ -206,7 +206,7 @@ function sidePanel(p, st, proj, linked){
   const R = S.wsRadius ?? 200;
   // repère de la carte (v1.60.2) : le lieu choisi pour ce suivi, sinon la structure
   const here = suiviCoords(p), pl = placeOfSuivi(p);
-  const shows = showsOfProject(proj).filter(s => s.date && !isOff(s.status)).sort((a,b)=>a.date.localeCompare(b.date));
+  const shows = showsOfProject(proj).filter(s => s.date && !isOff(s.status) && !s.archived_at).sort((a,b)=>a.date.localeCompare(b.date));
   const now = today();
   // ±5 jours autour de la date, partout dans le monde
   const around = target ? shows.filter(s => Math.abs(daysBetween(target, s.date)) <= 5) : [];

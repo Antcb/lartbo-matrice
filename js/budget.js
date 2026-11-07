@@ -167,7 +167,7 @@ export function accountOf(projectId){
 export function accountMoves(projectId){
   const p = byId('projects', projectId), moves = [];
   const isOwnProd = s => /^(Production|Co-Production)$/.test(s?.contract_type || '');
-  const where = s => s ? `${s.venue || '?'} (${String(s.date || '').split('-').reverse().join('/')})` : 'hors date';
+  const where = s => s ? `${s.venue || '?'} (${String(s.date || '').split('-').reverse().join('/')}${s.archived_at ? ', date archivée' : ''})` : 'hors date';   // v1.60.3
   for (const s of accountShowsOf(projectId).filter(x => !isOwnProd(x))){
     for (const pay of paymentsOf(s.id)){
       // commission (lot D1) : un mouvement par versement réel (date, référence) ; commission versée avant ce lot sans détail : un mouvement

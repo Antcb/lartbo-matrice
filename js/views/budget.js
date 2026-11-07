@@ -7,6 +7,7 @@ import { BUDGET_CATS, PAYERS } from '../constants.js';
 import { commissionState, payAmount, paymentsOf } from '../calc.js';
 import { byId } from '../selectors.js';
 import { S } from '../state.js';
+import { archivedTag } from '../ui/bits.js';
 import { cChk, cIn, cSel } from '../ui/cells.js';
 import { HOLDERS, cnmBearer, cnmOf, coreaCalc, holderLabel, isCorea } from '../corea.js';
 import { esc, eur2, fmtDate, today, r2, pct as fmtPct } from '../utils.js';
@@ -184,7 +185,7 @@ function ownProdRow(s, b, missing){
   const paidExp = r2(b.lines.filter(l => !isSolde(l) && (l.paid_at || l.reimbursed_at)).reduce((t, l) => t + lineValue(l), 0));
   const ar = artistResult(s, b), kind = s.contract_type === 'Co-Production' ? 'Coproduction' : 'Production';
   const dash = t => `<td class="num muted" title="${t}">—</td>`;
-  return `<tr class="own-prod-row"><td class="nowrap"><a href="#" data-act="openProdShow" data-id="${s.id}">${fmtDate(s.date)}</a></td><td>${esc(s.venue||'')}${s.city?` <span class="muted">(${esc(s.city)})</span>`:''} <span class="badge" title="Budget de production à part (onglet Budget de la date) : prévisionnel, répartition selon l’accord">${kind}</span></td>
+  return `<tr class="own-prod-row"><td class="nowrap"><a href="#" data-act="${s.archived_at ? 'editShow' : 'openProdShow'}" data-id="${s.id}">${fmtDate(s.date)}</a></td><td>${esc(s.venue||'')}${archivedTag(s)}${s.city?` <span class="muted">(${esc(s.city)})</span>`:''} <span class="badge" title="Budget de production à part (onglet Budget de la date) : prévisionnel, répartition selon l’accord">${kind}</span></td>
       ${dash('Pas de cession facturée par L’ArtBo à l’organisateur sur cette date')}${dash('Pas de commission calculée : répartition selon l’accord')}
       <td class="num nowrap" title="Dépenses réellement payées ; le prévisionnel est dans le budget de la date">${eur2(paidExp)} <span class="muted tiny">payées</span></td>
       ${dash('Pas de reste calculé : la part de l’artiste suit l’accord de production')}<td class="num">${ar.hasVerse ? eur2(ar.verse) : '<span class="muted">—</span>'}</td>
@@ -203,7 +204,7 @@ export function projectBudgetHTML(projectId){
   const rows = shows.map(s => { const b = showBudget(s); const now = today();
     const missing = s.date && s.date < now && b.docsIn < b.docsAll;
     if (isProductionShow(s)) return ownProdRow(s, b, missing);
-    return `<tr><td class="nowrap"><a href="#" data-act="openProdShow" data-id="${s.id}">${fmtDate(s.date)}</a></td><td>${esc(s.venue||'')}${s.city?` <span class="muted">(${esc(s.city)})</span>`:''}</td>
+    return `<tr><td class="nowrap"><a href="#" data-act="${s.archived_at ? 'editShow' : 'openProdShow'}" data-id="${s.id}">${fmtDate(s.date)}</a></td><td>${esc(s.venue||'')}${archivedTag(s)}${s.city?` <span class="muted">(${esc(s.city)})</span>`:''}</td>
       <td class="num"${b.share ? ` title="MG ${eur2(b.fee)} + part du résultat ${eur2(b.share)}"` : ''}>${eur2(b.gross)}</td><td class="num">${eur2(b.com)}</td><td class="num">${eur2(b.expenses)}</td><td class="num"><b>${eur2(b.available)}</b></td><td class="num">${(r => r.hasVerse ? eur2(r.verse) : '<span class="muted">—</span>')(artistResult(s, b))}</td>
       ${b.lines.length ? `<td class="num nowrap">${ecartHTML(artistResult(s, b).ecart)}</td>
       <td class="${missing?'late-cell':''}">${b.docsIn}/${b.docsAll}${missing?' ⚠︎':''}</td>` : '<td class="num muted">—</td><td><span class="warn-badge">Budget à faire</span></td>'}</tr>`; }).join('');

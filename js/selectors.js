@@ -55,9 +55,14 @@ export function projFilterOk(ids){
   if (S.showInactive || !ids.length) return true;
   return ids.some(id => byId('projects', id)?.active);
 }
-export function showsFiltered({year=true}={}){
+/** Date archivée (v1.60.3) : hors des listes de TRAVAIL (Booking, Production, Billetterie, Communication, carte, suivis, relances),
+ *  mais toujours dans les données et les vues FINANCIÈRES (factures, créances, dettes, paiements, comptes, commissions, exports
+ *  comptables), signalée « date archivée ». Distincte d'une annulation (statut) et d'une suppression. */
+export const isArchived = s => !!s?.archived_at;
+/** Dates des listes de travail (artistes et année choisis) ; archived: true = dates archivées comprises (indicateurs financiers) */
+export function showsFiltered({year=true, archived=false}={}){
   return S.db.shows.filter(s =>
-    projFilterOk([s.project_id]) &&
+    (archived || !isArchived(s)) && projFilterOk([s.project_id]) &&
     (!year || !s.date || Number(s.date.slice(0,4)) === S.year)
   ).sort((a,b) => (a.date||'9999').localeCompare(b.date||'9999'));
 }
@@ -119,7 +124,7 @@ export function suiviCoords(p){
 /** Texte court d'un lieu : « Lieu · adresse, CP Ville » */
 export const placeText = pl => pl ? [pl.venue, [pl.address, [pl.postal_code, pl.city].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(' · ') : '';
 
-export const showLabel = s => s ? `${s.date ? s.date.split('-').reverse().join('/') : 'sans date'} · ${s.venue||'?'}${s.city && s.city!==s.venue ? ' ('+s.city+')' : ''}` : '';
+export const showLabel = s => s ? `${s.date ? s.date.split('-').reverse().join('/') : 'sans date'} · ${s.venue||'?'}${s.city && s.city!==s.venue ? ' ('+s.city+')' : ''}${isArchived(s) ? ' · date archivée' : ''}` : '';
 
 export function urgency(t){
   if (['Done','Cancelled'].includes(t.status)) return null;
@@ -259,7 +264,9 @@ export function projectOptions(onlyActive=false, keep=[]){
 }
 
 /** Nombre de notifications non lues pour l'utilisateur connecté */
-export const unreadNotifs = () => S.db.notifications.filter(n => !(n.read_by||[]).includes(S.user?.email));
+/** Notifications actives : sans celles retirées (date archivée ou restaurée, v1.60.3), gardées en base pour l'historique */
+export const activeNotifs = () => S.db.notifications.filter(n => !n.withdrawn_at);
+export const unreadNotifs = () => activeNotifs().filter(n => !(n.read_by||[]).includes(S.user?.email));
 
 /** Pôles des tâches (Réglages) : [{name, color}] */
 export const departments = () => { const d = setting('departments'); return Array.isArray(d) && d.length ? d : DEFAULT_DEPARTMENTS; };

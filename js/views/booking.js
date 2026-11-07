@@ -7,8 +7,8 @@ import { STATUS_COLOR, STATUSES, isOff, stColor, viaArtbo } from '../constants.j
 import { EMITTED_FIELDS } from '../calc.js';
 import { lingering } from '../data.js';
 import { route, routeCached } from '../geo.js';
-import { byId, projName, showCoords, showPlace, showPlaceNote, showsFiltered, visibleShow } from '../selectors.js';
-import { ARCHIVED, S } from '../state.js';
+import { byId, isArchived, projFilterOk, projName, showCoords, showPlace, showPlaceNote, showsFiltered, visibleShow } from '../selectors.js';
+import { S } from '../state.js';
 import { filterBar, fold, stBadge, stSelect, viewHead } from '../ui/bits.js';
 import { $, daysBetween, esc, eur, fmtDate, fmtShort } from '../utils.js';
 
@@ -16,8 +16,8 @@ export function viewBooking(){
   const all = showsFiltered();
   const shows = all.filter(visibleShow);
   const nOff = all.filter(s => isOff(s.status)).length;
-  // dates archivées (v1.60.3) : hors de S.db, donc hors de la liste, des totaux et de la carte ; filtre artistes appliqué
-  const archived = ARCHIVED.shows.filter(s => !S.projects.length || S.projects.includes(s.project_id)).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  // dates archivées (v1.60.3) : hors de cette liste de travail et de la carte (showsFiltered), toutes années ; filtre artistes appliqué
+  const archived = S.db.shows.filter(s => isArchived(s) && projFilterOk([s.project_id])).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const n = k => shows.filter(s => (s.status||'').startsWith(k)).length;
   const totalConf = shows.filter(s=>(s.status||'').startsWith('Confirmée') && viaArtbo(s)).reduce((a,s)=>a+(Number(s.fee_ht)||0),0);   // hors « Confirmée Artiste » (v1.53)
   let lastMonth = '', list = '';
@@ -51,13 +51,13 @@ export function viewBooking(){
 /** Dates archivées (v1.60.3) : consultables et restaurables ; une facture arrivée depuis l'archivage (synchronisation Pennylane)
  *  est signalée — la date doit alors être restaurée pour revenir dans les comptes et les relances */
 function archivedPanel(rows){
-  const emitted = id => ARCHIVED.show_payments.some(p => p.show_id === id && EMITTED_FIELDS.some(k => p[k] != null && String(p[k]).trim() !== ''))
+  const emitted = id => S.db.show_payments.some(p => p.show_id === id && EMITTED_FIELDS.some(k => p[k] != null && String(p[k]).trim() !== ''))
     || S.db.pennylane_a_rattacher.some(r => r.show_id === id && !r.resolved_at && !r.cancelled_at);
   return `<div class="panel pad"><h2 class="month">Dates archivées <small>${rows.length}</small></h2>
-    <p class="muted small">Hors des listes, totaux, comptes, relances, carte et calendriers. Ce n’est pas une annulation : leur statut ne change pas.</p>
+    <p class="muted small">Hors des listes de travail, des relances, de la carte et des calendriers ; fiche publique fermée. Leurs factures, paiements, créances et dettes restent dans les vues financières et les comptes. Ce n’est ni une annulation (statut inchangé) ni une suppression.</p>
     ${rows.map(s => `<p><strong>${esc([s.date ? fmtDate(s.date) : 'sans date', s.venue, projName(s.project_id)].filter(Boolean).join(' · '))}</strong> <span class="muted">— ${esc(s.status || '')}</span><br>
       <span class="muted small">Archivée le ${fmtDate(String(s.archived_at).slice(0, 10))}${s.archived_by ? ' par ' + esc(s.archived_by) : ''} : ${esc(s.archived_reason || '')}</span>
-      ${emitted(s.id) ? '<br><span class="warn-txt">Une facture Pennylane est arrivée pour cette date : restaure-la pour qu’elle revienne dans les comptes et les relances.</span>' : ''}
+      ${emitted(s.id) ? '<br><span class="warn-txt">Une facture est arrivée pour cette date (comptée dans les montants) : restaure-la pour la suivre et la relancer.</span>' : ''}
       <br><button class="btn sm" data-act="restoreShow" data-id="${s.id}">Restaurer</button></p>`).join('')}</div>`;
 }
 

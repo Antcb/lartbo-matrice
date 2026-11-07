@@ -31,7 +31,7 @@ create table public.commission_transfers (id uuid primary key default gen_random
 create table public.result_closures (id uuid primary key default gen_random_uuid(), show_id uuid not null references public.shows(id) on delete restrict,
   action text not null check (action in ('close', 'reopen')), reason text, snapshot jsonb, by_email text, at timestamptz not null default now());
 create table public.pennylane_a_rattacher (id uuid primary key default gen_random_uuid(), pennylane_id text not null unique,
-  show_id uuid references public.shows(id) on delete cascade, reason text not null default 'x', resolved_at timestamptz, cancelled_at timestamptz);
+  show_id uuid references public.shows(id) on delete cascade, invoice_number text, reason text not null default 'x', resolved_at timestamptz, cancelled_at timestamptz);
 create table public.pennylane_rattachements (id bigint generated always as identity primary key, show_id uuid references public.shows(id), pennylane_id text not null);
 create table public.finance_log (id bigint generated always as identity primary key, at timestamptz not null default now(), table_name text not null,
   row_id uuid not null, show_id uuid, op text not null, field text not null, old_value text, new_value text, actor text, source text);
@@ -468,3 +468,83 @@ begin
   ) select count(*) into n from ins;
   return n;
 end $function$;
+-- Fiche publique (essai du refus « Dossier indisponible ») : colonnes du lieu (v1.60.2), structures, fonctions lues par fiche_get,
+-- puis fiche_get dans son état attendu APRÈS la migration v1.60.2 lieux (texte de production v1.59 reconstitué depuis la v1.44 +
+-- remplacements v1.59 et v1.60.2, empreinte b5faee87…) et fiche_submit de la v1.11 (empreinte 6009c041…)
+alter table public.shows add column if not exists address text, add column if not exists postal_code text,
+  add column if not exists venue_is_structure boolean not null default false;
+alter table public.show_payments add column due_label text;
+create table public.structures (id uuid primary key default gen_random_uuid(), name text not null, address text, postal_code text, city text,
+  country text, admin jsonb default '{}', capacity_1 int, department_code text);
+create or replace function public.fr_date(d date, longue boolean default false) returns text language sql immutable as $$ select to_char(d, 'DD/MM/YYYY') $$;
+create or replace function public.default_acompte_for(p uuid) returns numeric language sql stable as $$ select 50::numeric $$;
+create or replace function public.lieu_departement(p_department text, p_postal text) returns text
+language sql immutable set search_path = public as $f$
+  select coalesce(
+    nullif(case when btrim(coalesce(p_department, '')) ~ '^\d$' then '0' || btrim(p_department) else upper(btrim(coalesce(p_department, ''))) end, ''),
+    case when regexp_replace(coalesce(p_postal, ''), '\s', '', 'g') ~ '^\d{5}$' then
+      (select case when c ~ '^9[78]' then left(c, 3) when c ~ '^20' then (case when c::int < 20200 then '2A' else '2B' end) else left(c, 2) end
+         from (select regexp_replace(p_postal, '\s', '', 'g') as c) x) end)
+$f$;
+CREATE OR REPLACE FUNCTION public.fiche_get(p_token text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare s shows%rowtype; st structures%rowtype; pr projects%rowtype; pays jsonb; vat numeric; acpt numeric;
+begin
+  if p_token is null or length(p_token) < 16 then return null; end if;
+  select * into s from shows where fiche_token = p_token;
+  if not found then return null; end if;
+  select * into st from structures where id = s.structure_id;
+  select * into pr from projects where id = s.project_id;
+  vat := coalesce(s.vat_rate, 5.5);
+  select coalesce(jsonb_agg(jsonb_build_object('label', p.label, 'kind', p.kind, 'pct', p.pct, 'due_label', p.due_label,
+           'ht', coalesce(p.amount, round(s.fee_ht * p.pct) / 100)) order by p.sort), '[]')
+    into pays from show_payments p where p.show_id = s.id and p.kind in ('acompte','solde') and p.hors_calcul is null;
+  select pct into acpt from show_payments where show_id = s.id and kind = 'acompte' and hors_calcul is null order by sort limit 1;
+  return jsonb_build_object(
+    'artist', trim(regexp_replace(coalesce(pr.name, ''), '\s*•.*$', '')),
+    'date', s.date, 'date_end', s.date_end, 'date_label', fr_date(s.date, true),
+    'venue', trim(regexp_replace(replace(coalesce(s.venue, ''), '**', ''), '\s*•\s*[A-Z/]{1,5}\s*$', '')),
+    'city', s.city, 'address', s.address, 'postal_code', s.postal_code, 'department', s.department,
+    'venue_is_structure', coalesce(s.venue_is_structure, false),   -- v1.60.2 source du lieu (décisions d'Anthony du 07/11/2026)
+    'cp', coalesce(public.lieu_departement(s.department, s.postal_code), case when s.venue_is_structure then public.lieu_departement(st.department_code, st.postal_code) end),
+    'status', s.status, 'contract_type', s.contract_type, 'prod_mode', coalesce(s.prod_mode, 'production'),
+    'fee_ht', s.fee_ht, 'vat', vat, 'fee_ttc', round(s.fee_ht * (1 + vat / 100), 2),
+    'acompte_pct', coalesce(acpt, case when s.terms_validated_at is not null or s.contract_type = 'Co-Production' then 0 end, public.default_acompte_for(s.project_id)),
+    'cr_producer_pct', s.cr_producer_pct, 'cr_break', s.cr_break, 'show_time', s.show_time, 'set_length', s.set_length,
+    'capacity', coalesce(s.capacity, st.capacity_1), 'ticketing_type', s.ticketing_type,
+    'payments', pays,
+    'structure', case when st.id is null then null else jsonb_build_object('name', st.name, 'address', st.address,
+        'postal_code', st.postal_code, 'city', st.city, 'country', st.country, 'admin', coalesce(st.admin, '{}')) end,
+    'fiche', s.fiche, 'submitted_at', s.fiche_submitted_at, 'validated_at', s.fiche_validated_at,
+    'locked', s.contract_sent is not null);
+end $function$
+;
+CREATE OR REPLACE FUNCTION public.fiche_submit(p_token text, p_admin jsonb, p_fiche jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare s shows%rowtype;
+begin
+  if p_token is null or length(p_token) < 16 then raise exception 'Lien invalide'; end if;
+  select * into s from shows where fiche_token = p_token;
+  if not found then raise exception 'Lien invalide'; end if;
+  if s.contract_sent is not null then raise exception 'Le contrat a déjà été envoyé : la fiche ne peut plus être modifiée. Écris-nous à production@lartboristerie.com.'; end if;
+  if length(coalesce(p_admin::text,'')) + length(coalesce(p_fiche::text,'')) > 30000 then raise exception 'Fiche trop longue'; end if;
+  update shows set fiche = coalesce(p_fiche, '{}') || jsonb_build_object('admin', coalesce(p_admin, '{}')),
+                   fiche_submitted_at = now(), fiche_validated_at = null
+    where id = s.id;
+  insert into notifications (kind, title, body, show_id, project_id, dedupe_key)
+    values ('fiche', 'Fiche de renseignements à valider — ' || coalesce(s.venue, ''),
+            concat_ws(' · ', to_char(s.date, 'DD/MM/YYYY'), s.city, p_admin->>'legal_name'),
+            s.id, s.project_id, 'fiche:' || s.id || ':' || extract(epoch from now())::bigint)
+    on conflict (dedupe_key) do nothing;
+  return jsonb_build_object('ok', true);
+end $function$
+
+;

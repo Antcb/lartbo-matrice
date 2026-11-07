@@ -136,9 +136,9 @@ async function showDeleteAsk(s){
     const arch = loc.blocked.length ? loc.archiveBlocked : st?.archive_blocked || blocked;
     if (arch.length){ toast(blocked.join(' '), true); return null; }
     return {title: 'Supprimer la date ?', text: [`La date « ${name} » ne peut pas être supprimée :`, ...blocked,
-      'Tu peux l’archiver à la place : elle sort des listes, des totaux, des comptes, des relances, de la carte et des calendriers, mais reste consultable dans Booking › « Dates archivées », où elle se restaure.',
-      'Ce n’est pas une annulation : son statut ne change pas. Rien n’est modifié ni supprimé dans Pennylane.',
-      'Si une facture est un jour faite dans Pennylane pour cette date (depuis son devis), restaure-la d’abord.'].join('\n'),
+      'Tu peux l’archiver à la place : elle sort des listes de travail, des relances, de la carte et des calendriers, et sa fiche publique se ferme. Ses montants restent dans les vues financières et les comptes. Elle reste consultable dans Booking › « Dates archivées », où elle se restaure.',
+      'Ce n’est ni une annulation (son statut ne change pas) ni une suppression. Rien n’est modifié ni supprimé dans Pennylane.',
+      'Si une facture est un jour faite dans Pennylane pour cette date, elle lui reste rattachée et une alerte apparaît dans les notifications.'].join('\n'),
       actions: [{value: 'archive', label: 'Archiver la date'}]};
   }
   const nb = (k, one, many) => `${k} ${k > 1 ? many : one}`;
@@ -157,7 +157,7 @@ async function showDeleteAsk(s){
 /** Suppression (choix « del ») ou archivage (choix « archive », motif demandé) d'une date depuis sa fenêtre */
 async function showRemove(id, choice){
   if (choice === 'archive'){
-    const reason = await askText({title: 'Archiver la date ?', text: 'La date sort des listes, totaux, comptes, relances, carte et calendriers ; son statut ne change pas. Le motif est gardé avec elle.', label: 'Motif de l’archivage', ok: 'Archiver la date'});
+    const reason = await askText({title: 'Archiver la date ?', text: 'La date sort des listes de travail, des relances, de la carte et des calendriers ; sa fiche publique se ferme ; ses montants restent comptés. Son statut ne change pas. Le motif est gardé avec elle.', label: 'Motif de l’archivage', ok: 'Archiver la date'});
     if (!reason) return false;
     const ok = await archiveShow(id, reason);
     if (ok) toast('Date archivée : elle reste consultable dans Booking › « Dates archivées »');
