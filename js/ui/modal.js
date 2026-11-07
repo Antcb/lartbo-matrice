@@ -28,6 +28,8 @@ export function field(f, v){
   else if (f.type==='ac') input = acInput(f.kind, {value:v, attrs:`name="${f.k}"`, create:f.create, activeOnly:f.activeOnly, placeholder:f.placeholder||'Taper pour chercher…'});
   else if (f.type==='fulladdr') input = acInput('fulladdr', {value:v, text:v||'', attrs:`name="${f.k}"`, placeholder:f.placeholder||'Taper une adresse…'});
   else if (f.type==='place' || f.type==='city') input = acInput(f.type==='city'?'cities':'places', {value:v, text:v||'', attrs:`name="${f.k}"`, fill:f.fill??'', placeholder:f.placeholder||(f.type==='city'?'Taper une ville…':'Taper une adresse ou une ville…')});
+  // lieu d'une date (v1.60.2) : salle / festival connu (adresse, code postal, ville, coordonnées remplis) ou nom tapé librement
+  else if (f.type==='lieu') input = acInput('lieux', {value:v, text:v||'', attrs:`name="${f.k}"`, fill:f.fill??'', placeholder:f.placeholder||'Chercher une salle, un festival… ou taper le nom'});
   else if (f.type==='tags') input = tagPicker({id, name: f.k, values: Array.isArray(v) ? v : (v ? String(v).split(',').map(x=>x.trim()).filter(Boolean) : []), suggestions: typeof f.suggest === 'function' ? f.suggest() : (f.suggest || [])});
   else if (f.type==='links') input = linksPicker(f, v);
   else if (f.type==='checks') input = `<div class="checks pills">${f.options.map(([val,lab])=>`<label><input type="checkbox" name="${f.k}" value="${esc(val)}" ${(v||[]).includes(val)?'checked':''}> ${esc(lab)}</label>`).join('')}</div>`;

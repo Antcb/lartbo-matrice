@@ -10,8 +10,9 @@ import { render } from './app.js';
 import { insert, purgeStored, remove, save, sb, signedUrl } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
 import { PROSPECT_TAGS, attOk, attSizeHTML, callGoogle, callScript, fill, todoOk, tplLabel, tplProjects } from './mail.js';
-import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName } from './selectors.js';
+import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, placeOfEvent, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName } from './selectors.js';
 import { S, touch } from './state.js';
+import { geocode } from './geo.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { recipientsHelp, syncChips } from './ui/recipients.js';
 import { dateInput } from './ui/datefield.js';
@@ -244,7 +245,8 @@ async function recordProspection(st, {to, subject, html, send, out, pids, contac
   if (date){
     const status = isFestival(st) ? 'Intérêt Festival' : 'Intérêt Salle';
     const ev = eventsOfStructure(st.id).find(e => e.date_start && date >= e.date_start && date <= (e.date_end || e.date_start));
-    for (const pid of pids) await insert('shows', {...showPrefillFromStructure(st), venue: ev?.name || st.name, project_id: pid, date, status,
+    // lieu réel (v1.60.2) : celui de l'événement s'il y en a un à cette date (sa ville, pas celle du siège), sinon celui de la structure
+    for (const pid of pids) await insert('shows', {...showPrefillFromStructure(st), ...(ev ? placeOfEvent(ev) : {}), venue: ev?.name || st.name, project_id: pid, date, status,
       prospect_id: p.id, contract_type: 'Cession', communication_enabled: true, request_date: now});
   }
   await relanceTask(st, pids, subject, send, byId('prospects', p.id), 0);
@@ -411,3 +413,16 @@ export const lastProspectMail = stId => prospectsOfStructure(stId).filter(p => p
   .sort((a, b) => (b.mail_sent_at || b.updated_at || '').localeCompare(a.mail_sent_at || a.updated_at || ''))[0] || null;
 
 export { PROSPECT_TAGS, logsOf };
+
+/** Lieu propre d'un suivi (v1.60.2) : enregistré en entier, ou retiré (pl = null) ; la carte de l'espace de prospection en part */
+export const PLACE_KEYS = ['venue', 'address', 'postal_code', 'city', 'department', 'lat', 'lng'];
+export async function setSuiviPlace(pid, pl){
+  const patch = Object.fromEntries(PLACE_KEYS.map(k => [k, pl?.[k] ?? null]));
+  // lieu connu sans coordonnées (événement dans une autre ville…) : localisé par son adresse ou sa ville, jamais par son seul nom
+  if (pl && patch.lat == null && (patch.address || patch.city)){
+    const fr = !patch.department || /^(\d{2,3}|2[AB])$/i.test(patch.department);
+    const g = await geocode([patch.address, patch.postal_code, patch.city, fr ? '' : patch.department].filter(Boolean).join(' '), {france: fr});
+    if (g){ patch.lat = g.lat; patch.lng = g.lng; patch.department = patch.department || g.department_code || null; }
+  }
+  if (await save('prospects', pid, patch)) toast(pl ? 'Lieu du suivi enregistré' : 'Lieu du suivi retiré');
+}

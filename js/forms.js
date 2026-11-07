@@ -11,7 +11,7 @@ import { CFG } from './config.js';
 import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PRIORITY_OPTS, PROSPECT, PROSPECT_OPTS, STATUSES, TASK_STATUS, TASK_STATUS_OPTS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
 import { insert, purgeStored, refreshFor, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode, geoFrance, searchPlaces } from './geo.js';
-import { contactMails, contactsWithMail, defaultCommission, settingAcompte, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle, spectaclesOf } from './selectors.js';
+import { contactMails, contactsWithMail, defaultCommission, settingAcompte, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, placeOfStructure, placeOfSuivi, projIds, projName, projectOptions, prospectTitle, spectaclesOf } from './selectors.js';
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow } from './ui/bits.js';
@@ -21,6 +21,7 @@ import { driveHTML } from './views/production.js';
 import { cancelAutoRelances, closeNoAnswer, deleteProspect, prospectDeleteAsk } from './prospection.js';
 import { afterFeeChange, askConfirmation, becameConfirmed } from './confirm-flow.js';
 import { spectFields, spectValue } from './budget-template.js';
+import { deptOf } from './contract.js';
 
 const team = () => CFG.TEAM.map(e=>[e, TEAM_NAMES[e]||e]);
 const activeProjects = keep => projectOptions(true, keep).map(x=>[x.id, x.name]);
@@ -29,11 +30,14 @@ const activeProjects = keep => projectOptions(true, keep).map(x=>[x.id, x.name])
 export function showFields(s){
   return [
     {k:'structure_id', label:'Structure (salle, festival, organisateur)', type:'ac', kind:'structures', create:true, full:true},
-    {k:'venue', label:'Nom du lieu / festival', full:true},
+    // lieu réel (v1.60.2) : choisi parmi les salles / festivals connus (adresse et code postal repris) ou tapé
+    {k:'venue', label:'Nom du lieu / festival', type:'lieu', fill:'', full:true},
     {k:'project_id', label:'Artiste', type:'project'},
     {k:'spectacle_id', label:'Spectacle', type:'select', blank:false, options: spectacleOptions(s.project_id, s.spectacle_id)},
     {k:'status', label:'Statut', type:'select', options:STATUSES.includes(s.status)||!s.status ? STATUSES : [s.status, ...STATUSES], blank:false},
     {k:'date', label:'Date', type:'date'}, {k:'date_end', label:'Fin (si plusieurs jours)', type:'date'},
+    {k:'address', label:'Adresse du lieu', type:'place', fill:'', full:true, placeholder:'Taper l’adresse du lieu (facultatif)'},
+    {k:'postal_code', label:'Code postal'},
     {k:'city', label:'Ville', type:'city', fill:''}, {k:'department', label:'Département (ou pays)', placeholder:'ex. 69, CH, BE'},
     {k:'contract_type', label:'Type de contrat', type:'select', options:CONTRACTS},
     {k:'fee_ht', label:'Cachet HT (€)', type:'number'},
@@ -69,8 +73,36 @@ export function newSpectacle(projectId){
     }});
 }
 
-/** Valeurs d'une nouvelle date posée depuis une structure : ville et département de la fiche (pas de l'adresse administrative) */
-export const showPrefillFromStructure = st => st ? {structure_id: st.id, venue: st.name, city: st.city || null, department: st.department_code || (st.country && st.country!=='France' ? st.country : null), lat: st.lat, lng: st.lng} : {};
+/** Valeurs d'une nouvelle date posée depuis une structure : lieu de la fiche (adresse, code postal, ville, département — pas
+ *  l'adresse administrative) */
+export const showPrefillFromStructure = st => st ? {structure_id: st.id, ...placeOfStructure(st)} : {};
+/** Nouvelle date posée depuis un suivi (v1.60.2) : le lieu choisi dans le suivi s'il y en a un, sinon celui de sa structure */
+export const showPrefillFromSuivi = (p, st) => { const pl = placeOfSuivi(p);
+  return pl ? {structure_id: st?.id || null, ...pl, venue: pl.venue || st?.name || null} : showPrefillFromStructure(st); };
+
+/** Coordonnées d'une date à l'enregistrement (v1.60.2) : un lieu ou une adresse choisis dans la fenêtre gardent les leurs ;
+ *  un emplacement changé à la main est relocalisé (adresse complète si elle est connue) ; la structure (organisateur) ne sert
+ *  de repère que si la date n'a ni adresse ni autre ville. Le département suit le code postal (règle {{cp}}, deptOf). */
+async function locateShow(v, s){
+  const st = byId('structures', v.structure_id);
+  if (!v.city && !v.address && st) v.city = st.city || null;
+  const french = d => !d || /^(\d{2,3}|2[AB])$/i.test(String(d).trim());
+  // département vide : tiré du code postal seulement pour un lieu en France (structure en France ou sans pays) — jamais d'Aube pour Berlin 10115
+  const inFrance = v.department ? french(v.department) : !st || !st.country || /^\s*france\s*$/i.test(st.country);
+  if (/^\d{5}$/.test(String(v.postal_code || '').replace(/\s/g, '')) && inFrance && (!v.department || v.postal_code !== s.postal_code))
+    v.department = deptOf(v.postal_code, '');
+  const moved = ['address', 'postal_code', 'city'].some(k => (v[k] || '') !== (s[k] || ''));
+  if (v.lat != null && v.lat !== s.lat) return;   // coordonnées du lieu / de l'adresse choisis
+  if (!moved){
+    if (v.lat != null) return;
+    // rien n'a bougé et la structure, dans la même ville, sert déjà de repère (showCoords) : rien n'est écrit sur la date
+    if (st && st.lat != null && (!v.city || !st.city || norm(v.city) === norm(st.city))) return;
+  }
+  v.lat = v.lng = null;
+  if (st && st.lat != null && !v.address && (!v.city || norm(v.city) === norm(st.city || ''))){ v.lat = st.lat; v.lng = st.lng; v.department = v.department || st.department_code; return; }
+  const fr = !v.department || french(v.department);
+  await fillCoords(v, [v.address, v.postal_code, v.city, fr ? 'France' : v.department].filter(Boolean).join(' '));
+}
 
 export function editShow(id, projectId, prefill={}){
   const s = id ? byId('shows', id) : {status:'Intérêt Salle', contract_type:'Cession', project_id: projectId||S.project||null, communication_enabled:true, date:null, ...prefill};
@@ -88,13 +120,7 @@ export function editShow(id, projectId, prefill={}){
       // spectacle (v1.57) : il doit appartenir à l'artiste de la date ; une nouvelle date d'un artiste qui a des spectacles en demande un
       if (v.spectacle_id && byId('spectacles', v.spectacle_id)?.project_id !== v.project_id) { toast('Ce spectacle n’est pas celui de cet artiste : choisis-en un autre', true); return false; }
       if (!id && !v.spectacle_id && spectaclesOf(v.project_id).some(x => x.active)) { toast('Choisis le spectacle de cette date', true); return false; }
-      const st = byId('structures', v.structure_id);
-      if (!v.city && st) v.city = st.city;
-      const placeChanged = !id || v.city!==s.city || v.structure_id!==s.structure_id;
-      if (placeChanged && (v.lat==null || v.city!==s.city)){
-        if (st && st.lat!=null && (!v.city || v.city===st.city)){ v.lat=st.lat; v.lng=st.lng; v.department = v.department || st.department_code; }
-        else if (v.lat==null || v.city!==s.city){ v.lat=null; v.lng=null; await fillCoords(v, [v.city, v.department && /^\d/.test(v.department) ? 'France' : ''].filter(Boolean).join(', ')); }
-      }
+      await locateShow(v, s);
       const before = s.status, wasOff = isOff(before), nowOff = isOff(v.status), oldFee = s.fee_ht;
       let showId = id, ok = true;
       if (id){
@@ -107,16 +133,23 @@ export function editShow(id, projectId, prefill={}){
       if (becameConfirmed(before, v.status)) setTimeout(() => askConfirmation(showId), 80);
     }
   });
-  // Choix d'une structure → nom du lieu, ville et département repris de sa fiche
+  // Choix d'une structure → lieu repris de sa fiche (nom si vide, adresse, code postal, ville, département, coordonnées),
+  // sauf si un lieu ou une adresse ont été choisis dans cette fenêtre (v1.60.2 : le lieu réel n'est jamais remplacé par l'organisateur)
   const dlg = $('#modal');
+  let placePicked = false;
   const onChosen = e => {
-    const box = e.target.closest('.ac'); if (!box || box.querySelector('.ac-val').name !== 'structure_id') return;
+    const box = e.target.closest('.ac'); if (!box) return;
+    const name = box.querySelector('.ac-val').name;
+    if (['venue', 'address', 'city'].includes(name)){ placePicked = true; return; }
+    if (name !== 'structure_id') return;
     const st = byId('structures', e.detail.id); if (!st) return;
     const f = dlg.querySelector('form').elements;
     const pre = showPrefillFromStructure(st);
-    if (!f.venue.value) f.venue.value = pre.venue;
-    if (pre.city){ f.city.value = pre.city; const ci = f.city.closest('.ac')?.querySelector('.ac-input'); if (ci) ci.value = pre.city; }
-    if (pre.department) f.department.value = pre.department;
+    const put = (k, v) => { const el = f[k]; if (!el) return; el.value = v ?? ''; const vis = el.closest('.ac')?.querySelector('.ac-input'); if (vis) vis.value = v ?? ''; };
+    if (!f.venue.value) put('venue', pre.venue);
+    if (placePicked) return;
+    if (pre.city){ put('city', pre.city); put('address', pre.address); put('postal_code', pre.postal_code); }
+    if (pre.department) put('department', pre.department);
     if (f.lat){ f.lat.value = st.lat ?? ''; f.lng.value = st.lng ?? ''; }
   };
   dlg.addEventListener('ac-chosen', onChosen);

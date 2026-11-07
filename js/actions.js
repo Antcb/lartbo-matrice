@@ -7,7 +7,7 @@ import { go, render } from './app.js';
 import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
 import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
-import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure } from './forms.js';
+import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure, showPrefillFromSuivi } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showsFiltered, structName } from './selectors.js';
 import { CFG } from './config.js';
 import { propagateCommission } from './commission.js';
@@ -23,7 +23,7 @@ import { rtStyle, rtToolbar } from './ui/richtext.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
 import { exportShows } from './exports.js';
-import { callProspect, cancelAutoRelances, closeNoAnswer, deleteProspect, markLogSent, openProspection, prospectDeleteAsk, restoreRelances } from './prospection.js';
+import { callProspect, cancelAutoRelances, closeNoAnswer, deleteProspect, markLogSent, openProspection, prospectDeleteAsk, restoreRelances, setSuiviPlace } from './prospection.js';
 import { EMP_ACTIONS, editEmployee } from './views/employees.js';
 import { BUDGET_ACTIONS, confirmProvisionalCommission } from './budget-actions.js';
 
@@ -357,7 +357,8 @@ export const ACTIONS = {
   wsClear: () => { S.wsTarget = null; render(); },
   wsShow: t => { const p = byId('prospects', t.dataset.id), st = byId('structures', p.structure_id);
     const fest = (st?.tags||[]).some(x=>/festival/i.test(x));
-    editShow(null, S.wsProject && projIds(p).includes(S.wsProject) ? S.wsProject : projIds(p)[0], {...showPrefillFromStructure(st), date:S.wsTarget||null, status: fest?'Option Festival':'Option Salle', prospect_id: p.id}); },
+    editShow(null, S.wsProject && projIds(p).includes(S.wsProject) ? S.wsProject : projIds(p)[0], {...showPrefillFromSuivi(p, st), date:S.wsTarget||null, status: fest?'Option Festival':'Option Salle', prospect_id: p.id}); },
+  suiviLieuClear: t => setSuiviPlace(t.dataset.id, null),
   wsTask: t => { const p = byId('prospects', t.dataset.id); editTask(null, {structure_id:p.structure_id, project_ids:projIds(p), department:'Booking', prospect_id:p.id}); },
   noAnswerClose: async t => { if (await confirmAsk('Clore le suivi ?', 'Pas de réponse au téléphone : la tâche est terminée et le suivi est clos (noté dans son journal).', 'Clore le suivi')) await closeNoAnswer(t.dataset.id); },
   rmProj: async (t, e) => { e.stopPropagation(); const tb = t.dataset.t || 'prospects', r = byId(tb, t.dataset.id); const ids = projIds(r).filter(x=>x!==t.dataset.p);

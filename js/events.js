@@ -6,6 +6,7 @@ import { importMovinmotion } from './views/employees.js';
 import { render } from './app.js';
 import { insert, save, sb, syncLinks, uploadFiles } from './data.js';
 import { geocode } from './geo.js';
+import { setSuiviPlace } from './prospection.js';
 import { byId, linksOfContact, projIds } from './selectors.js';
 import { S, localSet, setProjects, touch } from './state.js';
 import { MAIL_MSG, fieldError, mailOk, parseCSV, toast, today } from './utils.js';
@@ -169,6 +170,19 @@ document.addEventListener('change', async e => {
   toast('Date rattachée au suivi');
 });
 
+// Lieu d'un suivi (v1.60.2) : lieu connu ou adresse choisis dans la liste → lieu complet (adresse, code postal, ville, département,
+// coordonnées) ; nom tapé sans choisir → gardé tel quel, sans coordonnées inventées ; champ vidé → lieu retiré
+document.addEventListener('ac-chosen', e => { const v = e.target.querySelector?.('.ac-val[data-suivi-lieu]'); if (v) v._chosen = e.detail; });
+document.addEventListener('change', async e => {
+  const pid = e.target.dataset?.suiviLieu; if (!pid) return;
+  const el = e.target;
+  await Promise.resolve();   // le choix dans la liste (ac-chosen) est signalé juste après le « change »
+  const it = el._chosen; el._chosen = null;
+  const typed = el.value.trim();
+  await setSuiviPlace(pid, it ? {venue: it.venue ?? null, address: it.street || null, postal_code: it.postcode || null, city: it.city || null,
+      department: it.department_code || (it.country && !/^france$/i.test(it.country) ? (it.country_code || it.country) : null), lat: it.lat ?? null, lng: it.lng ?? null}
+    : typed ? {venue: typed} : null);
+});
 
 /** Fichiers choisis en plusieurs fois (bouton puis bouton, ou bouton puis glisser) : les premiers sont gardés, sans doublon (v1.53) */
 const fileKey = f => `${f.name}|${f.size}|${f.lastModified}`;

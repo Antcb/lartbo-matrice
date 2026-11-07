@@ -60,12 +60,13 @@ export const ficheKind = contractType => contractType === 'Co-Réalisation' ? 'c
 /** Le champ s'applique-t-il à ce type de contrat et à ces réponses ? */
 export const fieldOn = (f, kind, values) => (!f.only || f.only === kind) && (!f.if || values?.[f.if[0]] === f.if[1]);
 
-/** Valeurs par défaut tirées de la date et de la structure (fiche_get ou données de l'app) */
+/** Valeurs par défaut tirées de la date et de la structure (fiche_get ou données de l'app) ; adresse et code postal du lieu de la date
+ *  d'abord (v1.60.2), sinon ceux de la structure */
 export function ficheDefaults(d){
   const st = d.structure || {};
   return {
     legal_name: st.name, country: 'France',
-    venue_name: d.venue, venue_address: st.address, venue_postal_code: st.postal_code || d.cp, venue_city: d.city || st.city, venue_country: st.country || 'France',
+    venue_name: d.venue, venue_address: d.address || st.address, venue_postal_code: d.postal_code || st.postal_code || d.cp, venue_city: d.city || st.city, venue_country: st.country || 'France',
     capacity: d.capacity, cr_break: d.cr_break, show_time: d.show_time, set_length: d.set_length,
     ticketing: d.ticketing_type === 'Gratuit' ? 'Gratuit' : d.ticketing_type ? 'Payant (prix libre compris)' : '',
   };

@@ -58,8 +58,8 @@ test('v1.57 dates : spectacle demandé pour une nouvelle date, jamais attribué 
   // nouvelle date de l'artiste : le spectacle est demandé
   await page.evaluate(async () => { (await import('./js/forms.js')).editShow(null, 'art-a'); });
   await page.waitForTimeout(200);   // la fenêtre se prépare (brouillon, 60 ms) avant la saisie
-  await page.locator('#modal [name=venue]').fill('Salle Nouvelle');
-  await expect(page.locator('#modal [name=venue]')).toHaveValue('Salle Nouvelle');
+  await page.locator('#modal .ac[data-ac=lieux] .ac-input').fill('Salle Nouvelle');   // v1.60.2 : nom du lieu à suggestions (texte libre gardé)
+  await expect(page.locator('#modal .ac[data-ac=lieux] .ac-input')).toHaveValue('Salle Nouvelle');
   await expect(page.locator('#fld-spectacle_id option')).toHaveText(['— choisir le spectacle —', 'Jeune public', 'Classique']);
   await page.locator('#modal button[type=submit]').click();
   await expect(page.locator('.toast').last()).toContainText('Choisis le spectacle');
