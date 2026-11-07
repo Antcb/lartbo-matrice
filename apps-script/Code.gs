@@ -838,7 +838,7 @@ function contractName_(show, artist) {
 /**
  * Parcourt <Artiste>/032_Production/<Année>/<dossiers de dates> et propose les bons noms dans un Google Sheet.
  * Rien n'est renommé : toutes les propositions arrivent DÉCOCHÉES (décision d'Anthony du 07/11/2026) ; on coche une à une celles
- * à appliquer (ancien nom → nouveau nom), puis on lance renameApply.
+ * à appliquer (ancien nom → nouveau nom), puis on lance renameApply. Les contrats sont listés pour information et ne sont JAMAIS renommés.
  */
 function renameAudit() {
   var p = props_();
@@ -914,7 +914,7 @@ function auditContracts_(folder, show, artist, rows, aname, where) {
     var g = groups[k].sort(function (a, b) { return a.ver - b.ver || a.created - b.created; });
     g.forEach(function (c, i) {
       var want = base + c.signed + (g.length > 1 ? ' • V' + (i + 1) : '') + '.' + c.ext;
-      if (!sameName_(want, c.name)) rows.push([false, 'Contrat' + (c.signed ? ' signé (à ne renommer qu’en connaissance de cause)' : ''), aname, where, c.name, want, c.file.getId()]);
+      if (!sameName_(want, c.name)) rows.push([false, 'Contrat' + (c.signed ? ' signé' : '') + ' (information seulement : jamais renommé)', aname, where, c.name, want, c.file.getId()]);
     });
   });
 }
@@ -924,9 +924,13 @@ function renameApply() {
   var id = PropertiesService.getScriptProperties().getProperty('RENAME_SHEET_ID');
   if (!id) throw new Error('Lance d’abord la vérification des noms');
   var sh = SpreadsheetApp.openById(id).getSheets()[0], data = sh.getDataRange().getValues(), done = 0;
+  // Tableau créé par une version antérieure (cases cochées d'office) : refusé, relancer « Vérifier les noms »
+  if (!/^Ancien nom/.test(String(data[0] && data[0][4] || ''))) throw new Error('Tableau de renommage d’une ancienne version : relance « Vérifier les noms » avant d’appliquer');
   for (var i = 1; i < data.length; i++) {
     var r = data[i];
     if (r[0] !== true || !r[5] || !r[6]) continue;
+    // Contrats (émis ou signés) : jamais renommés par cet outil (décision d'Anthony du 07/11/2026)
+    if (/^Contrat/.test(r[1])) { sh.getRange(i + 1, 1).setValue(false); continue; }
     try {
       (/^Dossier/.test(r[1]) ? DriveApp.getFolderById(r[6]) : DriveApp.getFileById(r[6])).setName(r[5]);
       sh.getRange(i + 1, 1).setValue(false); sh.getRange(i + 1, 2).setValue(r[1] + ' ✔ renommé'); done++;

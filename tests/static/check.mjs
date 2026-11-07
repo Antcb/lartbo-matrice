@@ -210,6 +210,8 @@ for (const f of JS.filter(p => !p.endsWith('js/utils.js'))) {
 {
   const gs = readFileSync(join(ROOT, 'apps-script/Code.gs'), 'utf8');
   if (/rows\.push\(\[\s*true\b/.test(gs)) fail('renommage', 'apps-script/Code.gs : une proposition de renommage est cochée par défaut (elles doivent toutes arriver décochées)');
+  if (!/if \(\/\^Contrat\/\.test\(r\[1\]\)\)/.test(gs)) fail('renommage', 'apps-script/Code.gs : renameApply doit refuser les contrats (jamais renommés)');
+  if (!/Tableau de renommage d’une ancienne version/.test(gs)) fail('renommage', 'apps-script/Code.gs : renameApply doit refuser un tableau d’une ancienne version');
   if (!/var SCRIPT_VERSION = 'v\d+\.\d+\.\d+'/.test(gs) || !/version: SCRIPT_VERSION/.test(gs)) fail('renommage', 'apps-script/Code.gs : version du code absente du « ping »');
 }
 
