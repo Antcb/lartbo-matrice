@@ -111,9 +111,9 @@ export async function openProspection(structureId, {prospectId=null}={}){
       <label for="pr-from">Envoyé par</label><select id="pr-from" ${relance ? 'disabled title="La relance part de la boîte qui a envoyé la prospection"' : ''}>${Object.entries(SENDERS).map(([k, l]) => `<option value="${k}" ${k === sender ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
       <label for="pr-tpl">Modèle</label><select id="pr-tpl"></select>
       <label for="pr-show" class="pr-concert" hidden>Concert</label><span class="pr-concert" hidden><select id="pr-show"></select><small class="muted">remplit la date, la ville, le lieu, la date limite de réponse et les liens</small></span>
-      <label for="pr-contact">Contact</label><span class="mail-to"><select id="pr-contact"><option value="">— autre adresse —</option>${contacts.map(c => `<option value="${c.id}" ${c.id === contact?.id ? 'selected' : ''}>${esc(c.display_name)}${contactMails(c) ? ` · ${esc(contactMails(c))}` : ' (pas de mail)'}</option>`).join('')}</select>
-        <small class="muted">remplace le destinataire par ses adresses et remplit les balises du contact (prénom…)</small></span>
-      <label for="pr-to-q">Destinataire</label>${recipientsField('pr-to', st.id, {value: relance ? (p.mail_to || '') : contactMails(contact), prospection: true, label: 'Destinataires'})}
+      <label for="pr-contact" class="rcpt-who">Interlocuteur</label><span class="mail-to rcpt-who"><select id="pr-contact"><option value="">— autre adresse —</option>${contacts.map(c => `<option value="${c.id}" ${c.id === contact?.id ? 'selected' : ''}>${esc(c.display_name)}${contactMails(c) ? ` · ${esc(contactMails(c))}` : ' (pas de mail)'}</option>`).join('')}</select>
+        <small class="muted">personne à qui l’on s’adresse (prénom et balises du mail) ; la choisir remplace le destinataire</small><span class="rcpt-propose"></span></span>
+      <label for="pr-to-q">Destinataire</label>${recipientsField('pr-to', st.id, {value: relance ? (p.mail_to || '') : contactMails(contact), prospection: true, label: 'Destinataires', interlocutor: 'pr-contact'})}
       <label for="pr-cc-q">Copie</label>${recipientsField('pr-cc', st.id, {prospection: true, label: 'Copies'})}
       ${relance ? '' : `<label for="pr-subj">Objet</label><input id="pr-subj">
       <label>Date proposée</label><span class="pr-date">${dateInput('', 'id="pr-date"')}<small class="muted">facultatif : crée la date en « Intérêt » pour chaque artiste</small></span>`}
@@ -205,6 +205,8 @@ export async function openProspection(structureId, {prospectId=null}={}){
     if ($('#pr-tpl').value !== before && !dirty) draw(true); else draw();
   });
   $('#pr-contact').onchange = e => { contact = byId('contacts', e.target.value) || null; if (contactMails(contact)) $('#pr-to').value = contactMails(contact); draw(); syncChips(document.querySelector('#modal')); };
+  // interlocuteur proposé depuis une adresse choisie (v1.60.3) : sur clic seulement, sans toucher aux destinataires
+  $('#pr-contact').addEventListener('interlocutor', () => { contact = byId('contacts', $('#pr-contact').value) || null; draw(); syncChips(document.querySelector('#modal')); });
   $('#pr-date')?.addEventListener('change', () => draw());
   $('#pr-show').onchange = async () => { if (dirty && !(await confirmAsk('Remplacer le texte retouché ?', 'Le texte du mail que tu as retouché sera réécrit avec ce concert.', 'Remplacer le texte', {danger: true}))) return; draw(true); };
   $('#pr-from').onchange = e => { const before = signatureOf(sender); sender = e.target.value; $('#pr-from-addr').textContent = fromAddr();

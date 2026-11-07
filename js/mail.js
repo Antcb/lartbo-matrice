@@ -144,10 +144,10 @@ export async function prepareMail(showId, kind){
     <div class="mail-grid">
       <label for="ml-tpl">Modèle</label><select id="ml-tpl">${tpls.map(t=>`<option value="${t.id}">${esc(t.name||MAIL_KINDS[t.kind])}${tplProjects(t).length?'':' · générique'}</option>`).join('')}</select>
       <label>Envoyé par</label><span class="ml-from">${esc(PROD_MAIL)}${sig ? ' <span class="muted">· avec la signature production@</span>' : ' <span class="muted">· pas de signature (Réglages › Prospection, signature de Chloé)</span>'}</span>
-      <label for="ml-contact">Contact</label><span class="mail-to"><select id="ml-contact"><option value="">— autre adresse —</option>${contacts.map(c=>`<option value="${c.id}" ${c.id===contactId?'selected':''}>${esc(c.display_name)}${contactMails(c)?` · ${esc(contactMails(c))}`:' (pas de mail)'}</option>`).join('')}</select>
-        <small class="muted">remplace le destinataire par ses adresses et remplit les balises du contact (prénom…)</small></span>
-      ${mustPick ? `<p class="mode-note rcpt-note">${contacts.filter(c => contactMails(c)).length ? 'Plusieurs contacts possibles et aucun n’est lié à cette date ou à son suivi' : 'Aucun contact identifié pour cette date'} : choisis le contact ci-dessus ou une adresse dans le champ Destinataire.</p>` : ''}
-      <label for="ml-to-q">Destinataire</label>${recipientsField('ml-to', s.structure_id, {value: vars.contact_email || '', label: 'Destinataires'})}
+      <label for="ml-contact" class="rcpt-who">Interlocuteur</label><span class="mail-to rcpt-who"><select id="ml-contact"><option value="">— autre adresse —</option>${contacts.map(c=>`<option value="${c.id}" ${c.id===contactId?'selected':''}>${esc(c.display_name)}${contactMails(c)?` · ${esc(contactMails(c))}`:' (pas de mail)'}</option>`).join('')}</select>
+        <small class="muted">personne à qui l’on s’adresse (prénom et balises du mail) ; la choisir remplace le destinataire</small><span class="rcpt-propose"></span></span>
+      ${mustPick ? `<p class="mode-note rcpt-note">${contacts.filter(c => contactMails(c)).length ? 'Plusieurs contacts possibles et aucun n’est lié à cette date ou à son suivi' : 'Aucun contact identifié pour cette date'} : choisis l’interlocuteur ci-dessus ou une adresse dans le champ Destinataire.</p>` : ''}
+      <label for="ml-to-q">Destinataire</label>${recipientsField('ml-to', s.structure_id, {value: vars.contact_email || '', label: 'Destinataires', interlocutor: 'ml-contact'})}
       <label for="ml-cc-q">Copie</label>${recipientsField('ml-cc', s.structure_id, {label: 'Copies'})}
       <label for="ml-subj">Objet</label><input id="ml-subj">
     </div>
@@ -217,6 +217,15 @@ export async function prepareMail(showId, kind){
     if (await replaceOk()) draw(); else syncChips(document.querySelector('#modal'));
     if (contactId && contactId !== s.conf_contact_id) save('shows', s.id, {conf_contact_id: contactId}, {rerender:false});
   };
+  // interlocuteur proposé depuis une adresse choisie (v1.60.3, décision d'Anthony du 07/11) : sur clic seulement ; destinataires et
+  // copies gardés tels quels ; le texte n'est réécrit que s'il n'a pas été retouché, ou avec accord
+  $('#ml-contact').addEventListener('interlocutor', async () => {
+    contactId = $('#ml-contact').value; vars = await mailVars(showId, contactId); document.querySelector('#modal .rcpt-note')?.remove();
+    const cc = $('#ml-cc').value;
+    if (await replaceOk()){ draw(); $('#ml-cc').value = cc; }
+    syncChips(document.querySelector('#modal'));
+    if (contactId && contactId !== s.conf_contact_id) save('shows', s.id, {conf_contact_id: contactId}, {rerender:false});
+  });
   $('#ml-files').addEventListener('change', e => { const i = e.target.dataset.att; if (i != null){ files[i].on = e.target.checked; drawFiles(); } });
   $('#ml-up').addEventListener('change', async e => {
     for (const f of e.target.files){
