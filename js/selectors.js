@@ -76,6 +76,8 @@ export const showLabel = s => s ? `${s.date ? s.date.split('-').reverse().join('
 
 export function urgency(t){
   if (['Done','Cancelled'].includes(t.status)) return null;
+  // relance d'un contact lié uniquement à des structures inactives (v1.60.2) : suspendue, jamais « en retard » ni urgente
+  if (relanceTaskSuspended(t)) return {cls:'low', label:'Relance suspendue (structure inactive)', suspended:true};
   const d = daysUntil(t.deadline);
   if (d==null) return t.priority ? {cls:{'D-Day':'today',Critical:'crit',High:'high',Medium:'med',Low:'low'}[t.priority]||'med', label:PRIORITY_LABEL[t.priority]||t.priority} : null;
   if (d<0) return {cls:'late', label:`En retard de ${-d} j`};
@@ -164,6 +166,30 @@ export function linksOfContact(id){ return (byCol('contact_structures','contact_
 
 /** Structure fermée / inactive (v1.54) : gardée avec tout son historique, plus proposée par défaut */
 export const isInactive = st => !!st?.inactive_at;
+/**
+ * Contact rattaché UNIQUEMENT à des structures inactives (au moins une, aucune active) — demande d'Anthony (v1.60.2) : ses relances
+ * sont suspendues et il est tenu hors de la prospection, sans suppression ni désabonnement. Un contact lié à au moins une structure
+ * active reste prospectable ; un contact sans structure n'est pas concerné. Réactiver la structure rétablit tout (rien n'est enregistré).
+ */
+export const onlyInactive = c => { const l = c?.id ? linksOfContact(c.id) : []; return l.length > 0 && l.every(isInactive); };
+/** Adresses d'un champ « À » (nom <adresse>, virgules, points-virgules) */
+const addrsIn = v => (String(v || '').match(/[^\s<>,;"]+@[^\s<>,;"]+/g) || []).map(m => m.toLowerCase());
+/**
+ * Relances automatiques d'un suivi suspendues (v1.60.2) : tous ses destinataires reconnus (contacts retrouvés par l'une de leurs
+ * adresses dans le « À » du mail de prospection, sinon le contact du suivi) ne sont liés qu'à des structures inactives ; destinataire
+ * non reconnu (adresse libre, contact sans structure) : la structure du suivi est inactive. Calculé à l'affichage : réactiver la
+ * structure rétablit les relances, aucune tâche n'est modifiée ni supprimée.
+ */
+export function relancesSuspended(p){
+  if (!p || suiviClosed(p)) return false;
+  let who = contactsWithMail(addrsIn(p.mail_to));
+  if (!who.length && p.contact_id) who = [byId('contacts', p.contact_id)].filter(Boolean);
+  who = who.filter(c => linksOfContact(c.id).length);
+  return who.length ? who.every(onlyInactive) : isInactive(byId('structures', p.structure_id));
+}
+/** Tâche de relance automatique (mail J+10 ou téléphone) d'un suivi dont les relances sont suspendues */
+export const relanceTaskSuspended = t => !!t?.prospect_id && ['relance_mail', 'relance_tel'].includes(t.auto_kind) && !isDone(t)
+  && relancesSuspended(byId('prospects', t.prospect_id));
 /** Fonction d'un contact dans une structure donnée (contact_structures.role, v1.54) — à côté de ses fonctions générales */
 export const linkRole = (contactId, structureId) => (S.db.contact_structures.find(l => l.contact_id === contactId && l.structure_id === structureId)?.role) || '';
 export function linksOfStructure(id){ return (byCol('contact_structures','structure_id').get(id)||[]).map(l=>byId('contacts',l.contact_id)).filter(Boolean); }

@@ -19,12 +19,16 @@ export function dedupe(input){
   return parts.length - keep.length;
 }
 
-/** Bloc de suggestions sous un champ d'adresses (#target) : contacts de la structure + recherche dans la base */
-export function recipientsHelp(target, structureId){
+/**
+ * Bloc de suggestions sous un champ d'adresses (#target) : contacts de la structure + recherche dans la base.
+ * La recherche trouve un contact par son nom ou par n'importe laquelle de ses adresses et propose chacune d'elles (v1.60.2).
+ * prospection : les contacts liés uniquement à des structures inactives n'y sont proposés que sur demande (v1.60.2).
+ */
+export function recipientsHelp(target, structureId, {prospection=false}={}){
   const opts = linksOfStructure(structureId).flatMap(c => mailParts(contactMails(c)).map(m => ({c, m})));
   return `<div class="rcpt-sug" data-rcpt-box="${esc(target)}">
     ${opts.map(({c, m}) => `<button type="button" class="tag-chip" data-rcpt-add="${esc(m)}" data-rcpt-for="${esc(target)}" aria-pressed="false" title="${esc(m)}">${esc(c.display_name)} · ${esc(m)}</button>`).join('')}
-    <span class="rcpt-search">${acInput('contacts', {attrs: `data-rcpt-search="${esc(target)}" aria-label="Chercher un contact de la base"`, placeholder: 'Chercher un contact de la base…'})}</span></div>`;
+    <span class="rcpt-search">${acInput('rcpt', {attrs: `data-rcpt-search="${esc(target)}" aria-label="Chercher un contact de la base (nom ou adresse)"`, placeholder: 'Chercher un contact de la base (nom ou adresse)…', activeOnly: prospection})}</span></div>`;
 }
 /** Met à jour l'état des pastilles (adresse présente ou non dans le champ) */
 export function syncChips(root = document){
@@ -45,15 +49,14 @@ document.addEventListener('click', e => {
 });
 // brouillon restauré (js/ui/drafts.js, sans événement « input » sur les champs) : pastilles remises à jour
 document.addEventListener('draft-applied', e => syncChips(e.target.closest?.('dialog') || document));
-// recherche dans la base : l'adresse du contact choisi est ajoutée (sans doublon)
+// recherche dans la base : l'adresse choisie (une ligne par adresse du contact, v1.60.2) est ajoutée, sans doublon
 document.addEventListener('change', e => {
   const t = e.target; if (!t.dataset?.rcptSearch || !t.value) return;
-  const c = byId('contacts', t.value), input = document.getElementById(t.dataset.rcptSearch);
+  const m = t.value.trim(), input = document.getElementById(t.dataset.rcptSearch);
   t.value = ''; const vis = t.closest('.ac')?.querySelector('.ac-input'); if (vis) vis.value = '';
-  if (!c || !input) return;
-  if (!contactMails(c)) return toast(`${c.display_name} n’a pas d’adresse mail`, true);
-  const add = mailParts(contactMails(c)).slice(0, 1).filter(m => !has(input, m));
-  if (add.length) set(input, [...mailParts(input.value), ...add]);
+  if (!input) return;
+  if (m.startsWith('sans-adresse:')) return toast(`${byId('contacts', m.slice(13))?.display_name || 'Ce contact'} n’a pas d’adresse mail`, true);
+  if (!has(input, m)) set(input, [...mailParts(input.value), m]);
   syncChips(input.closest('dialog') || document);
 });
 // champ modifié à la main : doublons retirés, pastilles à jour
