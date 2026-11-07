@@ -2,6 +2,7 @@
  * Toutes les actions déclenchées par un clic (boutons data-act="…"),
  * et les « crochets » d'enregistrement direct (clé 'change:table.champ').
  */
+import { MAIL_ACTIONS } from './mailbox.js';
 import { afterFeeChange, askConfirmation, becameConfirmed, sendConfirmation, validateTerms } from './confirm-flow.js';
 import { go, render } from './app.js';
 import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
@@ -71,6 +72,7 @@ setSaveConfirm(async (table, id, patch) => {
 
 export const ACTIONS = {
   ...EMP_ACTIONS,
+  ...MAIL_ACTIONS,
   ...BUDGET_ACTIONS,
   employeeCard: t => editEmployee(t.dataset.id),
   closeModal: t => (t.dataset.level==='2' ? $('#modal2') : $('#modal')).close(),

@@ -237,7 +237,7 @@ async function recordProspection(st, {to, subject, html, send, out, pids, contac
     if (!p) return;
   }
   const log = await insert('prospect_logs', {prospect_id: p.id, date: send ? now : null, kind: 'Mail', contact_name: contact?.display_name || to, contact_id: contact?.id || null,
-    author: S.user.email, body: `**Prospection${send ? '' : DRAFT_MARK}** · ${andList(pids.map(projName))}${account === 'production' ? ' · depuis production@' : ''}\n**Objet :** ${subject}\n\n${plain(html)}`, body_html: html});
+    author: S.user.email, body: `**Prospection${send ? '' : DRAFT_MARK}** · ${andList(pids.map(projName))}${account === 'production' ? ' · depuis production@' : ''}\n**Objet :** ${subject}\n\n${plain(html)}`, body_html: html, ...(send && out.message_id ? {gmail_message_id: out.message_id} : {})});
   await save('prospects', p.id, {mail_account: account === 'production' ? 'production' : null, mail_thread_id: out.thread_id, mail_to: to, mail_subject: subject, mail_sent_at: send ? (out.sent_at || new Date().toISOString()) : null,
     mail_log_id: log?.id || null, relances: 0, ...(send ? {last_contact: now} : {})}, {rerender: false});
   // date proposée → une date en « Intérêt » par artiste
@@ -264,7 +264,7 @@ async function recordRelance(p, st, {to, html, send, out, contact}){
   const now = today(), n = (p.relances || 0) + 1;
   const before = historyText(p);
   const log = await insert('prospect_logs', {prospect_id: p.id, date: send ? now : null, kind: 'Mail', contact_name: contact?.display_name || to, contact_id: contact?.id || null,
-    author: S.user.email, body: `**Relance n°${n}${send ? '' : DRAFT_MARK}** (en réponse à « ${p.mail_subject || ''} »)${before ? `\n_Avant : ${before}_` : ''}\n\n${plain(html)}`, body_html: html});
+    author: S.user.email, body: `**Relance n°${n}${send ? '' : DRAFT_MARK}** (en réponse à « ${p.mail_subject || ''} »)${before ? `\n_Avant : ${before}_` : ''}\n\n${plain(html)}`, body_html: html, ...(send && out.message_id ? {gmail_message_id: out.message_id} : {})});   // messagerie (v1.61) : reconnu à la synchronisation, aucun doublon
   // une relance ne compte (et ne fait avancer la tâche) qu'une fois partie : en brouillon, on attend l'envoi depuis Gmail
   await save('prospects', p.id, {mail_log_id: log?.id || null, ...(send ? {relances: n, last_contact: now} : {})}, {rerender: false});
   if (send) await relanceTask(st, projIds(p), p.mail_subject, true, byId('prospects', p.id), n);

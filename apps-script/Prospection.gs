@@ -28,6 +28,14 @@ function doPost(e) {
     else if (a === 'mail') out = mail_(body);
     else if (a === 'reply') out = reply_(body);
     else if (a === 'status') out = status_(body.thread_id);
+    // messagerie intégrée (v1.61) : Gmail reste la référence ; aucune suppression définitive
+    else if (a === 'threads') out = threads_(body);
+    else if (a === 'thread') out = thread_(body);
+    else if (a === 'labels') out = labels_();
+    else if (a === 'modify') out = modify_(body);
+    else if (a === 'compose') out = compose_(body);
+    else if (a === 'attachment') out = attachment_(body);
+    else if (a === 'history') out = history_(body);
     else out = { ok: false, error: 'Action inconnue : ' + a };
   } catch (err) {
     out = { ok: false, error: String(err) };
@@ -79,7 +87,10 @@ function utf8_(s) { return Utilities.newBlob('').setDataFromString(String(s || '
  * GmailApp.createDraft abîme les émojis : on passe par l'API Gmail (service « Gmail API » du script).
  * o : { to, cc, subject, html, attachments: [blobs], threadId, inReplyTo, references, fromName, send }
  */
+var MAX_MESSAGE_BYTES_ = 25 * 1024 * 1024;
+function oneLine_(v) { return String(v || '').replace(/[\r\n]+/g, ' ').trim(); }   // en-têtes : jamais de retour à la ligne glissé
 function mimeDraft_(o) {
+  o.to = oneLine_(o.to); o.cc = oneLine_(o.cc); o.bcc = oneLine_(o.bcc); o.subject = oneLine_(o.subject);
   if (typeof Gmail === 'undefined') throw new Error('Active « Gmail API » dans le script Google (Services › + › Gmail API), puis redéploie');
   var me = Session.getEffectiveUser().getEmail();
   var mixed = 'mix' + Date.now(), alt = 'alt' + Date.now();
@@ -87,6 +98,7 @@ function mimeDraft_(o) {
   if (o.fromName) L.push('From: ' + enc_(o.fromName) + ' <' + me + '>');
   L.push('To: ' + (o.to || ''));
   if (o.cc) L.push('Cc: ' + o.cc);
+  if (o.bcc) L.push('Bcc: ' + o.bcc);
   L.push('Subject: ' + enc_(o.subject || ''));
   if (o.inReplyTo) L.push('In-Reply-To: ' + o.inReplyTo, 'References: ' + (o.references || o.inReplyTo));
   L.push('MIME-Version: 1.0', 'Content-Type: multipart/mixed; boundary="' + mixed + '"', '',
@@ -99,9 +111,13 @@ function mimeDraft_(o) {
       'Content-Disposition: attachment; filename="' + enc_(f.getName()) + '"', 'Content-Transfer-Encoding: base64', '', b64_(f.getBytes()));
   });
   L.push('--' + mixed + '--');
-  var message = { raw: Utilities.base64EncodeWebSafe(Utilities.newBlob(L.join('\r\n')).getBytes()) };
+  var mime = Utilities.newBlob(L.join('\r\n')).getBytes();
+  // limite de Gmail : 25 Mo pour le message ENCODÉ (pièces jointes en base64, textes, en-têtes) — mesurée ici, au-delà rien n'est créé ni envoyé
+  if (mime.length > MAX_MESSAGE_BYTES_) throw new Error('Message trop lourd pour Gmail : ' + (mime.length / 1048576).toFixed(1).replace('.', ',') + ' Mo une fois encodé (25 Mo au plus). Rien n’est parti.');
+  var message = { raw: Utilities.base64EncodeWebSafe(mime) };
   if (o.threadId) message.threadId = o.threadId;
-  var draft = Gmail.Users.Drafts.create({ message: message }, 'me');
+  // brouillon déjà enregistré (messagerie) : mis à jour, jamais dupliqué
+  var draft = o.draftId ? Gmail.Users.Drafts.update({ message: message }, 'me', o.draftId) : Gmail.Users.Drafts.create({ message: message }, 'me');
   if (o.send) {
     var sent = Gmail.Users.Drafts.send({ id: draft.id }, 'me');
     return { sent: true, thread_id: sent.threadId, message_id: sent.id, sent_at: new Date().toISOString() };
@@ -155,4 +171,210 @@ function status_(threadId) {
     else reply = m.getDate().toISOString();
   });
   return { ok: true, sent: sent, reply_at: reply };
+}
+
+
+/* ════════════════════════ Messagerie intégrée (v1.61) — boîte de ce compte ════════════════════════
+ * Lecture des conversations, libellés, rangement, réponses dans le fil, pièces jointes, historique pour la synchronisation.
+ * Gmail reste la référence : ce que fait L'ArtBotrice se voit dans Gmail et Apple Mail, et inversement. Jamais de suppression
+ * définitive (« Corbeille » seulement). */
+function hdr_(headers, name) {
+  var n = name.toLowerCase();
+  for (var i = 0; i < (headers || []).length; i++) if (String(headers[i].name).toLowerCase() === n) return headers[i].value;
+  return '';
+}
+/** « Nom <a@b.fr>, c@d.fr » → [{name, email}] (adresses en minuscules) */
+function addrs_(v) {
+  var out = [];
+  String(v || '').replace(/(?:"?([^"<,]*)"?\s*)?<?([A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})>?/g, function (m, name, email) {
+    out.push({ name: String(name || '').trim(), email: email.toLowerCase() });
+    return m;
+  });
+  return out;
+}
+/** Conversation sans corps de message, mais avec la structure des parties (noms et tailles des pièces jointes) */
+var META_FIELDS_ = 'id,messages(id,threadId,labelIds,internalDate,snippet,payload(mimeType,filename,headers,body(size,attachmentId),'
+  + 'parts(mimeType,filename,body(size,attachmentId),parts(mimeType,filename,body(size,attachmentId),parts(mimeType,filename,body(size,attachmentId))))))';
+function threadLight_(id) { return Gmail.Users.Threads.get('me', id, { format: 'full', fields: META_FIELDS_ }); }
+function me_() { return Session.getEffectiveUser().getEmail().toLowerCase(); }
+function b64dec_(data) { return Utilities.newBlob(Utilities.base64DecodeWebSafe(data)).getDataAsString('UTF-8'); }
+
+/** Parcours des parties d'un message : corps HTML / texte et pièces jointes (nom, taille, type, identifiant) */
+function parts_(payload, acc) {
+  if (!payload) return acc;
+  var mime = payload.mimeType || '', fn = payload.filename || '', body = payload.body || {};
+  if (fn && (body.attachmentId || body.data)) acc.attachments.push({ name: fn, size: body.size || 0, mime: mime, id: body.attachmentId || '' });
+  else if (mime === 'text/html' && body.data && !acc.html) acc.html = b64dec_(body.data);
+  else if (mime === 'text/plain' && body.data && !acc.text) acc.text = b64dec_(body.data);
+  (payload.parts || []).forEach(function (p) { parts_(p, acc); });
+  return acc;
+}
+
+/** Résumé d'un message (sans corps) — sert à la liste, à la synchronisation et au journal */
+function msgMeta_(m, me) {
+  var h = (m.payload || {}).headers || [], from = addrs_(hdr_(h, 'From'))[0] || { name: '', email: '' };
+  var acc = parts_(m.payload, { html: '', text: '', attachments: [] });
+  return { id: m.id, thread_id: m.threadId, rfc_id: hdr_(h, 'Message-ID'), labels: m.labelIds || [],
+    from: from, reply_to: addrs_(hdr_(h, 'Reply-To')), to: addrs_(hdr_(h, 'To')), cc: addrs_(hdr_(h, 'Cc')),
+    subject: hdr_(h, 'Subject'), date: new Date(Number(m.internalDate)).toISOString(), snippet: m.snippet || '',
+    direction: from.email === me || (m.labelIds || []).indexOf('SENT') >= 0 ? 'out' : 'in',
+    attachments: acc.attachments.map(function (a) { return { name: a.name, size: a.size, mime: a.mime, id: a.id }; }),
+    draft: (m.labelIds || []).indexOf('DRAFT') >= 0 };
+}
+
+/** Liste de conversations : boîte de réception (défaut), libellé, recherche Gmail, non lus ; par pages de 25 au plus */
+function threads_(b) {
+  var me = me_(), q = String(b.q || ''), opt = { maxResults: Math.min(Number(b.max) || 25, 25) };
+  if (b.unread) q = (q + ' is:unread').trim();
+  if (q) opt.q = q;
+  opt.labelIds = b.label ? [String(b.label)] : (q ? [] : ['INBOX']);
+  if (!opt.labelIds.length) delete opt.labelIds;
+  if (b.page_token) opt.pageToken = String(b.page_token);
+  var res = Gmail.Users.Threads.list('me', opt), list = [];
+  (res.threads || []).forEach(function (t) {
+    list.push(threadMeta_(threadLight_(t.id), me));
+  });
+  return { ok: true, threads: list, next_page_token: res.nextPageToken || null, account: me };
+}
+function threadMeta_(full, me) {
+  var msgs = (full.messages || []).map(function (m) { return msgMeta_(m, me); }).filter(function (m) { return !m.draft; });
+  var last = msgs[msgs.length - 1] || {}, people = {}, labels = {};
+  msgs.forEach(function (m) {
+    [m.from].concat(m.to, m.cc, m.reply_to).forEach(function (a) { if (a && a.email && a.email !== me) people[a.email] = a.name || people[a.email] || ''; });
+  });
+  (full.messages || []).forEach(function (m) { (m.labelIds || []).forEach(function (l) { labels[l] = 1; }); });
+  return { id: full.id, subject: (msgs[0] || {}).subject || '', snippet: last.snippet || '', last_at: last.date || null, count: msgs.length,
+    unread: !!labels.UNREAD, labels: Object.keys(labels), participants: Object.keys(people).map(function (e) { return { email: e, name: people[e] }; }),
+    messages: msgs };
+}
+
+/** Conversation complète (corps compris), brouillons exclus */
+function thread_(b) {
+  var me = me_(), full = Gmail.Users.Threads.get('me', String(b.thread_id), { format: 'full' });
+  var meta = threadMeta_(full, me);
+  meta.messages = (full.messages || []).filter(function (m) { return (m.labelIds || []).indexOf('DRAFT') < 0; }).map(function (m) {
+    var x = msgMeta_(m, me), acc = parts_(m.payload, { html: '', text: '', attachments: [] });
+    x.html = acc.html || ('<pre>' + String(acc.text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre>');
+    return x;
+  });
+  return { ok: true, thread: meta, account: me };
+}
+
+/** Libellés existants (= dossiers d'Apple Mail sous le compte) ; rien n'est créé ni renommé */
+function labels_() {
+  var res = Gmail.Users.Labels.list('me');
+  return { ok: true, labels: (res.labels || []).map(function (l) { return { id: l.id, name: l.name, type: l.type }; }) };
+}
+
+/** Rangement : ajouter / retirer des libellés, archiver (retirer de la boîte de réception), lu / non lu, corbeille (jamais de suppression définitive) */
+function modify_(b) {
+  var id = String(b.thread_id);
+  if (b.trash) { Gmail.Users.Threads.trash('me', id); return { ok: true, trashed: true }; }
+  if (b.untrash) { Gmail.Users.Threads.untrash('me', id); return { ok: true, untrashed: true }; }
+  var add = (b.add || []).map(String), rm = (b.remove || []).map(String);
+  if (b.archive) rm.push('INBOX');
+  if (b.read === true) rm.push('UNREAD');
+  if (b.read === false) add.push('UNREAD');
+  var res = Gmail.Users.Threads.modify({ addLabelIds: add, removeLabelIds: rm }, 'me', id);
+  var labels = {};
+  (res.messages || []).forEach(function (m) { (m.labelIds || []).forEach(function (l) { labels[l] = 1; }); });
+  return { ok: true, labels: Object.keys(labels) };
+}
+
+/**
+ * Rédaction : 'reply' (adresse de réponse du message, sinon son expéditeur), 'reply_all' (+ destinataires et copies, sans soi-même),
+ * 'forward' (pièces jointes d'origine jointes), 'new'. Destinataires fournis par L'ArtBotrice (affichés et modifiables avant l'envoi).
+ * Brouillon (enregistré / mis à jour) ou envoi ; une réponse reste dans le fil (threadId, In-Reply-To, References).
+ * Résultat d'envoi seulement si Gmail confirme : sent: true + identifiants.
+ */
+function compose_(b) {
+  var mode = String(b.mode || 'new'), me = me_(), base = null, subject = String(b.subject || ''), quoted = '', extra = [];
+  if (mode !== 'new') {
+    var full = Gmail.Users.Threads.get('me', String(b.thread_id), { format: 'full' });
+    var list = (full.messages || []).filter(function (m) { return (m.labelIds || []).indexOf('DRAFT') < 0; });
+    base = b.message_id ? list.filter(function (m) { return m.id === b.message_id; })[0] : list[list.length - 1];
+    if (!base) throw new Error('Message d’origine introuvable dans Gmail');
+    var h = base.payload.headers, acc = parts_(base.payload, { html: '', text: '', attachments: [] });
+    var orig = hdr_(h, 'Subject') || '';
+    if (!subject) subject = mode === 'forward' ? (/^(tr|fwd?)\s*:/i.test(orig) ? orig : 'Tr : ' + orig) : (/^re\s*:/i.test(orig) ? orig : 'Re: ' + orig);
+    var when = Utilities.formatDate(new Date(Number(base.internalDate)), 'Europe/Paris', "dd/MM/yyyy 'à' HH:mm");
+    var from = hdr_(h, 'From').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    quoted = mode === 'forward'
+      ? '<br><div class="gmail_quote">---------- Message transféré ---------<br>De : ' + from + '<br>Date : ' + when + '<br>Objet : ' + orig.replace(/</g, '&lt;') + '<br><br>' + (acc.html || acc.text || '') + '</div>'
+      : '<br><div class="gmail_quote"><div>Le ' + when + ', ' + from + ' a écrit :</div><blockquote style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">' + (acc.html || acc.text || '') + '</blockquote></div>';
+    if (mode === 'forward' && b.keep_attachments !== false) extra = GmailApp.getMessageById(base.id).getAttachments({ includeInlineImages: false });
+  }
+  var rfc = base ? hdr_(base.payload.headers, 'Message-ID') : '', refs = base ? ((hdr_(base.payload.headers, 'References') || '') + ' ' + rfc).trim() : '';
+  var reply = mode === 'reply' || mode === 'reply_all';
+  var out = mimeDraft_({ to: b.to, cc: b.cc, bcc: b.bcc, subject: subject, html: (b.html || '') + quoted,
+    attachments: strictBlobs_(b.attachments).concat(extra), threadId: reply ? String(b.thread_id) : (b.thread_id && mode === 'forward' ? String(b.thread_id) : null),
+    inReplyTo: reply ? rfc : null, references: reply ? refs : null, fromName: b.from_name || "L'ArtBoristerie Productions",
+    send: !!b.send, draftId: b.draft_id || null });
+  out.ok = true; out.subject = subject;
+  return out;
+}
+
+/** Pièces jointes de la messagerie : vraies pièces jointes, jamais de lien ; une pièce illisible arrête l'envoi (rien ne part sans elle) */
+function strictBlobs_(list) {
+  var total = 0, out = (list || []).map(function (f) {   // taille brute ; la limite réelle est vérifiée sur le message encodé (mimeDraft_)
+    var blob;
+    try {
+      if (f.url) blob = UrlFetchApp.fetch(f.url).getBlob().setName(f.name || 'piece-jointe');
+      else if (f.id) blob = DriveApp.getFileById(f.id).getBlob();
+    } catch (err) { throw new Error('Pièce jointe illisible : ' + (f.name || f.id || '?') + ' (' + err.message + '). Rien n’est parti.'); }
+    if (!blob) throw new Error('Pièce jointe introuvable : ' + (f.name || '?') + '. Rien n’est parti.');
+    total += blob.getBytes().length;
+    return blob;
+  });
+  if (total * 4 / 3 > MAX_MESSAGE_BYTES_) throw new Error('Pièces jointes trop lourdes pour Gmail (plus de 25 Mo une fois encodées). Rien n’est parti.');
+  return out;
+}
+
+/** Pièce jointe reçue (aperçu ou « Conserver dans le projet », toujours sur action explicite) */
+function attachment_(b) {
+  var a = Gmail.Users.Messages.Attachments.get('me', String(b.message_id), String(b.attachment_id));
+  if ((a.size || 0) > 20 * 1024 * 1024) throw new Error('Pièce jointe trop lourde pour être reprise ici (plus de 20 Mo)');
+  return { ok: true, size: a.size, data: a.data };   // base64 « web safe »
+}
+
+/**
+ * Synchronisation : conversations changées depuis le point de reprise (messages ajoutés, y compris envoyés depuis Apple Mail,
+ * libellés ajoutés / retirés). Sans point de reprise, ou point trop ancien : les conversations des 14 derniers jours.
+ */
+function history_(b) {
+  var me = me_(), profile = Gmail.Users.getProfile('me'), ids = {}, full = false;
+  if (b.ids && b.ids.length) {   // conversations restées en attente au passage précédent : lues telles quelles, sans historique
+    var out0 = [];
+    b.ids.slice(0, 50).forEach(function (id) { try { out0.push(threadMeta_(threadLight_(String(id)), me)); } catch (err) { out0.push({ id: String(id), missing: true }); } });
+    return { ok: true, account: me, threads: out0, remaining: [] };
+  }
+  if (b.start_history_id) {
+    try {
+      var token = null;
+      do {
+        var res = Gmail.Users.History.list('me', { startHistoryId: String(b.start_history_id), pageToken: token, maxResults: 500,
+          historyTypes: ['messageAdded', 'labelAdded', 'labelRemoved'] });
+        (res.history || []).forEach(function (h) {
+          (h.messages || []).concat((h.messagesAdded || []).map(function (x) { return x.message; }),
+            (h.labelsAdded || []).map(function (x) { return x.message; }), (h.labelsRemoved || []).map(function (x) { return x.message; }))
+            .forEach(function (m) { if (m && m.threadId) ids[m.threadId] = 1; });
+        });
+        token = res.nextPageToken;
+      } while (token);
+    } catch (err) { full = true; }   // point de reprise expiré (Gmail ne garde qu'une semaine environ) : reprise sur 14 jours
+  } else full = true;
+  if (full) {
+    var token2 = null, n = 0;
+    do {
+      var r = Gmail.Users.Threads.list('me', { q: 'newer_than:14d -in:drafts', maxResults: 100, pageToken: token2 });
+      (r.threads || []).forEach(function (t) { ids[t.id] = 1; });
+      token2 = r.nextPageToken; n++;
+    } while (token2 && n < 5);
+  }
+  var list = Object.keys(ids), limit = Math.min(Number(b.max) || 30, 50), out = [];
+  list.slice(0, limit).forEach(function (id) {
+    try { out.push(threadMeta_(threadLight_(id), me)); }
+    catch (err) { out.push({ id: id, missing: true }); }   // conversation supprimée définitivement depuis Gmail
+  });
+  return { ok: true, account: me, history_id: String(profile.historyId), threads: out, remaining: list.slice(limit), full: full };
 }

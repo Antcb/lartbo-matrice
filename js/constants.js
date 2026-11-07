@@ -72,7 +72,7 @@ export const BOOKING_STEPS = [
 ];
 
 export const VIEWS = [
-  ['todo','To Do'], ['booking','Booking'], ['prospects','Suivi'], ['production','Production'], ['ticketing','Ticketing'], ['communication','Communication'],
+  ['todo','To Do'], ['booking','Booking'], ['prospects','Suivi'], ['mails','Mails'], ['production','Production'], ['ticketing','Ticketing'], ['communication','Communication'],
   ['structures','Structures'], ['contacts','Contacts'], ['projects','Projets'], ['employees','Salariés'],
 ];
 
