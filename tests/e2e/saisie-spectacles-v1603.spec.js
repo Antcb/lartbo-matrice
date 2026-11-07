@@ -59,14 +59,27 @@ test('v1.60.3 champs numériques : premier focus = tout sélectionné, clic suiv
 
 test.describe('écran tactile', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
-  test('v1.60.3 champs numériques au doigt : pas de sélection imposée (même règle que les dates et les recherches)', async ({ page }) => {
+  test('v1.60.3 champs numériques au doigt : premier toucher = tout sélectionné, toucher suivant = curseur (réponse du 07/11)', async ({ page }) => {
     const ctx = await openApp(page);
-    await patch(page, 'projects', 'art-a', { road_people: 12 });
+    await patch(page, 'projects', 'art-a', { road_people: 125 });
     await ficheProjet(page);
     const f = page.locator('input[data-t=projects][data-f=road_people]');
+    await f.scrollIntoViewIfNeeded();
     await f.tap();
+    await expect.poll(() => sel(f)).toEqual([0, 3, 3]);
+    // toucher suivant dans le champ déjà actif : pas de nouvelle sélection complète (curseur déplacé librement)
+    await page.waitForTimeout(700);
+    const box = await f.boundingBox();
+    await page.touchscreen.tap(box.x + box.width - 6, box.y + box.height / 2);
+    await page.waitForTimeout(50);
     const [a, b] = await sel(f);
-    expect(a).toBe(b);
+    expect(a, 'curseur, pas de sélection').toBe(b);
+    // premier toucher puis frappe : la valeur est remplacée
+    await f.evaluate(el => el.blur());
+    await f.tap();
+    await expect.poll(() => sel(f)).toEqual([0, 3, 3]);
+    await page.keyboard.type('8');
+    await expect(f).toHaveValue('8');
     expectClean(ctx);
   });
 });
@@ -87,6 +100,12 @@ test('v1.60.3 budget d’une date : lignes de cachets sur trois lignes au plus (
   expect(Math.max(...rows.map(r => r.lignes)), JSON.stringify(rows)).toBeLessThanOrEqual(3);
   expect(await page.evaluate(() => { const w = document.querySelector('#prod-sv-1 .budget-table').closest('.tbl-wrap'); return w.scrollWidth - w.clientWidth; }), 'tableau sans défilement horizontal à 1 440 px').toBeLessThanOrEqual(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);
+  // 1 280 px : le tableau défilait déjà avant ce lot (1 265 px de contenu) ; il ne s'élargit pas (réponse d'Anthony du 07/11)
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.evaluate(async () => (await import('./js/app.js')).render());
+  expect(await page.evaluate(() => document.querySelector('#prod-sv-1 .budget-table').closest('.tbl-wrap').scrollWidth), 'pas plus large qu’avant le lot').toBeLessThanOrEqual(1265);
+  const l1280 = await page.locator('#prod-sv-1 .budget-table td.bl-label textarea').evaluateAll(l => Math.max(...l.map(ta => Math.round((ta.scrollHeight - 8) / parseFloat(getComputedStyle(ta).lineHeight)))));
+  expect(l1280).toBeLessThanOrEqual(3);
   expectClean(ctx);
 });
 
@@ -128,6 +147,8 @@ test('v1.60.3 fiche projet : une date confirmée s’ouvre directement dans Prod
   await expect(page.locator('#modal[open]')).toHaveCount(0);
   await expect(page.locator('#prod-sh-1.open')).toBeVisible();
   await expect(page.locator('#prod-sh-1 .prod-body')).toBeVisible();
+  await expect.poll(async () => { const r = await page.locator('#prod-sh-1 .prod-head').boundingBox(), top = await page.locator('header.top, .top').first().boundingBox();
+    return r.y >= top.y + top.height - 1 && r.y < 900; }, 'la date ouverte est à l’écran, sous l’en-tête').toBe(true);
   expect(await page.evaluate(async () => { const { S } = await import('./js/state.js'); return [S.view, S.year, S.projects]; })).toEqual(['production', Y, ['art-a']]);
   await expect(page.locator('.toast').last()).toContainText('Filtre Artistes : Artiste Alpha');
   // reste de la ligne : la fenêtre de la date, comme avant
@@ -141,7 +162,10 @@ test('v1.60.3 aperçu projet : budget type de l’artiste retiré dès qu’il a
   const ctx = await openApp(page);
   await patch(page, 'projects', 'art-a', { budget_template: { artists: 3, t1max: 400, t1: 200, t2max: 800, t2: 300, t3: 400 } });
   await ficheProjet(page);
-  await expect(page.locator('h3.block-title', { hasText: /^Budget type/ })).toHaveCount(1);   // aucun spectacle : seul budget type, gardé
+  // aucun spectacle : budget historique gardé temporairement, clairement identifié
+  await expect(page.locator('h3.block-title', { hasText: /^Budget type/ })).toHaveCount(1);
+  await expect(page.locator('h3.block-title', { hasText: /^Budget type/ })).toContainText('Budget type historique de l’artiste');
+  await expect(page.locator('h3.block-title', { hasText: /^Budget type/ })).toContainText('temporaire');
   await seed(page, { spectacles: [{ id: 'sp-x', project_id: 'art-a', name: 'Classique', active: true, budget_template: T, sort: 1 }] });
   await ficheProjet(page);
   await expect(page.locator('h3.block-title', { hasText: /^Budget type/ })).toHaveCount(0);
@@ -190,6 +214,20 @@ test('v1.60.3 nouvelle date : seul spectacle actif présélectionné ; plusieurs
   await nouvelle();
   await expect(page.locator('#fld-spectacle_id')).toHaveValue('');
   await close();
+  // défaut refusé s'il n'est pas un spectacle actif de cet artiste (même contrôle en base)
+  await page.evaluate(async () => { const a = await import('./js/actions.js');
+    await a.ACTIONS['change:projects.default_spectacle_id']({ dataset: { t: 'projects', id: 'art-a', f: 'default_spectacle_id' } }, 'sp-a0'); });
+  await expect(page.locator('.toast').last()).toContainText('il doit être un spectacle actif de cet artiste');
+  expect(await page.evaluate(() => window.__DB.projects.find(p => p.id === 'art-a').default_spectacle_id ?? null)).not.toBe('sp-a0');
+  // archiver le spectacle par défaut depuis la fiche : le défaut est retiré, message clair, dates inchangées
+  await patch(page, 'spectacles', 'sp-a2', { active: true });
+  await ficheProjet(page);
+  await page.locator('select[data-t=projects][data-f=default_spectacle_id]').selectOption('sp-a3');
+  await expect.poll(() => page.evaluate(() => window.__DB.projects.find(p => p.id === 'art-a').default_spectacle_id)).toBe('sp-a3');
+  await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.tab['fold:spectacle-sp-a3'] = true; (await import('./js/app.js')).render(); });
+  await page.locator('input[type=checkbox][data-t=spectacles][data-id=sp-a3][data-f=active]').uncheck();
+  await expect.poll(() => page.evaluate(() => [window.__DB.spectacles.find(x => x.id === 'sp-a3').active, window.__DB.projects.find(p => p.id === 'art-a').default_spectacle_id])).toEqual([false, null]);
+  await expect(page.locator('.toast').last()).toContainText('ce n’est plus le spectacle par défaut');
   // date existante : jamais rattachée automatiquement ; aucune date historique modifiée
   await page.evaluate(async () => { (await import('./js/forms.js')).editShow('sh-1'); });
   await expect(page.locator('#fld-spectacle_id')).toHaveValue('');

@@ -25,22 +25,27 @@ new MutationObserver(list => list.forEach(m => m.addedNodes.forEach(n => {
   if (n.matches('input[type=number]')) enhance(n); else scan(n);
 }))).observe(document.documentElement, {childList: true, subtree: true});
 
-// Premier focus (clic ou Tab) : toute la valeur est sélectionnée, la frappe la remplace directement (07/11/2026) ; un clic suivant
-// dans le champ déjà actif place le curseur normalement (édition partielle, décimales). Même règle que les dates et les
-// recherches : pas sur écran tactile (la sélection y ouvre le menu copier-coller). Un réaffichage qui rend le focus au champ
-// garde la position du curseur (app.js, focusKey) : jamais de sélection imposée en pleine saisie.
+// Premier focus (clic, Tab ou doigt) : toute la valeur est sélectionnée, la frappe la remplace directement (07/11/2026) ; ensuite,
+// un clic ou un toucher dans le champ déjà actif place le curseur normalement (édition partielle, décimales) : la sélection
+// complète n'a lieu qu'une fois par focus, jamais à chaque déplacement du curseur. Écran tactile (réponse d'Anthony du
+// 07/11/2026) : sélection posée juste après le focus par setSelectionRange (le toucher place d'abord son curseur ; select()
+// est peu fiable sur iOS). Un réaffichage qui rend le focus au champ garde la position du curseur (app.js, focusKey).
 let firstFocus = null;
-const coarse = () => matchMedia('(pointer:coarse)').matches;
+const selectAll = el => { try { el.setSelectionRange(0, el.value.length); } catch(e){ el.select(); } };
 document.addEventListener('focusin', e => {
-  const el = e.target; if (!el.dataset?.num || el.readOnly || coarse()) return;
-  el.select(); firstFocus = {el, at: Date.now()};
+  const el = e.target; if (!el.dataset?.num || el.readOnly) return;
+  selectAll(el); firstFocus = {el, at: Date.now()};
+  if (matchMedia('(pointer:coarse)').matches){ const v = desc.get.call(el);
+    setTimeout(() => { if (document.activeElement === el && desc.get.call(el) === v && el.selectionStart === el.selectionEnd) selectAll(el); }, 0); }
 });
-// le clic qui donne le focus ne doit pas annuler la sélection (le navigateur la réduit au relâchement)
-document.addEventListener('mouseup', e => {
+// le clic / toucher qui donne le focus ne doit pas annuler la sélection (le navigateur la réduit au relâchement) ; une seule fois
+const keepFirst = e => {
   const f = firstFocus; firstFocus = null;
-  if (!f || e.target !== f.el || Date.now() - f.at > 400) return;
-  if (f.el.selectionStart === f.el.selectionEnd) f.el.select();
-});
+  if (!f || e.target !== f.el || Date.now() - f.at > 600) return;
+  if (f.el.selectionStart === f.el.selectionEnd) selectAll(f.el);
+};
+document.addEventListener('mouseup', keepFirst);
+document.addEventListener('touchend', e => { const f = firstFocus; if (f && e.target === f.el) setTimeout(() => keepFirst({target: f.el}), 0); });
 
 // Saisie illisible (« 12x ») : refusée partout avant tout enregistrement, l'ancienne valeur revient
 const ok = v => v === '' || Number.isFinite(Number(v));

@@ -500,6 +500,24 @@ async function setBill(pay, pct){
   if (pct > max + 0.001){ toast(`Les factures ne peuvent pas dépasser ${fmtPct(100)} du cachet : ${fmtPct(max)} au plus pour cette ligne`, true); return true; }
   return false;
 }
+// Spectacle par défaut (v1.60.3, réponse d'Anthony du 07/11/2026) : toujours un spectacle ACTIF de l'artiste (même contrôle en base :
+// projects_default_spectacle_guard, migration 2026-11-07_v1.60.3_spectacle_defaut.sql)
+ACTIONS['change:projects.default_spectacle_id'] = async (t, v) => {
+  const sp = v && byId('spectacles', v);
+  if (v && !(sp && sp.active && sp.project_id === t.dataset.id)){ toast('Spectacle par défaut refusé : il doit être un spectacle actif de cet artiste', true); render(); return; }
+  await save('projects', t.dataset.id, {default_spectacle_id: v});
+};
+// spectacle archivé : s'il était le défaut de l'artiste, le défaut est retiré (jamais un défaut inutilisable) ; les dates ne bougent pas.
+// Même règle en base : spectacles_default_cleanup (migration v1.60.3)
+ACTIONS['change:spectacles.active'] = async (t, v) => {
+  const sp = byId('spectacles', t.dataset.id); if (!sp) return;
+  if (!await save('spectacles', sp.id, {active: v}, {rerender: false})) return;
+  const p = byId('projects', sp.project_id);
+  if (!v && p?.default_spectacle_id === sp.id){
+    if (await save('projects', p.id, {default_spectacle_id: null}, {rerender: false})) toast(`« ${sp.name} » archivé : ce n’est plus le spectacle par défaut des nouvelles dates (dates existantes inchangées)`);
+  }
+  render();
+};
 // commission de l'artiste changée : ses dates suivent (après confirmation)
 ACTIONS['change:projects.default_artbo_pct'] = async (t, v) => {
   if (!await save('projects', t.dataset.id, {default_artbo_pct: v}, {rerender: false})) return;
