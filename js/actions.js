@@ -5,10 +5,10 @@
 import { afterFeeChange, askConfirmation, becameConfirmed, sendConfirmation, validateTerms } from './confirm-flow.js';
 import { go, render } from './app.js';
 import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
-import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
+import { CONFIRMED_PROD, FOLLOW_DATES, PAY_KINDS, isOff } from './constants.js';
 import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
 import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure, showPrefillFromSuivi } from './forms.js';
-import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showsFiltered, structName } from './selectors.js';
+import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showLabel, showsFiltered, structName } from './selectors.js';
 import { CFG } from './config.js';
 import { propagateCommission } from './commission.js';
 import { payerLabel } from './budget.js';
@@ -18,7 +18,7 @@ import { ask, askText, confirmAsk, copyText } from './ui/dialog.js';
 import { modalSaved } from './ui/drafts.js';
 import { applyAcompte, saveDepartments } from './views/settings.js';
 import { hasLogDraft, setLogDraft } from './views/suivi.js';
-import { $, esc, eur2, fmtDate, safeHtml, toast, today, r2, pct as fmtPct } from './utils.js';
+import { $, esc, eur2, fmtDate, fmtNum, safeHtml, toast, today, r2, pct as fmtPct } from './utils.js';
 import { rtStyle, rtToolbar } from './ui/richtext.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
@@ -464,6 +464,23 @@ ACTIONS['change:prospects.status'] = async (t, v) => {
 // Date retirée du ticketing / de la communication : reste visible 5 s
 for (const f of ['ticketing_enabled','communication_enabled'])
   ACTIONS['change:shows.'+f] = async (t, v) => v ? save('shows', t.dataset.id, {[f]:true}) : saveLinger('shows', t.dataset.id, {[f]:false}, f==='ticketing_enabled' ? 'Date retirée du ticketing' : 'Date retirée de la communication');
+// Dates de suivi (Production › Suivi admin, Communication — v1.60.3, demande d'Anthony du 07/11/2026) : une date déjà renseignée
+// ne se modifie ni ne s'efface sans confirmation (ancienne et nouvelle valeur) ; « Annuler » garde l'ancienne ; un champ vide se
+// remplit sans question. Saisies manuelles seulement : un envoi réel (mail.js, contrat) écrit par save(), sans passer par ce crochet.
+for (const [f, label] of Object.entries(FOLLOW_DATES))
+  ACTIONS['change:shows.'+f] = async (t, v) => {
+    const id = t.dataset.id, s = byId('shows', id), old = s?.[f] || null;
+    if (old && old !== v){
+      const ok = await confirmAsk(v ? `Modifier la date « ${label} » ?` : `Effacer la date « ${label} » ?`,
+        `${showLabel(s)}\nAncienne valeur : ${fmtNum(old)}\nNouvelle valeur : ${v ? fmtNum(v) : 'aucune (date effacée)'}`,
+        v ? 'Modifier la date' : 'Effacer la date', {danger: !v});
+      if (!ok){   // Annuler, Échap, clic dehors : rien n'est écrit, la case reprend l'ancienne valeur
+        t.value = old; const txt = t.parentElement?.querySelector('.dt-txt'); if (txt){ txt.value = fmtNum(old); txt.classList.remove('bad'); txt.title = ''; }
+        render(); return;
+      }
+    }
+    await save('shows', id, {[f]: v}, {rerender: t.dataset.rr !== '0'});
+  };
 // Date annulée / sans suite : reste visible 5 s
 ACTIONS['change:shows.status'] = async (t, v) => {
   const before = byId('shows', t.dataset.id)?.status;

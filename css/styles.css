@@ -779,8 +779,7 @@ dialog.mail .mode-note{margin:0}
 .pa-row{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center}
 .pa-item{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
 .pa-item small{font-size:12px}
-.pa-item.pa-stack{flex-direction:column;align-items:flex-start;gap:4px}   /* boucle communication : bouton, date d'envoi, statut du mail préparé */
-.pa-date{display:inline-flex;align-items:center;gap:8px}
+.pa-item.pa-stack{flex-direction:column;align-items:flex-start;gap:4px}   /* boucle communication : bouton, statut du mail préparé */
 .pa-item.drive{gap:6px}
 .ok-txt{color:var(--ok);font-weight:600}
 .warn-txt{color:var(--warn);font-weight:600}
