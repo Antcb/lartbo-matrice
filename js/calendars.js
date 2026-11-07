@@ -3,8 +3,9 @@
  * Décisions d'Anthony du 06/11/2026 :
  *   - un agenda par artiste, choisi explicitement (agendas partagés avec production@) ; suspendre / déconnecter ; dernière
  *     synchronisation et erreurs affichées ; accès perdu ou synchronisation en échec → « disponibilités plus à jour », jamais « libre » ;
- *   - booking : événements = indisponibilités, affichées à part (origine Google) ; « Disponible » ne bloque pas ; chevauchement avec une
- *     option ou une date → avertissement, poursuite possible après confirmation ; événement privé → « Indisponible » sans détail ;
+ *   - booking : événements = indisponibilités, affichées à part (origine Google) ; « Disponible » ne bloque pas ; conflit avec une option ou
+ *     une date (horaires réels qui se chevauchent OU même jour local, décision du 07/11) → avertissement avec la raison, poursuite
+ *     possible après confirmation ; événement privé → « Indisponible » sans détail ;
  *   - carte : titre contenant « show » + lieu reconnu comme ville → repère « Date artiste — calendrier Google » ; sinon
  *     « localisation à préciser », jamais de repère approximatif ; jamais compté dans les chiffres (ce ne sont pas des dates) ;
  *   - dates « Option / Confirmée Artiste » existantes : jamais converties ; association explicite proposée (pas de double affichage).
@@ -53,16 +54,25 @@ export function calFresh(cal){
 }
 export const evLabel = e => e.private || !e.title ? 'Indisponible' : e.title;
 
-/** Indisponibilités (occupé seulement) qui chevauchent une date de l'artiste */
+/**
+ * Indisponibilités (occupé seulement ; « Disponible » jamais) en conflit avec une date de l'artiste — décision d'Anthony du 07/11/2026 :
+ * conflit si les HORAIRES RÉELS se chevauchent (instants, fuseaux compris ; la date de booking couvre ses journées à Paris) OU si le
+ * JOUR LOCAL de l'événement (son fuseau ; journée entière : dates calendaires) tombe dans les jours de la date. Une seule entrée par
+ * événement, avec sa raison : « chevauchement horaire » (prioritaire si les deux) ou « événement artiste le même jour ».
+ */
+export const CAL_WHY = {heure: 'chevauchement horaire', jour: 'événement artiste le même jour'};
 export function calOverlaps(v){
   if (!v?.project_id || !v.date) return [];
   const a = v.date, b = v.date_end && v.date_end > v.date ? v.date_end : v.date;
-  // la date de booking couvre ses journées à Paris ; un événement à l'heure se compare sur ses INSTANTS réels (fuseaux compris),
-  // une journée entière sur ses dates calendaires
   const from = midnightIn(a), to = midnightIn(nextDay(b));
-  return calEvents([v.project_id]).filter(e => e.busy && !e.show_id && (e.all_day
-    ? (([x, y]) => x && x <= b && y >= a)(evSpan(e))
-    : e.start_at && new Date(e.start_at).getTime() < to && new Date(e.end_at || e.start_at).getTime() > from));
+  const out = [];
+  for (const e of calEvents([v.project_id])){
+    if (!e.busy || e.show_id) continue;
+    const hour = !e.all_day && e.start_at && new Date(e.start_at).getTime() < to && new Date(e.end_at || e.start_at).getTime() > from;
+    const [x, y] = evSpan(e), day = !!x && x <= b && y >= a;
+    if (hour || day) out.push({...e, why: hour ? CAL_WHY.heure : CAL_WHY.jour});
+  }
+  return out;
 }
 
 /** Avant d'enregistrer une option / une date : avertissement si l'agenda de l'artiste est occupé (ou plus à jour) ; true = poursuivre */
@@ -77,7 +87,7 @@ export async function calCheckBeforeSave(v, before = null){
   const cal = calOf(v.project_id); if (!cal || cal.status === 'deconnecte') return true;
   const hits = calOverlaps(v), stale = !calFresh(cal);
   if (!hits.length && !stale) return true;
-  const lines = hits.slice(0, 6).map(e => { const [x, y] = evSpan(e); return `• ${fmtDate(x)}${y !== x ? ' → ' + fmtDate(y) : ''} : ${evLabel(e)}`; }).join('\n');
+  const lines = hits.slice(0, 6).map(e => { const [x, y] = evSpan(e); return `• ${fmtDate(x)}${y !== x ? ' → ' + fmtDate(y) : ''} : ${evLabel(e)} (${e.why})`; }).join('\n');
   return confirmAsk(hits.length ? 'Artiste indisponible ?' : 'Agenda pas à jour',
     `${hits.length ? `L’agenda Google de ${projName(v.project_id)} indique :\n${lines}\n\n` : ''}${stale ? `Disponibilités plus à jour (${calStatusText(cal)}).\n\n` : ''}Enregistrer quand même ?`, 'Enregistrer quand même');
 }
