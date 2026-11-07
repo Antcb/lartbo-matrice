@@ -72,7 +72,7 @@ test('v1.60.2 prospection : contacts liés uniquement à des structures inactive
   const ctx = await openApp(page);
   await seed(page, DATA);
   await page.evaluate(async () => { (await import('./js/prospection.js')).openProspection('zo'); });
-  const search = page.locator('[data-rcpt-box="pr-cc"] .ac-input'), cc = page.locator('#pr-cc');
+  const search = page.locator('#pr-cc-q'), cc = page.locator('#pr-cc');
   await search.fill('exemple.invalid');
   await expect(page.locator('.ac-item', { hasText: 'fanny@exemple.invalid' })).toHaveCount(0);
   await expect(page.locator('.ac-item', { hasText: 'marc@exemple.invalid' })).toHaveCount(1);       // lié aussi à une structure active
@@ -85,7 +85,7 @@ test('v1.60.2 prospection : contacts liés uniquement à des structures inactive
   await page.locator('#modal [data-act=closeModal]').first().click();
   // mail d'une date (pas une prospection) : la recherche propose tout, comme avant
   await page.evaluate(async () => { (await import('./js/mail.js')).prepareMail('zs-1', 'confirmation'); });
-  await page.locator('[data-rcpt-box="ml-cc"] .ac-input').fill('fanny');
+  await page.locator('#ml-cc-q').fill('fanny');
   await expect(page.locator('.ac-item', { hasText: 'fanny@exemple.invalid' })).toHaveCount(1);
   await expect(page.locator('.ac-item', { hasText: 'Afficher aussi' })).toHaveCount(0);
   expect(await page.evaluate(() => window.__calls.filter(c => c.fn === 'script-google').length)).toBe(0);
@@ -97,7 +97,7 @@ test('v1.60.2 adresses d’un contact : trouvé par n’importe laquelle, chacun
   const ctx = await openApp(page);
   await seed(page, DATA);
   await page.evaluate(async () => { (await import('./js/mail.js')).prepareMail('zs-1', 'confirmation'); });
-  const search = page.locator('[data-rcpt-box="ml-to"] .ac-input'), to = page.locator('#ml-to');
+  const search = page.locator('#ml-to-q'), to = page.locator('#ml-to');
   // recherche par la 2e adresse : le contact est trouvé, ses deux adresses sont proposées (celle tapée d'abord)
   await search.fill('bea.pro');
   const items = page.locator('.ac-item');
@@ -107,12 +107,13 @@ test('v1.60.2 adresses d’un contact : trouvé par n’importe laquelle, chacun
   await expect(items.nth(0)).toContainText('adresse 2 sur 2');
   await items.nth(1).dispatchEvent('mousedown');
   await expect(to).toHaveValue('bea@exemple.invalid');
-  // l'autre adresse s'ajoute aussi, sans doublon
+  // l'autre adresse s'ajoute aussi, sans doublon (v1.60.3 : une adresse déjà choisie n'est plus proposée)
   await search.fill('Bea Deux');
+  await expect(page.locator('.ac-item', { hasText: 'bea@exemple.invalid' })).toHaveCount(0);
   await page.locator('.ac-item', { hasText: 'bea.pro@exemple.invalid' }).dispatchEvent('mousedown');
   await expect(to).toHaveValue('bea@exemple.invalid, bea.pro@exemple.invalid');
   await search.fill('Bea Deux');
-  await page.locator('.ac-item', { hasText: 'bea.pro@exemple.invalid' }).dispatchEvent('mousedown');
+  await expect(page.locator('.ac-item', { hasText: 'exemple.invalid' })).toHaveCount(0);
   await expect(to).toHaveValue('bea@exemple.invalid, bea.pro@exemple.invalid');
   // contact sans adresse : trouvé, et le dit
   await search.fill('Nina');

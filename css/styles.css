@@ -606,13 +606,19 @@ input[type=range]{accent-color:var(--brand);flex:1;min-width:120px}
   .tpl-row{grid-template-columns:1fr}
 }
 .mail-wrap{grid-column:1/-1;min-width:0}
-/* destinataires et copies (v1.55) : adresses de la structure à ajouter / retirer, recherche dans la base */
-.rcpt-sug{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;min-width:0}
-.mail-grid>.rcpt-sug{grid-column:2/-1}
-.rcpt-sug .tag-chip{max-width:100%;overflow-wrap:anywhere;text-align:left}   /* pastille d'adresse = .tag-chip (DS §227) ; adresses longues sur téléphone */
-.rcpt-sug .tag-chip::before{content:'+ '}
-.rcpt-sug .tag-chip.on::before{content:'✓ '}
-.rcpt-search .ac{min-width:0;width:240px;max-width:100%}
+/* destinataires et copies — champ unique (v1.60.3) : cadre .tagpick (étiquettes), pastilles .tp-chip, saisie avec suggestions .ac ;
+   le champ d'adresses lu à l'envoi (.rcpt-src) est masqué derrière les pastilles */
+.rcpt-field{min-width:0}
+.rcpt-field .rcpt-chips{display:contents}
+.rcpt-chip{max-width:100%;overflow-wrap:anywhere;text-align:left}   /* adresses longues sur téléphone */
+.rcpt-chip small{font-weight:400;color:var(--muted)}
+.rcpt-chip.bad{border-color:var(--danger);color:var(--danger)}
+.rcpt-field .ac{flex:1 1 160px;min-width:0}
+.rcpt-field .ac-input{border:0 !important;outline:0;box-shadow:none !important;padding:4px !important;background:transparent !important;width:100%}   /* comme .tp-q */
+.rcpt-field:has(.bad){border-color:var(--danger)}
+.rcpt-field .help.err{flex-basis:100%;margin:0}
+.rcpt-src{display:none !important}
+.mail-to small{align-self:center}
 .rcpt-note{grid-column:1/-1}
 .warn-badge{background:#FFF1D6;color:#8A5A00;border-radius:999px;padding:3px 10px;font-weight:600;font-size:12px}
 .fiche-lbl{font-size:13px;margin-right:4px}
@@ -764,6 +770,7 @@ dialog.mail .mode-note{margin:0}
   dialog.mail .btn,dialog.mail .rt-btn,dialog.mail .rt-bar select,dialog.mail .mail-grid select,dialog.mail .mail-grid input:not([type=checkbox]),
   .view-prospects select,.view-prospects .search{min-height:var(--h-touch)}
   dialog.mail .pills label,dialog.mail .att-chip,dialog.mail .tag-chip{min-height:var(--h-touch)}
+  dialog.mail .rcpt-rm{min-width:var(--h-touch);min-height:var(--h-touch)}   /* retirer une adresse au doigt (v1.60.3) */
   dialog.mail input[type=checkbox]{width:var(--chk-touch);height:var(--chk-touch)}
 }
 .log-mail{margin-top:8px;padding:12px 14px;border:1px solid var(--line-2);border-radius:var(--r);background:#fff;color:#000;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.45;overflow-x:auto;isolation:isolate;contain:paint}
@@ -812,13 +819,13 @@ dialog.mail .mode-note{margin:0}
 .pp-btn.pp-on{border-color:var(--brand);color:var(--brand);font-weight:600}
 .inactive-tgl{white-space:nowrap}
 /* Fenêtre de mail : destinataire, copie, objet sur toute la largeur */
-dialog.mail .mail-grid>input[id$="-cc"],dialog.mail .mail-grid>input[id$="-subj"]{grid-column:span 3}
+dialog.mail .mail-grid>.rcpt-field,dialog.mail .mail-grid>input[id$="-subj"]{grid-column:span 3}
 dialog.mail .mail-to{grid-template-columns:minmax(200px,1fr) minmax(0,2fr)}
 dialog.mail .mail-grid input{width:100%;min-width:0}
 .ml-from{font-size:13px;align-self:center}
 .ml-att .drop-hint{color:var(--faint);font-size:12px}
 .ml-att.drop-over{outline:2px dashed var(--brand-2);outline-offset:4px;border-radius:var(--r)}
-@media (max-width:900px){ dialog.mail .mail-grid>input[id$="-cc"],dialog.mail .mail-grid>input[id$="-subj"]{grid-column:auto} dialog.mail .mail-to{grid-template-columns:1fr} }
+@media (max-width:900px){ dialog.mail .mail-grid>.rcpt-field,dialog.mail .mail-grid>input[id$="-subj"]{grid-column:auto} dialog.mail .mail-to{grid-template-columns:1fr} }
 .terms-ac input{width:90px !important;flex:none}
 .terms-eur{white-space:nowrap}
 .terms-n select{width:auto;flex:none}
@@ -859,8 +866,8 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .tagpick:focus-within{border-color:var(--brand-2);box-shadow:0 0 0 3px rgba(40,60,99,.12)}
 .tp-chips{display:contents}
 .tp-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 9px;border-radius:999px;background:var(--soft);border:1px solid var(--line);font-size:13px;font-weight:600;color:var(--ink)}
-.tp-rm{border:0;background:none;color:var(--muted);font-size:15px;line-height:1;cursor:pointer;padding:0 4px;border-radius:50%}
-.tp-rm:hover{color:var(--danger);background:#fff}
+.tp-rm,.rcpt-rm{border:0;background:none;color:var(--muted);font-size:15px;line-height:1;cursor:pointer;padding:0 4px;border-radius:50%}
+.tp-rm:hover,.rcpt-rm:hover{color:var(--danger);background:#fff}
 .tp-q{flex:1;min-width:110px;border:0 !important;outline:0;box-shadow:none !important;padding:4px !important;background:transparent}
 .tp-sugg{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;max-height:180px;overflow:auto;padding:8px 2px 4px;border-top:1px solid var(--line-2);margin-top:2px}
 .tp-opt{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}

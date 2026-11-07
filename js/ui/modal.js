@@ -12,6 +12,7 @@ import { $, esc, toast, checkMails } from '../utils.js';
 import { SOURCES, acInput, commitTypedText } from './autocomplete.js';
 import { dateInput } from './datefield.js';
 import { tagPicker, commitTags } from './tagpicker.js';
+import { commitRecipients } from './recipients.js';
 import { projPicker } from './projpicker.js';
 import { trackModal } from './history.js';
 import { modalSaved, watchModal } from './drafts.js';
@@ -86,7 +87,7 @@ export function openModal({title, fields, values={}, onSave, onDelete, deleteAsk
       ev.preventDefault();
       // un champ date en cours de saisie doit être validé avant lecture
       if (document.activeElement?.classList.contains('dt-txt')) document.activeElement.blur();
-      commitTypedText(ev.target); commitTags(ev.target);
+      commitTypedText(ev.target); commitTags(ev.target); commitRecipients(ev.target);   // adresse tapée dans Destinataire / Copie (v1.60.3)
       // un seul enregistrement à la fois : tous les boutons du bas attendent la fin (envoi, brouillon…)
       if (dlg._busy) return;
       // une date illisible ou une fin avant le début : on ne ferme pas, on montre le champ

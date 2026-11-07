@@ -23,9 +23,15 @@ export const mailOk = v => !mailText(v) || MAIL_RE.test(mailText(v));
  *  « Nom <adresse> » et « "Dupont, Jean" <adresse> » acceptés ; au moins une adresse si le champ n'est pas vide */
 export const mailsOk = v => {
   const t = mailText(v); if (!t) return true;
-  const parts = t.split(/[,;](?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x => x.trim());
-  return parts.some(Boolean) && parts.every((x, i) => (x || (i === parts.length - 1 && i > 0)) && (!x || mailOk((x.match(/<([^<>]*)>\s*$/) || [, x])[1])));
+  const parts = t.split(MAIL_SEP).map(x => x.trim());
+  return parts.some(Boolean) && parts.every((x, i) => (x || (i === parts.length - 1 && i > 0)) && (!x || mailOk(mailAddr(x))));
 };
+/** Séparateur d'une liste d'adresses : virgule ou point-virgule hors noms entre guillemets */
+const MAIL_SEP = /[,;](?=(?:[^"]*"[^"]*")*[^"]*$)/;
+/** Adresses d'une liste (destinataires, copie), non vides */
+export const mailParts = v => String(v || '').split(MAIL_SEP).map(x => x.trim()).filter(Boolean);
+/** Adresse seule d'une écriture « Nom <adresse> » (sinon le texte lui-même), sans espaces autour */
+export const mailAddr = x => ((String(x || '').match(/<([^<>]*)>\s*$/) || [, x])[1]).trim();
 export const MAIL_MSG = 'Adresse mail invalide : vérifie le @ et le domaine';
 /** Erreur sous un champ (§9.1, Q23) : message en --danger sous le champ, bordure du champ en --danger ; msg vide = retire l'erreur */
 export function fieldError(input, msg){
