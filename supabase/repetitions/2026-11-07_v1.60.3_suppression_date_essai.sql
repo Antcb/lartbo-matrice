@@ -208,9 +208,16 @@ begin
   if ok then raise exception 'ECHEC 13e : réactivation écrite directement'; end if;
   begin perform public.reactivate_reminders(d, jsonb_build_object('precontrat', (current_date - 1)::text)); ok := true; exception when others then ok := false; e := sqlerrm; end;
   if ok or e not like 'Choisis une prochaine échéance%' then raise exception 'ECHEC 13f : échéance passée acceptée (%)', e; end if;
-  -- l'application propose toutes les relances concernées (ici pré-contrat et boucle accueil) ; une relance sans date choisie reprendrait
-  -- à son échéance d'origine
-  perform public.reactivate_reminders(d, jsonb_build_object('precontrat', (current_date + 3)::text, 'boucle_accueil', (current_date + 3)::text));
+  -- l'application propose toutes les relances concernées (ici pré-contrat, boucle accueil et paiement de l'acompte envoyé à l'étape 14) ;
+  -- le serveur exige une date pour chacune (relecture v1.60.3)
+  -- relecture v1.60.3 : une échéance pour CHAQUE relance concernée, sinon refus (jamais de relance passée qui partirait aussitôt)
+  begin perform public.reactivate_reminders(d, '{}'); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like 'Choisis la prochaine échéance de chaque relance (manquante : acompte_paye, boucle_accueil, precontrat)%' then raise exception 'ECHEC 13f2 : réactivation vide acceptée (%)', e; end if;
+  begin perform public.reactivate_reminders(d, jsonb_build_object('precontrat', (current_date + 3)::text)); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like '%(manquante : acompte_paye, boucle_accueil)%' then raise exception 'ECHEC 13f3 : relance manquante acceptée (%)', e; end if;
+  if (select reminders_suspended_at from shows where id = d) is null then raise exception 'ECHEC 13f4 : relances réactivées malgré le refus'; end if;
+  -- relance proposée en plus par l'application (règle JS sans la limite des 120 jours) : acceptée, sans effet côté serveur
+  perform public.reactivate_reminders(d, jsonb_build_object('precontrat', (current_date + 3)::text, 'boucle_accueil', (current_date + 3)::text, 'acompte_paye', (current_date + 3)::text, 'facture_acompte', (current_date + 3)::text));
   if (select archive_history -> -1 ->> 'action' from shows where id = d) <> 'reactivate_reminders' then raise exception 'ECHEC 13g : réactivation non tracée'; end if;
   begin perform public.reactivate_reminders(d, '{}'); ok := true; exception when others then ok := false; e := sqlerrm; end;
   if ok or e not like '%ne sont pas suspendues%' then raise exception 'ECHEC 13h : %', e; end if;
