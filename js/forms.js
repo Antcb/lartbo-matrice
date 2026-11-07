@@ -106,6 +106,9 @@ async function locateShow(v, s){
   if (v.lat != null && v.lat !== s.lat) return;   // coordonnées du lieu / de l'adresse choisis
   if (!moved){
     if (v.lat != null) return;
+    // lieu inchangé (adresse, code postal, ville, organisateur, case « adresse de la structure ») : RIEN n'est écrit — une ancienne
+    // date garde son repère hérité (« lieu à confirmer »), jamais déplacée ni géocodée d'office (décision du 07/11, relecture v1.60.2)
+    if ((v.structure_id || null) === (s.structure_id || null) && !!v.venue_is_structure === !!s.venue_is_structure) return;
     // rien n'a bougé et la structure, dans la même ville, sert déjà de repère (showCoords) : rien n'est écrit sur la date
     if (st && st.lat != null && (!v.city || !st.city || norm(v.city) === norm(st.city))) return;
   }
