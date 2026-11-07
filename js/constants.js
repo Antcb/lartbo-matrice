@@ -63,6 +63,7 @@ export const PROD_STEPS = [
   ['contract_sent','Contrat envoyé'],
   ['contract_signed','Contrat signé'],
   ['contract_cosigned_sent','Contrat co-signé renvoyé'],
+  ['boucle_com','Boucle communication'],   // même donnée que l'onglet Communication (v1.60.3, demande d'Anthony du 07/11/2026)
   ['boucle_tech','Boucle technique'],
 ];
 // Projets en « booking seul » : L'ArtBo envoie la conf, puis facture sa commission à l'artiste
@@ -70,6 +71,15 @@ export const BOOKING_STEPS = [
   ['conf_kit_sent','Conf + FT + kit promo'],
   ['contract_cosigned_sent','Contrat co-signé (artiste ↔ organisateur)'],
 ];
+/**
+ * Dates de suivi d'une date de concert, saisies à la main dans Production › Suivi admin et dans Communication (v1.60.3) :
+ * une date déjà renseignée ne se modifie ni ne s'efface sans confirmation (ACTIONS['change:shows.<champ>'], js/actions.js).
+ */
+export const FOLLOW_DATES = {
+  conf_kit_sent: 'Conf + FT + kit promo', precontract_done: 'Pré-contrat complété', contract_sent: 'Contrat envoyé',
+  contract_signed: 'Contrat signé', contract_cosigned_sent: 'Contrat co-signé', boucle_com: 'Boucle communication',
+  boucle_tech: 'Boucle technique', poster_request_date: 'Demande d’affiches',
+};
 
 export const VIEWS = [
   ['todo','To Do'], ['booking','Booking'], ['prospects','Suivi'], ['production','Production'], ['ticketing','Ticketing'], ['communication','Communication'],
