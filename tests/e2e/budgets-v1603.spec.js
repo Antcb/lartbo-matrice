@@ -260,3 +260,119 @@ test('v1.60.3 CNM de coréalisation : break prévisionnel sans double déduction
   await expect(page.locator('#prod-cn-E .cnm-block')).not.toContainText('payeur effectif à préciser');
   expectClean(ctx);
 });
+
+// Matrice « CNM déduite du partage » (Anthony, 07/11/2026 : périmètre = break prévisionnel uniquement). Données FICTIVES : MG 1 000 € ;
+// 400 billets à 20 € HT ; break 100 validé ; 50 % au producteur ; CNM 3,5 % = 280 € ; Son 2 000 € ; part validée 2 860 €.
+// Valeurs de référence relevées en rejouant ce même test sur a7bc55d (avant toute correction CNM) : dépenses, reste artiste,
+// écart, synthèse et bloc « reste artiste » doivent rester IDENTIQUES ; seul le break prévisionnel change.
+const CNM_MATRIX = {
+  P1: { bearer: 'artbo', cnm: 'auto' },                                  // ligne automatique non payée, pas de solde versé
+  P2: { bearer: 'artbo', cnm: 'paid', payer: 'compte', solde: 1000 },    // ligne CNM payée par le compte, solde versé
+  P3: { bearer: 'organisateur', solde: 1500 },                           // aucune ligne CNM, solde versé
+  P4: { bearer: 'organisateur', cnm: 'paid', payer: 'artbo', reimb: true },   // payée par L'ArtBo, remboursée, pas de solde
+  P5: { bearer: 'organisateur', cnm: 'paid', payer: 'compte', solde: 1200 },  // payée, solde versé
+  P6: { bearer: 'artbo', cnm: 'auto', solde: 800 },                      // ligne automatique non payée, solde versé
+};
+const REF_A7BC55D = {
+ "P1": {
+  "expenses": 2280,
+  "forecastExp": 2280,
+  "available": 808,
+  "reste": 808,
+  "com": 772,
+  "verse": 0,
+  "ecart": null,
+  "synthese": "Prévu Réel / à jour Écart Cachet HT encaissé : 0,00 € sur 1 000,00 € 1 000,00 € 1 000,00 € 0,00 € Part du résultat (coréalisation) validée · comprise dans la base de la commission 2 860,00 € 2 860,00 € 0,00 € Commission L’ArtBo pas encore versée · sur 3 860,00 € (MG + part) 772,00 € 772,00 € 0,00 € Dépenses 0,00 € réels (0 ligne) + 2 280,00 € encore au prévu (2 lignes) 2 280,00 € 2 280,00 € 0,00 € Reste pour l’artiste MG + part − commission − dépenses · encore provisoire : 2 dépenses au prévu 808,00 € 808,00 € 0,00 €",
+  "resteBloc": "808,00 € calculé : MG 1 000,00 € + part 2 860,00 € − commission 772,00 € − dépenses 2 280,00 € — versé à l’artiste — écart : quand le versement est noté"
+ },
+ "P2": {
+  "expenses": 2280,
+  "forecastExp": 2280,
+  "available": 808,
+  "reste": 808,
+  "com": 772,
+  "verse": 1000,
+  "ecart": -192,
+  "synthese": "Prévu Réel / à jour Écart Cachet HT encaissé : 0,00 € sur 1 000,00 € 1 000,00 € 1 000,00 € 0,00 € Part du résultat (coréalisation) validée · comprise dans la base de la commission 2 860,00 € 2 860,00 € 0,00 € Commission L’ArtBo pas encore versée · sur 3 860,00 € (MG + part) 772,00 € 772,00 € 0,00 € Dépenses 280,00 € réels (1 ligne) + 2 000,00 € encore au prévu (1 ligne) 2 280,00 € 2 280,00 € 0,00 € Reste pour l’artiste MG + part − commission − dépenses · encore provisoire : 1 dépense au prévu 808,00 € 808,00 € 0,00 €",
+  "resteBloc": "808,00 € calculé : MG 1 000,00 € + part 2 860,00 € − commission 772,00 € − dépenses 2 280,00 € 1 000,00 € versé à l’artiste -192,00 € écart pour toi : versé plus que le reste, tu perds"
+ },
+ "P3": {
+  "expenses": 2000,
+  "forecastExp": 2000,
+  "available": 1088,
+  "reste": 1088,
+  "com": 772,
+  "verse": 1500,
+  "ecart": -412,
+  "synthese": "Prévu Réel / à jour Écart Cachet HT encaissé : 0,00 € sur 1 000,00 € 1 000,00 € 1 000,00 € 0,00 € Part du résultat (coréalisation) validée · comprise dans la base de la commission 2 860,00 € 2 860,00 € 0,00 € Commission L’ArtBo pas encore versée · sur 3 860,00 € (MG + part) 772,00 € 772,00 € 0,00 € Dépenses 0,00 € réels (0 ligne) + 2 000,00 € encore au prévu (1 ligne) 2 000,00 € 2 000,00 € 0,00 € Reste pour l’artiste MG + part − commission − dépenses · encore provisoire : 1 dépense au prévu 1 088,00 € 1 088,00 € 0,00 €",
+  "resteBloc": "1 088,00 € calculé : MG 1 000,00 € + part 2 860,00 € − commission 772,00 € − dépenses 2 000,00 € 1 500,00 € versé à l’artiste -412,00 € écart pour toi : versé plus que le reste, tu perds"
+ },
+ "P4": {
+  "expenses": 2280,
+  "forecastExp": 2280,
+  "available": 808,
+  "reste": 808,
+  "com": 772,
+  "verse": 0,
+  "ecart": null,
+  "synthese": "Prévu Réel / à jour Écart Cachet HT encaissé : 0,00 € sur 1 000,00 € 1 000,00 € 1 000,00 € 0,00 € Part du résultat (coréalisation) validée · comprise dans la base de la commission 2 860,00 € 2 860,00 € 0,00 € Commission L’ArtBo pas encore versée · sur 3 860,00 € (MG + part) 772,00 € 772,00 € 0,00 € Dépenses 280,00 € réels (1 ligne) + 2 000,00 € encore au prévu (1 ligne) 2 280,00 € 2 280,00 € 0,00 € Reste pour l’artiste MG + part − commission − dépenses · encore provisoire : 1 dépense au prévu 808,00 € 808,00 € 0,00 €",
+  "resteBloc": "808,00 € calculé : MG 1 000,00 € + part 2 860,00 € − commission 772,00 € − dépenses 2 280,00 € — versé à l’artiste — écart : quand le versement est noté"
+ },
+ "P5": {
+  "expenses": 2280,
+  "forecastExp": 2280,
+  "available": 808,
+  "reste": 808,
+  "com": 772,
+  "verse": 1200,
+  "ecart": -392,
+  "synthese": "Prévu Réel / à jour Écart Cachet HT encaissé : 0,00 € sur 1 000,00 € 1 000,00 € 1 000,00 € 0,00 € Part du résultat (coréalisation) validée · comprise dans la base de la commission 2 860,00 € 2 860,00 € 0,00 € Commission L’ArtBo pas encore versée · sur 3 860,00 € (MG + part) 772,00 € 772,00 € 0,00 € Dépenses 280,00 € réels (1 ligne) + 2 000,00 € encore au prévu (1 ligne) 2 280,00 € 2 280,00 € 0,00 € Reste pour l’artiste MG + part − commission − dépenses · encore provisoire : 1 dépense au prévu 808,00 € 808,00 € 0,00 €",
+  "resteBloc": "808,00 € calculé : MG 1 000,00 € + part 2 860,00 € − commission 772,00 € − dépenses 2 280,00 € 1 200,00 € versé à l’artiste -392,00 € écart pour toi : versé plus que le reste, tu perds"
+ },
+ "P6": {
+  "expenses": 2280,
+  "forecastExp": 2280,
+  "available": 808,
+  "reste": 808,
+  "com": 772,
+  "verse": 800,
+  "ecart": 8,
+  "synthese": "Prévu Réel / à jour Écart Cachet HT encaissé : 0,00 € sur 1 000,00 € 1 000,00 € 1 000,00 € 0,00 € Part du résultat (coréalisation) validée · comprise dans la base de la commission 2 860,00 € 2 860,00 € 0,00 € Commission L’ArtBo pas encore versée · sur 3 860,00 € (MG + part) 772,00 € 772,00 € 0,00 € Dépenses 0,00 € réels (0 ligne) + 2 280,00 € encore au prévu (2 lignes) 2 280,00 € 2 280,00 € 0,00 € Reste pour l’artiste MG + part − commission − dépenses · encore provisoire : 2 dépenses au prévu 808,00 € 808,00 € 0,00 €",
+  "resteBloc": "808,00 € calculé : MG 1 000,00 € + part 2 860,00 € − commission 772,00 € − dépenses 2 280,00 € 800,00 € versé à l’artiste +8,00 € écart pour toi : versé moins que le reste, tu gagnes"
+ }
+};
+async function cnmMatrix(page) {
+  const shows = [], lines = [];
+  for (const [k, c] of Object.entries(CNM_MATRIX)) {
+    const id = 'cm-' + k;
+    shows.push({ ...COREA, id, date: `${Y}-05-0${shows.length + 1}`, fee_ht: 1000, capacity: 1000, break_even: 100, cr_producer_pct: 50, cnm_pct: 3.5,
+      ticket_holder: 'organisateur', cnm_bearer: c.bearer, cnm_in_result: true, corea_share: 2860,
+      corea: { break_validated_at: `${Y - 1}-12-01T10:00:00Z`, break_value: 100, tiers: [{ label: 'Plein', price: 21.1, vat: 5.5, qty: 400, after: 300 }], charges: [] } });
+    lines.push({ id: id + '-son', project_id: 'art-a', show_id: id, category: 'Technique', label: 'Son', forecast: 2000, payer: 'compte' });
+    if (c.cnm === 'auto') lines.push({ id: id + '-cnm', project_id: 'art-a', show_id: id, category: 'Taxes', label: 'Taxe CNM (billetterie)', supplier: 'CNM', auto: 'cnm', payer: 'compte' });
+    if (c.cnm === 'paid') lines.push({ id: id + '-cnm', project_id: 'art-a', show_id: id, category: 'Taxes', label: 'Taxe CNM', supplier: 'CNM', amount: 280, paid_at: `${Y}-05-20`, payer: c.payer, ...(c.reimb ? { reimbursed_at: `${Y}-05-25` } : {}) });
+    if (c.solde) lines.push({ id: id + '-solde', project_id: 'art-a', show_id: id, category: 'Solde artiste', label: 'Solde artiste', auto: 'solde_artiste', amount: c.solde, paid_at: `${Y}-05-30`, payer: 'compte' });
+  }
+  await seed(page, { shows, budget_lines: lines });
+  const out = {};
+  for (const s of shows) {
+    await openBudget(page, s.id);
+    const v = await page.evaluate(async id => { const b = await import('./js/budget.js'); const vb = await import('./js/views/budget.js'); const br = await import('./js/break.js'); const { byId } = await import('./js/selectors.js');
+      const s = byId('shows', id), bud = b.showBudget(s), ar = vb.artistResult(s, bud);
+      const txt = sel => (document.querySelector(`#prod-${id} ${sel}`)?.innerText || '').replace(/\s+/g, ' ').trim();
+      return { expenses: bud.expenses, forecastExp: bud.forecastExp, available: bud.available, reste: b.availableForArtist(s), com: bud.com, verse: ar.verse, ecart: ar.ecart,
+        synthese: txt('table.budget-sum'), resteBloc: txt('.artist-result .ar-grid'), brk: br.coreaBreaks(s).byScenario.mix.n }; }, s.id);
+    out[s.id.slice(3)] = v;
+  }
+  return out;
+}
+test('v1.60.3 CNM déduite du partage : dépenses, reste artiste et synthèse identiques à a7bc55d ; seul le break prévisionnel change', async ({ page }) => {
+  const ctx = await openApp(page);
+  const got = await cnmMatrix(page);
+  const brk = Object.fromEntries(Object.entries(got).map(([k, v]) => [k, v.brk]));
+  for (const v of Object.values(got)) delete v.brk;
+  expect(got).toEqual(REF_A7BC55D);   // dépenses, reste artiste, écart, synthèse, bloc « reste » : identiques à a7bc55d
+  // break prévisionnel : CNM déduite une seule fois (via le partage) — avant : {"P1": 237, "P2": 242, "P3": 208, "P4": 242, "P5": 242, "P6": 237}
+  expect(brk).toEqual({ P1: 208, P2: 214, P3: 208, P4: 214, P5: 214, P6: 208 });
+  expectClean(ctx);
+});
