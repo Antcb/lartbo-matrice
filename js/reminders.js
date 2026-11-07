@@ -15,7 +15,9 @@
  *    suspension possible à la main, ligne par ligne (reminders_paused)
  *  - 10 j après le premier encaissement (acompte ou solde) : commission L'ArtBo pas encore versée (pas de facture en production) ; facture partenaire pas envoyée / payée
  * Booking seul : après le contrat co-signé, faire la facture de commission ; puis mêmes règles d'envoi et de paiement.
- * Date archivée : aucune relance ; date restaurée : échéances reportées au plus tôt 7 jours après la restauration (v1.60.3).
+ * Date archivée : aucune relance. Date restaurée (décision d'Anthony du 07/11) : relances suspendues jusqu'à « Réactiver les relances » ;
+ * chaque relance part alors à la prochaine échéance choisie (reminders_next, clé = règle de generate_reminders), jamais avant son
+ * échéance d'origine (v1.60.3).
  *   Jamais de relance d'acompte ni de solde (factures de l'artiste à l'organisateur).
  */
 import { commissionState, isInvoiced, paymentsOf } from './calc.js';
@@ -46,53 +48,54 @@ const nameOf = p => [p.label || '', filled(p.invoice_number) ? `(${String(p.invo
 export const sendTitle = p => `Facture à envoyer : ${nameOf(p)}`;
 export const paidTitle = p => `Paiement à vérifier : ${nameOf(p)}${p.reminded_at ? ' (toujours impayée après relance)' : ''}`;
 
+/** Règle de la fonction serveur (generate_reminders) d'une facture « paiement à vérifier », selon sa nature */
+const PAID_RULE = {acompte: 'acompte_paye', solde: 'solde_paye', artbo: 'booking_commission_payee'};
 /** Factures suivies : « à envoyer » (faite, pas de date d'envoi) puis « paiement à vérifier » (envoyée, impayée, relances non suspendues) */
 function invoiceRules(pays, booking, rule){
   for (const p of pays.filter(x => followedInvoice(x, booking))){
-    if (madeNotSent(p) && madeOn(p)) rule(p.kind, workDay(addDays(madeOn(p), SEND_DELAY)), sendTitle(p));
-    if (p.sent_at && !p.paid_at && !p.reminders_paused) rule(p.kind, plus10(last(p)), paidTitle(p));
+    if (madeNotSent(p) && madeOn(p)) rule(p.kind, workDay(addDays(madeOn(p), SEND_DELAY)), sendTitle(p), 'facture_envoi');
+    if (p.sent_at && !p.paid_at && !p.reminders_paused) rule(p.kind, plus10(last(p)), paidTitle(p), PAID_RULE[p.kind] || 'autre_payee');
   }
 }
 
-/** Date restaurée (v1.60.3) : aucune relance accumulée d'un coup — échéance au plus tôt 7 jours après la restauration (jour ouvré),
- *  même règle que generate_reminders (migration v1.60.3) ; null pour une date jamais restaurée */
-export const restoreGrace = s => s?.restored_at ? workDay(addDays(new Date(s.restored_at).toLocaleDateString('sv-SE', {timeZone: 'Europe/Paris'}), 7)) : null;
-
-export function remindersOf(s){
-  // date archivée (v1.60.3) : relances suspendues (même règle que generate_reminders)
-  if (!CONFIRMED_PROD.includes(s.status) || s.archived_at) return [];
-  const out = [], pays = paymentsOf(s.id), now = today(), grace = restoreGrace(s);
+/** Relances d'une date. Date archivée, ou restaurée sans réactivation des relances : aucune (même règle que generate_reminders) ;
+ *  {all: true} = relances concernées malgré la suspension, à leur échéance d'origine (fenêtre « Réactiver les relances »).
+ *  Chaque relance porte sa règle (key) = celle de generate_reminders. */
+export function remindersOf(s, {all = false} = {}){
+  if (!CONFIRMED_PROD.includes(s.status) || s.archived_at || (s.reminders_suspended_at && !all)) return [];
+  const out = [], pays = paymentsOf(s.id), now = today(), next = (!all && s.reminders_next) || {};
   const first = k => pays.find(p => p.kind===k);
-  const rule = (step, due, title) => { if (grace && due < grace) due = grace; out.push({step, due, title, late: due <= now}); };
+  // prochaine échéance choisie à la réactivation : jamais avant l'échéance d'origine
+  const rule = (step, due, title, key) => { const origin = due; if (next[key] && next[key] > due) due = next[key]; out.push({step, key, due, origin, title, late: due <= now}); };
   if (s.prod_mode === 'booking'){
     const com = first('artbo');
-    if (s.contract_cosigned_sent && com && !isInvoiced(com)) rule('artbo', s.contract_cosigned_sent, 'Facture de commission à faire (contrat co-signé)');
+    if (s.contract_cosigned_sent && com && !isInvoiced(com)) rule('artbo', s.contract_cosigned_sent, 'Facture de commission à faire (contrat co-signé)', 'booking_commission');
     invoiceRules(pays, true, rule);
     // acomptes / soldes : factures de l'artiste à l'organisateur, jamais relancées par L'ArtBo (décision d'Anthony du 26/10, lot C1)
     return out;
   }
   const upcoming = !s.date || s.date >= now;
-  if (upcoming && s.conf_kit_sent && !s.precontract_done && !s.contract_sent) rule('precontract_done', plus10(s.conf_kit_sent), 'Pré-contrat à compléter');
-  if (upcoming && s.precontract_done && !s.contract_sent) rule('contract_sent', plus10(s.precontract_done), 'Contrat à envoyer');
-  if (upcoming && s.contract_sent && !s.contract_signed) rule('contract_signed', plus10(s.contract_sent), 'Contrat signé à récupérer');
-  if (upcoming && s.contract_signed && !s.contract_cosigned_sent) rule('contract_cosigned_sent', plus10(s.contract_signed), 'Contrat co-signé à renvoyer');
+  if (upcoming && s.conf_kit_sent && !s.precontract_done && !s.contract_sent) rule('precontract_done', plus10(s.conf_kit_sent), 'Pré-contrat à compléter', 'precontrat');
+  if (upcoming && s.precontract_done && !s.contract_sent) rule('contract_sent', plus10(s.precontract_done), 'Contrat à envoyer', 'contrat_envoi');
+  if (upcoming && s.contract_sent && !s.contract_signed) rule('contract_signed', plus10(s.contract_sent), 'Contrat signé à récupérer', 'contrat_signe');
+  if (upcoming && s.contract_signed && !s.contract_cosigned_sent) rule('contract_cosigned_sent', plus10(s.contract_signed), 'Contrat co-signé à renvoyer', 'contrat_cosigne');
   const ac = first('acompte'), so = first('solde');
   // acompte devenu caduc (solde déjà facturé) : plus réclamé (lot C1) — même règle côté serveur (generate_reminders, facture_acompte)
   // une fois la facture faite (numéro / lien Pennylane), c'est la règle « Facture à envoyer » qui prend le relais (v1.46a)
-  if (s.contract_sent && ac && !isInvoiced(ac) && !isInvoiced(so)) rule('acompte', s.contract_sent, 'Facture d’acompte à faire (contrat envoyé)');
-  if (s.date && so && !isInvoiced(so) && s.date >= addDays(now, -30)) rule('solde', soldeReminderDay(s.date), 'Facture de solde à faire');
+  if (s.contract_sent && ac && !isInvoiced(ac) && !isInvoiced(so)) rule('acompte', s.contract_sent, 'Facture d’acompte à faire (contrat envoyé)', 'facture_acompte');
+  if (s.date && so && !isInvoiced(so) && s.date >= addDays(now, -30)) rule('solde', soldeReminderDay(s.date), 'Facture de solde à faire', 'solde_envoi');
   invoiceRules(pays, false, rule);
   // 4 mois calendaires avant le concert ; samedi / dimanche → vendredi précédent (Q12, v1.49) — même règle côté serveur
-  if (upcoming && s.date && !s.boucle_tech) rule('boucle_tech', workDayBefore(addMonths(s.date, -4)), 'Boucle accueil & technique à envoyer (J-4 mois)');
-  if (upcoming && s.contract_cosigned_sent && !s.boucle_com) rule('boucle_com', s.contract_cosigned_sent, 'Boucle communication à envoyer');
+  if (upcoming && s.date && !s.boucle_tech) rule('boucle_tech', workDayBefore(addMonths(s.date, -4)), 'Boucle accueil & technique à envoyer (J-4 mois)', 'boucle_accueil');
+  if (upcoming && s.contract_cosigned_sent && !s.boucle_com) rule('boucle_com', s.contract_cosigned_sent, 'Boucle communication à envoyer', 'boucle_com');
   // en production, la commission L'ArtBo n'est pas facturée : L'ArtBo se la verse depuis le compte de l'artiste
   // dès le premier encaissement (acompte, ou solde quand il n'y a pas d'acompte)
   const com = first('artbo'), part = first('partner');
   const cashed = pays.filter(p => ['acompte','solde'].includes(p.kind) && p.paid_at).map(p => p.paid_at).sort()[0];
   // reste à transférer (versements partiels compris, lot D1) — même règle côté serveur (generate_reminders, migration v1.43)
   const reste = com ? commissionState(com).remaining : 0;
-  if (cashed && com && reste >= 0.005) rule('artbo', plus10(cashed), `${com.label || 'Commission L’ArtBo'} : ${eur2(reste)} à te verser`);
-  if (cashed && part && (!part.sent_at || !part.paid_at)) rule('partner', plus10(cashed), `Facture ${part.label || 'Commission partenaire'} à ${part.sent_at?'faire payer':'envoyer'}`);
+  if (cashed && com && reste >= 0.005) rule('artbo', plus10(cashed), `${com.label || 'Commission L’ArtBo'} : ${eur2(reste)} à te verser`, 'commission');
+  if (cashed && part && (!part.sent_at || !part.paid_at)) rule('partner', plus10(cashed), `Facture ${part.label || 'Commission partenaire'} à ${part.sent_at?'faire payer':'envoyer'}`, 'commission_partenaire');
   return out;
 }
 
