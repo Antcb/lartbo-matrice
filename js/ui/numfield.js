@@ -25,6 +25,23 @@ new MutationObserver(list => list.forEach(m => m.addedNodes.forEach(n => {
   if (n.matches('input[type=number]')) enhance(n); else scan(n);
 }))).observe(document.documentElement, {childList: true, subtree: true});
 
+// Premier focus (clic ou Tab) : toute la valeur est sélectionnée, la frappe la remplace directement (07/11/2026) ; un clic suivant
+// dans le champ déjà actif place le curseur normalement (édition partielle, décimales). Même règle que les dates et les
+// recherches : pas sur écran tactile (la sélection y ouvre le menu copier-coller). Un réaffichage qui rend le focus au champ
+// garde la position du curseur (app.js, focusKey) : jamais de sélection imposée en pleine saisie.
+let firstFocus = null;
+const coarse = () => matchMedia('(pointer:coarse)').matches;
+document.addEventListener('focusin', e => {
+  const el = e.target; if (!el.dataset?.num || el.readOnly || coarse()) return;
+  el.select(); firstFocus = {el, at: Date.now()};
+});
+// le clic qui donne le focus ne doit pas annuler la sélection (le navigateur la réduit au relâchement)
+document.addEventListener('mouseup', e => {
+  const f = firstFocus; firstFocus = null;
+  if (!f || e.target !== f.el || Date.now() - f.at > 400) return;
+  if (f.el.selectionStart === f.el.selectionEnd) f.el.select();
+});
+
 // Saisie illisible (« 12x ») : refusée partout avant tout enregistrement, l'ancienne valeur revient
 const ok = v => v === '' || Number.isFinite(Number(v));
 document.addEventListener('focusin', e => { const el = e.target; if (el.dataset?.num) el._good = desc.get.call(el); }, true);

@@ -77,9 +77,11 @@ function notifPanel(){
 function focusKey(a){
   if (!a || a===document.body) return null;
   const host = a.classList.contains('dt-txt') ? a.parentElement.querySelector('.dt-val') : a;
-  if (host.dataset?.t) return {sel:`[data-t="${host.dataset.t}"][data-id="${host.dataset.id}"][data-f="${host.dataset.f}"]`, dt: a.classList.contains('dt-txt')};
+  // champ numérique : curseur / sélection gardés (sinon la sélection du premier focus, numfield.js, reviendrait en pleine saisie)
+  const caret = a.dataset?.num ? {pos: a.selectionStart, end: a.selectionEnd} : {};
+  if (host.dataset?.t) return {sel:`[data-t="${host.dataset.t}"][data-id="${host.dataset.id}"][data-f="${host.dataset.f}"]`, dt: a.classList.contains('dt-txt'), ...caret};
   if (a.dataset?.search) return {sel:`[data-search="${a.dataset.search}"]`, pos:a.selectionStart};
-  if (a.id) return {sel:'#'+CSS.escape(a.id)};
+  if (a.id) return {sel:'#'+CSS.escape(a.id), ...caret};
   return null;
 }
 
@@ -128,7 +130,7 @@ export function render(){
   checkVisibleProspects();
   restorePageDrafts(main);
   restoreScroll(main, scroll);
-  if (fk){ let el = main.querySelector(fk.sel); if (el){ if (fk.dt) el = el.parentElement.querySelector('.dt-txt'); el.focus({preventScroll:true}); if (fk.pos!=null) try{ el.setSelectionRange(fk.pos, fk.pos); }catch(e){} } }
+  if (fk){ let el = main.querySelector(fk.sel); if (el){ if (fk.dt) el = el.parentElement.querySelector('.dt-txt'); el.focus({preventScroll:true}); if (fk.pos!=null) try{ el.setSelectionRange(fk.pos, fk.end ?? fk.pos); }catch(e){} } }
   if (S.focusProspect){ const el=document.getElementById('pr-'+S.focusProspect); if (el) el.scrollIntoView({block:'start'}); S.focusProspect=null; }
 }
 

@@ -110,6 +110,16 @@ export const ACTIONS = {
   exportShows: () => exportShows(),
 
   // Production
+  // Fiche projet → la date ouverte dans Production (v1.60.3) : année de la date, recherche Production vidée ; si le filtre Artistes
+  // (ou le masquage des artistes inactifs) la cacherait, le filtre passe sur son artiste et on le dit
+  openShowProd: t => { const s = byId('shows', t.dataset.id); if (!s) return;
+    if (!CONFIRMED_PROD.includes(s.status)){ editShow(s.id); return; }
+    S.year = Number((s.date || '').slice(0, 4)) || S.year; localSet('year', S.year);
+    if (S.search.production) S.search.production = '';
+    const hidden = !showsFiltered().some(x => x.id === s.id);
+    if (hidden){ setProjects([s.project_id]); toast(`Filtre Artistes : ${byId('projects', s.project_id)?.name || 'artiste de la date'} (pour afficher la date)`); }
+    S.openProd.add(s.id); go('production');
+    document.getElementById('prod-' + s.id)?.scrollIntoView({block: 'start'}); },
   toggleProd: t => { const id=t.dataset.id; S.openProd.has(id)?S.openProd.delete(id):S.openProd.add(id); render(); },
   expandAll: () => { const ids = showsFiltered().filter(s=>CONFIRMED_PROD.includes(s.status)).map(s=>s.id); if (ids.every(i=>S.openProd.has(i))) S.openProd.clear(); else ids.forEach(i=>S.openProd.add(i)); render(); },
   reloadShow: async t => { await refreshShowSide(t.dataset.id); render(); },

@@ -897,6 +897,7 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .budget-table input.doc-no{min-width:80px;width:110px}
 .budget-table tr.has-doc td{background:#FFF9EC}
 .budget-table .calc-note{font-size:11px;margin-top:2px}
+@media (min-width:1025px){ .budget-table td.bl-label{min-width:30ch} .budget-table td.bl-sup .cell-ta{min-width:90px} }   /* ordinateur (v1.60.3) : libellé des cachets (jauge, brut indicatif) sur 3 lignes au plus au lieu de 4 à 7 ; fournisseur (« Salarié ») plus étroit pour ne pas élargir le tableau à 1 440 px ; téléphone et tablette : fiches inchangées */
 .budget-table .reimb{flex-direction:row;align-items:center;gap:6px}
 .budget-table td > select{max-width:170px!important}
 .budget-table .dt{max-width:140px}
