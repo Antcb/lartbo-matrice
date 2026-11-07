@@ -118,18 +118,36 @@ export function costFillPlan(s){
   }
   return out;
 }
-/** Origine du budget type de la date, pour les messages */
+/** Origine du budget type de la date, pour les messages : le spectacle choisi (jamais complété par l'artiste), sinon le modèle de
+ *  l'artiste, réservé aux dates sans spectacle et nommé comme tel (décision du 07/11/2026) */
 export const templateSource = s => { const sp = s?.spectacle_id ? byId('spectacles', s.spectacle_id) : null;
-  return sp ? `du spectacle « ${sp.name || 'sans nom'} »` : 'de l’artiste'; };
+  return sp ? `du spectacle « ${sp.name || 'sans nom'} »` : 'de l’artiste (date sans spectacle)'; };
+/**
+ * Informations manquantes pour chiffrer les coûts vides de la date : jauge ouverte, ou coût absent du modèle du SPECTACLE choisi
+ * (jamais remplacé par celui de l'artiste ni des Réglages, décision du 07/11/2026). Liste de textes, vide si rien ne manque.
+ */
+export function costGaps(s){
+  const miss = missingCostLines(s?.id); if (!miss.length) return [];
+  const out = [], sp = s.spectacle_id ? byId('spectacles', s.spectacle_id) : null, rows = templateLines(s).filter(r => r.category === 'Staff');
+  if (jaugeOf(s) == null && rows.some(r => /jauge à renseigner/.test(r.label))) out.push('jauge ouverte de la date');
+  for (const l of miss){
+    const r = rows.find(x => costKey(x.label) === costKey(l.label));
+    if (r && r.unit_cost == null && !/jauge à renseigner/.test(r.label)) out.push(`${costKey(l.label).replace(/^./, c => c.toUpperCase())} : coût absent du modèle ${sp ? `du spectacle « ${sp.name || 'sans nom'} »` : 'de l’artiste'}${/jauge/.test(r.label) ? ` (${r.label.match(/\((.*?)\)/)?.[1] || ''})` : ''}`);
+    else if (!r) out.push(`${l.label || 'ligne sans libellé'} : absente du budget type ${templateSource(s)}, coût à saisir sur la ligne`);
+  }
+  return [...new Set(out)];
+}
 /** Propose (fenêtre de confirmation de l'application, jamais une fenêtre native) de compléter les coûts vides ; écriture
  *  conditionnelle : une ligne remplie entre-temps ailleurs n'est pas écrasée. manual = appelé depuis le bouton (message si rien) */
 export async function offerCostFill(showId, {manual = false} = {}){
   const s = byId('shows', showId), plan = costFillPlan(s);
-  if (!plan.length){ if (manual) toast('Aucun coût vide à compléter depuis le budget type (jauge et coûts du modèle à vérifier)'); return false; }
+  if (!plan.length){ if (manual) toast(`Rien à compléter depuis le budget type ${templateSource(s)}${costGaps(s).length ? ' — à renseigner : ' + costGaps(s).join(' ; ') : ''}`); return false; }
+  const gaps = costGaps(s).filter(g => !/^jauge/.test(g));
   const kept = linesOf(showId).filter(l => !isMissingCost(l) && rowsKeyed(s).has(costKey(l.label)) && !l.auto).length;
   const text = [`Jauge ouverte de la date : ${jaugeOf(s) ?? 'non renseignée'}. Compléter avec le budget type ${templateSource(s)} les coûts encore vides :`,
     ...plan.map(x => `• ${x.line.label || 'Cachets'} : ${Number(x.line.qty)} × ${eur2(Number(x.unit_cost))}`),
-    'Seules les lignes vides sont complétées ; la quantité saisie est gardée.' + (kept ? ` ${kept} ligne${kept > 1 ? 's' : ''} déjà chiffrée${kept > 1 ? 's' : ''} : inchangée${kept > 1 ? 's' : ''}.` : '')].join('\n');
+    'Seules les lignes vides sont complétées ; la quantité saisie est gardée.' + (kept ? ` ${kept} ligne${kept > 1 ? 's' : ''} déjà chiffrée${kept > 1 ? 's' : ''} : inchangée${kept > 1 ? 's' : ''}.` : ''),
+    ...(gaps.length ? [`Restent à renseigner (rien n’est repris d’un autre modèle) : ${gaps.join(' ; ')}.`] : [])].join('\n');
   if (!(await confirmAsk('Compléter les coûts manquants ?', text, `Compléter ${plan.length} ligne${plan.length > 1 ? 's' : ''}`))) return false;
   let done = 0;
   for (const x of plan){
