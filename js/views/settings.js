@@ -214,7 +214,7 @@ export async function applyAcompte(){
   const now = today();
   // artiste avec son propre acompte par défaut (v1.59) : ses dates ne suivent pas le réglage général
   const ownAc = new Set(S.db.projects.filter(p => p.default_acompte_pct != null && p.default_acompte_pct !== '').map(p => p.id));
-  const ids = S.db.shows.filter(s => !s.terms_validated_at && s.prod_mode !== 'booking' && !isCoproduction(s) && !ownAc.has(s.project_id) && (!s.date || s.date >= now)).map(s => s.id).filter(id => {   // coproduction : pas d'acompte / solde par défaut (v1.44)
+  const ids = S.db.shows.filter(s => !s.archived_at && !s.terms_validated_at && s.prod_mode !== 'booking' && !isCoproduction(s) && !ownAc.has(s.project_id) && (!s.date || s.date >= now)).map(s => s.id).filter(id => {   // coproduction : pas d'acompte / solde par défaut (v1.44)
     const p = paymentsOf(id).filter(x => ['acompte','solde'].includes(x.kind));
     return p.filter(x => x.kind === 'acompte').length === 1 && p.every(x => !isInvoiced(x) && (x.amount == null || x.amount === ''));   // aucune facture émise (§6.4)
   });

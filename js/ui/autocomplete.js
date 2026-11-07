@@ -81,7 +81,8 @@ export const SOURCES = {
   },
   shows: {
     label: id => showLabel(byId('shows', id)),
-    search: q => rank(S.db.shows.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')), q,
+    search: q => rank(S.db.shows.filter(s => !s.archived_at).sort(   // date archivée (v1.60.3) : plus proposée
+      (a,b)=>(b.date||'').localeCompare(a.date||'')), q,
         s => `${s.venue} — ${s.city||''} ${fmtDate(s.date)} ${s.date||''} ${(s.date||'').split('-').reverse().join('/')} ${byId('projects', s.project_id)?.name||''} ${s.status||''}`, 60)
       .map(s => ({id:s.id, label:showLabel(s), hint:[byId('projects', s.project_id)?.name, s.status].filter(Boolean).join(' · ')})),
   },

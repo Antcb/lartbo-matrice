@@ -73,3 +73,6 @@ export const fold = (key, title, inner, {open=false, count=null}={}) => {
 };
 
 export { projPicker };
+
+/** Mention d'une date archivée (v1.60.3) là où elle reste affichée (vues financières, historique d'un artiste ou d'une structure) */
+export const archivedTag = s => s?.archived_at ? ' <span class="badge tag">date archivée</span>' : '';

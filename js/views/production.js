@@ -5,7 +5,7 @@
  */
 import { vatConflict, BILL_KINDS, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
-import { byId, projName, setting, showsFiltered, spectacleName, structName } from '../selectors.js';
+import { byId, isArchived, projName, setting, showsFiltered, spectacleName, structName } from '../selectors.js';
 import { followedInvoice, lateSteps, remindersOf } from '../reminders.js';
 import { S } from '../state.js';
 import { filterBar, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
@@ -22,14 +22,19 @@ const vatWarn = s => vatConflict(s) ? ' <span class="warn-txt small">Structure a
 export function viewProduction(){
   const q = S.search.production || '';
   const all = showsFiltered().filter(s => CONFIRMED_PROD.includes(s.status));
-  const shows = all.filter(s => matches([s.venue, s.city, s.department, structName(s.structure_id), projName(s.project_id), fmtDate(s.date), s.date, s.contract_type].join(' '), q));
+  const hit = s => matches([s.venue, s.city, s.department, structName(s.structure_id), projName(s.project_id), fmtDate(s.date), s.date, s.contract_type].join(' '), q);
+  const shows = all.filter(hit);
+  // indicateurs FINANCIERS : dates archivées comprises (v1.60.3, réponse d'Anthony du 07/11) — un archivage ne change aucun montant ;
+  // la liste de travail et les relances ne les montrent pas
+  const archivedFin = showsFiltered({archived: true}).filter(s => isArchived(s) && CONFIRMED_PROD.includes(s.status) && hit(s));
+  const finShows = shows.concat(archivedFin);
   let artbo=0, partner=0;
-  shows.forEach(s => paymentsOf(s.id).forEach(p => {
+  finShows.forEach(s => paymentsOf(s.id).forEach(p => {
     const a = payAmount(p)||0;
     if (p.kind==='artbo') artbo+=a; if (p.kind==='partner') partner+=a;
   }));
   // trois indicateurs distincts, jamais additionnés (décision d'Anthony du 26/10, lot C1) ; les factures de l'artiste en booking n'y entrent pas
-  const fin = financeOf(shows);
+  const fin = financeOf(finShows);
   const late = shows.reduce((n,s)=>n+remindersOf(s).filter(r=>r.late).length, 0);
   const groups = {};
   shows.forEach(s => (groups[s.project_id||''] ||= []).push(s));
@@ -44,7 +49,9 @@ export function viewProduction(){
     ${away.map(a => { const sh = byId('shows', pieceShowId(a));
       return `<div class="file-row"><span class="file-ico" aria-hidden="true">📎</span><a href="#" data-act="openAttachment" data-id="${a.id}">${esc(a.name)}</a>
         <span class="muted small">${sh ? esc([fmtDate(sh.date), sh.venue, projName(sh.project_id), sh.status].filter(Boolean).join(' · ')) : `date supprimée · ${esc(projName(a.project_id) || 'artiste inconnu')}`}</span></div>`; }).join('')}</div>` : '';
-  if (!all.length) return head + awayHTML + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
+  const archHTML = archivedFin.length ? `<div class="panel pad mb"><p class="help full"><b>Dates archivées comptées dans ces montants</b> (hors de la liste et des relances) :</p>
+    ${archivedFin.map(s => `<div class="file-row"><a href="#" data-act="editShow" data-id="${s.id}">${esc([fmtDate(s.date), s.venue, projName(s.project_id)].filter(Boolean).join(' · '))}</a> <span class="badge tag">date archivée</span></div>`).join('')}</div>` : '';
+  if (!all.length && !archivedFin.length) return head + awayHTML + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
   return head + awayHTML + `
     <div class="stat-row">
       <div class="stat"><b>${eur2(artbo)}</b><span>Commissions L'ArtBo</span></div>
@@ -55,6 +62,7 @@ export function viewProduction(){
       <div class="stat" title="Factures de commission L’ArtBo à l’artiste (dates booking) émises et pas encore réglées"><b>${eur2(fin.commissionsBooking)}</b><span>Commissions à encaisser — booking${fin.commissions ? ` (${fin.commissions})` : ''}</span></div>
       <div class="stat"><b style="${late?'color:var(--danger)':''}">${late}</b><span>Relance${late>1?'s':''} en retard</span></div>
     </div>
+    ${archHTML}
     ${shows.length ? order.map(pid => `<section class="group"><div class="group-head"><h2>${esc(projName(pid)||'Sans projet')}</h2><span class="count">${groups[pid].length}</span></div>
       ${pid ? projectBudgetHTML(pid) : ''}
       <div class="prod-list">${groups[pid].map(prodRow).join('')}</div></section>`).join('') : '<div class="empty panel">Aucune date ne correspond à la recherche.</div>'}`;

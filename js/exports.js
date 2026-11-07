@@ -107,7 +107,8 @@ export function exportShows(){
       if (!v.statuses.length){ toast('Coche au moins un statut', true); return false; }
       const from = v.mode === 'year' ? `${v.year}-01-01` : v.from, to = v.mode === 'year' ? `${v.year}-12-31` : v.to;
       if (v.mode === 'range' && (!from || !to)){ toast('Indique le début et la fin de la période', true); return false; }
-      const list = S.db.shows.filter(s => s.project_id === v.project && v.statuses.includes(s.status) && s.date && s.date >= from && s.date <= to)
+      const list = S.db.shows.filter(s => !s.archived_at && s.project_id === v.project &&   // export des dates (liste de travail) : sans les archivées (v1.60.3)
+         v.statuses.includes(s.status) && s.date && s.date >= from && s.date <= to)
         .sort((a, b) => a.date.localeCompare(b.date));
       const artist = projName(v.project).replace(/\s*•.*$/, '');
       // Jour, date, lieu, département / pays, statut ; cachet et structure si cochés

@@ -159,3 +159,52 @@ begin
   if exists (select 1 from notifications where show_id = b) then raise exception 'ECHEC 10b : rappel pour une date archivée'; end if;
   raise notice 'ESSAI 10 (rappels) réussi';
 end $r$;
+
+-- 11 à 14. Réponses d'Anthony du 07/11 au soir : fiche publique fermée, notifications retirées, aucune relance accumulée à la
+-- restauration, alerte quand une facture arrive sur une date archivée (rattachement conservé). Rôle serveur (comme la tâche
+-- planifiée et la synchronisation), avec l'adresse d'un membre de l'équipe pour archiver / restaurer.
+do $s$
+declare pa uuid; d uuid; p uuid; ok boolean; e text; f jsonb; n int;
+begin
+  perform set_config('request.jwt.claims', '{"email":"equipe@test.local","role":"authenticated"}', false);
+  insert into projects (name) values ('ESSAI soir') returning id into pa;
+  insert into shows (project_id, venue, date, status, prod_mode, conf_kit_sent, fiche_token, fiche)
+    values (pa, 'ESSAI Soir', current_date + 60, 'Confirmée Salle', 'production', current_date - 30, 'jeton-essai-soir-000001', '{"x":"gardé"}') returning id into d;
+  insert into show_payments (show_id, kind, label, pct) values (d, 'acompte', 'Acompte', 30) returning id into p;
+  perform public.generate_reminders();
+  if not exists (select 1 from notifications where show_id = d and kind = 'precontrat' and withdrawn_at is null) then raise exception 'ECHEC 11 : rappel de départ absent'; end if;
+  if public.fiche_get('jeton-essai-soir-000001') is null then raise exception 'ECHEC 11a : fiche illisible avant archivage'; end if;
+
+  perform public.archive_show(d, 'essai du soir');
+  -- 11. fiche publique : accès fermé, message neutre, données conservées
+  begin f := public.fiche_get('jeton-essai-soir-000001'); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e <> 'Dossier indisponible' then raise exception 'ECHEC 11b : fiche_get (%)', e; end if;
+  begin perform public.fiche_submit('jeton-essai-soir-000001', '{}', '{"y":1}'); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e <> 'Dossier indisponible' then raise exception 'ECHEC 11c : fiche_submit (%)', e; end if;
+  if (select fiche ->> 'x' from shows where id = d) <> 'gardé' then raise exception 'ECHEC 11d : données de la fiche modifiées'; end if;
+  -- 12. notifications de la date : retirées (marquées), jamais supprimées
+  if exists (select 1 from notifications where show_id = d and withdrawn_at is null) then raise exception 'ECHEC 12 : notification encore active'; end if;
+  if not exists (select 1 from notifications where show_id = d and withdrawn_reason = 'Date archivée') then raise exception 'ECHEC 12b : historique perdu'; end if;
+  perform public.generate_reminders();
+  if exists (select 1 from notifications where show_id = d and withdrawn_at is null) then raise exception 'ECHEC 12c : rappel créé pour une date archivée'; end if;
+  -- 14. facture arrivée sur la date archivée : rattachement conservé + une seule alerte ; idem facture Pennylane à rattacher
+  update show_payments set invoice_number = 'F-77', pennylane_id = '77' where id = p;
+  update show_payments set sent_at = current_date where id = p;
+  select count(*) into n from notifications where show_id = d and kind = 'date_archivee_facture' and withdrawn_at is null;
+  if n <> 1 or (select invoice_number from show_payments where id = p) <> 'F-77' then raise exception 'ECHEC 14 : % alerte(s)', n; end if;
+  insert into pennylane_a_rattacher (pennylane_id, show_id) values ('PL-SOIR', d);
+  if (select count(*) from notifications where show_id = d and kind = 'date_archivee_facture') <> 2 then raise exception 'ECHEC 14b : alerte « à rattacher » absente'; end if;
+
+  -- 13. restauration : fiche rouverte, alertes traitées, aucune relance accumulée tout de suite
+  perform public.restore_show(d);
+  if public.fiche_get('jeton-essai-soir-000001') ->> 'venue' <> 'ESSAI Soir' then raise exception 'ECHEC 13 : fiche non rouverte'; end if;
+  if exists (select 1 from notifications where show_id = d and withdrawn_at is null) then raise exception 'ECHEC 13b : alerte ou rappel encore actifs'; end if;
+  perform public.generate_reminders();
+  if exists (select 1 from notifications where show_id = d and withdrawn_at is null) then raise exception 'ECHEC 13c : relance accumulée envoyée à la restauration'; end if;
+  -- 8 jours plus tard (restauration avancée artificiellement) : la relance encore due est générée, une seule fois, avec sa clé propre
+  perform set_config('matrice.archive_rpc', 'on', true); update shows set restored_at = now() - interval '10 days' where id = d; perform set_config('matrice.archive_rpc', '', true);
+  perform public.generate_reminders(); perform public.generate_reminders();
+  select count(*) into n from notifications where show_id = d and kind = 'precontrat' and withdrawn_at is null and dedupe_key like '%:r%';
+  if n <> 1 then raise exception 'ECHEC 13d : relance après délai (% trouvée(s))', n; end if;
+  raise notice 'ESSAIS 11 à 14 (fiche publique, notifications, restauration, alerte facture) réussis';
+end $s$;

@@ -57,7 +57,7 @@ function concertVars(show){
 }
 const structById = id => id ? byId('structures', id) : null;
 /** Dates confirmées à venir des artistes choisis (pour inviter un programmateur) */
-const concertsOf = pids => S.db.shows.filter(s => pids.includes(s.project_id) && CONFIRMED_PROD.includes(s.status) && s.date >= today())
+const concertsOf = pids => S.db.shows.filter(s => !s.archived_at && pids.includes(s.project_id) && CONFIRMED_PROD.includes(s.status) && s.date >= today())
   .sort((a, b) => a.date.localeCompare(b.date));
 const CONCERT_TAGS = /\{\{(date_concert|date_concert_court|ville_concert|cp_concert|lieu_concert|date_reponse|lien_projet|lien_evenement)\}\}/;
 
