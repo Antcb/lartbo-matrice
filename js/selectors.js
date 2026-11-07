@@ -7,7 +7,7 @@ import { DEFAULT_DEPARTMENTS, PRIORITY_LABEL, TEAM_NAMES, isOff } from './consta
 import { lingering } from './data.js';
 import { ENV } from './config.js';
 import { S } from './state.js';
-import { daysUntil, fmtDate } from './utils.js';
+import { daysUntil, fmtDate, norm } from './utils.js';
 
 const CACHE = {};
 /** Index mis en cache tant que les tables listées n'ont pas changé */
@@ -68,9 +68,40 @@ export const visibleShow = s => S.showCancelled || !isOff(s.status) || lingering
 export function showCoords(s){
   if (s.lat!=null && s.lng!=null) return [s.lat, s.lng];
   const st = byId('structures', s.structure_id);
+  // v1.60.2 : la structure (organisateur) ne remplace le lieu que s'il est dans sa ville — jamais une date d'une autre ville placée
+  // chez l'organisateur (elle reste « non localisée » jusqu'à son prochain enregistrement, qui la localise)
+  if (s.city && st?.city && norm(s.city) !== norm(st.city)) return null;
   if (st && st.lat!=null && st.lng!=null) return [st.lat, st.lng];
   return null;
 }
+
+/* Lieux (v1.60.2) : un suivi ou une date peut avoir son propre lieu (salle, festival, adresse), distinct de la structure suivie.
+ * Un lieu = {venue, address, postal_code, city, department, lat, lng} ; repris d'une fiche structure ou d'un événement, jamais inventé. */
+const isFrance = c => !c || /^\s*france\s*$/i.test(c);
+/** Lieu d'une fiche structure (sa propre adresse, pas l'adresse administrative) */
+export const placeOfStructure = st => st ? {venue: st.name, address: st.address || null, postal_code: st.postal_code || null, city: st.city || null,
+  department: st.department_code || (!isFrance(st.country) ? st.country : null), lat: st.lat ?? null, lng: st.lng ?? null} : null;
+/** Lieu d'un festival / d'une salle / d'un événement d'une structure : l'adresse et les coordonnées de la structure ne sont reprises
+ *  que si l'événement est dans la même ville et sans lieu propre (sinon : ville seule, localisée à l'enregistrement) */
+export function placeOfEvent(e){
+  if (!e) return null;
+  const st = byId('structures', e.structure_id), sp = placeOfStructure(st);
+  const sameCity = !!sp && (!e.city || norm(e.city) === norm(st.city || '')), same = sameCity && !e.place;
+  return {venue: e.name, address: same ? sp.address : null, postal_code: same ? sp.postal_code : null, city: e.city || st?.city || null,
+    department: sameCity ? sp.department : null, lat: same ? sp.lat : null, lng: same ? sp.lng : null};
+}
+/** Lieu propre d'un suivi (null s'il n'en a pas : c'est alors la structure qui sert de repère) */
+export const placeOfSuivi = p => p && (p.venue || p.address || p.city) ? {venue: p.venue || null, address: p.address || null, postal_code: p.postal_code || null,
+  city: p.city || null, department: p.department || null, lat: p.lat ?? null, lng: p.lng ?? null} : null;
+/** Point de repère d'un suivi sur la carte : son lieu s'il est localisé, sinon sa structure */
+export function suiviCoords(p){
+  if (p?.lat != null && p?.lng != null) return [p.lat, p.lng];
+  if (placeOfSuivi(p)) return null;   // lieu propre pas encore localisé : jamais la ville de la structure à sa place
+  const st = byId('structures', p?.structure_id);
+  return st && st.lat != null && st.lng != null ? [st.lat, st.lng] : null;
+}
+/** Texte court d'un lieu : « Lieu · adresse, CP Ville » */
+export const placeText = pl => pl ? [pl.venue, [pl.address, [pl.postal_code, pl.city].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(' · ') : '';
 
 export const showLabel = s => s ? `${s.date ? s.date.split('-').reverse().join('/') : 'sans date'} · ${s.venue||'?'}${s.city && s.city!==s.venue ? ' ('+s.city+')' : ''}` : '';
 

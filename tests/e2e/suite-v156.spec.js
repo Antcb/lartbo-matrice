@@ -38,7 +38,7 @@ test('v1.56 structures inactives : absentes des nouvelles sélections de suivi, 
   });
   // nouveau suivi : la structure fermée n'est pas proposée, une ligne permet de l'afficher
   await page.evaluate(async () => (await import('./js/actions.js')).ACTIONS.newProspect());
-  const ac = page.locator('.ws-who .ac-input');
+  const ac = page.locator('.ws-who .ac[data-ac=structures] .ac-input');
   await ac.fill('Zz Salle');
   await expect(page.locator('.ac-item', { hasText: 'Zz Salle ouverte' })).toHaveCount(1);
   await expect(page.locator('.ac-item', { hasText: 'Zz Salle fermée' })).toHaveCount(0);
@@ -50,7 +50,7 @@ test('v1.56 structures inactives : absentes des nouvelles sélections de suivi, 
   await expect.poll(() => page.evaluate(() => window.__DB.prospects.at(-1).structure_id)).toBe('si-1');
   // ancien dossier : intact, structure affichée
   await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.view = 'prospects'; S.suiviPage = 'pi-old'; (await import('./js/app.js')).render(); });
-  await expect(page.locator('.ws-who .ac-input')).toHaveValue('Zz Salle fermée');
+  await expect(page.locator('.ws-who .ac[data-ac=structures] .ac-input')).toHaveValue('Zz Salle fermée');
   expect(await page.evaluate(() => window.__DB.prospects.find(p => p.id === 'pi-old').structure_id)).toBe('si-1');
   // fiche de la structure fermée : « Nouveau suivi » demande d'abord (Annuler : rien n'est créé) ; « Prospection » n'est plus le bouton principal
   await page.evaluate(async () => { const { S } = await import('./js/state.js'); const app = await import('./js/app.js'); app.go('structures'); S.structurePage = 'si-1'; app.render(); });
