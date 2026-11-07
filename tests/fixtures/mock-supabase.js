@@ -87,6 +87,8 @@
       }
       if (st.op === 'insert') { const arr = (Array.isArray(st.patch) ? st.patch : [st.patch]).map(r => ({ id: uid(), ...r })); rows.push(...arr); return { data: clone(st.single ? arr[0] : arr), error: null }; }
       if (st.op === 'upsert') { const arr = Array.isArray(st.patch) ? st.patch : [st.patch]; arr.forEach(p => { const r = rows.find(x => (p.id && x.id === p.id) || (p.key && x.key === p.key)); r ? Object.assign(r, p) : rows.push({ ...p }); }); return { data: clone(arr), error: null }; }
+      // window.__DELETE_ERROR = { table: {code, message} } : suppression refusée par la base (ex. clé étrangère, v1.60.3)
+      if (st.op === 'delete' && window.__DELETE_ERROR && window.__DELETE_ERROR[table]) return { data: null, error: window.__DELETE_ERROR[table] };
       if (st.op === 'delete') { const keep = rows.filter(r => !match(r)); rows.length = 0; rows.push(...keep); return { data: null, error: null }; }
       return { data: null, error: null };
     };
@@ -107,8 +109,21 @@
     return b;
   }
 
+  // v1.60.3 : suppression contrôlée d'une date (migration 2026-11-07_v1.60.3_suppression_date) — refus du résultat clôturé
+  // (les autres refus sont essayés sur une vraie base PostgreSQL), copie dans show_deletions, tâches détachées
+  const deletionState = id => { const s = DB.shows.find(x => x.id === id); if (!s) return null;
+    return { blocked: s.result_closed_at ? ['Le résultat de cette date est clôturé : rouvre-le d’abord (bouton « Rouvrir », avec un motif), puis supprime la date.'] : [],
+      payments: DB.show_payments.filter(r => r.show_id === id).length, budget_lines: DB.budget_lines.filter(r => r.show_id === id).length,
+      tasks: DB.tasks.filter(r => r.show_id === id).length, closures: DB.result_closures.filter(r => r.show_id === id).length }; };
   const RPC = {
     is_team: () => true,
+    show_deletion_state: a => deletionState(a.p_show),
+    delete_show: a => { const id = a.p_show, st = deletionState(id);
+      DB.show_deletions.push({ id: DB.show_deletions.length + 1, show_id: id, actor: USER, snapshot: { show: DB.shows.find(x => x.id === id), result_closures: DB.result_closures.filter(r => r.show_id === id) } });
+      DB.tasks.forEach(t => { if (t.show_id === id) t.show_id = null; });
+      for (const t of ['result_closures', 'show_payments', 'budget_lines']) { const keep = DB[t].filter(r => r.show_id !== id); DB[t].length = 0; DB[t].push(...keep); }
+      const keep = DB.shows.filter(x => x.id !== id); DB.shows.length = 0; DB.shows.push(...keep);
+      return st; },
     mail_vars: () => ({ artiste: 'Artiste Alpha', date: 'mardi 1er juin 2027', ville: 'Bourg-Test', lieu: 'Festival Fictif', cachet_ht: '6 000 €', contact: 'Camille',
       lien_fiche: 'https://exemple.invalid/fiche.html?t=jeton-fiche-test-0001' }),
     // v1.40 (A2) : fiche d'une date booking / production avec le mode transmis par le serveur (migration 2026-10-25_v1.40_fiche_mode)
@@ -144,7 +159,10 @@
       (window.__clientUrls ||= []).push(String(url));
       return {
         from: table => builder(table, String(url)),
-        rpc: async (name, args) => { window.__calls.push({ rpc: name, args, url: String(url) }); const f = RPC[name]; return { data: f ? clone(f(args || {})) : null, error: null }; },
+        // window.__RPC_ERROR = { nom: {code, message} } : la fonction de la base répond par cette erreur (fonction absente, refus…)
+        rpc: async (name, args) => { window.__calls.push({ rpc: name, args, url: String(url) }); const e = window.__RPC_ERROR && window.__RPC_ERROR[name];
+          if (e) return { data: null, error: e };
+          const f = RPC[name]; return { data: f ? clone(f(args || {})) : null, error: null }; },
         // window.__FN_ERROR = { nom: 'message' } : la fonction serveur répond par cette erreur (essais de la file des résumés IA)
         functions: { invoke: async (name, o) => { window.__calls.push({ fn: name, body: o && o.body, url: String(url) });
           const err = window.__FN_ERROR && window.__FN_ERROR[name];

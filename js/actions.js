@@ -76,7 +76,9 @@ export const ACTIONS = {
   closeModal: t => (t.dataset.level==='2' ? $('#modal2') : $('#modal')).close(),
   // suppression depuis une fenêtre : fenêtre de dialogue de l'application (Q20) — Annuler, Échap ou clic dehors ne suppriment jamais rien
   modalDelete: async t => { const lvl = Number(t.dataset.level||1), m = MODALS[lvl];
-    const q = m.deleteAsk ? m.deleteAsk() : {title: 'Supprimer ?', text: 'Cet élément sera supprimé définitivement.', actions: [{value: 'del', label: 'Supprimer', danger: true}]};
+    // question éventuellement calculée par le serveur (date, v1.60.3) ; null = suppression refusée (motif déjà affiché)
+    const q = m.deleteAsk ? await m.deleteAsk() : {title: 'Supprimer ?', text: 'Cet élément sera supprimé définitivement.', actions: [{value: 'del', label: 'Supprimer', danger: true}]};
+    if (!q) return;
     const choice = await ask(q); if (choice == null) return;
     if ((await m.onDelete(choice)) === false) return;   // refus (garde-fou) : la fenêtre reste ouverte
     modalSaved(m.dlg); m.dlg.close(); render(); },

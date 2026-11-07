@@ -125,10 +125,44 @@ export async function remove(table, id){
   if (why){ toast(why, true); return false; }
   const before = byId(table, id);
   const {error} = await sb.from(table).delete().eq('id', id);
-  if (error){ toast('Suppression impossible : '+error.message, true); return false; }
+  if (error){ toast('Suppression impossible : '+dbErrorText(error), true); return false; }
   S.db[table] = S.db[table].filter(r => r.id !== id); touch(table);
   summaryAfter(table, before);
   return true;
+}
+
+/** Message d'erreur de la base pour l'utilisateur (v1.60.3) : jamais le texte technique d'une clé étrangère (code 23503) */
+export const dbErrorText = error => error?.code === '23503'
+  ? 'cet élément est encore relié à d’autres données de la Matrice (historique, tâches ou documents). Rien n’a été supprimé.'
+  : error?.message || 'erreur inconnue';
+/** Fonction serveur absente (migration pas encore appliquée) */
+const missingFunction = error => error?.code === 'PGRST202' || /Could not find the function|schema cache/i.test(error?.message || '');
+
+/** Ce que la suppression d'une date ferait, vu par le serveur (v1.60.3, fonction show_deletion_state) :
+ *  {blocked: [motifs], payments, budget_lines, tasks, closures} ; null si le serveur n'a pas encore la fonction ou ne répond pas. */
+export async function showDeletionState(id){
+  const {data, error} = await sb.rpc('show_deletion_state', {p_show: id});
+  if (error) return missingFunction(error) ? null : {blocked: [error.code === 'P0001' ? error.message : 'Suppression impossible : ' + dbErrorText(error)]};
+  return data;
+}
+
+/**
+ * Suppression contrôlée d'une date (v1.60.3, demande d'Anthony du 07/11) : fonction serveur delete_show — refus motivés (résultat
+ * clôturé, factures émises, documents Pennylane, pièces à rattacher…), copie complète dans le journal des suppressions (historique de
+ * clôture / réouverture compris), tâches gardées sans lien, puis la date avec ses lignes de facturation (aucune émise) et de budget.
+ * Même garde-fou que remove (calc.changeBlocked) avant tout appel. Serveur sans la fonction (migration pas encore appliquée) :
+ * suppression directe comme avant, erreur de clé étrangère traduite.
+ */
+export async function deleteShow(id){
+  const why = saveGuard ? saveGuard('shows', id, null) : '';
+  if (why){ toast(why, true); return false; }
+  const {data, error} = await sb.rpc('delete_show', {p_show: id});
+  if (error && missingFunction(error)) return remove('shows', id);
+  if (error){ toast(error.code === 'P0001' ? error.message : 'Suppression impossible : ' + dbErrorText(error), true); return false; }
+  for (const t of ['show_payments', 'budget_lines', 'pennylane_a_rattacher']) if (S.db[t]){ S.db[t] = S.db[t].filter(r => r.show_id !== id); touch(t); }
+  S.db.tasks.forEach(t => { if (t.show_id === id) t.show_id = null; }); touch('tasks');   // tâches gardées, sans lien vers la date
+  S.db.shows = S.db.shows.filter(r => r.id !== id); touch('shows');
+  return data || true;
 }
 
 /**
