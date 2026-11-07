@@ -34,6 +34,15 @@
 --     (generate_reminders ci-dessous), cartes et calendriers ; elle reste en base, consultable (« Dates archivées ») et
 --     restaurable. Ce n'est PAS une annulation : son statut ne change pas ; aucun appel ni document Pennylane touché.
 --     Refusé si : résultat clôturé, facture émise ou versement, facture Pennylane à rattacher, pièce à rattacher.
+--     Archivage OPÉRATIONNEL seulement (réponse d'Anthony du 07/11, au soir) : la date sort des listes de TRAVAIL, mais ses
+--     factures, créances, dettes, paiements et engagements réels restent dans les vues et exports financiers (aucun total
+--     financier ne change) ; distinct d'une annulation (statut) et d'une suppression (delete_show).
+--     Fiche publique (fiche_get, fiche_submit) : « Dossier indisponible » pour une date archivée, données conservées ;
+--     la restauration rétablit l'accès. Notifications non retirées de la date : marquées « retirées » à l'archivage
+--     (notifications.withdrawn_at, historique conservé, rien n'est supprimé). Restauration : aucune relance immédiate —
+--     une échéance tombée avant « restaurée le + 7 jours » est reportée à ce jour-là (jour ouvré), clés anti-doublon propres.
+--     Facture (ou facture Pennylane à rattacher) arrivée sur une date archivée : rattachement conservé + notification
+--     d'alerte (déclencheurs ci-dessous, sans toucher à la fonction pennylane).
 --  5. Tâches détachées par une suppression : une mention « Date supprimée le … : <date · lieu · artiste> » est ajoutée en tête
 --     de leur note (pas de tâche orpheline inexpliquée).
 -- Même règle côté application : js/calc.js (showRemovalState, changeBlocked), js/forms.js (showDeleteAsk), js/data.js
@@ -42,7 +51,8 @@
 -- Retour arrière (après accord) : ne plus appeler delete_show (l'application revient alors à la suppression directe) ;
 --   drop function public.delete_show(uuid), public.show_deletion_state(uuid), public.archive_show(uuid, text),
 --   public.restore_show(uuid) ; drop trigger shows_archive_guard on public.shows ; drop function public.shows_archive_guard() ;
---   recréer generate_reminders dans sa version v1.49 ; la table show_deletions et les colonnes d'archivage restent (historique).
+--   recréer generate_reminders (v1.49), fiche_get (v1.60.2) et fiche_submit (v1.11) ; drop trigger show_payments_archived_alert,
+--   pennylane_archived_alert ; la table show_deletions et les colonnes ajoutées restent (historique).
 -- =====================================================================================================
 
 -- ─────────────── 0. Garde (avant toute écriture) : generate_reminders doit être la v1.49 (voir §5 en fin de fichier) ───────────────
@@ -51,6 +61,16 @@ declare b text := (select prosrc from pg_proc where oid = 'public.generate_remin
 begin
   if md5(b) <> '1e39731b4ae42784cad558380e0ec253' and position('archived_at' in b) = 0 then
     raise exception 'v1.60.3 : generate_reminders n''est pas la version v1.49 attendue (empreinte du corps %) : migration arrêtée, rien n''est appliqué', md5(b);
+  end if;
+  -- fiche publique : fiche_get après la migration v1.60.2 lieux (texte de production v1.59 → empreinte 5ad948…, puis remplacement
+  -- v1.60.2 → b5faee87…), fiche_submit de la v1.11 (6009c041…) ; déjà remplacées par cette migration (marqueur) : acceptées
+  b := pg_get_functiondef('public.fiche_get(text)'::regprocedure);
+  if md5(b) <> 'b5faee87a1cc0c83b29f3e11394fc6d9' and position('v1.60.3 date archivée' in b) = 0 then
+    raise exception 'v1.60.3 : fiche_get n''est pas la version attendue après la v1.60.2 (empreinte %) : appliquer d''abord 2026-11-07_v1.60.2_lieux.sql ; migration arrêtée, rien n''est appliqué', md5(b);
+  end if;
+  b := pg_get_functiondef('public.fiche_submit(text,jsonb,jsonb)'::regprocedure);
+  if md5(b) <> '6009c041ca749a37b19d439718431266' and position('v1.60.3 date archivée' in b) = 0 then
+    raise exception 'v1.60.3 : fiche_submit n''est pas la version attendue (empreinte %) : migration arrêtée, rien n''est appliqué', md5(b);
   end if;
 end $m$;
 
@@ -85,6 +105,10 @@ alter table public.shows add column if not exists archived_at timestamptz;
 alter table public.shows add column if not exists archived_by text;
 alter table public.shows add column if not exists archived_reason text;
 alter table public.shows add column if not exists archive_history jsonb not null default '[]'::jsonb;
+alter table public.shows add column if not exists restored_at timestamptz;   -- dernière restauration : délai avant toute relance
+alter table public.notifications add column if not exists withdrawn_at timestamptz;   -- notification retirée de la liste active (gardée)
+alter table public.notifications add column if not exists withdrawn_reason text;
+comment on column public.notifications.withdrawn_at is 'Notification retirée de la liste active (v1.60.3 : date archivée / restaurée) ; gardée pour l''historique, jamais supprimée';
 comment on column public.shows.archived_at is 'Date archivée (v1.60.3) : hors des listes, totaux, comptes, relances, cartes et calendriers ; restaurable. Distinct d''une annulation (statut inchangé).';
 comment on column public.shows.archive_history is 'Historique des archivages / restaurations (qui, quand, motif) ; écrit seulement par archive_show / restore_show';
 
@@ -93,13 +117,14 @@ language plpgsql set search_path = public as $$
 begin
   if coalesce(current_setting('matrice.archive_rpc', true), '') = 'on' then return new; end if;
   if tg_op = 'INSERT' then
-    if new.archived_at is not null or new.archived_by is not null or new.archived_reason is not null
+    if new.archived_at is not null or new.archived_by is not null or new.archived_reason is not null or new.restored_at is not null
        or coalesce(new.archive_history, '[]'::jsonb) <> '[]'::jsonb then
       raise exception 'Une date ne se crée pas archivée.' using errcode = 'P0001'; end if;
     return new;
   end if;
   if new.archived_at is distinct from old.archived_at or new.archived_by is distinct from old.archived_by
-     or new.archived_reason is distinct from old.archived_reason or new.archive_history is distinct from old.archive_history then
+     or new.archived_reason is distinct from old.archived_reason or new.archive_history is distinct from old.archive_history
+     or new.restored_at is distinct from old.restored_at then
     raise exception 'Archivage et restauration d’une date : utiliser les boutons « Archiver la date » / « Restaurer ».' using errcode = 'P0001';
   end if;
   return new;
@@ -224,6 +249,8 @@ begin
          archive_history = coalesce(archive_history, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('action', 'archive', 'at', now(), 'by', who, 'reason', btrim(p_reason)))
    where id = p_show;
   perform set_config('matrice.archive_rpc', '', true);
+  -- relances et rappels de la date : retirés de la liste active (marqués, historique conservé, rien n'est supprimé)
+  update notifications set withdrawn_at = now(), withdrawn_reason = 'Date archivée' where show_id = p_show and withdrawn_at is null;
 end $$;
 revoke all on function public.archive_show(uuid, text) from public, anon, authenticated, service_role;
 grant execute on function public.archive_show(uuid, text) to authenticated;
@@ -237,10 +264,13 @@ begin
   if not found then raise exception 'Date introuvable : elle a peut-être déjà été supprimée.' using errcode = 'P0001'; end if;
   if s.archived_at is null then raise exception 'Cette date n’est pas archivée.' using errcode = 'P0001'; end if;
   perform set_config('matrice.archive_rpc', 'on', true);
-  update shows set archived_at = null, archived_by = null, archived_reason = null,
+  update shows set archived_at = null, archived_by = null, archived_reason = null, restored_at = now(),
          archive_history = coalesce(archive_history, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('action', 'restore', 'at', now(), 'by', who))
    where id = p_show;
   perform set_config('matrice.archive_rpc', '', true);
+  -- alertes « facture sur une date archivée » : traitées par la restauration (gardées, retirées de la liste active)
+  update notifications set withdrawn_at = now(), withdrawn_reason = 'Date restaurée'
+   where show_id = p_show and kind = 'date_archivee_facture' and withdrawn_at is null;
 end $$;
 revoke all on function public.restore_show(uuid) from public, anon, authenticated, service_role;
 grant execute on function public.restore_show(uuid) to authenticated;
@@ -261,6 +291,7 @@ begin
       -- rappels administratifs (étapes, boucles, factures à faire, partenaire) : dates passées de plus de 120 jours exclues ;
       -- factures (à envoyer, impayées) et commission à virer : sans limite de durée (Q13, décision du 27/10)
       (sh.date is null or sh.date >= current_date - 120) recent,
+      (sh.restored_at at time zone 'Europe/Paris')::date restored,   -- v1.60.3 : date restaurée (délai avant relance)
       sh.conf_kit_sent, sh.precontract_done, sh.contract_sent, sh.contract_signed, sh.contract_cosigned_sent, sh.boucle_tech, sh.boucle_com,
       a.id a_id,
       (a.sent_at is not null or a.paid_at is not null or nullif(btrim(a.invoice_number), '') is not null or nullif(btrim(a.pennylane_id), '') is not null) a_emis,
@@ -318,13 +349,15 @@ begin
     insert into notifications (kind, title, body, show_id, dedupe_key)
     select c.r, c.t || ' — ' || s.venue,
            concat_ws(' · ', nullif(s.proj,''), to_char(s.date, 'DD/MM/YYYY'), s.city),
-           s.id, c.r || ':' || c.k || ':' || c.raw
+           s.id, c.r || ':' || c.k || ':' || c.raw || coalesce(':r' || to_char(s.restored, 'YYYYMMDD'), '')   -- v1.60.3 : clés propres après restauration
     from cand c join s on s.id = c.id
     -- échéance : J+n décalée au lundi (w) ; boucle accueil & technique (4 mois calendaires) : samedi / dimanche → vendredi précédent
     -- (Q12, v1.49 — même règle que js/reminders.js workDayBefore) ; la clé anti-doublon garde la date brute (aucune notification en double)
-    where c.raw is not null and (case when c.w then public.workday(c.raw)
+    -- v1.60.3 : date restaurée — aucune relance accumulée envoyée d'un coup : échéance au plus tôt 7 jours après la restauration
+    -- (jour ouvré) ; les échéances suivantes ne changent pas
+    where c.raw is not null and greatest(case when c.w then public.workday(c.raw)
                                       when c.r = 'boucle_accueil' then c.raw - (case extract(isodow from c.raw) when 6 then 1 when 7 then 2 else 0 end)::int
-                                      else c.raw end) <= current_date
+                                      else c.raw end, public.workday(s.restored + 7)) <= current_date
     on conflict (dedupe_key) do nothing
     returning 1
   ) select count(*) into n from ins;
@@ -332,3 +365,103 @@ begin
 end $function$;
 revoke all on function public.generate_reminders() from public, anon, authenticated, service_role;
 grant execute on function public.generate_reminders() to service_role;
+
+-- ─────────────── 6. Fiche publique : « Dossier indisponible » pour une date archivée (fonctions RÉÉCRITES ENTIÈREMENT, §7.5) ───────────────
+-- fiche_get : texte attendu après la v1.60.2 (lieux) + une condition ; fiche_submit : texte v1.11 + une condition. Gardes en tête (§0).
+-- Droits inchangés (create or replace les conserve).
+CREATE OR REPLACE FUNCTION public.fiche_get(p_token text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare s shows%rowtype; st structures%rowtype; pr projects%rowtype; pays jsonb; vat numeric; acpt numeric;
+begin
+  if p_token is null or length(p_token) < 16 then return null; end if;
+  select * into s from shows where fiche_token = p_token;
+  if not found then return null; end if;
+  -- v1.60.3 date archivée : accès fermé (message neutre), données conservées ; la restauration rétablit l'accès
+  if s.archived_at is not null then raise exception 'Dossier indisponible' using errcode = 'P0001'; end if;
+  select * into st from structures where id = s.structure_id;
+  select * into pr from projects where id = s.project_id;
+  vat := coalesce(s.vat_rate, 5.5);
+  select coalesce(jsonb_agg(jsonb_build_object('label', p.label, 'kind', p.kind, 'pct', p.pct, 'due_label', p.due_label,
+           'ht', coalesce(p.amount, round(s.fee_ht * p.pct) / 100)) order by p.sort), '[]')
+    into pays from show_payments p where p.show_id = s.id and p.kind in ('acompte','solde') and p.hors_calcul is null;
+  select pct into acpt from show_payments where show_id = s.id and kind = 'acompte' and hors_calcul is null order by sort limit 1;
+  return jsonb_build_object(
+    'artist', trim(regexp_replace(coalesce(pr.name, ''), '\s*•.*$', '')),
+    'date', s.date, 'date_end', s.date_end, 'date_label', fr_date(s.date, true),
+    'venue', trim(regexp_replace(replace(coalesce(s.venue, ''), '**', ''), '\s*•\s*[A-Z/]{1,5}\s*$', '')),
+    'city', s.city, 'address', s.address, 'postal_code', s.postal_code, 'department', s.department,
+    'venue_is_structure', coalesce(s.venue_is_structure, false),   -- v1.60.2 source du lieu (décisions d'Anthony du 07/11/2026)
+    'cp', coalesce(public.lieu_departement(s.department, s.postal_code), case when s.venue_is_structure then public.lieu_departement(st.department_code, st.postal_code) end),
+    'status', s.status, 'contract_type', s.contract_type, 'prod_mode', coalesce(s.prod_mode, 'production'),
+    'fee_ht', s.fee_ht, 'vat', vat, 'fee_ttc', round(s.fee_ht * (1 + vat / 100), 2),
+    'acompte_pct', coalesce(acpt, case when s.terms_validated_at is not null or s.contract_type = 'Co-Production' then 0 end, public.default_acompte_for(s.project_id)),
+    'cr_producer_pct', s.cr_producer_pct, 'cr_break', s.cr_break, 'show_time', s.show_time, 'set_length', s.set_length,
+    'capacity', coalesce(s.capacity, st.capacity_1), 'ticketing_type', s.ticketing_type,
+    'payments', pays,
+    'structure', case when st.id is null then null else jsonb_build_object('name', st.name, 'address', st.address,
+        'postal_code', st.postal_code, 'city', st.city, 'country', st.country, 'admin', coalesce(st.admin, '{}')) end,
+    'fiche', s.fiche, 'submitted_at', s.fiche_submitted_at, 'validated_at', s.fiche_validated_at,
+    'locked', s.contract_sent is not null);
+end $function$;
+CREATE OR REPLACE FUNCTION public.fiche_submit(p_token text, p_admin jsonb, p_fiche jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare s shows%rowtype;
+begin
+  if p_token is null or length(p_token) < 16 then raise exception 'Lien invalide'; end if;
+  select * into s from shows where fiche_token = p_token;
+  if not found then raise exception 'Lien invalide'; end if;
+  -- v1.60.3 date archivée : accès fermé (message neutre), données conservées ; la restauration rétablit l'accès
+  if s.archived_at is not null then raise exception 'Dossier indisponible' using errcode = 'P0001'; end if;
+  if s.contract_sent is not null then raise exception 'Le contrat a déjà été envoyé : la fiche ne peut plus être modifiée. Écris-nous à production@lartboristerie.com.'; end if;
+  if length(coalesce(p_admin::text,'')) + length(coalesce(p_fiche::text,'')) > 30000 then raise exception 'Fiche trop longue'; end if;
+  update shows set fiche = coalesce(p_fiche, '{}') || jsonb_build_object('admin', coalesce(p_admin, '{}')),
+                   fiche_submitted_at = now(), fiche_validated_at = null
+    where id = s.id;
+  insert into notifications (kind, title, body, show_id, project_id, dedupe_key)
+    values ('fiche', 'Fiche de renseignements à valider — ' || coalesce(s.venue, ''),
+            concat_ws(' · ', to_char(s.date, 'DD/MM/YYYY'), s.city, p_admin->>'legal_name'),
+            s.id, s.project_id, 'fiche:' || s.id || ':' || extract(epoch from now())::bigint)
+    on conflict (dedupe_key) do nothing;
+  return jsonb_build_object('ok', true);
+end $function$;
+
+-- ─────────────── 7. Alerte : facture arrivée sur une date archivée (rattachement conservé, alerte visible) ───────────────
+-- La synchronisation Pennylane (fonction pennylane, inchangée) relie normalement la facture à sa ligne ; ce déclencheur ajoute une
+-- notification (liste des notifications de l'application et récap quotidien par mail) tant que la date reste archivée.
+create or replace function public.archived_invoice_alert() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare s shows%rowtype; emis boolean; avant boolean := false; cle text; quoi text;
+begin
+  select * into s from shows where id = new.show_id;
+  if not found or s.archived_at is null then return null; end if;
+  if tg_table_name = 'show_payments' then
+    emis := new.sent_at is not null or new.paid_at is not null or nullif(btrim(new.invoice_number), '') is not null or nullif(btrim(new.pennylane_id), '') is not null;
+    if tg_op = 'UPDATE' then
+      avant := old.sent_at is not null or old.paid_at is not null or nullif(btrim(old.invoice_number), '') is not null or nullif(btrim(old.pennylane_id), '') is not null;
+    end if;
+    if not emis or avant then return null; end if;
+    cle := 'date_archivee_facture:' || new.id; quoi := coalesce(nullif(btrim(new.invoice_number), ''), new.label);
+  else
+    cle := 'date_archivee_facture:pl:' || new.pennylane_id; quoi := coalesce(new.invoice_number, 'facture à rattacher');
+  end if;
+  insert into notifications (kind, title, body, show_id, project_id, dedupe_key)
+  values ('date_archivee_facture', 'Facture sur une date archivée — ' || coalesce(s.venue, ''),
+          concat_ws(' · ', (select name from projects where id = s.project_id), to_char(s.date, 'DD/MM/YYYY'), quoi,
+                    'comptée dans les montants ; restaure la date (Booking › Dates archivées) pour la suivre'),
+          s.id, s.project_id, cle)
+  on conflict (dedupe_key) do nothing;
+  return null;
+end $$;
+revoke execute on function public.archived_invoice_alert() from public, anon, authenticated;
+drop trigger if exists show_payments_archived_alert on public.show_payments;
+create trigger show_payments_archived_alert after insert or update on public.show_payments for each row execute function public.archived_invoice_alert();
+drop trigger if exists pennylane_archived_alert on public.pennylane_a_rattacher;
+create trigger pennylane_archived_alert after insert on public.pennylane_a_rattacher for each row execute function public.archived_invoice_alert();

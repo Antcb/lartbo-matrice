@@ -193,7 +193,11 @@ function pickTemplate_(show, kind) {
 function dailyJob() {
   try { rhFileDocs_(); } catch (err) { Logger.log('Pièces salariés : ' + err); }
   try { artistFileDocs_(); } catch (err) { Logger.log('Fichiers artistes : ' + err); }
-  var notifs = sb_('GET', 'notifications?emailed_at=is.null&select=*&order=created_at.asc') || [];
+  // notifications retirées (date archivée / restaurée, Matrice v1.60.3) : ni brouillon ni récap. Base sans la colonne (migration
+  // v1.60.3 pas encore appliquée) : lecture comme avant
+  var notifs;
+  try { notifs = sb_('GET', 'notifications?emailed_at=is.null&withdrawn_at=is.null&select=*&order=created_at.asc') || []; }
+  catch (e) { notifs = sb_('GET', 'notifications?emailed_at=is.null&select=*&order=created_at.asc') || []; }
   var KIND = { boucle_accueil: 'boucle_tech', boucle_com: 'boucle_com' };
   var drafted = [];
   notifs.forEach(function (n) {

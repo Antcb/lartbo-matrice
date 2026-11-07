@@ -22,6 +22,8 @@ const DRAFT = 'fiche-brouillon-' + token;
 async function load(){
   if (!token) return fail('Ce lien est incomplet. Vérifie le lien reçu par mail.');
   const {data, error} = await sb.rpc('fiche_get', {p_token: token});
+  // dossier fermé par l'équipe (date archivée, v1.60.3 — fiche_get) : message neutre, sans détail
+  if (error && /Dossier indisponible/.test(error.message || '')) return fail('Dossier indisponible. Pour toute question, écris-nous à production@lartboristerie.com.');
   if (error) return fail('La fiche ne peut pas être chargée pour le moment. Réessaie dans quelques minutes.');
   if (!data) return fail('Ce lien n’est pas valide. Vérifie le lien reçu par mail ou écris-nous à production@lartboristerie.com.');
   draw(data);
