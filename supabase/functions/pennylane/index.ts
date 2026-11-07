@@ -7,7 +7,7 @@
 // Le jeton API est gardé côté serveur (Réglages › Pennylane). Appels depuis l'app (utilisateur connecté) :
 //   { action: 'status' } · { action: 'quote', show_id } · { action: 'invoice', payment_id } · { action: 'sync' }
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { acomptesFactures, baseCommission, caduc, emise, factureIsolee, figerMontant, isBooking, montantAcompte, montantAttendu, payable, pctCommission, rangeeDansLeDrive, relieAuDevis, soldeDouteux } from './regles.ts';
+import { acomptesFactures, baseCommission, caduc, describe, emise, factureIsolee, figerMontant, frDate, isBooking, montantAcompte, montantAttendu, payable, pctCommission, rangeeDansLeDrive, relieAuDevis, soldeDouteux, texteCommission } from './regles.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -35,19 +35,13 @@ const vatCode = (rate: number | null, country: string) => {
   if (!r) return /^(fr|france)?$/i.test(country.trim()) ? 'FR_0' : 'exempt';
   return 'FR_' + String(Math.round(r * 10));
 };
-const frDate = (d: string) => d ? d.split('-').reverse().join('/') : '';
+// frDate, describe : regles.ts (v1.60.2, testés par tests/static/pennylane-regles.mjs)
 // jour de Paris (CONVENTIONS §1.2, v1.49) : une facture faite entre 0 h et 2 h ne prend plus la date de la veille
 const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
 const plusDays = (n: number) => { const d = new Date(today() + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const norm = (s: string) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const ISO2: Record<string, string> = { france: 'FR', suisse: 'CH', switzerland: 'CH', belgique: 'BE', belgium: 'BE', espagne: 'ES', spain: 'ES', allemagne: 'DE', germany: 'DE', 'pays bas': 'NL', netherlands: 'NL', luxembourg: 'LU', italie: 'IT', italy: 'IT', 'royaume uni': 'GB', portugal: 'PT', canada: 'CA' };
 const iso2 = (c: string) => { const k = norm(c || 'France'); return k.length === 2 ? k.toUpperCase() : (ISO2[k] || 'FR'); };
-
-/** « 12/03/2027 • Bagnols-sur-Cèze (30) • LA MOBA » */
-function describe(s: any) {
-  const cp = s.department ? ` (${s.department})` : '';
-  return [frDate(s.date), s.city ? s.city + cp : '', s.venue].filter(Boolean).join(' • ');
-}
 
 /** Produits Pennylane (Cession, Coréalisation, Commission) retrouvés par leur nom */
 let PRODUCTS: any[] | null = null;
@@ -357,10 +351,12 @@ Deno.serve(async (req) => {
         if (!proj.admin_structure_id) return json({ error: 'Indique la structure administrative de l’artiste dans sa fiche projet : c’est le client de la facture de commission' }, 400);
         st = (await admin.from('structures').select('*').eq('id', proj.admin_structure_id).single()).data;
         const prod = await product('commission');
-        description = `Commission booking • ${frDate(s.date)} • ${s.city || s.venue || ''}`;
+        // lieu réel et code du lieu (v1.60.2) : même format que les devis et factures de cession (describe) ; nouvelles factures seulement
+        const txt = texteCommission(s, artist);
+        description = txt.description;
         line = { ...(prod ? { product_id: prod.id } : {}), label: prod?.label || 'Commission • Booking', quantity: 1, unit: 'no_unit', raw_currency_unit_price: money(amount),
           vat_rate: vatCode(p.vat_rate ?? 20, st?.admin?.country || st?.country || 'France'),
-          description: `Commission booking pour ${artist} • Concert le ${frDate(s.date)} • ${[s.city, s.venue].filter(Boolean).join(' • ')}` };
+          description: txt.ligne };
       } else if (p.kind === 'acompte' || p.kind === 'solde') {
         // comme dans Pennylane : acompte et solde se font depuis le devis (le solde déduit l'acompte), pas en facture isolée
         return json({ error: 'L’acompte et le solde se facturent depuis le devis Pennylane (bouton « Facturer depuis le devis »)' }, 400);

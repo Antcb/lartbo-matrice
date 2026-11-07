@@ -205,6 +205,16 @@ for (const f of JS.filter(p => !p.endsWith('js/utils.js'))) {
   for (const t of app) if (!backup.includes(t)) fail('sauvegarde', `table « ${t} » chargée par l'application mais absente de l'export de sauvegarde (supabase/functions/backup-export)`);
 }
 
+// 11. Renommages Drive (décision d'Anthony du 07/11/2026) : le tableau de renommage du script Google ne coche JAMAIS une proposition
+// par défaut, et « Tester le script » peut lire la version du code déployé
+{
+  const gs = readFileSync(join(ROOT, 'apps-script/Code.gs'), 'utf8');
+  if (/rows\.push\(\[\s*true\b/.test(gs)) fail('renommage', 'apps-script/Code.gs : une proposition de renommage est cochée par défaut (elles doivent toutes arriver décochées)');
+  if (!/if \(\/\^Contrat\/\.test\(r\[1\]\)\)/.test(gs)) fail('renommage', 'apps-script/Code.gs : renameApply doit refuser les contrats (jamais renommés)');
+  if (!/Tableau de renommage d’une ancienne version/.test(gs)) fail('renommage', 'apps-script/Code.gs : renameApply doit refuser un tableau d’une ancienne version');
+  if (!/var SCRIPT_VERSION = 'v\d+\.\d+\.\d+'/.test(gs) || !/version: SCRIPT_VERSION/.test(gs)) fail('renommage', 'apps-script/Code.gs : version du code absente du « ping »');
+}
+
 // Bilan
 console.log(`Contrôles statiques : ${JS.length} modules, version ${version}, ${total(now)} fenêtre(s) native(s) tolérée(s), ${scanned.length} fichiers examinés pour les secrets.`);
 if (problems.length) { console.error(`\n${problems.length} problème(s) :\n` + problems.map(p => ' - ' + p).join('\n')); process.exit(1); }

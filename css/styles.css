@@ -377,6 +377,11 @@ td .ac-input:hover{border-color:var(--line)}
 .photo.lg{width:150px}
 .project-hero{display:flex;gap:20px;align-items:center;margin-bottom:14px}
 .project-hero h1{font-size:var(--fs-h1)}
+.project-hero .ph-photo{display:flex;flex-direction:column;gap:var(--sp-1);align-items:center}
+.project-hero .ph-main{flex:1;min-width:0}
+/* tablette et téléphone : les boutons passent sous le nom au lieu de le recouvrir (point 16, v1.60.2) ; téléphone : photo réduite comme les cartes (.pcard) */
+@media (max-width:1100px){ .project-hero{flex-wrap:wrap} .project-hero > .vh-actions{flex:1 1 100%} }
+@media (max-width:760px){ .project-hero{gap:var(--sp-2)} .project-hero .photo.lg{width:84px} .project-hero h1{overflow-wrap:anywhere} }
 .cropper{position:relative;width:280px;aspect-ratio:1/1;border-radius:var(--r);overflow:hidden;background:#222;cursor:grab;touch-action:none;margin:0 auto}
 .cropper img{width:100%;height:100%;object-fit:cover;user-select:none;-webkit-user-drag:none;pointer-events:none}
 .link-row{display:grid;grid-template-columns:200px minmax(0,1fr) auto;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line-2)}
@@ -882,6 +887,8 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .bt-tiers th,.bt-tiers td{padding:4px 0;font-size:14px;border:0;background:none}
 .bt-tiers th{font-size:12px;color:var(--muted);font-weight:600;text-align:left}
 .bt-tiers td input{display:inline-block;margin:0 4px}
+/* tarifs par jauge : le champ suit le texte « jusqu’à » (pas de marge négative d’alignement de colonne, cellules sans marge intérieure) — point 16, v1.60.2 */
+.bt-tiers tbody td > input[data-bt]:not([type=checkbox]):not([type=radio]){margin:0 4px;max-width:none}
 /* Budget : ligne plus compacte */
 .budget-table .qty-line{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .budget-table .qty-line .x{color:var(--muted)}

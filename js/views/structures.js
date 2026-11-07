@@ -4,7 +4,7 @@
  */
 import { lingering } from '../data.js';
 import { distKm } from '../geo.js';
-import { suiviClosed, byId, eventsOfStructure, isInactive, lastExchange, linkRole, linksOfContact, linksOfStructure, projName, prospectsOfStructure, showsOfStructure, tasksOfStructure } from '../selectors.js';
+import { suiviClosed, byId, eventsOfStructure, isInactive, relanceTaskSuspended, lastExchange, linkRole, linksOfContact, linksOfStructure, projName, prospectsOfStructure, showsOfStructure, tasksOfStructure } from '../selectors.js';
 import { S } from '../state.js';
 import { curTab, fold, pstBadge, stBadge, stSelect, tabsBar, tag, viewHead } from '../ui/bits.js';
 import { cAc, cIn, cSel } from '../ui/cells.js';
@@ -60,7 +60,7 @@ export function structurePage(st){
   else if (tab==='events') body = eventsTab(st, events);
   else if (tab==='admin') body = adminTab(st);
   return `<button class="btn ghost back" data-act="closeStructure">← Structures</button>
-  ${isInactive(st) ? `<p class="mode-note">Structure <b>inactive</b> depuis le ${fmtDate(String(st.inactive_at).slice(0, 10))} : gardée avec ses contacts, suivis, dates et documents ; plus proposée par défaut. <button class="btn sm" data-act="setStructureInactive" data-id="${st.id}" data-on="0">Réactiver</button></p>` : ''}
+  ${isInactive(st) ? `<p class="mode-note">Structure <b>inactive</b> depuis le ${fmtDate(String(st.inactive_at).slice(0, 10))} : gardée avec ses contacts, suivis, dates et documents ; plus proposée par défaut. ${(n => n ? `${n} relance${n > 1 ? 's' : ''} automatique${n > 1 ? 's' : ''} suspendue${n > 1 ? 's' : ''} (contacts liés uniquement à des structures inactives). ` : '')(S.db.tasks.filter(t => relanceTaskSuspended(t) && byId('prospects', t.prospect_id)?.structure_id === st.id).length)}Ses contacts qui ne sont liés qu’à des structures inactives ne sont plus relancés ni proposés en prospection (désabonnements inchangés) ; la réactiver rétablit tout. <button class="btn sm" data-act="setStructureInactive" data-id="${st.id}" data-on="0">Réactiver</button></p>` : ''}
   ${viewHead(esc(st.name), {sub: esc([st.city, st.department_code && '('+st.department_code+')', st.region, st.country && st.country!=='France' ? st.country : ''].filter(Boolean).join(' · ')),
     actions:`<button class="btn ${isInactive(st) ? '' : 'primary'}" data-act="prospection" data-id="${st.id}" title="Mail de prospection depuis un modèle : brouillon ou envoi, suivi et relance créés automatiquement">Prospection</button>
       ${(m => m ? `<button class="btn" data-act="relance" data-id="${m.id}" title="Relance en réponse au mail « ${esc(m.mail_subject || '')} »">Relance${m.relances ? ` (${m.relances + 1}e)` : ''}</button>` : '')(lastProspectMail(st.id))}

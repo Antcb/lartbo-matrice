@@ -7,7 +7,7 @@ import { DEFAULT_DEPARTMENTS, PRIORITY_LABEL, TEAM_NAMES, isOff } from './consta
 import { lingering } from './data.js';
 import { ENV } from './config.js';
 import { S } from './state.js';
-import { daysUntil, fmtDate } from './utils.js';
+import { daysUntil, fmtDate, norm } from './utils.js';
 
 const CACHE = {};
 /** Index mis en cache tant que les tables listées n'ont pas changé */
@@ -65,17 +65,66 @@ export function showsFiltered({year=true}={}){
 /** Masque annulées / sans suite, sauf pendant les 5 s qui suivent le changement */
 export const visibleShow = s => S.showCancelled || !isOff(s.status) || lingering(s.id);
 
-export function showCoords(s){
-  if (s.lat!=null && s.lng!=null) return [s.lat, s.lng];
-  const st = byId('structures', s.structure_id);
-  if (st && st.lat!=null && st.lng!=null) return [st.lat, st.lng];
-  return null;
+/**
+ * Localisation d'une date sur la carte et pour les distances (décision d'Anthony du 07/11/2026) — jamais une date retirée de la carte
+ * ni des listes, aucune donnée modifiée :
+ *  - 'own'       : coordonnées enregistrées sur la date (lieu choisi, adresse propre, ou repère déjà enregistré : conservé tel quel) ;
+ *  - 'confirmed' : sans coordonnées propres, la structure, confirmée comme lieu (« Utiliser l'adresse de la structure… » coché) ;
+ *  - 'inherited' : sans coordonnées propres ni confirmation, le repère de la structure, conservé comme en v1.60.1 mais « lieu à confirmer » ;
+ *                  de même pour une date dont les coordonnées enregistrées sont exactement celles de sa structure (copiées autrefois) ;
+ *  - 'missing'   : aucune coordonnée exploitable (« localisation manquante ») : la date reste dans les listes.
+ * Placement identique à la v1.60.1 (coordonnées de la date, sinon celles de la structure).
+ */
+export function showPlace(s){
+  const st = byId('structures', s?.structure_id), sc = st && st.lat != null && st.lng != null ? [st.lat, st.lng] : null;
+  const conf = !!s?.venue_is_structure && !!st;
+  if (s?.lat != null && s?.lng != null){
+    const copied = sc && !conf && !s.address && Number(s.lat) === Number(sc[0]) && Number(s.lng) === Number(sc[1]);
+    return {coords: [s.lat, s.lng], state: copied ? 'inherited' : 'own'};
+  }
+  if (sc) return {coords: sc, state: conf ? 'confirmed' : 'inherited'};
+  return {coords: null, state: 'missing'};
 }
+export const showCoords = s => showPlace(s).coords;
+/** Mention de la localisation d'une date ('' quand le lieu est connu) */
+export const PLACE_NOTE = {inherited: 'Localisation héritée de la structure — lieu à confirmer', missing: 'Localisation manquante'};
+export const showPlaceNote = s => PLACE_NOTE[showPlace(s).state] || '';
+
+/* Lieux (v1.60.2) : un suivi ou une date peut avoir son propre lieu (salle, festival, adresse), distinct de la structure suivie.
+ * Un lieu = {venue, address, postal_code, city, department, lat, lng} ; repris d'une fiche structure ou d'un événement, jamais inventé. */
+const isFrance = c => !c || /^\s*france\s*$/i.test(c);
+/** Lieu d'une fiche structure (sa propre adresse, pas l'adresse administrative) */
+export const placeOfStructure = st => st ? {venue: st.name, address: st.address || null, postal_code: st.postal_code || null, city: st.city || null,
+  department: st.department_code || (!isFrance(st.country) ? st.country : null), lat: st.lat ?? null, lng: st.lng ?? null} : null;
+/** Lieu d'un festival / d'une salle / d'un événement d'une structure, sélectionné : SES propres données (nom, « Lieu (si différent) »
+ *  repris comme adresse, ville ; la table structure_events n'a ni code postal ni coordonnées) — jamais l'adresse, le code postal,
+ *  la ville ni les coordonnées de l'organisateur (décisions du 07/11/2026). Département : celui de la structure seulement si
+ *  l'événement est indiqué dans la même ville qu'elle. */
+export function placeOfEvent(e){
+  if (!e) return null;
+  const st = byId('structures', e.structure_id), sp = placeOfStructure(st);
+  const sameCity = !!sp && !!e.city && norm(e.city) === norm(st.city || '');
+  return {venue: e.name, address: (e.place || '').trim() || null, postal_code: null, city: e.city || null, department: sameCity ? sp.department : null, lat: null, lng: null};
+}
+/** Lieu propre d'un suivi (null s'il n'en a pas : c'est alors la structure qui sert de repère) */
+export const placeOfSuivi = p => p && (p.venue || p.address || p.city) ? {venue: p.venue || null, address: p.address || null, postal_code: p.postal_code || null,
+  city: p.city || null, department: p.department || null, lat: p.lat ?? null, lng: p.lng ?? null} : null;
+/** Point de repère d'un suivi sur la carte : son lieu s'il est localisé, sinon sa structure */
+export function suiviCoords(p){
+  if (p?.lat != null && p?.lng != null) return [p.lat, p.lng];
+  if (placeOfSuivi(p)) return null;   // lieu propre pas encore localisé : jamais la ville de la structure à sa place
+  const st = byId('structures', p?.structure_id);
+  return st && st.lat != null && st.lng != null ? [st.lat, st.lng] : null;
+}
+/** Texte court d'un lieu : « Lieu · adresse, CP Ville » */
+export const placeText = pl => pl ? [pl.venue, [pl.address, [pl.postal_code, pl.city].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(' · ') : '';
 
 export const showLabel = s => s ? `${s.date ? s.date.split('-').reverse().join('/') : 'sans date'} · ${s.venue||'?'}${s.city && s.city!==s.venue ? ' ('+s.city+')' : ''}` : '';
 
 export function urgency(t){
   if (['Done','Cancelled'].includes(t.status)) return null;
+  // relance d'un contact lié uniquement à des structures inactives (v1.60.2) : suspendue, jamais « en retard » ni urgente
+  if (relanceTaskSuspended(t)) return {cls:'low', label:'Relance suspendue (structure inactive)', suspended:true};
   const d = daysUntil(t.deadline);
   if (d==null) return t.priority ? {cls:{'D-Day':'today',Critical:'crit',High:'high',Medium:'med',Low:'low'}[t.priority]||'med', label:PRIORITY_LABEL[t.priority]||t.priority} : null;
   if (d<0) return {cls:'late', label:`En retard de ${-d} j`};
@@ -164,6 +213,30 @@ export function linksOfContact(id){ return (byCol('contact_structures','contact_
 
 /** Structure fermée / inactive (v1.54) : gardée avec tout son historique, plus proposée par défaut */
 export const isInactive = st => !!st?.inactive_at;
+/**
+ * Contact rattaché UNIQUEMENT à des structures inactives (au moins une, aucune active) — demande d'Anthony (v1.60.2) : ses relances
+ * sont suspendues et il est tenu hors de la prospection, sans suppression ni désabonnement. Un contact lié à au moins une structure
+ * active reste prospectable ; un contact sans structure n'est pas concerné. Réactiver la structure rétablit tout (rien n'est enregistré).
+ */
+export const onlyInactive = c => { const l = c?.id ? linksOfContact(c.id) : []; return l.length > 0 && l.every(isInactive); };
+/** Adresses d'un champ « À » (nom <adresse>, virgules, points-virgules) */
+const addrsIn = v => (String(v || '').match(/[^\s<>,;"]+@[^\s<>,;"]+/g) || []).map(m => m.toLowerCase());
+/**
+ * Relances automatiques d'un suivi suspendues (v1.60.2) : tous ses destinataires reconnus (contacts retrouvés par l'une de leurs
+ * adresses dans le « À » du mail de prospection, sinon le contact du suivi) ne sont liés qu'à des structures inactives ; destinataire
+ * non reconnu (adresse libre, contact sans structure) : la structure du suivi est inactive. Calculé à l'affichage : réactiver la
+ * structure rétablit les relances, aucune tâche n'est modifiée ni supprimée.
+ */
+export function relancesSuspended(p){
+  if (!p || suiviClosed(p)) return false;
+  let who = contactsWithMail(addrsIn(p.mail_to));
+  if (!who.length && p.contact_id) who = [byId('contacts', p.contact_id)].filter(Boolean);
+  who = who.filter(c => linksOfContact(c.id).length);
+  return who.length ? who.every(onlyInactive) : isInactive(byId('structures', p.structure_id));
+}
+/** Tâche de relance automatique (mail J+10 ou téléphone) d'un suivi dont les relances sont suspendues */
+export const relanceTaskSuspended = t => !!t?.prospect_id && ['relance_mail', 'relance_tel'].includes(t.auto_kind) && !isDone(t)
+  && relancesSuspended(byId('prospects', t.prospect_id));
 /** Fonction d'un contact dans une structure donnée (contact_structures.role, v1.54) — à côté de ses fonctions générales */
 export const linkRole = (contactId, structureId) => (S.db.contact_structures.find(l => l.contact_id === contactId && l.structure_id === structureId)?.role) || '';
 export function linksOfStructure(id){ return (byCol('contact_structures','structure_id').get(id)||[]).map(l=>byId('contacts',l.contact_id)).filter(Boolean); }

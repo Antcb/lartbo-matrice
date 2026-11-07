@@ -7,7 +7,7 @@ import { go, render } from './app.js';
 import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
 import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
-import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure } from './forms.js';
+import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure, showPrefillFromSuivi } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showsFiltered, structName } from './selectors.js';
 import { CFG } from './config.js';
 import { propagateCommission } from './commission.js';
@@ -23,7 +23,7 @@ import { rtStyle, rtToolbar } from './ui/richtext.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
 import { exportShows } from './exports.js';
-import { callProspect, cancelAutoRelances, closeNoAnswer, deleteProspect, markLogSent, openProspection, prospectDeleteAsk, restoreRelances } from './prospection.js';
+import { callProspect, cancelAutoRelances, closeNoAnswer, deleteProspect, markLogSent, openProspection, prospectDeleteAsk, restoreRelances, setSuiviPlace } from './prospection.js';
 import { EMP_ACTIONS, editEmployee } from './views/employees.js';
 import { BUDGET_ACTIONS, confirmProvisionalCommission } from './budget-actions.js';
 
@@ -158,7 +158,7 @@ export const ACTIONS = {
     try { await navigator.clipboard.writeText(await (await fetch('apps-script/Code.gs?v=' + Date.now())).text()); toast('Code.gs copié : colle-le à la place de tout le contenu de Code.gs dans le script de production@, puis redéploie'); }
     catch (err) { toast('Copie impossible : ' + err.message, true); }
   },
-  testMainScript: async () => { try { const out = await callScript('ping', {}); toast(`Script Google OK (${out.account || 'compte Google'})`); } catch (err) { toast(err.message, true); } },
+  testMainScript: async () => { try { const out = await callScript('ping', {}); toast(`Script Google OK (${out.account || 'compte Google'}) · code ${out.version || 'antérieur à la v1.60.2 : à redéployer'}`); } catch (err) { toast(err.message, true); } },
   testProspectScript: async () => { try { const out = await callProspect('ping', {}); toast(`Script de prospection OK (${out.account || 'compte Google'})`); } catch (err) { toast(err.message, true); } },
   saveSignature: async t => { const key = t.dataset.key || 'prospect_signature', el = $('#' + (t.dataset.el || 'set-sig')); if (!el) return;
     const {error} = await sb.from('settings').upsert({key, value: el.innerHTML});
@@ -167,17 +167,19 @@ export const ACTIONS = {
     toast('Signature enregistrée'); },
   brevoSyncAll: async () => {
     const n = S.db.contacts.reduce((n, c) => n + new Set([c.email, c.email_2].filter(e => /@/.test(e || '')).map(e => e.trim().toLowerCase())).size, 0);
-    if (!(await confirmAsk('Envoyer les contacts dans Brevo ?', `Contacts de la Matrice avec un mail : ${n}. Seuls ceux qui ne sont pas encore dans Brevo sont ajoutés : les autres (et les désabonnés) ne sont pas touchés.`, 'Envoyer à Brevo'))) return;
+    if (!(await confirmAsk('Envoyer les contacts dans Brevo ?', `Contacts de la Matrice avec un mail : ${n}. Seuls ceux qui ne sont pas encore dans Brevo sont ajoutés : les autres (et les désabonnés) ne sont pas touchés. Les contacts liés uniquement à des structures inactives ne sont pas ajoutés.`, 'Envoyer à Brevo'))) return;
     toast('Envoi à Brevo…');
     try {
       // session de l'utilisateur (compte de l'équipe) au lieu du code secret du déclencheur (v1.47)
       const {data, error} = await sb.functions.invoke('brevo-sync', {body: {all: true}});
       const out = data || await error?.context?.json?.().catch(() => null) || {ok: false, error: 'Brevo injoignable pour le moment : réessaie dans un instant.'};
       if (!out.ok) throw new Error(out.error || 'Erreur Brevo');
-      toast(out.count ? `${out.count} nouveaux contacts envoyés : Brevo les importe (quelques minutes)` : 'Tous les contacts sont déjà dans Brevo');
+      // contacts liés uniquement à des structures inactives : pas ajoutés (v1.60.2), annoncés
+      const held = out.skipped_inactive ? ` · ${out.skipped_inactive} adresse${out.skipped_inactive > 1 ? 's' : ''} non ajoutée${out.skipped_inactive > 1 ? 's' : ''} (contacts liés uniquement à des structures inactives)` : '';
+      toast((out.count ? `${out.count} nouveaux contacts envoyés : Brevo les importe (quelques minutes)` : 'Aucun nouveau contact à ajouter dans Brevo') + held);
     } catch (err) { toast(err.message, true); }
   },
-  testScript: async () => { try { const out = await callScript('ping', {}); toast(`Script OK (${out.account||'compte Google'})`); } catch (err) { toast(err.message, true); } },
+  testScript: async () => { try { const out = await callScript('ping', {}); toast(`Script OK (${out.account||'compte Google'}) · code ${out.version || 'antérieur à la v1.60.2 : à redéployer'}`); } catch (err) { toast(err.message, true); } },
   driveScan: async t => { t.disabled = true; toast('Recherche des dossiers dans le Drive… (jusqu’à 1 min)');
     try { const out = await callScript('link_folders', {}); toast(`${out.linked} dossier${out.linked>1?'s':''} rattaché${out.linked>1?'s':''}`); const {loadAll} = await import('./data.js'); await loadAll(); render(); }
     catch (err) { toast(err.message, true); } t.disabled = false; },
@@ -357,7 +359,8 @@ export const ACTIONS = {
   wsClear: () => { S.wsTarget = null; render(); },
   wsShow: t => { const p = byId('prospects', t.dataset.id), st = byId('structures', p.structure_id);
     const fest = (st?.tags||[]).some(x=>/festival/i.test(x));
-    editShow(null, S.wsProject && projIds(p).includes(S.wsProject) ? S.wsProject : projIds(p)[0], {...showPrefillFromStructure(st), date:S.wsTarget||null, status: fest?'Option Festival':'Option Salle', prospect_id: p.id}); },
+    editShow(null, S.wsProject && projIds(p).includes(S.wsProject) ? S.wsProject : projIds(p)[0], {...showPrefillFromSuivi(p, st), date:S.wsTarget||null, status: fest?'Option Festival':'Option Salle', prospect_id: p.id}); },
+  suiviLieuClear: t => setSuiviPlace(t.dataset.id, null),
   wsTask: t => { const p = byId('prospects', t.dataset.id); editTask(null, {structure_id:p.structure_id, project_ids:projIds(p), department:'Booking', prospect_id:p.id}); },
   noAnswerClose: async t => { if (await confirmAsk('Clore le suivi ?', 'Pas de réponse au téléphone : la tâche est terminée et le suivi est clos (noté dans son journal).', 'Clore le suivi')) await closeNoAnswer(t.dataset.id); },
   rmProj: async (t, e) => { e.stopPropagation(); const tb = t.dataset.t || 'prospects', r = byId(tb, t.dataset.id); const ids = projIds(r).filter(x=>x!==t.dataset.p);
@@ -394,14 +397,23 @@ ${p.content_md||'(aucune)'}`;
   editLog: t => { const l = byId('prospect_logs', t.dataset.id);
     // un mail envoyé depuis la Matrice se modifie avec sa mise en forme
     const mail = !!l.body_html, head = String(l.body || '').split('\n\n')[0];
-    openModal({ title: `Échange du ${l.date ? fmtDate(l.date) : '—'}`, values: mail ? {...l, body: head} : l,
+    // mail tel qu'affiché à l'ouverture (avant un éventuel brouillon) : sert à savoir s'il a vraiment été modifié
+    let html0 = null;
+    const done = openModal({ title: `Échange du ${l.date ? fmtDate(l.date) : '—'}`, values: mail ? {...l, body: head} : l,
       fields:[{k:'date', label:'Date', type:'date'}, {k:'kind', label:'Type', type:'select', options:['Appel','Mail','RDV','Note'], blank:false}, {k:'contact_name', label:'Interlocuteur', full:true},
         {k:'body', label: mail ? 'En-tête (objet, artistes…)' : 'Notes', type:'textarea', full:true, rows: mail ? 3 : 10}],
       extra: mail ? `<div class="field full"><label>Mail</label>${rtToolbar('log-html')}<div class="mail-preview" id="log-html" contenteditable="true" style="${rtStyle()}">${safeHtml(l.body_html)}</div></div>` : '',
       onSave: async v => {
-        if (mail){ const html = document.querySelector('#modal #log-html').innerHTML, div = document.createElement('div'); div.innerHTML = html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p)>/gi, '\n');
-          v.body_html = html; v.body = (v.body || '') + '\n\n' + div.textContent.replace(/\n{3,}/g, '\n\n').trim(); }
-        await save('prospect_logs', l.id, v, {rerender:false}); } }); },
+        if (mail){ const html = document.querySelector('#modal #log-html').innerHTML;
+          // règle d'Anthony (22/10/2026) : changer la date, le type ou l'interlocuteur ne réenregistre pas le mail non modifié
+          const htmlChanged = html !== html0, headChanged = (v.body ?? null) !== (head.trim() || null);
+          if (!htmlChanged && !headChanged) delete v.body;
+          else { const div = document.createElement('div'); div.innerHTML = html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p)>/gi, '\n');
+            if (htmlChanged) v.body_html = html;
+            v.body = (v.body || '') + '\n\n' + div.textContent.replace(/\n{3,}/g, '\n\n').trim(); } }
+        await save('prospect_logs', l.id, v, {rerender:false}); } });
+    if (mail) html0 = document.querySelector('#modal #log-html')?.innerHTML ?? null;
+    return done; },
   // brouillon de prospection / relance envoyé depuis Gmail : noté « envoyé » à la main
   markLogSent: async t => { await markLogSent(t.dataset.id); },
   createArtistFolder: t => createArtistFolder(t.dataset.id),

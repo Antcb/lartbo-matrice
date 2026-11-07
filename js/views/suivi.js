@@ -9,7 +9,7 @@
 import { LOG_ICON, LOG_KINDS, PROSPECT, PROSPECT_LABEL, PROSPECT_OPTS, isOff, stColor } from '../constants.js';
 import { lingering, summaryRetryAt } from '../data.js';
 import { distKm, routeCached, route } from '../geo.js';
-import { suiviClosed, projFilterOk, byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, projIds, projName, projNames, projectOptions, showCoords, showsOfProject, structName } from '../selectors.js';
+import { suiviClosed, projFilterOk, byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, placeOfSuivi, placeText, projIds, projName, projNames, projectOptions, showCoords, showPlace, showPlaceNote, showsOfProject, structName, suiviCoords } from '../selectors.js';
 import { ENV } from '../config.js';
 import { S, localDel, localGet, localSet } from '../state.js';
 import { inactiveToggle, dropZone, fileRow, fold, projPicker, stSelect, pstBadge, stBadge, tabsBar, curTab, viewHead } from '../ui/bits.js';
@@ -169,11 +169,22 @@ function suiviPage(p){
     <div class="field"><label>Structure</label>${cAc('structures','prospects',p.id,'structure_id',p.structure_id,{create:true, activeOnly:true, placeholder:'Chercher ou créer la structure (salle, festival…)'})}</div>
     <div class="field"><label>Contacts de la structure</label><div class="proj-chips">${contacts.map(c=>`<a href="#" class="chip" data-act="editContact" data-id="${c.id}" style="padding-right:10px">${esc(c.display_name)}</a>`).join('')}
       ${st?`<button type="button" class="btn sm" data-act="newContactFor" data-id="${st.id}">+ Contact</button>`:'<span class="muted">Choisis la structure</span>'}</div></div>
+    ${lieuField(p)}
   </div>
   <div class="workspace">
     <div>${suiviCard(p, {page:true})}</div>
     <aside class="side">${sidePanel(p, st, proj, linked)}</aside>
   </div>`;
+}
+
+/** Lieu du suivi (v1.60.2) : salle, festival ou adresse, si le concert n'a pas lieu à la structure suivie ; la carte part de ce lieu */
+function lieuField(p){
+  const pl = placeOfSuivi(p), lieuTxt = pl ? (pl.venue || pl.address || pl.city) : '';
+  return `<div class="field"><label>Lieu du concert (si différent de la structure)</label>
+    ${acInput('lieuxAdr', {value: lieuTxt, text: lieuTxt, attrs: `data-suivi-lieu="${p.id}" aria-label="Lieu du concert"`, placeholder: 'Chercher une salle, un festival ou une adresse…'})}
+    ${pl ? `<p class="help mb-sm">${esc(placeText(pl))}${pl.lat == null ? ' · <span class="warn-txt">non localisé : choisis le lieu ou son adresse dans la liste</span>' : ''}
+      <button type="button" class="btn sm ghost" data-act="suiviLieuClear" data-id="${p.id}">Retirer le lieu</button></p>`
+      : '<p class="help mb-sm">Sans lieu choisi, la carte part de la structure.</p>'}</div>`;
 }
 
 const addD = addDays, addY = (d, n) => addMonths(d, 12 * n);   // fonctions officielles (§1.6) : 29/02 + 1 an → 28/02
@@ -193,7 +204,8 @@ function sidePanel(p, st, proj, linked){
   if (!ids.length) return linkedHTML + `<div class="panel pad"><p class="muted m0">Ajoute l'artiste concerné (+ Projet) pour voir son planning et ses dates autour.</p></div>`;
   const target = S.wsTarget;
   const R = S.wsRadius ?? 200;
-  const here = st && st.lat!=null ? [st.lat, st.lng] : null;
+  // repère de la carte (v1.60.2) : le lieu choisi pour ce suivi, sinon la structure
+  const here = suiviCoords(p), pl = placeOfSuivi(p);
   const shows = showsOfProject(proj).filter(s => s.date && !isOff(s.status)).sort((a,b)=>a.date.localeCompare(b.date));
   const now = today();
   // ±5 jours autour de la date, partout dans le monde
@@ -203,13 +215,13 @@ function sidePanel(p, st, proj, linked){
   const inRadius = here ? shows.filter(s => s.date >= now && s.date <= until && !around.includes(s) && showCoords(s) && distKm(here, showCoords(s)) <= R) : [];
   const shown = target ? [...around, ...inRadius] : shows.filter(s => s.date >= now && s.date <= until);
   const pts = shown.map(s => { const c = showCoords(s); return c && {lat:c[0], lng:c[1], color:stColor(s.status), big:(s.status||'').startsWith('Confirmée'), showId:s.id, from: here,
-    label:`<b>${esc(s.venue)}</b><br>${fmtDate(s.date)} — ${esc(s.city||'')}<br>${esc(s.status)}`}; }).filter(Boolean);
-  if (here) pts.push({lat:here[0], lng:here[1], color:'#FFFFFF', ring:true, big:true, label:`<b>${esc(st.name)}</b><br>Date en négociation${target?' : '+fmtDate(target):''}`});
+    label:`<b>${esc(s.venue)}</b><br>${fmtDate(s.date)} — ${esc(s.city||'')}<br>${esc(s.status)}${showPlaceNote(s) ? `<br><span class="warn-txt">${esc(showPlaceNote(s))}</span>` : ''}`}; }).filter(Boolean);
+  if (here) pts.push({lat:here[0], lng:here[1], color:'#FFFFFF', ring:true, big:true, label:`<b>${esc(pl?.venue || pl?.address || st?.name || '')}</b>${pl && st ? `<br>${esc(st.name)}` : ''}<br>Date en négociation${target?' : '+fmtDate(target):''}`});
   setMapData({points: pts, key:`ws|${p.id}|${proj}|${target}|${R}`, circle: here && target ? {center: here, km: R} : null,
     fitTo: here ? [here, ...pts.map(x=>[x.lat,x.lng])] : null, zoom:7});
   // distances routières en arrière-plan pour les listes
   if (here){ const todo = shown.filter(s => showCoords(s) && !routeCached(here, s)).slice(0, 25);
-    if (todo.length) Promise.all(todo.map(s=>route(here, s))).then(()=>{ if (S.suiviPage===p.id){ const el = $('#ws-lists'); if (el) el.innerHTML = lists(around, inRadius, here, target, R, until); } }); }
+    if (todo.length) Promise.all(todo.map(s=>route(here, s))).then(()=>{ if (S.suiviPage===p.id){ const el = $('#ws-lists'); if (el) el.innerHTML = lists(around, inRadius, here, target, R, until, !!pl); } }); }
   const busy = target ? shows.filter(s => s.date <= target && (s.date_end||s.date) >= target && !(s.structure_id===p.structure_id)) : [];
   return linkedHTML + `
     ${ids.length>1 ? `<div class="seg" role="tablist">${ids.map(id=>`<button class="btn ${id===proj?'on':''}" data-act="wsProject" data-id="${id}" aria-pressed="${id===proj}">${esc(projName(id))}</button>`).join('')}</div>` : ''}
@@ -224,7 +236,7 @@ function sidePanel(p, st, proj, linked){
                : '<p class="help mt-sm">Indique la date demandée : la carte montre ses dates 5 jours avant / après, et celles dans le rayon jusqu’à un an après.</p>'}
     </div>
     <div class="map-box"><div id="map-slot" role="region" aria-label="Carte des dates de l'artiste"></div></div>
-    ${target ? `<div id="ws-lists">${lists(around, inRadius, here, target, R, until)}</div>` : ''}
+    ${target ? `<div id="ws-lists">${lists(around, inRadius, here, target, R, until, !!pl)}</div>` : ''}
     <div class="panel pad"><h3 class="block-title">Planning de ${esc(projName(proj))} <span class="muted" style="font-weight:500">${target?'45 jours autour de la date':'12 prochains mois'}</span></h3>
       <div class="planning">${(target ? shows.filter(s => Math.abs(daysBetween(target, s.date)) <= 45) : shows.filter(s => s.date >= now && s.date <= until)).map(s => `<div class="plan-row ${target && Math.abs(daysBetween(target, s.date))<=2 ? 'target':''}" data-act="editShow" data-id="${s.id}" style="cursor:pointer">
           <span class="d">${period(s)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span>${s.fee_ht?` <span class="fee-tag">${eur(s.fee_ht)} HT</span>`:''}</span>${stSelect(s)}</div>`).join('') || '<p class="muted">Aucune date sur cette période.</p>'}</div>
@@ -232,13 +244,14 @@ function sidePanel(p, st, proj, linked){
 }
 
 function distCell(s, here){
-  const c = showCoords(s); if (!c) return '<span class="muted">non localisée</span>';
+  // localisation de la date (07/11/2026) : manquante signalée ; héritée de la structure : distance donnée, « lieu à confirmer »
+  const {coords: c, state} = showPlace(s); if (!c) return '<span class="warn-txt">localisation manquante</span>';
   if (!here) return '';
-  const r = routeCached(here, s);
-  return r && !r.error ? `<b>${r.km} km</b><br><span class="muted">${r.time}</span>` : `${Math.round(distKm(here, c))} km<br><span class="muted">à vol d'oiseau</span>`;
+  const r = routeCached(here, s), tbc = state === 'inherited' ? '<br><span class="warn-txt">lieu à confirmer</span>' : '';
+  return (r && !r.error ? `<b>${r.km} km</b><br><span class="muted">${r.time}</span>` : `${Math.round(distKm(here, c))} km<br><span class="muted">à vol d'oiseau</span>`) + tbc;
 }
 
-function lists(around, inRadius, here, target, R, until){
+function lists(around, inRadius, here, target, R, until, ownPlace=false){
   const row = s => { const d = daysBetween(target, s.date);
     return `<li><span>${stBadge(s.status)} <b>${esc(s.venue)}</b> · ${esc(s.city||'')}<br><span class="muted">${period(s)} ${s.date.slice(0,4)} (${d===0?'même jour':d>0?'J+'+d:'J'+d})${s.fee_ht?' · '+eur(s.fee_ht)+' HT':''}</span></span>
       <span class="num" style="text-align:right">${distCell(s, here)}</span></li>`; };
@@ -246,7 +259,8 @@ function lists(around, inRadius, here, target, R, until){
       ${around.length ? `<ul>${around.map(row).join('')}</ul>` : '<p class="muted m0">Aucune date entre le '+fmtDate(addD(target,-5))+' et le '+fmtDate(addD(target,5))+'.</p>'}
     </div>
     <div class="panel pad near-list"><h3 class="block-title">Dans un rayon de ${R} km jusqu’au ${fmtDate(until)} <span class="count">${inRadius.length}</span></h3>
-      ${!here ? '<p class="muted m0">Cette structure n’a pas de ville localisée : ajoute son adresse dans la fiche structure.</p>'
+      ${!here ? (ownPlace ? '<p class="muted m0">Le lieu de ce suivi n’est pas localisé : choisis-le ou choisis son adresse dans la liste « Lieu du concert ».</p>'
+          : '<p class="muted m0">Cette structure n’a pas de ville localisée : ajoute son adresse dans la fiche structure.</p>')
         : inRadius.length ? `<ul>${inRadius.map(row).join('')}</ul>` : '<p class="muted m0">Aucune date dans ce rayon sur la période.</p>'}
     </div>`;
 }
