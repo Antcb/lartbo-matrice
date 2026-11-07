@@ -346,6 +346,13 @@ function coprodBlock(s){
   const legacy = closed && !('artbo_loss_share' in x);
   const loss = (x.shared_result ?? x.result) < 0, pA = loss && !legacy ? x.artbo_loss_share : x.artbo_share;
   const pctTxt = v => v == null ? '% non renseigné' : esc(fmtPct(v)) + (loss && legacy ? ', % appliqué à la clôture' : '');
+  // promotion locale : prévue dès qu'un % est saisi (v1.60.3) — le montant réel reste à 0 tant que les billets vendus ne sont pas
+  // saisis, ce qui ne veut pas dire « aucune promotion locale » (retour d'Anthony du 07/11/2026)
+  const promoPlanned = !!(Number(k.r.p.promo_net_pct) || Number(k.r.p.promo_dl_pct)), promoShown = closed ? !!x.promo : promoPlanned || !!k.r.promo;
+  const realMissing = !k.r.p.tickets.length || k.r.p.tickets.some(t => t.real_qty == null || t.real_qty === '');
+  const promoAmt = closed || !realMissing ? eur2(x.promo) : `prévue ${eur2(productionBudget(s).promo)} ; réel calculé quand les billets vendus seront saisis`;
+  // reversement provisoire tant qu'un paiement ou un encaissement nécessaire manque (demande d'Anthony du 07/11/2026)
+  const prov = !closed && k.provisional;
   return `<div class="coprod-block">
     <h4 class="block-title">Clôture du résultat ${closed ? '<span class="ok-badge">clôturé</span>' : ''}</h4>
     <div class="steps prod-params">
@@ -353,10 +360,10 @@ function coprodBlock(s){
     </div>
     ${coprodReceiptsTable(s, closed)}
     <div class="steps prod-params"><label>Recettes de billetterie encaissées le</label>${closed ? `<span>${x.receipts_cashed_at ? fmtDate(x.receipts_cashed_at) : '—'}</span>` : dateInput(k.r.p.receipts_cashed_at, `data-prod-show="${s.id}" data-prod-path="receipts_cashed_at"`)}</div>
-    ${!k.r.promo && !x.promo ? '<p class="muted small">Aucune promotion locale.</p>' : ''}
+    ${!promoShown ? '<p class="muted small">Aucune promotion locale.</p>' : ''}
     ${x.promo_advance ? `<p class="muted small">Dont avance de promotion locale : ${eur2(x.promo_advance)} payés par ${x.promo_payer === 'artbo' ? 'L’ArtBo' : 'le coproducteur'} pour le compte de ${x.promo_debtor === 'artbo' ? 'L’ArtBo' : 'le coproducteur'} (comptée une seule fois).</p>` : ''}
-    ${k.r.promo || x.promo ? `<div class="steps prod-params">
-      <label>Promotion locale (${eur2(x.promo)}) : à la charge de</label>${closed ? `<span>${esc((PROMO_DEBTORS.find(d => d[0] === x.promo_debtor) || [, '—'])[1])}</span>` : prodSel(s, 'promo_debtor', k.r.p.promo_debtor, PROMO_DEBTORS)}
+    ${promoShown ? `<div class="steps prod-params">
+      <label>Promotion locale (${promoAmt}) : supportée par</label>${closed ? `<span>${esc((PROMO_DEBTORS.find(d => d[0] === x.promo_debtor) || [, '—'])[1])}</span>` : prodSel(s, 'promo_debtor', k.r.p.promo_debtor, PROMO_DEBTORS)}
       <label>Payée par</label>${closed ? `<span>${esc((PROMO_PAYERS.find(d => d[0] === x.promo_payer) || [, '—'])[1])}</span>` : prodSel(s, 'promo_payer', k.r.p.promo_payer, PROMO_PAYERS)}
       <label>Payée le</label>${closed ? `<span>${x.promo_paid_at ? fmtDate(x.promo_paid_at) : '—'}</span>` : dateInput(k.r.p.promo_paid_at, `data-prod-show="${s.id}" data-prod-path="promo_paid_at"`)}
     </div>` : ''}
@@ -372,9 +379,10 @@ function coprodBlock(s){
       ${x.extra_receipts ? row('Recettes complémentaires encaissées par L’ArtBo', x.cashed_artbo) + row('Recettes complémentaires encaissées par le coproducteur', x.cashed_partner) : ''}
       ${row('Dépenses payées par L’ArtBo (promotion locale comprise si elle l’a payée)', -x.paid_artbo)}
       ${row('Dépenses payées par le coproducteur', -x.paid_partner)}
-      <tr class="bill-total"><td><b>Reversement</b></td><td class="num nowrap">${x.from ? `<b>${eur2(x.transfer)}</b>` : 'aucun'}</td></tr>
+      <tr class="bill-total"><td><b>Reversement</b>${prov ? ' <span class="warn-badge">provisoire</span>' : ''}</td><td class="num nowrap">${x.artbo_part == null ? '<span class="warn-txt">information manquante</span>' : x.from ? `<b>${eur2(x.transfer)}</b>` : 'aucun'}</td></tr>
     </tbody></table></div>
-    ${x.from ? `<p>${side(x.from)} reverse <b>${eur2(x.transfer)}</b> à ${side(x.to)}${x.to ? ` ; ${side(x.to)} facture ${side(x.from)} (facture à préparer à la main)` : ''}.</p>` : ''}
+    ${prov ? `<p class="warn-txt small">Reversement provisoire : à renseigner — ${k.pending.map(esc).join(', ')}. Rien n’est présumé payé ni encaissé ; le montant peut encore changer.</p>` : ''}
+    ${x.from ? `<p>${prov ? 'Estimation provisoire : ' : ''}${side(x.from)} reverse <b>${eur2(x.transfer)}</b> à ${side(x.to)}${x.to ? ` ; ${side(x.to)} facture ${side(x.from)} (facture à préparer à la main)` : ''}.</p>` : ''}
     ${closed ? `<div class="steps prod-params"><label>Reversement payé le</label>${cIn('shows', s.id, 'reversement_paid_at', s.reversement_paid_at, 'date')} <span class="muted">${s.reversement_paid_at ? '' : 'pas encore payé'}</span></div>` : ''}
     <div class="vh-actions mt-sm">${closed ? `<button class="btn sm" data-act="reopenResult" data-id="${s.id}">Rouvrir le résultat</button>`
       : `<button class="btn sm primary" data-act="closeResult" data-id="${s.id}" ${k.ok ? '' : 'disabled title="Corrige d’abord les points ci-dessus"'}>Clôturer le résultat</button>`}</div>
@@ -494,6 +502,7 @@ export function productionBudgetHTML(s){
       <tr><td>Coûts de production HT</td><td></td>${two(-f.costs, -r.costs)}</tr>
       <tr><td>Promo locale (sur la recette nette)</td><td class="num">${pin(s, 'promo_net_pct', p.promo_net_pct, 'class="narrow"')} %</td><td colspan="2"></td></tr>
       <tr><td>Promo locale (sur les DL)</td><td class="num">${pin(s, 'promo_dl_pct', p.promo_dl_pct, 'class="narrow"')} %</td>${two(-f.promo, R(-r.promo))}</tr>
+      ${s.contract_type === 'Co-Production' ? `<tr><td>Promo locale supportée par <span class="muted">(selon le contrat ; distinct de qui la paie et de qui encaisse la billetterie, notés à la clôture)</span>${f.promo && !p.promo_debtor ? ' <span class="warn-txt">Non renseigné</span> <span class="muted">: comptée pour l’instant dans le résultat partagé</span>' : ''}</td><td colspan="3">${prodSel(s, 'promo_debtor', p.promo_debtor, PROMO_DEBTORS)}</td></tr>` : ''}
       ${f.extra ? `<tr><td>Recettes complémentaires de coproduction (lignes de Factures qualifiées)</td><td></td>${two(f.extra, R(r.extra))}</tr>` : ''}
       <tr><td><b>Résultat hors DL</b></td><td></td>${two(f.result, R(r.result), 'strong')}</tr>
       <tr class="bill-total"><td><b>Résultat DL inclus</b></td><td></td>${two(f.resultDl, R(r.resultDl), 'strong')}</tr>
