@@ -179,11 +179,18 @@ export function changeBlocked(table, id, patch){
   if (table === 'show_payments'){ const why = closedReceiptLock(byId('show_payments', id), patch); if (why) return why; }
   if (patch === null){
     if (table === 'show_payments' && !counted(byId('show_payments', id))) return 'Ligne hors calcul (gardée pour la traçabilité) : elle ne se supprime pas.';
+    // suppression d'une date (v1.60.3) : mêmes refus, mêmes textes et même ordre que la base (show_deletion_state, migration v1.60.3)
+    if (table === 'shows' && byId('shows', id)?.result_closed_at) return 'Le résultat de cette date est clôturé : rouvre-le d’abord (bouton « Rouvrir », avec un motif), puis supprime la date.';
     if (table === 'shows' && allPaymentsOf(id).some(p => !counted(p))) return 'Cette date garde des lignes hors calcul (traçabilité) : elle ne se supprime pas.';
     if (table === 'show_payments'){ const why = billLockReason(byId('show_payments', id)); return why && why.replace('ne se modifie plus', 'ne se supprime pas').replace('ne peuvent plus changer', 'ne se suppriment plus'); }
     // comme la base : lors de la suppression en chaîne, la date n'existe plus pour le déclencheur, qui applique la définition
     // complète — une commission de production numérotée (historique) empêche donc aussi la suppression de sa date
     if (table === 'shows' && hasFinancialRecord(id)) return 'Cette date a des factures émises : elle ne se supprime pas (ses factures et son budget seraient effacés avec elle).';
+    if (table === 'shows'){ const s = byId('shows', id), n = S.db.pennylane_a_rattacher.filter(r => r.show_id === id).length;
+      if (filled(s?.pennylane_quote_id) || filled(s?.pennylane_quote_url) || allPaymentsOf(id).some(p => filled(p.pennylane_url)))
+        return 'Cette date est liée à un document Pennylane (devis ou facture) : elle ne se supprime pas (rien n’est jamais supprimé dans Pennylane, le document resterait sans sa date).';
+      if (n) return `Cette date a ${n} facture${n > 1 ? 's' : ''} Pennylane connue${n > 1 ? 's' : ''} de la synchronisation (à rattacher, rattachée ou annulée) : elle ne se supprime pas.`;
+      if (S.db.pennylane_rattachements.some(r => r.show_id === id)) return 'Cette date a un historique de rattachement de factures Pennylane : elle ne se supprime pas (traçabilité).'; }
     // pièces gardées « à rattacher » : la date ne se supprime pas tant qu'elles n'ont pas été rattachées (décision d'Anthony du 25/10)
     if (table === 'shows'){ const n = piecesToAttach(byId('shows', id)).length;
       if (n) return `Cette date a ${n} pièce${n > 1 ? 's' : ''} à rattacher (onglet Factures) : rattache-${n > 1 ? 'les' : 'la'} avant de supprimer la date.`; }
