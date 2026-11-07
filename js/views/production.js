@@ -14,7 +14,7 @@ import { dateInput } from '../ui/datefield.js';
 import { esc, eur2, fmtDate, matches, today, pct } from '../utils.js';
 import { coreaCommissionCheck, payerLabel } from '../budget.js';
 import { commissionPctOf, isCorea } from '../corea.js';
-import { commissionTransferCell, productionBudgetHTML, projectBudgetHTML, showBudgetHTML } from './budget.js';
+import { commissionTransferCell, productionBudgetHTML, projectBudgetHTML, showBudgetHTML, textBreakHint } from './budget.js';
 import { isProductionShow } from '../production-budget.js';
 
 const vatWarn = s => vatConflict(s) ? ' <span class="warn-txt small">Structure administrative de l’artiste non soumise à la TVA : à vérifier (TTC = HT)</span>' : '';
@@ -195,7 +195,7 @@ function coreaBookingBlock(s){
     <h4 class="block-title">Coréalisation : part du résultat</h4>
     <div class="steps">
       <label>MG HT (cachet)</label><b>${eur2(mg)}</b>
-      <label>Break contractuel (billets)</label>${cIn('shows', s.id, 'break_even', s.break_even, 'number', 'class="narrow"')}
+      <label>Break contractuel (billets)</label><span>${cIn('shows', s.id, 'break_even', s.break_even, 'number', 'class="narrow" aria-label="Break contractuel (billets)"')}${textBreakHint(s)}</span>
       <label>Part du résultat HT revenant à l’artiste</label><input type="number" step="any" inputmode="decimal" class="narrow" data-corea-show="${s.id}" data-corea-path="booking_share" value="${esc(c.booking_share ?? '')}" placeholder="0 si break non dépassé">
       <label>Part validée</label><span>${validated == null ? '<b>pas encore validée</b>' : `<b>${eur2(validated)}</b>${c.share_validated_at ? ` <span class="muted">le ${fmtDate(c.share_validated_at)}${c.share_validated_by ? ' par ' + esc(c.share_validated_by) : ''}</span>` : ''}`}${stale ? ' <span class="warn-txt">part modifiée depuis la validation : à valider de nouveau</span>' : ''}</span>
       <label>Commission (${esc(pct(rate))})</label><span>${validated == null

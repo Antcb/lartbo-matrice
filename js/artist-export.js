@@ -2,7 +2,7 @@
  * Export du budget d'une date pour l'artiste (ex. Pipi pour The Locos) : une page claire, prête à imprimer
  * ou à enregistrer en PDF — cachet, commission, chaque dépense, ce qui reste pour l'artiste et ce qui lui a été versé.
  */
-import { commissionAmount, commissionOf, isSolde, lineValue, showBudget } from './budget.js';
+import { commissionAmount, commissionOf, isSolde, lineValue, missingCostLines, missingCostText, showBudget } from './budget.js';
 import { artistResult } from './views/budget.js';
 import { byId, showCommissionPct } from './selectors.js';
 import { commissionState } from './calc.js';
@@ -15,7 +15,7 @@ export function exportArtistBudget(showId){
   const cst = com ? commissionState(com) : null, pctN = com?.pct != null && String(com.pct).trim() !== '' ? Number(com.pct) : showCommissionPct(s);
   const comPct = Math.abs(Math.round(b.gross * pctN) / 100 - commissionAmount(s)) < 0.005 ? String(pctN) : '';   // base : MG + part validée (coréalisation, v1.51)
   const artist = (p?.name || '').replace(/\s*•.*$/, ''), who = p?.artist_payee || artist;
-  const exp = b.lines.filter(l => !isSolde(l) && Math.abs(lineValue(l)) >= 0.005);
+  const exp = b.lines.filter(l => !isSolde(l) && Math.abs(lineValue(l)) >= 0.005), unknown = missingCostLines(s.id);
   const CAT = {Staff: 'Salaires', Movinmotion: 'Frais de paie (Movinmotion)', Taxes: 'Taxes'};
   const row = l => `<tr><td>${esc(CAT[l.category] || l.category || '')}</td><td>${esc(l.label || '')}${l.supplier ? ` <span class="m">· ${esc(l.supplier)}</span>` : ''}</td>
     <td class="n">${eur2(lineValue(l))}${l.amount == null ? ' <span class="m">(prévu)</span>' : ''}</td></tr>`;
@@ -59,6 +59,7 @@ export function exportArtistBudget(showId){
   <h2>Le résultat</h2>
   <table><tbody>
     <tr class="big"><td><b>Reste pour ${esc(who)}</b><div class="m">${b.share ? 'MG + part du résultat' : 'cachet'} − commission − dépenses</div></td><td class="n"><b>${eur2(r.reste)}</b></td></tr>
+    ${unknown.length ? `<tr><td colspan="2"><b>${esc(missingCostText(unknown))}</b><div class="m">ces coûts ne sont pas encore comptés : le reste n’est pas définitif</div></td></tr>` : ''}
     ${paid.map(l => `<tr><td>Versé${l.paid_at ? ' le ' + esc(fmtDate(l.paid_at)) : ''}${l.supplier ? ' à ' + esc(l.supplier) : ''}</td><td class="n">${eur2(l.amount)}</td></tr>`).join('')
       || (todo.length ? '' : `<tr><td class="m" colspan="2">Versement pas encore effectué.</td></tr>`)}
     ${todo.map(l => `<tr><td>À verser${l.supplier ? ' à ' + esc(l.supplier) : ''}</td><td class="n">${eur2(l.amount)}</td></tr>`).join('')}
