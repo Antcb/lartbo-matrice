@@ -85,35 +85,42 @@ test.describe('écran tactile', () => {
 });
 
 const T = { mus_n: 4, multi_n: 1, tech_n: 2, mus_small: 250, mus_small_brut: 160, mus_large: 320, multi_small: 300, multi_large: 380, tech: 290, peage: 40 };
-test('v1.60.3 budget d’une date : lignes de cachets sur trois lignes au plus (au lieu de 4 à 7), aucun défilement horizontal à 1 280 et 1 440 px', async ({ page }) => {
+// « Garde trois lignes pour les cachets, sans imposer de défilement horizontal sur grand écran » (Anthony, 07/11/2026). La mise en page
+// ne doit pas dépendre des métriques de la police (Geist chez Anthony, police de repli sur le serveur de tests) : vérifiée avec la
+// police par défaut ET avec DejaVu Sans forcée (plus large), à 1 280 et 1 440 px, avec une marge d'au moins 40 px sur la largeur
+// minimale du tableau. Le total de « quantité × coût » passe dessous quand la place manque ; « quantité × coût » lui-même seulement
+// en dernier recours (jamais à 1 440 px).
+for (const police of [null, 'DejaVu Sans']) test(`v1.60.3 budget d’une date : cachets sur trois lignes au plus, aucun défilement horizontal à 1 280 et 1 440 px (police ${police || 'par défaut'})`, async ({ page }) => {
   const ctx = await openApp(page);
+  if (police) await page.addStyleTag({ content: `*{font-family:'${police}' !important}` });   // test seulement : police de repli plus large
   await seed(page, { spectacles: [{ id: 'sp-jp', project_id: 'art-a', name: 'Jeune public', active: true, budget_template: T, sort: 1 }], shows: [
     { id: 'sv-1', project_id: 'art-a', spectacle_id: 'sp-jp', venue: 'Salle', capacity: 300, status: 'Confirmée Salle', contract_type: 'Cession', prod_mode: 'production', date: `${Y}-12-01`, fee_ht: 3000 }] });
   await page.evaluate(async () => { const t = await import('./js/budget-template.js'); const { byId } = await import('./js/selectors.js'); await t.applyTemplate(byId('shows', 'sv-1'), { quiet: true });
     const { S } = await import('./js/state.js'); const a = await import('./js/app.js'); S.openProd.add('sv-1'); S.tab['prod:sv-1'] = 'budget'; a.go('production'); });
-  const rows = await page.locator('#prod-sv-1 .budget-table tr[data-budget-line]').evaluateAll(l => l.map(r => {
-    const ta = r.querySelector('td.bl-label textarea'), lh = parseFloat(getComputedStyle(ta).lineHeight);
-    return { label: ta.value.slice(0, 30), lignes: Math.round((ta.scrollHeight - 8) / lh) }; }));
-  const mus = rows.find(r => /^Cachets musiciens/.test(r.label));
-  expect(mus, 'ligne des musiciens (jauge + brut indicatif)').toBeTruthy();
-  // avant : 4 lignes à 1 440 px, 7 à 1 280 px ; deux lignes demanderaient d'élargir le tableau (défilement horizontal à 1 440 px)
-  expect(Math.max(...rows.map(r => r.lignes)), JSON.stringify(rows)).toBeLessThanOrEqual(3);
-  expect(await page.evaluate(() => { const w = document.querySelector('#prod-sv-1 .budget-table').closest('.tbl-wrap'); return w.scrollWidth - w.clientWidth; }), 'tableau sans défilement horizontal à 1 440 px').toBeLessThanOrEqual(0);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);
-  // 1 280 px : « Garde trois lignes pour les cachets, sans imposer de défilement horizontal sur grand écran » (Anthony, 07/11/2026) :
-  // avant, 1 265 px de contenu pour 1 196 px de cadre ; le total de « quantité × coût » passe désormais sous la quantité quand la place manque
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await page.evaluate(async () => (await import('./js/app.js')).render());
-  expect(await page.evaluate(() => { const w = document.querySelector('#prod-sv-1 .budget-table').closest('.tbl-wrap'); return w.scrollWidth - w.clientWidth; }), 'tableau sans défilement horizontal à 1 280 px').toBeLessThanOrEqual(0);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1280);
-  // « quantité × coût » jamais coupé, total lisible et aligné à droite dans sa case
-  const qty = await page.locator('#prod-sv-1 .budget-table .qty-line').evaluateAll(l => l.map(q => { const [n, x, u] = [...q.querySelectorAll('.qty-mul > *')].map(e => e.getBoundingClientRect());
-    const b = q.querySelector('b').getBoundingClientRect(), td = q.closest('td').getBoundingClientRect();
-    return { uneLigne: Math.abs(n.top - u.top) < 2 && Math.abs(n.top - x.top) < 12, totalDansLaCase: b.width > 0 && b.right <= td.right + 0.5 && b.left >= td.left - 0.5 }; }));
-  expect(qty.length, 'lignes quantité × coût présentes').toBeGreaterThan(0);
-  expect(qty.every(q => q.uneLigne && q.totalDansLaCase), JSON.stringify(qty)).toBe(true);
-  const l1280 = await page.locator('#prod-sv-1 .budget-table td.bl-label textarea').evaluateAll(l => Math.max(...l.map(ta => Math.round((ta.scrollHeight - 8) / parseFloat(getComputedStyle(ta).lineHeight)))));
-  expect(l1280).toBeLessThanOrEqual(3);
+  const mesure = () => page.evaluate(() => {
+    const w = document.querySelector('#prod-sv-1 .budget-table').closest('.tbl-wrap'), t = w.querySelector('table');
+    const lignes = [...t.querySelectorAll('td.bl-label textarea')].map(ta => Math.round((ta.scrollHeight - 8) / parseFloat(getComputedStyle(ta).lineHeight)));
+    const qty = [...t.querySelectorAll('.qty-line')].map(q => { const [n, , u] = q.querySelectorAll('.qty-mul > *'), b = q.querySelector('b'), td = q.closest('td');
+      const R = e => e.getBoundingClientRect();
+      return { uneLigne: Math.abs(R(n).top - R(u).top) < 2, dansLaCase: R(b).width > 0 && R(b).right <= R(td).right + 0.5 && R(q).left >= R(td).left - 0.5 && R(q).right <= R(td).right + 0.5 }; });
+    // largeur minimale du tableau, libellé gardé à sa largeur réelle (trois lignes), tout le reste replié s'il le peut :
+    // marge de sécurité face aux polices
+    t.classList.add('mesure-min'); const st = document.createElement('style'); document.head.append(st);
+    st.textContent = `.mesure-min{width:min-content!important} .mesure-min td.bl-label{min-width:${t.querySelector('td.bl-label').getBoundingClientRect().width}px!important}`;
+    const min = Math.ceil(t.getBoundingClientRect().width); st.remove(); t.classList.remove('mesure-min');
+    return { client: w.clientWidth, depasse: w.scrollWidth - w.clientWidth, page: document.documentElement.scrollWidth, min, lignes: Math.max(...lignes), qty }; });
+  for (const W of [1440, 1280]) {
+    await page.setViewportSize({ width: W, height: 900 });
+    await page.evaluate(async () => (await import('./js/app.js')).render());
+    const m = await mesure();
+    expect(m.depasse, `tableau sans défilement horizontal à ${W} px ${JSON.stringify(m)}`).toBeLessThanOrEqual(0);
+    expect(m.page).toBeLessThanOrEqual(W);
+    expect(m.client - m.min, `marge d’au moins 40 px sur la largeur minimale du tableau à ${W} px ${JSON.stringify(m)}`).toBeGreaterThanOrEqual(40);
+    expect(m.lignes, `cachets sur trois lignes au plus à ${W} px`).toBeLessThanOrEqual(3);
+    expect(m.qty.length).toBeGreaterThan(0);
+    expect(m.qty.every(q => q.dansLaCase), `total lisible dans sa case à ${W} px`).toBe(true);
+    if (W === 1440) expect(m.qty.every(q => q.uneLigne), '« quantité × coût » sur une ligne à 1 440 px').toBe(true);
+  }
   expectClean(ctx);
 });
 
