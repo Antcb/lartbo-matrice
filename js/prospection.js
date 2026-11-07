@@ -7,7 +7,7 @@
  */
 import { confirmAsk } from './ui/dialog.js';
 import { render } from './app.js';
-import { insert, purgeStored, remove, save, sb, signedUrl } from './data.js';
+import { contentTypeOf, insert, purgeStored, remove, save, sb, signedUrl } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
 import { PROSPECT_TAGS, attOk, attSizeHTML, callGoogle, callScript, fill, todoOk, tplLabel, tplProjects } from './mail.js';
 import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName } from './selectors.js';
@@ -214,7 +214,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
   $('#pr-up').addEventListener('change', async e => {
     for (const f of e.target.files){
       const path = `mails/prospection/${st.id}/${Date.now()}_${f.name.replace(/[^\w.\-]+/g, '_')}`;
-      const {error} = await sb.storage.from('suivi').upload(path, f, {contentType: f.type || 'application/octet-stream'});
+      const {error} = await sb.storage.from('suivi').upload(path, f, {contentType: contentTypeOf(f)});
       if (error){ toast('Envoi impossible : ' + error.message, true); continue; }
       files.push({path, name: f.name, size: f.size, on: true, mine: true});
     }
