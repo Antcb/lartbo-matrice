@@ -66,3 +66,33 @@ export function montantAttendu(p: Ligne, fee: number, dejaFactures: number): num
 export const soldeDouteux = (p: Ligne, montantFacture: number, lignesDeLaDate: Ligne[], fee: number) =>
   p.kind === 'solde' && lignesDeLaDate.some(a => a.kind === 'acompte' && emise(a) && !plein(a.pennylane_id)
     && Math.abs((montantAcompte(a, fee) ?? -1) - Number(montantFacture)) < 0.05);
+
+/** Date d'un concert au format JJ/MM/AAAA (AAAA-MM-JJ reçu tel quel, sans fuseau) */
+export const frDate = (d: string | null | undefined) => d ? String(d).split('-').reverse().join('/') : '';
+
+/** Code du lieu entre parenthèses : département de la date (2 chiffres : même règle que « {{cp}} », v1.17.0 ; nomenclature v1.15.2) ;
+ *  sinon tiré de son code postal (2A / 2B en Corse, 971… outre-mer) — même règle que js/contract.js deptOf. */
+export function codeLieu(s: { department?: unknown; postal_code?: unknown }): string {
+  const d = String(s?.department ?? '').trim();
+  if (d) return /^\d$/.test(d) ? '0' + d : d.toUpperCase();
+  const cp = String(s?.postal_code ?? '').replace(/\s/g, '');
+  if (!/^\d{5}$/.test(cp)) return '';
+  return /^9[78]/.test(cp) ? cp.slice(0, 3) : /^20/.test(cp) ? (Number(cp) < 20200 ? '2A' : '2B') : cp.slice(0, 2);
+}
+
+/** « 12/03/2027 • Bagnols-sur-Cèze (30) • LA MOBA » : date, ville (code), lieu réel de la date — devis, factures de cession et
+ *  de commission (v1.60.2 : la commission reprend le même format, lieu et code compris) */
+export function describe(s: { date?: string | null; city?: string | null; venue?: string | null; department?: unknown; postal_code?: unknown }) {
+  const cp = codeLieu(s);
+  return [frDate(s.date), s.city ? s.city + (cp ? ` (${cp})` : '') : '', s.venue].filter(Boolean).join(' • ');
+}
+
+/** Textes d'une NOUVELLE facture de commission booking (v1.60.2) : description de la facture et de sa ligne, lieu réel et code
+ *  compris. Une facture déjà émise n'est jamais refaite (emise) : ces textes ne touchent aucun document Pennylane existant. */
+export function texteCommission(s: Parameters<typeof describe>[0], artist: string) {
+  const lieu = [s.city ? s.city + (codeLieu(s) ? ` (${codeLieu(s)})` : '') : '', s.venue].filter(Boolean).join(' • ');
+  return {
+    description: ['Commission booking', describe(s)].filter(Boolean).join(' • '),
+    ligne: `Commission booking pour ${artist} • Concert le ${frDate(s.date)}${lieu ? ' • ' + lieu : ''}`,
+  };
+}
