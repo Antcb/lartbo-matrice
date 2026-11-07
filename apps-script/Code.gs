@@ -35,6 +35,9 @@
  *   PRODUCTION_FOLDER     032_Production
  */
 
+/** Version du code (renvoyée par « Tester le script » dans Réglages › Google, pour vérifier le redéploiement) */
+var SCRIPT_VERSION = 'v1.60.2';
+
 function props_() {
   return PropertiesService.getScriptProperties().getProperties();
 }
@@ -69,7 +72,7 @@ function doPost(e) {
     else if (action === 'save_urls') out = saveUrls_(body.folder_id, body.files);
     else if (action === 'artist_folder') out = createArtistFolder_(body.project_id);
     else if (action === 'artist_file_docs') out = { ok: true, filed: artistFileDocs_(body.project_id) };
-    else if (action === 'ping') out = { ok: true, account: Session.getEffectiveUser().getEmail() };
+    else if (action === 'ping') out = { ok: true, account: Session.getEffectiveUser().getEmail(), version: SCRIPT_VERSION };
     else out = { ok: false, error: 'Action inconnue : ' + action };
   } catch (err) {
     out = { ok: false, error: String(err) };
@@ -834,13 +837,14 @@ function contractName_(show, artist) {
 
 /**
  * Parcourt <Artiste>/032_Production/<Année>/<dossiers de dates> et propose les bons noms dans un Google Sheet.
- * Rien n'est renommé : on coche ou décoche la colonne « Appliquer », puis on lance renameApply.
+ * Rien n'est renommé : toutes les propositions arrivent DÉCOCHÉES (décision d'Anthony du 07/11/2026) ; on coche une à une celles
+ * à appliquer (ancien nom → nouveau nom), puis on lance renameApply.
  */
 function renameAudit() {
   var p = props_();
   var shows = sb_('GET', 'shows?select=id,project_id,date,status,venue,city,department,postal_code,venue_is_structure,contract_type,drive_folder_id,structure:structures(postal_code,department_code,city)&date=not.is.null') || [];
   var projects = sb_('GET', 'projects?select=id,name,drive_artist_folder_id') || [];
-  var rows = [['Appliquer', 'Type', 'Artiste', 'Dossier', 'Nom actuel', 'Nom proposé', 'ID']];
+  var rows = [['Appliquer', 'Type', 'Artiste', 'Dossier', 'Ancien nom (actuel, inchangé tant que la case n’est pas cochée)', 'Nouveau nom proposé', 'ID']];
   var root = DriveApp.getFolderById(p.ARTISTS_ROOT_ID), artists = root.getFolders();
   while (artists.hasNext()) {
     var af = artists.next(), aname = af.getName();
@@ -858,7 +862,7 @@ function renameAudit() {
           || (m && proj ? pickShow_(shows.filter(function (s) { return s.project_id === proj.id && s.date === y.getName() + '-' + m[1] + '-' + m[2]; })) : null);
         if (!show) { rows.push([false, 'Dossier (date inconnue)', aname, y.getName(), df.getName(), '', df.getId()]); continue; }
         var want = folderName_(show);
-        if (!sameName_(want, df.getName())) rows.push([true, 'Dossier de date', aname, y.getName(), df.getName(), want, df.getId()]);
+        if (!sameName_(want, df.getName())) rows.push([false, 'Dossier de date', aname, y.getName(), df.getName(), want, df.getId()]);
         auditContracts_(df, show, proj ? proj.name.replace(/\s*•.*$/, '').trim() : aname, rows, aname, y.getName() + '/' + want);
       }
     }
@@ -910,7 +914,7 @@ function auditContracts_(folder, show, artist, rows, aname, where) {
     var g = groups[k].sort(function (a, b) { return a.ver - b.ver || a.created - b.created; });
     g.forEach(function (c, i) {
       var want = base + c.signed + (g.length > 1 ? ' • V' + (i + 1) : '') + '.' + c.ext;
-      if (!sameName_(want, c.name)) rows.push([true, 'Contrat', aname, where, c.name, want, c.file.getId()]);
+      if (!sameName_(want, c.name)) rows.push([false, 'Contrat' + (c.signed ? ' signé (à ne renommer qu’en connaissance de cause)' : ''), aname, where, c.name, want, c.file.getId()]);
     });
   });
 }
