@@ -14,7 +14,7 @@ import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, l
 import { S, touch } from './state.js';
 import { geocode } from './geo.js';
 import { CONFIRMED_PROD } from './constants.js';
-import { recipientsHelp, syncChips } from './ui/recipients.js';
+import { recipientsField, syncChips } from './ui/recipients.js';
 import { dateInput } from './ui/datefield.js';
 import { openModal } from './ui/modal.js';
 import { rtStyle, rtToolbar, wrapMail } from './ui/richtext.js';
@@ -111,11 +111,10 @@ export async function openProspection(structureId, {prospectId=null}={}){
       <label for="pr-from">Envoyé par</label><select id="pr-from" ${relance ? 'disabled title="La relance part de la boîte qui a envoyé la prospection"' : ''}>${Object.entries(SENDERS).map(([k, l]) => `<option value="${k}" ${k === sender ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
       <label for="pr-tpl">Modèle</label><select id="pr-tpl"></select>
       <label for="pr-show" class="pr-concert" hidden>Concert</label><span class="pr-concert" hidden><select id="pr-show"></select><small class="muted">remplit la date, la ville, le lieu, la date limite de réponse et les liens</small></span>
-      <label for="pr-contact">Destinataire</label><span class="mail-to"><select id="pr-contact"><option value="">— autre adresse —</option>${contacts.map(c => `<option value="${c.id}" ${c.id === contact?.id ? 'selected' : ''}>${esc(c.display_name)}${contactMails(c) ? ` · ${esc(contactMails(c))}` : ' (pas de mail)'}</option>`).join('')}</select>
-        <input id="pr-to" type="email" multiple placeholder="adresse@exemple.fr (plusieurs : séparées par des virgules)" value="${esc(relance ? (p.mail_to || '') : contactMails(contact))}"></span>
-      ${recipientsHelp('pr-to', st.id, {prospection: true})}
-      <label for="pr-cc">Copie</label><input id="pr-cc" data-mails>
-      ${recipientsHelp('pr-cc', st.id, {prospection: true})}
+      <label for="pr-contact">Contact</label><span class="mail-to"><select id="pr-contact"><option value="">— autre adresse —</option>${contacts.map(c => `<option value="${c.id}" ${c.id === contact?.id ? 'selected' : ''}>${esc(c.display_name)}${contactMails(c) ? ` · ${esc(contactMails(c))}` : ' (pas de mail)'}</option>`).join('')}</select>
+        <small class="muted">remplace le destinataire par ses adresses et remplit les balises du contact (prénom…)</small></span>
+      <label for="pr-to-q">Destinataire</label>${recipientsField('pr-to', st.id, {value: relance ? (p.mail_to || '') : contactMails(contact), prospection: true, label: 'Destinataires'})}
+      <label for="pr-cc-q">Copie</label>${recipientsField('pr-cc', st.id, {prospection: true, label: 'Copies'})}
       ${relance ? '' : `<label for="pr-subj">Objet</label><input id="pr-subj">
       <label>Date proposée</label><span class="pr-date">${dateInput('', 'id="pr-date"')}<small class="muted">facultatif : crée la date en « Intérêt » pour chaque artiste</small></span>`}
     </div>
