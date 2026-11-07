@@ -36,7 +36,7 @@
  */
 
 /** Version du code (renvoyée par « Tester le script » dans Réglages › Google, pour vérifier le redéploiement) */
-var SCRIPT_VERSION = 'v1.60.2';
+var SCRIPT_VERSION = 'v1.60.3';
 
 function props_() {
   return PropertiesService.getScriptProperties().getProperties();
