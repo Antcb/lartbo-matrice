@@ -2,7 +2,7 @@
 // Lancé par « npm test » (node --experimental-strip-types). Module testé : supabase/functions/pennylane/regles.ts
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { acomptesFactures, baseCommission, caduc, emise, factureIsolee, figerMontant, rangeeDansLeDrive, montantAttendu, payable, pctCommission, relieAuDevis, soldeDouteux } from '../../supabase/functions/pennylane/regles.ts';
+import { acomptesFactures, baseCommission, caduc, codeLieu, describe, emise, factureIsolee, figerMontant, rangeeDansLeDrive, montantAttendu, payable, pctCommission, relieAuDevis, soldeDouteux, texteCommission } from '../../supabase/functions/pennylane/regles.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -115,6 +115,30 @@ t('v1.51 : commission en coréalisation sur MG + part du résultat validée ; au
   assert.equal(Math.round(baseCommission({ fee_ht: 1000, contract_type: 'Co-Réalisation', corea_share: 500 }) * pctCommission(null, null, 15)) / 100, 225);
   const src = readFileSync(new URL('../../supabase/functions/pennylane/index.ts', import.meta.url), 'utf8');
   assert.match(src, /amount = Math\.round\(baseCommission\(s\) \* pct\) \/ 100/, 'facture de commission sur la base');
+});
+
+t('v1.60.2 : nouvelle facture de commission avec le lieu réel et le code du lieu, au format des devis (describe)', () => {
+  const s = { date: '2027-03-12', city: 'Villefictive', department: '30', venue: 'Salle Fictive' };
+  assert.equal(describe(s), '12/03/2027 • Villefictive (30) • Salle Fictive');
+  const t1 = texteCommission(s, 'Artiste Fictif');
+  assert.equal(t1.description, 'Commission booking • 12/03/2027 • Villefictive (30) • Salle Fictive');
+  assert.equal(t1.ligne, 'Commission booking pour Artiste Fictif • Concert le 12/03/2027 • Villefictive (30) • Salle Fictive');
+  // avant : « Commission booking • 12/03/2027 • Villefictive » (ni lieu ni code)
+  assert.equal(texteCommission({ ...s, city: null, department: null }, 'A').description, 'Commission booking • 12/03/2027 • Salle Fictive');
+  assert.equal(texteCommission({ ...s, department: null, postal_code: null }, 'A').ligne, 'Commission booking pour A • Concert le 12/03/2027 • Villefictive • Salle Fictive');
+  // code du lieu : département de la date (2 chiffres, règle {{cp}}) ; sinon tiré du code postal ; jamais inventé
+  assert.equal(codeLieu({ department: '7' }), '07');
+  assert.equal(codeLieu({ department: 'ch' }), 'CH');
+  assert.equal(codeLieu({ postal_code: '30200' }), '30');
+  assert.equal(codeLieu({ postal_code: '20090' }), '2A');
+  assert.equal(codeLieu({ postal_code: '20200' }), '2B');
+  assert.equal(codeLieu({ postal_code: '97110' }), '971');
+  assert.equal(codeLieu({ postal_code: '1204' }), '', 'code postal étranger : pas de département inventé');
+  assert.equal(codeLieu({ department: '13', postal_code: '30200' }), '13', 'le département de la date prime');
+  const src = readFileSync(new URL('../../supabase/functions/pennylane/index.ts', import.meta.url), 'utf8');
+  assert.match(src, /const txt = texteCommission\(s, artist\)/, 'facture de commission : textes communs');
+  assert.doesNotMatch(src, /s\.city \|\| s\.venue/, 'plus de « ville ou lieu » seul');
+  assert.doesNotMatch(src, /function describe\(/, 'une seule fonction describe (regles.ts)');
 });
 
 let ko = 0;
