@@ -54,7 +54,7 @@ test('v1.55 destinataires et copies : adresses de la structure proposées, reche
   await q.focus();
   await expect(sugg(page)).toHaveCount(2);
   await sugg(page).filter({ hasText: 'alex@exemple.invalid' }).dispatchEvent('mousedown');
-  await q.focus(); await page.keyboard.press('ArrowDown');
+  await page.locator('#ml-subj').focus(); await page.waitForTimeout(300); await q.focus();   // retour dans le champ vide
   await expect(sugg(page)).toHaveCount(1);   // l'adresse déjà choisie n'est plus proposée
   await sugg(page).filter({ hasText: 'bea@exemple.invalid' }).dispatchEvent('mousedown');
   await expect(to).toHaveValue('alex@exemple.invalid, bea@exemple.invalid');

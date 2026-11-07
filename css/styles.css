@@ -618,6 +618,10 @@ input[type=range]{accent-color:var(--brand);flex:1;min-width:120px}
 .rcpt-field .help.err{flex-basis:100%;margin:0}
 .rcpt-src{display:none !important}
 .mail-to small{align-self:center}
+.mail-grid>label.rcpt-who{font-weight:400}   /* ligne « Interlocuteur » discrète (v1.60.3) */
+.rcpt-propose:empty{display:none}
+dialog.mail .mail-to.rcpt-who{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-1)}
+dialog.mail .mail-to.rcpt-who select{width:auto;max-width:100%}
 .rcpt-note{grid-column:1/-1}
 .warn-badge{background:#FFF1D6;color:#8A5A00;border-radius:999px;padding:3px 10px;font-weight:600;font-size:12px}
 .fiche-lbl{font-size:13px;margin-right:4px}
