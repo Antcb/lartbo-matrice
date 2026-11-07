@@ -25,12 +25,16 @@ const DATA = {
 };
 const sugg = page => page.locator('.ac-list .ac-item');
 const chips = (page, id) => page.locator(`[data-rcpt="${id}"] .rcpt-chip`);
+// openModal donne le focus à son premier champ 30 ms après l'ouverture : on l'attend avant de taper, sinon (machine lente) ce focus
+// arrive pendant la frappe et une partie du texte part ailleurs (test instable sur GitHub)
+const ouverte = async page => { await expect(page.locator('#modal')).toBeVisible(); await page.evaluate(() => new Promise(r => setTimeout(r, 100))); };
 const scriptCalls = page => page.evaluate(() => window.__calls.filter(c => c.fn === 'script-google').length);
 
 test('v1.60.3 champ unique : recherche dans le champ, suggestions lisibles, clavier, ajout libre, adresse invalide signalée', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, DATA);
   await page.evaluate(async () => { (await import('./js/mail.js')).prepareMail('sz-show', 'boucle_tech'); });
+  await ouverte(page);
   const to = page.locator('#ml-to'), q = page.locator('#ml-to-q');
   // plus de champ de recherche séparé ni de rangée de pastilles sous le champ ; une seule saisie par ligne
   await expect(page.locator('#modal .rcpt-sug, #modal [data-rcpt-add], #modal [data-rcpt-box]')).toHaveCount(0);
@@ -109,6 +113,7 @@ test('v1.60.3 même composant partout : confirmation, boucles, prospection, rela
   await page.locator('#modal [data-act=closeModal]').first().click();
   // prospection : adresse tapée sans validation → ajoutée au moment d'envoyer (puis les contrôles suivants de la fenêtre)
   await page.evaluate(async () => { (await import('./js/prospection.js')).openProspection('sz-1'); });
+  await ouverte(page);
   await check(['pr-to', 'pr-cc']);
   await page.locator('#pr-cc-q').fill('copie@exemple.invalid');
   await page.locator('#modal button[type=submit]').click();
@@ -129,6 +134,7 @@ test('v1.60.3 interlocuteur : proposé depuis une adresse sans ambiguïté, jama
     contact_structures: [...DATA.contact_structures, { contact_id: 'cz-c', structure_id: 'sz-1' }, { contact_id: 'cz-d1', structure_id: 'sz-1' }, { contact_id: 'cz-d2', structure_id: 'sz-1' }],
     shows: [...DATA.shows, { ...DATA.shows[0], id: 'sz-show2', prospect_id: null, date: `${Y}-12-04` }] });
   await page.evaluate(async () => { (await import('./js/mail.js')).prepareMail('sz-show2', 'confirmation'); });
+  await ouverte(page);
   const who = page.locator('#ml-contact'), to = page.locator('#ml-to'), q = page.locator('#ml-to-q'), use = page.locator('#modal [data-rcpt-use]');
   await expect(page.locator('label[for="ml-contact"]')).toHaveText('Interlocuteur');
   await expect(who).toHaveValue('');
