@@ -90,9 +90,9 @@ export function projectPage(p){
 /** Exercice comptable : du 01/10 au 30/09 → « 2025-2026 » */
 export const fiscalYear = d => { if (!d) return 'Sans date'; const y = Number(d.slice(0,4)), m = Number(d.slice(5,7)); return m >= 10 ? `${y}-${y+1}` : `${y-1}-${y}`; };
 
-/* Aperçu. Ancien budget type de l'artiste (projects.budget_template) : bloc retiré dès que l'artiste a un spectacle (redondant avec
-   les budgets par spectacle, 07/11/2026) ; la donnée reste en base et sert toujours aux dates sans spectacle (templateLines) ;
-   artiste sans spectacle : le bloc reste (seul budget type de ses dates). */
+/* Aperçu. Ancien budget type de l'artiste (projects.budget_template) : bloc retiré dès que l'artiste a un spectacle (les budgets par
+   spectacle sont le parcours principal, 07/11/2026) ; la donnée reste en base et sert toujours aux dates sans spectacle
+   (templateLines) ; artiste sans spectacle : bloc gardé temporairement, identifié « historique », « temporaire ». */
 function overview(p, {shows, tasks, suivis}){
   const byYear = {};
   shows.forEach(s=>{ const y=fiscalYear(s.date); (byYear[y]=byYear[y]||[]).push(s); });
@@ -112,7 +112,8 @@ function overview(p, {shows, tasks, suivis}){
       <label>Commission L'ArtBo (%)</label>${cIn('projects', p.id, 'default_artbo_pct', p.default_artbo_pct, 'number', `class="narrow" placeholder="${defaultCommission(p.mode)}"`)}
     </div></div>
   ${spectaclesPanel(p)}
-  ${p.mode === 'booking' || spectaclesOf(p.id).length ? '' : `<div class="panel pad mt-lg"><h3 class="block-title">Budget type <span class="muted title-note">· budget prévisionnel posé sur chaque nouvelle date confirmée</span></h3>${templateForm(p.id)}</div>`}
+  ${p.mode === 'booking' || spectaclesOf(p.id).length ? '' : `<div class="panel pad mt-lg"><h3 class="block-title">Budget type historique de l’artiste <span class="badge">temporaire</span> <span class="muted title-note">· posé sur les nouvelles dates confirmées sans spectacle</span></h3>
+    <p class="help mb">Ancien budget type, gardé tant que l’artiste n’a pas de spectacle. Le parcours principal est le budget type par spectacle : crée un spectacle ci-dessus ; ce bloc disparaît alors de l’aperçu (ses valeurs restent pour les dates sans spectacle).</p>${templateForm(p.id)}</div>`}
   <div class="struct-hero mt-lg">
     <div class="panel pad"><h3 class="block-title">Prochaines dates</h3>${next.map(s=>`<div class="plan-row click" data-act="editShow" data-id="${s.id}"><span class="d">${prodDate(s)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span>${stSelect(s)}</div>`).join('') || '<p class="muted m0">Aucune date à venir.</p>'}</div>
     <div class="panel pad"><h3 class="block-title">En cours</h3>
@@ -295,6 +296,6 @@ function spectaclesPanel(p){
       `<div class="steps kv-grid"><label>Nom</label>${cIn('spectacles', sp.id, 'name', sp.name, 'text', 'aria-label="Nom du spectacle"')}
         <label>Proposé pour les nouvelles dates</label>${cChk('spectacles', sp.id, 'active', sp.active, 'actif')}</div>
        <h4 class="block-title mt">Budget type du spectacle</h4>${spectacleForm(sp)}`)).join('')
-      : '<p class="muted m0">Aucun spectacle : les dates prennent le budget type de l’artiste (ci-dessous). Les dates existantes ne sont rattachées à aucun spectacle tant que tu ne le choisis pas.</p>'}
+      : '<p class="muted m0">Aucun spectacle : les dates prennent le budget type historique de l’artiste (ci-dessous). Les dates existantes ne sont rattachées à aucun spectacle tant que tu ne le choisis pas.</p>'}
   </div>`;
 }
