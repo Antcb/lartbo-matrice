@@ -5,11 +5,11 @@
 import { ask, askText } from './ui/dialog.js';
 import { FORMAT_FIELD, exportTable } from './exports.js';
 import { propagateCommission } from './commission.js';
-import { hasFinancialRecord } from './calc.js';
+import { allPaymentsOf, changeBlocked, hasFinancialRecord } from './calc.js';
 import { render } from './app.js';
 import { CFG } from './config.js';
 import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PRIORITY_OPTS, PROSPECT, PROSPECT_OPTS, STATUSES, TASK_STATUS, TASK_STATUS_OPTS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
-import { insert, purgeStored, refreshFor, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
+import { deleteShow, insert, purgeStored, refreshFor, remove, removeWhere, save, saveLinger, sb, showDeletionState, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode, geoFrance, searchPlaces } from './geo.js';
 import { contactMails, contactsWithMail, defaultCommission, settingAcompte, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, placeOfSuivi, projIds, showPlaceNote, projName, projectOptions, prospectTitle, spectaclesOf, defaultSpectacleId } from './selectors.js';
 import { S, touch } from './state.js';
@@ -121,6 +121,29 @@ async function locateShow(v, s){
   await fillCoords(v, [v.address, v.postal_code, v.city, fr ? 'France' : v.department].filter(Boolean).join(' '));
 }
 
+/**
+ * Question de suppression d'une date (v1.60.3) : ce qui part et ce qui reste, d'après le serveur (show_deletion_state) — à défaut
+ * (serveur sans la fonction), d'après les données chargées. Refus (garde-fou de l'application ou du serveur) : motif affiché, null.
+ */
+async function showDeleteAsk(s){
+  const why = changeBlocked('shows', s.id, null);
+  if (why){ toast(why, true); return null; }
+  const st = await showDeletionState(s.id);
+  if (st?.blocked?.length){ toast(st.blocked.join(' '), true); return null; }
+  const nb = (k, one, many) => `${k} ${k > 1 ? many : one}`;
+  const pays = st ? Number(st.payments) : allPaymentsOf(s.id).length, lines = st ? Number(st.budget_lines) : S.db.budget_lines.filter(l => l.show_id === s.id).length;
+  const tasks = st ? Number(st.tasks) : S.db.tasks.filter(t => t.show_id === s.id).length, closures = Number(st?.closures || 0);
+  const gone = [pays && nb(pays, 'ligne de facturation (non émise)', 'lignes de facturation (aucune émise)'), lines && nb(lines, 'ligne de budget', 'lignes de budget')].filter(Boolean);
+  const text = [
+    `Supprimer la date « ${[s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · ')} » ?`,
+    `Supprimées avec elle : ${gone.length ? gone.join(' et ') : 'aucune ligne de facturation ni de budget'}.`,
+    tasks ? `Conservée${tasks > 1 ? 's' : ''} : ${nb(tasks, 'tâche liée', 'tâches liées')}, sans lien vers la date.` : '',
+    closures ? `Historique de clôture et de réouverture du résultat (${nb(closures, 'entrée', 'entrées')}) : conservé dans le journal des suppressions, avec une copie complète de la date.`
+      : st ? 'Une copie complète de la date est gardée dans le journal des suppressions.' : '',
+    'Rien n’est supprimé dans Pennylane ; le dossier Google Drive n’est pas touché.'];
+  return {title: 'Supprimer la date ?', text: text.filter(Boolean).join('\n'), actions: [{value: 'del', label: 'Supprimer la date', danger: true}]};
+}
+
 export function editShow(id, projectId, prefill={}){
   const s = id ? byId('shows', id) : {status:'Intérêt Salle', contract_type:'Cession', project_id: projectId||S.project||null, communication_enabled:true, date:null, ...prefill};
   // nouvelle date : spectacle présélectionné (seul actif, sinon celui par défaut de l'artiste), toujours modifiable (v1.60.3)
@@ -130,9 +153,8 @@ export function editShow(id, projectId, prefill={}){
     + (id && s.status?.startsWith('Confirmée') ? `<div class="full drive">${driveHTML(s)}</div>` : '');
   const p = openModal({
     title: id ? s.venue : 'Nouvelle date', fields: showFields(s), values: s, extra,
-    deleteAsk: () => ({title: 'Supprimer la date ?', text: `Supprimer la date « ${[s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · ')} » avec ses lignes de facturation et son budget ? Les tâches liées restent ; le dossier Google Drive n’est pas touché.`,
-      actions: [{value: 'del', label: 'Supprimer la date', danger: true}]}),
-    onDelete: id ? () => remove('shows', id) : null,
+    deleteAsk: () => showDeleteAsk(s),
+    onDelete: id ? () => deleteShow(id) : null,
     onSave: async v => {
       if (!v.venue) { toast('Indique le nom du lieu ou du festival', true); return false; }
       if (!v.project_id) { toast('Choisis l’artiste', true); return false; }
