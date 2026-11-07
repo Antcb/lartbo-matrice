@@ -24,54 +24,64 @@ comment on column public.shows.postal_code is 'Code postal du lieu de la date (v
 comment on column public.prospects.venue is 'Lieu du concert du suivi, si différent de la structure (v1.60.2)';
 comment on column public.shows.venue_is_structure is 'Adresse de la structure confirmée comme lieu de représentation de la date (v1.60.2, décision du 07/11/2026) ; faux = adresse du lieu à compléter si la date n''en a pas';
 
--- Fiche de renseignements publique (fiche_get) et variables des mails (mail_vars) — décision d'Anthony du 07/11/2026, même règle que
--- l'application (js/fiche-fields.js venueAddressOf / ficheDefaults) : adresse et code postal du LIEU DE LA DATE ; sinon ceux de la
--- structure SEULEMENT si venue_is_structure ; sinon vide (à compléter). fiche_get garde l'objet « structure » (coordonnées de
--- l'organisateur, pour l'administratif) et renvoie en plus address / postal_code / venue_is_structure de la date.
--- Remplacement EXACT dans le texte en production (empreinte vérifiée, chaque texte trouvé une seule fois) ; version inattendue = arrêt,
--- rien n'est appliqué. Rejouable : une fonction déjà à jour (texte contenant « venue_is_structure ») est laissée telle quelle.
--- Une fonction passée par la première version de cette migration (commit 8198aac, repli sur la structure sans condition) est mise
--- à niveau par remplacement exact de ses textes de 8198aac (chaque texte trouvé une seule fois, sinon arrêt).
+-- Département du lieu (règle {{cp}}, même règle que deptOf dans js/fiche-fields.js et cpDept_ du script Google) : le département
+-- donné (1 chiffre → 0X, sinon en majuscules) ; à défaut tiré d'un code postal à 5 chiffres (971…, 2A / 2B, sinon 2 premiers chiffres)
+create or replace function public.lieu_departement(p_department text, p_postal text) returns text
+language sql immutable set search_path = public as $f$
+  select coalesce(
+    nullif(case when btrim(coalesce(p_department, '')) ~ '^\d$' then '0' || btrim(p_department) else upper(btrim(coalesce(p_department, ''))) end, ''),
+    case when regexp_replace(coalesce(p_postal, ''), '\s', '', 'g') ~ '^\d{5}$' then
+      (select case when c ~ '^9[78]' then left(c, 3) when c ~ '^20' then (case when c::int < 20200 then '2A' else '2B' end) else left(c, 2) end
+         from (select regexp_replace(p_postal, '\s', '', 'g') as c) x) end)
+$f$;
+revoke all on function public.lieu_departement(text, text) from public, anon;
+grant execute on function public.lieu_departement(text, text) to authenticated, service_role;
+
+-- Fiche de renseignements publique (fiche_get) et variables des mails (mail_vars) — décisions d'Anthony du 07/11/2026, même règle
+-- que l'application (js/fiche-fields.js venueSource / ficheDefaults) : chaque valeur du lieu (adresse, code postal, ville,
+-- département) vient de la date ; sinon de la structure SEULEMENT si venue_is_structure ; sinon vide (à compléter). Valeurs déjà
+-- enregistrées sur la date : prioritaires, jamais modifiées. fiche_get garde l'objet « structure » (coordonnées de l'organisateur,
+-- pour l'administratif) et renvoie en plus address / postal_code / department / venue_is_structure de la date ; son « cp » est le
+-- département (plus jamais un code postal à sa place).
+-- Remplacement EXACT dans le texte de PRODUCTION (seul état de départ accepté : empreinte vérifiée, chaque texte trouvé une seule
+-- fois) ; version inattendue = arrêt, rien n'est appliqué. Rejouable : une fonction contenant déjà le marqueur « v1.60.2 source du
+-- lieu » est laissée telle quelle.
 do $m$
-declare d text; n text; st text; r record; k int;
+declare d text; n text; r record; k int;
 begin
-  create temporary table if not exists _v1602(ord int generated always as identity, sig text, expected text, state text, old text, new text) on commit drop;
+  create temporary table if not exists _v1602(ord int generated always as identity, sig text, expected text, old text, new text) on commit drop;
   truncate _v1602;
-  insert into _v1602 (sig, expected, state, old, new) values
-    -- version en production (v1.60.1)
-    ('public.fiche_get(text)', '5ad948247fd5a70ebb4877ec4302df11', 'prod',
-     $x$'city', s.city, 'cp', coalesce(st.postal_code, s.department),$x$,
-     $x$'city', s.city, 'address', s.address, 'postal_code', s.postal_code, 'venue_is_structure', coalesce(s.venue_is_structure, false),
-    'cp', coalesce(nullif(btrim(s.postal_code), ''), case when s.venue_is_structure then nullif(btrim(st.postal_code), '') end, s.department),$x$),
-    ('public.mail_vars(uuid,uuid)', 'ede0e727e33142e4a2d28c0ea5f7ef2b', 'prod',
-     $x$'code_postal', coalesce(st.postal_code, ''),$x$,
-     $x$'code_postal', coalesce(nullif(btrim(s.postal_code), ''), case when s.venue_is_structure then nullif(btrim(st.postal_code), '') end, ''),$x$),
-    ('public.mail_vars(uuid,uuid)', null, 'prod',
-     $x$'adresse', coalesce(nullif(st.address, ''), concat_ws(' ', st.postal_code, st.city), s.city, ''),$x$,
-     $x$'adresse', coalesce(nullif(btrim(s.address), ''), case when s.venue_is_structure then nullif(btrim(st.address), '') end, ''),$x$),
-    -- version de la première migration v1.60.2 (8198aac)
-    ('public.fiche_get(text)', null, '8198aac',
-     $x$'city', s.city, 'address', s.address, 'postal_code', s.postal_code, 'cp', coalesce(st.postal_code, s.department),$x$,
-     $x$'city', s.city, 'address', s.address, 'postal_code', s.postal_code, 'venue_is_structure', coalesce(s.venue_is_structure, false),
-    'cp', coalesce(nullif(btrim(s.postal_code), ''), case when s.venue_is_structure then nullif(btrim(st.postal_code), '') end, s.department),$x$),
-    ('public.mail_vars(uuid,uuid)', null, '8198aac',
-     $x$'code_postal', coalesce(nullif(btrim(s.postal_code), ''), st.postal_code, ''),$x$,
-     $x$'code_postal', coalesce(nullif(btrim(s.postal_code), ''), case when s.venue_is_structure then nullif(btrim(st.postal_code), '') end, ''),$x$),
-    ('public.mail_vars(uuid,uuid)', null, '8198aac',
-     $x$'adresse', coalesce(nullif(btrim(s.address), ''), nullif(st.address, ''), concat_ws(' ', st.postal_code, st.city), s.city, ''),$x$,
-     $x$'adresse', coalesce(nullif(btrim(s.address), ''), case when s.venue_is_structure then nullif(btrim(st.address), '') end, ''),$x$);
+  insert into _v1602 (sig, expected, old, new) values
+    ('public.fiche_get(text)', '5ad948247fd5a70ebb4877ec4302df11',
+     $x$    'city', s.city, 'cp', coalesce(st.postal_code, s.department),$x$,
+     $x$    'city', s.city, 'address', s.address, 'postal_code', s.postal_code, 'department', s.department,
+    'venue_is_structure', coalesce(s.venue_is_structure, false),   -- v1.60.2 source du lieu (décisions d'Anthony du 07/11/2026)
+    'cp', coalesce(public.lieu_departement(s.department, s.postal_code), case when s.venue_is_structure then public.lieu_departement(st.department_code, st.postal_code) end),$x$),
+    ('public.mail_vars(uuid,uuid)', 'ede0e727e33142e4a2d28c0ea5f7ef2b',
+     $x$    'ville', coalesce(s.city, st.city, ''),
+    'cp', coalesce(nullif(case when s.department ~ '^\d$' then '0' || s.department else upper(s.department) end, ''),
+                 case when lower(trim(st.city)) = lower(trim(s.city)) and st.postal_code ~ '^\d{5}$' then
+                   case when st.postal_code ~ '^9[78]' then left(st.postal_code, 3) when st.postal_code ~ '^20' then (case when st.postal_code::int < 20200 then '2A' else '2B' end) else left(st.postal_code, 2) end end, ''),
+    'code_postal', coalesce(st.postal_code, ''),$x$,
+     $x$    -- v1.60.2 source du lieu (décisions d'Anthony du 07/11/2026) : valeurs de la date d'abord ; la structure SEULEMENT si elle est
+    -- confirmée comme lieu (venue_is_structure) ; sinon vide. {{cp}} = département, {{code_postal}} = code postal complet (jamais l'un pour l'autre)
+    'ville', coalesce(nullif(btrim(s.city), ''), case when s.venue_is_structure then nullif(btrim(st.city), '') end, ''),
+    'cp', coalesce(public.lieu_departement(s.department, s.postal_code),
+                   case when s.venue_is_structure then public.lieu_departement(st.department_code, st.postal_code) end, ''),
+    'code_postal', coalesce(nullif(btrim(s.postal_code), ''), case when s.venue_is_structure then nullif(btrim(st.postal_code), '') end, ''),$x$),
+    ('public.mail_vars(uuid,uuid)', null,
+     $x$    'adresse', coalesce(nullif(st.address, ''), concat_ws(' ', st.postal_code, st.city), s.city, ''),$x$,
+     $x$    'adresse', coalesce(nullif(btrim(s.address), ''), case when s.venue_is_structure then nullif(btrim(st.address), '') end, ''),$x$);
   for d in select distinct sig from _v1602 loop
     n := pg_get_functiondef(d::regprocedure);
-    if position('venue_is_structure' in n) > 0 then continue; end if;   -- déjà à jour (rejeu)
-    if md5(n) = (select expected from _v1602 where sig = d and expected is not null) then st := 'prod';
-    elsif position('s.postal_code' in n) > 0 then st := '8198aac';
-    else
+    if position('v1.60.2 source du lieu' in n) > 0 then continue; end if;   -- déjà à jour (rejeu)
+    if md5(n) is distinct from (select expected from _v1602 where sig = d and expected is not null) then
       raise exception 'v1.60.2 : % n''est pas la version attendue (empreinte %) : migration arrêtée, rien n''est appliqué', d, md5(n);
     end if;
-    for r in select old, new from _v1602 where sig = d and state = st order by ord loop
+    for r in select old, new from _v1602 where sig = d order by ord loop
       k := (length(n) - length(replace(n, r.old, ''))) / length(r.old);
       if k <> 1 then
-        raise exception 'v1.60.2 : % (version %) : texte à remplacer trouvé % fois (attendu : 1) : migration arrêtée, rien n''est appliqué', d, st, k;
+        raise exception 'v1.60.2 : % : texte à remplacer trouvé % fois (attendu : 1) : migration arrêtée, rien n''est appliqué', d, k;
       end if;
       n := replace(n, r.old, r.new);
     end loop;

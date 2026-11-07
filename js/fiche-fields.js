@@ -60,23 +60,38 @@ export const ficheKind = contractType => contractType === 'Co-Réalisation' ? 'c
 /** Le champ s'applique-t-il à ce type de contrat et à ces réponses ? */
 export const fieldOn = (f, kind, values) => (!f.only || f.only === kind) && (!f.if || values?.[f.if[0]] === f.if[1]);
 
-/**
- * Adresse et code postal du LIEU d'une date pour les documents (fiche, contrat ; même règle que fiche_get / mail_vars côté serveur),
- * décision d'Anthony du 07/11/2026 : 1. ceux de la date (lieu choisi ou adresse propre) ; 2. ceux de la structure SEULEMENT si
- * « Utiliser l'adresse de la structure comme lieu de représentation » est coché sur la date (venue_is_structure) ; 3. sinon vide
- * (à compléter). L'adresse d'une structure est souvent celle du siège : jamais présentée d'office comme celle du lieu.
- */
-export function venueAddressOf(d, st){
-  const own = x => (x == null ? '' : String(x).trim()) || null, conf = !!d?.venue_is_structure && !!st;
-  return {address: own(d?.address) || (conf ? own(st.address) : null), postal_code: own(d?.postal_code) || (conf ? own(st.postal_code) : null)};
+/** Département pour les noms de fichiers : 79200 → 79, Corse 2A / 2B, outre-mer 971… ; sinon le département de la date (CH, BE… à l'étranger) */
+export function deptOf(postal, fallback){
+  const cp = String(postal || '').replace(/\s/g, '');
+  if (/^\d{5}$/.test(cp)) return /^9[78]/.test(cp) ? cp.slice(0, 3) : /^20/.test(cp) ? (Number(cp) < 20200 ? '2A' : '2B') : cp.slice(0, 2);
+  const d = String(fallback || '').trim();
+  return /^\d$/.test(d) ? '0' + d : d.toUpperCase();
 }
 
-/** Valeurs par défaut tirées de la date et de la structure (fiche_get ou données de l'app) ; adresse et code postal du lieu : venueAddressOf */
+/**
+ * Source du lieu d'une date pour les documents (fiche, contrat, nom du fichier ; même règle que fiche_get / mail_vars côté serveur
+ * et dept_ du script Google), décisions d'Anthony du 07/11/2026 : chaque valeur vient 1. de la date (valeurs enregistrées sur elle,
+ * lieu choisi ou saisi : elles priment toujours), 2. de la structure SEULEMENT si elle est confirmée comme lieu (case « Utiliser
+ * l'adresse de la structure comme lieu de représentation » = venue_is_structure, ou structure choisie comme lieu), 3. sinon rien
+ * (à compléter). Code postal complet et département ne remplacent jamais l'un l'autre : department = département de la date, sinon
+ * tiré du code postal de la source.
+ */
+export function venueSource(d, st){
+  const t = x => (x == null ? '' : String(x).trim()) || null, conf = !!d?.venue_is_structure && !!st;
+  const pick = k => t(d?.[k]) || (conf ? t(st[k]) : null);
+  const department = deptOf('', d?.department) || deptOf(t(d?.postal_code), '')
+    || (conf ? deptOf('', st.department_code) || deptOf(t(st.postal_code), '') : '') || null;
+  // pays : celui de la structure confirmée ; sinon la France seulement si le département de la date est français (sinon à compléter)
+  const country = conf ? (t(st.country) || 'France') : /^(\d{2,3}|2[AB])$/i.test(department || '') ? 'France' : null;
+  return {address: pick('address'), postal_code: pick('postal_code'), city: pick('city'), department, country, confirmed: conf};
+}
+
+/** Valeurs par défaut tirées de la date et de la structure (fiche_get ou données de l'app) ; lieu : venueSource */
 export function ficheDefaults(d){
-  const st = d.structure || {}, va = venueAddressOf(d, d.structure);
+  const st = d.structure || {}, src = venueSource(d, d.structure);
   return {
     legal_name: st.name, country: 'France',
-    venue_name: d.venue, venue_address: va.address, venue_postal_code: va.postal_code, venue_city: d.city || st.city, venue_country: st.country || 'France',
+    venue_name: d.venue, venue_address: src.address, venue_postal_code: src.postal_code, venue_city: src.city, venue_country: src.country,
     capacity: d.capacity, cr_break: d.cr_break, show_time: d.show_time, set_length: d.set_length,
     ticketing: d.ticketing_type === 'Gratuit' ? 'Gratuit' : d.ticketing_type ? 'Payant (prix libre compris)' : '',
   };
