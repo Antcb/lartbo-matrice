@@ -104,6 +104,7 @@ test('agendas : même avertissement sur tous les chemins — intérêt → optio
     const before = { project_id: S.db.projects[0].id, date: `${Y}-03-11`, status: 'Intérêt Salle' };
     return calCheckBeforeSave({ ...before, status: 'Option Salle' }, before); }, Y);
   await expect(page.locator('dialog[open]', { hasText: 'Artiste indisponible ?' })).toBeVisible();
+  await expect(page.locator('dialog[open]')).toContainText(/\((chevauchement horaire|événement artiste le même jour)\)/);   // raison affichée
   await page.locator('dialog[open] button', { hasText: 'Annuler' }).click();
   expect(await r).toBe(false);
   // option → intérêt (moins engagée), même jour : rien à redemander
@@ -123,7 +124,7 @@ test('agendas : même avertissement sur tous les chemins — intérêt → optio
   expectClean(ctx);
 });
 
-test('agendas : jour local de l’événement affiché ; conflit comparé sur les instants réels (fuseaux) ; journée entière sans décalage', async ({ page }) => {
+test('agendas : jour local de l’événement affiché ; conflit = horaires réels OU même jour local, avec la raison ; journée entière sans décalage', async ({ page }) => {
   const ctx = await openApp(page);
   await preparer(page);
   const r = await page.evaluate(async Y => {
@@ -134,13 +135,20 @@ test('agendas : jour local de l’événement affiché ; conflit comparé sur le
       start_at: `${Y}-06-11T00:00:00Z`, end_at: `${Y}-06-11T03:00:00Z`, time_zone: 'America/New_York', title: 'Show New York', is_show: true };
     const jour = { id: 'e-j', calendar_ref: 'cal-1', project_id: ART, gcal_event_id: 'e-j', busy: true, all_day: true, start_date: `${Y}-07-14`, end_date: `${Y}-07-15`, deleted_at: null, title: 'Fête' };
     S.db.artist_calendar_events.push(ny, jour); touch('artist_calendar_events');
-    const ov = d => calOverlaps({ project_id: ART, date: d, status: 'Option Salle' }).map(e => e.id);
-    return { span: evSpan(ny), le10: ov(`${Y}-06-10`), le11: ov(`${Y}-06-11`), jour: evSpan(jour), j14: ov(`${Y}-07-14`), j15: ov(`${Y}-07-15`) };
+    const ov = d => calOverlaps({ project_id: ART, date: d, status: 'Option Salle' }).map(e => `${e.id}:${e.why}`);
+    // même jour ET même horaire : une seule entrée, raison « chevauchement horaire »
+    const both = { id: 'e-b', calendar_ref: 'cal-1', project_id: ART, gcal_event_id: 'e-b', busy: true, all_day: false, deleted_at: null,
+      start_at: `${Y}-08-02T18:00:00Z`, end_at: `${Y}-08-02T20:00:00Z`, time_zone: 'Europe/Paris', title: 'Répétition' };
+    // « Disponible » (busy false) le même jour : jamais d'alerte
+    const dispo = { ...both, id: 'e-d', gcal_event_id: 'e-d', busy: false, title: 'Disponible' };
+    S.db.artist_calendar_events.push(both, dispo); touch('artist_calendar_events');
+    return { span: evSpan(ny), le10: ov(`${Y}-06-10`), le11: ov(`${Y}-06-11`), jour: evSpan(jour), j14: ov(`${Y}-07-14`), j15: ov(`${Y}-07-15`), a02: ov(`${Y}-08-02`) };
   }, Y);
   expect(r.span).toEqual([`${Y}-06-10`, `${Y}-06-10`]);   // affiché le 10/06, jour local à New York
-  expect(r.le10).not.toContain('e-ny');                    // à Paris, l'instant réel tombe le 11/06
-  expect(r.le11).toContain('e-ny');
+  expect(r.le10).toEqual(['e-ny:événement artiste le même jour']);   // pas d'horaire commun à Paris, mais jour local à New York
+  expect(r.le11).toEqual(['e-ny:chevauchement horaire']);            // l'instant réel tombe le 11/06 à Paris
   expect(r.jour).toEqual([`${Y}-07-14`, `${Y}-07-14`]);     // journée entière : dates calendaires, sans décalage
-  expect(r.j14).toContain('e-j'); expect(r.j15).not.toContain('e-j');
+  expect(r.j14).toEqual(['e-j:événement artiste le même jour']); expect(r.j15).toEqual([]);
+  expect(r.a02).toEqual(['e-b:chevauchement horaire']);              // une seule alerte ; « Disponible » ignoré
   expectClean(ctx);
 });
