@@ -6,7 +6,7 @@
 import { STATUS_COLOR, STATUSES, isOff, stColor, viaArtbo } from '../constants.js';
 import { lingering } from '../data.js';
 import { route, routeCached } from '../geo.js';
-import { byId, projName, showCoords, showsFiltered, visibleShow } from '../selectors.js';
+import { byId, projName, showCoords, showPlace, showPlaceNote, showsFiltered, visibleShow } from '../selectors.js';
 import { S } from '../state.js';
 import { filterBar, fold, stBadge, stSelect, viewHead } from '../ui/bits.js';
 import { $, daysBetween, esc, eur, fmtDate, fmtShort } from '../utils.js';
@@ -49,7 +49,7 @@ function gigRow(s){
   const pa = S.routePick.a===s.id, pb = S.routePick.b===s.id;
   return `<div class="gig ${pa||pb?'picked':''} ${lingering(s.id)&&isOff(s.status)?'leaving':''}" style="--c:${stColor(s.status)}" data-act="editShow" data-id="${s.id}">
     <div class="day"><b>${d?String(d.getDate()).padStart(2,'0'):'—'}</b><span>${d?d.toLocaleDateString('fr-FR',{weekday:'short'}):''}</span></div>
-    <div class="what"><b>${esc(s.venue)}</b><small>${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))}${!S.project && s.project_id ? ' · '+esc(projName(s.project_id)) : ''}${s.date_end && s.date_end!==s.date ? ' · jusqu’au '+fmtShort(s.date_end) : ''}</small></div>
+    <div class="what"><b>${esc(s.venue)}</b><small>${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))}${!S.project && s.project_id ? ' · '+esc(projName(s.project_id)) : ''}${s.date_end && s.date_end!==s.date ? ' · jusqu’au '+fmtShort(s.date_end) : ''}${showPlace(s).state === 'missing' ? ' · <span class="warn-txt">localisation manquante</span>' : ''}</small></div>
     <div class="right">${stSelect(s)}
       <span class="fee">${[s.fee_ht?eur(s.fee_ht):'', s.contract_type||''].filter(Boolean).join(' · ')}</span>
       <span class="pick" title="Calcul de trajet : choisis un départ (A) puis une arrivée (B)">
@@ -118,7 +118,7 @@ export function setMapData(data){ S.mapData = data; }
 
 function setBookingMap(shows){
   const pts = shows.filter(s => !S.mapHidden.has(s.status)).map(s => { const c = showCoords(s); return c && {lat:c[0], lng:c[1], color:stColor(s.status), big:(s.status||'').startsWith('Confirmée'), showId:s.id, hover:true,
-    label:`<b>${esc(s.venue)}</b><br>${fmtDate(s.date)} — ${esc(s.city||'')}<br>${esc(s.status)}${s.project_id?' · '+esc(projName(s.project_id)):''}${s.fee_ht?'<br>'+eur(s.fee_ht):''}
+    label:`<b>${esc(s.venue)}</b><br>${fmtDate(s.date)} — ${esc(s.city||'')}<br>${esc(s.status)}${s.project_id?' · '+esc(projName(s.project_id)):''}${s.fee_ht?'<br>'+eur(s.fee_ht):''}${showPlaceNote(s) ? `<br><span class="warn-txt">${esc(showPlaceNote(s))}</span>` : ''}
       <div class="pop-actions"><button type="button" class="btn sm ${S.routePick.a===s.id?'on':''}" data-act="pick" data-p="a" data-id="${s.id}">Départ (A)</button><button type="button" class="btn sm ${S.routePick.b===s.id?'on':''}" data-act="pick" data-p="b" data-id="${s.id}">Arrivée (B)</button></div>`}; }).filter(Boolean);
   const a0 = byId('shows', S.routePick.a), b0 = byId('shows', S.routePick.b);
   const rr = a0 && b0 ? routeCached(a0, b0) : null;

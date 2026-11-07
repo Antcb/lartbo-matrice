@@ -11,7 +11,7 @@ import { CFG } from './config.js';
 import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PRIORITY_OPTS, PROSPECT, PROSPECT_OPTS, STATUSES, TASK_STATUS, TASK_STATUS_OPTS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
 import { insert, purgeStored, refreshFor, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode, geoFrance, searchPlaces } from './geo.js';
-import { contactMails, contactsWithMail, defaultCommission, settingAcompte, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, placeOfStructure, placeOfSuivi, projIds, projName, projectOptions, prospectTitle, spectaclesOf } from './selectors.js';
+import { contactMails, contactsWithMail, defaultCommission, settingAcompte, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, placeOfStructure, placeOfSuivi, projIds, showPlaceNote, projName, projectOptions, prospectTitle, spectaclesOf } from './selectors.js';
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow } from './ui/bits.js';
@@ -39,6 +39,9 @@ export function showFields(s){
     {k:'address', label:'Adresse du lieu', type:'place', fill:'', full:true, placeholder:'Taper l’adresse du lieu (facultatif)'},
     {k:'postal_code', label:'Code postal'},
     {k:'city', label:'Ville', type:'city', fill:''}, {k:'department', label:'Département (ou pays)', placeholder:'ex. 69, CH, BE'},
+    // décision d'Anthony du 07/11/2026 : l'adresse de la structure n'est le lieu de la date que sur ce choix explicite (sinon : à compléter)
+    {k:'venue_is_structure', label:'Utiliser l’adresse de la structure comme lieu de représentation', type:'checkbox', full:true},
+    {k:'_h_place', type:'html', full:true, html:`<p class="help m0" data-place-note>${esc(placeHelp(s))}</p>`},
     {k:'contract_type', label:'Type de contrat', type:'select', options:CONTRACTS},
     {k:'fee_ht', label:'Cachet HT (€)', type:'number'},
     {k:'ticketing_type', label:'Billetterie', type:'select', options:TICKETING},
@@ -73,16 +76,24 @@ export function newSpectacle(projectId){
     }});
 }
 
-/** Valeurs d'une nouvelle date posée depuis une structure : lieu de la fiche (adresse, code postal, ville, département — pas
- *  l'adresse administrative) */
-export const showPrefillFromStructure = st => st ? {structure_id: st.id, ...placeOfStructure(st)} : {};
+/** Valeurs d'une nouvelle date posée depuis une structure : organisateur, nom, ville et département ; ni adresse, ni code postal, ni
+ *  coordonnées (décision du 07/11/2026 : l'adresse de la structure n'est le lieu que si la case de la date le confirme) */
+export const showPrefillFromStructure = st => { const pl = placeOfStructure(st);
+  return pl ? {structure_id: st.id, venue: pl.venue, city: pl.city, department: pl.department} : {}; };
+/** Texte d'aide sous la case « Utiliser l'adresse de la structure… » : où en est la localisation de la date */
+function placeHelp(s){
+  const note = s?.id ? showPlaceNote(s) : '';
+  return (note ? note + '. ' : '') + 'Sans lieu choisi, adresse propre ou cette case, l’adresse du lieu reste à compléter dans la fiche, le contrat et les mails.';
+}
 /** Nouvelle date posée depuis un suivi (v1.60.2) : le lieu choisi dans le suivi s'il y en a un, sinon celui de sa structure */
 export const showPrefillFromSuivi = (p, st) => { const pl = placeOfSuivi(p);
   return pl ? {structure_id: st?.id || null, ...pl, venue: pl.venue || st?.name || null} : showPrefillFromStructure(st); };
 
 /** Coordonnées d'une date à l'enregistrement (v1.60.2) : un lieu ou une adresse choisis dans la fenêtre gardent les leurs ;
- *  un emplacement changé à la main est relocalisé (adresse complète si elle est connue) ; la structure (organisateur) ne sert
- *  de repère que si la date n'a ni adresse ni autre ville. Le département suit le code postal (règle {{cp}}, deptOf). */
+ *  un emplacement changé à la main est relocalisé (adresse complète si elle est connue) ; les coordonnées de la structure ne sont
+ *  copiées sur la date que si la case « Utiliser l'adresse de la structure… » est cochée (07/11/2026) — sinon rien n'est écrit et la
+ *  carte garde le repère de la structure comme localisation héritée (showPlace). Coordonnées déjà enregistrées : jamais effacées
+ *  sans changement du lieu. Le département suit le code postal (règle {{cp}}, deptOf). */
 async function locateShow(v, s){
   const st = byId('structures', v.structure_id);
   if (!v.city && !v.address && st) v.city = st.city || null;
@@ -99,7 +110,10 @@ async function locateShow(v, s){
     if (st && st.lat != null && (!v.city || !st.city || norm(v.city) === norm(st.city))) return;
   }
   v.lat = v.lng = null;
-  if (st && st.lat != null && !v.address && (!v.city || norm(v.city) === norm(st.city || ''))){ v.lat = st.lat; v.lng = st.lng; v.department = v.department || st.department_code; return; }
+  if (st && st.lat != null && !v.address && (!v.city || norm(v.city) === norm(st.city || ''))){
+    if (v.venue_is_structure){ v.lat = st.lat; v.lng = st.lng; }
+    v.department = v.department || st.department_code; return;
+  }
   const fr = !v.department || french(v.department);
   await fillCoords(v, [v.address, v.postal_code, v.city, fr ? 'France' : v.department].filter(Boolean).join(' '));
 }
@@ -133,8 +147,9 @@ export function editShow(id, projectId, prefill={}){
       if (becameConfirmed(before, v.status)) setTimeout(() => askConfirmation(showId), 80);
     }
   });
-  // Choix d'une structure → lieu repris de sa fiche (nom si vide, adresse, code postal, ville, département, coordonnées),
-  // sauf si un lieu ou une adresse ont été choisis dans cette fenêtre (v1.60.2 : le lieu réel n'est jamais remplacé par l'organisateur)
+  // Choix d'une structure → nom (si vide), ville et département repris de sa fiche, sauf si un lieu ou une adresse ont été choisis
+  // ou sont déjà renseignés (le lieu réel n'est jamais remplacé par l'organisateur) ; jamais son adresse, son code postal ni ses
+  // coordonnées (07/11/2026 : seulement avec la case « Utiliser l'adresse de la structure… », appliquée à l'enregistrement)
   const dlg = $('#modal');
   let placePicked = false;
   const onChosen = e => {
@@ -147,10 +162,10 @@ export function editShow(id, projectId, prefill={}){
     const pre = showPrefillFromStructure(st);
     const put = (k, v) => { const el = f[k]; if (!el) return; el.value = v ?? ''; const vis = el.closest('.ac')?.querySelector('.ac-input'); if (vis) vis.value = v ?? ''; };
     if (!f.venue.value) put('venue', pre.venue);
-    if (placePicked) return;
-    if (pre.city){ put('city', pre.city); put('address', pre.address); put('postal_code', pre.postal_code); }
+    if (placePicked || f.address?.value.trim()) return;
+    if (pre.city) put('city', pre.city);
     if (pre.department) put('department', pre.department);
-    if (f.lat){ f.lat.value = st.lat ?? ''; f.lng.value = st.lng ?? ''; }
+    // coordonnées : inchangées ici ; une autre ville est relocalisée à l'enregistrement (locateShow)
   };
   dlg.addEventListener('ac-chosen', onChosen);
   // autre artiste choisi → ses spectacles (v1.57) ; le spectacle choisi reste seulement s'il est aussi le sien

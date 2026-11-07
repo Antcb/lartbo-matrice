@@ -9,7 +9,7 @@
 import { LOG_ICON, LOG_KINDS, PROSPECT, PROSPECT_LABEL, PROSPECT_OPTS, isOff, stColor } from '../constants.js';
 import { lingering, summaryRetryAt } from '../data.js';
 import { distKm, routeCached, route } from '../geo.js';
-import { suiviClosed, projFilterOk, byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, placeOfSuivi, placeText, projIds, projName, projNames, projectOptions, showCoords, showsOfProject, structName, suiviCoords } from '../selectors.js';
+import { suiviClosed, projFilterOk, byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, placeOfSuivi, placeText, projIds, projName, projNames, projectOptions, showCoords, showPlace, showPlaceNote, showsOfProject, structName, suiviCoords } from '../selectors.js';
 import { ENV } from '../config.js';
 import { S, localDel, localGet, localSet } from '../state.js';
 import { inactiveToggle, dropZone, fileRow, fold, projPicker, stSelect, pstBadge, stBadge, tabsBar, curTab, viewHead } from '../ui/bits.js';
@@ -215,7 +215,7 @@ function sidePanel(p, st, proj, linked){
   const inRadius = here ? shows.filter(s => s.date >= now && s.date <= until && !around.includes(s) && showCoords(s) && distKm(here, showCoords(s)) <= R) : [];
   const shown = target ? [...around, ...inRadius] : shows.filter(s => s.date >= now && s.date <= until);
   const pts = shown.map(s => { const c = showCoords(s); return c && {lat:c[0], lng:c[1], color:stColor(s.status), big:(s.status||'').startsWith('Confirmée'), showId:s.id, from: here,
-    label:`<b>${esc(s.venue)}</b><br>${fmtDate(s.date)} — ${esc(s.city||'')}<br>${esc(s.status)}`}; }).filter(Boolean);
+    label:`<b>${esc(s.venue)}</b><br>${fmtDate(s.date)} — ${esc(s.city||'')}<br>${esc(s.status)}${showPlaceNote(s) ? `<br><span class="warn-txt">${esc(showPlaceNote(s))}</span>` : ''}`}; }).filter(Boolean);
   if (here) pts.push({lat:here[0], lng:here[1], color:'#FFFFFF', ring:true, big:true, label:`<b>${esc(pl?.venue || pl?.address || st?.name || '')}</b>${pl && st ? `<br>${esc(st.name)}` : ''}<br>Date en négociation${target?' : '+fmtDate(target):''}`});
   setMapData({points: pts, key:`ws|${p.id}|${proj}|${target}|${R}`, circle: here && target ? {center: here, km: R} : null,
     fitTo: here ? [here, ...pts.map(x=>[x.lat,x.lng])] : null, zoom:7});
@@ -244,10 +244,11 @@ function sidePanel(p, st, proj, linked){
 }
 
 function distCell(s, here){
-  const c = showCoords(s); if (!c) return '<span class="muted">non localisée</span>';
+  // localisation de la date (07/11/2026) : manquante signalée ; héritée de la structure : distance donnée, « lieu à confirmer »
+  const {coords: c, state} = showPlace(s); if (!c) return '<span class="warn-txt">localisation manquante</span>';
   if (!here) return '';
-  const r = routeCached(here, s);
-  return r && !r.error ? `<b>${r.km} km</b><br><span class="muted">${r.time}</span>` : `${Math.round(distKm(here, c))} km<br><span class="muted">à vol d'oiseau</span>`;
+  const r = routeCached(here, s), tbc = state === 'inherited' ? '<br><span class="warn-txt">lieu à confirmer</span>' : '';
+  return (r && !r.error ? `<b>${r.km} km</b><br><span class="muted">${r.time}</span>` : `${Math.round(distKm(here, c))} km<br><span class="muted">à vol d'oiseau</span>`) + tbc;
 }
 
 function lists(around, inRadius, here, target, R, until, ownPlace=false){

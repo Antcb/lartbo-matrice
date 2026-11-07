@@ -44,13 +44,14 @@ test('v1.60.2 date : code postal tapé → département à 2 chiffres ; nom tap�
   const r = await page.evaluate(async () => {
     const { byId, placeOfEvent, showCoords } = await import('./js/selectors.js');
     const ev = placeOfEvent(byId('structure_events', 'ev-1'));
-    // date d'une autre ville que son organisateur, pas encore localisée : jamais placée chez l'organisateur
+    // date d'une autre ville que son organisateur, pas encore localisée : repère de la structure conservé (comme en v1.60.1),
+    // « localisation héritée — lieu à confirmer » (décision du 07/11/2026 : aucune date retirée de la carte)
     const loin = showCoords({ structure_id: 'st-2', city: 'Autre-Ville', lat: null, lng: null });
     const meme = showCoords({ structure_id: 'st-2', city: 'Bourg-Test', lat: null, lng: null });
     return { ev, loin, meme };
   });
   expect(r.ev).toEqual({ venue: 'Zz Édition Ailleurs', address: null, postal_code: null, city: 'Autre-Ville', department: null, lat: null, lng: null });
-  expect(r.loin).toBeNull();
+  expect(r.loin).toEqual([47.45, -0.55]);
   expect(r.meme).toEqual([47.45, -0.55]);
   // code postal saisi à la main sur une date existante : département déduit (règle {{cp}} : 2 chiffres, 2A/2B)
   await page.evaluate(async () => { (await import('./js/forms.js')).editShow('sh-3'); });
