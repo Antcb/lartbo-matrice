@@ -11,7 +11,7 @@ import { cChk, cIn, cSel } from '../ui/cells.js';
 import { HOLDERS, cnmBearer, cnmOf, coreaCalc, holderLabel, isCorea } from '../corea.js';
 import { esc, eur2, fmtDate, today, r2, pct as fmtPct } from '../utils.js';
 import { coreaBreaks, productionBreaks } from '../break.js';
-import { COPROD_ROLES, PROD_CATS, PROMO_DEBTORS, PROMO_PAYERS, coprodClose, coprodLines, isProductionShow, productionBudget } from '../production-budget.js';
+import { COPROD_ROLES, PROD_CATS, PROMO_DEBTORS, PROMO_LEGACY_LABEL, PROMO_PAYERS, coprodClose, coprodLines, isProductionShow, productionBudget, promoDebtorOf } from '../production-budget.js';
 
 const STATUS = {paid:['Payé','ok-badge'], doc:['Pièce reçue','warn-badge'], planned:['Prévu','badge']};
 const badge = l => { const [t,c] = STATUS[lineStatus(l)]; return `<span class="${c}">${t}</span>`; };
@@ -362,7 +362,7 @@ function coprodBlock(s){
     ${!promoShown ? '<p class="muted small">Aucune promotion locale.</p>' : ''}
     ${x.promo_advance ? `<p class="muted small">Dont avance de promotion locale : ${eur2(x.promo_advance)} payés par ${x.promo_payer === 'artbo' ? 'L’ArtBo' : 'le coproducteur'} pour le compte de ${x.promo_debtor === 'artbo' ? 'L’ArtBo' : 'le coproducteur'} (comptée une seule fois).</p>` : ''}
     ${promoShown ? `<div class="steps prod-params">
-      <label>Promotion locale (${promoAmt}) : supportée par</label>${closed ? `<span>${esc((PROMO_DEBTORS.find(d => d[0] === x.promo_debtor) || [, '—'])[1])}</span>` : prodSel(s, 'promo_debtor', k.r.p.promo_debtor, PROMO_DEBTORS)}
+      <label>Promotion locale (${promoAmt}) : supportée par</label>${closed ? `<span>${esc((PROMO_DEBTORS.find(d => d[0] === x.promo_debtor) || [, x.promo_debtor_rule === 'commun_historique' ? PROMO_LEGACY_LABEL : '—'])[1])}</span>` : `<span>${prodSel(s, 'promo_debtor', k.r.p.promo_debtor, PROMO_DEBTORS)}${promoDebtorOf(s, k.r.p).assumed ? ` <span class="warn-txt">${esc(PROMO_LEGACY_LABEL)}</span>` : ''}</span>`}
       <label>Payée par</label>${closed ? `<span>${esc((PROMO_PAYERS.find(d => d[0] === x.promo_payer) || [, '—'])[1])}</span>` : prodSel(s, 'promo_payer', k.r.p.promo_payer, PROMO_PAYERS)}
       <label>Payée le</label>${closed ? `<span>${x.promo_paid_at ? fmtDate(x.promo_paid_at) : '—'}</span>` : `<input type="date" data-prod-show="${s.id}" data-prod-path="promo_paid_at" value="${esc(k.r.p.promo_paid_at || '')}">`}
     </div>` : ''}
@@ -501,7 +501,7 @@ export function productionBudgetHTML(s){
       <tr><td>Coûts de production HT</td><td></td>${two(-f.costs, -r.costs)}</tr>
       <tr><td>Promo locale (sur la recette nette)</td><td class="num">${pin(s, 'promo_net_pct', p.promo_net_pct, 'class="narrow"')} %</td><td colspan="2"></td></tr>
       <tr><td>Promo locale (sur les DL)</td><td class="num">${pin(s, 'promo_dl_pct', p.promo_dl_pct, 'class="narrow"')} %</td>${two(-f.promo, R(-r.promo))}</tr>
-      ${s.contract_type === 'Co-Production' ? `<tr><td>Promo locale supportée par <span class="muted">(selon le contrat ; distinct de qui la paie et de qui encaisse la billetterie, notés à la clôture)</span>${f.promo && !p.promo_debtor ? ' <span class="warn-txt">Non renseigné</span> <span class="muted">: comptée pour l’instant dans le résultat partagé</span>' : ''}</td><td colspan="3">${prodSel(s, 'promo_debtor', p.promo_debtor, PROMO_DEBTORS)}</td></tr>` : ''}
+      ${s.contract_type === 'Co-Production' ? `<tr><td>Promo locale supportée par <span class="muted">(selon le contrat ; distinct de qui la paie et de qui encaisse la billetterie, notés à la clôture)</span>${f.promo && !promoDebtorOf(s, p).debtor ? ' <span class="warn-txt">à choisir avant la clôture</span>' : f.promo && promoDebtorOf(s, p).assumed ? ` <span class="warn-txt">${esc(PROMO_LEGACY_LABEL)}</span>` : ''}</td><td colspan="3">${prodSel(s, 'promo_debtor', p.promo_debtor, PROMO_DEBTORS)}</td></tr>` : ''}
       ${f.extra ? `<tr><td>Recettes complémentaires de coproduction (lignes de Factures qualifiées)</td><td></td>${two(f.extra, R(r.extra))}</tr>` : ''}
       <tr><td><b>Résultat hors DL</b></td><td></td>${two(f.result, R(r.result), 'strong')}</tr>
       <tr class="bill-total"><td><b>Résultat DL inclus</b></td><td></td>${two(f.resultDl, R(r.resultDl), 'strong')}</tr>
