@@ -2,14 +2,15 @@
  * Budget dans l'onglet Production : le budget de chaque date (prévu / réel, pièces, qui paie)
  * et la vue d'ensemble d'un artiste (compte dédié, toutes les dates, frais hors date).
  */
-import { accountMoves, accountOf, availableForArtist, coreaCommissionCheck, cnmPct, commissionAmount, commissionOf, isFree, isSolde, lineForecast, lineStatus, lineValue, linesOf, offLinesOf, payerLabel, payslipCost, prodShowsOf, showBudget } from '../budget.js';
+import { INCOMPLETE, accountMoves, accountOf, availableForArtist, coreaCommissionCheck, cnmPct, commissionAmount, commissionOf, isFree, isSolde, lineForecast, lineStatus, lineValue, linesOf, missingCostLines, offLinesOf, payerLabel, payslipCost, prodShowsOf, showBudget } from '../budget.js';
+import { costFillPlan } from '../budget-template.js';
 import { BUDGET_CATS, PAYERS } from '../constants.js';
 import { commissionState, payAmount, paymentsOf } from '../calc.js';
 import { byId } from '../selectors.js';
 import { S } from '../state.js';
 import { cChk, cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';   // dates du budget de production : largeur d'une date (.steps .dt), saisie jj/mm/aaaa (v1.60.3)
-import { HOLDERS, cnmBearer, cnmOf, coreaCalc, holderLabel, isCorea } from '../corea.js';
+import { HOLDERS, breakFromText, cnmBearer, cnmOf, coreaCalc, holderLabel, isCorea } from '../corea.js';
 import { esc, eur2, fmtDate, today, r2, pct as fmtPct } from '../utils.js';
 import { coreaBreaks, productionBreaks } from '../break.js';
 import { COPROD_ROLES, PROD_CATS, PROMO_DEBTORS, PROMO_LEGACY_LABEL, PROMO_PAYERS, coprodClose, coprodLines, isProductionShow, productionBudget, promoDebtorOf } from '../production-budget.js';
@@ -62,6 +63,17 @@ function dropZone(attrs, text){
 }
 
 /**
+ * « Budget incomplet — coûts à renseigner » (demande d'Anthony du 07/11/2026) : lignes dont la quantité est connue mais pas le
+ * coût (comptées 0 €) ; avec, quand le budget type de la date sait les chiffrer (jauge renseignée), le bouton pour compléter
+ * les seules lignes vides après confirmation.
+ */
+function incompleteNote(s){
+  const ls = missingCostLines(s.id); if (!ls.length) return '';
+  const n = costFillPlan(s).length;
+  return `<p class="mode-note warn-txt budget-incomplete"><b>${INCOMPLETE}</b> : ${esc(ls.map(l => l.label || l.category || 'ligne sans libellé').join(' ; '))} — compté${ls.length > 1 ? 's' : ''} 0 € tant que le coût n’est pas saisi : totaux, reste et points d’équilibre non fiables.${n ? ` <button class="btn sm" data-act="fillMissingCosts" data-id="${s.id}">Compléter depuis le budget type (${n} ligne${n > 1 ? 's' : ''})</button>` : ''}</p>`;
+}
+
+/**
  * Résumé lisible : prévu / réel / écart. Une seule logique sur toutes les lignes :
  *  - « Réel » = ce qu'on sait aujourd'hui : le montant réel quand il est connu, sinon le prévu (encore estimé) ;
  *  - « Écart » = seulement ce qui a vraiment changé (réel connu − son prévu) ;
@@ -99,15 +111,15 @@ function summaryTable(s, b, com, p){
       <td class="num nowrap">${strong ? `<b>${eur2(f)}</b>` : eur2(f)}</td><td class="num nowrap">${strong ? `<b>${eur2(r)}</b>` : eur2(r)}</td>${gapCell(gap, cost)}</tr>`;
   const resteF = r2(b.gross - b.com - b.forecastExp), resteR = r2(b.gross - b.com - expNow);
   // coréalisation : rémunération brute = MG + part du résultat validée ; la commission porte sur le tout (v1.51)
-  const corea = isCorea(s), shareTodo = corea && (s.corea_share == null || s.corea_share === '');
+  const corea = isCorea(s), shareTodo = corea && (s.corea_share == null || s.corea_share === ''), missing = missingCostLines(s.id).length;
   const brut = corea ? 'MG + part − commission − dépenses' : 'cachet − commission − dépenses';
   return `<div class="tbl-wrap"><table class="budget-sum"><thead><tr><th></th><th class="num">Prévu</th><th class="num" title="Montant réel quand il est connu, sinon le prévu">Réel / à jour</th><th class="num">Écart</th></tr></thead><tbody>
     ${row('Cachet HT', b.fee, b.fee, 0, (cashed >= b.fee - 0.01 && b.fee ? 'entièrement encaissé' : `encaissé : ${eur2(cashed)} sur ${eur2(b.fee)}`) + (unassigned ? ` · dont ${eur2(unassigned)} — compte non renseigné` : ''))}
     ${corea ? row('Part du résultat (coréalisation)', b.share, b.share, 0, shareTodo ? 'pas encore validée : la commission ne porte pour l’instant que sur le MG' : 'validée · comprise dans la base de la commission') : ''}
     ${row('Commission L’ArtBo', b.com, b.com, 0, commissionStatus(com) + (corea ? ` · sur ${eur2(b.gross)} (MG${shareTodo ? ' seul, provisoire' : ' + part'})` : '')
       + ((q => q && Math.abs(q.gap) >= 0.005 ? ` · régularisation à prévoir : ${q.gap > 0 ? '+' : ''}${eur2(q.gap)} (montant historique conservé)` : '')(coreaCommissionCheck(s))), {cost: true})}
-    ${row('Dépenses', b.forecastExp, expNow, expGap, !exp.length ? 'aucune ligne' : est.length ? `${eur2(realSum)} réels (${real.length} ligne${real.length > 1 ? 's' : ''}) + ${eur2(estSum)} encore au prévu (${est.length} ligne${est.length > 1 ? 's' : ''})` : 'toutes les lignes ont leur montant réel', {cost: true})}
-    ${row('Reste pour l’artiste' + (p?.artist_payee ? ` (${esc(p.artist_payee)})` : ''), resteF, resteR, r2(resteR - resteF), est.length ? `${brut} · encore provisoire : ${est.length} dépense${est.length > 1 ? 's' : ''} au prévu` : `${brut} · définitif`, {strong: true})}
+    ${row('Dépenses', b.forecastExp, expNow, expGap, (missing ? `<span class="warn-txt">${INCOMPLETE} (${missing} ligne${missing > 1 ? 's' : ''} à 0 €)</span> · ` : '') + (!exp.length ? 'aucune ligne' : est.length ? `${eur2(realSum)} réels (${real.length} ligne${real.length > 1 ? 's' : ''}) + ${eur2(estSum)} encore au prévu (${est.length} ligne${est.length > 1 ? 's' : ''})` : 'toutes les lignes ont leur montant réel'), {cost: true})}
+    ${row('Reste pour l’artiste' + (p?.artist_payee ? ` (${esc(p.artist_payee)})` : ''), resteF, resteR, r2(resteR - resteF), (missing ? `<span class="warn-txt">${INCOMPLETE}</span> · ` : '') + (est.length ? `${brut} · encore provisoire : ${est.length} dépense${est.length > 1 ? 's' : ''} au prévu` : `${brut} · définitif`), {strong: true})}
   </tbody></table></div>
   <p class="muted" style="font-size:12px;margin:6px 0 12px">Pièces reçues : ${b.docsIn}/${b.docsAll} · ${b.paid} payées.</p>`;
 }
@@ -139,7 +151,7 @@ function artistBlock(s, b, p){
   return `<div class="artist-result">
     <h4 class="block-title">Reste pour ${esc(who)}</h4>
     <div class="ar-grid">
-      <div class="stat"><b>${eur2(r.reste)}</b><span>calculé : ${b.share ? `MG ${eur2(b.fee)} + part ${eur2(b.share)}` : `cachet ${eur2(b.fee)}`} − commission ${eur2(b.com)} − dépenses ${eur2(b.expenses)}</span></div>
+      <div class="stat"><b>${eur2(r.reste)}</b><span>${missingCostLines(s.id).length ? `<b class="warn-txt">${INCOMPLETE}</b> · ` : ''}calculé : ${b.share ? `MG ${eur2(b.fee)} + part ${eur2(b.share)}` : `cachet ${eur2(b.fee)}`} − commission ${eur2(b.com)} − dépenses ${eur2(b.expenses)}</span></div>
       <div class="stat"><b>${r.hasVerse ? eur2(r.verse) : '—'}</b><span>versé à ${esc(who)}${r.todo ? ` · <b>${eur2(r.todo)}</b> encore à verser (pas de date)` : ''}</span></div>
       <div class="stat"><b>${ecartHTML(r.ecart)}</b><span>${r.ecart == null ? 'écart : quand le versement est noté' : r.ecart < -0.005 ? 'écart pour toi : versé plus que le reste, tu perds' : r.ecart > 0.005 ? 'écart pour toi : versé moins que le reste, tu gagnes' : 'écart pour toi : juste'}</span></div>
     </div>
@@ -160,7 +172,9 @@ export function showBudgetHTML(s){
     <td class="${cst?.full || cst?.legacy ? 'done-cell' : ''}">${commissionTransferCell(com)}</td><td></td></tr>`;
   return `<div class="prod-budget">
 
+    ${incompleteNote(s)}
     ${summaryTable(s, b, com, p)}
+    <div class="steps prod-params"><label>Jauge ouverte (places)</label><span>${cIn('shows', s.id, 'capacity', s.capacity, 'number', 'class="narrow" aria-label="Jauge ouverte (places)"')} <span class="muted">jauge de la date (tarifs du budget type, points d’équilibre), pas la capacité de la salle</span></span></div>
     ${cnmBlock(s)}
     ${isCorea(s) ? coreaBlock(s) : ''}
     <div class="tbl-wrap"><table class="budget-table">${HEAD}<tbody>${comRow}${byCategory(b.lines.filter(l => !isSolde(l)), p)}</tbody></table></div>
@@ -205,7 +219,7 @@ export function projectBudgetHTML(projectId){
     const missing = s.date && s.date < now && b.docsIn < b.docsAll;
     if (isProductionShow(s)) return ownProdRow(s, b, missing);
     return `<tr><td class="nowrap"><a href="#" data-act="openProdShow" data-id="${s.id}">${fmtDate(s.date)}</a></td><td>${esc(s.venue||'')}${s.city?` <span class="muted">(${esc(s.city)})</span>`:''}</td>
-      <td class="num"${b.share ? ` title="MG ${eur2(b.fee)} + part du résultat ${eur2(b.share)}"` : ''}>${eur2(b.gross)}</td><td class="num">${eur2(b.com)}</td><td class="num">${eur2(b.expenses)}</td><td class="num"><b>${eur2(b.available)}</b></td><td class="num">${(r => r.hasVerse ? eur2(r.verse) : '<span class="muted">—</span>')(artistResult(s, b))}</td>
+      <td class="num"${b.share ? ` title="MG ${eur2(b.fee)} + part du résultat ${eur2(b.share)}"` : ''}>${eur2(b.gross)}</td><td class="num">${eur2(b.com)}</td><td class="num">${eur2(b.expenses)}</td><td class="num"><b>${eur2(b.available)}</b>${missingCostLines(s.id).length ? `<div class="warn-txt tiny" title="${esc(INCOMPLETE)}">budget incomplet</div>` : ''}</td><td class="num">${(r => r.hasVerse ? eur2(r.verse) : '<span class="muted">—</span>')(artistResult(s, b))}</td>
       ${b.lines.length ? `<td class="num nowrap">${ecartHTML(artistResult(s, b).ecart)}</td>
       <td class="${missing?'late-cell':''}">${b.docsIn}/${b.docsAll}${missing?' ⚠︎':''}</td>` : '<td class="num muted">—</td><td><span class="warn-badge">Budget à faire</span></td>'}</tr>`; }).join('');
   // dates produites par L'ArtBo (Production / Co-Production) : budget prévisionnel à part, hors totaux du cachet ; seul le versé réel compte
@@ -261,6 +275,14 @@ function cnmBlock(s){
   </div>`;
 }
 
+/** Break des Conditions lisible sans ambiguïté : proposé (bouton) quand « Break (billets) » est vide, signalé s'il diffère ;
+ *  jamais enregistré ni validé sans geste explicite (demande du 07/11/2026) */
+export function textBreakHint(s){
+  const n = breakFromText(s.cr_break); if (n == null) return '';
+  const cur = s.break_even == null || s.break_even === '' ? null : Number(s.break_even);
+  if (cur == null) return ` <button class="btn sm" data-act="coreaUseTextBreak" data-id="${s.id}" title="Reprend le nombre du texte des Conditions ; le break restera à valider">Reprendre ${n} billets (Conditions)</button>`;
+  return cur === n ? '' : ` <span class="warn-txt small">les Conditions indiquent ${n} billets</span>`;
+}
 const cin = (s, path, v, extra = '') => `<input type="${/label/.test(path) ? 'text' : 'number'}" ${/label/.test(path) ? '' : 'step="any" inputmode="decimal"'} data-corea-show="${s.id}" data-corea-path="${path}" value="${esc(v ?? '')}" ${extra}>`;
 /** Coréalisation : tarifs, break validé, recettes au-delà du break, charges déductibles, partage (MG + part du résultat) */
 function coreaBlock(s){
@@ -274,7 +296,7 @@ function coreaBlock(s){
       <td class="num">${cin(s, `tiers.${i}.after`, co.tiers[i].after, 'class="narrow" placeholder="—" title="Billets de ce tarif vendus après le break (si connu)"')}</td>
       <td><button class="btn icon sm ghost danger" data-act="coreaDelTier" data-id="${s.id}" data-i="${i}" aria-label="Retirer ce tarif">✕</button></td></tr>`).join('');
   const charges = (co.charges || []).map((x, i) => `<tr><td>${cin(s, `charges.${i}.label`, x.label, 'placeholder="Charge prévue au contrat (ex. SACEM, frais de billetterie)"')}</td>
-      <td class="num">${cin(s, `charges.${i}.amount`, x.amount, 'class="narrow" title="Montant HT"')}</td>
+      <td class="num">${cin(s, `charges.${i}.amount`, x.amount, 'class="narrow" title="Montant HT (€)" aria-label="Montant HT (€)" placeholder="HT"')}</td>
       <td><button class="btn icon sm ghost danger" data-act="coreaDelCharge" data-id="${s.id}" data-i="${i}" aria-label="Retirer cette charge">✕</button></td></tr>`).join('');
   const brk = s.break_even == null || s.break_even === '' ? '<span class="muted">à renseigner</span>'
     : c.validated ? `<span class="ok-badge">validé</span> <span class="muted">le ${who(co.break_validated_at, co.break_by)}</span>`
@@ -290,7 +312,7 @@ function coreaBlock(s){
     <h4 class="block-title">Coréalisation : partage au-delà du break</h4>
     <div class="steps prod-params">
       <label>Minimum garanti (cachet HT)</label><span><b>${eur2(c.mg)}</b> <span class="muted">acquis, fixe</span></span>
-      <label>Break (billets)</label><span>${cIn('shows', s.id, 'break_even', s.break_even, 'number', 'class="narrow"')} ${brk}</span>
+      <label>Break (billets)</label><span>${cIn('shows', s.id, 'break_even', s.break_even, 'number', 'class="narrow" aria-label="Break (billets)"')} ${brk}${textBreakHint(s)}</span>
       ${s.cr_break ? `<label>Break du contrat</label><span class="muted">« ${esc(s.cr_break)} » (texte conservé tel quel)</span>` : ''}
       <label>% du résultat net au producteur</label>${cIn('shows', s.id, 'cr_producer_pct', s.cr_producer_pct, 'number', 'class="narrow"')}
     </div>
@@ -300,7 +322,8 @@ function coreaBlock(s){
     <div class="vh-actions mt-sm"><button class="btn sm" data-act="coreaAddTier" data-id="${s.id}">Ajouter un tarif</button></div>
     ${rev}
     <h4 class="block-title">Charges déductibles (contrat)</h4>
-    <div class="tbl-wrap"><table class="budget-table"><tbody>${charges}
+    <p class="muted small">Charge autorisée par le contrat, retirée des recettes avant le partage ; chacune une seule fois, sans double déduction (la CNM passe par la case « CNM déduite du résultat partagé » ; ni le MG ni la commission ne sont des charges).</p>
+    <div class="tbl-wrap"><table class="budget-table"><thead><tr><th>Charge prévue au contrat</th><th class="num">Montant HT (€)</th><th></th></tr></thead><tbody>${charges}
       ${s.cnm_in_result ? `<tr><td>Taxe CNM (sur la totalité des recettes HT)</td><td class="num nowrap">${eur2(c.cnm)}</td><td></td></tr>` : ''}</tbody></table></div>
     <div class="vh-actions mt-sm"><button class="btn sm" data-act="coreaAddCharge" data-id="${s.id}">Ajouter une charge</button></div>
     ${c.issues.length ? `<ul class="warn-txt warn-list">${c.issues.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
@@ -454,9 +477,10 @@ export function productionBudgetHTML(s){
       <div class="stat"><b style="${f.resultDl < 0 ? 'color:var(--danger)' : ''}">${eur2(f.resultDl)}</b><span>Résultat DL inclus (prévu)${hasReal || lines.some(l => l.amount != null) ? ` · réel ${eur2(r.resultDl)}` : ''}</span></div>
       <div class="stat"><b>${pct(f.fill)}</b><span>Remplissage (${f.total} / ${f.capacity || '?'} places)</span></div>
     </div>
+    ${incompleteNote(s)}
 
     <div class="steps prod-params">
-      <label>Jauge (fiche de la date)</label>${cIn('shows', s.id, 'capacity', s.capacity, 'number', 'class="narrow"')}
+      <label>Jauge ouverte (places)</label>${cIn('shows', s.id, 'capacity', s.capacity, 'number', 'class="narrow"')}
       <label>Représentations</label>${pin(s, 'reps', p.reps, 'class="narrow"')}
       <label>TVA billetterie (%)</label>${pin(s, 'vat', p.vat, 'class="narrow"')}
       ${s.contract_type === 'Co-Production' || s.partner_id ? `<label>Part de L’ArtBo (%) des bénéfices</label><span>${pin(s, 'artbo_share', p.artbo_share, 'class="narrow"')} <span class="muted">· ${esc(f.partnerName)} : ${esc(fmtPct(100 - (Number(p.artbo_share) || 0)))}</span></span>
