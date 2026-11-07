@@ -85,7 +85,7 @@ test.describe('écran tactile', () => {
 });
 
 const T = { mus_n: 4, multi_n: 1, tech_n: 2, mus_small: 250, mus_small_brut: 160, mus_large: 320, multi_small: 300, multi_large: 380, tech: 290, peage: 40 };
-test('v1.60.3 budget d’une date : lignes de cachets sur trois lignes au plus (au lieu de 4 à 7), tableau pas plus large', async ({ page }) => {
+test('v1.60.3 budget d’une date : lignes de cachets sur trois lignes au plus (au lieu de 4 à 7), aucun défilement horizontal à 1 280 et 1 440 px', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, { spectacles: [{ id: 'sp-jp', project_id: 'art-a', name: 'Jeune public', active: true, budget_template: T, sort: 1 }], shows: [
     { id: 'sv-1', project_id: 'art-a', spectacle_id: 'sp-jp', venue: 'Salle', capacity: 300, status: 'Confirmée Salle', contract_type: 'Cession', prod_mode: 'production', date: `${Y}-12-01`, fee_ht: 3000 }] });
@@ -100,10 +100,18 @@ test('v1.60.3 budget d’une date : lignes de cachets sur trois lignes au plus (
   expect(Math.max(...rows.map(r => r.lignes)), JSON.stringify(rows)).toBeLessThanOrEqual(3);
   expect(await page.evaluate(() => { const w = document.querySelector('#prod-sv-1 .budget-table').closest('.tbl-wrap'); return w.scrollWidth - w.clientWidth; }), 'tableau sans défilement horizontal à 1 440 px').toBeLessThanOrEqual(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);
-  // 1 280 px : le tableau défilait déjà avant ce lot (1 265 px de contenu) ; il ne s'élargit pas (réponse d'Anthony du 07/11)
+  // 1 280 px : « Garde trois lignes pour les cachets, sans imposer de défilement horizontal sur grand écran » (Anthony, 07/11/2026) :
+  // avant, 1 265 px de contenu pour 1 196 px de cadre ; le total de « quantité × coût » passe désormais sous la quantité quand la place manque
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.evaluate(async () => (await import('./js/app.js')).render());
-  expect(await page.evaluate(() => document.querySelector('#prod-sv-1 .budget-table').closest('.tbl-wrap').scrollWidth), 'pas plus large qu’avant le lot').toBeLessThanOrEqual(1265);
+  expect(await page.evaluate(() => { const w = document.querySelector('#prod-sv-1 .budget-table').closest('.tbl-wrap'); return w.scrollWidth - w.clientWidth; }), 'tableau sans défilement horizontal à 1 280 px').toBeLessThanOrEqual(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1280);
+  // « quantité × coût » jamais coupé, total lisible et aligné à droite dans sa case
+  const qty = await page.locator('#prod-sv-1 .budget-table .qty-line').evaluateAll(l => l.map(q => { const [n, x, u] = [...q.querySelectorAll('.qty-mul > *')].map(e => e.getBoundingClientRect());
+    const b = q.querySelector('b').getBoundingClientRect(), td = q.closest('td').getBoundingClientRect();
+    return { uneLigne: Math.abs(n.top - u.top) < 2 && Math.abs(n.top - x.top) < 12, totalDansLaCase: b.width > 0 && b.right <= td.right + 0.5 && b.left >= td.left - 0.5 }; }));
+  expect(qty.length, 'lignes quantité × coût présentes').toBeGreaterThan(0);
+  expect(qty.every(q => q.uneLigne && q.totalDansLaCase), JSON.stringify(qty)).toBe(true);
   const l1280 = await page.locator('#prod-sv-1 .budget-table td.bl-label textarea').evaluateAll(l => Math.max(...l.map(ta => Math.round((ta.scrollHeight - 8) / parseFloat(getComputedStyle(ta).lineHeight)))));
   expect(l1280).toBeLessThanOrEqual(3);
   expectClean(ctx);

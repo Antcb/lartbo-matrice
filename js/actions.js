@@ -153,7 +153,7 @@ export const ACTIONS = {
       if (win) win.location.href = out.url; else window.open(out.url, '_blank');
       toast(`${out.count} ligne(s) à vérifier dans le tableau`); render(); }
     catch (err) { if (win) win.close(); toast(err.message, true); } t.disabled = false; },
-  renameApply: async t => { if (!(await confirmAsk('Renommer dans le Drive ?', 'Tous les éléments cochés dans le tableau de renommage seront renommés dans le Drive (rien n’est supprimé ni déplacé).', 'Renommer les éléments cochés'))) return; t.disabled = true;
+  renameApply: async t => { if (!(await confirmAsk('Renommer dans le Drive ?', 'Seuls les dossiers cochés dans le tableau de renommage seront renommés dans le Drive. Les contrats ne sont jamais renommés, même cochés (lignes données pour information). Rien n’est supprimé ni déplacé.', 'Renommer les dossiers cochés'))) return; t.disabled = true;
     try { const out = await callScript('rename_apply', {}); toast(`${out.renamed} élément(s) renommé(s)`); } catch (err) { toast(err.message, true); } t.disabled = false; },
   prospection: t => openProspection(t.dataset.id),
   relance: t => openProspection(null, {prospectId: t.dataset.id}),
