@@ -17,7 +17,7 @@
 import { r2 } from './utils.js';
 import { isProductionShow, prodOf, productionBudget } from './production-budget.js';
 import { breakValidated, cnmRate, cnmRealOf, coreaTiers, isAbroad, isCorea } from './corea.js';
-import { isSolde, lineForecast, linesOf } from './budget.js';
+import { isSolde, lineForecast, linesOf, missingCostLines, missingCostText } from './budget.js';
 
 const num = v => v == null || v === '' ? null : Number(v);
 
@@ -65,6 +65,9 @@ export function productionBreaks(s){
   const coprod = s.contract_type === 'Co-Production' || (num(p.artbo_share) ?? 100) < 100;
   const base = {coprod, quota: Q, scenarios: SCENARIOS};
   if (!Q) return {...base, missing: 'Billets prévus par tarif (quotas) : à saisir pour calculer l’équilibre'};
+  // coûts inconnus comptés 0 € : aucun équilibre présenté comme fiable (demande du 07/11/2026)
+  const unknown = missingCostLines(s.id);
+  if (unknown.length) return {...base, incomplete: true, missing: `${missingCostText(unknown)} — équilibre non calculé (ces coûts compteraient pour 0 €)`};
   // budget prévu pour n billets (même calcul que le budget de la date : taxes, coûts, promotion, recettes complémentaires)
   const cache = new Map(), orders = Object.fromEntries(SCENARIOS.map(([sc]) => [sc, saleOrder(tiers, sc)]));
   const budgetAt = (sc, n) => { const key = sc + n; if (!cache.has(key)){
@@ -96,10 +99,14 @@ export function coreaBreaks(s){
   if (contract.value == null) missing.push('break du contrat');
   else if (!contract.validated) missing.push('validation du break du contrat');
   if (pct == null) missing.push('% du résultat net au producteur');
+  else if (pct < 0 || pct > 100) missing.push('% du résultat net au producteur entre 0 et 100');   // même contrôle que coreaCalc
+  // coûts inconnus comptés 0 € : un équilibre « 0 billet » ne serait pas fiable (demande du 07/11/2026)
+  const unknown = missingCostLines(s.id);
+  if (unknown.length) missing.push(missingCostText(unknown).replace(/^Budget incomplet — /, ''));
   const blocking = (s.corea?.charges || []).some(c => /\bcnm\b|minimum garanti|\bmg\b|commission/i.test(c.label || '') || (num(c.amount) || 0) < 0);
   if (blocking) missing.push('charges déductibles à corriger (voir le partage)');
   const costs = r2(linesOf(s.id).filter(l => !isSolde(l)).reduce((a, l) => a + (lineForecast(l) ?? (Number(l.amount) || 0)), 0));
-  if (missing.length) return {...res, missing: 'Équilibre de L’ArtBoristerie : à compléter — ' + missing.join(', '), costs, mg};
+  if (missing.length) return {...res, incomplete: unknown.length > 0, missing: (unknown.length ? 'Budget incomplet. ' : '') + 'Équilibre de L’ArtBoristerie : à compléter — ' + missing.join(', '), costs, mg};
   // prix HT d'un billet selon le scénario : moyenne pondérée par les ventes saisies (sinon moyenne simple), ou tarif min / max
   const priced = tiers.filter(t => t.price > 0), w = priced.reduce((a, t) => a + t.qty, 0);
   const unit = {mix: w ? priced.reduce((a, t) => a + t.unitHt * t.qty, 0) / w : priced.reduce((a, t) => a + t.unitHt, 0) / priced.length,
