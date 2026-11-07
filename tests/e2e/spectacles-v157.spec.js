@@ -77,6 +77,9 @@ test('v1.57 fiche de l’artiste : créer un spectacle avec son budget type ; mo
   await page.evaluate(async () => { const { S } = await import('./js/state.js'); const app = await import('./js/app.js'); app.go('projects'); S.projectPage = 'art-a'; app.render(); });
   await expect(page.locator('main')).toContainText('Aucun spectacle');
   await page.locator('[data-act=newSpectacle]').click();
+  // openModal donne le focus au premier champ (Nom) 30 ms après l'ouverture : on l'attend avant de remplir, sinon (machine lente) la
+  // frappe d'un autre champ part dans le Nom (« Jeune public3 », test instable sur GitHub, exécution 42398792731)
+  await expect(page.locator('#modal [name=name]')).toBeVisible(); await page.evaluate(() => new Promise(r => setTimeout(r, 100)));
   await page.locator('#modal [name=name]').fill('Jeune public');
   await page.locator('#modal [name=mus_n]').fill('3');
   await page.locator('#modal [name=mus_small]').fill('250,5');
