@@ -66,7 +66,7 @@ Toute règle ci-dessous qui n'est pas encore appliquée par le code **ne doit pa
 ### 2.1 Règles générales [EN PLACE]
 - Tous les montants de la Matrice sont **HT**, sauf la billetterie du budget de production (TTC, signalé à l'écran). Salaires : **coût total employeur**.
 - Format français : espace pour les milliers, **virgule décimale**, `€` après le montant.
-- Saisie : tout `input[type=number]` est converti par `js/ui/numfield.js` (virgule acceptée et affichée ; saisie illisible refusée avec « Nombre illisible »). Aucune autre conversion.
+- Saisie : tout `input[type=number]` est converti par `js/ui/numfield.js` (virgule acceptée et affichée ; saisie illisible refusée avec « Nombre illisible »). Aucune autre conversion. [EN PLACE v1.60.3, demande du 07/11/2026] Premier focus (clic ou Tab) : toute la valeur est sélectionnée (la frappe la remplace) ; un clic suivant place le curseur ; pas sur écran tactile (même règle que les dates et les recherches) ; comportement unique dans `numfield.js`, jamais champ par champ.
 - [DÉCIDÉ Q22] **La précision réelle n'est jamais perdue** : on stocke le montant exact saisi ou calculé (au centime) ; masquer des centimes est un choix d'affichage uniquement.
 
 ### 2.2 Affichage des centimes [DÉCIDÉ Q22]
@@ -386,6 +386,8 @@ Les factures de l'artiste sur les dates booking n'entrent dans **aucun** des tro
 ### 6.18 Spectacles d'un artiste et budget type [DÉCIDÉ 04/11/2026, EN PLACE v1.57]
 - Un **artiste** (`projects`, inchangée) peut porter plusieurs **spectacles** (`spectacles` : nom, actif, budget type). Jamais de duplication d'artiste pour représenter un spectacle.
 - Une **date** peut être rattachée à un spectacle (`shows.spectacle_id`). Dates existantes : **aucune attribution automatique** (vide = non précisé). Nouvelle date d'un artiste qui a des spectacles actifs : le choix est demandé dans la fenêtre de la date (les autres chemins de création, ex. prospection, laissent le spectacle vide). Le spectacle doit être celui de l'artiste de la date.
+- [EN PLACE v1.60.3, demande du 07/11/2026] Fenêtre d'une **nouvelle** date : le seul spectacle actif de l'artiste est présélectionné ; plusieurs actifs : celui défini par défaut sur l'artiste (`projects.default_spectacle_id`, fiche artiste › Spectacles) s'il est encore actif, sinon le choix est demandé ; toujours modifiable (`defaultSpectacleId`, `js/selectors.js`). Jamais appliqué aux dates existantes ni aux autres chemins de création.
+- [v1.60.3] Aperçu de l'artiste : l'ancien budget type de l'artiste (`projects.budget_template`) n'est plus affiché dès qu'il a un spectacle ; la donnée reste et sert toujours aux dates sans spectacle.
 - **Budget type** : celui du spectacle de la date, sinon celui de l'artiste, sinon Réglages ; copié seulement dans un budget **vide**, puis adaptable ; le modifier ne change jamais les budgets existants.
 - **Budget type d'un spectacle** : effectifs (musiciens, multi-instrumentistes, techniciens) ; **coût employeur charges comprises** (musicien et multi-instrumentiste selon la jauge, technicien fixe) ; **brut pour information** (affiché dans le libellé de la ligne, jamais compté). Montants saisis dans le spectacle, jamais inventés.
 - **Jauge du tarif** = jauge **ouverte** pour la date (`shows.capacity`), jamais la capacité de la salle ou du festival ; **petite jauge : jusqu'à 300 places incluses**. Sans jauge : ligne posée sans tarif (« jauge à renseigner »). Vaut aussi pour le budget type de l'artiste.

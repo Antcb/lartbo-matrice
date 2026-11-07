@@ -26,6 +26,15 @@ export const projName = id => byId('projects', id)?.name || '';
 export const spectaclesOf = (projectId, {all = true} = {}) => (S.db.spectacles || []).filter(x => x.project_id === projectId && (all || x.active))
   .sort((a, b) => (b.active - a.active) || ((a.sort ?? 1e9) - (b.sort ?? 1e9)) || a.name.localeCompare(b.name));
 export const spectacleName = id => byId('spectacles', id)?.name || '';
+/** Spectacle présélectionné pour une NOUVELLE date (v1.60.3) : le seul spectacle actif de l'artiste ; plusieurs actifs : celui défini
+ *  par défaut sur l'artiste (projects.default_spectacle_id) s'il est encore actif et bien le sien ; sinon aucun (choix demandé).
+ *  Jamais appliqué aux dates existantes ni aux autres chemins de création. */
+export function defaultSpectacleId(projectId){
+  const act = spectaclesOf(projectId, {all: false});
+  if (act.length === 1) return act[0].id;
+  const d = byId('projects', projectId)?.default_spectacle_id;
+  return d && act.some(x => x.id === d) ? d : '';
+}
 
 export const structName = id => byId('structures', id)?.name || '';
 
