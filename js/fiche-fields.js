@@ -60,13 +60,23 @@ export const ficheKind = contractType => contractType === 'Co-Réalisation' ? 'c
 /** Le champ s'applique-t-il à ce type de contrat et à ces réponses ? */
 export const fieldOn = (f, kind, values) => (!f.only || f.only === kind) && (!f.if || values?.[f.if[0]] === f.if[1]);
 
-/** Valeurs par défaut tirées de la date et de la structure (fiche_get ou données de l'app) ; adresse et code postal du lieu de la date
- *  d'abord (v1.60.2), sinon ceux de la structure */
+/**
+ * Adresse et code postal du LIEU d'une date pour les documents (fiche, contrat ; même règle que fiche_get / mail_vars côté serveur),
+ * décision d'Anthony du 07/11/2026 : 1. ceux de la date (lieu choisi ou adresse propre) ; 2. ceux de la structure SEULEMENT si
+ * « Utiliser l'adresse de la structure comme lieu de représentation » est coché sur la date (venue_is_structure) ; 3. sinon vide
+ * (à compléter). L'adresse d'une structure est souvent celle du siège : jamais présentée d'office comme celle du lieu.
+ */
+export function venueAddressOf(d, st){
+  const own = x => (x == null ? '' : String(x).trim()) || null, conf = !!d?.venue_is_structure && !!st;
+  return {address: own(d?.address) || (conf ? own(st.address) : null), postal_code: own(d?.postal_code) || (conf ? own(st.postal_code) : null)};
+}
+
+/** Valeurs par défaut tirées de la date et de la structure (fiche_get ou données de l'app) ; adresse et code postal du lieu : venueAddressOf */
 export function ficheDefaults(d){
-  const st = d.structure || {};
+  const st = d.structure || {}, va = venueAddressOf(d, d.structure);
   return {
     legal_name: st.name, country: 'France',
-    venue_name: d.venue, venue_address: d.address || st.address, venue_postal_code: d.postal_code || st.postal_code || d.cp, venue_city: d.city || st.city, venue_country: st.country || 'France',
+    venue_name: d.venue, venue_address: va.address, venue_postal_code: va.postal_code, venue_city: d.city || st.city, venue_country: st.country || 'France',
     capacity: d.capacity, cr_break: d.cr_break, show_time: d.show_time, set_length: d.set_length,
     ticketing: d.ticketing_type === 'Gratuit' ? 'Gratuit' : d.ticketing_type ? 'Payant (prix libre compris)' : '',
   };
