@@ -6,11 +6,13 @@ import { importMovinmotion } from './views/employees.js';
 import { render } from './app.js';
 import { insert, save, sb, syncLinks, uploadFiles } from './data.js';
 import { geocode } from './geo.js';
+import { setSuiviPlace } from './prospection.js';
 import { byId, linksOfContact, projIds } from './selectors.js';
 import { S, localSet, setProjects, touch } from './state.js';
 import { MAIL_MSG, fieldError, mailOk, parseCSV, toast, today } from './utils.js';
 import { setLogDraft } from './views/suivi.js';
 import { clearDraft } from './ui/drafts.js';
+import { fileDrag, takeDropped } from './ui/dropfiles.js';
 
 // + Projet sur un suivi / une tâche
 document.addEventListener('change', async e => {
@@ -80,15 +82,19 @@ document.addEventListener('change', async e => {
 
 // Pièces jointes : glisser-déposer
 const zoneOf = e => e.target.closest?.('[data-drop],[data-drop-form]');
+// (v1.60.2) même lecture que la fenêtre des mails : glisser depuis Mail (Mac) accepté même sans « Files » annoncé,
+// fichiers lus aussi dans les éléments du dépôt, et un message quand rien n'est exploitable au lieu de ne rien faire
 ['dragenter','dragover'].forEach(ev => document.addEventListener(ev, e => {
-  const z = zoneOf(e); if (!z || !e.dataTransfer?.types?.includes('Files')) return;
+  const z = zoneOf(e); if (!z || !fileDrag(e)) return;
   e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; z.classList.add('over');
 }));
 document.addEventListener('dragleave', e => { const z = zoneOf(e); if (z && !z.contains(e.relatedTarget)) z.classList.remove('over'); });
 document.addEventListener('drop', async e => {
   const z = zoneOf(e); if (!z) { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); return; }
   e.preventDefault(); z.classList.remove('over');
-  const files = [...(e.dataTransfer?.files || [])]; if (!files.length) return;
+  // (v1.60.3) lecture et copie en mémoire DANS l'événement : un message glissé depuis Apple Mail est un .eml temporaire
+  // que Mail efface ou réécrit ensuite (l'envoi répondait alors « Failed to fetch ») ; message clair si rien n'est lisible
+  const {files} = await takeDropped(e); if (!files.length) return;
   if (z.dataset.dropForm){
     // dans un formulaire : on ajoute les fichiers au champ, envoyés à l'enregistrement
     const input = z.querySelector('input[type=file]'); const dt = new DataTransfer();
@@ -169,6 +175,19 @@ document.addEventListener('change', async e => {
   toast('Date rattachée au suivi');
 });
 
+// Lieu d'un suivi (v1.60.2) : lieu connu ou adresse choisis dans la liste → lieu complet (adresse, code postal, ville, département,
+// coordonnées) ; nom tapé sans choisir → gardé tel quel, sans coordonnées inventées ; champ vidé → lieu retiré
+document.addEventListener('ac-chosen', e => { const v = e.target.querySelector?.('.ac-val[data-suivi-lieu]'); if (v) v._chosen = e.detail; });
+document.addEventListener('change', async e => {
+  const pid = e.target.dataset?.suiviLieu; if (!pid) return;
+  const el = e.target;
+  await Promise.resolve();   // le choix dans la liste (ac-chosen) est signalé juste après le « change »
+  const it = el._chosen; el._chosen = null;
+  const typed = el.value.trim();
+  await setSuiviPlace(pid, it ? {venue: it.venue ?? null, address: it.street || null, postal_code: it.postcode || null, city: it.city || null,
+      department: it.department_code || (it.country && !/^france$/i.test(it.country) ? (it.country_code || it.country) : null), lat: it.lat ?? null, lng: it.lng ?? null}
+    : typed ? {venue: typed} : null);
+});
 
 /** Fichiers choisis en plusieurs fois (bouton puis bouton, ou bouton puis glisser) : les premiers sont gardés, sans doublon (v1.53) */
 const fileKey = f => `${f.name}|${f.size}|${f.lastModified}`;

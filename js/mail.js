@@ -9,12 +9,12 @@
 import { confirmAsk } from './ui/dialog.js';
 import { billPct, isCoproduction, paymentsOf, vatConflict } from './calc.js';
 import { ENV } from './config.js';
-import { insert, remove, save, sb } from './data.js';
+import { contentTypeOf, insert, remove, save, sb, typedFile } from './data.js';
 import { byId, contactMails, linksOfStructure, projectOptions, setting } from './selectors.js';
 import { S } from './state.js';
 import { openModal } from './ui/modal.js';
 import { rtStyle, rtToolbar, wrapMail } from './ui/richtext.js';
-import { recipientsHelp, syncChips } from './ui/recipients.js';
+import { recipientsField, syncChips } from './ui/recipients.js';
 import { esc, fmtDate, toast, today, eur2, pct } from './utils.js';
 
 export const MAIL_KINDS = { confirmation: 'Confirmation', boucle_tech: 'Boucle accueil & technique', boucle_com: 'Boucle communication', prospection: 'Prospection', relance: 'Relance de prospection', autre: 'Autre' };
@@ -144,12 +144,11 @@ export async function prepareMail(showId, kind){
     <div class="mail-grid">
       <label for="ml-tpl">Modèle</label><select id="ml-tpl">${tpls.map(t=>`<option value="${t.id}">${esc(t.name||MAIL_KINDS[t.kind])}${tplProjects(t).length?'':' · générique'}</option>`).join('')}</select>
       <label>Envoyé par</label><span class="ml-from">${esc(PROD_MAIL)}${sig ? ' <span class="muted">· avec la signature production@</span>' : ' <span class="muted">· pas de signature (Réglages › Prospection, signature de Chloé)</span>'}</span>
-      <label for="ml-contact">Destinataire</label><span class="mail-to"><select id="ml-contact"><option value="">— autre adresse —</option>${contacts.map(c=>`<option value="${c.id}" ${c.id===contactId?'selected':''}>${esc(c.display_name)}${contactMails(c)?` · ${esc(contactMails(c))}`:' (pas de mail)'}</option>`).join('')}</select>
-        <input id="ml-to" type="text" data-mails inputmode="email" placeholder="adresse@exemple.fr (plusieurs : séparées par des virgules)" value="${esc(vars.contact_email||'')}"></span>
-      ${mustPick ? `<p class="mode-note rcpt-note">${contacts.filter(c => contactMails(c)).length ? 'Plusieurs contacts possibles et aucun n’est lié à cette date ou à son suivi' : 'Aucun contact identifié pour cette date'} : choisis le destinataire ci-dessus ou dans les suggestions.</p>` : ''}
-      ${recipientsHelp('ml-to', s.structure_id)}
-      <label for="ml-cc">Copie</label><input id="ml-cc" type="text" data-mails placeholder="Nom <adresse@…>, …">
-      ${recipientsHelp('ml-cc', s.structure_id)}
+      <label for="ml-contact" class="rcpt-who">Interlocuteur</label><span class="mail-to rcpt-who"><select id="ml-contact"><option value="">— autre adresse —</option>${contacts.map(c=>`<option value="${c.id}" ${c.id===contactId?'selected':''}>${esc(c.display_name)}${contactMails(c)?` · ${esc(contactMails(c))}`:' (pas de mail)'}</option>`).join('')}</select>
+        <small class="muted">personne à qui l’on s’adresse (prénom et balises du mail) ; la choisir remplace le destinataire</small><span class="rcpt-propose"></span></span>
+      ${mustPick ? `<p class="mode-note rcpt-note">${contacts.filter(c => contactMails(c)).length ? 'Plusieurs contacts possibles et aucun n’est lié à cette date ou à son suivi' : 'Aucun contact identifié pour cette date'} : choisis l’interlocuteur ci-dessus ou une adresse dans le champ Destinataire.</p>` : ''}
+      <label for="ml-to-q">Destinataire</label>${recipientsField('ml-to', s.structure_id, {value: vars.contact_email || '', label: 'Destinataires', interlocutor: 'ml-contact'})}
+      <label for="ml-cc-q">Copie</label>${recipientsField('ml-cc', s.structure_id, {label: 'Copies'})}
       <label for="ml-subj">Objet</label><input id="ml-subj">
     </div>
     ${rtToolbar('ml-body')}<div class="mail-preview" id="ml-body" contenteditable="true" style="${rtStyle()}" aria-label="Texte du mail (modifiable)"></div>
@@ -218,11 +217,20 @@ export async function prepareMail(showId, kind){
     if (await replaceOk()) draw(); else syncChips(document.querySelector('#modal'));
     if (contactId && contactId !== s.conf_contact_id) save('shows', s.id, {conf_contact_id: contactId}, {rerender:false});
   };
+  // interlocuteur proposé depuis une adresse choisie (v1.60.3, décision d'Anthony du 07/11) : sur clic seulement ; destinataires et
+  // copies gardés tels quels ; le texte n'est réécrit que s'il n'a pas été retouché, ou avec accord
+  $('#ml-contact').addEventListener('interlocutor', async () => {
+    contactId = $('#ml-contact').value; vars = await mailVars(showId, contactId); document.querySelector('#modal .rcpt-note')?.remove();
+    const cc = $('#ml-cc').value;
+    if (await replaceOk()){ draw(); $('#ml-cc').value = cc; }
+    syncChips(document.querySelector('#modal'));
+    if (contactId && contactId !== s.conf_contact_id) save('shows', s.id, {conf_contact_id: contactId}, {rerender:false});
+  });
   $('#ml-files').addEventListener('change', e => { const i = e.target.dataset.att; if (i != null){ files[i].on = e.target.checked; drawFiles(); } });
   $('#ml-up').addEventListener('change', async e => {
     for (const f of e.target.files){
       const path = `mails/${s.id}/${Date.now()}_${f.name.replace(/[^\w.\-]+/g, '_')}`;
-      const {error} = await sb.storage.from('suivi').upload(path, f, {contentType: f.type || 'application/octet-stream'});
+      const {error} = await sb.storage.from('suivi').upload(path, typedFile(f), {contentType: contentTypeOf(f)});
       if (error){ toast('Envoi impossible : ' + error.message, true); continue; }
       files.push({path, name: f.name, size: f.size, on: true, mine: true});
     }
@@ -382,7 +390,7 @@ export async function editTemplate(id, defaults={}){
   document.querySelector('#tpl-up').addEventListener('change', async e => {
     for (const f of e.target.files){
       const path = `modeles/${id || 'nouveau'}/${Date.now()}_${f.name.replace(/[^\w.\-]+/g, '_')}`;
-      const {error} = await sb.storage.from('suivi').upload(path, f, {contentType: f.type || 'application/octet-stream'});
+      const {error} = await sb.storage.from('suivi').upload(path, typedFile(f), {contentType: contentTypeOf(f)});
       if (error){ toast('Envoi impossible : ' + error.message, true); continue; }
       files.push({path, name: f.name, size: f.size});
     }

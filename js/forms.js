@@ -5,22 +5,24 @@
 import { ask, askText } from './ui/dialog.js';
 import { FORMAT_FIELD, exportTable } from './exports.js';
 import { propagateCommission } from './commission.js';
-import { hasFinancialRecord } from './calc.js';
+import { allPaymentsOf, hasFinancialRecord, showRemovalState } from './calc.js';
 import { render } from './app.js';
 import { CFG } from './config.js';
 import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PRIORITY_OPTS, PROSPECT, PROSPECT_OPTS, STATUSES, TASK_STATUS, TASK_STATUS_OPTS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
-import { insert, purgeStored, refreshFor, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
+import { archiveShow, deleteShow, insert, reactivateReminders, purgeStored, refreshFor, remove, removeWhere, save, saveLinger, sb, showDeletionState, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode, geoFrance, searchPlaces } from './geo.js';
-import { contactMails, contactsWithMail, defaultCommission, settingAcompte, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, projIds, projName, projectOptions, prospectTitle, spectaclesOf } from './selectors.js';
+import { contactMails, contactsWithMail, defaultCommission, settingAcompte, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, placeOfSuivi, projIds, showPlaceNote, projName, projectOptions, prospectTitle, spectaclesOf, defaultSpectacleId } from './selectors.js';
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
-import { fileRow } from './ui/bits.js';
+import { fileRow, remindersSuspendedNote } from './ui/bits.js';
+import { remindersOf } from './reminders.js';
 import { hiddenFields, openModal } from './ui/modal.js';
 import { $, downloadCSV, esc, fmtDate, norm, toast, today, workDay, addDays, pct } from './utils.js';
 import { driveHTML } from './views/production.js';
 import { cancelAutoRelances, closeNoAnswer, deleteProspect, prospectDeleteAsk } from './prospection.js';
 import { afterFeeChange, askConfirmation, becameConfirmed } from './confirm-flow.js';
 import { spectFields, spectValue } from './budget-template.js';
+import { deptOf } from './contract.js';
 
 const team = () => CFG.TEAM.map(e=>[e, TEAM_NAMES[e]||e]);
 const activeProjects = keep => projectOptions(true, keep).map(x=>[x.id, x.name]);
@@ -29,12 +31,18 @@ const activeProjects = keep => projectOptions(true, keep).map(x=>[x.id, x.name])
 export function showFields(s){
   return [
     {k:'structure_id', label:'Structure (salle, festival, organisateur)', type:'ac', kind:'structures', create:true, full:true},
-    {k:'venue', label:'Nom du lieu / festival', full:true},
+    // lieu réel (v1.60.2) : choisi parmi les salles / festivals connus (adresse et code postal repris) ou tapé
+    {k:'venue', label:'Nom du lieu / festival', type:'lieu', fill:'', full:true},
     {k:'project_id', label:'Artiste', type:'project'},
     {k:'spectacle_id', label:'Spectacle', type:'select', blank:false, options: spectacleOptions(s.project_id, s.spectacle_id)},
     {k:'status', label:'Statut', type:'select', options:STATUSES.includes(s.status)||!s.status ? STATUSES : [s.status, ...STATUSES], blank:false},
     {k:'date', label:'Date', type:'date'}, {k:'date_end', label:'Fin (si plusieurs jours)', type:'date'},
+    {k:'address', label:'Adresse du lieu', type:'place', fill:'', full:true, placeholder:'Taper l’adresse du lieu (facultatif)'},
+    {k:'postal_code', label:'Code postal'},
     {k:'city', label:'Ville', type:'city', fill:''}, {k:'department', label:'Département (ou pays)', placeholder:'ex. 69, CH, BE'},
+    // décision d'Anthony du 07/11/2026 : l'adresse de la structure n'est le lieu de la date que sur ce choix explicite (sinon : à compléter)
+    {k:'venue_is_structure', label:'Utiliser l’adresse de la structure comme lieu de représentation', type:'checkbox', full:true},
+    {k:'_h_place', type:'html', full:true, html:`<p class="help m0" data-place-note>${esc(placeHelp(s))}</p>`},
     {k:'contract_type', label:'Type de contrat', type:'select', options:CONTRACTS},
     {k:'fee_ht', label:'Cachet HT (€)', type:'number'},
     {k:'ticketing_type', label:'Billetterie', type:'select', options:TICKETING},
@@ -69,32 +77,139 @@ export function newSpectacle(projectId){
     }});
 }
 
-/** Valeurs d'une nouvelle date posée depuis une structure : ville et département de la fiche (pas de l'adresse administrative) */
-export const showPrefillFromStructure = st => st ? {structure_id: st.id, venue: st.name, city: st.city || null, department: st.department_code || (st.country && st.country!=='France' ? st.country : null), lat: st.lat, lng: st.lng} : {};
+/** Valeurs d'une nouvelle date posée depuis une structure : l'organisateur et son nom comme nom du lieu, rien d'autre (décisions du
+ *  07/11/2026 : adresse, code postal, ville, département et coordonnées suivent la source du lieu — la structure seulement si elle
+ *  est confirmée comme lieu, case de la date) */
+export const showPrefillFromStructure = st => st ? {structure_id: st.id, venue: st.name} : {};
+/** Texte d'aide sous la case « Utiliser l'adresse de la structure… » : où en est la localisation de la date */
+function placeHelp(s){
+  const note = s?.id ? showPlaceNote(s) : '';
+  return (note ? note + '. ' : '') + 'Sans lieu choisi, adresse propre ou cette case (cochée aussi en choisissant la structure elle-même comme lieu), l’adresse, le code postal et la ville du lieu restent à compléter dans la fiche, le contrat et les mails.';
+}
+/** Nouvelle date posée depuis un suivi (v1.60.2) : le lieu choisi dans le suivi s'il y en a un, sinon celui de sa structure */
+export const showPrefillFromSuivi = (p, st) => { const pl = placeOfSuivi(p);
+  return pl ? {structure_id: st?.id || null, ...pl, venue: pl.venue || st?.name || null} : showPrefillFromStructure(st); };
+
+/** Coordonnées d'une date à l'enregistrement (v1.60.2) : un lieu ou une adresse choisis dans la fenêtre gardent les leurs ;
+ *  un emplacement changé à la main est relocalisé (adresse complète si elle est connue) ; les coordonnées de la structure ne sont
+ *  copiées sur la date que si la case « Utiliser l'adresse de la structure… » est cochée (07/11/2026) — sinon rien n'est écrit et la
+ *  carte garde le repère de la structure comme localisation héritée (showPlace). Coordonnées déjà enregistrées : jamais effacées
+ *  sans changement du lieu. Le département suit le code postal (règle {{cp}}, deptOf). */
+async function locateShow(v, s){
+  const st = byId('structures', v.structure_id);
+  const french = d => !d || /^(\d{2,3}|2[AB])$/i.test(String(d).trim());
+  // département vide : tiré du code postal seulement pour un lieu en France (structure en France ou sans pays) — jamais d'Aube pour Berlin 10115
+  const inFrance = v.department ? french(v.department) : !st || !st.country || /^\s*france\s*$/i.test(st.country);
+  if (/^\d{5}$/.test(String(v.postal_code || '').replace(/\s/g, '')) && inFrance && (!v.department || v.postal_code !== s.postal_code))
+    v.department = deptOf(v.postal_code, '');
+  const moved = ['address', 'postal_code', 'city'].some(k => (v[k] || '') !== (s[k] || ''));
+  if (v.lat != null && v.lat !== s.lat) return;   // coordonnées du lieu / de l'adresse choisis
+  if (!moved){
+    if (v.lat != null) return;
+    // lieu inchangé (adresse, code postal, ville, organisateur, case « adresse de la structure ») : RIEN n'est écrit — une ancienne
+    // date garde son repère hérité (« lieu à confirmer »), jamais déplacée ni géocodée d'office (décision du 07/11, relecture v1.60.2)
+    if ((v.structure_id || null) === (s.structure_id || null) && !!v.venue_is_structure === !!s.venue_is_structure) return;
+    // rien n'a bougé et la structure, dans la même ville, sert déjà de repère (showCoords) : rien n'est écrit sur la date
+    if (st && st.lat != null && (!v.city || !st.city || norm(v.city) === norm(st.city))) return;
+  }
+  v.lat = v.lng = null;
+  if (st && st.lat != null && !v.address && (!v.city || norm(v.city) === norm(st.city || ''))){
+    // structure confirmée comme lieu : ses coordonnées ; sinon rien de l'organisateur (repère hérité « lieu à confirmer »)
+    if (v.venue_is_structure){ v.lat = st.lat; v.lng = st.lng; }
+    return;
+  }
+  const fr = !v.department || french(v.department);
+  await fillCoords(v, [v.address, v.postal_code, v.city, fr ? 'France' : v.department].filter(Boolean).join(' '));
+}
+
+/**
+ * Question de suppression d'une date (v1.60.3) : ce qui part et ce qui reste, d'après le serveur (show_deletion_state) — à défaut
+ * (serveur sans la fonction), d'après les données chargées. Suppression refusée : motif affiché (null) ; si l'archivage reste
+ * possible (devis ou document Pennylane, lignes hors calcul…), la question propose « Archiver la date » à la place
+ * (réponse d'Anthony du 07/11 : distinct d'une annulation, aucun document Pennylane touché).
+ */
+async function showDeleteAsk(s){
+  const name = [s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · ');
+  const loc = showRemovalState(s.id);
+  const st = loc.blocked.length ? null : await showDeletionState(s.id);
+  const blocked = loc.blocked.length ? loc.blocked : st?.blocked || [];
+  if (blocked.length){
+    const arch = loc.blocked.length ? loc.archiveBlocked : st?.archive_blocked || blocked;
+    if (arch.length){ toast(blocked.join(' '), true); return null; }
+    return {title: 'Supprimer la date ?', text: [`La date « ${name} » ne peut pas être supprimée :`, ...blocked,
+      'Tu peux l’archiver à la place : elle sort des listes de travail, des relances, de la carte et des calendriers, et sa fiche publique se ferme. Ses montants restent dans les vues financières et les comptes. Elle reste consultable dans Booking › « Dates archivées », où elle se restaure.',
+      'Ce n’est ni une annulation (son statut ne change pas) ni une suppression. Rien n’est modifié ni supprimé dans Pennylane.',
+      'Si une facture est un jour faite dans Pennylane pour cette date, elle lui reste rattachée et une alerte apparaît dans les notifications.'].join('\n'),
+      actions: [{value: 'archive', label: 'Archiver la date'}]};
+  }
+  const nb = (k, one, many) => `${k} ${k > 1 ? many : one}`;
+  const pays = st ? Number(st.payments) : allPaymentsOf(s.id).length, lines = st ? Number(st.budget_lines) : S.db.budget_lines.filter(l => l.show_id === s.id).length;
+  const tasks = st ? Number(st.tasks) : S.db.tasks.filter(t => t.show_id === s.id).length, closures = Number(st?.closures || 0);
+  const gone = [pays && nb(pays, 'ligne de facturation (non émise)', 'lignes de facturation (aucune émise)'), lines && nb(lines, 'ligne de budget', 'lignes de budget')].filter(Boolean);
+  const text = [
+    `Supprimer la date « ${name} » ?`,
+    `Supprimées avec elle : ${gone.length ? gone.join(' et ') : 'aucune ligne de facturation ni de budget'}.`,
+    tasks ? `Conservée${tasks > 1 ? 's' : ''} : ${nb(tasks, 'tâche liée', 'tâches liées')}, détachée${tasks > 1 ? 's' : ''} de la date${st ? ', avec la mention « Date supprimée le … » en tête de leur note' : ''}.` : '',
+    closures ? `Historique de clôture et de réouverture du résultat (${nb(closures, 'entrée', 'entrées')}) : conservé dans le journal des suppressions, avec une copie complète de la date.`
+      : st ? 'Une copie complète de la date est gardée dans le journal des suppressions.' : '',
+    'Rien n’est supprimé dans Pennylane ; le dossier Google Drive n’est pas touché.'];
+  return {title: 'Supprimer la date ?', text: text.filter(Boolean).join('\n'), actions: [{value: 'del', label: 'Supprimer la date', danger: true}]};
+}
+/** Suppression (choix « del ») ou archivage (choix « archive », motif demandé) d'une date depuis sa fenêtre */
+async function showRemove(id, choice){
+  if (choice === 'archive'){
+    const reason = await askText({title: 'Archiver la date ?', text: 'La date sort des listes de travail, des relances, de la carte et des calendriers ; sa fiche publique se ferme ; ses montants restent comptés. Son statut ne change pas. Le motif est gardé avec elle.', label: 'Motif de l’archivage', ok: 'Archiver la date'});
+    if (!reason) return false;
+    const ok = await archiveShow(id, reason);
+    if (ok) toast('Date archivée : elle reste consultable dans Booking › « Dates archivées »');
+    return ok;
+  }
+  const r = await deleteShow(id);
+  if (r && typeof r === 'object') toast(`Date supprimée${r.tasks ? ` ; ${r.tasks > 1 ? `${r.tasks} tâches gardées` : '1 tâche gardée'}, avec la mention « Date supprimée » dans la note` : ''}`);
+  return r;
+}
+
+/**
+ * « Réactiver les relances » d'une date restaurée (v1.60.3, décision d'Anthony du 07/11) : une prochaine échéance par relance
+ * concernée (proposée : l'échéance d'origine, ou aujourd'hui si elle est passée ; jamais avant aujourd'hui). Échéances d'origine
+ * intactes ; la relance ne part ni avant la date choisie ni avant son échéance d'origine. Tracé côté serveur.
+ */
+export function reactivateRemindersWindow(id, level = 1){
+  const s = byId('shows', id); if (!s) return;
+  const now = today(), groups = new Map();
+  for (const r of remindersOf(s, {all: true})){ const g = groups.get(r.key) || {titles: [], origin: r.origin}; g.titles.push(r.title); if (r.origin < g.origin) g.origin = r.origin; groups.set(r.key, g); }
+  const keys = [...groups.keys()], values = Object.fromEntries(keys.map(k => [k, groups.get(k).origin > now ? groups.get(k).origin : now]));
+  const fields = keys.map(k => ({k, type: 'date', full: true, label: `${[...new Set(groups.get(k).titles)].join(' · ')} — échéance d’origine : ${fmtDate(groups.get(k).origin)}`}));
+  return openModal({level, title: 'Réactiver les relances', saveLabel: 'Réactiver les relances', values, fields,
+    extraTop: `<p class="help full">${esc([s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · '))} : choisis la prochaine échéance de chaque relance. Les échéances d’origine ne changent pas ; une relance ne part ni avant la date choisie, ni avant son échéance d’origine.${keys.length ? '' : ' Aucune relance n’est en cours pour cette date : les prochaines suivront leurs échéances d’origine.'}</p>`,
+    onSave: async v => {
+      for (const k of keys){ if (!v[k]){ toast('Choisis la prochaine échéance de chaque relance', true); return false; }
+        if (v[k] < now){ toast('Choisis une prochaine échéance à partir d’aujourd’hui', true); return false; } }
+      const ok = await reactivateReminders(id, Object.fromEntries(keys.map(k => [k, v[k]])));
+      if (ok) toast('Relances réactivées');
+      return ok;
+    }});
+}
 
 export function editShow(id, projectId, prefill={}){
   const s = id ? byId('shows', id) : {status:'Intérêt Salle', contract_type:'Cession', project_id: projectId||S.project||null, communication_enabled:true, date:null, ...prefill};
+  // nouvelle date : spectacle présélectionné (seul actif, sinon celui par défaut de l'artiste), toujours modifiable (v1.60.3)
+  if (!id && !s.spectacle_id && s.project_id) s.spectacle_id = defaultSpectacleId(s.project_id) || null;
   const extra = hiddenFields(s, [['lat',1],['lng',1],['prospect_id']])
     + (id && s.structure_id ? `<div class="full"><button type="button" class="btn sm" data-act="openStructure" data-id="${s.structure_id}">Ouvrir la fiche structure et son suivi</button></div>` : '')
-    + (id && s.status?.startsWith('Confirmée') ? `<div class="full drive">${driveHTML(s)}</div>` : '');
+    + (id && s.status?.startsWith('Confirmée') ? `<div class="full drive">${driveHTML(s)}</div>` : '')
+    + remindersSuspendedNote(s, 2);   // relances suspendues après restauration (v1.60.3) : réactivation dans une 2e fenêtre
   const p = openModal({
     title: id ? s.venue : 'Nouvelle date', fields: showFields(s), values: s, extra,
-    deleteAsk: () => ({title: 'Supprimer la date ?', text: `Supprimer la date « ${[s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · ')} » avec ses lignes de facturation et son budget ? Les tâches liées restent ; le dossier Google Drive n’est pas touché.`,
-      actions: [{value: 'del', label: 'Supprimer la date', danger: true}]}),
-    onDelete: id ? () => remove('shows', id) : null,
+    deleteAsk: () => showDeleteAsk(s),
+    onDelete: id ? choice => showRemove(id, choice) : null,
     onSave: async v => {
       if (!v.venue) { toast('Indique le nom du lieu ou du festival', true); return false; }
       if (!v.project_id) { toast('Choisis l’artiste', true); return false; }
       // spectacle (v1.57) : il doit appartenir à l'artiste de la date ; une nouvelle date d'un artiste qui a des spectacles en demande un
       if (v.spectacle_id && byId('spectacles', v.spectacle_id)?.project_id !== v.project_id) { toast('Ce spectacle n’est pas celui de cet artiste : choisis-en un autre', true); return false; }
       if (!id && !v.spectacle_id && spectaclesOf(v.project_id).some(x => x.active)) { toast('Choisis le spectacle de cette date', true); return false; }
-      const st = byId('structures', v.structure_id);
-      if (!v.city && st) v.city = st.city;
-      const placeChanged = !id || v.city!==s.city || v.structure_id!==s.structure_id;
-      if (placeChanged && (v.lat==null || v.city!==s.city)){
-        if (st && st.lat!=null && (!v.city || v.city===st.city)){ v.lat=st.lat; v.lng=st.lng; v.department = v.department || st.department_code; }
-        else if (v.lat==null || v.city!==s.city){ v.lat=null; v.lng=null; await fillCoords(v, [v.city, v.department && /^\d/.test(v.department) ? 'France' : ''].filter(Boolean).join(', ')); }
-      }
+      await locateShow(v, s);
       const before = s.status, wasOff = isOff(before), nowOff = isOff(v.status), oldFee = s.fee_ht;
       let showId = id, ok = true;
       if (id){
@@ -107,17 +222,25 @@ export function editShow(id, projectId, prefill={}){
       if (becameConfirmed(before, v.status)) setTimeout(() => askConfirmation(showId), 80);
     }
   });
-  // Choix d'une structure → nom du lieu, ville et département repris de sa fiche
+  // Choix d'une structure (organisateur) → son nom comme lieu si le nom est vide, rien d'autre : ni adresse, code postal, ville,
+  // département ni coordonnées (décisions du 07/11/2026 : la structure n'est le lieu que sur confirmation).
+  // La structure elle-même choisie dans la liste « Lieu » vaut confirmation : la case « Utiliser l'adresse de la structure… » est
+  // cochée quand ce lieu est aussi l'organisateur de la date (choisi avant ou après) ; un autre lieu choisi ensuite la décoche.
   const dlg = $('#modal');
+  let placeStructure = null, autoChecked = false;
   const onChosen = e => {
-    const box = e.target.closest('.ac'); if (!box || box.querySelector('.ac-val').name !== 'structure_id') return;
+    const box = e.target.closest('.ac'); if (!box) return;
+    const name = box.querySelector('.ac-val').name;
+    const f = dlg.querySelector('form').elements, box2 = f.venue_is_structure;
+    const sync = () => { if (!box2) return; const on = !!placeStructure && placeStructure === (f.structure_id?.value || null);
+      if (on && !box2.checked){ box2.checked = true; autoChecked = true; } else if (!on && autoChecked){ box2.checked = false; autoChecked = false; } };
+    if (name === 'venue'){ placeStructure = e.detail?.place_structure || null; sync(); return; }
+    if (name !== 'structure_id') return;
     const st = byId('structures', e.detail.id); if (!st) return;
-    const f = dlg.querySelector('form').elements;
     const pre = showPrefillFromStructure(st);
-    if (!f.venue.value) f.venue.value = pre.venue;
-    if (pre.city){ f.city.value = pre.city; const ci = f.city.closest('.ac')?.querySelector('.ac-input'); if (ci) ci.value = pre.city; }
-    if (pre.department) f.department.value = pre.department;
-    if (f.lat){ f.lat.value = st.lat ?? ''; f.lng.value = st.lng ?? ''; }
+    const put = (k, v) => { const el = f[k]; if (!el) return; el.value = v ?? ''; const vis = el.closest('.ac')?.querySelector('.ac-input'); if (vis) vis.value = v ?? ''; };
+    if (!f.venue.value) put('venue', pre.venue);
+    sync();
   };
   dlg.addEventListener('ac-chosen', onChosen);
   // autre artiste choisi → ses spectacles (v1.57) ; le spectacle choisi reste seulement s'il est aussi le sien
@@ -126,7 +249,8 @@ export function editShow(id, projectId, prefill={}){
     const sel = dlg.querySelector('#fld-spectacle_id'); if (!sel) return;
     const cur = sel.value;
     sel.innerHTML = spectacleOptions(e.target.value, null).map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
-    if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+    if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+    else if (!id) sel.value = defaultSpectacleId(e.target.value);   // nouvelle date sans spectacle valable : présélection du nouvel artiste (v1.60.3)
   };
   dlg.addEventListener('change', onProject);
   dlg.addEventListener('close', () => { dlg.removeEventListener('ac-chosen', onChosen); dlg.removeEventListener('change', onProject); }, {once:true});

@@ -5,10 +5,10 @@
 import { afterFeeChange, askConfirmation, becameConfirmed, sendConfirmation, validateTerms } from './confirm-flow.js';
 import { go, render } from './app.js';
 import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
-import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
-import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
-import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure } from './forms.js';
-import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showsFiltered, structName } from './selectors.js';
+import { CONFIRMED_PROD, FOLLOW_DATES, INVOICE_DATES, PAY_KINDS, isOff } from './constants.js';
+import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, restoreShow, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
+import { reactivateRemindersWindow, createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure, showPrefillFromSuivi } from './forms.js';
+import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showLabel, showsFiltered, structName, unreadNotifs } from './selectors.js';
 import { CFG } from './config.js';
 import { propagateCommission } from './commission.js';
 import { payerLabel } from './budget.js';
@@ -18,12 +18,12 @@ import { ask, askText, confirmAsk, copyText } from './ui/dialog.js';
 import { modalSaved } from './ui/drafts.js';
 import { applyAcompte, saveDepartments } from './views/settings.js';
 import { hasLogDraft, setLogDraft } from './views/suivi.js';
-import { $, esc, eur2, fmtDate, safeHtml, toast, today, r2, pct as fmtPct } from './utils.js';
+import { $, esc, eur2, fmtDate, fmtNum, safeHtml, toast, today, r2, pct as fmtPct } from './utils.js';
 import { rtStyle, rtToolbar } from './ui/richtext.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
 import { exportShows } from './exports.js';
-import { callProspect, cancelAutoRelances, closeNoAnswer, deleteProspect, markLogSent, openProspection, prospectDeleteAsk, restoreRelances } from './prospection.js';
+import { callProspect, cancelAutoRelances, closeNoAnswer, deleteProspect, markLogSent, openProspection, prospectDeleteAsk, restoreRelances, setSuiviPlace } from './prospection.js';
 import { EMP_ACTIONS, editEmployee } from './views/employees.js';
 import { BUDGET_ACTIONS, confirmProvisionalCommission } from './budget-actions.js';
 
@@ -76,7 +76,9 @@ export const ACTIONS = {
   closeModal: t => (t.dataset.level==='2' ? $('#modal2') : $('#modal')).close(),
   // suppression depuis une fenêtre : fenêtre de dialogue de l'application (Q20) — Annuler, Échap ou clic dehors ne suppriment jamais rien
   modalDelete: async t => { const lvl = Number(t.dataset.level||1), m = MODALS[lvl];
-    const q = m.deleteAsk ? m.deleteAsk() : {title: 'Supprimer ?', text: 'Cet élément sera supprimé définitivement.', actions: [{value: 'del', label: 'Supprimer', danger: true}]};
+    // question éventuellement calculée par le serveur (date, v1.60.3) ; null = suppression refusée (motif déjà affiché)
+    const q = m.deleteAsk ? await m.deleteAsk() : {title: 'Supprimer ?', text: 'Cet élément sera supprimé définitivement.', actions: [{value: 'del', label: 'Supprimer', danger: true}]};
+    if (!q) return;
     const choice = await ask(q); if (choice == null) return;
     if ((await m.onDelete(choice)) === false) return;   // refus (garde-fou) : la fenêtre reste ouverte
     modalSaved(m.dlg); m.dlg.close(); render(); },
@@ -88,17 +90,29 @@ export const ACTIONS = {
   toggleNotifs: () => { S.notifOpen = !S.notifOpen; S.userOpen = false; render(); },
   toggleUser: () => { S.userOpen = !S.userOpen; S.notifOpen = false; render(); },
   readAllNotifs: async () => { const me = S.user.email;
-    for (const n of S.db.notifications.filter(n=>!(n.read_by||[]).includes(me))) await save('notifications', n.id, {read_by:[...(n.read_by||[]), me]}, {rerender:false});
+    for (const n of unreadNotifs()) await save('notifications', n.id, {read_by:[...(n.read_by||[]), me]}, {rerender:false});
     render(); },
   openNotif: async t => { const n = byId('notifications', t.dataset.id); const me = S.user.email;
     if (!(n.read_by||[]).includes(me)) await save('notifications', n.id, {read_by:[...(n.read_by||[]), me]}, {rerender:false});
     S.notifOpen = false;
+    // date archivée (alerte « facture sur une date archivée », v1.60.3) : ouverte dans Booking › Dates archivées
+    if (n.show_id && byId('shows', n.show_id)?.archived_at){ S.view = 'booking'; S.showArchived = true; render(); return; }
     if (n.show_id){ const s = byId('shows', n.show_id); if (s){ S.view='production'; S.year = Number((s.date||'').slice(0,4)) || S.year; S.openProd.add(s.id); render(); document.getElementById('prod-'+s.id)?.scrollIntoView({block:'center'}); return; } }
     if (n.task_id){ S.view='todo'; render(); return; }
     render(); },
 
   // Booking
   toggleCancelled: () => { S.showCancelled=!S.showCancelled; render(); },
+  toggleArchived: () => { S.showArchived = !S.showArchived; render(); },
+  // date archivée (v1.60.3) : restaurée après confirmation — elle revient dans les listes de travail ; ses relances restent suspendues
+  // (échéances d'origine intactes) jusqu'à une réactivation explicite, proposée ici (décision d'Anthony du 07/11)
+  restoreShow: async t => { const s = byId('shows', t.dataset.id); if (!s?.archived_at) return;
+    const choice = await ask({title: 'Restaurer la date ?', text: `La date « ${[s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · ')} » revient dans les listes de travail, la carte et les calendriers ; sa fiche publique se rouvre.\nSes relances restent suspendues : aucune ne repart automatiquement. Tu peux les réactiver maintenant en choisissant leurs prochaines échéances, ou plus tard depuis la date.`,
+      actions: [{value: 'keep', label: 'Restaurer, relances suspendues', plain: true}, {value: 'reactivate', label: 'Restaurer et réactiver les relances…'}]});
+    if (!choice || !(await restoreShow(s.id))) return;
+    toast('Date restaurée'); render();
+    if (choice === 'reactivate') reactivateRemindersWindow(s.id); },
+  reactivateReminders: t => reactivateRemindersWindow(t.dataset.id, Number(t.dataset.level) || 1),
   resetTodoFilters: () => { S.todoWho = ''; localSet('todoWho', ''); S.todoDept = ''; S.search.todo = ''; setProjects([]); render(); },
   clearArtists: () => { setProjects([]); render(); },
   toggleInactive: () => { S.showInactive = !S.showInactive; localSet('showInactive', S.showInactive ? '1' : ''); render(); },
@@ -110,6 +124,16 @@ export const ACTIONS = {
   exportShows: () => exportShows(),
 
   // Production
+  // Fiche projet → la date ouverte dans Production (v1.60.3) : année de la date, recherche Production vidée ; si le filtre Artistes
+  // (ou le masquage des artistes inactifs) la cacherait, le filtre passe sur son artiste et on le dit
+  openShowProd: t => { const s = byId('shows', t.dataset.id); if (!s) return;
+    if (!CONFIRMED_PROD.includes(s.status)){ editShow(s.id); return; }
+    S.year = Number((s.date || '').slice(0, 4)) || S.year; localSet('year', S.year);
+    if (S.search.production) S.search.production = '';
+    const hidden = !showsFiltered().some(x => x.id === s.id);
+    if (hidden){ setProjects([s.project_id]); toast(`Filtre Artistes : ${byId('projects', s.project_id)?.name || 'artiste de la date'} (pour afficher la date)`); }
+    S.openProd.add(s.id); go('production');
+    document.getElementById('prod-' + s.id)?.scrollIntoView({block: 'start'}); },
   toggleProd: t => { const id=t.dataset.id; S.openProd.has(id)?S.openProd.delete(id):S.openProd.add(id); render(); },
   expandAll: () => { const ids = showsFiltered().filter(s=>CONFIRMED_PROD.includes(s.status)).map(s=>s.id); if (ids.every(i=>S.openProd.has(i))) S.openProd.clear(); else ids.forEach(i=>S.openProd.add(i)); render(); },
   reloadShow: async t => { await refreshShowSide(t.dataset.id); render(); },
@@ -143,7 +167,7 @@ export const ACTIONS = {
       if (win) win.location.href = out.url; else window.open(out.url, '_blank');
       toast(`${out.count} ligne(s) à vérifier dans le tableau`); render(); }
     catch (err) { if (win) win.close(); toast(err.message, true); } t.disabled = false; },
-  renameApply: async t => { if (!(await confirmAsk('Renommer dans le Drive ?', 'Tous les éléments cochés dans le tableau de renommage seront renommés dans le Drive (rien n’est supprimé ni déplacé).', 'Renommer les éléments cochés'))) return; t.disabled = true;
+  renameApply: async t => { if (!(await confirmAsk('Renommer dans le Drive ?', 'Seuls les dossiers cochés dans le tableau de renommage seront renommés dans le Drive. Les contrats ne sont jamais renommés, même cochés (lignes données pour information). Rien n’est supprimé ni déplacé.', 'Renommer les dossiers cochés'))) return; t.disabled = true;
     try { const out = await callScript('rename_apply', {}); toast(`${out.renamed} élément(s) renommé(s)`); } catch (err) { toast(err.message, true); } t.disabled = false; },
   prospection: t => openProspection(t.dataset.id),
   relance: t => openProspection(null, {prospectId: t.dataset.id}),
@@ -158,7 +182,7 @@ export const ACTIONS = {
     try { await navigator.clipboard.writeText(await (await fetch('apps-script/Code.gs?v=' + Date.now())).text()); toast('Code.gs copié : colle-le à la place de tout le contenu de Code.gs dans le script de production@, puis redéploie'); }
     catch (err) { toast('Copie impossible : ' + err.message, true); }
   },
-  testMainScript: async () => { try { const out = await callScript('ping', {}); toast(`Script Google OK (${out.account || 'compte Google'})`); } catch (err) { toast(err.message, true); } },
+  testMainScript: async () => { try { const out = await callScript('ping', {}); toast(`Script Google OK (${out.account || 'compte Google'}) · code ${out.version || 'antérieur à la v1.60.2 : à redéployer'}`); } catch (err) { toast(err.message, true); } },
   testProspectScript: async () => { try { const out = await callProspect('ping', {}); toast(`Script de prospection OK (${out.account || 'compte Google'})`); } catch (err) { toast(err.message, true); } },
   saveSignature: async t => { const key = t.dataset.key || 'prospect_signature', el = $('#' + (t.dataset.el || 'set-sig')); if (!el) return;
     const {error} = await sb.from('settings').upsert({key, value: el.innerHTML});
@@ -167,17 +191,19 @@ export const ACTIONS = {
     toast('Signature enregistrée'); },
   brevoSyncAll: async () => {
     const n = S.db.contacts.reduce((n, c) => n + new Set([c.email, c.email_2].filter(e => /@/.test(e || '')).map(e => e.trim().toLowerCase())).size, 0);
-    if (!(await confirmAsk('Envoyer les contacts dans Brevo ?', `Contacts de la Matrice avec un mail : ${n}. Seuls ceux qui ne sont pas encore dans Brevo sont ajoutés : les autres (et les désabonnés) ne sont pas touchés.`, 'Envoyer à Brevo'))) return;
+    if (!(await confirmAsk('Envoyer les contacts dans Brevo ?', `Contacts de la Matrice avec un mail : ${n}. Seuls ceux qui ne sont pas encore dans Brevo sont ajoutés : les autres (et les désabonnés) ne sont pas touchés. Les contacts liés uniquement à des structures inactives ne sont pas ajoutés.`, 'Envoyer à Brevo'))) return;
     toast('Envoi à Brevo…');
     try {
       // session de l'utilisateur (compte de l'équipe) au lieu du code secret du déclencheur (v1.47)
       const {data, error} = await sb.functions.invoke('brevo-sync', {body: {all: true}});
       const out = data || await error?.context?.json?.().catch(() => null) || {ok: false, error: 'Brevo injoignable pour le moment : réessaie dans un instant.'};
       if (!out.ok) throw new Error(out.error || 'Erreur Brevo');
-      toast(out.count ? `${out.count} nouveaux contacts envoyés : Brevo les importe (quelques minutes)` : 'Tous les contacts sont déjà dans Brevo');
+      // contacts liés uniquement à des structures inactives : pas ajoutés (v1.60.2), annoncés
+      const held = out.skipped_inactive ? ` · ${out.skipped_inactive} adresse${out.skipped_inactive > 1 ? 's' : ''} non ajoutée${out.skipped_inactive > 1 ? 's' : ''} (contacts liés uniquement à des structures inactives)` : '';
+      toast((out.count ? `${out.count} nouveaux contacts envoyés : Brevo les importe (quelques minutes)` : 'Aucun nouveau contact à ajouter dans Brevo') + held);
     } catch (err) { toast(err.message, true); }
   },
-  testScript: async () => { try { const out = await callScript('ping', {}); toast(`Script OK (${out.account||'compte Google'})`); } catch (err) { toast(err.message, true); } },
+  testScript: async () => { try { const out = await callScript('ping', {}); toast(`Script OK (${out.account||'compte Google'}) · code ${out.version || 'antérieur à la v1.60.2 : à redéployer'}`); } catch (err) { toast(err.message, true); } },
   driveScan: async t => { t.disabled = true; toast('Recherche des dossiers dans le Drive… (jusqu’à 1 min)');
     try { const out = await callScript('link_folders', {}); toast(`${out.linked} dossier${out.linked>1?'s':''} rattaché${out.linked>1?'s':''}`); const {loadAll} = await import('./data.js'); await loadAll(); render(); }
     catch (err) { toast(err.message, true); } t.disabled = false; },
@@ -357,7 +383,8 @@ export const ACTIONS = {
   wsClear: () => { S.wsTarget = null; render(); },
   wsShow: t => { const p = byId('prospects', t.dataset.id), st = byId('structures', p.structure_id);
     const fest = (st?.tags||[]).some(x=>/festival/i.test(x));
-    editShow(null, S.wsProject && projIds(p).includes(S.wsProject) ? S.wsProject : projIds(p)[0], {...showPrefillFromStructure(st), date:S.wsTarget||null, status: fest?'Option Festival':'Option Salle', prospect_id: p.id}); },
+    editShow(null, S.wsProject && projIds(p).includes(S.wsProject) ? S.wsProject : projIds(p)[0], {...showPrefillFromSuivi(p, st), date:S.wsTarget||null, status: fest?'Option Festival':'Option Salle', prospect_id: p.id}); },
+  suiviLieuClear: t => setSuiviPlace(t.dataset.id, null),
   wsTask: t => { const p = byId('prospects', t.dataset.id); editTask(null, {structure_id:p.structure_id, project_ids:projIds(p), department:'Booking', prospect_id:p.id}); },
   noAnswerClose: async t => { if (await confirmAsk('Clore le suivi ?', 'Pas de réponse au téléphone : la tâche est terminée et le suivi est clos (noté dans son journal).', 'Clore le suivi')) await closeNoAnswer(t.dataset.id); },
   rmProj: async (t, e) => { e.stopPropagation(); const tb = t.dataset.t || 'prospects', r = byId(tb, t.dataset.id); const ids = projIds(r).filter(x=>x!==t.dataset.p);
@@ -394,14 +421,23 @@ ${p.content_md||'(aucune)'}`;
   editLog: t => { const l = byId('prospect_logs', t.dataset.id);
     // un mail envoyé depuis la Matrice se modifie avec sa mise en forme
     const mail = !!l.body_html, head = String(l.body || '').split('\n\n')[0];
-    openModal({ title: `Échange du ${l.date ? fmtDate(l.date) : '—'}`, values: mail ? {...l, body: head} : l,
+    // mail tel qu'affiché à l'ouverture (avant un éventuel brouillon) : sert à savoir s'il a vraiment été modifié
+    let html0 = null;
+    const done = openModal({ title: `Échange du ${l.date ? fmtDate(l.date) : '—'}`, values: mail ? {...l, body: head} : l,
       fields:[{k:'date', label:'Date', type:'date'}, {k:'kind', label:'Type', type:'select', options:['Appel','Mail','RDV','Note'], blank:false}, {k:'contact_name', label:'Interlocuteur', full:true},
         {k:'body', label: mail ? 'En-tête (objet, artistes…)' : 'Notes', type:'textarea', full:true, rows: mail ? 3 : 10}],
       extra: mail ? `<div class="field full"><label>Mail</label>${rtToolbar('log-html')}<div class="mail-preview" id="log-html" contenteditable="true" style="${rtStyle()}">${safeHtml(l.body_html)}</div></div>` : '',
       onSave: async v => {
-        if (mail){ const html = document.querySelector('#modal #log-html').innerHTML, div = document.createElement('div'); div.innerHTML = html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p)>/gi, '\n');
-          v.body_html = html; v.body = (v.body || '') + '\n\n' + div.textContent.replace(/\n{3,}/g, '\n\n').trim(); }
-        await save('prospect_logs', l.id, v, {rerender:false}); } }); },
+        if (mail){ const html = document.querySelector('#modal #log-html').innerHTML;
+          // règle d'Anthony (22/10/2026) : changer la date, le type ou l'interlocuteur ne réenregistre pas le mail non modifié
+          const htmlChanged = html !== html0, headChanged = (v.body ?? null) !== (head.trim() || null);
+          if (!htmlChanged && !headChanged) delete v.body;
+          else { const div = document.createElement('div'); div.innerHTML = html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p)>/gi, '\n');
+            if (htmlChanged) v.body_html = html;
+            v.body = (v.body || '') + '\n\n' + div.textContent.replace(/\n{3,}/g, '\n\n').trim(); } }
+        await save('prospect_logs', l.id, v, {rerender:false}); } });
+    if (mail) html0 = document.querySelector('#modal #log-html')?.innerHTML ?? null;
+    return done; },
   // brouillon de prospection / relance envoyé depuis Gmail : noté « envoyé » à la main
   markLogSent: async t => { await markLogSent(t.dataset.id); },
   createArtistFolder: t => createArtistFolder(t.dataset.id),
@@ -452,6 +488,37 @@ ACTIONS['change:prospects.status'] = async (t, v) => {
 // Date retirée du ticketing / de la communication : reste visible 5 s
 for (const f of ['ticketing_enabled','communication_enabled'])
   ACTIONS['change:shows.'+f] = async (t, v) => v ? save('shows', t.dataset.id, {[f]:true}) : saveLinger('shows', t.dataset.id, {[f]:false}, f==='ticketing_enabled' ? 'Date retirée du ticketing' : 'Date retirée de la communication');
+/**
+ * Date déjà renseignée modifiée ou effacée à la main (v1.60.3, décisions d'Anthony du 07/11/2026) : confirmation avec l'ancienne et la
+ * nouvelle valeur ; « Annuler » (Échap, clic dehors) n'écrit rien et la case reprend l'ancienne valeur ; un champ vide se remplit sans
+ * question. Seulement les saisies dans les cases (crochets change:…) : les écritures d'un événement réellement effectué (envoi d'un mail,
+ * contrat, synchronisation Pennylane, versement noté) passent par save() sans question. Changement refusé par la protection des factures
+ * émises (changeBlocked) : pas de question, save() affiche son message de refus. Renvoie true = enregistrer.
+ */
+async function dateChangeOk(t, table, f, v, label, context){
+  const old = byId(table, t.dataset.id)?.[f] || null;
+  if (!old || old === v || changeBlocked(table, t.dataset.id, {[f]: v})) return true;
+  const ok = await confirmAsk(v ? `Modifier la date « ${label} » ?` : `Effacer la date « ${label} » ?`,
+    `${context}\nAncienne valeur : ${fmtNum(old)}\nNouvelle valeur : ${v ? fmtNum(v) : 'aucune (date effacée)'}`,
+    v ? 'Modifier la date' : 'Effacer la date', {danger: !v});
+  if (ok) return true;
+  t.value = old; const txt = t.parentElement?.querySelector('.dt-txt'); if (txt){ txt.value = fmtNum(old); txt.classList.remove('bad'); txt.title = ''; }
+  render(); return false;
+}
+// Dates de suivi d'une date (Production › Suivi admin, Communication)
+for (const [f, label] of Object.entries(FOLLOW_DATES))
+  ACTIONS['change:shows.'+f] = async (t, v) => {
+    if (!(await dateChangeOk(t, 'shows', f, v, label, showLabel(byId('shows', t.dataset.id))))) return;
+    await save('shows', t.dataset.id, {[f]: v}, {rerender: t.dataset.rr !== '0'});
+  };
+/** Contexte d'une ligne de facture dans la question : date de concert et libellé de la ligne */
+const payContext = p => [showLabel(byId('shows', p?.show_id)), p?.label || PAY_KINDS[p?.kind] || p?.kind].filter(Boolean).join(' · ');
+// Dates de facture envoyée / relancée (Production › Factures) ; « Payée » : crochet plus bas (compte d'encaissement)
+for (const f of ['sent_at', 'reminded_at'])
+  ACTIONS['change:show_payments.'+f] = async (t, v) => {
+    if (!(await dateChangeOk(t, 'show_payments', f, v, INVOICE_DATES[f], payContext(byId('show_payments', t.dataset.id))))) return;
+    await save('show_payments', t.dataset.id, {[f]: v});
+  };
 // Date annulée / sans suite : reste visible 5 s
 ACTIONS['change:shows.status'] = async (t, v) => {
   const before = byId('shows', t.dataset.id)?.status;
@@ -478,6 +545,24 @@ async function setBill(pay, pct){
   if (pct > max + 0.001){ toast(`Les factures ne peuvent pas dépasser ${fmtPct(100)} du cachet : ${fmtPct(max)} au plus pour cette ligne`, true); return true; }
   return false;
 }
+// Spectacle par défaut (v1.60.3, réponse d'Anthony du 07/11/2026) : toujours un spectacle ACTIF de l'artiste (même contrôle en base :
+// projects_default_spectacle_guard, migration 2026-11-07_v1.60.3_spectacle_defaut.sql)
+ACTIONS['change:projects.default_spectacle_id'] = async (t, v) => {
+  const sp = v && byId('spectacles', v);
+  if (v && !(sp && sp.active && sp.project_id === t.dataset.id)){ toast('Spectacle par défaut refusé : il doit être un spectacle actif de cet artiste', true); render(); return; }
+  await save('projects', t.dataset.id, {default_spectacle_id: v});
+};
+// spectacle archivé : s'il était le défaut de l'artiste, le défaut est retiré (jamais un défaut inutilisable) ; les dates ne bougent pas.
+// Même règle en base : spectacles_default_cleanup (migration v1.60.3)
+ACTIONS['change:spectacles.active'] = async (t, v) => {
+  const sp = byId('spectacles', t.dataset.id); if (!sp) return;
+  if (!await save('spectacles', sp.id, {active: v}, {rerender: false})) return;
+  const p = byId('projects', sp.project_id);
+  if (!v && p?.default_spectacle_id === sp.id){
+    if (await save('projects', p.id, {default_spectacle_id: null}, {rerender: false})) toast(`« ${sp.name} » archivé : ce n’est plus le spectacle par défaut des nouvelles dates (dates existantes inchangées)`);
+  }
+  render();
+};
 // commission de l'artiste changée : ses dates suivent (après confirmation)
 ACTIONS['change:projects.default_artbo_pct'] = async (t, v) => {
   if (!await save('projects', t.dataset.id, {default_artbo_pct: v}, {rerender: false})) return;
@@ -519,6 +604,7 @@ ACTIONS['change:show_payments.amount_ttc'] = async (t, v) => {
 // « Non renseigné » (compté dans la date et l'artiste, dans aucun compte), il réintègre le bon compte dès qu'il est choisi.
 ACTIONS['change:show_payments.paid_at'] = async (t, v) => {
   const pay = byId('show_payments', t.dataset.id);
+  if (!(await dateChangeOk(t, 'show_payments', 'paid_at', v, INVOICE_DATES.paid_at, payContext(pay)))) return;
   if (!(await save('show_payments', pay.id, {paid_at: v}, {rerender: false}))) { render(); return; }
   render();
   const s = byId('shows', pay.show_id), proj = byId('projects', s?.project_id);

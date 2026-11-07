@@ -5,6 +5,18 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.60.3 — 07/11/2026
+- v1.60.3 : saisie et spectacles (sélection des champs numériques, cachets sur 3 lignes sans défilement horizontal à 1 280 px et plus, spectacle par défaut), coproduction et promotion locale, suivi administratif (boucle communication, confirmation avant de modifier une date de suivi), destinataires et copies en champ unique, message Apple Mail glissé dans un suivi, budgets (jauge, coûts à compléter, CNM, points d'équilibre), suppression et archivage contrôlés d'une date, question exacte avant le renommage Drive
+
+
+## 1.60.2 — 07/11/2026
+- Pièces jointes du Suivi : glisser depuis Apple Mail accepté, photos (JPG, PNG, HEIC) enregistrées avec leur vrai type, message clair si rien n'est joignable
+- Lieux : choix d'un lieu connu (adresse, code postal) dans une date et lieu de concert propre à un suivi ; carte placée sur le lieu réel ; nouvelles factures de commission avec la ville, le département et le lieu
+- Structures inactives : relances de suivi suspendues et contacts liés uniquement à des structures inactives écartés de la prospection et de Brevo, sans suppression ni désabonnement ; réactivation rétablie
+- Destinataires : un contact est trouvé par n'importe laquelle de ses adresses et toutes ses adresses sont proposées
+- Journal : changer la date d'un échange ne réenregistre plus le mail ; corrections visuelles de l'en-tête de la fiche artiste et des tarifs par jauge
+
+
 ## 1.60.1 — 06/11/2026
 - Structure administrative (relecture v1.60.0) — une réponse de l'artiste différente de la structure reste dans la fiche et n'est plus remplacée en silence lors d'un enregistrement ; le lien public ne reçoit que les champs de la fiche ; rappel TVA dans la fenêtre des mails
 

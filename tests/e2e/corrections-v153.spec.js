@@ -61,7 +61,7 @@ test('v1.53 prospection : aucun artiste coché d’office, même avec un artiste
   for (const c of await page.locator('#modal [data-pr-art]').all()) await expect(c).not.toBeChecked();
   await expect(page.locator('#pr-art-note')).toContainText('n’est pas repris d’office');
   // l'envoi sans artiste est refusé
-  await page.locator('#pr-to').fill('contact@exemple.invalid');
+  await page.locator('#pr-to-q').fill('contact@exemple.invalid');   // champ unique (v1.60.3) : validée à l'envoi
   await page.locator('#modal button[type=submit]').click();
   await expect(page.locator('.toast').last()).toContainText('Coche au moins un artiste');
   expect(await page.evaluate(() => window.__calls.filter(c => c.fn === 'script-google').length)).toBe(0);

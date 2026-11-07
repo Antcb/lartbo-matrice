@@ -7,7 +7,7 @@ import './ui/datefield.js';
 import './ui/numfield.js';
 import './ui/autocomplete.js';
 import { ACTIONS, cleanupDraft } from './actions.js';
-import { byId, teamName, unreadNotifs } from './selectors.js';
+import { activeNotifs, byId, teamName, unreadNotifs } from './selectors.js';
 import { netArtbo, payAmount, paymentsOf } from './calc.js';
 import { APP_VERSION, ENV } from './config.js';
 import { VIEWS } from './constants.js';
@@ -64,7 +64,7 @@ function header(){
 const NOTIF_MAIL = {boucle_accueil:'boucle_tech', boucle_com:'boucle_com'};
 
 function notifPanel(){
-  const list = S.db.notifications.slice().sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,60);
+  const list = activeNotifs().sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,60);
   const me = S.user.email;
   return `<div class="menu notif-menu" role="dialog" aria-label="Notifications">
     <div class="menu-head"><b>Notifications</b><span class="spacer"></span>${list.some(n=>!(n.read_by||[]).includes(me))?'<button class="btn sm ghost" data-act="readAllNotifs">Tout marquer comme lu</button>':''}</div>
@@ -77,9 +77,11 @@ function notifPanel(){
 function focusKey(a){
   if (!a || a===document.body) return null;
   const host = a.classList.contains('dt-txt') ? a.parentElement.querySelector('.dt-val') : a;
-  if (host.dataset?.t) return {sel:`[data-t="${host.dataset.t}"][data-id="${host.dataset.id}"][data-f="${host.dataset.f}"]`, dt: a.classList.contains('dt-txt')};
+  // champ numérique : curseur / sélection gardés (sinon la sélection du premier focus, numfield.js, reviendrait en pleine saisie)
+  const caret = a.dataset?.num ? {pos: a.selectionStart, end: a.selectionEnd} : {};
+  if (host.dataset?.t) return {sel:`[data-t="${host.dataset.t}"][data-id="${host.dataset.id}"][data-f="${host.dataset.f}"]`, dt: a.classList.contains('dt-txt'), ...caret};
   if (a.dataset?.search) return {sel:`[data-search="${a.dataset.search}"]`, pos:a.selectionStart};
-  if (a.id) return {sel:'#'+CSS.escape(a.id)};
+  if (a.id) return {sel:'#'+CSS.escape(a.id), ...caret};
   return null;
 }
 
@@ -128,7 +130,7 @@ export function render(){
   checkVisibleProspects();
   restorePageDrafts(main);
   restoreScroll(main, scroll);
-  if (fk){ let el = main.querySelector(fk.sel); if (el){ if (fk.dt) el = el.parentElement.querySelector('.dt-txt'); el.focus({preventScroll:true}); if (fk.pos!=null) try{ el.setSelectionRange(fk.pos, fk.pos); }catch(e){} } }
+  if (fk){ let el = main.querySelector(fk.sel); if (el){ if (fk.dt) el = el.parentElement.querySelector('.dt-txt'); el.focus({preventScroll:true}); if (fk.pos!=null) try{ el.setSelectionRange(fk.pos, fk.end ?? fk.pos); }catch(e){} } }
   if (S.focusProspect){ const el=document.getElementById('pr-'+S.focusProspect); if (el) el.scrollIntoView({block:'start'}); S.focusProspect=null; }
 }
 

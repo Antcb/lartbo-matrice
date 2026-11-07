@@ -1,6 +1,7 @@
 /**
  * Brevo : ajoute dans Brevo les contacts de la Matrice qui n'y sont pas encore (mail, prénom, nom, structure).
  * Un mail déjà présent dans Brevo n'est JAMAIS modifié : ni ses champs, ni ses listes, ni son désabonnement.
+ * Contact lié uniquement à des structures inactives (v1.60.2) : pas ajouté (hors prospection) ; rien n'est supprimé ni désabonné.
  * Appelée par un déclencheur de la base à chaque création ou modification d'un contact
  * (et quand on le rattache à une structure), ou par Réglages › Brevo pour tout envoyer d'un coup.
  * Réglages lus dans la table settings : brevo_api_key, brevo_list_id (une ou plusieurs listes, séparées par des virgules),
@@ -9,6 +10,7 @@
  * le navigateur n'a plus le code secret).
  */
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { aAjouter, type Link, names, onlyInactive } from "./regles.ts";
 
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const API = "https://api.brevo.com/v3";
@@ -71,11 +73,14 @@ async function brevoEmails(key: string) {
 
 type Contact = { id: string; email: string | null; email_2?: string | null; first_name: string | null; last_name: string | null; display_name: string | null };
 
+/** Structures rattachées à chaque contact (nom, inactive ou non — v1.60.2) ; une erreur de lecture arrête tout (jamais d'ajout à l'aveugle) */
 async function structuresOf(ids: string[]) {
-  const out = new Map<string, string[]>();
+  const out = new Map<string, Link[]>();
   for (let i = 0; i < ids.length; i += 500) {
-    const { data } = await sb.from("contact_structures").select("contact_id, structures(name)").in("contact_id", ids.slice(i, i + 500));
-    for (const r of (data || []) as any[]) if (r.structures?.name) (out.get(r.contact_id) || out.set(r.contact_id, []).get(r.contact_id)!).push(r.structures.name);
+    const { data, error } = await sb.from("contact_structures").select("contact_id, structures(name, inactive_at)").in("contact_id", ids.slice(i, i + 500));
+    if (error) throw new Error(`Lecture des structures des contacts impossible : ${error.message}`);
+    for (const r of (data || []) as any[]) if (r.structures) (out.get(r.contact_id) || out.set(r.contact_id, []).get(r.contact_id)!)
+      .push({ name: r.structures.name || "", inactive: !!r.structures.inactive_at });
   }
   return out;
 }
@@ -119,15 +124,18 @@ Deno.serve(async (req) => {
       const known = await brevoEmails(key);
       const seen = new Set<string>();
       // chaque mail du contact (mail 1 et mail 2) devient un contact Brevo
-      const list: { c: Contact; email: string }[] = [];
-      for (const c of all) for (const e of mailsOf(c)) { if (known.has(e) || seen.has(e)) continue; seen.add(e); list.push({ c, email: e }); }
-      if (!list.length) return json({ ok: true, count: 0 });
-      const st = await structuresOf([...new Set(list.map((x) => x.c.id))]);
+      const cand: { c: Contact; email: string }[] = [];
+      for (const c of all) for (const e of mailsOf(c)) { if (known.has(e) || seen.has(e)) continue; seen.add(e); cand.push({ c, email: e }); }
+      if (!cand.length) return json({ ok: true, count: 0, skipped_inactive: 0 });
+      const st = await structuresOf([...new Set(cand.map((x) => x.c.id))]);
+      // contacts liés uniquement à des structures inactives : pas ajoutés (v1.60.2, regles.ts)
+      const { list, skipped_inactive } = aAjouter(cand, st);
+      if (!list.length) return json({ ok: true, count: 0, skipped_inactive });
       const r = await bfetch(`${API}/contacts/import`, { method: "POST", headers: { "api-key": key, "content-type": "application/json" },
-        body: JSON.stringify({ jsonBody: list.map(({ c, email }) => ({ email, attributes: attributes(c, st.get(c.id) || [], a) })),
+        body: JSON.stringify({ jsonBody: list.map(({ c, email }) => ({ email, attributes: attributes(c, names(st.get(c.id)), a) })),
           ...(listIds.length ? { listIds } : {}), updateExistingContacts: false, emptyContactsAttributes: false }) });
       if (!r.ok) return json({ ok: false, error: `Brevo ${r.status} : ${await r.text()}` });
-      return json({ ok: true, count: list.length });
+      return json({ ok: true, count: list.length, skipped_inactive });
     }
 
     // Un contact : petite attente pour que les structures rattachées juste après la création soient là
@@ -136,7 +144,9 @@ Deno.serve(async (req) => {
     const mails = c ? mailsOf(c as Contact) : [];
     if (!c || !mails.length) return json({ ok: true, skipped: "pas de mail" });
     const st = await structuresOf([c.id]);
-    const attrs = attributes(c as Contact, st.get(c.id) || [], a);
+    const attrs = attributes(c as Contact, names(st.get(c.id)), a);
+    const held = onlyInactive(st.get(c.id));   // lié uniquement à des structures inactives : pas de nouveau contact Brevo (v1.60.2)
+    const skipped: string[] = [];
     const errors: string[] = [], done: string[] = [], created: string[] = [];
     // mails créés par la Matrice (avant la v1.32 : seul le mail 1, signalé par brevo_created)
     const ours = new Set<string>((c.brevo_emails || []).map((e: string) => e.toLowerCase()));
@@ -150,6 +160,7 @@ Deno.serve(async (req) => {
           body: JSON.stringify({ attributes: attrs }) });
         done.push(email); continue;
       }
+      if (held) { skipped.push(email); continue; }
       const r = await bfetch(`${API}/contacts`, { method: "POST", headers: { "api-key": key, "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({ email, attributes: attrs, ...(listIds.length ? { listIds } : {}) }) });
       const txt = r.ok ? "" : await r.text();
@@ -161,7 +172,7 @@ Deno.serve(async (req) => {
     // ajout des mails créés à la liste enregistrée, sans l'écraser (une autre synchronisation du même contact peut tourner en même temps)
     if (created.length) await sb.rpc("brevo_add_emails", { p_contact: c.id, p_emails: created });
     await sb.from("contacts").update({ brevo_at: new Date().toISOString(), brevo_error: err, ...(ours.size ? { brevo_created: true } : {}) }).eq("id", c.id);
-    return json({ ok: !err, error: err, emails: done });
+    return json({ ok: !err, error: err, emails: done, ...(skipped.length ? { skipped_inactive: skipped } : {}) });
   } catch (e) {
     const msg = String(e);
     if (/unrecognised IP/i.test(msg)) return json({ ok: false, error: "Brevo bloque la connexion (adresse IP non autorisée). Dans Brevo : Paramètres › Sécurité › IP autorisées, désactive le blocage des adresses IP inconnues, puis réessaie." });

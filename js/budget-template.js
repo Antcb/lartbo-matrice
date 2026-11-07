@@ -16,7 +16,8 @@
  * Le modèle n'est copié que dans un budget VIDE : le modifier ne change jamais les budgets existants.
  */
 import { render } from './app.js';
-import { cnmDue, isFree, linesOf, payslipCost } from './budget.js';
+import { cnmDue, isFree, isMissingCost, linesOf, missingCostLines, payslipCost } from './budget.js';
+import { confirmAsk } from './ui/dialog.js';
 import { save, sb, mergeRows } from './data.js';
 import { isProductionShow } from './production-budget.js';
 import { byId, setting } from './selectors.js';
@@ -98,6 +99,68 @@ export function templateLines(s){
   if (p?.artist_payee) rows.push({category: 'Solde artiste', label: 'Solde artiste', supplier: p.artist_payee, auto: 'solde_artiste'});
   return rows;
 }
+
+/**
+ * Coûts manquants complétables depuis le budget type (demande d'Anthony du 07/11/2026, après saisie de la jauge) : pour chaque
+ * ligne de la date dont le coût reste à renseigner (isMissingCost : quantité connue, prix, prévu et réel vides), le coût unitaire
+ * que donne MAINTENANT le budget type de la date (spectacle, sinon artiste) pour la même ligne de cachets (même début de libellé :
+ * « Cachets musiciens », « Cachets techniciens »…). Seules les lignes vides sont proposées ; une ligne déjà chiffrée n'est jamais
+ * touchée ; la quantité saisie est gardée. Le libellé n'est remplacé que s'il porte encore la mention « à renseigner » du modèle.
+ */
+const costKey = label => String(label || '').split(' (')[0].split(' — ')[0].trim().toLowerCase();
+export function costFillPlan(s){
+  if (!s || s.prod_mode === 'booking' || s.result_closed_at) return [];
+  const rows = templateLines(s).filter(r => r.category === 'Staff' && r.unit_cost != null);
+  const out = [];
+  for (const l of missingCostLines(s.id)){
+    const r = rows.find(x => costKey(x.label) === costKey(l.label)); if (!r) continue;
+    out.push({line: l, unit_cost: r.unit_cost, label: /à renseigner/.test(l.label || '') ? r.label : l.label});
+  }
+  return out;
+}
+/** Origine du budget type de la date, pour les messages : le spectacle choisi (jamais complété par l'artiste), sinon le modèle de
+ *  l'artiste, réservé aux dates sans spectacle et nommé comme tel (décision du 07/11/2026) */
+export const templateSource = s => { const sp = s?.spectacle_id ? byId('spectacles', s.spectacle_id) : null;
+  return sp ? `du spectacle « ${sp.name || 'sans nom'} »` : 'de l’artiste (date sans spectacle)'; };
+/**
+ * Informations manquantes pour chiffrer les coûts vides de la date : jauge ouverte, ou coût absent du modèle du SPECTACLE choisi
+ * (jamais remplacé par celui de l'artiste ni des Réglages, décision du 07/11/2026). Liste de textes, vide si rien ne manque.
+ */
+export function costGaps(s){
+  const miss = missingCostLines(s?.id); if (!miss.length) return [];
+  const out = [], sp = s.spectacle_id ? byId('spectacles', s.spectacle_id) : null, rows = templateLines(s).filter(r => r.category === 'Staff');
+  if (jaugeOf(s) == null && rows.some(r => /jauge à renseigner/.test(r.label))) out.push('jauge ouverte de la date');
+  for (const l of miss){
+    const r = rows.find(x => costKey(x.label) === costKey(l.label));
+    if (r && r.unit_cost == null && !/jauge à renseigner/.test(r.label)) out.push(`${costKey(l.label).replace(/^./, c => c.toUpperCase())} : coût absent du modèle ${sp ? `du spectacle « ${sp.name || 'sans nom'} »` : 'de l’artiste'}${/jauge/.test(r.label) ? ` (${r.label.match(/\((.*?)\)/)?.[1] || ''})` : ''}`);
+    else if (!r) out.push(`${l.label || 'ligne sans libellé'} : absente du budget type ${templateSource(s)}, coût à saisir sur la ligne`);
+  }
+  return [...new Set(out)];
+}
+/** Propose (fenêtre de confirmation de l'application, jamais une fenêtre native) de compléter les coûts vides ; écriture
+ *  conditionnelle : une ligne remplie entre-temps ailleurs n'est pas écrasée. manual = appelé depuis le bouton (message si rien) */
+export async function offerCostFill(showId, {manual = false} = {}){
+  const s = byId('shows', showId), plan = costFillPlan(s);
+  if (!plan.length){ if (manual) toast(`Rien à compléter depuis le budget type ${templateSource(s)}${costGaps(s).length ? ' — à renseigner : ' + costGaps(s).join(' ; ') : ''}`); return false; }
+  const gaps = costGaps(s).filter(g => !/^jauge/.test(g));
+  const kept = linesOf(showId).filter(l => !isMissingCost(l) && rowsKeyed(s).has(costKey(l.label)) && !l.auto).length;
+  const text = [`Jauge ouverte de la date : ${jaugeOf(s) ?? 'non renseignée'}. Compléter avec le budget type ${templateSource(s)} les coûts encore vides :`,
+    ...plan.map(x => `• ${x.line.label || 'Cachets'} : ${Number(x.line.qty)} × ${eur2(Number(x.unit_cost))}`),
+    'Seules les lignes vides sont complétées ; la quantité saisie est gardée.' + (kept ? ` ${kept} ligne${kept > 1 ? 's' : ''} déjà chiffrée${kept > 1 ? 's' : ''} : inchangée${kept > 1 ? 's' : ''}.` : ''),
+    ...(gaps.length ? [`Restent à renseigner (rien n’est repris d’un autre modèle) : ${gaps.join(' ; ')}.`] : [])].join('\n');
+  if (!(await confirmAsk('Compléter les coûts manquants ?', text, `Compléter ${plan.length} ligne${plan.length > 1 ? 's' : ''}`))) return false;
+  let done = 0;
+  for (const x of plan){
+    const {data, error} = await sb.from('budget_lines').update({unit_cost: x.unit_cost, label: x.label}).eq('id', x.line.id)
+      .is('unit_cost', null).is('forecast', null).is('amount', null).select();
+    if (error){ toast('Complément impossible : ' + error.message, true); break; }
+    if (data?.length){ mergeRows('budget_lines', data); done++; }
+  }
+  render();
+  toast(done === plan.length ? `${done} coût${done > 1 ? 's' : ''} complété${done > 1 ? 's' : ''} depuis le budget type` : `${done} sur ${plan.length} complété${done > 1 ? 's' : ''} : les autres ont été remplies ailleurs entre-temps (non modifiées)`, done < plan.length);
+  return done > 0;
+}
+const rowsKeyed = s => new Set(templateLines(s).filter(r => r.category === 'Staff').map(r => costKey(r.label)));
 
 /** Pose le budget type sur une date (seulement si son budget est vide) ; quiet = sans message */
 export async function applyTemplate(s, {quiet = false} = {}){

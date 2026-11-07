@@ -49,6 +49,14 @@ export function coreaCommissionCheck(s){
 
 /** Ligne de solde artiste (automatique ou ajoutée à la main / par une pièce) : comptée une seule fois, dans le solde */
 export const isSolde = l => l.auto === 'solde_artiste' || l.category === 'Solde artiste';
+/**
+ * Ligne CNM d'une coréalisation dont la CNM est AUSSI « déduite du résultat partagé » (précisions d'Anthony du 07/11/2026) : la
+ * déduction de l'assiette partagée ne dit pas, à elle seule, qui paie la CNM ni qui en récupère le montant. Les dépenses et le reste
+ * artiste n'en tiennent PAS compte (inchangés, en attente du rapprochement des dates réelles : tools/rapprochement-cnm.mjs) ; seul le
+ * break PRÉVISIONNEL (js/break.js) ne la déduit qu'une fois.
+ */
+export const cnmViaShare = l => { if (!l || !isCnmLine(l) || !l.show_id) return false; const s = byId('shows', l.show_id);
+  return !!s && isCorea(s) && !!s.cnm_in_result; };
 
 const staffQty = showId => linesOf(showId).filter(l => l.category === 'Staff').reduce((t,l) => t + (Number(l.qty)||0), 0);
 
@@ -71,6 +79,19 @@ export function lineForecast(l){
   }
   return null;
 }
+/**
+ * Coût à renseigner (demande d'Anthony du 07/11/2026) : ligne saisie (pas automatique, pas un solde artiste) dont la QUANTITÉ est
+ * connue mais pas le prix (ex. cachets du budget type posés sans jauge ou sans coût dans le spectacle), sans prévu ni réel saisi.
+ * Elle compte pour 0 dans les totaux : le budget est alors « incomplet », jamais présenté comme fiable ou définitif.
+ */
+const filledN = v => v != null && v !== '';
+export const isMissingCost = l => !!l && !l.auto && !isSolde(l) && !filledN(l.amount) && !filledN(l.forecast)
+  && filledN(l.qty) && Number(l.qty) > 0 && !filledN(l.unit_cost);
+/** Lignes d'une date dont le coût reste à renseigner */
+export const missingCostLines = showId => linesOf(showId).filter(isMissingCost);
+/** Texte commun « Budget incomplet — coûts à renseigner » (synthèse, reste artiste, points d'équilibre, export) */
+export const INCOMPLETE = 'Budget incomplet — coûts à renseigner';
+export const missingCostText = ls => `${INCOMPLETE} : ${ls.map(l => l.label || l.category || 'ligne sans libellé').join(' ; ')}`;
 /** Montant retenu : le réel s'il est connu, sinon le prévu */
 export const lineValue = l => l.amount != null ? Number(l.amount) : (lineForecast(l) || 0);
 export const lineStatus = l => l.paid_at || l.reimbursed_at ? 'paid' : (l.doc_number || l.file_path || l.amount != null) ? 'doc' : 'planned';
@@ -167,7 +188,7 @@ export function accountOf(projectId){
 export function accountMoves(projectId){
   const p = byId('projects', projectId), moves = [];
   const isOwnProd = s => /^(Production|Co-Production)$/.test(s?.contract_type || '');
-  const where = s => s ? `${s.venue || '?'} (${String(s.date || '').split('-').reverse().join('/')})` : 'hors date';
+  const where = s => s ? `${s.venue || '?'} (${String(s.date || '').split('-').reverse().join('/')}${s.archived_at ? ', date archivée' : ''})` : 'hors date';   // v1.60.3
   for (const s of accountShowsOf(projectId).filter(x => !isOwnProd(x))){
     for (const pay of paymentsOf(s.id)){
       // commission (lot D1) : un mouvement par versement réel (date, référence) ; commission versée avant ce lot sans détail : un mouvement

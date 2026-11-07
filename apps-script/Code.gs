@@ -35,6 +35,9 @@
  *   PRODUCTION_FOLDER     032_Production
  */
 
+/** Version du code (renvoyée par « Tester le script » dans Réglages › Google, pour vérifier le redéploiement) */
+var SCRIPT_VERSION = 'v1.60.3';
+
 function props_() {
   return PropertiesService.getScriptProperties().getProperties();
 }
@@ -69,7 +72,7 @@ function doPost(e) {
     else if (action === 'save_urls') out = saveUrls_(body.folder_id, body.files);
     else if (action === 'artist_folder') out = createArtistFolder_(body.project_id);
     else if (action === 'artist_file_docs') out = { ok: true, filed: artistFileDocs_(body.project_id) };
-    else if (action === 'ping') out = { ok: true, account: Session.getEffectiveUser().getEmail() };
+    else if (action === 'ping') out = { ok: true, account: Session.getEffectiveUser().getEmail(), version: SCRIPT_VERSION };
     else out = { ok: false, error: 'Action inconnue : ' + action };
   } catch (err) {
     out = { ok: false, error: String(err) };
@@ -190,7 +193,15 @@ function pickTemplate_(show, kind) {
 function dailyJob() {
   try { rhFileDocs_(); } catch (err) { Logger.log('Pièces salariés : ' + err); }
   try { artistFileDocs_(); } catch (err) { Logger.log('Fichiers artistes : ' + err); }
-  var notifs = sb_('GET', 'notifications?emailed_at=is.null&select=*&order=created_at.asc') || [];
+  // notifications retirées (date archivée / restaurée, Matrice v1.60.3) : ni brouillon ni récap. Repli sur la lecture d'avant
+  // SEULEMENT si la colonne withdrawn_at n'existe pas encore (migration v1.60.3 pas appliquée : erreur Postgres 42703) ; toute autre
+  // erreur arrête proprement le récap du jour (relecture v1.60.3), pour ne jamais renvoyer des notifications retirées
+  var notifs;
+  try { notifs = sb_('GET', 'notifications?emailed_at=is.null&withdrawn_at=is.null&select=*&order=created_at.asc') || []; }
+  catch (e) {
+    if (!/42703/.test(String(e)) || !/withdrawn_at/.test(String(e))) throw new Error('Récap quotidien non envoyé : lecture des notifications impossible (' + e + ')');
+    notifs = sb_('GET', 'notifications?emailed_at=is.null&select=*&order=created_at.asc') || [];
+  }
   var KIND = { boucle_accueil: 'boucle_tech', boucle_com: 'boucle_com' };
   var drafted = [];
   notifs.forEach(function (n) {
@@ -571,7 +582,7 @@ function createShowFolder_(showId, force) {
   lock.waitLock(30000);
   try {
     var show = sb_('GET', 'shows?id=eq.' + showId +
-      '&select=id,venue,date,city,department,drive_folder_id,project:projects(id,name,drive_artist_folder_id),structure:structures(postal_code,city)')[0];
+      '&select=id,venue,date,city,department,postal_code,venue_is_structure,drive_folder_id,project:projects(id,name,drive_artist_folder_id),structure:structures(postal_code,department_code,city)')[0];
     if (!show) throw new Error('Date introuvable : ' + showId);
 
     // Déjà créé et toujours présent → on ne refait rien
@@ -614,13 +625,16 @@ function createShowFolder_(showId, force) {
  * sinon le département de la date (pays à l'étranger : CH, BE…).
  */
 function dept_(show) {
-  // 1. le département de la date (lieu du concert) ; 2. à défaut le CP de la structure, seulement si elle est dans la même ville
-  //    (le siège d'un producteur est souvent ailleurs : 3AG à Clermont, RPO à Grenoble…)
+  // Même source de lieu que l'adresse (décisions d'Anthony du 07/11/2026 ; = venueSource dans js/fiche-fields.js et lieu_departement en SQL) :
+  // 1. le département de la date ; 2. le code postal de la date ; 3. la structure SEULEMENT si elle est confirmée comme lieu de
+  // représentation (venue_is_structure) — jamais le siège d'un organisateur non confirmé (3AG à Clermont, RPO à Grenoble…)
   var d = String(show.department || '').trim();
   if (d) return /^\d$/.test(d) ? '0' + d : (/^\d{5}$/.test(d) ? cpDept_(d) : d.toUpperCase());
-  var st = show.structure || {};
-  var same = st.city && show.city && rhNorm_(st.city) === rhNorm_(show.city);
-  return same ? cpDept_(st.postal_code) : '';
+  var own = cpDept_(show.postal_code);
+  if (own) return own;
+  if (!show.venue_is_structure) return '';
+  var st = show.structure || {}, sd = String(st.department_code || '').trim();
+  return sd ? (/^\d$/.test(sd) ? '0' + sd : sd.toUpperCase()) : (cpDept_(st.postal_code) || '');
 }
 
 function cpDept_(cp) {
@@ -831,13 +845,14 @@ function contractName_(show, artist) {
 
 /**
  * Parcourt <Artiste>/032_Production/<Année>/<dossiers de dates> et propose les bons noms dans un Google Sheet.
- * Rien n'est renommé : on coche ou décoche la colonne « Appliquer », puis on lance renameApply.
+ * Rien n'est renommé : toutes les propositions arrivent DÉCOCHÉES (décision d'Anthony du 07/11/2026) ; on coche une à une celles
+ * à appliquer (ancien nom → nouveau nom), puis on lance renameApply. Les contrats sont listés pour information et ne sont JAMAIS renommés.
  */
 function renameAudit() {
   var p = props_();
-  var shows = sb_('GET', 'shows?select=id,project_id,date,status,venue,city,department,contract_type,drive_folder_id,structure:structures(postal_code,city)&date=not.is.null') || [];
+  var shows = sb_('GET', 'shows?select=id,project_id,date,status,venue,city,department,postal_code,venue_is_structure,contract_type,drive_folder_id,structure:structures(postal_code,department_code,city)&date=not.is.null') || [];
   var projects = sb_('GET', 'projects?select=id,name,drive_artist_folder_id') || [];
-  var rows = [['Appliquer', 'Type', 'Artiste', 'Dossier', 'Nom actuel', 'Nom proposé', 'ID']];
+  var rows = [['Appliquer', 'Type', 'Artiste', 'Dossier', 'Ancien nom (actuel, inchangé tant que la case n’est pas cochée)', 'Nouveau nom proposé', 'ID']];
   var root = DriveApp.getFolderById(p.ARTISTS_ROOT_ID), artists = root.getFolders();
   while (artists.hasNext()) {
     var af = artists.next(), aname = af.getName();
@@ -855,7 +870,7 @@ function renameAudit() {
           || (m && proj ? pickShow_(shows.filter(function (s) { return s.project_id === proj.id && s.date === y.getName() + '-' + m[1] + '-' + m[2]; })) : null);
         if (!show) { rows.push([false, 'Dossier (date inconnue)', aname, y.getName(), df.getName(), '', df.getId()]); continue; }
         var want = folderName_(show);
-        if (!sameName_(want, df.getName())) rows.push([true, 'Dossier de date', aname, y.getName(), df.getName(), want, df.getId()]);
+        if (!sameName_(want, df.getName())) rows.push([false, 'Dossier de date', aname, y.getName(), df.getName(), want, df.getId()]);
         auditContracts_(df, show, proj ? proj.name.replace(/\s*•.*$/, '').trim() : aname, rows, aname, y.getName() + '/' + want);
       }
     }
@@ -907,7 +922,7 @@ function auditContracts_(folder, show, artist, rows, aname, where) {
     var g = groups[k].sort(function (a, b) { return a.ver - b.ver || a.created - b.created; });
     g.forEach(function (c, i) {
       var want = base + c.signed + (g.length > 1 ? ' • V' + (i + 1) : '') + '.' + c.ext;
-      if (!sameName_(want, c.name)) rows.push([true, 'Contrat', aname, where, c.name, want, c.file.getId()]);
+      if (!sameName_(want, c.name)) rows.push([false, 'Contrat' + (c.signed ? ' signé' : '') + ' (information seulement : jamais renommé)', aname, where, c.name, want, c.file.getId()]);
     });
   });
 }
@@ -917,9 +932,13 @@ function renameApply() {
   var id = PropertiesService.getScriptProperties().getProperty('RENAME_SHEET_ID');
   if (!id) throw new Error('Lance d’abord la vérification des noms');
   var sh = SpreadsheetApp.openById(id).getSheets()[0], data = sh.getDataRange().getValues(), done = 0;
+  // Tableau créé par une version antérieure (cases cochées d'office) : refusé, relancer « Vérifier les noms »
+  if (!/^Ancien nom/.test(String(data[0] && data[0][4] || ''))) throw new Error('Tableau de renommage d’une ancienne version : relance « Vérifier les noms » avant d’appliquer');
   for (var i = 1; i < data.length; i++) {
     var r = data[i];
     if (r[0] !== true || !r[5] || !r[6]) continue;
+    // Contrats (émis ou signés) : jamais renommés par cet outil (décision d'Anthony du 07/11/2026)
+    if (/^Contrat/.test(r[1])) { sh.getRange(i + 1, 1).setValue(false); continue; }
     try {
       (/^Dossier/.test(r[1]) ? DriveApp.getFolderById(r[6]) : DriveApp.getFileById(r[6])).setName(r[5]);
       sh.getRange(i + 1, 1).setValue(false); sh.getRange(i + 1, 2).setValue(r[1] + ' ✔ renommé'); done++;

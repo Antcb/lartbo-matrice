@@ -175,18 +175,42 @@ const closedReceiptLock = (p, patch) => { const s = p && byId('shows', p.show_id
   if (patch === null || ['coprod_role', 'coprod_holder', 'amount', 'pct', 'kind', 'show_id'].some(k => k in patch && String(patch[k] ?? '') !== String(p[k] ?? '')))
     return 'Résultat clôturé : les recettes qualifiées de cette date sont verrouillées. Rouvre le résultat (avec un motif) pour les modifier.';
   return ''; };
+/**
+ * Suppression et archivage d'une date (v1.60.3) : {blocked: refus de suppression, archiveBlocked: refus d'archivage}, dans
+ * l'ordre et avec les textes de la base (show_deletion_state, migration v1.60.3). Une date dont la suppression est refusée
+ * mais l'archivage permis (devis ou document Pennylane, lignes hors calcul…) peut être archivée (réponse d'Anthony du 07/11).
+ */
+export function showRemovalState(id){
+  const s = byId('shows', id), pays = allPaymentsOf(id), blocked = [], archiveBlocked = [], pl = (n, w) => n > 1 ? w + 's' : w;
+  if (s?.result_closed_at){
+    blocked.push('Le résultat de cette date est clôturé : rouvre-le d’abord (bouton « Rouvrir », avec un motif), puis supprime la date.');
+    archiveBlocked.push('Le résultat de cette date est clôturé : rouvre-le d’abord (bouton « Rouvrir », avec un motif).'); }
+  if (s?.archived_at) archiveBlocked.push('Cette date est déjà archivée.');
+  if (pays.some(p => !counted(p))) blocked.push('Cette date garde des lignes hors calcul (traçabilité) : elle ne se supprime pas.');
+  // comme la base : lors de la suppression en chaîne, la date n'existe plus pour le déclencheur, qui applique la définition
+  // complète — une commission de production numérotée (historique) empêche donc aussi la suppression de sa date
+  if (hasFinancialRecord(id)){
+    blocked.push('Cette date a des factures émises : elle ne se supprime pas (ses factures et son budget seraient effacés avec elle).');
+    archiveBlocked.push('Cette date a des factures émises ou des versements : elle reste dans les listes, les comptes et les relances (pas d’archivage).'); }
+  if (filled(s?.pennylane_quote_id) || filled(s?.pennylane_quote_url) || pays.some(p => filled(p.pennylane_url)))
+    blocked.push('Cette date est liée à un document Pennylane (devis ou facture) : elle ne se supprime pas (rien n’est jamais supprimé dans Pennylane, le document resterait sans sa date).');
+  const known = S.db.pennylane_a_rattacher.filter(r => r.show_id === id), n = known.length;
+  if (n) blocked.push(`Cette date a ${n} ${pl(n, 'facture')} Pennylane ${pl(n, 'connue')} de la synchronisation (à rattacher, rattachée ou annulée) : elle ne se supprime pas.`);
+  if (known.some(r => !r.resolved_at && !r.cancelled_at)) archiveBlocked.push('Cette date a une facture Pennylane à rattacher : rattache-la d’abord (onglet Factures).');
+  if (S.db.pennylane_rattachements.some(r => r.show_id === id)) blocked.push('Cette date a un historique de rattachement de factures Pennylane : elle ne se supprime pas (traçabilité).');
+  // pièces gardées « à rattacher » : la date ne se supprime pas tant qu'elles n'ont pas été rattachées (décision d'Anthony du 25/10)
+  const k = piecesToAttach(s).length;
+  if (k){ blocked.push(`Cette date a ${k} ${pl(k, 'pièce')} à rattacher (onglet Factures) : rattache-${k > 1 ? 'les' : 'la'} avant de supprimer la date.`);
+    archiveBlocked.push(`Cette date a ${k} ${pl(k, 'pièce')} à rattacher (onglet Factures) : rattache-${k > 1 ? 'les' : 'la'} d’abord.`); }
+  return {blocked, archiveBlocked};
+}
 export function changeBlocked(table, id, patch){
   if (table === 'show_payments'){ const why = closedReceiptLock(byId('show_payments', id), patch); if (why) return why; }
   if (patch === null){
     if (table === 'show_payments' && !counted(byId('show_payments', id))) return 'Ligne hors calcul (gardée pour la traçabilité) : elle ne se supprime pas.';
-    if (table === 'shows' && allPaymentsOf(id).some(p => !counted(p))) return 'Cette date garde des lignes hors calcul (traçabilité) : elle ne se supprime pas.';
+    // suppression d'une date : refus de showRemovalState (même ordre et mêmes textes que la base, v1.60.3)
+    if (table === 'shows') return showRemovalState(id).blocked[0] || '';
     if (table === 'show_payments'){ const why = billLockReason(byId('show_payments', id)); return why && why.replace('ne se modifie plus', 'ne se supprime pas').replace('ne peuvent plus changer', 'ne se suppriment plus'); }
-    // comme la base : lors de la suppression en chaîne, la date n'existe plus pour le déclencheur, qui applique la définition
-    // complète — une commission de production numérotée (historique) empêche donc aussi la suppression de sa date
-    if (table === 'shows' && hasFinancialRecord(id)) return 'Cette date a des factures émises : elle ne se supprime pas (ses factures et son budget seraient effacés avec elle).';
-    // pièces gardées « à rattacher » : la date ne se supprime pas tant qu'elles n'ont pas été rattachées (décision d'Anthony du 25/10)
-    if (table === 'shows'){ const n = piecesToAttach(byId('shows', id)).length;
-      if (n) return `Cette date a ${n} pièce${n > 1 ? 's' : ''} à rattacher (onglet Factures) : rattache-${n > 1 ? 'les' : 'la'} avant de supprimer la date.`; }
     return '';
   }
   if (!patch) return '';

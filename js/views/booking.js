@@ -4,9 +4,10 @@
  * La carte (Leaflet) est créée une seule fois et déplacée d'un affichage à l'autre (attachMap).
  */
 import { STATUS_COLOR, STATUSES, isOff, stColor, viaArtbo } from '../constants.js';
+import { EMITTED_FIELDS } from '../calc.js';
 import { lingering } from '../data.js';
 import { route, routeCached } from '../geo.js';
-import { byId, projName, showCoords, showsFiltered, visibleShow } from '../selectors.js';
+import { byId, isArchived, projFilterOk, projName, showCoords, showPlace, showPlaceNote, showsFiltered, visibleShow } from '../selectors.js';
 import { S } from '../state.js';
 import { filterBar, fold, stBadge, stSelect, viewHead } from '../ui/bits.js';
 import { $, daysBetween, esc, eur, fmtDate, fmtShort } from '../utils.js';
@@ -15,8 +16,13 @@ export function viewBooking(){
   const all = showsFiltered();
   const shows = all.filter(visibleShow);
   const nOff = all.filter(s => isOff(s.status)).length;
+  // dates archivées (v1.60.3) : hors de cette liste de travail et de la carte (showsFiltered), toutes années ; filtre artistes appliqué
+  const archived = S.db.shows.filter(s => isArchived(s) && projFilterOk([s.project_id])).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const n = k => shows.filter(s => (s.status||'').startsWith(k)).length;
-  const totalConf = shows.filter(s=>(s.status||'').startsWith('Confirmée') && viaArtbo(s)).reduce((a,s)=>a+(Number(s.fee_ht)||0),0);   // hors « Confirmée Artiste » (v1.53)
+  // cachets confirmés : hors « Confirmée Artiste » (v1.53) ; dates archivées COMPRISES (v1.60.3) — l'archivage ne change aucun montant,
+  // même périmètre que la fiche artiste et les indicateurs de Production (artistes et année choisis)
+  const confFee = l => l.filter(s=>(s.status||'').startsWith('Confirmée') && viaArtbo(s)).reduce((a,s)=>a+(Number(s.fee_ht)||0),0);
+  const archFee = confFee(showsFiltered({archived: true}).filter(isArchived)), totalConf = confFee(shows) + archFee;
   let lastMonth = '', list = '';
   for (const s of shows){
     const m = s.date ? new Date(s.date+'T12:00:00').toLocaleDateString('fr-FR',{month:'long',year:'numeric'}) : 'Sans date';
@@ -26,16 +32,17 @@ export function viewBooking(){
   }
   setBookingMap(shows);
   return viewHead('Booking', {
-      sub: [plural(n('Intérêt'),'intérêt'), plural(n('Option'),'option'), plural(n('Confirmée'),'confirmée'), `${eur(totalConf)} de cachets confirmés`].join(' · '),
+      sub: [plural(n('Intérêt'),'intérêt'), plural(n('Option'),'option'), plural(n('Confirmée'),'confirmée'), `${eur(totalConf)} de cachets confirmés${archFee ? ` (dont ${eur(archFee)} de dates archivées)` : ''}`].join(' · '),
       filters: filterBar(),
       actions: `${nOff?`<button class="btn" data-act="toggleCancelled" aria-pressed="${S.showCancelled}">${S.showCancelled?'Masquer':'Afficher'} annulées / sans suite (${nOff})</button>`:''}
+        ${archived.length?`<button class="btn" data-act="toggleArchived" aria-pressed="${!!S.showArchived}">${S.showArchived?'Masquer':'Afficher'} les dates archivées (${archived.length})</button>`:''}
         <button class="btn" data-act="exportShows">Exporter</button>
         <button class="btn primary" data-act="newShow">Nouvelle date</button>`}) + `
   <div class="pane-switch" role="tablist">
     <button class="btn sm ${S.bookingPane!=='map'?'on':''}" data-act="bookingPane" data-p="list">Liste</button>
     <button class="btn sm ${S.bookingPane==='map'?'on':''}" data-act="bookingPane" data-p="map">Carte et trajets</button></div>
   <div class="booking pane-${S.bookingPane==='map'?'map':'list'}">
-    <div class="list-wrap">${list || `<div class="empty panel">Aucune date en ${S.year}. Ajoute un intérêt avec « Nouvelle date ».</div>`}</div>
+    <div class="list-wrap">${S.showArchived && archived.length ? archivedPanel(archived) : ''}${list || `<div class="empty panel">Aucune date en ${S.year}. Ajoute un intérêt avec « Nouvelle date ».</div>`}</div>
     <aside class="side side-booking">
       <div class="map-box"><div id="map-slot" role="region" aria-label="Carte des dates"></div></div>
       <div class="legend">${legend(shows)}</div>
@@ -44,12 +51,25 @@ export function viewBooking(){
   </div>`;
 }
 
+/** Dates archivées (v1.60.3) : consultables et restaurables ; une facture arrivée depuis l'archivage (synchronisation Pennylane)
+ *  est signalée — la date doit alors être restaurée pour revenir dans les comptes et les relances */
+function archivedPanel(rows){
+  const emitted = id => S.db.show_payments.some(p => p.show_id === id && EMITTED_FIELDS.some(k => p[k] != null && String(p[k]).trim() !== ''))
+    || S.db.pennylane_a_rattacher.some(r => r.show_id === id && !r.resolved_at && !r.cancelled_at);
+  return `<div class="panel pad"><h2 class="month">Dates archivées <small>${rows.length}</small></h2>
+    <p class="muted small">Hors des listes de travail, des relances, de la carte et des calendriers ; fiche publique fermée. Leurs factures, paiements, créances et dettes restent dans les vues financières et les comptes. Ce n’est ni une annulation (statut inchangé) ni une suppression.</p>
+    ${rows.map(s => `<p><strong>${esc([s.date ? fmtDate(s.date) : 'sans date', s.venue, projName(s.project_id)].filter(Boolean).join(' · '))}</strong> <span class="muted">— ${esc(s.status || '')}</span><br>
+      <span class="muted small">Archivée le ${fmtDate(String(s.archived_at).slice(0, 10))}${s.archived_by ? ' par ' + esc(s.archived_by) : ''} : ${esc(s.archived_reason || '')}</span>
+      ${emitted(s.id) ? '<br><span class="warn-txt">Une facture est arrivée pour cette date (comptée dans les montants) : restaure-la pour la suivre et la relancer.</span>' : ''}
+      <br><button class="btn sm" data-act="restoreShow" data-id="${s.id}">Restaurer</button></p>`).join('')}</div>`;
+}
+
 function gigRow(s){
   const d = s.date ? new Date(s.date+'T12:00:00') : null;
   const pa = S.routePick.a===s.id, pb = S.routePick.b===s.id;
   return `<div class="gig ${pa||pb?'picked':''} ${lingering(s.id)&&isOff(s.status)?'leaving':''}" style="--c:${stColor(s.status)}" data-act="editShow" data-id="${s.id}">
     <div class="day"><b>${d?String(d.getDate()).padStart(2,'0'):'—'}</b><span>${d?d.toLocaleDateString('fr-FR',{weekday:'short'}):''}</span></div>
-    <div class="what"><b>${esc(s.venue)}</b><small>${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))}${!S.project && s.project_id ? ' · '+esc(projName(s.project_id)) : ''}${s.date_end && s.date_end!==s.date ? ' · jusqu’au '+fmtShort(s.date_end) : ''}</small></div>
+    <div class="what"><b>${esc(s.venue)}</b><small>${esc([s.city, s.department && '('+s.department+')'].filter(Boolean).join(' '))}${!S.project && s.project_id ? ' · '+esc(projName(s.project_id)) : ''}${s.date_end && s.date_end!==s.date ? ' · jusqu’au '+fmtShort(s.date_end) : ''}${showPlace(s).state === 'missing' ? ' · <span class="warn-txt">localisation manquante</span>' : ''}</small></div>
     <div class="right">${stSelect(s)}
       <span class="fee">${[s.fee_ht?eur(s.fee_ht):'', s.contract_type||''].filter(Boolean).join(' · ')}</span>
       <span class="pick" title="Calcul de trajet : choisis un départ (A) puis une arrivée (B)">
@@ -118,7 +138,7 @@ export function setMapData(data){ S.mapData = data; }
 
 function setBookingMap(shows){
   const pts = shows.filter(s => !S.mapHidden.has(s.status)).map(s => { const c = showCoords(s); return c && {lat:c[0], lng:c[1], color:stColor(s.status), big:(s.status||'').startsWith('Confirmée'), showId:s.id, hover:true,
-    label:`<b>${esc(s.venue)}</b><br>${fmtDate(s.date)} — ${esc(s.city||'')}<br>${esc(s.status)}${s.project_id?' · '+esc(projName(s.project_id)):''}${s.fee_ht?'<br>'+eur(s.fee_ht):''}
+    label:`<b>${esc(s.venue)}</b><br>${fmtDate(s.date)} — ${esc(s.city||'')}<br>${esc(s.status)}${s.project_id?' · '+esc(projName(s.project_id)):''}${s.fee_ht?'<br>'+eur(s.fee_ht):''}${showPlaceNote(s) ? `<br><span class="warn-txt">${esc(showPlaceNote(s))}</span>` : ''}
       <div class="pop-actions"><button type="button" class="btn sm ${S.routePick.a===s.id?'on':''}" data-act="pick" data-p="a" data-id="${s.id}">Départ (A)</button><button type="button" class="btn sm ${S.routePick.b===s.id?'on':''}" data-act="pick" data-p="b" data-id="${s.id}">Arrivée (B)</button></div>`}; }).filter(Boolean);
   const a0 = byId('shows', S.routePick.a), b0 = byId('shows', S.routePick.b);
   const rr = a0 && b0 ? routeCached(a0, b0) : null;

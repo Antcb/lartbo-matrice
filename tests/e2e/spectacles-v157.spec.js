@@ -58,8 +58,8 @@ test('v1.57 dates : spectacle demandé pour une nouvelle date, jamais attribué 
   // nouvelle date de l'artiste : le spectacle est demandé
   await page.evaluate(async () => { (await import('./js/forms.js')).editShow(null, 'art-a'); });
   await page.waitForTimeout(200);   // la fenêtre se prépare (brouillon, 60 ms) avant la saisie
-  await page.locator('#modal [name=venue]').fill('Salle Nouvelle');
-  await expect(page.locator('#modal [name=venue]')).toHaveValue('Salle Nouvelle');
+  await page.locator('#modal .ac[data-ac=lieux] .ac-input').fill('Salle Nouvelle');   // v1.60.2 : nom du lieu à suggestions (texte libre gardé)
+  await expect(page.locator('#modal .ac[data-ac=lieux] .ac-input')).toHaveValue('Salle Nouvelle');
   await expect(page.locator('#fld-spectacle_id option')).toHaveText(['— choisir le spectacle —', 'Jeune public', 'Classique']);
   await page.locator('#modal button[type=submit]').click();
   await expect(page.locator('.toast').last()).toContainText('Choisis le spectacle');
@@ -77,6 +77,9 @@ test('v1.57 fiche de l’artiste : créer un spectacle avec son budget type ; mo
   await page.evaluate(async () => { const { S } = await import('./js/state.js'); const app = await import('./js/app.js'); app.go('projects'); S.projectPage = 'art-a'; app.render(); });
   await expect(page.locator('main')).toContainText('Aucun spectacle');
   await page.locator('[data-act=newSpectacle]').click();
+  // openModal donne le focus au premier champ (Nom) 30 ms après l'ouverture : on l'attend avant de remplir, sinon (machine lente) la
+  // frappe d'un autre champ part dans le Nom (« Jeune public3 », test instable sur GitHub, exécution 42398792731)
+  await expect(page.locator('#modal [name=name]')).toBeVisible(); await page.evaluate(() => new Promise(r => setTimeout(r, 100)));
   await page.locator('#modal [name=name]').fill('Jeune public');
   await page.locator('#modal [name=mus_n]').fill('3');
   await page.locator('#modal [name=mus_small]').fill('250,5');
@@ -140,7 +143,9 @@ test('v1.57 budget type d’un spectacle incomplet : « à renseigner », jamais
   await page.locator('#fld-spectacle_id').selectOption('sp-jp');
   await page.evaluate(() => { const h = document.querySelector('#fld-project_id'); h.value = 'art-b'; h.dispatchEvent(new Event('change', { bubbles: true })); });
   await expect(page.locator('#fld-spectacle_id option')).toHaveText(['— choisir le spectacle —', 'Spectacle Bêta']);
-  await expect(page.locator('#fld-spectacle_id')).toHaveValue('');
+  // v1.60.3 (demande d'Anthony du 07/11/2026) : nouvelle date → le seul spectacle actif du nouvel artiste est présélectionné
+  // (avant : vide) ; le spectacle de l'ancien artiste ne reste jamais
+  await expect(page.locator('#fld-spectacle_id')).toHaveValue('sp-b');
   expectClean(ctx);
 });
 

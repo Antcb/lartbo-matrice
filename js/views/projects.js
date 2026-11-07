@@ -13,8 +13,8 @@ import { CONFIRMED_PROD, LOG_ICON, stClass, viaArtbo } from '../constants.js';
 import { save, sb, signedCached, signedUrl } from '../data.js';
 import { defaultCommission, projectCommission, publicLink, setting, suiviClosed, attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, spectaclesOf, structName, tasksOfProject } from '../selectors.js';
 import { S, touch } from '../state.js';
-import { curTab, dropZone, fileRow, fold, pstBadge, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
-import { cAc, cChk, cIn } from '../ui/cells.js';
+import { archivedTag, curTab, dropZone, fileRow, fold, pstBadge, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
+import { cAc, cChk, cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { badMails, checkMails, esc, eur, fmtDate, md, toast, today, url, pct } from '../utils.js';
 import { adminForm } from './structures.js';
@@ -73,8 +73,8 @@ export function projectPage(p){
     logs:logsTab, links:linksTab, fiche:artistTab, drive:driveTab, mails:mailsTab, admin:adminTab, members:membersTab}[tab](p, {shows, tasks, suivis, logs, members});
   return `<button class="btn ghost back" data-act="closeProject">← Projets</button>
   <div class="project-hero">
-    <div style="display:flex;flex-direction:column;gap:6px;align-items:center">${photoHTML(p, 'lg')}<button class="btn sm ghost" data-act="projectPhoto" data-id="${p.id}">${p.photo_path?'Changer / recadrer':'Ajouter une photo'}</button></div>
-    <div style="flex:1;min-width:0"><h1>${esc(p.name)}</h1>
+    <div class="ph-photo">${photoHTML(p, 'lg')}<button class="btn sm ghost" data-act="projectPhoto" data-id="${p.id}">${p.photo_path?'Changer / recadrer':'Ajouter une photo'}</button></div>
+    <div class="ph-main"><h1>${esc(p.name)}</h1>
       <div class="proj-chips mt-sm"><span class="badge ${p.mode==='booking'?'tag':'proj'}">${p.mode==='booking'?'Booking seul':'Production'}</span><span class="badge tag">${p.active?'Actif':'Inactif'}</span>
         <span class="badge tag" title="${p.default_artbo_pct != null && p.default_artbo_pct !== '' ? 'Propre à l’artiste' : 'Par défaut (Réglages)'}">Commission ${pct(projectCommission(p))}</span></div></div>
     <div class="vh-actions">${p.drive_artist_folder_id ? `<a class="btn" href="https://drive.google.com/drive/folders/${esc(p.drive_artist_folder_id)}" target="_blank" rel="noopener">Dossier Drive ↗</a>`
@@ -90,16 +90,20 @@ export function projectPage(p){
 /** Exercice comptable : du 01/10 au 30/09 → « 2025-2026 » */
 export const fiscalYear = d => { if (!d) return 'Sans date'; const y = Number(d.slice(0,4)), m = Number(d.slice(5,7)); return m >= 10 ? `${y}-${y+1}` : `${y-1}-${y}`; };
 
+/* Aperçu. Ancien budget type de l'artiste (projects.budget_template) : bloc retiré dès que l'artiste a un spectacle (les budgets par
+   spectacle sont le parcours principal, 07/11/2026) ; la donnée reste en base et sert toujours aux dates sans spectacle
+   (templateLines) ; artiste sans spectacle : bloc gardé temporairement, identifié « historique », « temporaire ». */
 function overview(p, {shows, tasks, suivis}){
   const byYear = {};
   shows.forEach(s=>{ const y=fiscalYear(s.date); (byYear[y]=byYear[y]||[]).push(s); });
-  const next = shows.filter(s => s.date >= today() && stClass(s.status)!=='off').slice(0, 6);
+  const next = shows.filter(s => s.date >= today() && stClass(s.status)!=='off' && !s.archived_at).slice(0, 6);   // liste de travail : sans les dates archivées (v1.60.3)
   return `<div class="tbl-wrap year-tbl"><table><thead><tr><th>Exercice (01/10 → 30/09)</th><th class="num">Confirmées</th><th class="num">Options</th><th class="num">Intérêts</th><th class="num">Dates</th><th class="num">Cachets confirmés</th><th class="num">Commissions L'ArtBo nettes</th></tr></thead><tbody>
     ${Object.entries(byYear).sort((a,b)=>b[0].localeCompare(a[0])).map(([y,l])=>{ const conf = l.filter(s=>stClass(s.status)==='conf');
       return `<tr><td><b>${y}</b>${y.includes('-')?`<span class="sub">01/10/${y.slice(0,4)} → 30/09/${y.slice(5)}</span>`:''}</td><td class="num">${conf.length}</td><td class="num">${l.filter(s=>stClass(s.status)==='opt').length}</td><td class="num">${l.filter(s=>stClass(s.status)==='int').length}</td><td class="num">${l.length}</td>
       <td class="num">${eur(conf.filter(viaArtbo).reduce((a,s)=>a+(Number(s.fee_ht)||0),0))}</td><td class="num"><b>${eur(l.filter(s=>CONFIRMED_PROD.includes(s.status)).reduce((a,s)=>a+netArtbo(s),0))}</b></td></tr>`;}).join('') || '<tr><td colspan="7" class="empty">Aucune date.</td></tr>'}
   </tbody></table></div>
   <p class="help">Cachets confirmés : dates confirmées salle / festival seulement (les dates « Confirmée Artiste », qui ne passent pas par L’ArtBoristerie, restent comptées dans « Confirmées » mais pas dans les montants). Commissions nettes = commission L'ArtBo moins la part reversée aux partenaires (ex. Pyrprod), sur les dates confirmées salle / festival.</p>
+  ${shows.some(s => s.archived_at) ? `<p class="help">Dont ${shows.filter(s => s.archived_at).length} date(s) archivée(s) : comptées dans ces montants (l’archivage ne change aucun chiffre), absentes des prochaines dates.</p>` : ''}
   <div class="panel pad mt-lg"><h3 class="block-title">Accueil <span class="muted title-note">· repris dans les contrats et les mails ({{personnes}}, {{chambres}}, {{montage}}), enregistré dès que tu quittes le champ</span></h3>
     <div class="steps kv-grid">
       <label>Personnes sur la route (= repas)</label>${cIn('projects', p.id, 'road_people', p.road_people, 'number', 'class="narrow"')}
@@ -109,19 +113,25 @@ function overview(p, {shows, tasks, suivis}){
       <label>Commission L'ArtBo (%)</label>${cIn('projects', p.id, 'default_artbo_pct', p.default_artbo_pct, 'number', `class="narrow" placeholder="${defaultCommission(p.mode)}"`)}
     </div></div>
   ${spectaclesPanel(p)}
-  ${p.mode === 'booking' ? '' : `<div class="panel pad mt-lg"><h3 class="block-title">Budget type <span class="muted title-note">· budget prévisionnel posé sur chaque nouvelle date confirmée</span></h3>${templateForm(p.id)}</div>`}
+  ${p.mode === 'booking' || spectaclesOf(p.id).length ? '' : `<div class="panel pad mt-lg"><h3 class="block-title">Budget type historique de l’artiste <span class="badge">temporaire</span> <span class="muted title-note">· posé sur les nouvelles dates confirmées sans spectacle</span></h3>
+    <p class="help mb">Ancien budget type, gardé tant que l’artiste n’a pas de spectacle. Le parcours principal est le budget type par spectacle : crée un spectacle ci-dessus ; ce bloc disparaît alors de l’aperçu (ses valeurs restent pour les dates sans spectacle).</p>${templateForm(p.id)}</div>`}
   <div class="struct-hero mt-lg">
-    <div class="panel pad"><h3 class="block-title">Prochaines dates</h3>${next.map(s=>`<div class="plan-row click" data-act="editShow" data-id="${s.id}"><span class="d">${fmtDate(s.date)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span>${stSelect(s)}</div>`).join('') || '<p class="muted m0">Aucune date à venir.</p>'}</div>
+    <div class="panel pad"><h3 class="block-title">Prochaines dates</h3>${next.map(s=>`<div class="plan-row click" data-act="editShow" data-id="${s.id}"><span class="d">${prodDate(s)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span>${stSelect(s)}</div>`).join('') || '<p class="muted m0">Aucune date à venir.</p>'}</div>
     <div class="panel pad"><h3 class="block-title">En cours</h3>
       <p class="mb-sm"><b>${tasks.filter(t=>!isDone(t)).length}</b> tâche(s) à faire · <b>${suivis.filter(x=>!suiviClosed(x)).length}</b> suivi(s) ouverts</p>
       ${p.notes?`<div class="md">${md(p.notes)}</div>`:''}</div>
   </div>`;
 }
 
+/** Date d'une ligne de la fiche projet : confirmée salle / festival = lien vers la date ouverte dans Production (v1.60.3) ;
+ *  le reste de la ligne ouvre toujours la fenêtre de la date */
+const prodDate = s => CONFIRMED_PROD.includes(s.status) && !s.archived_at   // date archivée : hors de la liste Production, s'ouvre dans sa fenêtre (comme le budget de l'artiste)
+  ? `<a href="#" data-act="openShowProd" data-id="${s.id}" title="Ouvrir cette date dans Production">${fmtDate(s.date)} ↗</a>` : fmtDate(s.date);
+
 function datesTab(p, {shows}){
   const list = shows.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   return `<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Lieu</th><th>Structure</th><th>Statut</th><th class="num">Cachet</th><th>Contrat</th></tr></thead><tbody>
-    ${list.map(s=>`<tr class="click" data-act="editShow" data-id="${s.id}"><td class="nowrap">${fmtDate(s.date)}</td><td><b>${esc(s.venue)}</b><span class="sub">${esc(s.city||'')}</span></td><td>${esc(structName(s.structure_id))}</td><td>${stSelect(s)}</td><td class="num">${eur(s.fee_ht)}</td><td>${esc(s.contract_type||'')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aucune date.</td></tr>'}
+    ${list.map(s=>`<tr class="click" data-act="editShow" data-id="${s.id}"><td class="nowrap">${prodDate(s)}</td><td><b>${esc(s.venue)}</b>${archivedTag(s)}<span class="sub">${esc(s.city||'')}</span></td><td>${esc(structName(s.structure_id))}</td><td>${stSelect(s)}</td><td class="num">${eur(s.fee_ht)}</td><td>${esc(s.contract_type||'')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aucune date.</td></tr>'}
   </tbody></table></div>`;
 }
 
@@ -277,11 +287,16 @@ export const artistLink = p => publicLink('artiste', p.artist_token);   // en te
 /** Spectacles de l'artiste (v1.57) : chacun son budget type ; une date peut être rattachée à l'un d'eux */
 function spectaclesPanel(p){
   const list = spectaclesOf(p.id), n = id => showsOfProject(p.id).filter(s => s.spectacle_id === id).length;
+  // plusieurs spectacles actifs : celui présélectionné sur chaque nouvelle date (v1.60.3) ; un seul actif : il l'est d'office
+  const actifs = list.filter(x => x.active);
+  const byDefault = actifs.length > 1 ? `<div class="steps mb-sm"><label>Spectacle par défaut des nouvelles dates</label>${cSel('projects', p.id, 'default_spectacle_id', p.default_spectacle_id, actifs.map(x => [x.id, x.name]))}</div>
+    <p class="help mb">Présélectionné dans chaque nouvelle date, toujours modifiable. Vide : le spectacle est demandé. Les dates existantes ne changent pas.</p>` : '';
   return `<div class="panel pad mt-lg"><h3 class="block-title">Spectacles <span class="count">${list.length}</span> <span class="muted title-note">· chacun son budget type ; choisi sur chaque date</span><span class="spacer"></span><button class="btn sm" data-act="newSpectacle" data-id="${p.id}">Nouveau spectacle</button></h3>
+    ${byDefault}
     ${list.length ? list.map(sp => fold('spectacle-' + sp.id, `${esc(sp.name)}${sp.active ? '' : ' <span class="badge">archivé</span>'}${spectMissing(sp).length ? ' <span class="warn-badge">à compléter</span>' : ''} <span class="muted">· ${n(sp.id)} date${n(sp.id) > 1 ? 's' : ''}</span>`,
       `<div class="steps kv-grid"><label>Nom</label>${cIn('spectacles', sp.id, 'name', sp.name, 'text', 'aria-label="Nom du spectacle"')}
         <label>Proposé pour les nouvelles dates</label>${cChk('spectacles', sp.id, 'active', sp.active, 'actif')}</div>
        <h4 class="block-title mt">Budget type du spectacle</h4>${spectacleForm(sp)}`)).join('')
-      : '<p class="muted m0">Aucun spectacle : les dates prennent le budget type de l’artiste (ci-dessous). Les dates existantes ne sont rattachées à aucun spectacle tant que tu ne le choisis pas.</p>'}
+      : '<p class="muted m0">Aucun spectacle : les dates prennent le budget type historique de l’artiste (ci-dessous). Les dates existantes ne sont rattachées à aucun spectacle tant que tu ne le choisis pas.</p>'}
   </div>`;
 }

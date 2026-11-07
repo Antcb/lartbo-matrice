@@ -75,7 +75,7 @@ export function viewSettings(){
       <p class="help mt-sm">Mettre à jour le script : sur production@, ouvre script.google.com › le projet du script › fichier Code.gs › sélectionne tout et colle le code copié › Enregistrer › Déployer › Gérer les déploiements › crayon › Version : Nouvelle version › Déployer. L’adresse ne change pas.</p>
       <div class="vh-actions mt"><button class="btn sm" data-act="testScript">Tester le script</button>
         <button class="btn sm" data-act="driveScan">Rattacher les dossiers Drive existants</button></div>
-      <p class="help mt mb-sm">Noms des dossiers de dates (« MM-DD • Ville • Salle (79) ») et des contrats (« Artiste • AAAA-MM-JJ • Ville (79) • Salle • CC/CR ») : la vérification crée un Google Sheet avec les renommages proposés, sans rien toucher. Décoche ce qui ne convient pas, puis applique.</p>
+      <p class="help mt mb-sm">Noms des dossiers de dates (« MM-DD • Ville • Salle (79) ») et des contrats (« Artiste • AAAA-MM-JJ • Ville (79) • Salle • CC/CR ») : la vérification crée un Google Sheet avec les renommages proposés (ancien nom → nouveau nom), sans rien toucher. Tout arrive décoché : coche seulement les dossiers que tu veux renommer, puis applique. Les contrats sont listés pour information et ne sont jamais renommés.</p>
       <div class="vh-actions"><button class="btn sm" data-act="renameAudit">Vérifier les noms</button>
         ${setting('rename_sheet_url') ? `<a class="btn sm" href="${esc(setting('rename_sheet_url'))}" target="_blank" rel="noopener">Ouvrir le dernier tableau</a>` : ''}
         <button class="btn sm" data-act="renameApply">Appliquer les renommages cochés</button></div></div>
@@ -100,7 +100,7 @@ export function viewSettings(){
       ${rtToolbar('set-sig-prod')}<div class="mail-preview" id="set-sig-prod" contenteditable="true" style="${rtStyle()}">${setting('prospect_signature_production') || ''}</div>
       <div class="vh-actions mt-sm"><button class="btn sm" data-act="saveSignature" data-key="prospect_signature_production" data-el="set-sig-prod">Enregistrer la signature</button></div></div>
     <div class="panel pad"><h3 class="panel-title">Brevo</h3>
-      <p class="help mb">Chaque nouveau contact de la Matrice qui a un mail est ajouté automatiquement dans Brevo (mail, prénom, nom, structure). Un mail déjà présent dans Brevo n’est jamais modifié : ni ses infos, ni ses listes, et un désabonné reste désabonné. Dans Brevo : ton nom en haut à droite › « SMTP et API » › onglet « Clés API » › « Générer une nouvelle clé API », puis colle-la ici. La liste est facultative : son numéro est dans Contacts › Listes (colonne ID).</p>
+      <p class="help mb">Chaque nouveau contact de la Matrice qui a un mail est ajouté automatiquement dans Brevo (mail, prénom, nom, structure). Un mail déjà présent dans Brevo n’est jamais modifié : ni ses infos, ni ses listes, et un désabonné reste désabonné. Un contact lié uniquement à des structures inactives n’est pas ajouté (il l’est si l’une de ses structures est réactivée). Dans Brevo : ton nom en haut à droite › « SMTP et API » › onglet « Clés API » › « Générer une nouvelle clé API », puis colle-la ici. La liste est facultative : son numéro est dans Contacts › Listes (colonne ID).</p>
       <div class="steps">
         <label for="set-brevo">Clé API Brevo</label><span class="secret-line"><input id="set-brevo" type="password" autocomplete="off" data-1p-ignore data-brevo-key="1" placeholder="xkeysib-…"> <span class="muted" id="brevo-state">…</span></span>
         <label for="set-brevo-list">Liste Brevo (n°, ou plusieurs séparés par des virgules)</label><input id="set-brevo-list" data-setting-text="brevo_list_id" value="${esc(setting('brevo_list_id')||'')}" placeholder="ex. 3">
@@ -214,7 +214,7 @@ export async function applyAcompte(){
   const now = today();
   // artiste avec son propre acompte par défaut (v1.59) : ses dates ne suivent pas le réglage général
   const ownAc = new Set(S.db.projects.filter(p => p.default_acompte_pct != null && p.default_acompte_pct !== '').map(p => p.id));
-  const ids = S.db.shows.filter(s => !s.terms_validated_at && s.prod_mode !== 'booking' && !isCoproduction(s) && !ownAc.has(s.project_id) && (!s.date || s.date >= now)).map(s => s.id).filter(id => {   // coproduction : pas d'acompte / solde par défaut (v1.44)
+  const ids = S.db.shows.filter(s => !s.archived_at && !s.terms_validated_at && s.prod_mode !== 'booking' && !isCoproduction(s) && !ownAc.has(s.project_id) && (!s.date || s.date >= now)).map(s => s.id).filter(id => {   // coproduction : pas d'acompte / solde par défaut (v1.44)
     const p = paymentsOf(id).filter(x => ['acompte','solde'].includes(x.kind));
     return p.filter(x => x.kind === 'acompte').length === 1 && p.every(x => !isInvoiced(x) && (x.amount == null || x.amount === ''));   // aucune facture émise (§6.4)
   });

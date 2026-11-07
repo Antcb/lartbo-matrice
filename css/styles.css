@@ -292,6 +292,7 @@ td .ac-input:hover{border-color:var(--line)}
 /* 10 — Production ------------------------------------------------------ */
 .prod-list{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden}
 .prod-row+.prod-row{border-top:1px solid var(--line-2)}
+.prod-row{scroll-margin-top:90px}   /* date ouverte depuis la fiche projet ou une notification : visible sous l'en-tête fixe (v1.60.3) */
 .prod-head{display:grid;grid-template-columns:56px minmax(0,1fr) auto auto 20px;gap:16px;align-items:center;padding:10px 16px;cursor:pointer}
 .prod-head:hover{background:var(--soft)}
 .prod-head .what b{font-size:15px}
@@ -377,6 +378,11 @@ td .ac-input:hover{border-color:var(--line)}
 .photo.lg{width:150px}
 .project-hero{display:flex;gap:20px;align-items:center;margin-bottom:14px}
 .project-hero h1{font-size:var(--fs-h1)}
+.project-hero .ph-photo{display:flex;flex-direction:column;gap:var(--sp-1);align-items:center}
+.project-hero .ph-main{flex:1;min-width:0}
+/* tablette et téléphone : les boutons passent sous le nom au lieu de le recouvrir (point 16, v1.60.2) ; téléphone : photo réduite comme les cartes (.pcard) */
+@media (max-width:1100px){ .project-hero{flex-wrap:wrap} .project-hero > .vh-actions{flex:1 1 100%} }
+@media (max-width:760px){ .project-hero{gap:var(--sp-2)} .project-hero .photo.lg{width:84px} .project-hero h1{overflow-wrap:anywhere} }
 .cropper{position:relative;width:280px;aspect-ratio:1/1;border-radius:var(--r);overflow:hidden;background:#222;cursor:grab;touch-action:none;margin:0 auto}
 .cropper img{width:100%;height:100%;object-fit:cover;user-select:none;-webkit-user-drag:none;pointer-events:none}
 .link-row{display:grid;grid-template-columns:200px minmax(0,1fr) auto;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line-2)}
@@ -600,13 +606,23 @@ input[type=range]{accent-color:var(--brand);flex:1;min-width:120px}
   .tpl-row{grid-template-columns:1fr}
 }
 .mail-wrap{grid-column:1/-1;min-width:0}
-/* destinataires et copies (v1.55) : adresses de la structure à ajouter / retirer, recherche dans la base */
-.rcpt-sug{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;min-width:0}
-.mail-grid>.rcpt-sug{grid-column:2/-1}
-.rcpt-sug .tag-chip{max-width:100%;overflow-wrap:anywhere;text-align:left}   /* pastille d'adresse = .tag-chip (DS §227) ; adresses longues sur téléphone */
-.rcpt-sug .tag-chip::before{content:'+ '}
-.rcpt-sug .tag-chip.on::before{content:'✓ '}
-.rcpt-search .ac{min-width:0;width:240px;max-width:100%}
+/* destinataires et copies — champ unique (v1.60.3) : cadre .tagpick (étiquettes), pastilles .tp-chip, saisie avec suggestions .ac ;
+   le champ d'adresses lu à l'envoi (.rcpt-src) est masqué derrière les pastilles */
+.rcpt-field{min-width:0}
+.rcpt-field .rcpt-chips{display:contents}
+.rcpt-chip{max-width:100%;overflow-wrap:anywhere;text-align:left}   /* adresses longues sur téléphone */
+.rcpt-chip small{font-weight:400;color:var(--muted)}
+.rcpt-chip.bad{border-color:var(--danger);color:var(--danger)}
+.rcpt-field .ac{flex:1 1 160px;min-width:0}
+.rcpt-field .ac-input{border:0 !important;outline:0;box-shadow:none !important;padding:4px !important;background:transparent !important;width:100%}   /* comme .tp-q */
+.rcpt-field:has(.bad){border-color:var(--danger)}
+.rcpt-field .help.err{flex-basis:100%;margin:0}
+.rcpt-src{display:none !important}
+.mail-to small{align-self:center}
+.mail-grid>label.rcpt-who{font-weight:400}   /* ligne « Interlocuteur » discrète (v1.60.3) */
+.rcpt-propose:empty{display:none}
+dialog.mail .mail-to.rcpt-who{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-1)}
+dialog.mail .mail-to.rcpt-who select{width:auto;max-width:100%}
 .rcpt-note{grid-column:1/-1}
 .warn-badge{background:#FFF1D6;color:#8A5A00;border-radius:999px;padding:3px 10px;font-weight:600;font-size:12px}
 .fiche-lbl{font-size:13px;margin-right:4px}
@@ -758,6 +774,7 @@ dialog.mail .mode-note{margin:0}
   dialog.mail .btn,dialog.mail .rt-btn,dialog.mail .rt-bar select,dialog.mail .mail-grid select,dialog.mail .mail-grid input:not([type=checkbox]),
   .view-prospects select,.view-prospects .search{min-height:var(--h-touch)}
   dialog.mail .pills label,dialog.mail .att-chip,dialog.mail .tag-chip{min-height:var(--h-touch)}
+  dialog.mail .rcpt-rm{min-width:var(--h-touch);min-height:var(--h-touch)}   /* retirer une adresse au doigt (v1.60.3) */
   dialog.mail input[type=checkbox]{width:var(--chk-touch);height:var(--chk-touch)}
 }
 .log-mail{margin-top:8px;padding:12px 14px;border:1px solid var(--line-2);border-radius:var(--r);background:#fff;color:#000;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.45;overflow-x:auto;isolation:isolate;contain:paint}
@@ -774,8 +791,7 @@ dialog.mail .mode-note{margin:0}
 .pa-row{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center}
 .pa-item{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
 .pa-item small{font-size:12px}
-.pa-item.pa-stack{flex-direction:column;align-items:flex-start;gap:4px}   /* boucle communication : bouton, date d'envoi, statut du mail préparé */
-.pa-date{display:inline-flex;align-items:center;gap:8px}
+.pa-item.pa-stack{flex-direction:column;align-items:flex-start;gap:4px}   /* boucle communication : bouton, statut du mail préparé */
 .pa-item.drive{gap:6px}
 .ok-txt{color:var(--ok);font-weight:600}
 .warn-txt{color:var(--warn);font-weight:600}
@@ -807,13 +823,13 @@ dialog.mail .mode-note{margin:0}
 .pp-btn.pp-on{border-color:var(--brand);color:var(--brand);font-weight:600}
 .inactive-tgl{white-space:nowrap}
 /* Fenêtre de mail : destinataire, copie, objet sur toute la largeur */
-dialog.mail .mail-grid>input[id$="-cc"],dialog.mail .mail-grid>input[id$="-subj"]{grid-column:span 3}
+dialog.mail .mail-grid>.rcpt-field,dialog.mail .mail-grid>input[id$="-subj"]{grid-column:span 3}
 dialog.mail .mail-to{grid-template-columns:minmax(200px,1fr) minmax(0,2fr)}
 dialog.mail .mail-grid input{width:100%;min-width:0}
 .ml-from{font-size:13px;align-self:center}
 .ml-att .drop-hint{color:var(--faint);font-size:12px}
 .ml-att.drop-over{outline:2px dashed var(--brand-2);outline-offset:4px;border-radius:var(--r)}
-@media (max-width:900px){ dialog.mail .mail-grid>input[id$="-cc"],dialog.mail .mail-grid>input[id$="-subj"]{grid-column:auto} dialog.mail .mail-to{grid-template-columns:1fr} }
+@media (max-width:900px){ dialog.mail .mail-grid>.rcpt-field,dialog.mail .mail-grid>input[id$="-subj"]{grid-column:auto} dialog.mail .mail-to{grid-template-columns:1fr} }
 .terms-ac input{width:90px !important;flex:none}
 .terms-eur{white-space:nowrap}
 .terms-n select{width:auto;flex:none}
@@ -854,8 +870,8 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .tagpick:focus-within{border-color:var(--brand-2);box-shadow:0 0 0 3px rgba(40,60,99,.12)}
 .tp-chips{display:contents}
 .tp-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 9px;border-radius:999px;background:var(--soft);border:1px solid var(--line);font-size:13px;font-weight:600;color:var(--ink)}
-.tp-rm{border:0;background:none;color:var(--muted);font-size:15px;line-height:1;cursor:pointer;padding:0 4px;border-radius:50%}
-.tp-rm:hover{color:var(--danger);background:#fff}
+.tp-rm,.rcpt-rm{border:0;background:none;color:var(--muted);font-size:15px;line-height:1;cursor:pointer;padding:0 4px;border-radius:50%}
+.tp-rm:hover,.rcpt-rm:hover{color:var(--danger);background:#fff}
 .tp-q{flex:1;min-width:110px;border:0 !important;outline:0;box-shadow:none !important;padding:4px !important;background:transparent}
 .tp-sugg{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;max-height:180px;overflow:auto;padding:8px 2px 4px;border-top:1px solid var(--line-2);margin-top:2px}
 .tp-opt{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
@@ -882,8 +898,11 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .bt-tiers th,.bt-tiers td{padding:4px 0;font-size:14px;border:0;background:none}
 .bt-tiers th{font-size:12px;color:var(--muted);font-weight:600;text-align:left}
 .bt-tiers td input{display:inline-block;margin:0 4px}
+/* tarifs par jauge : le champ suit le texte « jusqu’à » (pas de marge négative d’alignement de colonne, cellules sans marge intérieure) — point 16, v1.60.2 */
+.bt-tiers tbody td > input[data-bt]:not([type=checkbox]):not([type=radio]){margin:0 4px;max-width:none}
 /* Budget : ligne plus compacte */
-.budget-table .qty-line{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.budget-table .qty-line{display:inline-flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:4px;white-space:nowrap}   /* quantité × coût puis total : le total passe sous la quantité quand la place manque (1 280 px), aligné à droite comme les montants — aucun défilement horizontal du tableau des cachets à 1 280 px et plus (décision d'Anthony du 07/11/2026, v1.60.3) */
+.budget-table .qty-line .qty-mul{display:inline-flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:4px}   /* « quantité × coût » : passe à la ligne en dernier recours seulement (police plus large que Geist, écran étroit) ; le total passe dessous d'abord */
 .budget-table .qty-line .x{color:var(--muted)}
 .budget-table .qty-line b{min-width:76px;text-align:right;font-variant-numeric:tabular-nums}
 .budget-table input.narrow2{width:calc(7ch + 20px)}   /* prix unitaire « 1234,56 » entier, quelle que soit la police */
@@ -894,6 +913,7 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .budget-table td > select{max-width:170px!important}
 .budget-table .dt{max-width:140px}
 .budget-table td{padding-left:8px;padding-right:8px}
+@media (min-width:1025px){ .budget-table td.bl-label{width:30ch} .budget-table td.bl-sup .cell-ta,.budget-table .cell-ta[data-f=doc_number]{min-width:90px} .budget-table :is(th,td){padding-left:var(--sp-1);padding-right:var(--sp-1)} }   /* ordinateur (v1.60.3) : libellé des cachets (jauge, brut indicatif) sur 3 lignes au plus au lieu de 4 à 7 — largeur fixée (width, et non min-width) : la place libre va d'abord à « Prévu HT », pour garder « quantité × coût » sur une ligne ; la place vient du fournisseur (« Salarié »), du n° de pièce et d'un tableau dense (comme .prod-bill) : aucun défilement à 1 280 et 1 440 px (total de « quantité × coût » replié, .qty-line) ; téléphone et tablette : fiches inchangées */
 /* To Do : échéance + urgence dans la même case, structure + date dans « Lié à » */
 .due-cell{min-width:150px}
 .due-cell .urg{display:inline-block;margin-top:4px;margin-left:-9px}

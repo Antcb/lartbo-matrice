@@ -7,13 +7,14 @@
  */
 import { confirmAsk } from './ui/dialog.js';
 import { render } from './app.js';
-import { insert, purgeStored, remove, save, sb, signedUrl } from './data.js';
+import { contentTypeOf, insert, purgeStored, remove, save, sb, signedUrl, typedFile } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
 import { PROSPECT_TAGS, attOk, attSizeHTML, callGoogle, callScript, fill, todoOk, tplLabel, tplProjects } from './mail.js';
-import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName } from './selectors.js';
+import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, placeOfEvent, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName } from './selectors.js';
 import { S, touch } from './state.js';
+import { geocode } from './geo.js';
 import { CONFIRMED_PROD } from './constants.js';
-import { recipientsHelp, syncChips } from './ui/recipients.js';
+import { recipientsField, syncChips } from './ui/recipients.js';
 import { dateInput } from './ui/datefield.js';
 import { openModal } from './ui/modal.js';
 import { rtStyle, rtToolbar, wrapMail } from './ui/richtext.js';
@@ -56,7 +57,7 @@ function concertVars(show){
 }
 const structById = id => id ? byId('structures', id) : null;
 /** Dates confirmées à venir des artistes choisis (pour inviter un programmateur) */
-const concertsOf = pids => S.db.shows.filter(s => pids.includes(s.project_id) && CONFIRMED_PROD.includes(s.status) && s.date >= today())
+const concertsOf = pids => S.db.shows.filter(s => !s.archived_at && pids.includes(s.project_id) && CONFIRMED_PROD.includes(s.status) && s.date >= today())
   .sort((a, b) => a.date.localeCompare(b.date));
 const CONCERT_TAGS = /\{\{(date_concert|date_concert_court|ville_concert|cp_concert|lieu_concert|date_reponse|lien_projet|lien_evenement)\}\}/;
 
@@ -110,11 +111,10 @@ export async function openProspection(structureId, {prospectId=null}={}){
       <label for="pr-from">Envoyé par</label><select id="pr-from" ${relance ? 'disabled title="La relance part de la boîte qui a envoyé la prospection"' : ''}>${Object.entries(SENDERS).map(([k, l]) => `<option value="${k}" ${k === sender ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
       <label for="pr-tpl">Modèle</label><select id="pr-tpl"></select>
       <label for="pr-show" class="pr-concert" hidden>Concert</label><span class="pr-concert" hidden><select id="pr-show"></select><small class="muted">remplit la date, la ville, le lieu, la date limite de réponse et les liens</small></span>
-      <label for="pr-contact">Destinataire</label><span class="mail-to"><select id="pr-contact"><option value="">— autre adresse —</option>${contacts.map(c => `<option value="${c.id}" ${c.id === contact?.id ? 'selected' : ''}>${esc(c.display_name)}${contactMails(c) ? ` · ${esc(contactMails(c))}` : ' (pas de mail)'}</option>`).join('')}</select>
-        <input id="pr-to" type="email" multiple placeholder="adresse@exemple.fr (plusieurs : séparées par des virgules)" value="${esc(relance ? (p.mail_to || '') : contactMails(contact))}"></span>
-      ${recipientsHelp('pr-to', st.id)}
-      <label for="pr-cc">Copie</label><input id="pr-cc" data-mails>
-      ${recipientsHelp('pr-cc', st.id)}
+      <label for="pr-contact" class="rcpt-who">Interlocuteur</label><span class="mail-to rcpt-who"><select id="pr-contact"><option value="">— autre adresse —</option>${contacts.map(c => `<option value="${c.id}" ${c.id === contact?.id ? 'selected' : ''}>${esc(c.display_name)}${contactMails(c) ? ` · ${esc(contactMails(c))}` : ' (pas de mail)'}</option>`).join('')}</select>
+        <small class="muted">personne à qui l’on s’adresse (prénom et balises du mail) ; la choisir remplace le destinataire</small><span class="rcpt-propose"></span></span>
+      <label for="pr-to-q">Destinataire</label>${recipientsField('pr-to', st.id, {value: relance ? (p.mail_to || '') : contactMails(contact), prospection: true, label: 'Destinataires', interlocutor: 'pr-contact'})}
+      <label for="pr-cc-q">Copie</label>${recipientsField('pr-cc', st.id, {prospection: true, label: 'Copies'})}
       ${relance ? '' : `<label for="pr-subj">Objet</label><input id="pr-subj">
       <label>Date proposée</label><span class="pr-date">${dateInput('', 'id="pr-date"')}<small class="muted">facultatif : crée la date en « Intérêt » pour chaque artiste</small></span>`}
     </div>
@@ -205,6 +205,8 @@ export async function openProspection(structureId, {prospectId=null}={}){
     if ($('#pr-tpl').value !== before && !dirty) draw(true); else draw();
   });
   $('#pr-contact').onchange = e => { contact = byId('contacts', e.target.value) || null; if (contactMails(contact)) $('#pr-to').value = contactMails(contact); draw(); syncChips(document.querySelector('#modal')); };
+  // interlocuteur proposé depuis une adresse choisie (v1.60.3) : sur clic seulement, sans toucher aux destinataires
+  $('#pr-contact').addEventListener('interlocutor', () => { contact = byId('contacts', $('#pr-contact').value) || null; draw(); syncChips(document.querySelector('#modal')); });
   $('#pr-date')?.addEventListener('change', () => draw());
   $('#pr-show').onchange = async () => { if (dirty && !(await confirmAsk('Remplacer le texte retouché ?', 'Le texte du mail que tu as retouché sera réécrit avec ce concert.', 'Remplacer le texte', {danger: true}))) return; draw(true); };
   $('#pr-from').onchange = e => { const before = signatureOf(sender); sender = e.target.value; $('#pr-from-addr').textContent = fromAddr();
@@ -214,7 +216,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
   $('#pr-up').addEventListener('change', async e => {
     for (const f of e.target.files){
       const path = `mails/prospection/${st.id}/${Date.now()}_${f.name.replace(/[^\w.\-]+/g, '_')}`;
-      const {error} = await sb.storage.from('suivi').upload(path, f, {contentType: f.type || 'application/octet-stream'});
+      const {error} = await sb.storage.from('suivi').upload(path, typedFile(f), {contentType: contentTypeOf(f)});
       if (error){ toast('Envoi impossible : ' + error.message, true); continue; }
       files.push({path, name: f.name, size: f.size, on: true, mine: true});
     }
@@ -244,7 +246,8 @@ async function recordProspection(st, {to, subject, html, send, out, pids, contac
   if (date){
     const status = isFestival(st) ? 'Intérêt Festival' : 'Intérêt Salle';
     const ev = eventsOfStructure(st.id).find(e => e.date_start && date >= e.date_start && date <= (e.date_end || e.date_start));
-    for (const pid of pids) await insert('shows', {...showPrefillFromStructure(st), venue: ev?.name || st.name, project_id: pid, date, status,
+    // lieu réel (v1.60.2) : celui de l'événement s'il y en a un à cette date (sa ville, pas celle du siège), sinon celui de la structure
+    for (const pid of pids) await insert('shows', {...showPrefillFromStructure(st), ...(ev ? placeOfEvent(ev) : {}), venue: ev?.name || st.name, project_id: pid, date, status,
       prospect_id: p.id, contract_type: 'Cession', communication_enabled: true, request_date: now});
   }
   await relanceTask(st, pids, subject, send, byId('prospects', p.id), 0);
@@ -411,3 +414,16 @@ export const lastProspectMail = stId => prospectsOfStructure(stId).filter(p => p
   .sort((a, b) => (b.mail_sent_at || b.updated_at || '').localeCompare(a.mail_sent_at || a.updated_at || ''))[0] || null;
 
 export { PROSPECT_TAGS, logsOf };
+
+/** Lieu propre d'un suivi (v1.60.2) : enregistré en entier, ou retiré (pl = null) ; la carte de l'espace de prospection en part */
+export const PLACE_KEYS = ['venue', 'address', 'postal_code', 'city', 'department', 'lat', 'lng'];
+export async function setSuiviPlace(pid, pl){
+  const patch = Object.fromEntries(PLACE_KEYS.map(k => [k, pl?.[k] ?? null]));
+  // lieu connu sans coordonnées (événement dans une autre ville…) : localisé par son adresse ou sa ville, jamais par son seul nom
+  if (pl && patch.lat == null && (patch.address || patch.city)){
+    const fr = !patch.department || /^(\d{2,3}|2[AB])$/i.test(patch.department);
+    const g = await geocode([patch.address, patch.postal_code, patch.city, fr ? '' : patch.department].filter(Boolean).join(' '), {france: fr});
+    if (g){ patch.lat = g.lat; patch.lng = g.lng; patch.department = patch.department || g.department_code || null; }
+  }
+  if (await save('prospects', pid, patch)) toast(pl ? 'Lieu du suivi enregistré' : 'Lieu du suivi retiré');
+}

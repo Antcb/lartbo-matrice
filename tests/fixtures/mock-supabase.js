@@ -63,7 +63,8 @@
     ],
   };
   // Une table inconnue se comporte comme une table vide (client_errors, etc.)
-  const DB = window.__DB = new Proxy(JSON.parse(JSON.stringify(seed)), { get: (o, k) => (k in o ? o[k] : (typeof k === 'string' ? (o[k] = []) : undefined)) });
+  // outil de rapprochement (tests/outils) : un extrait JSON remplace les données fictives ; tout reste en mémoire, rien n'est envoyé
+  const DB = window.__DB = new Proxy(JSON.parse(JSON.stringify(window.__SEED_OVERRIDE || seed)), { get: (o, k) => (k in o ? o[k] : (typeof k === 'string' ? (o[k] = []) : undefined)) });
   window.__calls = [];
   const clone = v => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
   const CONFIRMED = ['Confirmée Salle', 'Confirmée Festival'];
@@ -87,6 +88,8 @@
       }
       if (st.op === 'insert') { const arr = (Array.isArray(st.patch) ? st.patch : [st.patch]).map(r => ({ id: uid(), ...r })); rows.push(...arr); return { data: clone(st.single ? arr[0] : arr), error: null }; }
       if (st.op === 'upsert') { const arr = Array.isArray(st.patch) ? st.patch : [st.patch]; arr.forEach(p => { const r = rows.find(x => (p.id && x.id === p.id) || (p.key && x.key === p.key)); r ? Object.assign(r, p) : rows.push({ ...p }); }); return { data: clone(arr), error: null }; }
+      // window.__DELETE_ERROR = { table: {code, message} } : suppression refusée par la base (ex. clé étrangère, v1.60.3)
+      if (st.op === 'delete' && window.__DELETE_ERROR && window.__DELETE_ERROR[table]) return { data: null, error: window.__DELETE_ERROR[table] };
       if (st.op === 'delete') { const keep = rows.filter(r => !match(r)); rows.length = 0; rows.push(...keep); return { data: null, error: null }; }
       return { data: null, error: null };
     };
@@ -107,8 +110,32 @@
     return b;
   }
 
+  // v1.60.3 : suppression contrôlée d'une date (migration 2026-11-07_v1.60.3_suppression_date) — refus du résultat clôturé
+  // (les autres refus sont essayés sur une vraie base PostgreSQL), copie dans show_deletions, tâches détachées
+  const deletionState = id => { const s = DB.shows.find(x => x.id === id); if (!s) return null;
+    const devis = !!s.pennylane_quote_id, emis = DB.show_payments.some(p => p.show_id === id && (p.sent_at || p.paid_at || p.invoice_number || p.pennylane_id));
+    return { blocked: [s.result_closed_at && 'Le résultat de cette date est clôturé : rouvre-le d’abord (bouton « Rouvrir », avec un motif), puis supprime la date.',
+        emis && 'Cette date a des factures émises : elle ne se supprime pas (ses factures et son budget seraient effacés avec elle).',
+        devis && 'Cette date est liée à un document Pennylane (devis ou facture) : elle ne se supprime pas (rien n’est jamais supprimé dans Pennylane, le document resterait sans sa date).'].filter(Boolean),
+      archive_blocked: [s.result_closed_at && 'Le résultat de cette date est clôturé : rouvre-le d’abord (bouton « Rouvrir », avec un motif).', s.archived_at && 'Cette date est déjà archivée.',
+        emis && 'Cette date a des factures émises ou des versements : elle reste dans les listes, les comptes et les relances (pas d’archivage).'].filter(Boolean),
+      payments: DB.show_payments.filter(r => r.show_id === id).length, budget_lines: DB.budget_lines.filter(r => r.show_id === id).length,
+      tasks: DB.tasks.filter(r => r.show_id === id).length, closures: DB.result_closures.filter(r => r.show_id === id).length }; };
   const RPC = {
     is_team: () => true,
+    show_deletion_state: a => deletionState(a.p_show),
+    delete_show: a => { const id = a.p_show, st = deletionState(id);
+      DB.show_deletions.push({ id: DB.show_deletions.length + 1, show_id: id, actor: USER, snapshot: { show: DB.shows.find(x => x.id === id), result_closures: DB.result_closures.filter(r => r.show_id === id) } });
+      const show = DB.shows.find(x => x.id === id), ids = DB.tasks.filter(t => t.show_id === id).map(t => t.id);
+      DB.tasks.forEach(t => { if (t.show_id === id){ t.show_id = null; t.notes = ['Date supprimée le 07/11/2026 : ' + [show.date, show.venue].join(' · '), t.notes].filter(Boolean).join('\n'); } });
+      for (const t of ['result_closures', 'show_payments', 'budget_lines']) { const keep = DB[t].filter(r => r.show_id !== id); DB[t].length = 0; DB[t].push(...keep); }
+      const keep = DB.shows.filter(x => x.id !== id); DB.shows.length = 0; DB.shows.push(...keep);
+      return { ...st, task_ids: ids }; },
+    // archivage : notifications de la date retirées (gardées) ; restauration : relances suspendues jusqu'à leur réactivation explicite
+    archive_show: a => { const s = DB.shows.find(x => x.id === a.p_show); Object.assign(s, { archived_at: new Date().toISOString(), archived_by: USER, archived_reason: a.p_reason });
+      DB.notifications.forEach(n => { if (n.show_id === a.p_show && !n.withdrawn_at) Object.assign(n, { withdrawn_at: new Date().toISOString(), withdrawn_reason: 'Date archivée' }); }); return null; },
+    restore_show: a => { const s = DB.shows.find(x => x.id === a.p_show); Object.assign(s, { archived_at: null, archived_by: null, archived_reason: null, restored_at: new Date().toISOString(), reminders_suspended_at: new Date().toISOString(), reminders_next: null }); return null; },
+    reactivate_reminders: a => { const s = DB.shows.find(x => x.id === a.p_show); Object.assign(s, { reminders_suspended_at: null, reminders_reactivated_at: new Date().toISOString(), reminders_next: a.p_next }); return null; },
     mail_vars: () => ({ artiste: 'Artiste Alpha', date: 'mardi 1er juin 2027', ville: 'Bourg-Test', lieu: 'Festival Fictif', cachet_ht: '6 000 €', contact: 'Camille',
       lien_fiche: 'https://exemple.invalid/fiche.html?t=jeton-fiche-test-0001' }),
     // v1.40 (A2) : fiche d'une date booking / production avec le mode transmis par le serveur (migration 2026-10-25_v1.40_fiche_mode)
@@ -120,6 +147,14 @@
       prod_mode: a.p_token === 'jeton-fiche-booking-001' ? 'booking' : 'production',
       payments: [{ label: 'Acompte', kind: 'acompte', pct: 30, ht: 2400, due_label: 'à la signature' }, { label: 'Solde', kind: 'solde', pct: 70, ht: 5600, due_label: 'le soir du concert' }],
       structure: { name: 'Lieu Témoin' }, fiche: {}, submitted_at: null, locked: false }
+    // v1.60.2 : adresse et code postal du LIEU DE LA DATE renvoyés par fiche_get (différents de ceux de la structure)
+    : a.p_token === 'jeton-fiche-lieu-00001' ? { artist: 'Artiste Alpha', date: inYear('06-16'), date_label: 'date de test', venue: 'Salle du Lieu Réel', city: 'Villelieu',
+      address: '12 rue du Lieu Réel', postal_code: '30200', cp: '75011', contract_type: 'Cession', fee_ht: 6000, vat: 5.5, fee_ttc: 6330, acompte_pct: 50, payments: [],
+      structure: { name: 'Structure Organisatrice', address: '1 avenue du Siège', postal_code: '75011', city: 'Paris' }, fiche: {}, submitted_at: null, locked: false }
+    // décision du 07/11/2026 : date sans adresse propre — adresse de la structure reprise seulement si venue_is_structure (case cochée)
+    : ['jeton-fiche-lieu-00002', 'jeton-fiche-lieu-00003'].includes(a.p_token) ? { artist: 'Artiste Alpha', date: inYear('06-17'), date_label: 'date de test', venue: 'Salle Sans Adresse', city: null, department: null,
+      address: null, postal_code: null, venue_is_structure: a.p_token === 'jeton-fiche-lieu-00003', cp: a.p_token === 'jeton-fiche-lieu-00003' ? '75' : null, contract_type: 'Cession', fee_ht: 6000, vat: 5.5, fee_ttc: 6330, acompte_pct: 50, payments: [],
+      structure: { name: 'Structure Organisatrice', address: '1 avenue du Siège', postal_code: '75011', city: 'Paris', admin: { address: '1 avenue du Siège', postal_code: '75011' } }, fiche: {}, submitted_at: null, locked: false }
     : a.p_token === 'jeton-fiche-test-0001' ? { artist: 'Artiste Alpha', date: inYear('06-15'), date_label: 'date de test', venue: 'Festival Fictif', city: 'Bourg-Test',
       contract_type: 'Cession', fee_ht: 6000, vat: 5.5, fee_ttc: 6330, acompte_pct: 50, payments: [{ label: 'Acompte', kind: 'acompte', pct: 50, ht: 3000 }, { label: 'Solde', kind: 'solde', pct: 50, ht: 3000 }],
       structure: { name: 'Festival Fictif' }, fiche: {}, submitted_at: null, locked: false } : null,
@@ -136,7 +171,10 @@
       (window.__clientUrls ||= []).push(String(url));
       return {
         from: table => builder(table, String(url)),
-        rpc: async (name, args) => { window.__calls.push({ rpc: name, args, url: String(url) }); const f = RPC[name]; return { data: f ? clone(f(args || {})) : null, error: null }; },
+        // window.__RPC_ERROR = { nom: {code, message} } : la fonction de la base répond par cette erreur (fonction absente, refus…)
+        rpc: async (name, args) => { window.__calls.push({ rpc: name, args, url: String(url) }); const e = window.__RPC_ERROR && window.__RPC_ERROR[name];
+          if (e) return { data: null, error: e };
+          const f = RPC[name]; return { data: f ? clone(f(args || {})) : null, error: null }; },
         // window.__FN_ERROR = { nom: 'message' } : la fonction serveur répond par cette erreur (essais de la file des résumés IA)
         functions: { invoke: async (name, o) => { window.__calls.push({ fn: name, body: o && o.body, url: String(url) });
           const err = window.__FN_ERROR && window.__FN_ERROR[name];

@@ -1,7 +1,7 @@
 // Lot V1.55 — destinataires, copies, confirmations (demande d'Anthony du 04/11/2026). Données FICTIVES ; aucun envoi.
 //  - confirmation : jamais « le premier contact de la structure » : contact déjà choisi pour la date, sinon celui du suivi lié ;
 //    sinon choix demandé ;
-//  - sous « Destinataire » et « Copie » : adresses des contacts de la structure (ajout / retrait d'un clic), recherche dans la base,
+//  - « Destinataire » et « Copie » : adresses des contacts de la structure, recherche dans la base (dans le champ depuis v1.60.3),
 //    saisie libre, plusieurs adresses, aucun doublon. Le champ d'adresses reste le seul lu à l'envoi (circuits inchangés).
 import { test, expect } from '@playwright/test';
 import { openApp, expectClean } from './helpers.js';
@@ -40,76 +40,87 @@ test('v1.55 confirmation : jamais le premier contact d’office ; le contact du 
   expectClean(ctx);
 });
 
-test('v1.55 destinataires et copies : adresses de la structure d’un clic, recherche dans la base, plusieurs adresses, sans doublon', async ({ page }) => {
+// v1.60.3 (demande d'Anthony du 07/11) : mêmes règles, composant unique — la recherche est dans le champ (plus de rangée de
+// pastilles « + » ni de champ de recherche séparé) ; champ vide = adresses des contacts de la structure
+const chips = (page, id) => page.locator(`[data-rcpt="${id}"] .rcpt-chip`);
+const sugg = page => page.locator('.ac-list .ac-item');
+
+test('v1.55 destinataires et copies : adresses de la structure proposées, recherche dans la base, plusieurs adresses, sans doublon', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, DATA);
   await open(page, 'sd-show-1');
-  const to = page.locator('#ml-to'), cc = page.locator('#ml-cc');
-  // une seule pastille par adresse (bea@… et BEA@… = la même adresse)
-  await expect(page.locator('[data-rcpt-for="ml-to"]')).toHaveCount(2);
-  await page.locator('[data-rcpt-for="ml-to"][data-rcpt-add="alex@exemple.invalid"]').click();
-  await page.locator('[data-rcpt-for="ml-to"][data-rcpt-add="bea@exemple.invalid"]').click();
+  const to = page.locator('#ml-to'), cc = page.locator('#ml-cc'), q = page.locator('#ml-to-q');
+  // champ vide : une proposition par adresse de la structure (bea@… et BEA@… = la même adresse)
+  await q.focus();
+  await expect(sugg(page)).toHaveCount(2);
+  await sugg(page).filter({ hasText: 'alex@exemple.invalid' }).dispatchEvent('mousedown');
+  await page.locator('#ml-subj').focus(); await page.waitForTimeout(300); await q.focus();   // retour dans le champ vide
+  await expect(sugg(page)).toHaveCount(1);   // l'adresse déjà choisie n'est plus proposée
+  await sugg(page).filter({ hasText: 'bea@exemple.invalid' }).dispatchEvent('mousedown');
   await expect(to).toHaveValue('alex@exemple.invalid, bea@exemple.invalid');
-  await expect(page.locator('[data-rcpt-for="ml-to"].on')).toHaveCount(2);
-  // second clic : retirée
-  await page.locator('[data-rcpt-for="ml-to"][data-rcpt-add="alex@exemple.invalid"]').click();
+  await expect(chips(page, 'ml-to')).toHaveCount(2);
+  // ✕ : retirée
+  await chips(page, 'ml-to').filter({ hasText: 'alex@' }).locator('.rcpt-rm').click();
   await expect(to).toHaveValue('bea@exemple.invalid');
-  // saisie libre avec doublon : retiré en quittant le champ, la première écriture est gardée
-  await to.fill('bea@exemple.invalid, autre@exemple.invalid, BEA@exemple.invalid');
-  await to.blur();
+  // saisie libre avec doublon : jamais ajouté deux fois
+  await q.fill('autre@exemple.invalid, BEA@exemple.invalid,');
   await expect(to).toHaveValue('bea@exemple.invalid, autre@exemple.invalid');
+  await expect(q).toHaveValue('');
   // copie : recherche d'un contact de toute la base (pas lié à la structure)
-  const search = page.locator('[data-rcpt-box="ml-cc"] .ac-input');
-  await search.fill('Camille');
-  await page.locator('.ac-item', { hasText: 'Camille' }).first().click();
+  const cq = page.locator('#ml-cc-q');
+  await cq.fill('Camille');
+  await page.locator('.ac-item', { hasText: 'Camille' }).first().dispatchEvent('mousedown');
   await expect(cc).toHaveValue(/camille@example\.com/);
-  await search.fill('Camille');
-  await page.locator('.ac-item', { hasText: 'Camille' }).first().click();
+  await cq.fill('Camille');
+  await expect(page.locator('.ac-item', { hasText: 'camille@example.com' })).toHaveCount(0);
   expect((await cc.inputValue()).match(/camille@example\.com/gi).length).toBe(1);
   expect(await page.evaluate(() => window.__calls.filter(c => c.fn === 'script-google').length)).toBe(0);
   expectClean(ctx);
 });
 
-test('v1.55.1 relecture B1 : après un brouillon restauré, les pastilles disent vrai et un clic ne fait jamais l’inverse de ce qui est affiché', async ({ page }) => {
+test('v1.55.1 relecture B1 : après un brouillon restauré, les pastilles affichent exactement les adresses du champ', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, DATA);
   await open(page, 'sd-show-1');
-  const to = page.locator('#ml-to'), alex = page.locator('[data-rcpt-for="ml-to"][data-rcpt-add="alex@exemple.invalid"]');
+  const to = page.locator('#ml-to');
   // le suivi du brouillon démarre 60 ms après l'ouverture (js/ui/drafts.js watchModal) : on attend qu'il soit en place
   await page.waitForTimeout(200);
-  await alex.click();
+  await page.locator('#ml-to-q').fill('alex@exemple.invalid');
+  await page.keyboard.press('Enter');
   await expect(to).toHaveValue('alex@exemple.invalid');
   await expect.poll(() => page.evaluate(() => Object.keys(localStorage).some(k => k.includes('draft.') && localStorage.getItem(k).includes('alex@exemple.invalid')))).toBe(true);
   await page.locator('#modal [data-act=closeModal]').first().click();
-  // réouverture : brouillon restauré, la pastille indique bien l'adresse présente
+  // réouverture : brouillon restauré, la pastille est là, ✕ la retire
   await open(page, 'sd-show-1');
   await expect(page.locator('#modal .draft-bar')).toBeVisible();
   await expect(to).toHaveValue('alex@exemple.invalid');
-  await expect(alex).toHaveClass(/\bon\b/);
-  // pastille affichée « + » alors que l'adresse est déjà là (affichage en retard) : le clic n'ajoute rien et ne retire surtout rien
-  await alex.evaluate(b => b.classList.remove('on'));
-  await alex.click();
-  await expect(to).toHaveValue('alex@exemple.invalid');
-  await expect(alex).toHaveClass(/\bon\b/);
-  // pastille « ✓ » : le clic retire
-  await alex.click();
+  await expect(chips(page, 'ml-to')).toHaveCount(1);
+  await expect(chips(page, 'ml-to')).toContainText('Alex Premier');
+  await chips(page, 'ml-to').locator('.rcpt-rm').click();
   await expect(to).toHaveValue('');
+  await expect(chips(page, 'ml-to')).toHaveCount(0);
   expect(await page.evaluate(() => window.__calls.filter(c => c.fn === 'script-google').length)).toBe(0);
   expectClean(ctx);
 });
 
 test.describe('téléphone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
-  test('v1.55.1 relecture B2 : pastilles d’adresses = composant .tag-chip, cible tactile de 40 px', async ({ page }) => {
+  test('v1.55.1 relecture B2 / v1.60.3 : pastilles .tp-chip, ✕ de 40 px, champ dans l’écran de 390 px', async ({ page }) => {
     const ctx = await openApp(page);
     await seed(page, DATA);
-    await open(page, 'sd-show-1');
-    const chips = page.locator('#modal [data-rcpt-add]');
-    await expect(chips.first()).toBeVisible();
-    for (const c of await chips.all()) {
-      await expect(c).toHaveClass(/\btag-chip\b/);
-      expect((await c.boundingBox()).height).toBeGreaterThanOrEqual(40);
+    await open(page, 'sd-show-2');
+    const q = page.locator('#ml-to-q');
+    while (await chips(page, 'ml-to').count()) await chips(page, 'ml-to').first().locator('.rcpt-rm').click();
+    await q.fill('une.adresse.tres.longue.pour.un.telephone@exemple.invalid; bea@exemple.invalid;');
+    await expect(chips(page, 'ml-to')).toHaveCount(2);
+    for (const c of await chips(page, 'ml-to').all()) {
+      await expect(c).toHaveClass(/\btp-chip\b/);
+      const b = await c.boundingBox(); expect(b.x).toBeGreaterThanOrEqual(0); expect(b.x + b.width).toBeLessThanOrEqual(390);
+      expect((await c.locator('.rcpt-rm').boundingBox()).height).toBeGreaterThanOrEqual(40);
     }
+    const f = await page.locator('[data-rcpt="ml-to"]').boundingBox();
+    expect(f.x + f.width).toBeLessThanOrEqual(390);
+    expect(await page.evaluate(() => document.querySelector('#modal .modal-body').scrollWidth <= document.querySelector('#modal .modal-body').clientWidth)).toBe(true);
     expectClean(ctx);
   });
 });

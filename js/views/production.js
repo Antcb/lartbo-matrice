@@ -5,16 +5,16 @@
  */
 import { vatConflict, BILL_KINDS, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
-import { byId, projName, setting, showsFiltered, spectacleName, structName } from '../selectors.js';
+import { byId, isArchived, projName, setting, showsFiltered, spectacleName, structName } from '../selectors.js';
 import { followedInvoice, lateSteps, remindersOf } from '../reminders.js';
 import { S } from '../state.js';
-import { filterBar, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
+import { filterBar, remindersSuspendedNote, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cChk, cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { esc, eur2, fmtDate, matches, today, pct } from '../utils.js';
 import { coreaCommissionCheck, payerLabel } from '../budget.js';
 import { commissionPctOf, isCorea } from '../corea.js';
-import { commissionTransferCell, productionBudgetHTML, projectBudgetHTML, showBudgetHTML } from './budget.js';
+import { commissionTransferCell, productionBudgetHTML, projectBudgetHTML, showBudgetHTML, textBreakHint } from './budget.js';
 import { isProductionShow } from '../production-budget.js';
 
 const vatWarn = s => vatConflict(s) ? ' <span class="warn-txt small">Structure administrative de l’artiste non soumise à la TVA : à vérifier (TTC = HT)</span>' : '';
@@ -22,14 +22,19 @@ const vatWarn = s => vatConflict(s) ? ' <span class="warn-txt small">Structure a
 export function viewProduction(){
   const q = S.search.production || '';
   const all = showsFiltered().filter(s => CONFIRMED_PROD.includes(s.status));
-  const shows = all.filter(s => matches([s.venue, s.city, s.department, structName(s.structure_id), projName(s.project_id), fmtDate(s.date), s.date, s.contract_type].join(' '), q));
+  const hit = s => matches([s.venue, s.city, s.department, structName(s.structure_id), projName(s.project_id), fmtDate(s.date), s.date, s.contract_type].join(' '), q);
+  const shows = all.filter(hit);
+  // indicateurs FINANCIERS : dates archivées comprises (v1.60.3, réponse d'Anthony du 07/11) — un archivage ne change aucun montant ;
+  // la liste de travail et les relances ne les montrent pas
+  const archivedFin = showsFiltered({archived: true}).filter(s => isArchived(s) && CONFIRMED_PROD.includes(s.status) && hit(s));
+  const finShows = shows.concat(archivedFin);
   let artbo=0, partner=0;
-  shows.forEach(s => paymentsOf(s.id).forEach(p => {
+  finShows.forEach(s => paymentsOf(s.id).forEach(p => {
     const a = payAmount(p)||0;
     if (p.kind==='artbo') artbo+=a; if (p.kind==='partner') partner+=a;
   }));
   // trois indicateurs distincts, jamais additionnés (décision d'Anthony du 26/10, lot C1) ; les factures de l'artiste en booking n'y entrent pas
-  const fin = financeOf(shows);
+  const fin = financeOf(finShows);
   const late = shows.reduce((n,s)=>n+remindersOf(s).filter(r=>r.late).length, 0);
   const groups = {};
   shows.forEach(s => (groups[s.project_id||''] ||= []).push(s));
@@ -44,7 +49,9 @@ export function viewProduction(){
     ${away.map(a => { const sh = byId('shows', pieceShowId(a));
       return `<div class="file-row"><span class="file-ico" aria-hidden="true">📎</span><a href="#" data-act="openAttachment" data-id="${a.id}">${esc(a.name)}</a>
         <span class="muted small">${sh ? esc([fmtDate(sh.date), sh.venue, projName(sh.project_id), sh.status].filter(Boolean).join(' · ')) : `date supprimée · ${esc(projName(a.project_id) || 'artiste inconnu')}`}</span></div>`; }).join('')}</div>` : '';
-  if (!all.length) return head + awayHTML + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
+  const archHTML = archivedFin.length ? `<div class="panel pad mb"><p class="help full"><b>Dates archivées comptées dans ces montants</b> (hors de la liste et des relances) :</p>
+    ${archivedFin.map(s => `<div class="file-row"><a href="#" data-act="editShow" data-id="${s.id}">${esc([fmtDate(s.date), s.venue, projName(s.project_id)].filter(Boolean).join(' · '))}</a> <span class="badge tag">date archivée</span></div>`).join('')}</div>` : '';
+  if (!all.length && !archivedFin.length) return head + awayHTML + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
   return head + awayHTML + `
     <div class="stat-row">
       <div class="stat"><b>${eur2(artbo)}</b><span>Commissions L'ArtBo</span></div>
@@ -55,6 +62,7 @@ export function viewProduction(){
       <div class="stat" title="Factures de commission L’ArtBo à l’artiste (dates booking) émises et pas encore réglées"><b>${eur2(fin.commissionsBooking)}</b><span>Commissions à encaisser — booking${fin.commissions ? ` (${fin.commissions})` : ''}</span></div>
       <div class="stat"><b style="${late?'color:var(--danger)':''}">${late}</b><span>Relance${late>1?'s':''} en retard</span></div>
     </div>
+    ${archHTML}
     ${shows.length ? order.map(pid => `<section class="group"><div class="group-head"><h2>${esc(projName(pid)||'Sans projet')}</h2><span class="count">${groups[pid].length}</span></div>
       ${pid ? projectBudgetHTML(pid) : ''}
       <div class="prod-list">${groups[pid].map(prodRow).join('')}</div></section>`).join('') : '<div class="empty panel">Aucune date ne correspond à la recherche.</div>'}`;
@@ -89,6 +97,7 @@ function prodBody(s, booking, steps, pays, late){
   const body = {conditions: () => conditionsTab(s, booking), factures: () => billingTab(s, booking, pays, late),
     budget: () => isProductionShow(s) ? productionBudgetHTML(s) : showBudgetHTML(s), suivi: () => suiviTab(s, booking, steps, late), notes: () => notesTab(s)}[cur]();
   return `<div class="prod-body">
+    ${remindersSuspendedNote(s)}
     ${actionsBar(s, booking)}
     ${tabsBar(key, tabs.map(([k, l, n]) => [k, l, n]))}
     <div class="prod-tab">${body}</div>
@@ -102,14 +111,13 @@ function actionsBar(s, booking){
     const sent = l.sent || (kind === 'confirmation' ? s.conf_kit_sent : s[kind]);
     return `<small class="${sent ? 'ok-txt' : 'muted'}">${sent ? '✓ envoyé' : 'brouillon'} le ${fmtDate(sent && typeof sent === 'string' && sent.length === 10 ? sent : l.at)}</small>`; };
   const mailBtn = (kind, label) => `<span class="pa-item"><button class="btn sm ${log[kind] ? '' : 'primary'}" data-act="prepareMail" data-kind="${kind}" data-id="${s.id}">${label}</button>${state(kind)}</span>`;
-  // Boucle communication (06/11/2026) : la date d'envoi est la donnée de l'onglet Communication (shows.boucle_com), affichée et
-  // modifiable ici même si le mail est parti hors de L'ArtBotrice ; le statut « mail préparé » est distinct (préparer ≠ envoyer)
+  // Boucle communication : la date d'envoi (shows.boucle_com, même donnée que l'onglet Communication) se saisit dans Suivi admin,
+  // au-dessus de « Boucle technique » (v1.60.3 : champ retiré d'ici, doublon) ; le statut « mail préparé » reste distinct (préparer ≠ envoyer)
   const comLog = log.boucle_com;
   const comPrep = !comLog ? '' : comLog.sent
     ? `<small class="ok-txt">Envoyé depuis L’ArtBotrice le ${fmtDate(comLog.at)}</small>`
     : `<small class="muted">Mail préparé dans L’ArtBotrice le ${fmtDate(comLog.at)} (brouillon : n’indique pas l’envoi)</small>`;
   const comBtn = `<span class="pa-item pa-stack"><button class="btn sm ${comLog || s.boucle_com ? '' : 'primary'}" data-act="prepareMail" data-kind="boucle_com" data-id="${s.id}">Boucle communication</button>
-      <span class="pa-date"><small class="${s.boucle_com ? 'ok-txt' : 'muted'}">${s.boucle_com ? '✓ Envoyée le' : 'Date d’envoi'}</small>${cIn('shows', s.id, 'boucle_com', s.boucle_com, 'date')}</span>
       ${comPrep}</span>`;
   const fiche = s.fiche_validated_at
     ? `<span class="pa-item"><button class="btn sm ghost" data-act="validateFiche" data-id="${s.id}">Fiche de renseignements</button><small class="ok-txt">✓ validée le ${fmtDate(s.fiche_validated_at)}</small></span>`
@@ -196,7 +204,7 @@ function coreaBookingBlock(s){
     <h4 class="block-title">Coréalisation : part du résultat</h4>
     <div class="steps">
       <label>MG HT (cachet)</label><b>${eur2(mg)}</b>
-      <label>Break contractuel (billets)</label>${cIn('shows', s.id, 'break_even', s.break_even, 'number', 'class="narrow"')}
+      <label>Break contractuel (billets)</label><span>${cIn('shows', s.id, 'break_even', s.break_even, 'number', 'class="narrow" aria-label="Break contractuel (billets)"')}${textBreakHint(s)}</span>
       <label>Part du résultat HT revenant à l’artiste</label><input type="number" step="any" inputmode="decimal" class="narrow" data-corea-show="${s.id}" data-corea-path="booking_share" value="${esc(c.booking_share ?? '')}" placeholder="0 si break non dépassé">
       <label>Part validée</label><span>${validated == null ? '<b>pas encore validée</b>' : `<b>${eur2(validated)}</b>${c.share_validated_at ? ` <span class="muted">le ${fmtDate(c.share_validated_at)}${c.share_validated_by ? ' par ' + esc(c.share_validated_by) : ''}</span>` : ''}`}${stale ? ' <span class="warn-txt">part modifiée depuis la validation : à valider de nouveau</span>' : ''}</span>
       <label>Commission (${esc(pct(rate))})</label><span>${validated == null

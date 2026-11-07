@@ -125,9 +125,69 @@ export async function remove(table, id){
   if (why){ toast(why, true); return false; }
   const before = byId(table, id);
   const {error} = await sb.from(table).delete().eq('id', id);
-  if (error){ toast('Suppression impossible : '+error.message, true); return false; }
+  if (error){ toast('Suppression impossible : '+dbErrorText(error), true); return false; }
   S.db[table] = S.db[table].filter(r => r.id !== id); touch(table);
   summaryAfter(table, before);
+  return true;
+}
+
+/** Message d'erreur de la base pour l'utilisateur (v1.60.3) : jamais le texte technique d'une clé étrangère (code 23503) */
+export const dbErrorText = error => error?.code === '23503'
+  ? 'cet élément est encore relié à d’autres données de la Matrice (historique, tâches ou documents). Rien n’a été supprimé.'
+  : error?.message || 'erreur inconnue';
+/** Fonction serveur absente (migration pas encore appliquée) */
+const missingFunction = error => error?.code === 'PGRST202' || /Could not find the function|schema cache/i.test(error?.message || '');
+
+/** Ce que la suppression d'une date ferait, vu par le serveur (v1.60.3, fonction show_deletion_state) :
+ *  {blocked: [motifs], payments, budget_lines, tasks, closures} ; null si le serveur n'a pas encore la fonction ou ne répond pas. */
+export async function showDeletionState(id){
+  const {data, error} = await sb.rpc('show_deletion_state', {p_show: id});
+  if (error) return missingFunction(error) ? null : {blocked: [error.code === 'P0001' ? error.message : 'Suppression impossible : ' + dbErrorText(error)]};
+  return data;
+}
+
+/**
+ * Suppression contrôlée d'une date (v1.60.3, demande d'Anthony du 07/11) : fonction serveur delete_show — refus motivés (résultat
+ * clôturé, factures émises, documents Pennylane, pièces à rattacher…), copie complète dans le journal des suppressions (historique de
+ * clôture / réouverture compris), tâches gardées sans lien, puis la date avec ses lignes de facturation (aucune émise) et de budget.
+ * Même garde-fou que remove (calc.changeBlocked) avant tout appel. Serveur sans la fonction (migration pas encore appliquée) :
+ * suppression directe comme avant, erreur de clé étrangère traduite.
+ */
+export async function deleteShow(id){
+  const why = saveGuard ? saveGuard('shows', id, null) : '';
+  if (why){ toast(why, true); return false; }
+  const {data, error} = await sb.rpc('delete_show', {p_show: id});
+  if (error && missingFunction(error)) return remove('shows', id);
+  if (error){ toast(error.code === 'P0001' ? error.message : 'Suppression impossible : ' + dbErrorText(error), true); return false; }
+  for (const t of ['show_payments', 'budget_lines', 'pennylane_a_rattacher']) if (S.db[t]){ S.db[t] = S.db[t].filter(r => r.show_id !== id); touch(t); }
+  S.db.shows = S.db.shows.filter(r => r.id !== id); touch('shows');
+  // tâches gardées, détachées, avec la mention « Date supprimée le … » en tête de leur note (écrite par le serveur) : relues
+  const tids = data?.task_ids || S.db.tasks.filter(t => t.show_id === id).map(t => t.id);
+  S.db.tasks.forEach(t => { if (t.show_id === id) t.show_id = null; }); touch('tasks');
+  if (tids.length) await refreshFor('tasks', 'id', tids);
+  return data || true;
+}
+
+/** Archivage d'une date (v1.60.3, fonction serveur archive_show) : motif obligatoire ; refus du serveur affiché tel quel */
+export async function archiveShow(id, reason){
+  const {error} = await sb.rpc('archive_show', {p_show: id, p_reason: reason});
+  if (error){ toast(missingFunction(error) ? 'L’archivage des dates n’est pas encore installé sur le serveur.' : error.code === 'P0001' ? error.message : 'Archivage impossible : ' + dbErrorText(error), true); return false; }
+  // la date reste dans les données (vues financières) ; ses notifications sont retirées de la liste active par le serveur
+  await refreshFor('shows', 'id', [id]); await refreshFor('notifications', 'show_id', [id]);
+  return true;
+}
+/** Réactivation explicite des relances d'une date restaurée (fonction serveur reactivate_reminders) : next = {relance: 'AAAA-MM-JJ'} */
+export async function reactivateReminders(id, next){
+  const {error} = await sb.rpc('reactivate_reminders', {p_show: id, p_next: next});
+  if (error){ toast(error.code === 'P0001' ? error.message : 'Réactivation impossible : ' + dbErrorText(error), true); return false; }
+  await refreshFor('shows', 'id', [id]);
+  return true;
+}
+/** Restauration d'une date archivée (fonction serveur restore_show) : elle revient partout, avec ses lignes */
+export async function restoreShow(id){
+  const {error} = await sb.rpc('restore_show', {p_show: id});
+  if (error){ toast(error.code === 'P0001' ? error.message : 'Restauration impossible : ' + dbErrorText(error), true); return false; }
+  await refreshFor('shows', 'id', [id]); await refreshFor('notifications', 'show_id', [id]);
   return true;
 }
 
@@ -242,6 +302,32 @@ export async function syncLinks(kind, id, ids){
   touch('contact_structures');
 }
 
+/**
+ * Type d'un fichier envoyé au stockage : celui donné par le navigateur, sinon déduit de l'extension pour les photos et PDF
+ * (v1.60.2 : une photo arrivée sans type était enregistrée en « application/octet-stream » et se téléchargeait au lieu de s'afficher).
+ * Même correspondance que la fonction serveur lire-piece.
+ */
+const EXT_TYPES = {jpg: 'image/jpeg', jpeg: 'image/jpeg', jfif: 'image/jpeg', png: 'image/png', heic: 'image/heic', heif: 'image/heif', pdf: 'application/pdf', eml: 'message/rfc822'};
+export const contentTypeOf = f => f?.type || EXT_TYPES[(String(f?.name || '').match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase()] || 'application/octet-stream';
+/**
+ * Fichier tel qu'envoyé au stockage, avec son type DANS le fichier (v1.60.3) : la bibliothèque Supabase envoie un fichier
+ * en formulaire et ignore alors l'option contentType ; sans cela, un .eml ou une photo arrivés sans type restaient « octet-stream ».
+ */
+export const typedFile = f => { const type = contentTypeOf(f); return f.type === type ? f : new File([f], f.name, {type, lastModified: f.lastModified}); };
+/**
+ * Motif lisible d'un envoi au stockage qui n'a pas abouti à cause du réseau (« Failed to fetch ») : fichier devenu illisible
+ * (fichier temporaire d'une autre application effacé ou modifié) ou connexion au serveur impossible.
+ */
+export async function uploadFailure(file, err){
+  let readable = true; try { await file.slice(0, 1).arrayBuffer(); } catch { readable = false; }
+  const why = readable ? `connexion au stockage impossible (${err?.message || 'réseau'})` : 'le fichier n’est plus lisible par le navigateur : l’application d’où il vient l’a effacé ou modifié';
+  const data = {lisible: readable, erreur: `${err?.name || ''}: ${err?.message || ''}`,
+    ext: (String(file.name || '').match(/\.([a-z0-9]{1,8})$/i) || [])[1]?.toLowerCase() || '', taille: file.size, type: file.type || ''};
+  console.info('[Matrice] envoi au stockage : échec réseau', JSON.stringify(data));
+  window.dispatchEvent(new CustomEvent('matrice-diag', {detail: {key: 'envoi au stockage : échec réseau', data}}));
+  return why;
+}
+
 const safeName = n => n.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w.\-]+/g,'_') || 'fichier';
 
 /**
@@ -257,9 +343,14 @@ export async function uploadFiles(owner, files){
   for (const file of files){
     const path = `${folder}/${Date.now()}_${safeName(file.name)}`;
     if (!file.size){ failed.push([file.name, 'fichier vide ou illisible (un élément glissé depuis une messagerie n’est pas toujours un vrai fichier)']); continue; }
-    const {error} = await sb.storage.from('suivi').upload(path, file, {contentType: file.type||'application/octet-stream', upsert:false});
+    const type = contentTypeOf(file);
+    // (v1.60.3) une erreur réseau (« Failed to fetch ») n'est plus une exception non traitée qui arrête tout l'envoi :
+    // elle est expliquée dans le bilan, fichier par fichier
+    let error;
+    try { ({error} = await sb.storage.from('suivi').upload(path, typedFile(file), {contentType: type, upsert:false})); }
+    catch (err){ failed.push([file.name, await uploadFailure(file, err)]); continue; }
     if (error){ failed.push([file.name, error.message]); continue; }
-    if (await insert(table, {...owner, name:file.name, path, size:file.size, mime:file.type||null})){ ok++; done.push(file.name); }
+    if (await insert(table, {...owner, name:file.name, path, size:file.size, mime: type === 'application/octet-stream' ? (file.type || null) : type})){ ok++; done.push(file.name); }
     else failed.push([file.name, 'enregistrement refusé (voir le message affiché)']);
     if (owner.prospect_id) await emlToJournal(owner.prospect_id, file);
   }

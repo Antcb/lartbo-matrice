@@ -5,18 +5,19 @@
 import { render } from './app.js';
 import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
 import { cnmDue, commissionOf, coreaCommissionCheck, isFree, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
-import { commissionPctOf, coreaCalc, isCorea } from './corea.js';
+import { breakFromText, commissionPctOf, coreaCalc, isCorea } from './corea.js';
 import { acompteState, isCoproduction, isInvoiced, paymentsOf, payAmount } from './calc.js';
-import { insert, mergeRows, openStored, refreshFor, remove, save, sb } from './data.js';
+import { contentTypeOf, insert, mergeRows, openStored, refreshFor, remove, save, sb, typedFile, uploadFailure } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
 import { callScript } from './mail.js';
-import { applyTemplate, spectacleStaffRows } from './budget-template.js';
+import { applyTemplate, offerCostFill, spectacleStaffRows } from './budget-template.js';
 import { exportArtistBudget } from './artist-export.js';
 import { S, touch } from './state.js';
 import { openModal } from './ui/modal.js';
 import { ask, askText, confirmAsk, inform } from './ui/dialog.js';
-import { coprodClose } from './production-budget.js';
+import { PROMO_LEGACY_LABEL, coprodClose } from './production-budget.js';
 import { esc, eur2, fmtDate, norm, pct, toast, today } from './utils.js';
+import { takeDropped } from './ui/dropfiles.js';
 
 const nextSort = showId => Math.max(0, ...linesOf(showId).map(l => l.sort || 0)) + 1;
 const safeName = n => n.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w.\-]+/g, '_') || 'piece';
@@ -87,7 +88,7 @@ const sideLabel = (x, w) => w === 'artbo' ? 'L’ArtBoristerie' : (x.partner || 
 
 const lineName = id => { const p = id && byId('show_payments', id); return p ? (p.label || p.kind) : ''; };
 export const BUDGET_ACTIONS = {
-  coreaAddTier: t => saveCorea(t.dataset.id, c => { c.tiers.push({label: '', price: null, vat: 5.5, qty: null, after: null}); }),
+  coreaAddTier: t => saveCorea(t.dataset.id, c => { c.tiers.push({label: '', price: null, vat: 5.5, planned: null, qty: null, after: null}); }),
   coreaDelTier: async t => { const lab = byId('shows', t.dataset.id)?.corea?.tiers?.[Number(t.dataset.i)]?.label;
     if (await confirmAsk('Retirer le tarif ?', `Retirer le tarif « ${lab || 'sans nom'} » (prix et billets vendus compris) ?`, 'Retirer le tarif', {danger: true}))
       saveCorea(t.dataset.id, c => { c.tiers.splice(Number(t.dataset.i), 1); }); },
@@ -99,6 +100,16 @@ export const BUDGET_ACTIONS = {
   coreaValidateBreak: async t => { const s = byId('shows', t.dataset.id);
     if (!(await confirmAsk('Valider le break ?', `Break de ${s.break_even} billets vendus pour cette date${s.cr_break ? ` (texte du contrat : « ${s.cr_break} »)` : ''}. Le partage sera calculé sur les billets vendus au-delà.`, 'Valider le break'))) return;
     saveCorea(s.id, c => { c.break_validated_at = new Date().toISOString(); c.break_value = Number(s.break_even); c.break_by = me(); }); },
+  // break des Conditions lu sans ambiguïté (demande du 07/11/2026) : repris dans « Break (billets) » seulement sur ce clic, jamais
+  // validé par ce geste (« Valider le break » reste obligatoire) ; le texte du contrat reste tel quel
+  coreaUseTextBreak: async t => { const s = byId('shows', t.dataset.id), n = breakFromText(s?.cr_break);
+    if (!s || n == null || (s.break_even != null && s.break_even !== '')) return render();
+    if (await save('shows', s.id, {break_even: n})) toast(`Break repris des Conditions : ${n} billets${s.prod_mode === 'booking' ? '' : ' — à valider avant tout calcul'}`); },
+  // jauge ouverte saisie dans un budget (ou le Ticketing) : proposition de compléter les coûts encore vides (demande du 07/11/2026)
+  'change:shows.capacity': async (t, v) => { const old = byId('shows', t.dataset.id)?.capacity;
+    if (!(await save('shows', t.dataset.id, {capacity: v}))) return;
+    if (v != null && Number(v) !== Number(old)) await offerCostFill(t.dataset.id); },
+  fillMissingCosts: t => offerCostFill(t.dataset.id, {manual: true}),
   // prorata des ventes : jamais appliqué sans validation explicite, pour cette date seulement
   coreaValidateProrata: async t => { const s = byId('shows', t.dataset.id), k = coreaCalc(s);
     if (!(await confirmAsk('Valider le prorata ?', `Les ventes après le break ne sont pas connues par tarif. Retenir pour cette date les recettes au prorata des ventes de chaque tarif : ${eur2(k.range.prorata)} HT (fourchette ${eur2(k.range.min)} à ${eur2(k.range.max)}) ?`, 'Valider le prorata'))) return;
@@ -130,6 +141,7 @@ export const BUDGET_ACTIONS = {
     if (!k.ok) return inform({title: 'Clôture impossible', text: k.issues.join('\n')});
     const text = [`Résultat global réel : ${eur2(x.result)}`, `Part de L’ArtBo (${x.shared_result < 0 ? 'pertes : ' + pct(x.artbo_loss_share) : pct(x.artbo_share)}) : ${eur2(x.artbo_part)}`, `Part de ${x.partner} : ${eur2(x.partner_part)}`,
       `Recettes encaissées par ${sideLabel(x, x.holder)} : ${eur2(x.net_encaisse)} (nettes)`, `Dépenses payées : L’ArtBo ${eur2(x.paid_artbo)} · coproducteur ${eur2(x.paid_partner)}`,
+      ...(x.promo_debtor_rule === 'commun_historique' ? [`Promotion locale : ${PROMO_LEGACY_LABEL}`] : []),
       x.from ? `Reversement : ${sideLabel(x, x.from)} reverse ${eur2(x.transfer)} à ${sideLabel(x, x.to)}` : 'Aucun reversement', ...k.warnings,
       'Après clôture, les montants de la date sont verrouillés ; la réouverture demande un motif.'].join('\n');
     if (await ask({title: 'Clôturer le résultat ?', text, actions: [{value: 'ok', label: 'Clôturer le résultat'}]}) !== 'ok') return;
@@ -344,7 +356,9 @@ export async function readPieces(ctx, files){
     const folder = `budget/${show?.id || line?.show_id || 'projet-' + project_id}`;
     const path = `${folder}/${Date.now()}_${safeName(file.name)}`;
     toast(`Lecture de « ${file.name} » par l’IA…`);
-    const {error: upErr} = await sb.storage.from('suivi').upload(path, file, {contentType: file.type || 'application/octet-stream'});
+    let upErr;
+    try { ({error: upErr} = await sb.storage.from('suivi').upload(path, typedFile(file), {contentType: contentTypeOf(file)})); }
+    catch (err){ upErr = {message: await uploadFailure(file, err)}; }
     if (upErr){ toast(`${file.name} : ${upErr.message}`, true); continue; }
     let doc = null;
     const {data, error} = await sb.functions.invoke('lire-piece', {body:{path, show_id: show?.id || line?.show_id || null, project_id}});
@@ -478,7 +492,9 @@ document.addEventListener('dragover', e => { if (!e.dataTransfer?.types?.include
 document.addEventListener('dragleave', e => { const z = e.target.closest?.('.budget-over'); if (z && !z.contains(e.relatedTarget)) z.classList.remove('budget-over'); }, true);
 document.addEventListener('drop', e => { const ctx = ctxOf(e.target); if (!ctx) return; e.preventDefault(); e.stopPropagation();
   document.querySelectorAll('.budget-over').forEach(x => x.classList.remove('budget-over'));
-  const files = [...(e.dataTransfer?.files || [])]; if (files.length) readPieces(ctx, files); }, true);
+  if (!e.dataTransfer?.files?.length) return;
+  // (v1.60.3) pièce copiée en mémoire dès le dépôt (fichier temporaire d'une autre application, ex. pièce jointe glissée depuis Mail)
+  takeDropped(e).then(({files}) => { if (files.length) readPieces(ctx, files); }); }, true);
 document.addEventListener('change', e => { const t = e.target; if (!t.dataset?.budgetPick) return; const files = [...t.files]; t.value = '';
   if (files.length) readPieces(JSON.parse(t.dataset.budgetPick), files); });
 
