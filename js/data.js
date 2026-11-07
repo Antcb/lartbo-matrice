@@ -242,6 +242,14 @@ export async function syncLinks(kind, id, ids){
   touch('contact_structures');
 }
 
+/**
+ * Type d'un fichier envoyé au stockage : celui donné par le navigateur, sinon déduit de l'extension pour les photos et PDF
+ * (v1.60.2 : une photo arrivée sans type était enregistrée en « application/octet-stream » et se téléchargeait au lieu de s'afficher).
+ * Même correspondance que la fonction serveur lire-piece.
+ */
+const EXT_TYPES = {jpg: 'image/jpeg', jpeg: 'image/jpeg', jfif: 'image/jpeg', png: 'image/png', heic: 'image/heic', heif: 'image/heif', pdf: 'application/pdf', eml: 'message/rfc822'};
+export const contentTypeOf = f => f?.type || EXT_TYPES[(String(f?.name || '').match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase()] || 'application/octet-stream';
+
 const safeName = n => n.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w.\-]+/g,'_') || 'fichier';
 
 /**
@@ -257,9 +265,10 @@ export async function uploadFiles(owner, files){
   for (const file of files){
     const path = `${folder}/${Date.now()}_${safeName(file.name)}`;
     if (!file.size){ failed.push([file.name, 'fichier vide ou illisible (un élément glissé depuis une messagerie n’est pas toujours un vrai fichier)']); continue; }
-    const {error} = await sb.storage.from('suivi').upload(path, file, {contentType: file.type||'application/octet-stream', upsert:false});
+    const type = contentTypeOf(file);
+    const {error} = await sb.storage.from('suivi').upload(path, file, {contentType: type, upsert:false});
     if (error){ failed.push([file.name, error.message]); continue; }
-    if (await insert(table, {...owner, name:file.name, path, size:file.size, mime:file.type||null})){ ok++; done.push(file.name); }
+    if (await insert(table, {...owner, name:file.name, path, size:file.size, mime: type === 'application/octet-stream' ? (file.type || null) : type})){ ok++; done.push(file.name); }
     else failed.push([file.name, 'enregistrement refusé (voir le message affiché)']);
     if (owner.prospect_id) await emlToJournal(owner.prospect_id, file);
   }

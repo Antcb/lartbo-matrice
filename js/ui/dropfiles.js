@@ -8,11 +8,18 @@ const OWN = '[data-budget-drop],[data-budget-line],[data-drop],[data-drop-form],
 const STOP = 'dialog, .panel, section, form, .suivi-block';
 
 // Une pièce jointe glissée depuis Mail (Mac) n'annonce pas toujours « Files » pendant le glisser :
-// dans la fenêtre de préparation d'un mail, on accepte tout ce qui est lâché et on regarde au moment du dépôt
+// dans la fenêtre de préparation d'un mail et dans les zones de pièces jointes (suivi, journal, échanges, fenêtres),
+// on accepte tout ce qui est lâché et on regarde au moment du dépôt (v1.60.2 : même règle pour toutes ces zones)
 const MAILBOX = '.mail-wrap';
-const hasFiles = e => e.dataTransfer?.types?.includes('Files') || !!e.target?.closest?.(MAILBOX) && [...(e.dataTransfer?.types || [])].some(t => !/^text\/(plain|html)$/.test(t));
-const droppedFiles = e => { const f = [...(e.dataTransfer?.files || [])]; if (f.length) return f;
+const ATTACH = '[data-drop],[data-drop-form]';
+/** Glisser qui peut contenir un fichier : « Files » annoncé, ou, dans une zone de pièces jointes, autre chose que du simple texte */
+export const fileDrag = e => e.dataTransfer?.types?.includes('Files') || !!e.target?.closest?.(`${MAILBOX},${ATTACH}`) && [...(e.dataTransfer?.types || [])].some(t => !/^text\/(plain|html)$/.test(t));
+const hasFiles = fileDrag;
+/** Fichiers lâchés : la liste « files », sinon les éléments de type fichier (certains glisser depuis Mail ne remplissent que ceux-ci) */
+export const droppedFiles = e => { const f = [...(e.dataTransfer?.files || [])]; if (f.length) return f;
   return [...(e.dataTransfer?.items || [])].filter(i => i.kind === 'file').map(i => i.getAsFile()).filter(Boolean); };
+/** Rien d'exploitable dans le dépôt (lien, promesse de fichier non tenue par le navigateur…) : on le dit au lieu de ne rien faire */
+export const NOTHING_DROPPED = 'Rien à joindre : glisse la pièce jointe elle-même (son icône) depuis Mail, ou enregistre-la d’abord sur le Bureau puis glisse-la ici';
 
 function inputFor(target){
   if (!target?.closest || target.closest(OWN)) return null;
@@ -40,7 +47,7 @@ document.addEventListener('drop', e => {
   const f = inputFor(e.target); if (!f) return;
   e.preventDefault();
   const files = droppedFiles(e);
-  if (!files.length){ if (e.target.closest?.(MAILBOX)) import('../utils.js').then(u => u.toast('Rien à joindre : glisse la pièce jointe elle-même (son icône) depuis Mail', true)); return; }
+  if (!files.length){ if (e.target.closest?.(MAILBOX)) import('../utils.js').then(u => u.toast(NOTHING_DROPPED, true)); return; }
   const dt = new DataTransfer();
   (f.inp.multiple ? files : files.slice(0, 1)).forEach(x => dt.items.add(x));
   f.inp.files = dt.files;
