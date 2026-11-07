@@ -9,7 +9,7 @@
 import { confirmAsk } from './ui/dialog.js';
 import { billPct, isCoproduction, paymentsOf, vatConflict } from './calc.js';
 import { ENV } from './config.js';
-import { contentTypeOf, insert, remove, save, sb } from './data.js';
+import { contentTypeOf, insert, remove, save, sb, typedFile } from './data.js';
 import { byId, contactMails, linksOfStructure, projectOptions, setting } from './selectors.js';
 import { S } from './state.js';
 import { openModal } from './ui/modal.js';
@@ -222,7 +222,7 @@ export async function prepareMail(showId, kind){
   $('#ml-up').addEventListener('change', async e => {
     for (const f of e.target.files){
       const path = `mails/${s.id}/${Date.now()}_${f.name.replace(/[^\w.\-]+/g, '_')}`;
-      const {error} = await sb.storage.from('suivi').upload(path, f, {contentType: contentTypeOf(f)});
+      const {error} = await sb.storage.from('suivi').upload(path, typedFile(f), {contentType: contentTypeOf(f)});
       if (error){ toast('Envoi impossible : ' + error.message, true); continue; }
       files.push({path, name: f.name, size: f.size, on: true, mine: true});
     }
@@ -382,7 +382,7 @@ export async function editTemplate(id, defaults={}){
   document.querySelector('#tpl-up').addEventListener('change', async e => {
     for (const f of e.target.files){
       const path = `modeles/${id || 'nouveau'}/${Date.now()}_${f.name.replace(/[^\w.\-]+/g, '_')}`;
-      const {error} = await sb.storage.from('suivi').upload(path, f, {contentType: contentTypeOf(f)});
+      const {error} = await sb.storage.from('suivi').upload(path, typedFile(f), {contentType: contentTypeOf(f)});
       if (error){ toast('Envoi impossible : ' + error.message, true); continue; }
       files.push({path, name: f.name, size: f.size});
     }
