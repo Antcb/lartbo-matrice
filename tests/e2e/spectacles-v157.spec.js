@@ -140,7 +140,9 @@ test('v1.57 budget type d’un spectacle incomplet : « à renseigner », jamais
   await page.locator('#fld-spectacle_id').selectOption('sp-jp');
   await page.evaluate(() => { const h = document.querySelector('#fld-project_id'); h.value = 'art-b'; h.dispatchEvent(new Event('change', { bubbles: true })); });
   await expect(page.locator('#fld-spectacle_id option')).toHaveText(['— choisir le spectacle —', 'Spectacle Bêta']);
-  await expect(page.locator('#fld-spectacle_id')).toHaveValue('');
+  // v1.60.3 (demande d'Anthony du 07/11/2026) : nouvelle date → le seul spectacle actif du nouvel artiste est présélectionné
+  // (avant : vide) ; le spectacle de l'ancien artiste ne reste jamais
+  await expect(page.locator('#fld-spectacle_id')).toHaveValue('sp-b');
   expectClean(ctx);
 });
 

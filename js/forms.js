@@ -11,7 +11,7 @@ import { CFG } from './config.js';
 import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PRIORITY_OPTS, PROSPECT, PROSPECT_OPTS, STATUSES, TASK_STATUS, TASK_STATUS_OPTS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
 import { insert, purgeStored, refreshFor, remove, removeWhere, save, saveLinger, sb, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode, geoFrance, searchPlaces } from './geo.js';
-import { contactMails, contactsWithMail, defaultCommission, settingAcompte, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, placeOfSuivi, projIds, showPlaceNote, projName, projectOptions, prospectTitle, spectaclesOf } from './selectors.js';
+import { contactMails, contactsWithMail, defaultCommission, settingAcompte, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, placeOfSuivi, projIds, showPlaceNote, projName, projectOptions, prospectTitle, spectaclesOf, defaultSpectacleId } from './selectors.js';
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow } from './ui/bits.js';
@@ -123,6 +123,8 @@ async function locateShow(v, s){
 
 export function editShow(id, projectId, prefill={}){
   const s = id ? byId('shows', id) : {status:'Intérêt Salle', contract_type:'Cession', project_id: projectId||S.project||null, communication_enabled:true, date:null, ...prefill};
+  // nouvelle date : spectacle présélectionné (seul actif, sinon celui par défaut de l'artiste), toujours modifiable (v1.60.3)
+  if (!id && !s.spectacle_id && s.project_id) s.spectacle_id = defaultSpectacleId(s.project_id) || null;
   const extra = hiddenFields(s, [['lat',1],['lng',1],['prospect_id']])
     + (id && s.structure_id ? `<div class="full"><button type="button" class="btn sm" data-act="openStructure" data-id="${s.structure_id}">Ouvrir la fiche structure et son suivi</button></div>` : '')
     + (id && s.status?.startsWith('Confirmée') ? `<div class="full drive">${driveHTML(s)}</div>` : '');
@@ -177,7 +179,8 @@ export function editShow(id, projectId, prefill={}){
     const sel = dlg.querySelector('#fld-spectacle_id'); if (!sel) return;
     const cur = sel.value;
     sel.innerHTML = spectacleOptions(e.target.value, null).map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
-    if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+    if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+    else if (!id) sel.value = defaultSpectacleId(e.target.value);   // nouvelle date sans spectacle valable : présélection du nouvel artiste (v1.60.3)
   };
   dlg.addEventListener('change', onProject);
   dlg.addEventListener('close', () => { dlg.removeEventListener('ac-chosen', onChosen); dlg.removeEventListener('change', onProject); }, {once:true});
