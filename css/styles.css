@@ -902,7 +902,7 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .bt-tiers tbody td > input[data-bt]:not([type=checkbox]):not([type=radio]){margin:0 4px;max-width:none}
 /* Budget : ligne plus compacte */
 .budget-table .qty-line{display:inline-flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:4px;white-space:nowrap}   /* quantité × coût puis total : le total passe sous la quantité quand la place manque (1 280 px), aligné à droite comme les montants — aucun défilement horizontal du tableau des cachets à 1 280 px et plus (décision d'Anthony du 07/11/2026, v1.60.3) */
-.budget-table .qty-line .qty-mul{display:inline-flex;align-items:center;gap:4px}   /* « quantité × coût » jamais coupé ; seul le total passe dessous */
+.budget-table .qty-line .qty-mul{display:inline-flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:4px}   /* « quantité × coût » : passe à la ligne en dernier recours seulement (police plus large que Geist, écran étroit) ; le total passe dessous d'abord */
 .budget-table .qty-line .x{color:var(--muted)}
 .budget-table .qty-line b{min-width:76px;text-align:right;font-variant-numeric:tabular-nums}
 .budget-table input.narrow2{width:calc(7ch + 20px)}   /* prix unitaire « 1234,56 » entier, quelle que soit la police */
@@ -913,7 +913,7 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .budget-table td > select{max-width:170px!important}
 .budget-table .dt{max-width:140px}
 .budget-table td{padding-left:8px;padding-right:8px}
-@media (min-width:1025px){ .budget-table td.bl-label{min-width:30ch} .budget-table td.bl-sup .cell-ta,.budget-table .cell-ta[data-f=doc_number]{min-width:90px} .budget-table :is(th,td){padding-left:var(--sp-1);padding-right:var(--sp-1)} }   /* ordinateur (v1.60.3) : libellé des cachets (jauge, brut indicatif) sur 3 lignes au plus au lieu de 4 à 7 ; la place vient du fournisseur (« Salarié »), du n° de pièce et d'un tableau dense (comme .prod-bill) : aucun défilement à 1 280 et 1 440 px (total de « quantité × coût » replié, .qty-line) ; téléphone et tablette : fiches inchangées */
+@media (min-width:1025px){ .budget-table td.bl-label{width:30ch} .budget-table td.bl-sup .cell-ta,.budget-table .cell-ta[data-f=doc_number]{min-width:90px} .budget-table :is(th,td){padding-left:var(--sp-1);padding-right:var(--sp-1)} }   /* ordinateur (v1.60.3) : libellé des cachets (jauge, brut indicatif) sur 3 lignes au plus au lieu de 4 à 7 — largeur fixée (width, et non min-width) : la place libre va d'abord à « Prévu HT », pour garder « quantité × coût » sur une ligne ; la place vient du fournisseur (« Salarié »), du n° de pièce et d'un tableau dense (comme .prod-bill) : aucun défilement à 1 280 et 1 440 px (total de « quantité × coût » replié, .qty-line) ; téléphone et tablette : fiches inchangées */
 /* To Do : échéance + urgence dans la même case, structure + date dans « Lié à » */
 .due-cell{min-width:150px}
 .due-cell .urg{display:inline-block;margin-top:4px;margin-left:-9px}
