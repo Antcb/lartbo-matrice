@@ -5,8 +5,11 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
-## 1.56.9 — 06/11/2026
-- Pennylane : une facture faite depuis le devis n'est jamais reliée automatiquement au solde quand elle a le montant d'un acompte déjà noté à la main sur la date (signalée « à rattacher »)
+## 1.56.9 — 07/11/2026
+- Pennylane : une facture faite depuis le devis n'est jamais reliée automatiquement au solde quand elle a le montant d'un acompte déjà noté à la main sur la date ; jamais de rapprochement sur le seul montant quand plusieurs factures ou plusieurs lignes correspondent (facture signalée « à rattacher »)
+- Pennylane : action « Rattacher… » / « Corriger » sur la date — document, montant et lien affichés, ligne d'acompte ou de solde choisie explicitement, motif obligatoire pour une correction, confirmation, historique des rattachements ; aucun document Pennylane modifié, aucune facture en double ; le choix est gardé aux synchronisations suivantes
+- Pennylane : signalements « à rattacher » fermés automatiquement quand la facture est reliée ou annulée ; n° noté à la main reconnu sans tenir compte des tirets et espaces ; solde calculé affiché « calculé, non facturé », distinct d'un solde facturé
+- Base (migration 2026-11-07) : tables des signalements et de l'historique (lecture équipe, écriture par la fonction de rattachement seulement), unicité d'une facture d'acompte ou de solde, exception étroite de la protection des factures émises pour la seule correction d'un rattachement ; tables ajoutées à la sauvegarde
 
 
 ## 1.56.8 — 06/11/2026
