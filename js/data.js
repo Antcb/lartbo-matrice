@@ -176,6 +176,13 @@ export async function archiveShow(id, reason){
   await refreshFor('shows', 'id', [id]); await refreshFor('notifications', 'show_id', [id]);
   return true;
 }
+/** Réactivation explicite des relances d'une date restaurée (fonction serveur reactivate_reminders) : next = {relance: 'AAAA-MM-JJ'} */
+export async function reactivateReminders(id, next){
+  const {error} = await sb.rpc('reactivate_reminders', {p_show: id, p_next: next});
+  if (error){ toast(error.code === 'P0001' ? error.message : 'Réactivation impossible : ' + dbErrorText(error), true); return false; }
+  await refreshFor('shows', 'id', [id]);
+  return true;
+}
 /** Restauration d'une date archivée (fonction serveur restore_show) : elle revient partout, avec ses lignes */
 export async function restoreShow(id){
   const {error} = await sb.rpc('restore_show', {p_show: id});
