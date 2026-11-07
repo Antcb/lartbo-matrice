@@ -100,7 +100,10 @@ try {
 } finally { await browser.close(); server.close(); }
 
 const COLS = Object.keys(rows[0] || { date: 0 });
-const cell = v => v == null ? '' : typeof v === 'number' ? String(v).replace('.', ',') : /[;"\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+// texte commençant par = + - @ (ou tabulation / retour chariot) : préfixé d'une apostrophe, jamais interprété comme une formule par le
+// tableur (relecture v1.60.3) ; les nombres restent des nombres
+const safe = s => /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
+const cell = v => v == null ? '' : typeof v === 'number' ? String(v).replace('.', ',') : (s => /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s)(safe(String(v)));
 const csv = '﻿' + [COLS.join(';'), ...rows.map(r => COLS.map(k => cell(r[k])).join(';'))].join('\n') + '\n';
 if (output) await writeFile(output, csv); else process.stdout.write(csv);
 const dbl = rows.filter(r => r.double_deduction === 'oui');

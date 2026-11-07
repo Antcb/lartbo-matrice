@@ -19,7 +19,10 @@ export function viewBooking(){
   // dates archivées (v1.60.3) : hors de cette liste de travail et de la carte (showsFiltered), toutes années ; filtre artistes appliqué
   const archived = S.db.shows.filter(s => isArchived(s) && projFilterOk([s.project_id])).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const n = k => shows.filter(s => (s.status||'').startsWith(k)).length;
-  const totalConf = shows.filter(s=>(s.status||'').startsWith('Confirmée') && viaArtbo(s)).reduce((a,s)=>a+(Number(s.fee_ht)||0),0);   // hors « Confirmée Artiste » (v1.53)
+  // cachets confirmés : hors « Confirmée Artiste » (v1.53) ; dates archivées COMPRISES (v1.60.3) — l'archivage ne change aucun montant,
+  // même périmètre que la fiche artiste et les indicateurs de Production (artistes et année choisis)
+  const confFee = l => l.filter(s=>(s.status||'').startsWith('Confirmée') && viaArtbo(s)).reduce((a,s)=>a+(Number(s.fee_ht)||0),0);
+  const archFee = confFee(showsFiltered({archived: true}).filter(isArchived)), totalConf = confFee(shows) + archFee;
   let lastMonth = '', list = '';
   for (const s of shows){
     const m = s.date ? new Date(s.date+'T12:00:00').toLocaleDateString('fr-FR',{month:'long',year:'numeric'}) : 'Sans date';
@@ -29,7 +32,7 @@ export function viewBooking(){
   }
   setBookingMap(shows);
   return viewHead('Booking', {
-      sub: [plural(n('Intérêt'),'intérêt'), plural(n('Option'),'option'), plural(n('Confirmée'),'confirmée'), `${eur(totalConf)} de cachets confirmés`].join(' · '),
+      sub: [plural(n('Intérêt'),'intérêt'), plural(n('Option'),'option'), plural(n('Confirmée'),'confirmée'), `${eur(totalConf)} de cachets confirmés${archFee ? ` (dont ${eur(archFee)} de dates archivées)` : ''}`].join(' · '),
       filters: filterBar(),
       actions: `${nOff?`<button class="btn" data-act="toggleCancelled" aria-pressed="${S.showCancelled}">${S.showCancelled?'Masquer':'Afficher'} annulées / sans suite (${nOff})</button>`:''}
         ${archived.length?`<button class="btn" data-act="toggleArchived" aria-pressed="${!!S.showArchived}">${S.showArchived?'Masquer':'Afficher'} les dates archivées (${archived.length})</button>`:''}

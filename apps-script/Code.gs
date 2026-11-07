@@ -193,11 +193,15 @@ function pickTemplate_(show, kind) {
 function dailyJob() {
   try { rhFileDocs_(); } catch (err) { Logger.log('Pièces salariés : ' + err); }
   try { artistFileDocs_(); } catch (err) { Logger.log('Fichiers artistes : ' + err); }
-  // notifications retirées (date archivée / restaurée, Matrice v1.60.3) : ni brouillon ni récap. Base sans la colonne (migration
-  // v1.60.3 pas encore appliquée) : lecture comme avant
+  // notifications retirées (date archivée / restaurée, Matrice v1.60.3) : ni brouillon ni récap. Repli sur la lecture d'avant
+  // SEULEMENT si la colonne withdrawn_at n'existe pas encore (migration v1.60.3 pas appliquée : erreur Postgres 42703) ; toute autre
+  // erreur arrête proprement le récap du jour (relecture v1.60.3), pour ne jamais renvoyer des notifications retirées
   var notifs;
   try { notifs = sb_('GET', 'notifications?emailed_at=is.null&withdrawn_at=is.null&select=*&order=created_at.asc') || []; }
-  catch (e) { notifs = sb_('GET', 'notifications?emailed_at=is.null&select=*&order=created_at.asc') || []; }
+  catch (e) {
+    if (!/42703/.test(String(e)) || !/withdrawn_at/.test(String(e))) throw new Error('Récap quotidien non envoyé : lecture des notifications impossible (' + e + ')');
+    notifs = sb_('GET', 'notifications?emailed_at=is.null&select=*&order=created_at.asc') || [];
+  }
   var KIND = { boucle_accueil: 'boucle_tech', boucle_com: 'boucle_com' };
   var drafted = [];
   notifs.forEach(function (n) {
