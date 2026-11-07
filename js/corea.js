@@ -54,12 +54,12 @@ export function cnmBearer(s){
 /** Redevable légal (spectacle payant) : le détenteur de la billetterie */
 export const cnmDebtor = s => isFreeShow(s) ? null : (s?.ticket_holder || null);
 
-/** Tarifs d'une coréalisation : prix TTC, TVA (5,5 % par défaut), quantité vendue, ventes après le break (si connues) */
+/** Tarifs d'une coréalisation : prix TTC, TVA (5,5 % par défaut), quota prévu (break prévisionnel), quantité vendue, ventes après le break (si connues) */
 export function coreaTiers(s){
   return (s?.corea?.tiers || []).map(t => {
-    const price = num(t.price) || 0, vat = num(t.vat) ?? 5.5, qty = num(t.qty) || 0, after = num(t.after);
+    const price = num(t.price) || 0, vat = num(t.vat) ?? 5.5, qty = num(t.qty) || 0, after = num(t.after), planned = num(t.planned);
     const unitHt = price / (1 + vat / 100);
-    return {label: t.label || '', price, vat, qty, after, unitHt, ht: r2(qty * unitHt)};
+    return {label: t.label || '', price, vat, qty, after, planned, unitHt, ht: r2(qty * unitHt)};   // qty = billets VENDUS ; planned = quota PRÉVU
   });
 }
 /**

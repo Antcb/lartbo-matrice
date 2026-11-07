@@ -125,14 +125,15 @@ test('v1.60.3 break économique de la coréalisation : vérification indépendan
   // 100 billets à 10,55 € TTC (10 € HT) + 100 à 21,10 € TTC (20 € HT) vendus ; MG 500 € ; dépenses prévues 2 000 € ; break 100 validé ;
   // 50 % au producteur ; charges 300 € ; CNM 5 % sur la TOTALITÉ des recettes, déduite du résultat partagé
   await seed(page, { shows: [{ ...COREA, id: 'bg-6', date: `${Y}-02-15`, fee_ht: 500, capacity: 1000, break_even: 100, cr_producer_pct: 50, cnm_pct: 5, cnm_in_result: true,
-      corea: { break_validated_at: `${Y - 1}-12-01T10:00:00Z`, break_value: 100, tiers: [{ label: 'Réduit', price: 10.55, vat: 5.5, qty: 100 }, { label: 'Plein', price: 21.1, vat: 5.5, qty: 100 }],
+      corea: { break_validated_at: `${Y - 1}-12-01T10:00:00Z`, break_value: 100, tiers: [{ label: 'Réduit', price: 10.55, vat: 5.5, planned: 300, qty: 100 }, { label: 'Plein', price: 21.1, vat: 5.5, planned: 100, qty: 100 }],
         charges: [{ label: 'Frais de billetterie', amount: 300 }] } }],
     budget_lines: [{ id: 'bg-l6', project_id: 'art-a', show_id: 'bg-6', category: 'Technique', label: 'Son', forecast: 2000, payer: 'compte' }] });
-  // 500 + 0,5 × ((n − 100) u − 300 − 0,05 n u) − 2 000 ≥ 0 ⇔ 0,95 n u − 100 u ≥ 3 300 : u = 15 (moyenne des ventes) → 337 ; 10 → 453 ; 20 → 279
+  // 500 + 0,5 × ((n − 100) u − 300 − 0,05 n u) − 2 000 ≥ 0 ⇔ 0,95 n u − 100 u ≥ 3 300 : prévisionnel u = 12,5 (quotas 300 / 100) → 384 ;
+  // selon les ventes u = 15 (100 / 100 vendus) → 337 ; 10 → 453 ; 20 → 279
   const expected = u => { for (let n = 0; n <= 1000; n++) if (500 + 0.5 * Math.max(0, (Math.max(0, n - 100) * u) - 300 - n * u * 0.05) - 2000 >= 0) return n; return null; };
   const k = await breaks(page, 'bg-6');
-  expect([k.byScenario.mix.n, k.byScenario.low.n, k.byScenario.high.n]).toEqual([expected(15), expected(10), expected(20)]);
-  expect([k.byScenario.mix.n, k.byScenario.low.n, k.byScenario.high.n]).toEqual([337, 453, 279]);
+  expect([k.byScenario.mix.n, k.byScenario.sales.n, k.byScenario.low.n, k.byScenario.high.n]).toEqual([expected(12.5), expected(15), expected(10), expected(20)]);
+  expect([k.byScenario.mix.n, k.byScenario.sales.n, k.byScenario.low.n, k.byScenario.high.n]).toEqual([384, 337, 453, 279]);
   // % du producteur hors 0–100 : même blocage que le partage (coreaCalc), aucun équilibre
   await page.evaluate(async () => { const { S, touch } = await import('./js/state.js'); S.db.shows.find(x => x.id === 'bg-6').cr_producer_pct = 150; touch('shows'); });
   const k2 = await breaks(page, 'bg-6');
@@ -173,25 +174,42 @@ test('v1.60.3 coûts manquants : modèle du spectacle seul (jamais celui de l’
   expectClean(ctx);
 });
 
-test('v1.60.3 coréalisation, prix moyen : pondéré par les billets vendus avec sa source ; sans répartition « répartition à renseigner », extrêmes gardés', async ({ page }) => {
+test('v1.60.3 prix moyen : prévisionnel pondéré par les quotas prévus, « selon les ventes » à part ; absence de ventes ≠ blocage ; sans quotas « répartition à renseigner »', async ({ page }) => {
   const ctx = await openApp(page);
-  const tiers = q => [{ label: 'Réduit', price: 10.55, vat: 5.5, qty: q[0] }, { label: 'Plein', price: 21.1, vat: 5.5, qty: q[1] }];
+  const tiers = (pl, q) => [{ label: 'Réduit', price: 10.55, vat: 5.5, planned: pl[0], qty: q[0] }, { label: 'Plein', price: 21.1, vat: 5.5, planned: pl[1], qty: q[1] }];
   await seed(page, { shows: [{ ...COREA, id: 'bg-9', date: `${Y}-03-03`, fee_ht: 0, capacity: 1000, break_even: 0, cr_producer_pct: 100, cnm_pct: 0,
-      corea: { break_validated_at: `${Y - 1}-12-01T10:00:00Z`, break_value: 0, tiers: tiers([0, 0]), charges: [] } }],
-    budget_lines: [{ id: 'bg-l9', project_id: 'art-a', show_id: 'bg-9', category: 'Technique', label: 'Son', forecast: 1500, payer: 'compte' }] });
+      corea: { break_validated_at: `${Y - 1}-12-01T10:00:00Z`, break_value: 0, tiers: tiers([null, null], [0, 0]), charges: [] } },
+    { ...COREA, id: 'bg-10', date: `${Y}-03-04`, contract_type: 'Production', capacity: 500, cnm_pct: 0,
+      production: { vat: 5.5, sacem_pct: 0, tickets: [{ label: 'Réduit', qty: 100, price: 10.55, real_qty: 0 }, { label: 'Plein', qty: 100, price: 21.1, real_qty: 50 }] } }],
+    budget_lines: [{ id: 'bg-l9', project_id: 'art-a', show_id: 'bg-9', category: 'Technique', label: 'Son', forecast: 1500, payer: 'compte' },
+      { id: 'bg-l10', project_id: 'art-a', show_id: 'bg-10', category: 'Salle', label: 'Location', forecast: 1500, payer: 'artbo' }] });
+  const setTiers = (pl, q) => page.evaluate(async ([pl, q]) => { const { S, touch } = await import('./js/state.js'); const s = S.db.shows.find(x => x.id === 'bg-9');
+    s.corea = { ...s.corea, tiers: s.corea.tiers.map((t, i) => ({ ...t, planned: pl[i], qty: q[i] })) }; touch('shows'); (await import('./js/app.js')).render(); }, [pl, q]);
+  // ni quotas ni ventes : prévisionnel « répartition à renseigner » (jamais la moyenne simple 15 € → 100) ; extrêmes calculés
   let k = await breaks(page, 'bg-9');
-  expect(k.byScenario.mix).toMatchObject({ n: null, needsSplit: true });   // jamais la moyenne simple (15 € → 100 billets)
+  expect(k.byScenario.mix).toMatchObject({ n: null, needsSplit: true });
+  expect(k.byScenario.sales).toBeUndefined();
   expect([k.byScenario.low.n, k.byScenario.high.n]).toEqual([150, 75]);
-  expect(k.mixSource).toBeNull();
   await openBudget(page, 'bg-9');
-  await expect(page.locator('#prod-bg-9 .corea-block')).toContainText('répartition à renseigner');
-  // 300 réduits + 100 pleins vendus : (300 × 10 + 100 × 20) / 400 = 12,50 € HT → 1 500 / 12,5 = 120 billets
-  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js'); const s = S.db.shows.find(x => x.id === 'bg-9');
-    s.corea = { ...s.corea, tiers: [{ ...s.corea.tiers[0], qty: 300 }, { ...s.corea.tiers[1], qty: 100 }] }; touch('shows'); (await import('./js/app.js')).render(); });
+  const blk = page.locator('#prod-bg-9 .corea-block');
+  await expect(blk).toContainText('répartition à renseigner (quotas prévus par tarif)');
+  // quotas prévus 300 / 100, aucune vente : (300 × 10 + 100 × 20) / 400 = 12,50 € HT → 120 billets ; pas de blocage
+  await setTiers([300, 100], [0, 0]);
   k = await breaks(page, 'bg-9');
   expect(k.byScenario.mix.n).toBe(120);
-  expect(k.mixSource).toBe('moyenne pondérée par les 400 billets vendus saisis par tarif');
-  await expect(page.locator('#prod-bg-9 .corea-block')).toContainText('Prix moyen : moyenne pondérée par les 400 billets vendus saisis par tarif (12,50');
+  expect(k.mixSource).toBe('moyenne pondérée par les quotas prévus (400 billets prévus)');
+  expect(k.byScenario.sales).toBeUndefined();
+  await expect(blk).toContainText('Prévisionnel : moyenne pondérée par les quotas prévus (400 billets prévus), prix moyen 12,50');
+  await expect(blk).toContainText('Aucune vente saisie : pas de calcul selon les ventes.');
+  // ventes 100 / 300 : second calcul distinct (17,50 € HT → 86) ; le prévisionnel ne change pas
+  await setTiers([300, 100], [100, 300]);
+  k = await breaks(page, 'bg-9');
+  expect([k.byScenario.mix.n, k.byScenario.sales.n]).toEqual([120, 86]);
+  await expect(blk).toContainText('selon les ventes saisies (400 billets vendus)');
+  // production : quotas prévus (qty) et billets vendus (real_qty) distincts ; « selon les ventes » en plus, dans les quotas
+  k = await breaks(page, 'bg-10');
+  expect(k.scenarios.map(x => x[1])).toEqual(['répartition prévue (quotas)', 'selon les ventes saisies (50 billets vendus)', 'billets les moins chers d’abord', 'billets les plus chers d’abord']);
+  expect(Object.fromEntries(Object.entries(k.readings[0].byScenario).map(([sc, r]) => [sc, r.n]))).toEqual({ mix: 100, sales: 75, low: 125, high: 75 });
   expectClean(ctx);
 });
 
@@ -204,7 +222,7 @@ const CNM_CASES = {
   D: { cnm_bearer: 'organisateur', cnm_in_result: false },
   E: { cnm_bearer: 'organisateur', cnm_in_result: true, manual: true },
 };
-test('v1.60.3 CNM de coréalisation : une seule déduction (partage OU dépense de la date), rapprochement des cas', async ({ page }) => {
+test('v1.60.3 CNM de coréalisation : break prévisionnel sans double déduction ; dépenses et reste artiste inchangés ; effet (assiette, supporte, paie) sans payeur inventé', async ({ page }) => {
   const ctx = await openApp(page);
   const shows = [], lines = [];
   for (const [k, c] of Object.entries(CNM_CASES)) {
@@ -221,18 +239,24 @@ test('v1.60.3 CNM de coréalisation : une seule déduction (partage OU dépense 
     return Object.fromEntries(ids.map(id => { const s = byId('shows', id), k = c.coreaCalc(s), x = br.coreaBreaks(s);
       return [id.slice(3), { share: k.share, expenses: showBudgetExp(b, s), brk: x.byScenario.mix.n }]; }));
     function showBudgetExp(b, s) { return b.showBudget(s).expenses; } }, shows.map(s => s.id));
-  // part producteur (assiette partagée) ; dépenses de la date ; équilibre de L'ArtBo (billets)
+  // part producteur (assiette partagée) ; dépenses de la date (INCHANGÉES, rapprochement à part) ; break prévisionnel de L'ArtBo (billets)
   expect(out).toEqual({
-    A: { share: 2860, expenses: 2000, brk: 208 },   // avant : dépenses 2 280 (CNM aussi en dépense) → 237 : double déduction supprimée
-    B: { share: 3000, expenses: 2280, brk: 216 },   // dépense de L'ArtBo seule ; équilibre : CNM selon n billets (avant : 280 figés → 228)
+    A: { share: 2860, expenses: 2280, brk: 208 },   // break : CNM déduite une seule fois (avant 237) ; dépenses inchangées
+    B: { share: 3000, expenses: 2280, brk: 216 },   // break : CNM de L'ArtBo selon n billets (avant : 280 figés → 228)
     C: { share: 2860, expenses: 2000, brk: 208 },   // inchangé
     D: { share: 3000, expenses: 2000, brk: 200 },   // inchangé
-    E: { share: 2860, expenses: 2000, brk: 214 },   // CNM réelle saisie et payée (280 € fixes) : déduite du partage seulement (avant : 2 280 → 242)
+    E: { share: 2860, expenses: 2280, brk: 214 },   // break : CNM réelle (280 € fixes) déduite une seule fois (avant 242) ; dépenses inchangées
   });
   // la ligne payée reste un mouvement réel du compte (non retirée)
   expect(await page.evaluate(async () => (await import('./js/budget.js')).accountMoves('art-a').some(m => /CNM/.test(m.label)))).toBe(true);
   await openBudget(page, 'cn-A');
-  await expect(page.locator('#prod-cn-A')).toContainText('non comptée en dépense : CNM déduite du résultat partagé (une seule déduction)');
-  await expect(page.locator('#prod-cn-A .cnm-block')).toContainText('supportée via le partage (50 % par le producteur, 50 % par la structure)');
+  await expect(page.locator('#prod-cn-A')).toContainText('CNM aussi déduite du résultat partagé : comptée ici en dépense de la date, rapprochement à faire (non corrigé)');
+  const eff = page.locator('#prod-cn-A .cnm-block');
+  await expect(eff).toContainText('part du producteur réduite de 50 % de la CNM');
+  await expect(eff).toContainText('supportée par : L’ArtBoristerie');
+  await expect(eff).toContainText('payeur effectif à préciser');          // aucune ligne CNM payée : rien d'inventé
+  await openBudget(page, 'cn-E');
+  await expect(page.locator('#prod-cn-E .cnm-block')).toContainText('payée par : ');
+  await expect(page.locator('#prod-cn-E .cnm-block')).not.toContainText('payeur effectif à préciser');
   expectClean(ctx);
 });

@@ -63,7 +63,8 @@
     ],
   };
   // Une table inconnue se comporte comme une table vide (client_errors, etc.)
-  const DB = window.__DB = new Proxy(JSON.parse(JSON.stringify(seed)), { get: (o, k) => (k in o ? o[k] : (typeof k === 'string' ? (o[k] = []) : undefined)) });
+  // outil de rapprochement (tests/outils) : un extrait JSON remplace les données fictives ; tout reste en mémoire, rien n'est envoyé
+  const DB = window.__DB = new Proxy(JSON.parse(JSON.stringify(window.__SEED_OVERRIDE || seed)), { get: (o, k) => (k in o ? o[k] : (typeof k === 'string' ? (o[k] = []) : undefined)) });
   window.__calls = [];
   const clone = v => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
   const CONFIRMED = ['Confirmée Salle', 'Confirmée Festival'];
