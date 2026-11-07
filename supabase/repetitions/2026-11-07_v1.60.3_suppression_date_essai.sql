@@ -1,0 +1,111 @@
+-- Essais v1.60.3 (base jetable, données fictives) : chaque échec lève « ECHEC n ».
+insert into app_users values ('equipe@test.local') on conflict do nothing;
+grant execute on function public.show_deletion_state(uuid), public.delete_show(uuid) to authenticated;
+set role authenticated;
+do $e$
+declare pa uuid; d1 uuid; d2 uuid; d3 uuid; d4 uuid; d5 uuid; d6 uuid; d7 uuid; d8 uuid; d9 uuid; d10 uuid; t1 uuid; p1 uuid; ok boolean; e text; n int; r jsonb; j jsonb;
+begin
+  -- hors équipe
+  perform set_config('request.jwt.claims', '{"email":"inconnu@test.local","role":"authenticated"}', false);
+  begin perform public.delete_show(gen_random_uuid()); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e <> 'Accès refusé' then raise exception 'ECHEC 1 : hors équipe (%)', e; end if;
+  begin perform public.show_deletion_state(gen_random_uuid()); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e <> 'Accès refusé' then raise exception 'ECHEC 1b : état hors équipe (%)', e; end if;
+
+  perform set_config('request.jwt.claims', '{"email":"equipe@test.local","role":"authenticated"}', false);
+  insert into projects (name) values ('ESSAI v1.60.3') returning id into pa;
+
+  -- 2. date rouverte (clôture + réouverture), une ligne non émise, une dépense, une tâche
+  insert into shows (project_id, venue, date, contract_type, fee_ht) values (pa, 'ESSAI Rouverte', current_date + 30, 'Co-Production', 0) returning id into d1;
+  insert into show_payments (show_id, kind, label, amount) values (d1, 'autre', 'Recette', 500);
+  insert into budget_lines (project_id, show_id, category, label, amount) values (pa, d1, 'Salle', 'Location', 1000);
+  insert into tasks (title, show_id) values ('Tâche de la date', d1) returning id into t1;
+  perform public.close_result(d1, '{"result":1500}');
+  perform public.reopen_result(d1, 'Erreur de saisie');
+  -- avant correction : la suppression directe échoue sur la clé étrangère (constat du défaut)
+  begin delete from shows where id = d1; ok := true; exception when foreign_key_violation then ok := false; end;
+  if ok then raise exception 'ECHEC 2a : la suppression directe aurait dû buter sur result_closures'; end if;
+  j := public.show_deletion_state(d1);
+  if jsonb_array_length(j -> 'blocked') <> 0 or (j ->> 'closures')::int <> 2 or (j ->> 'tasks')::int <> 1 or (j ->> 'payments')::int <> 1 or (j ->> 'budget_lines')::int <> 1 then
+    raise exception 'ECHEC 2b : état inattendu %', j; end if;
+  r := public.delete_show(d1);
+  if exists (select 1 from shows where id = d1) then raise exception 'ECHEC 2c : date non supprimée'; end if;
+  if exists (select 1 from show_payments where show_id = d1) or exists (select 1 from budget_lines where show_id = d1) then raise exception 'ECHEC 2d : lignes restées'; end if;
+  if (select show_id from tasks where id = t1) is not null then raise exception 'ECHEC 2e : tâche non détachée'; end if;
+  if exists (select 1 from result_closures where show_id = d1) then raise exception 'ECHEC 2f : historique resté lié'; end if;
+  select snapshot into j from show_deletions where show_id = d1;
+  if j is null or jsonb_array_length(j -> 'result_closures') <> 2 or (j -> 'result_closures' -> 1 ->> 'reason') <> 'Erreur de saisie'
+     or jsonb_array_length(j -> 'payments') <> 1 or jsonb_array_length(j -> 'budget_lines') <> 1 or jsonb_array_length(j -> 'tasks_detached') <> 1
+     or (j -> 'show' ->> 'venue') <> 'ESSAI Rouverte' then raise exception 'ECHEC 2g : copie incomplète %', j; end if;
+  if (select actor from show_deletions where show_id = d1) <> 'equipe@test.local' then raise exception 'ECHEC 2h : auteur non noté'; end if;
+  if not exists (select 1 from finance_log where show_id = d1 and op = 'DELETE' and table_name = 'shows') then raise exception 'ECHEC 2i : finance_log sans la suppression'; end if;
+  if (r ->> 'closures')::int <> 2 or (r ->> 'tasks')::int <> 1 then raise exception 'ECHEC 2j : bilan %', r; end if;
+
+  -- 3. résultat clôturé : refus
+  insert into shows (project_id, venue, contract_type, fee_ht) values (pa, 'ESSAI Clôturée', 'Co-Production', 0) returning id into d2;
+  perform public.close_result(d2, '{"result":1}');
+  begin perform public.delete_show(d2); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like 'Le résultat de cette date est clôturé%' then raise exception 'ECHEC 3 : %', e; end if;
+  if not exists (select 1 from shows where id = d2) or (select count(*) from result_closures where show_id = d2) <> 1 then raise exception 'ECHEC 3b : modifiée malgré le refus'; end if;
+
+  -- 4. facture émise : refus, rien de touché (ni date, ni ligne, ni journal des suppressions)
+  select count(*) into n from show_deletions;
+  insert into shows (project_id, venue, fee_ht) values (pa, 'ESSAI Facturée', 1000) returning id into d3;
+  insert into show_payments (show_id, kind, label, amount, invoice_number, sent_at) values (d3, 'acompte', 'Acompte', 300, 'F-1', current_date) returning id into p1;
+  insert into tasks (title, show_id) values ('Tâche facturée', d3);
+  begin perform public.delete_show(d3); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like 'Cette date a des factures émises%' then raise exception 'ECHEC 4 : %', e; end if;
+  if not exists (select 1 from show_payments where id = p1) or not exists (select 1 from tasks where show_id = d3)
+     or (select count(*) from show_deletions) <> n then raise exception 'ECHEC 4b : modifiée malgré le refus'; end if;
+  -- la protection de la base reste active hors fonction (suppression directe refusée par show_payments_emitted_guard)
+  begin delete from shows where id = d3; ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok then raise exception 'ECHEC 4c : facture émise supprimée en direct'; end if;
+
+  -- 5. lien Pennylane (devis), facture Pennylane connue, historique de rattachement, pièce à rattacher, versement : refus
+  insert into shows (project_id, venue, pennylane_quote_id) values (pa, 'ESSAI Devis', '123') returning id into d4;
+  begin perform public.delete_show(d4); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like 'Cette date est liée à un document Pennylane%' then raise exception 'ECHEC 5a : %', e; end if;
+  insert into shows (project_id, venue) values (pa, 'ESSAI À rattacher') returning id into d5;
+  reset role; insert into pennylane_a_rattacher (pennylane_id, show_id) values ('PL-1', d5); set role authenticated;
+  begin perform public.delete_show(d5); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like 'Cette date a 1 facture Pennylane%' then raise exception 'ECHEC 5b : %', e; end if;
+  if not exists (select 1 from pennylane_a_rattacher where show_id = d5) then raise exception 'ECHEC 5b2 : facture à rattacher effacée'; end if;
+  insert into shows (project_id, venue) values (pa, 'ESSAI Rattachement') returning id into d6;
+  reset role; insert into pennylane_rattachements (show_id, pennylane_id) values (d6, 'PL-2'); set role authenticated;
+  begin perform public.delete_show(d6); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like '%historique de rattachement%' then raise exception 'ECHEC 5c : %', e; end if;
+  insert into shows (project_id, venue) values (pa, 'ESSAI Pièce') returning id into d7;
+  insert into attachments (name, path) values ('f.pdf', 'budget/' || d7 || '/f.pdf');
+  begin perform public.delete_show(d7); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like 'Cette date a 1 pièce à rattacher%' then raise exception 'ECHEC 5d : %', e; end if;
+  insert into shows (project_id, venue, prod_mode) values (pa, 'ESSAI Versement', 'production') returning id into d8;
+  insert into show_payments (show_id, kind, label, amount) values (d8, 'artbo', 'Commission', 100) returning id into p1;
+  reset role; insert into commission_transfers (payment_id, amount, transferred_at) values (p1, 40, current_date); set role authenticated;
+  begin perform public.delete_show(d8); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like 'Cette date a des factures émises%' then raise exception 'ECHEC 5e : %', e; end if;
+
+  -- 6. ligne hors calcul : refus
+  insert into shows (project_id, venue, contract_type) values (pa, 'ESSAI Hors calcul', 'Co-Production') returning id into d9;
+  perform set_config('matrice.regularisation', 'hors_calcul', true);
+  reset role; insert into show_payments (show_id, kind, label, hors_calcul) values (d9, 'acompte', 'Import', 'import'); set role authenticated;
+  perform set_config('matrice.regularisation', '', true);
+  begin perform public.delete_show(d9); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like 'Cette date garde des lignes hors calcul%' then raise exception 'ECHEC 6 : %', e; end if;
+
+  -- 7. date simple avec tâches (clé NO ACTION) : supprimée, tâches gardées
+  insert into shows (project_id, venue) values (pa, 'ESSAI Simple') returning id into d10;
+  insert into tasks (title, show_id) values ('T1', d10), ('T2', d10);
+  r := public.delete_show(d10);
+  if (select count(*) from tasks where title in ('T1', 'T2') and show_id is null) <> 2 then raise exception 'ECHEC 7'; end if;
+
+  -- 8. date introuvable ; journal en lecture seule
+  begin perform public.delete_show(d10); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like 'Date introuvable%' then raise exception 'ECHEC 8 : %', e; end if;
+  begin insert into show_deletions (show_id, snapshot) values (gen_random_uuid(), '{}'); ok := true; exception when others then ok := false; end;
+  if ok then raise exception 'ECHEC 8b : écriture directe dans le journal'; end if;
+  begin delete from show_deletions; ok := true; exception when others then ok := false; end;
+  if ok then raise exception 'ECHEC 8c : effacement du journal'; end if;
+  begin update show_deletions set label = 'x'; ok := true; exception when others then ok := false; end;
+  if ok then raise exception 'ECHEC 8d : modification du journal'; end if;
+  raise notice 'ESSAIS v1.60.3 : 8 groupes, tous réussis';
+end $e$;

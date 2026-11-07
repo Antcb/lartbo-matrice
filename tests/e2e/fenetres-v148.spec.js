@@ -84,7 +84,7 @@ test('v1.48 suppression d’une date depuis sa fenêtre : la question nomme la d
   await page.evaluate(async () => { (await import('./js/forms.js')).editShow('sh-2'); });
   await page.locator('#modal [data-act="modalDelete"]').click();
   await expect(dlg(page)).toContainText('Salle Exemple');
-  await expect(dlg(page)).toContainText('lignes de facturation et son budget');
+  await expect(dlg(page)).toContainText('aucune ligne de facturation ni de budget');   // texte détaillé depuis la v1.60.3
   await dlg(page).locator('button', { hasText: 'Annuler' }).click();
   expect(await db(page, 'shows', 'sh-2')).not.toBeNull();
   expectClean(ctx);
