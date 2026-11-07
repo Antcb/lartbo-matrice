@@ -73,6 +73,10 @@ test('v1.60.2 prospection : contacts liés uniquement à des structures inactive
   await seed(page, DATA);
   await page.evaluate(async () => { (await import('./js/prospection.js')).openProspection('zo'); });
   const search = page.locator('#pr-cc-q'), cc = page.locator('#pr-cc');
+  // openModal donne le focus à son premier champ 30 ms après l'ouverture : on attend ce focus avant de taper ailleurs ; sinon (machine
+  // lente) il arrive pendant la saisie, ferme la liste de suggestions et l'élément attendu n'apparaît plus (test instable sur GitHub)
+  const focusInitial = async loc => { await expect(loc).toBeVisible(); await page.evaluate(() => new Promise(r => setTimeout(r, 100))); };
+  await focusInitial(search);
   await search.fill('exemple.invalid');
   await expect(page.locator('.ac-item', { hasText: 'fanny@exemple.invalid' })).toHaveCount(0);
   await expect(page.locator('.ac-item', { hasText: 'marc@exemple.invalid' })).toHaveCount(1);       // lié aussi à une structure active
@@ -85,6 +89,7 @@ test('v1.60.2 prospection : contacts liés uniquement à des structures inactive
   await page.locator('#modal [data-act=closeModal]').first().click();
   // mail d'une date (pas une prospection) : la recherche propose tout, comme avant
   await page.evaluate(async () => { (await import('./js/mail.js')).prepareMail('zs-1', 'confirmation'); });
+  await focusInitial(page.locator('#ml-cc-q'));
   await page.locator('#ml-cc-q').fill('fanny');
   await expect(page.locator('.ac-item', { hasText: 'fanny@exemple.invalid' })).toHaveCount(1);
   await expect(page.locator('.ac-item', { hasText: 'Afficher aussi' })).toHaveCount(0);
