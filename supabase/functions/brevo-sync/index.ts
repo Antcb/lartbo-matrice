@@ -124,7 +124,6 @@ Deno.serve(async (req) => {
       const known = await brevoEmails(key);
       const seen = new Set<string>();
       // chaque mail du contact (mail 1 et mail 2) devient un contact Brevo
-      const list: { c: Contact; email: string }[] = [];
       const cand: { c: Contact; email: string }[] = [];
       for (const c of all) for (const e of mailsOf(c)) { if (known.has(e) || seen.has(e)) continue; seen.add(e); cand.push({ c, email: e }); }
       if (!cand.length) return json({ ok: true, count: 0, skipped_inactive: 0 });

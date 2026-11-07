@@ -1,7 +1,7 @@
 // v1.60.2 — lieux sélectionnables dans les dates et les suivis (adresse, code postal), bonne localisation sur la carte.
 // Données FICTIVES ; géocodage neutralisé par les tests (aucun service réel appelé).
 import { test, expect } from '@playwright/test';
-import { openApp, expectClean } from './helpers.js';
+import { openApp, preparePage, expectClean } from './helpers.js';
 
 const LIEU = { id: 'st-lieu', name: 'Zz Salle Réelle', address: '1 rue Fictive', postal_code: '30200', city: 'Bourg-Réel', country: 'France',
   department_code: '30', tags: ['Salle'], lat: 44.16, lng: 4.62 };
@@ -109,5 +109,14 @@ test('v1.60.2 suivi : nom tapé sans choisir → gardé, « non localisé », ja
   expect(await page.evaluate(() => window.__DB.prospects.find(p => p.id === 'pr-1').lat)).toBeNull();
   await expect(page.locator('.ws-who')).toContainText('non localisé');
   expect(await page.evaluate(async () => (await import('./js/selectors.js')).suiviCoords((await import('./js/selectors.js')).byId('prospects', 'pr-1')))).toBeNull();
+  expectClean(ctx);
+});
+
+test('v1.60.2 relecture : la fiche publique propose l’adresse et le code postal du lieu de la date, pas ceux de la structure', async ({ page }) => {
+  const ctx = await preparePage(page, { session: false });
+  await page.goto('/fiche.html?t=jeton-fiche-lieu-00001');
+  await expect(page.locator('#fiche-form')).toBeVisible();
+  await expect(page.locator('#fiche-form [name="venue_address"]')).toHaveValue('12 rue du Lieu Réel');
+  await expect(page.locator('#fiche-form [name="venue_postal_code"]')).toHaveValue('30200');
   expectClean(ctx);
 });
