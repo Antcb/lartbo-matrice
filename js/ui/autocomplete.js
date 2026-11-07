@@ -7,15 +7,18 @@
  *   - kind  : une des SOURCES ci-dessous
  *   - attrs : attributs posés sur l'input caché qui porte l'identifiant (name="…" ou data-t/data-id/data-f)
  *   - fill  : pour les adresses, préfixe des champs du formulaire à remplir automatiquement
- *   - activeOnly : structures — les inactives (v1.54) ne sont pas proposées ; une ligne « Afficher aussi … » les montre sur demande
+ *   - activeOnly : structures — les inactives (v1.54) ne sont pas proposées ; une ligne « Afficher aussi … » les montre sur demande ;
+ *                  destinataires (rcpt) d'une prospection — contacts liés uniquement à des structures inactives, même principe (v1.60.2)
  * Au choix, l'input caché reçoit l'identifiant et déclenche « change » (enregistrement direct ou formulaire).
  */
-import { byId, isInactive, linksOfStructure, showLabel, structName } from '../selectors.js';
+import { byId, contactMails, isInactive, linksOfStructure, onlyInactive, showLabel, structName } from '../selectors.js';
 import { S } from '../state.js';
 import { esc, fmtDate, hayOf, norm } from '../utils.js';
 import { searchPlaces } from '../geo.js';
 
 const LIMIT = 12;
+/** Adresses d'un contact (mail 1, mail 2), sans doublon : même liste que pour « À » (contactMails) */
+const mailsOf = c => contactMails(c).split(', ').filter(Boolean);
 
 function rank(rows, q, text, limit=LIMIT){
   const words = norm(q).split(/\s+/).filter(Boolean);
@@ -42,6 +45,18 @@ export const SOURCES = {
     label: id => byId('contacts', id)?.display_name || '',
     search: q => rank(S.db.contacts, q, c => `${c.display_name} — ${c.email||''} ${c.email_2||''}`)
       .map(c => ({id:c.id, label:c.display_name, hint:[c.email, c.email_2].filter(Boolean).join(' · ')})),
+  },
+  // destinataires d'un mail (v1.60.2) : un contact se trouve par son nom ou par N'IMPORTE LAQUELLE de ses adresses, et chacune de
+  // ses adresses est proposée (une ligne par adresse, celle qui correspond à la saisie d'abord) ; l'identifiant est l'adresse
+  rcpt: {
+    label: () => '',
+    search: q => rank(S.db.contacts, q, c => `${c.display_name} — ${c.email||''} ${c.email_2||''}`).flatMap(c => {
+      const mails = mailsOf(c), n = norm(q), hit = m => hayOf(m).includes(n) ? 0 : 1;
+      if (!mails.length) return [{id:'sans-adresse:' + c.id, label:c.display_name, inactive:onlyInactive(c), hint:'pas d’adresse mail'}];
+      return [...mails].sort((a, b) => hit(a) - hit(b))
+        .map(m => ({id:m, label:`${c.display_name} · ${m}`, inactive:onlyInactive(c),
+          hint:[mails.length > 1 ? `adresse ${mails.indexOf(m) + 1} sur ${mails.length}` : '', onlyInactive(c) ? 'structures inactives uniquement' : ''].filter(Boolean).join(' · ')}));
+    }).sort((a, b) => a.inactive - b.inactive),   // comme les structures : liés uniquement à des structures inactives en dernier
   },
   shows: {
     label: id => showLabel(byId('shows', id)),
@@ -135,7 +150,10 @@ async function update(input){
   if (box.dataset.activeOnly && !box._showInactive){
     const n = items.filter(it => it.inactive).length;
     items = items.filter(it => !it.inactive);
-    if (n) items.push({more:true, label:`Afficher aussi ${n} structure${n>1?'s':''} inactive${n>1?'s':''}`, hint:'fermée(s), gardée(s) avec leur historique'});
+    if (n) items.push(kind === 'rcpt'
+      // prospection (v1.60.2) : contacts liés uniquement à des structures inactives, montrés seulement sur demande
+      ? {more:true, label:`Afficher aussi ${n} adresse${n>1?'s':''} de contacts liés uniquement à des structures inactives`, hint:'hors prospection par défaut'}
+      : {more:true, label:`Afficher aussi ${n} structure${n>1?'s':''} inactive${n>1?'s':''}`, hint:'fermée(s), gardée(s) avec leur historique'});
   }
   if (box.dataset.create) items = items.concat([{create:true, label:`+ Créer « ${q} »`, q}]);
   OPEN.items = items; OPEN.idx = 0; draw();

@@ -5,7 +5,7 @@
 import { CFG } from '../config.js';
 import { TASK_STATUS, TEAM_NAMES } from '../constants.js';
 import { lingering } from '../data.js';
-import { suiviClosed, projFilterOk, deptColor, deptNames, attachmentsOf, isDone, projIds, projNames, prospectsOfStructure, showLabel, byId, structName, taskSort, teamName, urgency } from '../selectors.js';
+import { suiviClosed, relanceTaskSuspended, projFilterOk, deptColor, deptNames, attachmentsOf, isDone, projIds, projNames, prospectsOfStructure, showLabel, byId, structName, taskSort, teamName, urgency } from '../selectors.js';
 import { S } from '../state.js';
 import { trace } from '../diag.js';
 import { deptBadge, inactiveToggle, projPicker, viewHead } from '../ui/bits.js';
@@ -65,7 +65,8 @@ export function viewTodo(){
   // Pour qui : tout le monde, moi, ou une autre personne de l'équipe
   const who = S.todoWho || '';
   if (who) tasks = tasks.filter(t => t.assigned_to === (who === 'me' ? S.user.email : who));
-  if (f==='late') tasks = tasks.filter(t=>{ const d=daysUntil(t.deadline); return d!=null && d<=7 && open(t); });
+  // relances suspendues (contacts liés uniquement à des structures inactives, v1.60.2) : jamais dans « Urgentes »
+  if (f==='late') tasks = tasks.filter(t=>{ const d=daysUntil(t.deadline); return d!=null && d<=7 && open(t) && !relanceTaskSuspended(t); });
   if (f==='done'){ const since = new Date(Date.now() - 30*864e5).toISOString(); tasks = tasks.filter(t => t.status==='Done' && (t.done_at||t.updated_at||'') >= since); }
   if (f === 'done') trace('todo terminées', {all: S.db.tasks.length, done: S.db.tasks.filter(t => t.status === 'Done').length, shown: tasks.length, who, dept, projects: S.projects});
   const byDept = d => tasks.filter(t => (t.department||'') === d).length;
