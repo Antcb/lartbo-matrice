@@ -9,12 +9,13 @@ import { allPaymentsOf, hasFinancialRecord, showRemovalState } from './calc.js';
 import { render } from './app.js';
 import { CFG } from './config.js';
 import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PRIORITY_OPTS, PROSPECT, PROSPECT_OPTS, STATUSES, TASK_STATUS, TASK_STATUS_OPTS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
-import { archiveShow, deleteShow, insert, purgeStored, refreshFor, remove, removeWhere, save, saveLinger, sb, showDeletionState, signedUrl, syncLinks, uploadFiles } from './data.js';
+import { archiveShow, deleteShow, insert, reactivateReminders, purgeStored, refreshFor, remove, removeWhere, save, saveLinger, sb, showDeletionState, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode, geoFrance, searchPlaces } from './geo.js';
 import { contactMails, contactsWithMail, defaultCommission, settingAcompte, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, placeOfSuivi, projIds, showPlaceNote, projName, projectOptions, prospectTitle, spectaclesOf } from './selectors.js';
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
-import { fileRow } from './ui/bits.js';
+import { fileRow, remindersSuspendedNote } from './ui/bits.js';
+import { remindersOf } from './reminders.js';
 import { hiddenFields, openModal } from './ui/modal.js';
 import { $, downloadCSV, esc, fmtDate, norm, toast, today, workDay, addDays, pct } from './utils.js';
 import { driveHTML } from './views/production.js';
@@ -168,11 +169,34 @@ async function showRemove(id, choice){
   return r;
 }
 
+/**
+ * « Réactiver les relances » d'une date restaurée (v1.60.3, décision d'Anthony du 07/11) : une prochaine échéance par relance
+ * concernée (proposée : l'échéance d'origine, ou aujourd'hui si elle est passée ; jamais avant aujourd'hui). Échéances d'origine
+ * intactes ; la relance ne part ni avant la date choisie ni avant son échéance d'origine. Tracé côté serveur.
+ */
+export function reactivateRemindersWindow(id, level = 1){
+  const s = byId('shows', id); if (!s) return;
+  const now = today(), groups = new Map();
+  for (const r of remindersOf(s, {all: true})){ const g = groups.get(r.key) || {titles: [], origin: r.origin}; g.titles.push(r.title); if (r.origin < g.origin) g.origin = r.origin; groups.set(r.key, g); }
+  const keys = [...groups.keys()], values = Object.fromEntries(keys.map(k => [k, groups.get(k).origin > now ? groups.get(k).origin : now]));
+  const fields = keys.map(k => ({k, type: 'date', full: true, label: `${[...new Set(groups.get(k).titles)].join(' · ')} — échéance d’origine : ${fmtDate(groups.get(k).origin)}`}));
+  return openModal({level, title: 'Réactiver les relances', saveLabel: 'Réactiver les relances', values, fields,
+    extraTop: `<p class="help full">${esc([s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · '))} : choisis la prochaine échéance de chaque relance. Les échéances d’origine ne changent pas ; une relance ne part ni avant la date choisie, ni avant son échéance d’origine.${keys.length ? '' : ' Aucune relance n’est en cours pour cette date : les prochaines suivront leurs échéances d’origine.'}</p>`,
+    onSave: async v => {
+      for (const k of keys){ if (!v[k]){ toast('Choisis la prochaine échéance de chaque relance', true); return false; }
+        if (v[k] < now){ toast('Choisis une prochaine échéance à partir d’aujourd’hui', true); return false; } }
+      const ok = await reactivateReminders(id, Object.fromEntries(keys.map(k => [k, v[k]])));
+      if (ok) toast('Relances réactivées');
+      return ok;
+    }});
+}
+
 export function editShow(id, projectId, prefill={}){
   const s = id ? byId('shows', id) : {status:'Intérêt Salle', contract_type:'Cession', project_id: projectId||S.project||null, communication_enabled:true, date:null, ...prefill};
   const extra = hiddenFields(s, [['lat',1],['lng',1],['prospect_id']])
     + (id && s.structure_id ? `<div class="full"><button type="button" class="btn sm" data-act="openStructure" data-id="${s.structure_id}">Ouvrir la fiche structure et son suivi</button></div>` : '')
-    + (id && s.status?.startsWith('Confirmée') ? `<div class="full drive">${driveHTML(s)}</div>` : '');
+    + (id && s.status?.startsWith('Confirmée') ? `<div class="full drive">${driveHTML(s)}</div>` : '')
+    + remindersSuspendedNote(s, 2);   // relances suspendues après restauration (v1.60.3) : réactivation dans une 2e fenêtre
   const p = openModal({
     title: id ? s.venue : 'Nouvelle date', fields: showFields(s), values: s, extra,
     deleteAsk: () => showDeleteAsk(s),

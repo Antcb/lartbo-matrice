@@ -8,7 +8,7 @@ import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
 import { byId, isArchived, projName, setting, showsFiltered, spectacleName, structName } from '../selectors.js';
 import { followedInvoice, lateSteps, remindersOf } from '../reminders.js';
 import { S } from '../state.js';
-import { filterBar, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
+import { filterBar, remindersSuspendedNote, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cChk, cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { esc, eur2, fmtDate, matches, today, pct } from '../utils.js';
@@ -97,6 +97,7 @@ function prodBody(s, booking, steps, pays, late){
   const body = {conditions: () => conditionsTab(s, booking), factures: () => billingTab(s, booking, pays, late),
     budget: () => isProductionShow(s) ? productionBudgetHTML(s) : showBudgetHTML(s), suivi: () => suiviTab(s, booking, steps, late), notes: () => notesTab(s)}[cur]();
   return `<div class="prod-body">
+    ${remindersSuspendedNote(s)}
     ${actionsBar(s, booking)}
     ${tabsBar(key, tabs.map(([k, l, n]) => [k, l, n]))}
     <div class="prod-tab">${body}</div>

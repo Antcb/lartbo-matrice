@@ -39,8 +39,10 @@
 --     financier ne change) ; distinct d'une annulation (statut) et d'une suppression (delete_show).
 --     Fiche publique (fiche_get, fiche_submit) : « Dossier indisponible » pour une date archivée, données conservées ;
 --     la restauration rétablit l'accès. Notifications non retirées de la date : marquées « retirées » à l'archivage
---     (notifications.withdrawn_at, historique conservé, rien n'est supprimé). Restauration : aucune relance immédiate —
---     une échéance tombée avant « restaurée le + 7 jours » est reportée à ce jour-là (jour ouvré), clés anti-doublon propres.
+--     (notifications.withdrawn_at, historique conservé, rien n'est supprimé). Restauration (décision d'Anthony du 07/11) :
+--     échéances d'origine intactes, AUCUNE relance reprise automatiquement — les relances de la date restent suspendues
+--     (shows.reminders_suspended_at) jusqu'à « Réactiver les relances » (reactivate_reminders), où l'utilisateur choisit la
+--     prochaine échéance de chaque relance (shows.reminders_next ; jamais avant l'échéance d'origine) ; tracé dans archive_history.
 --     Facture (ou facture Pennylane à rattacher) arrivée sur une date archivée : rattachement conservé + notification
 --     d'alerte (déclencheurs ci-dessous, sans toucher à la fonction pennylane).
 --  5. Tâches détachées par une suppression : une mention « Date supprimée le … : <date · lieu · artiste> » est ajoutée en tête
@@ -105,7 +107,12 @@ alter table public.shows add column if not exists archived_at timestamptz;
 alter table public.shows add column if not exists archived_by text;
 alter table public.shows add column if not exists archived_reason text;
 alter table public.shows add column if not exists archive_history jsonb not null default '[]'::jsonb;
-alter table public.shows add column if not exists restored_at timestamptz;   -- dernière restauration : délai avant toute relance
+alter table public.shows add column if not exists restored_at timestamptz;   -- dernière restauration
+-- relances après une restauration : suspendues jusqu'à une réactivation explicite, avec les prochaines échéances choisies
+alter table public.shows add column if not exists reminders_suspended_at timestamptz;
+alter table public.shows add column if not exists reminders_reactivated_at timestamptz;
+alter table public.shows add column if not exists reminders_next jsonb;   -- {relance: 'AAAA-MM-JJ'} (clés de generate_reminders)
+comment on column public.shows.reminders_next is 'Prochaine échéance choisie à la réactivation des relances (v1.60.3) : {relance: date} ; la relance ne part ni avant cette date ni avant son échéance d''origine';
 alter table public.notifications add column if not exists withdrawn_at timestamptz;   -- notification retirée de la liste active (gardée)
 alter table public.notifications add column if not exists withdrawn_reason text;
 comment on column public.notifications.withdrawn_at is 'Notification retirée de la liste active (v1.60.3 : date archivée / restaurée) ; gardée pour l''historique, jamais supprimée';
@@ -118,13 +125,15 @@ begin
   if coalesce(current_setting('matrice.archive_rpc', true), '') = 'on' then return new; end if;
   if tg_op = 'INSERT' then
     if new.archived_at is not null or new.archived_by is not null or new.archived_reason is not null or new.restored_at is not null
+       or new.reminders_suspended_at is not null or new.reminders_reactivated_at is not null or new.reminders_next is not null
        or coalesce(new.archive_history, '[]'::jsonb) <> '[]'::jsonb then
       raise exception 'Une date ne se crée pas archivée.' using errcode = 'P0001'; end if;
     return new;
   end if;
   if new.archived_at is distinct from old.archived_at or new.archived_by is distinct from old.archived_by
      or new.archived_reason is distinct from old.archived_reason or new.archive_history is distinct from old.archive_history
-     or new.restored_at is distinct from old.restored_at then
+     or new.restored_at is distinct from old.restored_at or new.reminders_suspended_at is distinct from old.reminders_suspended_at
+     or new.reminders_reactivated_at is distinct from old.reminders_reactivated_at or new.reminders_next is distinct from old.reminders_next then
     raise exception 'Archivage et restauration d’une date : utiliser les boutons « Archiver la date » / « Restaurer ».' using errcode = 'P0001';
   end if;
   return new;
@@ -264,7 +273,9 @@ begin
   if not found then raise exception 'Date introuvable : elle a peut-être déjà été supprimée.' using errcode = 'P0001'; end if;
   if s.archived_at is null then raise exception 'Cette date n’est pas archivée.' using errcode = 'P0001'; end if;
   perform set_config('matrice.archive_rpc', 'on', true);
+  -- échéances d'origine intactes ; relances suspendues jusqu'à « Réactiver les relances » (décision d'Anthony du 07/11)
   update shows set archived_at = null, archived_by = null, archived_reason = null, restored_at = now(),
+         reminders_suspended_at = now(), reminders_reactivated_at = null, reminders_next = null,
          archive_history = coalesce(archive_history, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('action', 'restore', 'at', now(), 'by', who))
    where id = p_show;
   perform set_config('matrice.archive_rpc', '', true);
@@ -274,6 +285,33 @@ begin
 end $$;
 revoke all on function public.restore_show(uuid) from public, anon, authenticated, service_role;
 grant execute on function public.restore_show(uuid) to authenticated;
+
+-- Réactivation explicite des relances d'une date restaurée : p_next = {relance: 'AAAA-MM-JJ'} (clés de generate_reminders, une
+-- date à partir d'aujourd'hui par relance) ; tracée dans archive_history. Les relances reprennent avec des clés anti-doublon
+-- propres (celles d'avant l'archivage ont été retirées) ; aucune ne part avant l'échéance choisie ni avant son échéance d'origine.
+create or replace function public.reactivate_reminders(p_show uuid, p_next jsonb) returns void
+language plpgsql security definer set search_path = public as $$
+declare s shows%rowtype; who text := coalesce(auth.jwt() ->> 'email', ''); k text; v text; jour date := (now() at time zone 'Europe/Paris')::date;
+begin
+  if not public.is_team() then raise exception 'Accès refusé' using errcode = 'P0001'; end if;
+  select * into s from shows where id = p_show for update;
+  if not found then raise exception 'Date introuvable : elle a peut-être déjà été supprimée.' using errcode = 'P0001'; end if;
+  if s.archived_at is not null then raise exception 'Cette date est archivée : restaure-la d’abord.' using errcode = 'P0001'; end if;
+  if s.reminders_suspended_at is null then raise exception 'Les relances de cette date ne sont pas suspendues.' using errcode = 'P0001'; end if;
+  p_next := coalesce(p_next, '{}'::jsonb);
+  if jsonb_typeof(p_next) <> 'object' then raise exception 'Prochaines échéances illisibles.' using errcode = 'P0001'; end if;
+  for k, v in select key, value from jsonb_each_text(p_next) loop
+    if k !~ '^[a-z_]+$' or v !~ '^\d{4}-\d{2}-\d{2}$' then raise exception 'Prochaine échéance illisible (%).', k using errcode = 'P0001'; end if;
+    if v::date < jour then raise exception 'Choisis une prochaine échéance à partir d’aujourd’hui.' using errcode = 'P0001'; end if;
+  end loop;
+  perform set_config('matrice.archive_rpc', 'on', true);
+  update shows set reminders_suspended_at = null, reminders_reactivated_at = now(), reminders_next = p_next,
+         archive_history = coalesce(archive_history, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('action', 'reactivate_reminders', 'at', now(), 'by', who, 'next', p_next))
+   where id = p_show;
+  perform set_config('matrice.archive_rpc', '', true);
+end $$;
+revoke all on function public.reactivate_reminders(uuid, jsonb) from public, anon, authenticated, service_role;
+grant execute on function public.reactivate_reminders(uuid, jsonb) to authenticated;
 
 -- ─────────────── 5. Rappels : aucune date archivée (generate_reminders RÉÉCRITE ENTIÈREMENT, §7.5) ───────────────
 -- Texte de la v1.49 (migration 2026-10-27_v1.49_dates_formats.sql) + une seule condition (sh.archived_at is null).
@@ -291,7 +329,7 @@ begin
       -- rappels administratifs (étapes, boucles, factures à faire, partenaire) : dates passées de plus de 120 jours exclues ;
       -- factures (à envoyer, impayées) et commission à virer : sans limite de durée (Q13, décision du 27/10)
       (sh.date is null or sh.date >= current_date - 120) recent,
-      (sh.restored_at at time zone 'Europe/Paris')::date restored,   -- v1.60.3 : date restaurée (délai avant relance)
+      sh.reminders_next nxt, to_char(sh.reminders_reactivated_at, 'YYYYMMDDHH24MISS') reactiv,   -- v1.60.3 : relances réactivées
       sh.conf_kit_sent, sh.precontract_done, sh.contract_sent, sh.contract_signed, sh.contract_cosigned_sent, sh.boucle_tech, sh.boucle_com,
       a.id a_id,
       (a.sent_at is not null or a.paid_at is not null or nullif(btrim(a.invoice_number), '') is not null or nullif(btrim(a.pennylane_id), '') is not null) a_emis,
@@ -312,6 +350,7 @@ begin
     left join lateral (select * from show_payments x where x.show_id = sh.id and x.hors_calcul is null and x.kind = 'partner' order by sort limit 1) pt on true
     where sh.status in ('Confirmée Salle','Confirmée Festival')
       and sh.archived_at is null   -- v1.60.3 : une date archivée ne produit aucun rappel (comme dans js/reminders.js)
+      and sh.reminders_suspended_at is null   -- v1.60.3 : date restaurée, relances pas encore réactivées
   ), f as (
     -- factures suivies : production = acomptes, soldes, autres lignes ; booking = facture de commission (jamais acompte / solde)
     select x.id, x.show_id, x.kind, x.sent_at, x.paid_at, x.reminded_at, x.reminders_paused,
@@ -349,15 +388,15 @@ begin
     insert into notifications (kind, title, body, show_id, dedupe_key)
     select c.r, c.t || ' — ' || s.venue,
            concat_ws(' · ', nullif(s.proj,''), to_char(s.date, 'DD/MM/YYYY'), s.city),
-           s.id, c.r || ':' || c.k || ':' || c.raw || coalesce(':r' || to_char(s.restored, 'YYYYMMDD'), '')   -- v1.60.3 : clés propres après restauration
+           s.id, c.r || ':' || c.k || ':' || c.raw || coalesce(':a' || s.reactiv, '')   -- v1.60.3 : clés propres après réactivation
     from cand c join s on s.id = c.id
     -- échéance : J+n décalée au lundi (w) ; boucle accueil & technique (4 mois calendaires) : samedi / dimanche → vendredi précédent
     -- (Q12, v1.49 — même règle que js/reminders.js workDayBefore) ; la clé anti-doublon garde la date brute (aucune notification en double)
-    -- v1.60.3 : date restaurée — aucune relance accumulée envoyée d'un coup : échéance au plus tôt 7 jours après la restauration
-    -- (jour ouvré) ; les échéances suivantes ne changent pas
+    -- v1.60.3 : relances réactivées après une restauration — la relance ne part qu'à la prochaine échéance choisie pour elle
+    -- (reminders_next), jamais avant son échéance d'origine (greatest)
     where c.raw is not null and greatest(case when c.w then public.workday(c.raw)
                                       when c.r = 'boucle_accueil' then c.raw - (case extract(isodow from c.raw) when 6 then 1 when 7 then 2 else 0 end)::int
-                                      else c.raw end, public.workday(s.restored + 7)) <= current_date
+                                      else c.raw end, (s.nxt ->> c.r)::date) <= current_date
     on conflict (dedupe_key) do nothing
     returning 1
   ) select count(*) into n from ins;
