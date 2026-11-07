@@ -120,3 +120,26 @@ test('événement de la structure : jamais l’adresse ni les coordonnées de la
   expect(ev).toEqual({ venue: 'Zz Festival du Siège', address: null, postal_code: null, city: 'Paris', department: '75', lat: null, lng: null });
   expectClean(ctx);
 });
+
+// relecture v1.60.2 (847c131) : enregistrer une ancienne date sans rien changer ne la déplace pas et n'écrit aucune coordonnée
+test('v1.60.2 relecture : ancienne date d’une autre ville enregistrée sans changement → repère hérité conservé, rien n’est écrit', async ({ page }) => {
+  const ST = { id: 'st-siege-rel', name: 'Zz Organisateur', address: '1 avenue du Siège', postal_code: '75011', city: 'Paris', country: 'France', department_code: '75', tags: [], lat: 48.86, lng: 2.38 };
+  const SH = { id: 'sh-old-rel', project_id: null, structure_id: 'st-siege-rel', venue: 'Zz Ancienne date', city: 'Lyon', department: '69', date: '2027-05-01', status: 'Option Salle', contract_type: 'Cession', lat: null, lng: null, fee_ht: 1000 };
+  await openApp(page);
+  let geocode = 0;
+  await page.route(/data\.geopf\.fr/, r => { geocode++; r.fulfill({ contentType: 'application/json', body: JSON.stringify({ features: [{ geometry: { coordinates: [4.83, 45.76] }, properties: { score: 0.9, city: 'Lyon', postcode: '69001', citycode: '69381', context: '69, Rhône', label: 'Lyon', type: 'municipality' } }] }) }); });
+  const avant = await page.evaluate(async ({ ST, SH }) => { const { S, touch } = await import('./js/state.js');
+    SH.project_id = S.db.projects[0].id;
+    for (const [t, r] of [['structures', ST], ['shows', SH]]) { window.__DB[t].push(structuredClone(r)); S.db[t].push(structuredClone(r)); touch(t); }
+    const { showPlace } = await import('./js/selectors.js'); return showPlace(S.db.shows.find(s => s.id === 'sh-old-rel')); }, { ST, SH });
+  expect(avant.state).toBe('inherited');
+  await page.evaluate(async () => { (await import('./js/forms.js')).editShow('sh-old-rel'); });
+  await page.locator('#modal').getByRole('button', { name: /Enregistrer/ }).first().click();
+  await expect(page.locator('#modal')).toBeHidden();
+  const apres = await page.evaluate(async () => { const { S } = await import('./js/state.js'); const s = S.db.shows.find(x => x.id === 'sh-old-rel'); const db = window.__DB.shows.find(x => x.id === 'sh-old-rel');
+    const { showPlace } = await import('./js/selectors.js'); return { app: [s.lat, s.lng], base: [db.lat, db.lng], place: showPlace(s) }; });
+  expect(apres.base).toEqual([null, null]);
+  expect(apres.place.state).toBe('inherited');
+  expect(apres.place.coords).toEqual([48.86, 2.38]);
+  expect(geocode).toBe(0);
+});
