@@ -249,6 +249,24 @@ export async function syncLinks(kind, id, ids){
  */
 const EXT_TYPES = {jpg: 'image/jpeg', jpeg: 'image/jpeg', jfif: 'image/jpeg', png: 'image/png', heic: 'image/heic', heif: 'image/heif', pdf: 'application/pdf', eml: 'message/rfc822'};
 export const contentTypeOf = f => f?.type || EXT_TYPES[(String(f?.name || '').match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase()] || 'application/octet-stream';
+/**
+ * Fichier tel qu'envoyé au stockage, avec son type DANS le fichier (v1.60.3) : la bibliothèque Supabase envoie un fichier
+ * en formulaire et ignore alors l'option contentType ; sans cela, un .eml ou une photo arrivés sans type restaient « octet-stream ».
+ */
+export const typedFile = f => { const type = contentTypeOf(f); return f.type === type ? f : new File([f], f.name, {type, lastModified: f.lastModified}); };
+/**
+ * Motif lisible d'un envoi au stockage qui n'a pas abouti à cause du réseau (« Failed to fetch ») : fichier devenu illisible
+ * (fichier temporaire d'une autre application effacé ou modifié) ou connexion au serveur impossible.
+ */
+export async function uploadFailure(file, err){
+  let readable = true; try { await file.slice(0, 1).arrayBuffer(); } catch { readable = false; }
+  const why = readable ? `connexion au stockage impossible (${err?.message || 'réseau'})` : 'le fichier n’est plus lisible par le navigateur : l’application d’où il vient l’a effacé ou modifié';
+  const data = {lisible: readable, erreur: `${err?.name || ''}: ${err?.message || ''}`,
+    ext: (String(file.name || '').match(/\.([a-z0-9]{1,8})$/i) || [])[1]?.toLowerCase() || '', taille: file.size, type: file.type || ''};
+  console.info('[Matrice] envoi au stockage : échec réseau', JSON.stringify(data));
+  window.dispatchEvent(new CustomEvent('matrice-diag', {detail: {key: 'envoi au stockage : échec réseau', data}}));
+  return why;
+}
 
 const safeName = n => n.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w.\-]+/g,'_') || 'fichier';
 
@@ -266,7 +284,11 @@ export async function uploadFiles(owner, files){
     const path = `${folder}/${Date.now()}_${safeName(file.name)}`;
     if (!file.size){ failed.push([file.name, 'fichier vide ou illisible (un élément glissé depuis une messagerie n’est pas toujours un vrai fichier)']); continue; }
     const type = contentTypeOf(file);
-    const {error} = await sb.storage.from('suivi').upload(path, file, {contentType: type, upsert:false});
+    // (v1.60.3) une erreur réseau (« Failed to fetch ») n'est plus une exception non traitée qui arrête tout l'envoi :
+    // elle est expliquée dans le bilan, fichier par fichier
+    let error;
+    try { ({error} = await sb.storage.from('suivi').upload(path, typedFile(file), {contentType: type, upsert:false})); }
+    catch (err){ failed.push([file.name, await uploadFailure(file, err)]); continue; }
     if (error){ failed.push([file.name, error.message]); continue; }
     if (await insert(table, {...owner, name:file.name, path, size:file.size, mime: type === 'application/octet-stream' ? (file.type || null) : type})){ ok++; done.push(file.name); }
     else failed.push([file.name, 'enregistrement refusé (voir le message affiché)']);

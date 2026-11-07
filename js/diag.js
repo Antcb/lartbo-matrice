@@ -23,6 +23,8 @@ function show(msg){
 export function startDiag(client){
   sb = client;
   window.addEventListener('error', e => { const m = e.message || 'Erreur'; if (window[KEY] === m) return; window[KEY] = m; show(m); send(m, e.error?.stack || `${e.filename}:${e.lineno}`); });
+  // journal de diagnostic discret (dépôt de fichier qui n'aboutit pas…) : sans donnée personnelle, voir js/ui/dropfiles.js
+  window.addEventListener('matrice-diag', e => send(e.detail?.key || 'diagnostic', JSON.stringify(e.detail?.data ?? null)));
   window.addEventListener('unhandledrejection', e => { const m = e.reason?.message || String(e.reason); if (window[KEY] === m) return; window[KEY] = m; show(m); send(m, e.reason?.stack || ''); });
 }
 /** Ligne de démarrage : version, navigateur, filtres (aide à comprendre « ça ne marche pas chez X ») */

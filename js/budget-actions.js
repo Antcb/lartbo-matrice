@@ -7,7 +7,7 @@ import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
 import { cnmDue, commissionOf, coreaCommissionCheck, isFree, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
 import { commissionPctOf, coreaCalc, isCorea } from './corea.js';
 import { acompteState, isCoproduction, isInvoiced, paymentsOf, payAmount } from './calc.js';
-import { contentTypeOf, insert, mergeRows, openStored, refreshFor, remove, save, sb } from './data.js';
+import { contentTypeOf, insert, mergeRows, openStored, refreshFor, remove, save, sb, typedFile, uploadFailure } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
 import { callScript } from './mail.js';
 import { applyTemplate, spectacleStaffRows } from './budget-template.js';
@@ -17,6 +17,7 @@ import { openModal } from './ui/modal.js';
 import { ask, askText, confirmAsk, inform } from './ui/dialog.js';
 import { PROMO_LEGACY_LABEL, coprodClose } from './production-budget.js';
 import { esc, eur2, fmtDate, norm, pct, toast, today } from './utils.js';
+import { takeDropped } from './ui/dropfiles.js';
 
 const nextSort = showId => Math.max(0, ...linesOf(showId).map(l => l.sort || 0)) + 1;
 const safeName = n => n.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w.\-]+/g, '_') || 'piece';
@@ -345,7 +346,9 @@ export async function readPieces(ctx, files){
     const folder = `budget/${show?.id || line?.show_id || 'projet-' + project_id}`;
     const path = `${folder}/${Date.now()}_${safeName(file.name)}`;
     toast(`Lecture de « ${file.name} » par l’IA…`);
-    const {error: upErr} = await sb.storage.from('suivi').upload(path, file, {contentType: contentTypeOf(file)});
+    let upErr;
+    try { ({error: upErr} = await sb.storage.from('suivi').upload(path, typedFile(file), {contentType: contentTypeOf(file)})); }
+    catch (err){ upErr = {message: await uploadFailure(file, err)}; }
     if (upErr){ toast(`${file.name} : ${upErr.message}`, true); continue; }
     let doc = null;
     const {data, error} = await sb.functions.invoke('lire-piece', {body:{path, show_id: show?.id || line?.show_id || null, project_id}});
@@ -479,7 +482,9 @@ document.addEventListener('dragover', e => { if (!e.dataTransfer?.types?.include
 document.addEventListener('dragleave', e => { const z = e.target.closest?.('.budget-over'); if (z && !z.contains(e.relatedTarget)) z.classList.remove('budget-over'); }, true);
 document.addEventListener('drop', e => { const ctx = ctxOf(e.target); if (!ctx) return; e.preventDefault(); e.stopPropagation();
   document.querySelectorAll('.budget-over').forEach(x => x.classList.remove('budget-over'));
-  const files = [...(e.dataTransfer?.files || [])]; if (files.length) readPieces(ctx, files); }, true);
+  if (!e.dataTransfer?.files?.length) return;
+  // (v1.60.3) pièce copiée en mémoire dès le dépôt (fichier temporaire d'une autre application, ex. pièce jointe glissée depuis Mail)
+  takeDropped(e).then(({files}) => { if (files.length) readPieces(ctx, files); }); }, true);
 document.addEventListener('change', e => { const t = e.target; if (!t.dataset?.budgetPick) return; const files = [...t.files]; t.value = '';
   if (files.length) readPieces(JSON.parse(t.dataset.budgetPick), files); });
 
