@@ -118,3 +118,39 @@ test('v1.60.3 même composant partout : confirmation, boucles, prospection, rela
   expect(await scriptCalls(page)).toBe(0);
   expectClean(ctx);
 });
+
+// Décision d'Anthony du 07/11 : ligne « Interlocuteur » distincte ; jamais déduit de la première pastille ; une adresse qui identifie
+// un seul contact propose « Utiliser X comme interlocuteur », sans jamais écraser un choix existant.
+test('v1.60.3 interlocuteur : proposé depuis une adresse sans ambiguïté, jamais pris ni écrasé d’office', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { ...DATA,
+    contacts: [...DATA.contacts, { id: 'cz-c', display_name: 'Chloé Zéphyr', email: 'chloe@exemple.invalid' },
+      { id: 'cz-d1', display_name: 'Doublon Un', email: 'partage@exemple.invalid' }, { id: 'cz-d2', display_name: 'Doublon Deux', email: 'partage@exemple.invalid' }],
+    contact_structures: [...DATA.contact_structures, { contact_id: 'cz-c', structure_id: 'sz-1' }, { contact_id: 'cz-d1', structure_id: 'sz-1' }, { contact_id: 'cz-d2', structure_id: 'sz-1' }],
+    shows: [...DATA.shows, { ...DATA.shows[0], id: 'sz-show2', prospect_id: null, date: `${Y}-12-04` }] });
+  await page.evaluate(async () => { (await import('./js/mail.js')).prepareMail('sz-show2', 'confirmation'); });
+  const who = page.locator('#ml-contact'), to = page.locator('#ml-to'), q = page.locator('#ml-to-q'), use = page.locator('#modal [data-rcpt-use]');
+  await expect(page.locator('label[for="ml-contact"]')).toHaveText('Interlocuteur');
+  await expect(who).toHaveValue('');
+  // adresse ambiguë (deux contacts) : rien n'est proposé ; puis une adresse d'Alice : proposée, pas appliquée
+  await q.pressSequentially('partage@exemple.invalid;');
+  await expect(use).toHaveCount(0);
+  await q.pressSequentially('alice.perso@exemple.invalid;');
+  await expect(use).toHaveText('Utiliser Alice Zéphyr comme interlocuteur');
+  await expect(who).toHaveValue('');
+  // clic : interlocuteur choisi, destinataires inchangés (ordre compris)
+  await use.click();
+  await expect(who).toHaveValue('cz-a');
+  await expect(to).toHaveValue('partage@exemple.invalid, alice.perso@exemple.invalid');
+  await expect(use).toHaveCount(0);
+  await expect(page.locator('#modal .rcpt-note')).toHaveCount(0);
+  // une autre personne ajoutée : proposée, mais l'interlocuteur choisi reste ; retirée : la proposition disparaît
+  await q.pressSequentially('chloe@exemple.invalid;');
+  await expect(use).toHaveText('Utiliser Chloé Zéphyr comme interlocuteur');
+  await expect(who).toHaveValue('cz-a');
+  await chips(page, 'ml-to').filter({ hasText: 'chloe@' }).locator('.rcpt-rm').click();
+  await expect(use).toHaveCount(0);
+  await expect(who).toHaveValue('cz-a');
+  expect(await scriptCalls(page)).toBe(0);
+  expectClean(ctx);
+});

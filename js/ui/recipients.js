@@ -26,9 +26,10 @@ export function dedupe(input){
  * Champ Destinataire / Copie : pastilles + saisie avec suggestions, sur une seule ligne.
  * id : identifiant du champ d'adresses lu à l'envoi ; le champ de saisie visible est « id-q » (cible du <label for>).
  * prospection : contacts liés uniquement à des structures inactives proposés seulement sur demande (v1.60.2).
+ * interlocutor : id du menu « Interlocuteur » de la fenêtre (Destinataire seulement) — voir propose().
  */
-export function recipientsField(id, structureId, {value = '', prospection = false, placeholder = 'Nom ou adresse…', label = 'Destinataires'} = {}){
-  return `<div class="tagpick rcpt-field" data-rcpt="${esc(id)}">
+export function recipientsField(id, structureId, {value = '', prospection = false, placeholder = 'Nom ou adresse…', label = 'Destinataires', interlocutor = ''} = {}){
+  return `<div class="tagpick rcpt-field" data-rcpt="${esc(id)}"${interlocutor ? ` data-interlocutor="${esc(interlocutor)}"` : ''}>
     <span class="rcpt-chips" role="list" aria-label="${esc(label)} choisis"></span>
     ${acInput('rcpt', {attrs: `data-rcpt-search="${esc(id)}"`, placeholder, activeOnly: prospection,
       inputAttrs: `id="${esc(id)}-q" data-mails inputmode="email" aria-label="${esc(label)} : chercher un contact (nom ou adresse) ou taper une adresse"`,
@@ -53,11 +54,30 @@ const touched = f => { const form = f.closest('form'); if (form) form._draftGen 
 export function syncChips(root = document){
   [...(root.matches?.('[data-rcpt]') ? [root] : []), ...root.querySelectorAll('[data-rcpt]')].forEach(f => { const src = srcOf(f); if (!src) return;
     dedupe(src);
-    f.querySelector('.rcpt-chips').innerHTML = mailParts(src.value).map(chip).join(''); });
+    f.querySelector('.rcpt-chips').innerHTML = mailParts(src.value).map(chip).join(''); drawProposal(f); });
 }
 function add(f, part){
   const src = srcOf(f); if (!src || has(src, part)) return;
-  touched(f); set(src, [...mailParts(src.value), part.trim()]); syncChips(f);
+  touched(f); set(src, [...mailParts(src.value), part.trim()]); syncChips(f); propose(f, part);
+}
+/**
+ * Interlocuteur (décision d'Anthony du 07/11/2026) : jamais déduit des pastilles ni de leur ordre. Une adresse choisie qui identifie
+ * UN SEUL contact de la base, proposé dans le menu « Interlocuteur », fait apparaître « Utiliser X comme interlocuteur » si
+ * l'interlocuteur est vide ou différent ; rien n'est changé sans ce clic (événement « interlocutor » sur le menu, géré par la fenêtre).
+ */
+function propose(f, part){
+  const sel = f.dataset.interlocutor && document.getElementById(f.dataset.interlocutor); if (!sel) return;
+  const who = contactsWithMail([mailAddr(part)]), c = who.length === 1 ? who[0] : null;
+  if (!c || sel.value === c.id || ![...sel.options].some(o => o.value === c.id)) return;
+  f._propose = c.id; drawProposal(f);
+}
+function drawProposal(f){
+  const sel = f.dataset.interlocutor && document.getElementById(f.dataset.interlocutor), box = sel?.parentElement.querySelector('.rcpt-propose'); if (!box) return;
+  const c = f._propose && byId('contacts', f._propose), src = srcOf(f);
+  // plus proposé : déjà interlocuteur, ou plus aucune de ses adresses dans le champ
+  const still = c && sel.value !== c.id && [c.email, c.email_2].some(m => m && has(src, m));
+  if (!still) f._propose = null;
+  box.innerHTML = still ? `<button type="button" class="btn sm ghost" data-rcpt-use="${esc(c.id)}" data-rcpt-for="${esc(f.dataset.rcpt)}">Utiliser ${esc(c.display_name)} comme interlocuteur</button>` : '';
 }
 /** Adresse(s) tapée(s) : les valides deviennent des pastilles (sans doublon), les invalides restent dans la saisie, signalées */
 function commit(q){
@@ -79,6 +99,15 @@ document.addEventListener('change', e => {
   if (m.startsWith('sans-adresse:')) return toast(`${byId('contacts', m.slice(13))?.display_name || 'Ce contact'} n’a pas d’adresse mail`, true);
   add(f, m);
 });
+// « Utiliser X comme interlocuteur » : seul geste qui change l'interlocuteur depuis une adresse
+document.addEventListener('click', e => {
+  const b = e.target.closest?.('[data-rcpt-use]'); if (!b) return;
+  const f = document.querySelector(`[data-rcpt="${CSS.escape(b.dataset.rcptFor)}"]`), sel = f && document.getElementById(f.dataset.interlocutor); if (!sel) return;
+  sel.value = b.dataset.rcptUse; f._propose = null; drawProposal(f);
+  sel.dispatchEvent(new CustomEvent('interlocutor', {bubbles: true}));
+});
+// interlocuteur changé dans le menu : la proposition devenue inutile disparaît
+document.addEventListener('change', e => { if (e.target.tagName === 'SELECT') document.querySelectorAll(`[data-interlocutor="${CSS.escape(e.target.id || '-')}"]`).forEach(drawProposal); });
 // retirer une pastille (✕) : un clic, la saisie garde le focus
 document.addEventListener('click', e => {
   const rm = e.target.closest?.('[data-rcpt-rm]');
