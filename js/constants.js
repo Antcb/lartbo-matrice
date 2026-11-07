@@ -80,6 +80,8 @@ export const FOLLOW_DATES = {
   contract_signed: 'Contrat signé', contract_cosigned_sent: 'Contrat co-signé', boucle_com: 'Boucle communication',
   boucle_tech: 'Boucle technique', poster_request_date: 'Demande d’affiches',
 };
+/** Dates d'une ligne de facture saisies à la main (Production › Factures) : même confirmation (v1.60.3, décision d'Anthony du 07/11/2026) */
+export const INVOICE_DATES = { sent_at: 'Envoyée', reminded_at: 'Relancée', paid_at: 'Payée' };
 
 export const VIEWS = [
   ['todo','To Do'], ['booking','Booking'], ['prospects','Suivi'], ['production','Production'], ['ticketing','Ticketing'], ['communication','Communication'],

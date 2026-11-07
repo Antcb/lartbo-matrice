@@ -128,3 +128,95 @@ test('v1.60.3 : un envoi réel (écriture par l’application, comme logMail) re
   expect(await enBase(page, 'conf_kit_sent')).toBe('2026-11-07');
   expectClean(ctx);
 });
+
+// --- Réponses d'Anthony du 07/11/2026 : dates de facture (envoyée, relancée, payée) et boucle com dans la progression ---
+const ouvrirFactures = page => page.evaluate(async () => { const { S } = await import('./js/state.js'); const app = await import('./js/app.js');
+  app.go('production'); S.openProd = new Set(['sh-1']); S.tab['prod:sh-1'] = 'factures'; app.render(); });
+const reglerPay = (page, id, patch) => page.evaluate(async ([id, patch]) => { const { S, touch } = await import('./js/state.js');
+  for (const db of [S.db, window.__DB]) Object.assign(db.show_payments.find(p => p.id === id), patch); touch('show_payments'); }, [id, patch]);
+const casePay = (page, id, f) => page.locator(`.prod-tab .dt:has(input.dt-val[data-id="${id}"][data-f="${f}"]) input.dt-txt`);
+const payEnBase = (page, id, f) => page.evaluate(([id, f]) => window.__DB.show_payments.find(p => p.id === id)[f] ?? null, [id, f]);
+const ecritsPay = page => page.evaluate(() => window.__calls.filter(c => c.table === 'show_payments' && c.op === 'update').map(c => c.patch));
+
+test('v1.60.3 : dates de facture — vide sans question ; envoyée / relancée / payée modifiées → confirmation, Annuler garde', async ({ page }) => {
+  const ctx = await openApp(page);
+  await regler(page, { date: AN + '-12-31' });
+  await reglerPay(page, 'pa-1', { sent_at: null, reminded_at: null, paid_at: null, payee: 'compte', invoice_number: 'F-TEST-1' });
+  await ouvrirFactures(page);
+  // champ vide : enregistré sans question
+  await saisir(casePay(page, 'pa-1', 'reminded_at'), '10/10/2026');
+  await expect.poll(() => payEnBase(page, 'pa-1', 'reminded_at')).toBe('2026-10-10');
+  await expect(fenetre(page)).toHaveCount(0);
+  for (const [f, label] of [['sent_at', 'Envoyée'], ['paid_at', 'Payée']]){
+    await saisir(casePay(page, 'pa-1', f), '01/10/2026');
+    await expect.poll(() => payEnBase(page, 'pa-1', f)).toBe('2026-10-01');
+    await expect(fenetre(page)).toHaveCount(0);
+    await saisir(casePay(page, 'pa-1', f), '02/10/2026');
+    await expect(fenetre(page)).toContainText(`Modifier la date « ${label} » ?`);
+    await expect(fenetre(page)).toContainText('Festival Fictif (Bourg-Test) · Acompte');
+    await expect(fenetre(page)).toContainText('Ancienne valeur : 01/10/2026');
+    await expect(fenetre(page)).toContainText('Nouvelle valeur : 02/10/2026');
+    await fenetre(page).locator('button', { hasText: 'Annuler' }).click();
+    await expect(casePay(page, 'pa-1', f)).toHaveValue('01/10/2026');
+    expect(await payEnBase(page, 'pa-1', f)).toBe('2026-10-01');
+    await saisir(casePay(page, 'pa-1', f), '02/10/2026');
+    await fenetre(page).locator('button', { hasText: 'Modifier la date' }).click();
+    await expect.poll(() => payEnBase(page, 'pa-1', f)).toBe('2026-10-02');
+  }
+  // relance effacée : confirmation (Effacer)
+  await saisir(casePay(page, 'pa-1', 'reminded_at'), '');
+  await expect(fenetre(page)).toContainText('Effacer la date « Relancée » ?');
+  await fenetre(page).locator('button.danger', { hasText: 'Effacer la date' }).click();
+  await expect.poll(() => payEnBase(page, 'pa-1', 'reminded_at')).toBe(null);
+  expectClean(ctx);
+});
+
+test('v1.60.3 : facture émise — effacer sa date d’envoi ou de paiement reste refusé avec le message clair, sans question inutile', async ({ page }) => {
+  const ctx = await openApp(page);
+  await regler(page, { date: AN + '-12-31' });
+  await reglerPay(page, 'pa-1', { sent_at: '2026-10-01', paid_at: '2026-10-05', payee: 'compte', invoice_number: 'F-TEST-1', amount: 3000 });
+  await ouvrirFactures(page);
+  const avant = (await ecritsPay(page)).length;
+  for (const f of ['sent_at', 'paid_at']){
+    await saisir(casePay(page, 'pa-1', f), '');
+    await expect(page.locator('.toast').last()).toContainText('Facture déjà émise');
+    await expect(fenetre(page)).toHaveCount(0);
+    expect(await payEnBase(page, 'pa-1', f)).not.toBe(null);
+  }
+  expect((await ecritsPay(page)).length, 'rien n’est écrit').toBe(avant);
+  expectClean(ctx);
+});
+
+test('v1.60.3 : écriture d’un événement réel sur une facture (synchronisation, versement) sans question', async ({ page }) => {
+  const ctx = await openApp(page);
+  await reglerPay(page, 'pa-1', { sent_at: '2026-10-01', paid_at: null, payee: 'compte', invoice_number: 'F-TEST-1', amount: 3000 });
+  await ouvrirFactures(page);
+  await page.evaluate(async () => { const { save } = await import('./js/data.js'); await save('show_payments', 'pa-1', { paid_at: '2026-11-07', sent_at: '2026-10-02' }); });
+  await expect(fenetre(page)).toHaveCount(0);
+  expect(await payEnBase(page, 'pa-1', 'paid_at')).toBe('2026-11-07');
+  expectClean(ctx);
+});
+
+test('v1.60.3 : boucle com dans la progression et l’alerte de retard (production seulement, règle existante)', async ({ page }) => {
+  const ctx = await openApp(page);
+  // date à venir, contrat co-signé renvoyé, boucle com pas envoyée : étape en retard (même règle que le rappel « Boucle communication à envoyer »)
+  await regler(page, { date: AN + 1 + '-12-31', prod_mode: 'production', conf_kit_sent: '2026-09-01', precontract_done: '2026-09-02', contract_sent: '2026-09-03',
+    contract_signed: '2026-09-04', contract_cosigned_sent: '2026-09-05', boucle_com: null, boucle_tech: null });
+  await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.year = new Date().getFullYear() + 1; });
+  await ouvrir(page, 'production');
+  const point = page.locator('#prod-sh-1 .progress i').nth(5);   // ordre de PROD_STEPS : 6e étape = boucle com
+  await expect(point).toHaveClass(/late/);
+  await expect(page.locator('.prod-tab .steps > label', { hasText: 'Boucle communication' })).toHaveAttribute('style', /danger/);
+  await saisir(champ(page, 'boucle_com', '.prod-tab'), '06/09/2026');
+  await expect(point).toHaveClass(/ok/);
+  await expect(page.locator('.prod-tab .steps > label', { hasText: 'Boucle communication' })).not.toHaveAttribute('style', /danger/);
+  // booking seul : l'étape ne concerne pas la date (ni progression, ni retard)
+  await regler(page, { prod_mode: 'booking', boucle_com: null });
+  await ouvrir(page, 'production');
+  await expect(page.locator('.prod-tab .steps > label', { hasText: 'Boucle communication' })).toHaveCount(0);
+  expect(await page.evaluate(async () => { const { lateSteps } = await import('./js/reminders.js'); const { S } = await import('./js/state.js');
+    return lateSteps(S.db.shows.find(s => s.id === 'sh-1')).has('boucle_com'); }), 'pas de retard de boucle com en booking').toBe(false);
+  await expect(page.locator('#prod-sh-1 .progress i')).toHaveCount(2 + await page.evaluate(async () => { const { paymentsOf, tracked, acompteState } = await import('./js/calc.js');
+    return paymentsOf('sh-1').filter(tracked).filter(p => p.kind !== 'cnm' && acompteState(p) !== 'caduc').length; }));   // 2 étapes de BOOKING_STEPS + factures suivies
+  expectClean(ctx);
+});
