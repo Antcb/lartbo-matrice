@@ -88,7 +88,7 @@ const sideLabel = (x, w) => w === 'artbo' ? 'L’ArtBoristerie' : (x.partner || 
 
 const lineName = id => { const p = id && byId('show_payments', id); return p ? (p.label || p.kind) : ''; };
 export const BUDGET_ACTIONS = {
-  coreaAddTier: t => saveCorea(t.dataset.id, c => { c.tiers.push({label: '', price: null, vat: 5.5, qty: null, after: null}); }),
+  coreaAddTier: t => saveCorea(t.dataset.id, c => { c.tiers.push({label: '', price: null, vat: 5.5, planned: null, qty: null, after: null}); }),
   coreaDelTier: async t => { const lab = byId('shows', t.dataset.id)?.corea?.tiers?.[Number(t.dataset.i)]?.label;
     if (await confirmAsk('Retirer le tarif ?', `Retirer le tarif « ${lab || 'sans nom'} » (prix et billets vendus compris) ?`, 'Retirer le tarif', {danger: true}))
       saveCorea(t.dataset.id, c => { c.tiers.splice(Number(t.dataset.i), 1); }); },

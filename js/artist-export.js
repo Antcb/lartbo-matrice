@@ -2,7 +2,7 @@
  * Export du budget d'une date pour l'artiste (ex. Pipi pour The Locos) : une page claire, prête à imprimer
  * ou à enregistrer en PDF — cachet, commission, chaque dépense, ce qui reste pour l'artiste et ce qui lui a été versé.
  */
-import { commissionAmount, commissionOf, isBudgetExpense, lineValue, missingCostLines, missingCostText, showBudget } from './budget.js';
+import { commissionAmount, commissionOf, isSolde, lineValue, missingCostLines, missingCostText, showBudget } from './budget.js';
 import { artistResult } from './views/budget.js';
 import { byId, showCommissionPct } from './selectors.js';
 import { commissionState } from './calc.js';
@@ -15,7 +15,7 @@ export function exportArtistBudget(showId){
   const cst = com ? commissionState(com) : null, pctN = com?.pct != null && String(com.pct).trim() !== '' ? Number(com.pct) : showCommissionPct(s);
   const comPct = Math.abs(Math.round(b.gross * pctN) / 100 - commissionAmount(s)) < 0.005 ? String(pctN) : '';   // base : MG + part validée (coréalisation, v1.51)
   const artist = (p?.name || '').replace(/\s*•.*$/, ''), who = p?.artist_payee || artist;
-  const exp = b.lines.filter(l => isBudgetExpense(l) && Math.abs(lineValue(l)) >= 0.005), unknown = missingCostLines(s.id);
+  const exp = b.lines.filter(l => !isSolde(l) && Math.abs(lineValue(l)) >= 0.005), unknown = missingCostLines(s.id);
   const CAT = {Staff: 'Salaires', Movinmotion: 'Frais de paie (Movinmotion)', Taxes: 'Taxes'};
   const row = l => `<tr><td>${esc(CAT[l.category] || l.category || '')}</td><td>${esc(l.label || '')}${l.supplier ? ` <span class="m">· ${esc(l.supplier)}</span>` : ''}</td>
     <td class="n">${eur2(lineValue(l))}${l.amount == null ? ' <span class="m">(prévu)</span>' : ''}</td></tr>`;

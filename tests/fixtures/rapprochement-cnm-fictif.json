@@ -1,0 +1,327 @@
+{
+ "shows": [
+  {
+   "id": "fx-a",
+   "project_id": "art-x",
+   "structure_id": "st-x",
+   "venue": "Salle Fictive fx-a",
+   "city": "Villefictive",
+   "department": "75",
+   "status": "Confirmée Salle",
+   "prod_mode": "production",
+   "contract_type": "Co-Réalisation",
+   "vat_rate": 5.5,
+   "fee_ht": 1000,
+   "capacity": 1000,
+   "break_even": 100,
+   "cr_producer_pct": 50,
+   "cnm_pct": 3.5,
+   "ticket_holder": "organisateur",
+   "corea": {
+    "break_validated_at": "2026-01-01T10:00:00Z",
+    "break_value": 100,
+    "tiers": [
+     {
+      "label": "Plein",
+      "price": 21.1,
+      "vat": 5.5,
+      "qty": 400,
+      "after": 300
+     }
+    ],
+    "charges": []
+   },
+   "date": "2026-05-01",
+   "cnm_bearer": "artbo",
+   "cnm_in_result": true,
+   "corea_share": 2860
+  },
+  {
+   "id": "fx-b",
+   "project_id": "art-x",
+   "structure_id": "st-x",
+   "venue": "Salle Fictive fx-b",
+   "city": "Villefictive",
+   "department": "75",
+   "status": "Confirmée Salle",
+   "prod_mode": "production",
+   "contract_type": "Co-Réalisation",
+   "vat_rate": 5.5,
+   "fee_ht": 1000,
+   "capacity": 1000,
+   "break_even": 100,
+   "cr_producer_pct": 50,
+   "cnm_pct": 3.5,
+   "ticket_holder": "organisateur",
+   "corea": {
+    "break_validated_at": "2026-01-01T10:00:00Z",
+    "break_value": 100,
+    "tiers": [
+     {
+      "label": "Plein",
+      "price": 21.1,
+      "vat": 5.5,
+      "qty": 400,
+      "after": 300
+     }
+    ],
+    "charges": []
+   },
+   "date": "2026-05-02",
+   "cnm_bearer": "artbo",
+   "cnm_in_result": false
+  },
+  {
+   "id": "fx-c",
+   "project_id": "art-x",
+   "structure_id": "st-x",
+   "venue": "Salle Fictive fx-c",
+   "city": "Villefictive",
+   "department": "75",
+   "status": "Confirmée Salle",
+   "prod_mode": "production",
+   "contract_type": "Co-Réalisation",
+   "vat_rate": 5.5,
+   "fee_ht": 1000,
+   "capacity": 1000,
+   "break_even": 100,
+   "cr_producer_pct": 50,
+   "cnm_pct": 3.5,
+   "ticket_holder": "organisateur",
+   "corea": {
+    "break_validated_at": "2026-01-01T10:00:00Z",
+    "break_value": 100,
+    "tiers": [
+     {
+      "label": "Plein",
+      "price": 21.1,
+      "vat": 5.5,
+      "qty": 400,
+      "after": 300
+     }
+    ],
+    "charges": []
+   },
+   "date": "2026-05-03",
+   "cnm_bearer": "organisateur",
+   "cnm_in_result": true
+  },
+  {
+   "id": "fx-e",
+   "project_id": "art-x",
+   "structure_id": "st-x",
+   "venue": "Salle Fictive fx-e",
+   "city": "Villefictive",
+   "department": "75",
+   "status": "Confirmée Salle",
+   "prod_mode": "production",
+   "contract_type": "Co-Réalisation",
+   "vat_rate": 5.5,
+   "fee_ht": 1000,
+   "capacity": 1000,
+   "break_even": 100,
+   "cr_producer_pct": 50,
+   "cnm_pct": 3.5,
+   "ticket_holder": "organisateur",
+   "corea": {
+    "break_validated_at": "2026-01-01T10:00:00Z",
+    "break_value": 100,
+    "tiers": [
+     {
+      "label": "Plein",
+      "price": 21.1,
+      "vat": 5.5,
+      "qty": 400,
+      "after": 300
+     }
+    ],
+    "charges": []
+   },
+   "date": "2026-05-04",
+   "cnm_bearer": "organisateur",
+   "cnm_in_result": true,
+   "corea_share": 2860
+  },
+  {
+   "id": "fx-k",
+   "project_id": "art-x",
+   "structure_id": "st-x",
+   "venue": "Salle Fictive fx-k",
+   "city": "Villefictive",
+   "department": "75",
+   "status": "Confirmée Salle",
+   "prod_mode": "booking",
+   "contract_type": "Co-Réalisation",
+   "vat_rate": 5.5,
+   "fee_ht": 1000,
+   "capacity": 1000,
+   "break_even": 100,
+   "cr_producer_pct": 50,
+   "cnm_pct": 3.5,
+   "ticket_holder": "organisateur",
+   "corea": {
+    "break_validated_at": "2026-01-01T10:00:00Z",
+    "break_value": 100,
+    "tiers": [
+     {
+      "label": "Plein",
+      "price": 21.1,
+      "vat": 5.5,
+      "qty": 400,
+      "after": 300
+     }
+    ],
+    "charges": []
+   },
+   "date": "2026-05-05",
+   "cnm_in_result": true
+  },
+  {
+   "id": "fx-z",
+   "project_id": "art-x",
+   "structure_id": "st-x",
+   "venue": "Salle Fictive fx-z",
+   "city": "Villefictive",
+   "department": "75",
+   "status": "Confirmée Salle",
+   "prod_mode": "production",
+   "contract_type": "Cession",
+   "vat_rate": 5.5,
+   "fee_ht": 1000,
+   "capacity": 1000,
+   "break_even": 100,
+   "cr_producer_pct": 50,
+   "cnm_pct": 3.5,
+   "ticket_holder": "organisateur",
+   "corea": {
+    "break_validated_at": "2026-01-01T10:00:00Z",
+    "break_value": 100,
+    "tiers": [
+     {
+      "label": "Plein",
+      "price": 21.1,
+      "vat": 5.5,
+      "qty": 400,
+      "after": 300
+     }
+    ],
+    "charges": []
+   },
+   "date": "2026-05-06"
+  }
+ ],
+ "budget_lines": [
+  {
+   "id": "fx-a-son",
+   "project_id": "art-x",
+   "show_id": "fx-a",
+   "category": "Technique",
+   "label": "Son",
+   "forecast": 2000,
+   "payer": "compte"
+  },
+  {
+   "id": "fx-b-son",
+   "project_id": "art-x",
+   "show_id": "fx-b",
+   "category": "Technique",
+   "label": "Son",
+   "forecast": 2000,
+   "payer": "compte"
+  },
+  {
+   "id": "fx-c-son",
+   "project_id": "art-x",
+   "show_id": "fx-c",
+   "category": "Technique",
+   "label": "Son",
+   "forecast": 2000,
+   "payer": "compte"
+  },
+  {
+   "id": "fx-e-son",
+   "project_id": "art-x",
+   "show_id": "fx-e",
+   "category": "Technique",
+   "label": "Son",
+   "forecast": 2000,
+   "payer": "compte"
+  },
+  {
+   "id": "fx-a-cnm",
+   "project_id": "art-x",
+   "show_id": "fx-a",
+   "category": "Taxes",
+   "label": "Taxe CNM (billetterie)",
+   "supplier": "CNM",
+   "auto": "cnm",
+   "payer": "compte"
+  },
+  {
+   "id": "fx-b-cnm",
+   "project_id": "art-x",
+   "show_id": "fx-b",
+   "category": "Taxes",
+   "label": "Taxe CNM (billetterie)",
+   "supplier": "CNM",
+   "auto": "cnm",
+   "payer": "compte"
+  },
+  {
+   "id": "fx-e-cnm",
+   "project_id": "art-x",
+   "show_id": "fx-e",
+   "category": "Taxes",
+   "label": "Taxe CNM",
+   "supplier": "CNM",
+   "amount": 280,
+   "paid_at": "2026-05-20",
+   "payer": "artbo",
+   "reimbursed_at": "2026-05-25"
+  },
+  {
+   "id": "fx-e-solde",
+   "project_id": "art-x",
+   "show_id": "fx-e",
+   "category": "Solde artiste",
+   "label": "Solde artiste",
+   "auto": "solde_artiste",
+   "amount": 1000,
+   "paid_at": "2026-05-30",
+   "payer": "compte"
+  }
+ ],
+ "show_payments": [],
+ "commission_transfers": [],
+ "projects": [
+  {
+   "id": "art-x",
+   "name": "Artiste Fictif",
+   "active": true,
+   "mode": "production",
+   "artist_payee": "Bénéficiaire Fictif"
+  }
+ ],
+ "structures": [
+  {
+   "id": "st-x",
+   "name": "Salle Fictive",
+   "country": "France"
+  }
+ ],
+ "settings": [
+  {
+   "key": "default_cnm_pct",
+   "value": 3.5
+  },
+  {
+   "key": "default_artbo_pct_production",
+   "value": 20
+  },
+  {
+   "key": "default_artbo_pct",
+   "value": 15
+  }
+ ],
+ "partners": []
+}

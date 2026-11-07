@@ -2,7 +2,7 @@
  * Budget dans l'onglet Production : le budget de chaque date (prévu / réel, pièces, qui paie)
  * et la vue d'ensemble d'un artiste (compte dédié, toutes les dates, frais hors date).
  */
-import { INCOMPLETE, cnmViaShare, isBudgetExpense, accountMoves, accountOf, availableForArtist, coreaCommissionCheck, cnmPct, commissionAmount, commissionOf, isFree, isSolde, lineForecast, lineStatus, lineValue, linesOf, missingCostLines, offLinesOf, payerLabel, payslipCost, prodShowsOf, showBudget } from '../budget.js';
+import { INCOMPLETE, cnmViaShare, accountMoves, accountOf, availableForArtist, coreaCommissionCheck, cnmPct, commissionAmount, commissionOf, isFree, isSolde, lineForecast, lineStatus, lineValue, linesOf, missingCostLines, offLinesOf, payerLabel, payslipCost, prodShowsOf, showBudget } from '../budget.js';
 import { costFillPlan, costGaps, templateSource } from '../budget-template.js';
 import { BUDGET_CATS, PAYERS } from '../constants.js';
 import { commissionState, payAmount, paymentsOf } from '../calc.js';
@@ -10,7 +10,7 @@ import { byId } from '../selectors.js';
 import { S } from '../state.js';
 import { cChk, cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';   // dates du budget de production : largeur d'une date (.steps .dt), saisie jj/mm/aaaa (v1.60.3)
-import { HOLDERS, breakFromText, cnmBearer, cnmOf, coreaCalc, holderLabel, isCorea } from '../corea.js';
+import { HOLDERS, breakFromText, cnmBearer, cnmOf, coreaCalc, holderLabel, isCnmLine, isCorea } from '../corea.js';
 import { esc, eur2, fmtDate, today, r2, pct as fmtPct } from '../utils.js';
 import { coreaBreaks, productionBreaks } from '../break.js';
 import { COPROD_ROLES, PROD_CATS, PROMO_DEBTORS, PROMO_LEGACY_LABEL, PROMO_PAYERS, coprodClose, coprodLines, isProductionShow, productionBudget, promoDebtorOf } from '../production-budget.js';
@@ -28,7 +28,7 @@ function lineRow(l, project, {qtyAll = false} = {}){
   const prev = staff && hasQty
     ? `<span class="qty-line">${cIn('budget_lines', l.id, 'qty', l.qty, 'number', `class="narrow" title="${qtyAll ? 'Quantité' : 'Nombre de bulletins'}" placeholder="${qtyAll ? 'qté' : 'nb'}"`)}<span class="x">×</span>${cIn('budget_lines', l.id, 'unit_cost', l.unit_cost, 'number', `class="narrow2" title="${qtyAll ? 'Prix unitaire HT' : 'Coût employeur d’un bulletin'}" placeholder="${qtyAll ? 'P.U.' : 'coût'}"`)}<b>${eur2(fc ?? 0)}</b></span>`
     : `<input type="number" step="any" data-t="budget_lines" data-id="${l.id}" data-f="forecast" value="${l.forecast??''}" placeholder="${fc==null?'à saisir':fc}" class="${auto && l.forecast!=null?'override':''}" title="${auto ? (l.forecast!=null ? 'Montant saisi à la main à la place du calcul automatique (efface-le pour revenir au calcul)' : 'Vide = calcul automatique') : 'Montant prévu HT'}">`;
-  const calc = cnmViaShare(l) ? 'non comptée en dépense : CNM déduite du résultat partagé (une seule déduction)'
+  const calc = cnmViaShare(l) ? 'CNM aussi déduite du résultat partagé : comptée ici en dépense de la date, rapprochement à faire (non corrigé)'
     : l.auto==='movinmotion' ? `bulletins × ${l.unit_cost != null ? eur2(Number(l.unit_cost)) + ' (coût figé)' : 'coût Movinmotion des Réglages'}` : l.auto==='cnm' ? '% du cachet (entrée gratuite)' : '';
   return `<tr data-budget-line="${l.id}" class="${st==='paid'?'is-paid':st==='doc'?'has-doc':''}" title="${st==='paid'?'Payé':st==='doc'?'Pièce reçue, pas encore payée':'Prévu'}">
     <td>${cSel('budget_lines', l.id, 'category', l.category, BUDGET_CATS)}</td>
@@ -51,7 +51,7 @@ function byCategory(lines, project){
   const order = c => { const i = BUDGET_CATS.indexOf(c || 'Autres'); return i < 0 ? BUDGET_CATS.length : i; };
   const groups = new Map();
   for (const l of lines.slice().sort((a, b) => order(a.category) - order(b.category))) { const c = l.category || 'Autres'; if (!groups.has(c)) groups.set(c, []); groups.get(c).push(l); }
-  return [...groups].map(([c, ls]) => { const n = ls.filter(isBudgetExpense), f = n.reduce((t, l) => t + (lineForecast(l) ?? (Number(l.amount) || 0)), 0), r = n.reduce((t, l) => t + lineValue(l), 0);
+  return [...groups].map(([c, ls]) => { const f = ls.reduce((t, l) => t + (lineForecast(l) ?? (Number(l.amount) || 0)), 0), r = ls.reduce((t, l) => t + lineValue(l), 0);
     return `<tr class="cat-row"><td colspan="9"><b>${esc(c)}</b> <span class="muted">· prévu ${eur2(f)} · à jour ${eur2(r)}</span></td></tr>` + ls.map(l => lineRow(l, project)).join(''); }).join('');
 }
 
@@ -100,7 +100,7 @@ export function commissionTransferCell(com){
 }
 
 function summaryTable(s, b, com, p){
-  const exp = b.lines.filter(isBudgetExpense), real = exp.filter(l => l.amount != null), est = exp.filter(l => l.amount == null);
+  const exp = b.lines.filter(l => !isSolde(l)), real = exp.filter(l => l.amount != null), est = exp.filter(l => l.amount == null);
   const realSum = real.reduce((t, l) => t + Number(l.amount), 0), estSum = est.reduce((t, l) => t + (lineForecast(l) || 0), 0);
   const expNow = r2(realSum + estSum), expGap = r2(real.reduce((t, l) => t + Number(l.amount) - (lineForecast(l) ?? Number(l.amount)), 0));
   const cashedRows = paymentsOf(s.id).filter(x => ['acompte', 'solde'].includes(x.kind) && x.paid_at);
@@ -285,14 +285,18 @@ export function textBreakHint(s){
   if (cur == null) return ` <button class="btn sm" data-act="coreaUseTextBreak" data-id="${s.id}" title="Reprend le nombre du texte des Conditions ; le break restera à valider">Reprendre ${n} billets (Conditions)</button>`;
   return cur === n ? '' : ` <span class="warn-txt small">les Conditions indiquent ${n} billets</span>`;
 }
-/** CNM d'une coréalisation : effet sur l'assiette partagée, partie qui la supporte, partie qui la paie (décision du 07/11/2026 :
- *  une seule déduction ; déduite du partage, elle n'est pas recomptée comme dépense de la date) */
+/** CNM d'une coréalisation (précisions d'Anthony du 07/11/2026) : trois informations distinctes — effet sur l'assiette partagée,
+ *  partie qui la supporte (saisie de la date ou usage), payeur EFFECTIF (seulement d'après une ligne CNM payée ; sinon « à préciser ») */
 function cnmEffect(s, c){
-  const pay = c.debtor ? `payée au CNM par ${esc(holderLabel(c.debtor))} (détenteur de la billetterie)` : 'payeur : le détenteur de la billetterie (à renseigner)';
-  if (s.cnm_in_result){ const k = coreaCalc(s), p = k?.pct;
-    return `assiette partagée réduite de la CNM ; supportée via le partage${p == null ? '' : ` (${esc(fmtPct(p))} par le producteur, ${esc(fmtPct(100 - p))} par la structure)`} ; ${pay} ; jamais recomptée comme dépense de la date${s.cnm_bearer ? ' (« Coût supporté par » n’ajoute pas de dépense)' : ''}`; }
-  const b = cnmBearer(s);
-  return `assiette partagée non réduite ; supportée par ${b ? esc(holderLabel(b)) : 'une structure à attribuer'}${b === 'artbo' ? ' (dépense de la date)' : ''} ; ${pay}`;
+  const p = byId('projects', s.project_id), ls = linesOf(s.id).filter(isCnmLine), paid = ls.filter(l => l.paid_at);
+  const payer = paid.length ? paid.map(l => `${esc(payerLabel(l.payer || 'compte', p))} le ${fmtDate(l.paid_at)}${l.amount != null ? ` (${eur2(Number(l.amount))})` : ''}${l.reimbursed_at ? `, remboursé le ${fmtDate(l.reimbursed_at)}` : ''}`).join(' ; ')
+    : `<span class="warn-txt">payeur effectif à préciser</span>${c.debtor ? ` (redevable légal : ${esc(holderLabel(c.debtor))}, détenteur de la billetterie)` : ''}`;
+  const k = coreaCalc(s), pc = k?.pct;
+  const base = s.cnm_in_result ? `assiette partagée réduite de la CNM (part du producteur réduite de ${pc == null ? 'son %' : esc(fmtPct(pc))} de la CNM)` : 'assiette partagée non réduite';
+  const b = s.cnm_bearer || cnmBearer(s);
+  const bearer = b ? `${esc(holderLabel(b))}${s.cnm_bearer ? '' : ' (usage habituel)'}` : 'à attribuer selon le contrat';
+  const twice = s.cnm_in_result && ls.some(l => (lineForecast(l) || 0) !== 0 || l.amount != null) ? ' · <span class="warn-txt">aussi comptée en dépense de la date : rapprochement à faire (non corrigé)</span>' : '';
+  return `${base} · supportée par : ${bearer} · payée par : ${payer}${twice}`;
 }
 const cin = (s, path, v, extra = '') => `<input type="${/label/.test(path) ? 'text' : 'number'}" ${/label/.test(path) ? '' : 'step="any" inputmode="decimal"'} data-corea-show="${s.id}" data-corea-path="${path}" value="${esc(v ?? '')}" ${extra}>`;
 /** Coréalisation : tarifs, break validé, recettes au-delà du break, charges déductibles, partage (MG + part du résultat) */
@@ -302,7 +306,8 @@ function coreaBlock(s){
       <td>${cin(s, `tiers.${i}.label`, t.label, 'placeholder="Catégorie (ex. Plein tarif)"')}</td>
       <td class="num">${cin(s, `tiers.${i}.price`, co.tiers[i].price, 'class="narrow" title="Prix TTC"')}</td>
       <td class="num">${cin(s, `tiers.${i}.vat`, co.tiers[i].vat ?? 5.5, 'class="narrow" title="TVA (%)"')}</td>
-      <td class="num">${cin(s, `tiers.${i}.qty`, co.tiers[i].qty, 'class="narrow" title="Billets vendus"')}</td>
+      <td class="num">${cin(s, `tiers.${i}.planned`, co.tiers[i].planned, 'class="narrow" placeholder="—" title="Quota prévu (billets) : sert au break prévisionnel" aria-label="Prévus (quota)"')}</td>
+      <td class="num">${cin(s, `tiers.${i}.qty`, co.tiers[i].qty, 'class="narrow" title="Billets vendus" aria-label="Vendus"')}</td>
       <td class="num nowrap">${eur2(t.ht)}</td>
       <td class="num">${cin(s, `tiers.${i}.after`, co.tiers[i].after, 'class="narrow" placeholder="—" title="Billets de ce tarif vendus après le break (si connu)"')}</td>
       <td><button class="btn icon sm ghost danger" data-act="coreaDelTier" data-id="${s.id}" data-i="${i}" aria-label="Retirer ce tarif">✕</button></td></tr>`).join('');
@@ -327,9 +332,9 @@ function coreaBlock(s){
       ${s.cr_break ? `<label>Break du contrat</label><span class="muted">« ${esc(s.cr_break)} » (texte conservé tel quel)</span>` : ''}
       <label>% du résultat net au producteur</label>${cIn('shows', s.id, 'cr_producer_pct', s.cr_producer_pct, 'number', 'class="narrow"')}
     </div>
-    <div class="tbl-wrap"><table class="budget-table prod-table"><thead><tr><th>Catégorie tarifaire</th><th class="num">Prix TTC</th><th class="num">TVA %</th><th class="num">Vendus</th><th class="num">Recettes HT</th><th class="num">Vendus après le break</th><th></th></tr></thead>
+    <div class="tbl-wrap"><table class="budget-table prod-table"><thead><tr><th>Catégorie tarifaire</th><th class="num">Prix TTC</th><th class="num">TVA %</th><th class="num">Prévus (quota)</th><th class="num">Vendus</th><th class="num">Recettes HT</th><th class="num">Vendus après le break</th><th></th></tr></thead>
       <tbody>${tiers}</tbody>
-      <tfoot><tr class="bill-total"><td><b>Total</b></td><td colspan="2"></td><td class="num"><b>${c.sold}</b></td><td class="num nowrap"><b>${eur2(c.ht)}</b></td><td class="num">${c.beyond == null ? '—' : c.beyond + ' attendus'}</td><td></td></tr></tfoot></table></div>
+      <tfoot><tr class="bill-total"><td><b>Total</b></td><td colspan="2"></td><td class="num">${(n => n ? `<b>${n}</b>` : '—')(c.tiers.reduce((a, t) => a + (t.planned || 0), 0))}</td><td class="num"><b>${c.sold}</b></td><td class="num nowrap"><b>${eur2(c.ht)}</b></td><td class="num">${c.beyond == null ? '—' : c.beyond + ' attendus'}</td><td></td></tr></tfoot></table></div>
     <div class="vh-actions mt-sm"><button class="btn sm" data-act="coreaAddTier" data-id="${s.id}">Ajouter un tarif</button></div>
     ${rev}
     <h4 class="block-title">Charges déductibles (contrat)</h4>
@@ -455,7 +460,7 @@ function coreaBreaksHTML(s){
     </div>
     ${k.missing ? `<p class="muted">${esc(k.missing)}</p>` : `<div class="tbl-wrap"><table class="budget-table prod-table"><thead><tr><th>Équilibre de L’ArtBoristerie : billets vendus nécessaires</th>${k.scenarios.map(([, l]) => `<th class="num">${esc(l)}</th>`).join('')}</tr></thead>
       <tbody><tr><td>MG ${eur2(k.mg)} + part du résultat au-delà du break ≥ dépenses prévues de la date ${eur2(k.costs)}</td>${k.scenarios.map(([sc]) => `<td class="num nowrap">${k.byScenario[sc].needsSplit ? '<span class="warn-txt">répartition à renseigner</span>' : k.byScenario[sc].n == null ? `<span class="warn-txt">non atteint dans la jauge (${k.capacity})</span>` : `<b>${k.byScenario[sc].n}</b>`}</td>`).join('')}</tr></tbody></table></div>
-      <p class="muted small">Prix moyen : ${k.mixSource ? `${esc(k.mixSource)} (${eur2(k.mixUnit)} HT)` : 'répartition à renseigner (billets vendus par tarif) ; pas de moyenne simple des tarifs'}. ${k.cnmVar ? 'CNM à la charge de L’ArtBo hors partage : calculée sur les recettes de chaque nombre de billets. ' : ''}${k.coveredByMg ? 'Le minimum garanti couvre déjà les dépenses prévues de la date. ' : ''}Dépenses prévues de la date hors solde artiste et hors commission ; charges déductibles du contrat (et la CNM seulement si elle est déduite du résultat partagé). Calcul indicatif.</p>`}`;
+      <p class="muted small">Prévisionnel : ${k.mixSource ? `${esc(k.mixSource)}, prix moyen ${eur2(k.mixUnit)} HT` : 'répartition à renseigner (quotas prévus par tarif) ; pas de moyenne simple des tarifs'}.${k.salesUnit != null ? ` Selon les ventes saisies (${k.sold} billets vendus) : prix moyen ${eur2(k.salesUnit)} HT, calcul distinct.` : ' Aucune vente saisie : pas de calcul selon les ventes.'} ${k.cnmVar ? 'CNM à la charge de L’ArtBo hors partage : calculée sur les recettes de chaque nombre de billets. ' : ''}${k.coveredByMg ? 'Le minimum garanti couvre déjà les dépenses prévues de la date. ' : ''}Dépenses prévues de la date hors solde artiste et hors commission ; charges déductibles du contrat (et la CNM seulement si elle est déduite du résultat partagé). Calcul indicatif.</p>`}`;
 }
 
 /** Budget d'une date produite par L'ArtBo : billetterie, droits et taxes, coûts, résultat partagé avec le coproducteur */
