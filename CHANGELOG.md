@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.60.3 — 07/11/2026
+- v1.60.3 : saisie et spectacles (sélection des champs numériques, cachets sur 3 lignes sans défilement horizontal à 1 280 px et plus, spectacle par défaut), coproduction et promotion locale, suivi administratif (boucle communication, confirmation avant de modifier une date de suivi), destinataires et copies en champ unique, message Apple Mail glissé dans un suivi, budgets (jauge, coûts à compléter, CNM, points d'équilibre), suppression et archivage contrôlés d'une date, question exacte avant le renommage Drive
+
+
 ## 1.60.2 — 07/11/2026
 - Pièces jointes du Suivi : glisser depuis Apple Mail accepté, photos (JPG, PNG, HEIC) enregistrées avec leur vrai type, message clair si rien n'est joignable
 - Lieux : choix d'un lieu connu (adresse, code postal) dans une date et lieu de concert propre à un suivi ; carte placée sur le lieu réel ; nouvelles factures de commission avec la ville, le département et le lieu
