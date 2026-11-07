@@ -153,8 +153,8 @@ test('v1.60.3 date au devis Pennylane : archivage proposé (motif obligatoire), 
   await expect(panel).toContainText('Salle Devis');
   await expect(panel).toContainText('Date abandonnée, devis gardé');
   await panel.locator('[data-act="restoreShow"]').click();
-  await expect(dlg(page)).toContainText('Ses relances reprennent après un délai de 7 jours');
-  await dlg(page).locator('button', { hasText: 'Restaurer la date' }).click();
+  await expect(dlg(page)).toContainText('Ses relances restent suspendues : aucune ne repart automatiquement');
+  await dlg(page).locator('button', { hasText: 'Restaurer, relances suspendues' }).click();
   await expect(page.locator('.gig', { hasText: 'Salle Devis' })).toHaveCount(1);
   expectClean(ctx);
 });
@@ -183,14 +183,50 @@ test('v1.60.3 archivage opérationnel : aucun montant financier ne change (factu
   // mention visible là où elle reste comptée
   await expect(page.locator('.panel', { hasText: 'Dates archivées comptées dans ces montants' })).toContainText('Salle Finances');
   await expect(page.locator('.panel', { hasText: 'Dates archivées comptées dans ces montants' }).locator('.badge', { hasText: 'date archivée' })).toHaveCount(1);
-  // relances suspendues pendant l'archivage ; après restauration, aucune relance accumulée tout de suite (délai de 7 jours)
+  // relances : aucune pendant l'archivage ; après restauration, aucune tant qu'elles ne sont pas réactivées (échéances d'origine
+  // intactes) ; réactivées : chaque relance à la prochaine échéance choisie, jamais avant son échéance d'origine
   const rel = await page.evaluate(async () => { const { S } = await import('./js/state.js'); const r = await import('./js/reminders.js');
     const s = S.db.shows.find(x => x.id === 'sh-fin'); const archivee = r.remindersOf(s).length;
-    s.archived_at = null; s.restored_at = new Date().toISOString(); const rest = r.remindersOf(s);
-    return { archivee, restauree: rest.length, enRetard: rest.filter(x => x.late).length }; });
+    Object.assign(s, { archived_at: null, restored_at: new Date().toISOString(), reminders_suspended_at: new Date().toISOString() });
+    const suspendue = r.remindersOf(s).length, concernees = r.remindersOf(s, { all: true });
+    const k = concernees[0].key, origin = concernees[0].origin;
+    Object.assign(s, { reminders_suspended_at: null, reminders_next: { [k]: '2099-01-15' } });
+    const apres = r.remindersOf(s).find(x => x.key === k);
+    return { archivee, suspendue, concernees: concernees.length, k, origineGardee: apres.origin === origin, due: apres.due, late: apres.late }; });
   expect(rel.archivee).toBe(0);
-  expect(rel.restauree).toBeGreaterThan(0);
-  expect(rel.enRetard).toBe(0);
+  expect(rel.suspendue).toBe(0);
+  expect(rel.concernees).toBeGreaterThan(0);
+  expect(rel.k).toBe('acompte_paye');   // même clé que la fonction serveur generate_reminders
+  expect(rel).toMatchObject({ origineGardee: true, due: '2099-01-15', late: false });
+  expectClean(ctx);
+});
+
+test('v1.60.3 date restaurée : relances suspendues, « Réactiver les relances » avec la prochaine échéance de chacune', async ({ page }) => {
+  const ctx = await openApp(page);
+  const past = new Date(Date.now() - 40 * 864e5).toISOString().slice(0, 10), soon = new Date(Date.now() + 5 * 864e5).toISOString().slice(0, 10);
+  await seed(page, { shows: [{ ...ROUVERTE, id: 'sh-rel', venue: 'Salle Relances', date: new Date(Date.now() + 200 * 864e5).toISOString().slice(0, 10), contract_type: 'Cession',
+    status: 'Confirmée Salle', conf_kit_sent: past, restored_at: new Date().toISOString(), reminders_suspended_at: new Date().toISOString() }] });
+  expect(await page.evaluate(async () => { const { S } = await import('./js/state.js'); return (await import('./js/reminders.js')).remindersOf(S.db.shows.find(x => x.id === 'sh-rel')).length; })).toBe(0);
+  await page.evaluate(async () => { (await import('./js/forms.js')).editShow('sh-rel'); });
+  await expect(page.locator('#modal')).toContainText('Relances suspendues depuis la restauration');
+  await page.locator('#modal [data-act="reactivateReminders"]').click();
+  const w = page.locator('#modal2');
+  await expect(w).toContainText('Pré-contrat à compléter — échéance d’origine');
+  const field = w.locator('input[name="precontrat"]');
+  await expect(field).toHaveCount(1);
+  // échéance passée refusée, puis date choisie : réactivation tracée par le serveur
+  await field.evaluate((el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }, past);
+  await w.locator('button[type=submit]').click();
+  await expect(toasts(page).last()).toContainText('à partir d’aujourd’hui');
+  await field.evaluate((el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }, soon);
+  await w.locator('button[type=submit]').click();
+  await expect(toasts(page).last()).toContainText('Relances réactivées');
+  const c = (await calls(page)).find(x => x.rpc === 'reactivate_reminders');
+  expect(c?.args?.p_show).toBe('sh-rel');
+  expect(c?.args?.p_next?.precontrat).toBe(soon);
+  const sh = await db(page, 'shows', 'sh-rel');
+  expect(sh.reminders_suspended_at).toBeNull();
+  expect(sh.conf_kit_sent).toBe(past);   // échéance d'origine intacte
   expectClean(ctx);
 });
 

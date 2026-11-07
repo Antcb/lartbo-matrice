@@ -5,7 +5,7 @@
 import { PROSPECT_LABEL, STATUSES, stClass, stColor } from '../constants.js';
 import { deptColor, projName, projectOptions } from '../selectors.js';
 import { S } from '../state.js';
-import { esc } from '../utils.js';
+import { esc, fmtDate } from '../utils.js';
 import { projPicker } from './projpicker.js';
 
 export const stBadge = s => `<span class="badge st-badge st-${stClass(s)}" style="--c:${stColor(s)}">${esc(s||'—')}</span>`;
@@ -76,3 +76,7 @@ export { projPicker };
 
 /** Mention d'une date archivée (v1.60.3) là où elle reste affichée (vues financières, historique d'un artiste ou d'une structure) */
 export const archivedTag = s => s?.archived_at ? ' <span class="badge tag">date archivée</span>' : '';
+/** Relances suspendues après la restauration d'une date (v1.60.3, décision d'Anthony du 07/11) : rien ne part tant qu'elles ne sont
+ *  pas réactivées explicitement, avec le choix de leurs prochaines échéances */
+export const remindersSuspendedNote = (s, level = 1) => s?.reminders_suspended_at ? `<p class="warn-txt small full">Relances suspendues depuis la restauration du ${fmtDate(String(s.reminders_suspended_at).slice(0, 10))} : aucune relance ne part.
+  <button type="button" class="btn sm" data-act="reactivateReminders" data-id="${s.id}" data-level="${level}">Réactiver les relances…</button></p>` : '';

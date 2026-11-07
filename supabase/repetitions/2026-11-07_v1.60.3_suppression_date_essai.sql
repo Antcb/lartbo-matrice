@@ -195,16 +195,31 @@ begin
   insert into pennylane_a_rattacher (pennylane_id, show_id) values ('PL-SOIR', d);
   if (select count(*) from notifications where show_id = d and kind = 'date_archivee_facture') <> 2 then raise exception 'ECHEC 14b : alerte « à rattacher » absente'; end if;
 
-  -- 13. restauration : fiche rouverte, alertes traitées, aucune relance accumulée tout de suite
+  -- 13. restauration (décision d'Anthony du 07/11) : fiche rouverte, alertes traitées, échéances d'origine intactes, AUCUNE relance
+  -- reprise automatiquement, même longtemps après ; réactivation explicite avec la prochaine échéance de chaque relance, tracée
   perform public.restore_show(d);
   if public.fiche_get('jeton-essai-soir-000001') ->> 'venue' <> 'ESSAI Soir' then raise exception 'ECHEC 13 : fiche non rouverte'; end if;
   if exists (select 1 from notifications where show_id = d and withdrawn_at is null) then raise exception 'ECHEC 13b : alerte ou rappel encore actifs'; end if;
+  if (select conf_kit_sent from shows where id = d) <> current_date - 30 then raise exception 'ECHEC 13c : échéance d''origine modifiée'; end if;
+  perform set_config('matrice.archive_rpc', 'on', true); update shows set restored_at = now() - interval '30 days' where id = d; perform set_config('matrice.archive_rpc', '', true);
   perform public.generate_reminders();
-  if exists (select 1 from notifications where show_id = d and withdrawn_at is null) then raise exception 'ECHEC 13c : relance accumulée envoyée à la restauration'; end if;
-  -- 8 jours plus tard (restauration avancée artificiellement) : la relance encore due est générée, une seule fois, avec sa clé propre
-  perform set_config('matrice.archive_rpc', 'on', true); update shows set restored_at = now() - interval '10 days' where id = d; perform set_config('matrice.archive_rpc', '', true);
+  if exists (select 1 from notifications where show_id = d and withdrawn_at is null) then raise exception 'ECHEC 13d : relance reprise sans réactivation'; end if;
+  begin update shows set reminders_suspended_at = null where id = d; ok := true; exception when others then ok := false; end;
+  if ok then raise exception 'ECHEC 13e : réactivation écrite directement'; end if;
+  begin perform public.reactivate_reminders(d, jsonb_build_object('precontrat', (current_date - 1)::text)); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like 'Choisis une prochaine échéance%' then raise exception 'ECHEC 13f : échéance passée acceptée (%)', e; end if;
+  -- l'application propose toutes les relances concernées (ici pré-contrat et boucle accueil) ; une relance sans date choisie reprendrait
+  -- à son échéance d'origine
+  perform public.reactivate_reminders(d, jsonb_build_object('precontrat', (current_date + 3)::text, 'boucle_accueil', (current_date + 3)::text));
+  if (select archive_history -> -1 ->> 'action' from shows where id = d) <> 'reactivate_reminders' then raise exception 'ECHEC 13g : réactivation non tracée'; end if;
+  begin perform public.reactivate_reminders(d, '{}'); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like '%ne sont pas suspendues%' then raise exception 'ECHEC 13h : %', e; end if;
+  perform public.generate_reminders();
+  if exists (select 1 from notifications where show_id = d and withdrawn_at is null) then raise exception 'ECHEC 13i : relance partie avant l''échéance choisie'; end if;
+  -- l'échéance choisie arrive : la relance part, une seule fois, avec sa clé propre
+  perform set_config('matrice.archive_rpc', 'on', true); update shows set reminders_next = reminders_next || jsonb_build_object('precontrat', current_date::text) where id = d; perform set_config('matrice.archive_rpc', '', true);
   perform public.generate_reminders(); perform public.generate_reminders();
-  select count(*) into n from notifications where show_id = d and kind = 'precontrat' and withdrawn_at is null and dedupe_key like '%:r%';
-  if n <> 1 then raise exception 'ECHEC 13d : relance après délai (% trouvée(s))', n; end if;
-  raise notice 'ESSAIS 11 à 14 (fiche publique, notifications, restauration, alerte facture) réussis';
+  select count(*) into n from notifications where show_id = d and kind = 'precontrat' and withdrawn_at is null and dedupe_key like '%:a%';
+  if n <> 1 then raise exception 'ECHEC 13j : relance après réactivation (% trouvée(s))', n; end if;
+  raise notice 'ESSAIS 11 à 14 (fiche publique, notifications, restauration et réactivation des relances, alerte facture) réussis';
 end $s$;

@@ -7,7 +7,7 @@ import { go, render } from './app.js';
 import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, FOLLOW_DATES, INVOICE_DATES, PAY_KINDS, isOff } from './constants.js';
 import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, restoreShow, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
-import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure, showPrefillFromSuivi } from './forms.js';
+import { reactivateRemindersWindow, createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure, showPrefillFromSuivi } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showLabel, showsFiltered, structName, unreadNotifs } from './selectors.js';
 import { CFG } from './config.js';
 import { propagateCommission } from './commission.js';
@@ -104,10 +104,15 @@ export const ACTIONS = {
   // Booking
   toggleCancelled: () => { S.showCancelled=!S.showCancelled; render(); },
   toggleArchived: () => { S.showArchived = !S.showArchived; render(); },
-  // date archivée (v1.60.3) : restaurée après confirmation — elle revient dans les listes, totaux, comptes et relances
+  // date archivée (v1.60.3) : restaurée après confirmation — elle revient dans les listes de travail ; ses relances restent suspendues
+  // (échéances d'origine intactes) jusqu'à une réactivation explicite, proposée ici (décision d'Anthony du 07/11)
   restoreShow: async t => { const s = byId('shows', t.dataset.id); if (!s?.archived_at) return;
-    if (!(await confirmAsk('Restaurer la date ?', `La date « ${[s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · ')} » revient dans les listes de travail, la carte et les calendriers ; sa fiche publique se rouvre. Ses relances reprennent après un délai de 7 jours (aucune relance accumulée envoyée d’un coup).`, 'Restaurer la date'))) return;
-    if (await restoreShow(s.id)){ toast('Date restaurée'); render(); } },
+    const choice = await ask({title: 'Restaurer la date ?', text: `La date « ${[s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · ')} » revient dans les listes de travail, la carte et les calendriers ; sa fiche publique se rouvre.\nSes relances restent suspendues : aucune ne repart automatiquement. Tu peux les réactiver maintenant en choisissant leurs prochaines échéances, ou plus tard depuis la date.`,
+      actions: [{value: 'keep', label: 'Restaurer, relances suspendues', plain: true}, {value: 'reactivate', label: 'Restaurer et réactiver les relances…'}]});
+    if (!choice || !(await restoreShow(s.id))) return;
+    toast('Date restaurée'); render();
+    if (choice === 'reactivate') reactivateRemindersWindow(s.id); },
+  reactivateReminders: t => reactivateRemindersWindow(t.dataset.id, Number(t.dataset.level) || 1),
   resetTodoFilters: () => { S.todoWho = ''; localSet('todoWho', ''); S.todoDept = ''; S.search.todo = ''; setProjects([]); render(); },
   clearArtists: () => { setProjects([]); render(); },
   toggleInactive: () => { S.showInactive = !S.showInactive; localSet('showInactive', S.showInactive ? '1' : ''); render(); },

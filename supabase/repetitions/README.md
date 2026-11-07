@@ -22,4 +22,4 @@ ailleurs que sur le projet de test (contrôle de l'adresse des fonctions, absenc
   archivé, refus : résultat clôturé, facture émise, versement, devis / facture Pennylane, rattachement, pièce à rattacher, hors calcul ;
   journal en lecture seule ; tâches détachées annotées ; archivage / restauration et leurs refus ; aucun rappel pour une date
   archivée ; gardes de generate_reminders, fiche_get et fiche_submit ; fiche publique « Dossier indisponible » ; notifications
-  retirées ; restauration sans relance accumulée ; alerte de facture sur une date archivée). Données fictives uniquement.
+  retirées ; restauration avec relances suspendues puis réactivation explicite ; alerte de facture sur une date archivée). Données fictives uniquement.
