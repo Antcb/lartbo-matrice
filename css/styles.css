@@ -292,6 +292,7 @@ td .ac-input:hover{border-color:var(--line)}
 /* 10 — Production ------------------------------------------------------ */
 .prod-list{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden}
 .prod-row+.prod-row{border-top:1px solid var(--line-2)}
+.prod-row{scroll-margin-top:90px}   /* date ouverte depuis la fiche projet ou une notification : visible sous l'en-tête fixe (v1.60.3) */
 .prod-head{display:grid;grid-template-columns:56px minmax(0,1fr) auto auto 20px;gap:16px;align-items:center;padding:10px 16px;cursor:pointer}
 .prod-head:hover{background:var(--soft)}
 .prod-head .what b{font-size:15px}
@@ -897,11 +898,11 @@ dialog.mail .mail-grid input{width:100%;min-width:0}
 .budget-table input.doc-no{min-width:80px;width:110px}
 .budget-table tr.has-doc td{background:#FFF9EC}
 .budget-table .calc-note{font-size:11px;margin-top:2px}
-@media (min-width:1025px){ .budget-table td.bl-label{min-width:30ch} .budget-table td.bl-sup .cell-ta{min-width:90px} }   /* ordinateur (v1.60.3) : libellé des cachets (jauge, brut indicatif) sur 3 lignes au plus au lieu de 4 à 7 ; fournisseur (« Salarié ») plus étroit pour ne pas élargir le tableau à 1 440 px ; téléphone et tablette : fiches inchangées */
 .budget-table .reimb{flex-direction:row;align-items:center;gap:6px}
 .budget-table td > select{max-width:170px!important}
 .budget-table .dt{max-width:140px}
 .budget-table td{padding-left:8px;padding-right:8px}
+@media (min-width:1025px){ .budget-table td.bl-label{min-width:30ch} .budget-table td.bl-sup .cell-ta,.budget-table .cell-ta[data-f=doc_number]{min-width:90px} .budget-table :is(th,td){padding-left:var(--sp-1);padding-right:var(--sp-1)} }   /* ordinateur (v1.60.3) : libellé des cachets (jauge, brut indicatif) sur 3 lignes au plus au lieu de 4 à 7 ; la place vient du fournisseur (« Salarié »), du n° de pièce et d'un tableau dense (comme .prod-bill) : aucun défilement à 1 440 px, pas plus large qu'avant à 1 280 px ; téléphone et tablette : fiches inchangées */
 /* To Do : échéance + urgence dans la même case, structure + date dans « Lié à » */
 .due-cell{min-width:150px}
 .due-cell .urg{display:inline-block;margin-top:4px;margin-left:-9px}
