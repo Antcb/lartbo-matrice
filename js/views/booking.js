@@ -4,10 +4,11 @@
  * La carte (Leaflet) est créée une seule fois et déplacée d'un affichage à l'autre (attachMap).
  */
 import { STATUS_COLOR, STATUSES, isOff, stColor, viaArtbo } from '../constants.js';
+import { EMITTED_FIELDS } from '../calc.js';
 import { lingering } from '../data.js';
 import { route, routeCached } from '../geo.js';
 import { byId, projName, showCoords, showPlace, showPlaceNote, showsFiltered, visibleShow } from '../selectors.js';
-import { S } from '../state.js';
+import { ARCHIVED, S } from '../state.js';
 import { filterBar, fold, stBadge, stSelect, viewHead } from '../ui/bits.js';
 import { $, daysBetween, esc, eur, fmtDate, fmtShort } from '../utils.js';
 
@@ -15,6 +16,8 @@ export function viewBooking(){
   const all = showsFiltered();
   const shows = all.filter(visibleShow);
   const nOff = all.filter(s => isOff(s.status)).length;
+  // dates archivées (v1.60.3) : hors de S.db, donc hors de la liste, des totaux et de la carte ; filtre artistes appliqué
+  const archived = ARCHIVED.shows.filter(s => !S.projects.length || S.projects.includes(s.project_id)).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const n = k => shows.filter(s => (s.status||'').startsWith(k)).length;
   const totalConf = shows.filter(s=>(s.status||'').startsWith('Confirmée') && viaArtbo(s)).reduce((a,s)=>a+(Number(s.fee_ht)||0),0);   // hors « Confirmée Artiste » (v1.53)
   let lastMonth = '', list = '';
@@ -29,19 +32,33 @@ export function viewBooking(){
       sub: [plural(n('Intérêt'),'intérêt'), plural(n('Option'),'option'), plural(n('Confirmée'),'confirmée'), `${eur(totalConf)} de cachets confirmés`].join(' · '),
       filters: filterBar(),
       actions: `${nOff?`<button class="btn" data-act="toggleCancelled" aria-pressed="${S.showCancelled}">${S.showCancelled?'Masquer':'Afficher'} annulées / sans suite (${nOff})</button>`:''}
+        ${archived.length?`<button class="btn" data-act="toggleArchived" aria-pressed="${!!S.showArchived}">${S.showArchived?'Masquer':'Afficher'} les dates archivées (${archived.length})</button>`:''}
         <button class="btn" data-act="exportShows">Exporter</button>
         <button class="btn primary" data-act="newShow">Nouvelle date</button>`}) + `
   <div class="pane-switch" role="tablist">
     <button class="btn sm ${S.bookingPane!=='map'?'on':''}" data-act="bookingPane" data-p="list">Liste</button>
     <button class="btn sm ${S.bookingPane==='map'?'on':''}" data-act="bookingPane" data-p="map">Carte et trajets</button></div>
   <div class="booking pane-${S.bookingPane==='map'?'map':'list'}">
-    <div class="list-wrap">${list || `<div class="empty panel">Aucune date en ${S.year}. Ajoute un intérêt avec « Nouvelle date ».</div>`}</div>
+    <div class="list-wrap">${S.showArchived && archived.length ? archivedPanel(archived) : ''}${list || `<div class="empty panel">Aucune date en ${S.year}. Ajoute un intérêt avec « Nouvelle date ».</div>`}</div>
     <aside class="side side-booking">
       <div class="map-box"><div id="map-slot" role="region" aria-label="Carte des dates"></div></div>
       <div class="legend">${legend(shows)}</div>
       <div class="panel pad route-box" id="route-box">${routeBoxHTML(shows)}</div>
     </aside>
   </div>`;
+}
+
+/** Dates archivées (v1.60.3) : consultables et restaurables ; une facture arrivée depuis l'archivage (synchronisation Pennylane)
+ *  est signalée — la date doit alors être restaurée pour revenir dans les comptes et les relances */
+function archivedPanel(rows){
+  const emitted = id => ARCHIVED.show_payments.some(p => p.show_id === id && EMITTED_FIELDS.some(k => p[k] != null && String(p[k]).trim() !== ''))
+    || S.db.pennylane_a_rattacher.some(r => r.show_id === id && !r.resolved_at && !r.cancelled_at);
+  return `<div class="panel pad"><h2 class="month">Dates archivées <small>${rows.length}</small></h2>
+    <p class="muted small">Hors des listes, totaux, comptes, relances, carte et calendriers. Ce n’est pas une annulation : leur statut ne change pas.</p>
+    ${rows.map(s => `<p><strong>${esc([s.date ? fmtDate(s.date) : 'sans date', s.venue, projName(s.project_id)].filter(Boolean).join(' · '))}</strong> <span class="muted">— ${esc(s.status || '')}</span><br>
+      <span class="muted small">Archivée le ${fmtDate(String(s.archived_at).slice(0, 10))}${s.archived_by ? ' par ' + esc(s.archived_by) : ''} : ${esc(s.archived_reason || '')}</span>
+      ${emitted(s.id) ? '<br><span class="warn-txt">Une facture Pennylane est arrivée pour cette date : restaure-la pour qu’elle revienne dans les comptes et les relances.</span>' : ''}
+      <br><button class="btn sm" data-act="restoreShow" data-id="${s.id}">Restaurer</button></p>`).join('')}</div>`;
 }
 
 function gigRow(s){

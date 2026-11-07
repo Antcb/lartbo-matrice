@@ -40,6 +40,9 @@ begin
   if (select actor from show_deletions where show_id = d1) <> 'equipe@test.local' then raise exception 'ECHEC 2h : auteur non noté'; end if;
   if not exists (select 1 from finance_log where show_id = d1 and op = 'DELETE' and table_name = 'shows') then raise exception 'ECHEC 2i : finance_log sans la suppression'; end if;
   if (r ->> 'closures')::int <> 2 or (r ->> 'tasks')::int <> 1 then raise exception 'ECHEC 2j : bilan %', r; end if;
+  -- tâche détachée : mention visible en tête de sa note (réponse d'Anthony du 07/11)
+  if (select notes from tasks where id = t1) not like 'Date supprimée le __/__/____ : ' || to_char(current_date + 30, 'DD/MM/YYYY') || ' · ESSAI Rouverte · ESSAI v1.60.3' then
+    raise exception 'ECHEC 2k : mention absente (%)', (select notes from tasks where id = t1); end if;
 
   -- 3. résultat clôturé : refus
   insert into shows (project_id, venue, contract_type, fee_ht) values (pa, 'ESSAI Clôturée', 'Co-Production', 0) returning id into d2;
@@ -107,5 +110,52 @@ begin
   if ok then raise exception 'ECHEC 8c : effacement du journal'; end if;
   begin update show_deletions set label = 'x'; ok := true; exception when others then ok := false; end;
   if ok then raise exception 'ECHEC 8d : modification du journal'; end if;
-  raise notice 'ESSAIS v1.60.3 : 8 groupes, tous réussis';
+
+  -- 9. archivage : la date au devis Pennylane (non supprimable) s'archive avec un motif, se restaure ; refus clairs
+  j := public.show_deletion_state(d4);
+  if jsonb_array_length(j -> 'blocked') = 0 or jsonb_array_length(j -> 'archive_blocked') <> 0 then raise exception 'ECHEC 9 : état %', j; end if;
+  begin perform public.archive_show(d4, '  '); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like 'Indique le motif%' then raise exception 'ECHEC 9a : %', e; end if;
+  perform public.archive_show(d4, 'Date abandonnée, devis gardé dans Pennylane');
+  if (select archived_at is null or archived_by <> 'equipe@test.local' or archived_reason <> 'Date abandonnée, devis gardé dans Pennylane'
+             or jsonb_array_length(archive_history) <> 1 or status <> 'Intérêt Salle' or pennylane_quote_id <> '123' from shows where id = d4) then
+    raise exception 'ECHEC 9b : archivage mal noté'; end if;
+  begin perform public.archive_show(d4, 'encore'); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like '%déjà archivée%' then raise exception 'ECHEC 9c : %', e; end if;
+  begin update shows set archived_at = null where id = d4; ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like 'Archivage et restauration%' then raise exception 'ECHEC 9d : écriture directe acceptée (%)', e; end if;
+  begin insert into shows (project_id, venue, archived_at) values (pa, 'ESSAI née archivée', now()); ok := true; exception when others then ok := false; end;
+  if ok then raise exception 'ECHEC 9e : date créée archivée'; end if;
+  perform public.restore_show(d4);
+  if (select archived_at is not null or jsonb_array_length(archive_history) <> 2 from shows where id = d4) then raise exception 'ECHEC 9f : restauration'; end if;
+  begin perform public.restore_show(d4); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like '%n’est pas archivée%' then raise exception 'ECHEC 9g : %', e; end if;
+  begin perform public.archive_show(d3, 'x'); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like 'Cette date a des factures émises ou des versements%' then raise exception 'ECHEC 9h : %', e; end if;
+  begin perform public.archive_show(d2, 'x'); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like 'Le résultat de cette date est clôturé%' then raise exception 'ECHEC 9i : %', e; end if;
+  begin perform public.archive_show(d5, 'x'); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e not like '%facture Pennylane à rattacher%' then raise exception 'ECHEC 9j : %', e; end if;
+  perform set_config('request.jwt.claims', '{"email":"inconnu@test.local","role":"authenticated"}', false);
+  begin perform public.archive_show(d6, 'x'); ok := true; exception when others then ok := false; e := sqlerrm; end;
+  if ok or e <> 'Accès refusé' then raise exception 'ECHEC 9k : hors équipe (%)', e; end if;
+  perform set_config('request.jwt.claims', '{"email":"equipe@test.local","role":"authenticated"}', false);
+  raise notice 'ESSAIS v1.60.3 : 9 groupes, tous réussis';
 end $e$;
+
+-- 10. rappels : une date confirmée archivée ne produit aucun rappel (fonction lancée comme la tâche planifiée)
+reset role;
+do $r$
+declare pa uuid; a uuid; b uuid; n int;
+begin
+  perform set_config('request.jwt.claims', '{"email":"equipe@test.local","role":"authenticated"}', false);
+  insert into projects (name) values ('ESSAI rappels') returning id into pa;
+  insert into shows (project_id, venue, date, status, prod_mode, conf_kit_sent) values (pa, 'ESSAI Rappel visible', current_date + 90, 'Confirmée Salle', 'production', current_date - 30) returning id into a;
+  insert into shows (project_id, venue, date, status, prod_mode, conf_kit_sent) values (pa, 'ESSAI Rappel archivé', current_date + 90, 'Confirmée Salle', 'production', current_date - 30) returning id into b;
+  perform public.archive_show(b, 'essai');
+  perform public.generate_reminders();
+  select count(*) into n from notifications where show_id = a and kind = 'precontrat';
+  if n <> 1 then raise exception 'ECHEC 10 : rappel absent pour la date visible (%)', n; end if;
+  if exists (select 1 from notifications where show_id = b) then raise exception 'ECHEC 10b : rappel pour une date archivée'; end if;
+  raise notice 'ESSAI 10 (rappels) réussi';
+end $r$;
