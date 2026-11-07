@@ -10,6 +10,7 @@ import { byId, projName, showCoords, showsFiltered, visibleShow } from '../selec
 import { S } from '../state.js';
 import { filterBar, fold, stBadge, stSelect, viewHead } from '../ui/bits.js';
 import { $, daysBetween, esc, eur, fmtDate, fmtShort } from '../utils.js';
+import { calBookingRows, calMapPoints, calRowHTML, evSpan } from '../calendars.js';
 
 export function viewBooking(){
   const all = showsFiltered();
@@ -18,11 +19,17 @@ export function viewBooking(){
   const n = k => shows.filter(s => (s.status||'').startsWith(k)).length;
   const totalConf = shows.filter(s=>(s.status||'').startsWith('Confirmée') && viaArtbo(s)).reduce((a,s)=>a+(Number(s.fee_ht)||0),0);   // hors « Confirmée Artiste » (v1.53)
   let lastMonth = '', list = '';
-  for (const s of shows){
-    const m = s.date ? new Date(s.date+'T12:00:00').toLocaleDateString('fr-FR',{month:'long',year:'numeric'}) : 'Sans date';
-    if (m!==lastMonth){ const cnt = shows.filter(x => (x.date ? new Date(x.date+'T12:00:00').toLocaleDateString('fr-FR',{month:'long',year:'numeric'}) : 'Sans date') === m).length;
+  // indisponibilités des agendas Google des artistes (lecture seule) : intercalées par jour, affichées à part, jamais comptées
+  const projIds = S.projects.length ? S.projects : S.db.projects.filter(p => p.active || S.showInactive).map(p => p.id);
+  const unav = calBookingRows(projIds, S.year);
+  const monthOf = d => d ? new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{month:'long',year:'numeric'}) : 'Sans date';
+  const items = [...shows.map(s => ({d: s.date, s})), ...unav.map(u => ({d: u.span[0] < S.year + '-01-01' ? S.year + '-01-01' : u.span[0], u}))]
+    .sort((x, y) => (x.d || '9999').localeCompare(y.d || '9999') || (x.s ? 1 : 0) - (y.s ? 1 : 0));
+  for (const it of items){
+    const m = monthOf(it.d);
+    if (m!==lastMonth){ const cnt = shows.filter(x => monthOf(x.date) === m).length;
       list += `<h2 class="month">${m} <small>${cnt} date${cnt>1?'s':''}</small></h2>`; lastMonth=m; }
-    list += gigRow(s);
+    list += it.s ? gigRow(it.s) : calRowHTML(it.u, !S.project);
   }
   setBookingMap(shows);
   return viewHead('Booking', {
@@ -39,6 +46,7 @@ export function viewBooking(){
     <aside class="side side-booking">
       <div class="map-box"><div id="map-slot" role="region" aria-label="Carte des dates"></div></div>
       <div class="legend">${legend(shows)}</div>
+      ${calLegend()}
       <div class="panel pad route-box" id="route-box">${routeBoxHTML(shows)}</div>
     </aside>
   </div>`;
@@ -55,6 +63,14 @@ function gigRow(s){
       <span class="pick" title="Calcul de trajet : choisis un départ (A) puis une arrivée (B)">
         <button class="btn sm ${pa?'on':''}" data-act="pick" data-p="a" data-id="${s.id}" aria-pressed="${pa}" aria-label="Départ du trajet">A</button><button class="btn sm ${pb?'on':''}" data-act="pick" data-p="b" data-id="${s.id}" aria-pressed="${pb}" aria-label="Arrivée du trajet">B</button></span>
     </div></div>`;
+}
+
+/** Repères « Date artiste — calendrier Google » et « Show » à localiser (jamais placés au hasard) */
+function calLegend(){
+  const cal = calMapPoints(S.projects.length ? S.projects : null, S.year);
+  if (!cal.points.length && !cal.toLocate.length) return '';
+  return `<div class="cal-legend"><span class="cal-dot" aria-hidden="true"></span> Date artiste — calendrier Google (${cal.points.length})
+    ${cal.toLocate.length ? `<p class="help m0">Localisation à préciser : ${cal.toLocate.map(e => esc(`${fmtShort(evSpan(e)[0])} ${e.title || ''}${e.location ? ' (' + e.location + ')' : ''}`)).join(' · ')}</p>` : ''}</div>`;
 }
 
 const plural = (n, w) => `${n} ${w}${n>1?'s':''}`;
@@ -122,6 +138,9 @@ function setBookingMap(shows){
       <div class="pop-actions"><button type="button" class="btn sm ${S.routePick.a===s.id?'on':''}" data-act="pick" data-p="a" data-id="${s.id}">Départ (A)</button><button type="button" class="btn sm ${S.routePick.b===s.id?'on':''}" data-act="pick" data-p="b" data-id="${s.id}">Arrivée (B)</button></div>`}; }).filter(Boolean);
   const a0 = byId('shows', S.routePick.a), b0 = byId('shows', S.routePick.b);
   const rr = a0 && b0 ? routeCached(a0, b0) : null;
+  // « Show » des agendas Google : repère distinct, jamais approximatif ; sinon « localisation à préciser » (sous la carte)
+  const cal = calMapPoints(S.projects.length ? S.projects : null, S.year);
+  pts.push(...cal.points); S.calToLocate = cal.toLocate;
   setMapData({points: pts, key: `booking|${S.year}|${S.projects.join()}|${S.showInactive}|${S.showCancelled}`, keepView: true, line: rr?.geometry || null});
   // calcul des trajets en arrière-plan, puis mise à jour du cadre « Trajet »
   const jobs = chains(shows).map(c => [c.a, c.b]);
@@ -156,7 +175,8 @@ export function attachMap(){
   if (data.circle) L.circle(data.circle.center, {radius: data.circle.km*1000, color:'#283C63', weight:1, opacity:.5, fillOpacity:.05, interactive:false}).addTo(LAYER);
   for (const p of data.points){
     const light = ['#A9C8EC','#BFE3B9','#C9CDD4','#9EA4AD'].includes(p.color);
-    const m = L.circleMarker([p.lat, p.lng], {radius: p.big?9:7, color: p.ring ? '#C8372D' : (light ? '#5B677D' : '#FFFFFF'), weight: p.ring?3:1.5,
+    const m = L.circleMarker([p.lat, p.lng], p.gcal ? {radius: 8, color: '#283C63', weight: 2.5, dashArray: '3 3', fillColor: '#FFFFFF', fillOpacity: 1}   // agenda Google : repère distinct
+      : {radius: p.big?9:7, color: p.ring ? '#C8372D' : (light ? '#5B677D' : '#FFFFFF'), weight: p.ring?3:1.5,
       fillColor: p.color, fillOpacity:1}).bindPopup(p.label + (p.from ? '<div class="pop-dist">Calcul de la distance…</div>' : '')).addTo(LAYER);
     if (p.showId) MARKERS.set(p.showId, {m, r: p.big?9:7});
     // fiche du point après 1 seconde de survol
