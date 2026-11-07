@@ -5,11 +5,11 @@
 import { ask, askText } from './ui/dialog.js';
 import { FORMAT_FIELD, exportTable } from './exports.js';
 import { propagateCommission } from './commission.js';
-import { allPaymentsOf, changeBlocked, hasFinancialRecord } from './calc.js';
+import { allPaymentsOf, hasFinancialRecord, showRemovalState } from './calc.js';
 import { render } from './app.js';
 import { CFG } from './config.js';
 import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PRIORITY_OPTS, PROSPECT, PROSPECT_OPTS, STATUSES, TASK_STATUS, TASK_STATUS_OPTS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
-import { deleteShow, insert, purgeStored, refreshFor, remove, removeWhere, save, saveLinger, sb, showDeletionState, signedUrl, syncLinks, uploadFiles } from './data.js';
+import { archiveShow, deleteShow, insert, purgeStored, refreshFor, remove, removeWhere, save, saveLinger, sb, showDeletionState, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode, geoFrance, searchPlaces } from './geo.js';
 import { contactMails, contactsWithMail, defaultCommission, settingAcompte, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, placeOfSuivi, projIds, showPlaceNote, projName, projectOptions, prospectTitle, spectaclesOf } from './selectors.js';
 import { S, touch } from './state.js';
@@ -123,25 +123,49 @@ async function locateShow(v, s){
 
 /**
  * Question de suppression d'une date (v1.60.3) : ce qui part et ce qui reste, d'après le serveur (show_deletion_state) — à défaut
- * (serveur sans la fonction), d'après les données chargées. Refus (garde-fou de l'application ou du serveur) : motif affiché, null.
+ * (serveur sans la fonction), d'après les données chargées. Suppression refusée : motif affiché (null) ; si l'archivage reste
+ * possible (devis ou document Pennylane, lignes hors calcul…), la question propose « Archiver la date » à la place
+ * (réponse d'Anthony du 07/11 : distinct d'une annulation, aucun document Pennylane touché).
  */
 async function showDeleteAsk(s){
-  const why = changeBlocked('shows', s.id, null);
-  if (why){ toast(why, true); return null; }
-  const st = await showDeletionState(s.id);
-  if (st?.blocked?.length){ toast(st.blocked.join(' '), true); return null; }
+  const name = [s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · ');
+  const loc = showRemovalState(s.id);
+  const st = loc.blocked.length ? null : await showDeletionState(s.id);
+  const blocked = loc.blocked.length ? loc.blocked : st?.blocked || [];
+  if (blocked.length){
+    const arch = loc.blocked.length ? loc.archiveBlocked : st?.archive_blocked || blocked;
+    if (arch.length){ toast(blocked.join(' '), true); return null; }
+    return {title: 'Supprimer la date ?', text: [`La date « ${name} » ne peut pas être supprimée :`, ...blocked,
+      'Tu peux l’archiver à la place : elle sort des listes, des totaux, des comptes, des relances, de la carte et des calendriers, mais reste consultable dans Booking › « Dates archivées », où elle se restaure.',
+      'Ce n’est pas une annulation : son statut ne change pas. Rien n’est modifié ni supprimé dans Pennylane.',
+      'Si une facture est un jour faite dans Pennylane pour cette date (depuis son devis), restaure-la d’abord.'].join('\n'),
+      actions: [{value: 'archive', label: 'Archiver la date'}]};
+  }
   const nb = (k, one, many) => `${k} ${k > 1 ? many : one}`;
   const pays = st ? Number(st.payments) : allPaymentsOf(s.id).length, lines = st ? Number(st.budget_lines) : S.db.budget_lines.filter(l => l.show_id === s.id).length;
   const tasks = st ? Number(st.tasks) : S.db.tasks.filter(t => t.show_id === s.id).length, closures = Number(st?.closures || 0);
   const gone = [pays && nb(pays, 'ligne de facturation (non émise)', 'lignes de facturation (aucune émise)'), lines && nb(lines, 'ligne de budget', 'lignes de budget')].filter(Boolean);
   const text = [
-    `Supprimer la date « ${[s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · ')} » ?`,
+    `Supprimer la date « ${name} » ?`,
     `Supprimées avec elle : ${gone.length ? gone.join(' et ') : 'aucune ligne de facturation ni de budget'}.`,
-    tasks ? `Conservée${tasks > 1 ? 's' : ''} : ${nb(tasks, 'tâche liée', 'tâches liées')}, sans lien vers la date.` : '',
+    tasks ? `Conservée${tasks > 1 ? 's' : ''} : ${nb(tasks, 'tâche liée', 'tâches liées')}, détachée${tasks > 1 ? 's' : ''} de la date${st ? ', avec la mention « Date supprimée le … » en tête de leur note' : ''}.` : '',
     closures ? `Historique de clôture et de réouverture du résultat (${nb(closures, 'entrée', 'entrées')}) : conservé dans le journal des suppressions, avec une copie complète de la date.`
       : st ? 'Une copie complète de la date est gardée dans le journal des suppressions.' : '',
     'Rien n’est supprimé dans Pennylane ; le dossier Google Drive n’est pas touché.'];
   return {title: 'Supprimer la date ?', text: text.filter(Boolean).join('\n'), actions: [{value: 'del', label: 'Supprimer la date', danger: true}]};
+}
+/** Suppression (choix « del ») ou archivage (choix « archive », motif demandé) d'une date depuis sa fenêtre */
+async function showRemove(id, choice){
+  if (choice === 'archive'){
+    const reason = await askText({title: 'Archiver la date ?', text: 'La date sort des listes, totaux, comptes, relances, carte et calendriers ; son statut ne change pas. Le motif est gardé avec elle.', label: 'Motif de l’archivage', ok: 'Archiver la date'});
+    if (!reason) return false;
+    const ok = await archiveShow(id, reason);
+    if (ok) toast('Date archivée : elle reste consultable dans Booking › « Dates archivées »');
+    return ok;
+  }
+  const r = await deleteShow(id);
+  if (r && typeof r === 'object') toast(`Date supprimée${r.tasks ? ` ; ${r.tasks > 1 ? `${r.tasks} tâches gardées` : '1 tâche gardée'}, avec la mention « Date supprimée » dans la note` : ''}`);
+  return r;
 }
 
 export function editShow(id, projectId, prefill={}){
@@ -152,7 +176,7 @@ export function editShow(id, projectId, prefill={}){
   const p = openModal({
     title: id ? s.venue : 'Nouvelle date', fields: showFields(s), values: s, extra,
     deleteAsk: () => showDeleteAsk(s),
-    onDelete: id ? () => deleteShow(id) : null,
+    onDelete: id ? choice => showRemove(id, choice) : null,
     onSave: async v => {
       if (!v.venue) { toast('Indique le nom du lieu ou du festival', true); return false; }
       if (!v.project_id) { toast('Choisis l’artiste', true); return false; }

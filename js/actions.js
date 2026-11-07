@@ -6,13 +6,13 @@ import { afterFeeChange, askConfirmation, becameConfirmed, sendConfirmation, val
 import { go, render } from './app.js';
 import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, PAY_KINDS, isOff } from './constants.js';
-import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
+import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, restoreShow, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
 import { createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure, showPrefillFromSuivi } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showsFiltered, structName } from './selectors.js';
 import { CFG } from './config.js';
 import { propagateCommission } from './commission.js';
 import { payerLabel } from './budget.js';
-import { S, localSet, setProjects, touch } from './state.js';
+import { ARCHIVED, S, localSet, setProjects, touch } from './state.js';
 import { MODALS, openModal } from './ui/modal.js';
 import { ask, askText, confirmAsk, copyText } from './ui/dialog.js';
 import { modalSaved } from './ui/drafts.js';
@@ -101,6 +101,11 @@ export const ACTIONS = {
 
   // Booking
   toggleCancelled: () => { S.showCancelled=!S.showCancelled; render(); },
+  toggleArchived: () => { S.showArchived = !S.showArchived; render(); },
+  // date archivée (v1.60.3) : restaurée après confirmation — elle revient dans les listes, totaux, comptes et relances
+  restoreShow: async t => { const s = ARCHIVED.shows.find(x => x.id === t.dataset.id); if (!s) return;
+    if (!(await confirmAsk('Restaurer la date ?', `La date « ${[s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · ')} » revient dans les listes, les totaux, les comptes, les relances, la carte et les calendriers.`, 'Restaurer la date'))) return;
+    if (await restoreShow(s.id)){ toast('Date restaurée'); render(); } },
   resetTodoFilters: () => { S.todoWho = ''; localSet('todoWho', ''); S.todoDept = ''; S.search.todo = ''; setProjects([]); render(); },
   clearArtists: () => { setProjects([]); render(); },
   toggleInactive: () => { S.showInactive = !S.showInactive; localSet('showInactive', S.showInactive ? '1' : ''); render(); },

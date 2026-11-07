@@ -7,7 +7,7 @@ import { CFG, ENV } from './config.js';
 import { TEAM_NAMES } from './constants.js';
 import { LINGER_MS } from './constants.js';
 import { byId, linksOfStructure } from './selectors.js';
-import { S, TABLES, localGet, localSet, touch } from './state.js';
+import { ARCHIVED, S, TABLES, localGet, localSet, touch } from './state.js';
 import { toast, today } from './utils.js';
 
 export const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
@@ -159,10 +159,30 @@ export async function deleteShow(id){
   const {data, error} = await sb.rpc('delete_show', {p_show: id});
   if (error && missingFunction(error)) return remove('shows', id);
   if (error){ toast(error.code === 'P0001' ? error.message : 'Suppression impossible : ' + dbErrorText(error), true); return false; }
+  for (const t of ['show_payments', 'budget_lines']) ARCHIVED[t] = ARCHIVED[t].filter(r => r.show_id !== id);   // date archivée supprimée
+  ARCHIVED.shows = ARCHIVED.shows.filter(r => r.id !== id);
   for (const t of ['show_payments', 'budget_lines', 'pennylane_a_rattacher']) if (S.db[t]){ S.db[t] = S.db[t].filter(r => r.show_id !== id); touch(t); }
-  S.db.tasks.forEach(t => { if (t.show_id === id) t.show_id = null; }); touch('tasks');   // tâches gardées, sans lien vers la date
   S.db.shows = S.db.shows.filter(r => r.id !== id); touch('shows');
+  // tâches gardées, détachées, avec la mention « Date supprimée le … » en tête de leur note (écrite par le serveur) : relues
+  const tids = data?.task_ids || S.db.tasks.filter(t => t.show_id === id).map(t => t.id);
+  S.db.tasks.forEach(t => { if (t.show_id === id) t.show_id = null; }); touch('tasks');
+  if (tids.length) await refreshFor('tasks', 'id', tids);
   return data || true;
+}
+
+/** Archivage d'une date (v1.60.3, fonction serveur archive_show) : motif obligatoire ; refus du serveur affiché tel quel */
+export async function archiveShow(id, reason){
+  const {error} = await sb.rpc('archive_show', {p_show: id, p_reason: reason});
+  if (error){ toast(missingFunction(error) ? 'L’archivage des dates n’est pas encore installé sur le serveur.' : error.code === 'P0001' ? error.message : 'Archivage impossible : ' + dbErrorText(error), true); return false; }
+  await refreshFor('shows', 'id', [id]);   // la date passe dans les dates archivées (state.js), avec ses lignes
+  return true;
+}
+/** Restauration d'une date archivée (fonction serveur restore_show) : elle revient partout, avec ses lignes */
+export async function restoreShow(id){
+  const {error} = await sb.rpc('restore_show', {p_show: id});
+  if (error){ toast(error.code === 'P0001' ? error.message : 'Restauration impossible : ' + dbErrorText(error), true); return false; }
+  await refreshFor('shows', 'id', [id]);
+  return true;
 }
 
 /**

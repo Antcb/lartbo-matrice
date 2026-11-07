@@ -112,7 +112,12 @@
   // v1.60.3 : suppression contrôlée d'une date (migration 2026-11-07_v1.60.3_suppression_date) — refus du résultat clôturé
   // (les autres refus sont essayés sur une vraie base PostgreSQL), copie dans show_deletions, tâches détachées
   const deletionState = id => { const s = DB.shows.find(x => x.id === id); if (!s) return null;
-    return { blocked: s.result_closed_at ? ['Le résultat de cette date est clôturé : rouvre-le d’abord (bouton « Rouvrir », avec un motif), puis supprime la date.'] : [],
+    const devis = !!s.pennylane_quote_id, emis = DB.show_payments.some(p => p.show_id === id && (p.sent_at || p.paid_at || p.invoice_number || p.pennylane_id));
+    return { blocked: [s.result_closed_at && 'Le résultat de cette date est clôturé : rouvre-le d’abord (bouton « Rouvrir », avec un motif), puis supprime la date.',
+        emis && 'Cette date a des factures émises : elle ne se supprime pas (ses factures et son budget seraient effacés avec elle).',
+        devis && 'Cette date est liée à un document Pennylane (devis ou facture) : elle ne se supprime pas (rien n’est jamais supprimé dans Pennylane, le document resterait sans sa date).'].filter(Boolean),
+      archive_blocked: [s.result_closed_at && 'Le résultat de cette date est clôturé : rouvre-le d’abord (bouton « Rouvrir », avec un motif).', s.archived_at && 'Cette date est déjà archivée.',
+        emis && 'Cette date a des factures émises ou des versements : elle reste dans les listes, les comptes et les relances (pas d’archivage).'].filter(Boolean),
       payments: DB.show_payments.filter(r => r.show_id === id).length, budget_lines: DB.budget_lines.filter(r => r.show_id === id).length,
       tasks: DB.tasks.filter(r => r.show_id === id).length, closures: DB.result_closures.filter(r => r.show_id === id).length }; };
   const RPC = {
@@ -120,10 +125,13 @@
     show_deletion_state: a => deletionState(a.p_show),
     delete_show: a => { const id = a.p_show, st = deletionState(id);
       DB.show_deletions.push({ id: DB.show_deletions.length + 1, show_id: id, actor: USER, snapshot: { show: DB.shows.find(x => x.id === id), result_closures: DB.result_closures.filter(r => r.show_id === id) } });
-      DB.tasks.forEach(t => { if (t.show_id === id) t.show_id = null; });
+      const show = DB.shows.find(x => x.id === id), ids = DB.tasks.filter(t => t.show_id === id).map(t => t.id);
+      DB.tasks.forEach(t => { if (t.show_id === id){ t.show_id = null; t.notes = ['Date supprimée le 07/11/2026 : ' + [show.date, show.venue].join(' · '), t.notes].filter(Boolean).join('\n'); } });
       for (const t of ['result_closures', 'show_payments', 'budget_lines']) { const keep = DB[t].filter(r => r.show_id !== id); DB[t].length = 0; DB[t].push(...keep); }
       const keep = DB.shows.filter(x => x.id !== id); DB.shows.length = 0; DB.shows.push(...keep);
-      return st; },
+      return { ...st, task_ids: ids }; },
+    archive_show: a => { const s = DB.shows.find(x => x.id === a.p_show); Object.assign(s, { archived_at: new Date().toISOString(), archived_by: USER, archived_reason: a.p_reason }); return null; },
+    restore_show: a => { const s = DB.shows.find(x => x.id === a.p_show); Object.assign(s, { archived_at: null, archived_by: null, archived_reason: null }); return null; },
     mail_vars: () => ({ artiste: 'Artiste Alpha', date: 'mardi 1er juin 2027', ville: 'Bourg-Test', lieu: 'Festival Fictif', cachet_ht: '6 000 €', contact: 'Camille',
       lien_fiche: 'https://exemple.invalid/fiche.html?t=jeton-fiche-test-0001' }),
     // v1.40 (A2) : fiche d'une date booking / production avec le mode transmis par le serveur (migration 2026-10-25_v1.40_fiche_mode)
