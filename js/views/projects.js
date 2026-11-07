@@ -73,8 +73,8 @@ export function projectPage(p){
     logs:logsTab, links:linksTab, fiche:artistTab, drive:driveTab, mails:mailsTab, admin:adminTab, members:membersTab}[tab](p, {shows, tasks, suivis, logs, members});
   return `<button class="btn ghost back" data-act="closeProject">← Projets</button>
   <div class="project-hero">
-    <div style="display:flex;flex-direction:column;gap:6px;align-items:center">${photoHTML(p, 'lg')}<button class="btn sm ghost" data-act="projectPhoto" data-id="${p.id}">${p.photo_path?'Changer / recadrer':'Ajouter une photo'}</button></div>
-    <div style="flex:1;min-width:0"><h1>${esc(p.name)}</h1>
+    <div class="ph-photo">${photoHTML(p, 'lg')}<button class="btn sm ghost" data-act="projectPhoto" data-id="${p.id}">${p.photo_path?'Changer / recadrer':'Ajouter une photo'}</button></div>
+    <div class="ph-main"><h1>${esc(p.name)}</h1>
       <div class="proj-chips mt-sm"><span class="badge ${p.mode==='booking'?'tag':'proj'}">${p.mode==='booking'?'Booking seul':'Production'}</span><span class="badge tag">${p.active?'Actif':'Inactif'}</span>
         <span class="badge tag" title="${p.default_artbo_pct != null && p.default_artbo_pct !== '' ? 'Propre à l’artiste' : 'Par défaut (Réglages)'}">Commission ${pct(projectCommission(p))}</span></div></div>
     <div class="vh-actions">${p.drive_artist_folder_id ? `<a class="btn" href="https://drive.google.com/drive/folders/${esc(p.drive_artist_folder_id)}" target="_blank" rel="noopener">Dossier Drive ↗</a>`
