@@ -12,7 +12,7 @@ import { S, localSet, setProjects, touch } from './state.js';
 import { MAIL_MSG, fieldError, mailOk, parseCSV, toast, today } from './utils.js';
 import { setLogDraft } from './views/suivi.js';
 import { clearDraft } from './ui/drafts.js';
-import { NOTHING_DROPPED, droppedFiles, fileDrag } from './ui/dropfiles.js';
+import { fileDrag, takeDropped } from './ui/dropfiles.js';
 
 // + Projet sur un suivi / une tâche
 document.addEventListener('change', async e => {
@@ -92,7 +92,9 @@ document.addEventListener('dragleave', e => { const z = zoneOf(e); if (z && !z.c
 document.addEventListener('drop', async e => {
   const z = zoneOf(e); if (!z) { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); return; }
   e.preventDefault(); z.classList.remove('over');
-  const files = droppedFiles(e); if (!files.length) return toast(NOTHING_DROPPED, true);
+  // (v1.60.3) lecture et copie en mémoire DANS l'événement : un message glissé depuis Apple Mail est un .eml temporaire
+  // que Mail efface ou réécrit ensuite (l'envoi répondait alors « Failed to fetch ») ; message clair si rien n'est lisible
+  const {files} = await takeDropped(e); if (!files.length) return;
   if (z.dataset.dropForm){
     // dans un formulaire : on ajoute les fichiers au champ, envoyés à l'enregistrement
     const input = z.querySelector('input[type=file]'); const dt = new DataTransfer();
