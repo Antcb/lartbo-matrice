@@ -14,7 +14,7 @@ import { byId, contactMails, linksOfStructure, projectOptions, setting } from '.
 import { S } from './state.js';
 import { openModal } from './ui/modal.js';
 import { rtStyle, rtToolbar, wrapMail } from './ui/richtext.js';
-import { recipientsHelp, syncChips } from './ui/recipients.js';
+import { recipientsField, syncChips } from './ui/recipients.js';
 import { esc, fmtDate, toast, today, eur2, pct } from './utils.js';
 
 export const MAIL_KINDS = { confirmation: 'Confirmation', boucle_tech: 'Boucle accueil & technique', boucle_com: 'Boucle communication', prospection: 'Prospection', relance: 'Relance de prospection', autre: 'Autre' };
@@ -144,12 +144,11 @@ export async function prepareMail(showId, kind){
     <div class="mail-grid">
       <label for="ml-tpl">Modèle</label><select id="ml-tpl">${tpls.map(t=>`<option value="${t.id}">${esc(t.name||MAIL_KINDS[t.kind])}${tplProjects(t).length?'':' · générique'}</option>`).join('')}</select>
       <label>Envoyé par</label><span class="ml-from">${esc(PROD_MAIL)}${sig ? ' <span class="muted">· avec la signature production@</span>' : ' <span class="muted">· pas de signature (Réglages › Prospection, signature de Chloé)</span>'}</span>
-      <label for="ml-contact">Destinataire</label><span class="mail-to"><select id="ml-contact"><option value="">— autre adresse —</option>${contacts.map(c=>`<option value="${c.id}" ${c.id===contactId?'selected':''}>${esc(c.display_name)}${contactMails(c)?` · ${esc(contactMails(c))}`:' (pas de mail)'}</option>`).join('')}</select>
-        <input id="ml-to" type="text" data-mails inputmode="email" placeholder="adresse@exemple.fr (plusieurs : séparées par des virgules)" value="${esc(vars.contact_email||'')}"></span>
-      ${mustPick ? `<p class="mode-note rcpt-note">${contacts.filter(c => contactMails(c)).length ? 'Plusieurs contacts possibles et aucun n’est lié à cette date ou à son suivi' : 'Aucun contact identifié pour cette date'} : choisis le destinataire ci-dessus ou dans les suggestions.</p>` : ''}
-      ${recipientsHelp('ml-to', s.structure_id)}
-      <label for="ml-cc">Copie</label><input id="ml-cc" type="text" data-mails placeholder="Nom <adresse@…>, …">
-      ${recipientsHelp('ml-cc', s.structure_id)}
+      <label for="ml-contact">Contact</label><span class="mail-to"><select id="ml-contact"><option value="">— autre adresse —</option>${contacts.map(c=>`<option value="${c.id}" ${c.id===contactId?'selected':''}>${esc(c.display_name)}${contactMails(c)?` · ${esc(contactMails(c))}`:' (pas de mail)'}</option>`).join('')}</select>
+        <small class="muted">remplace le destinataire par ses adresses et remplit les balises du contact (prénom…)</small></span>
+      ${mustPick ? `<p class="mode-note rcpt-note">${contacts.filter(c => contactMails(c)).length ? 'Plusieurs contacts possibles et aucun n’est lié à cette date ou à son suivi' : 'Aucun contact identifié pour cette date'} : choisis le contact ci-dessus ou une adresse dans le champ Destinataire.</p>` : ''}
+      <label for="ml-to-q">Destinataire</label>${recipientsField('ml-to', s.structure_id, {value: vars.contact_email || '', label: 'Destinataires'})}
+      <label for="ml-cc-q">Copie</label>${recipientsField('ml-cc', s.structure_id, {label: 'Copies'})}
       <label for="ml-subj">Objet</label><input id="ml-subj">
     </div>
     ${rtToolbar('ml-body')}<div class="mail-preview" id="ml-body" contenteditable="true" style="${rtStyle()}" aria-label="Texte du mail (modifiable)"></div>

@@ -109,16 +109,18 @@ test('v1.50 relecture B1 : prospection vers un contact à 2 mails — plusieurs 
   });
   const to = page.locator('#pr-to');
   await expect(to).toHaveValue(/camille@example\.com.*camille2@example\.com/);
-  await page.locator('#pr-cc').fill('Régie <regie@exemple.fr>; prod@exemple.fr');
+  await page.locator('#pr-cc-q').fill('Régie <regie@exemple.fr>; prod@exemple.fr');   // champ unique (v1.60.3) : validées à l'envoi
   await page.locator('#modal button[type=submit]').first().click();
   await expect(page.locator('#modal .help.err[data-field-err]')).toHaveCount(0);
   // le contrôle des mails est passé : on arrive aux contrôles suivants de la fenêtre (artiste / objet)
   await expect(page.locator('.toast').last()).toContainText(/artiste|objet/);
   // une adresse fausse dans la liste : message sous le champ, rien n'est envoyé
   const avant = await page.evaluate(() => window.__calls.filter(c => c.fn === 'script-google').length);
-  await to.fill('camille@example.com, camille.example.com');
+  // champ unique (v1.60.3) : l'adresse fausse tapée n'est jamais ajoutée et bloque l'envoi
+  await page.locator('#pr-to-q').fill('camille.example.com');
   await page.locator('#modal button[type=submit]').first().click();
   await expect(page.locator('#modal .help.err[data-field-err]')).toHaveText('Adresse mail invalide : vérifie le @ et le domaine');
+  await expect(to).toHaveValue(/^camille@example\.com, camille2@example\.com$/);
   expect(await page.evaluate(() => window.__calls.filter(c => c.fn === 'script-google').length)).toBe(avant);
   expectClean(ctx);
 });
