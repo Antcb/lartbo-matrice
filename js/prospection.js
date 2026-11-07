@@ -112,9 +112,9 @@ export async function openProspection(structureId, {prospectId=null}={}){
       <label for="pr-show" class="pr-concert" hidden>Concert</label><span class="pr-concert" hidden><select id="pr-show"></select><small class="muted">remplit la date, la ville, le lieu, la date limite de réponse et les liens</small></span>
       <label for="pr-contact">Destinataire</label><span class="mail-to"><select id="pr-contact"><option value="">— autre adresse —</option>${contacts.map(c => `<option value="${c.id}" ${c.id === contact?.id ? 'selected' : ''}>${esc(c.display_name)}${contactMails(c) ? ` · ${esc(contactMails(c))}` : ' (pas de mail)'}</option>`).join('')}</select>
         <input id="pr-to" type="email" multiple placeholder="adresse@exemple.fr (plusieurs : séparées par des virgules)" value="${esc(relance ? (p.mail_to || '') : contactMails(contact))}"></span>
-      ${recipientsHelp('pr-to', st.id)}
+      ${recipientsHelp('pr-to', st.id, {prospection: true})}
       <label for="pr-cc">Copie</label><input id="pr-cc" data-mails>
-      ${recipientsHelp('pr-cc', st.id)}
+      ${recipientsHelp('pr-cc', st.id, {prospection: true})}
       ${relance ? '' : `<label for="pr-subj">Objet</label><input id="pr-subj">
       <label>Date proposée</label><span class="pr-date">${dateInput('', 'id="pr-date"')}<small class="muted">facultatif : crée la date en « Intérêt » pour chaque artiste</small></span>`}
     </div>
