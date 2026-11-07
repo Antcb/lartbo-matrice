@@ -49,6 +49,15 @@ export function coreaCommissionCheck(s){
 
 /** Ligne de solde artiste (automatique ou ajoutée à la main / par une pièce) : comptée une seule fois, dans le solde */
 export const isSolde = l => l.auto === 'solde_artiste' || l.category === 'Solde artiste';
+/**
+ * Taxe CNM d'une coréalisation « déduite du résultat partagé » (décision d'Anthony du 07/11/2026 : aucune double déduction d'une
+ * même charge) : elle réduit l'assiette partagée, donc la part du producteur (% du contrat) ; elle n'est PAS recomptée comme
+ * dépense de la date (ligne automatique ou saisie). Sa ligne reste affichée et, si elle est payée, reste un mouvement réel du compte.
+ */
+export const cnmViaShare = l => { if (!l || !isCnmLine(l) || !l.show_id) return false; const s = byId('shows', l.show_id);
+  return !!s && isCorea(s) && !!s.cnm_in_result; };
+/** Dépense comptée dans le budget de la date (reste artiste, synthèse, équilibre) : ni solde artiste, ni CNM déjà déduite du partage */
+export const isBudgetExpense = l => !isSolde(l) && !cnmViaShare(l);
 
 const staffQty = showId => linesOf(showId).filter(l => l.category === 'Staff').reduce((t,l) => t + (Number(l.qty)||0), 0);
 
@@ -91,16 +100,16 @@ export const lineStatus = l => l.paid_at || l.reimbursed_at ? 'paid' : (l.doc_nu
 /** Rémunération brute − commission − dépenses (hors solde artiste) = ce qui peut revenir à l'artiste.
  *  Brute = cachet HT (MG), plus la part du résultat validée en coréalisation (v1.51) ; la commission n'est retirée qu'une fois. */
 export function availableForArtist(s){
-  const out = linesOf(s.id).filter(l => !isSolde(l)).reduce((t,l) => t + lineValue(l), 0);
+  const out = linesOf(s.id).filter(isBudgetExpense).reduce((t,l) => t + lineValue(l), 0);
   return commissionBase(s) - commissionAmount(s) - out;
 }
 
 export function showBudget(s){
   const lines = linesOf(s.id);
   const fee = Number(s.fee_ht)||0, share = coreaShareOf(s), gross = r2(fee + share), com = commissionAmount(s);
-  const expenses = lines.filter(l => !isSolde(l)).reduce((t,l) => t + lineValue(l), 0);
+  const expenses = lines.filter(isBudgetExpense).reduce((t,l) => t + lineValue(l), 0);
   const solde = lines.filter(isSolde).reduce((t,l) => t + lineValue(l), 0);
-  const forecastExp = lines.filter(l => !isSolde(l)).reduce((t,l) => t + (lineForecast(l) ?? (Number(l.amount)||0)), 0);
+  const forecastExp = lines.filter(isBudgetExpense).reduce((t,l) => t + (lineForecast(l) ?? (Number(l.amount)||0)), 0);
   const docs = lines.filter(l => lineValue(l) !== 0);
   return {fee, share, gross, com, expenses: r2(expenses), forecastExp: r2(forecastExp), available: r2(gross - com - expenses), solde: r2(solde),
     result: r2(gross - com - expenses - solde), lines,

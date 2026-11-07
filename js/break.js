@@ -16,8 +16,8 @@
  */
 import { r2 } from './utils.js';
 import { isProductionShow, prodOf, productionBudget } from './production-budget.js';
-import { breakValidated, cnmRate, cnmRealOf, coreaTiers, isAbroad, isCorea } from './corea.js';
-import { isSolde, lineForecast, linesOf, missingCostLines, missingCostText } from './budget.js';
+import { breakValidated, cnmRate, cnmRealOf, coreaTiers, isAbroad, isCnmLine, isCorea } from './corea.js';
+import { cnmDue, isBudgetExpense, lineForecast, linesOf, missingCostLines, missingCostText } from './budget.js';
 
 const num = v => v == null || v === '' ? null : Number(v);
 
@@ -105,23 +105,33 @@ export function coreaBreaks(s){
   if (unknown.length) missing.push(missingCostText(unknown).replace(/^Budget incomplet — /, ''));
   const blocking = (s.corea?.charges || []).some(c => /\bcnm\b|minimum garanti|\bmg\b|commission/i.test(c.label || '') || (num(c.amount) || 0) < 0);
   if (blocking) missing.push('charges déductibles à corriger (voir le partage)');
-  const costs = r2(linesOf(s.id).filter(l => !isSolde(l)).reduce((a, l) => a + (lineForecast(l) ?? (Number(l.amount) || 0)), 0));
+  // dépenses prévues de la date : une seule déduction de la CNM (décision du 07/11/2026) — déduite du résultat partagé, elle n'est
+  // pas recomptée ; supportée par L'ArtBo hors partage (ligne automatique sans montant saisi), elle suit le nombre de billets testé
+  // (taux × recettes HT de n billets), comme la CNM du partage, et non plus les seules ventes déjà saisies
+  const lines = linesOf(s.id), manualCnm = lines.some(l => !l.auto && isCnmLine(l) && (l.amount != null || l.forecast != null));
+  const cnmVar = !s.cnm_in_result && cnmDue(s) && !manualCnm && lines.some(l => l.auto === 'cnm' && l.forecast == null && l.amount == null);
+  const costs = r2(lines.filter(isBudgetExpense).filter(l => !(cnmVar && l.auto === 'cnm')).reduce((a, l) => a + (lineForecast(l) ?? (Number(l.amount) || 0)), 0));
   if (missing.length) return {...res, incomplete: unknown.length > 0, missing: (unknown.length ? 'Budget incomplet. ' : '') + 'Équilibre de L’ArtBoristerie : à compléter — ' + missing.join(', '), costs, mg};
-  // prix HT d'un billet selon le scénario : moyenne pondérée par les ventes saisies (sinon moyenne simple), ou tarif min / max
+  // prix HT d'un billet selon le scénario (décision du 07/11/2026) : moyenne pondérée par les billets vendus saisis de chaque tarif
+  // (un seul tarif : son prix) ; sans répartition exploitable : « répartition à renseigner », JAMAIS une moyenne simple des tarifs ;
+  // les scénarios extrêmes (tarif min / max) restent calculés
   const priced = tiers.filter(t => t.price > 0), w = priced.reduce((a, t) => a + t.qty, 0);
-  const unit = {mix: w ? priced.reduce((a, t) => a + t.unitHt * t.qty, 0) / w : priced.reduce((a, t) => a + t.unitHt, 0) / priced.length,
-    low: Math.min(...priced.map(t => t.unitHt)), high: Math.max(...priced.map(t => t.unitHt))};
+  const mixUnit = priced.length === 1 ? priced[0].unitHt : w ? priced.reduce((a, t) => a + t.unitHt * t.qty, 0) / w : null;
+  const unit = {mix: mixUnit, low: Math.min(...priced.map(t => t.unitHt)), high: Math.max(...priced.map(t => t.unitHt))};
+  const mixSource = priced.length === 1 ? 'un seul tarif' : w ? `moyenne pondérée par les ${w} billets vendus saisis par tarif` : null;
   const charges = r2((s.corea?.charges || []).reduce((a, c) => a + (num(c.amount) || 0), 0));
   const cnmReal = cnmRealOf(s), rate = isAbroad(s) ? 0 : cnmRate(s);
   const artboAt = (sc, n) => {
     const beyond = Math.max(0, n - contract.value), ht = n * unit[sc];
     const cnm = !s.cnm_in_result ? 0 : isAbroad(s) ? 0 : cnmReal ?? r2(ht * rate / 100);
     const net = r2(beyond * unit[sc] - charges - cnm);
-    return r2(mg + Math.max(0, net) * pct / 100 - costs);
+    const own = cnmVar ? (cnmReal ?? r2(ht * rate / 100)) : 0;   // CNM à la seule charge de L'ArtBo, hors partage
+    return r2(mg + Math.max(0, net) * pct / 100 - costs - own);
   };
   const byScenario = Object.fromEntries([['mix', 'prix moyen des ventes saisies'], ['low', 'tous au tarif le moins cher'], ['high', 'tous au tarif le plus cher']]
-    .map(([sc]) => { const r = firstPositive(capacity, n => artboAt(sc, n)); return [sc, {...r, unreached: r.n == null}]; }));
-  return {...res, costs, mg, charges, capacity, byScenario,
+    .map(([sc]) => { if (unit[sc] == null) return [sc, {n: null, value: null, unreached: false, needsSplit: true}];
+      const r = firstPositive(capacity, n => artboAt(sc, n)); return [sc, {...r, unreached: r.n == null}]; }));
+  return {...res, costs, mg, charges, capacity, byScenario, mixSource, mixUnit: mixUnit == null ? null : r2(mixUnit), cnmVar,
     scenarios: [['mix', 'prix moyen des ventes saisies'], ['low', 'tous au tarif le moins cher'], ['high', 'tous au tarif le plus cher']],
-    coveredByMg: mg >= costs};
+    coveredByMg: mg >= costs && !cnmVar};
 }
