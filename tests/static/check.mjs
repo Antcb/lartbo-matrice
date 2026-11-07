@@ -212,6 +212,9 @@ for (const f of JS.filter(p => !p.endsWith('js/utils.js'))) {
   if (/rows\.push\(\[\s*true\b/.test(gs)) fail('renommage', 'apps-script/Code.gs : une proposition de renommage est cochée par défaut (elles doivent toutes arriver décochées)');
   if (!/if \(\/\^Contrat\/\.test\(r\[1\]\)\)/.test(gs)) fail('renommage', 'apps-script/Code.gs : renameApply doit refuser les contrats (jamais renommés)');
   if (!/Tableau de renommage d’une ancienne version/.test(gs)) fail('renommage', 'apps-script/Code.gs : renameApply doit refuser un tableau d’une ancienne version');
+  // question avant « Renommer » : exacte (v1.60.3) — seuls les dossiers cochés, jamais les contrats ; plus « tous les éléments cochés »
+  const act = readFileSync(join(ROOT, 'js/actions.js'), 'utf8');
+  if (/Tous les éléments cochés dans le tableau de renommage/.test(act) || !/Seuls les dossiers cochés[^']*Les contrats ne sont jamais renommés/.test(act)) fail('renommage', 'js/actions.js renameApply : la question doit dire que seuls les dossiers cochés sont renommés et jamais les contrats');
   if (!/var SCRIPT_VERSION = 'v\d+\.\d+\.\d+'/.test(gs) || !/version: SCRIPT_VERSION/.test(gs)) fail('renommage', 'apps-script/Code.gs : version du code absente du « ping »');
 }
 
