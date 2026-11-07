@@ -186,7 +186,23 @@ export function coprodClose(s){
   const artboPart = sp.artbo, partnerPart = sp.partner;
   const posArtbo = r2((holder === 'artbo' ? net : 0) + cashedBy('artbo') - paidBy('artbo')), posPartner = r2((holder === 'partenaire' ? net : 0) + cashedBy('partenaire') - paidBy('partenaire'));
   const transfer = artboPart == null ? 0 : r2(artboPart - posArtbo);   // > 0 : le coproducteur reverse à L'ArtBo ; < 0 : L'ArtBo reverse au coproducteur
-  return {r, issues, warnings, ok: !issues.length, snapshot: {
+  // reversement PROVISOIRE (demande d'Anthony du 07/11/2026) : tant qu'un paiement ou un encaissement nécessaire au calcul des
+  // positions n'est pas renseigné, le montant affiché n'est qu'une estimation (rien n'est présumé payé ni encaissé) ; information
+  // seulement, aucune règle de calcul ni de clôture n'est modifiée (les mêmes points bloquent déjà la clôture)
+  const pending = [];
+  if (!['artbo', 'partenaire'].includes(holder)) pending.push('structure qui encaisse les recettes');
+  if (!p.tickets.length || p.tickets.some(t => t.real_qty == null || t.real_qty === '')) pending.push('billets vendus');
+  else if (r.ht + r.dlHt > 0 && !p.receipts_cashed_at) pending.push('date d’encaissement de la billetterie');
+  if (onlyPlanned.length) pending.push('montant réel de dépenses seulement prévues');
+  if (noPayer.length) pending.push('payeur de dépenses réelles');
+  if (unpaidLines.length) pending.push('date de paiement de dépenses réelles');
+  if (promo && !PROMO_DEBTORS.some(d => d[0] === debtor)) pending.push('partie qui supporte la promotion locale');
+  if (promo && !['artbo', 'partenaire'].includes(payer)) pending.push('payeur de la promotion locale');
+  if (promo && !promoPaid) pending.push('date de paiement de la promotion locale');
+  if (unqualified.length) pending.push('qualification de lignes de Factures');
+  if (rec.some(x => !['artbo', 'partenaire'].includes(x.coprod_holder))) pending.push('encaisseur de recettes complémentaires');
+  if (recTodo.length) pending.push('date d’encaissement de recettes complémentaires');
+  return {r, issues, warnings, ok: !issues.length, pending, provisional: !!pending.length, snapshot: {
     holder, recettes_ht: r.ht, dl_ht: r.dlHt, taxes: r.taxes, cnm: r.cnm, sacem: r.sacem, costs: r.costs, promo: r.promo, result, shared_result: shared,
     promo_debtor: debtor, promo_payer: payer, promo_paid_at: p.promo_paid_at || null, receipts_cashed_at: p.receipts_cashed_at || null,
     extra_receipts: r.extra, cashed_artbo: cashedBy('artbo'), cashed_partner: cashedBy('partenaire'),
