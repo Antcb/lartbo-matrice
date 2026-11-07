@@ -5,12 +5,12 @@
 import { render } from './app.js';
 import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
 import { cnmDue, commissionOf, coreaCommissionCheck, isFree, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
-import { commissionPctOf, coreaCalc, isCorea } from './corea.js';
+import { breakFromText, commissionPctOf, coreaCalc, isCorea } from './corea.js';
 import { acompteState, isCoproduction, isInvoiced, paymentsOf, payAmount } from './calc.js';
 import { contentTypeOf, insert, mergeRows, openStored, refreshFor, remove, save, sb } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
 import { callScript } from './mail.js';
-import { applyTemplate, spectacleStaffRows } from './budget-template.js';
+import { applyTemplate, offerCostFill, spectacleStaffRows } from './budget-template.js';
 import { exportArtistBudget } from './artist-export.js';
 import { S, touch } from './state.js';
 import { openModal } from './ui/modal.js';
@@ -99,6 +99,16 @@ export const BUDGET_ACTIONS = {
   coreaValidateBreak: async t => { const s = byId('shows', t.dataset.id);
     if (!(await confirmAsk('Valider le break ?', `Break de ${s.break_even} billets vendus pour cette date${s.cr_break ? ` (texte du contrat : « ${s.cr_break} »)` : ''}. Le partage sera calculé sur les billets vendus au-delà.`, 'Valider le break'))) return;
     saveCorea(s.id, c => { c.break_validated_at = new Date().toISOString(); c.break_value = Number(s.break_even); c.break_by = me(); }); },
+  // break des Conditions lu sans ambiguïté (demande du 07/11/2026) : repris dans « Break (billets) » seulement sur ce clic, jamais
+  // validé par ce geste (« Valider le break » reste obligatoire) ; le texte du contrat reste tel quel
+  coreaUseTextBreak: async t => { const s = byId('shows', t.dataset.id), n = breakFromText(s?.cr_break);
+    if (!s || n == null || (s.break_even != null && s.break_even !== '')) return render();
+    if (await save('shows', s.id, {break_even: n})) toast(`Break repris des Conditions : ${n} billets${s.prod_mode === 'booking' ? '' : ' — à valider avant tout calcul'}`); },
+  // jauge ouverte saisie dans un budget (ou le Ticketing) : proposition de compléter les coûts encore vides (demande du 07/11/2026)
+  'change:shows.capacity': async (t, v) => { const old = byId('shows', t.dataset.id)?.capacity;
+    if (!(await save('shows', t.dataset.id, {capacity: v}))) return;
+    if (v != null && Number(v) !== Number(old)) await offerCostFill(t.dataset.id); },
+  fillMissingCosts: t => offerCostFill(t.dataset.id, {manual: true}),
   // prorata des ventes : jamais appliqué sans validation explicite, pour cette date seulement
   coreaValidateProrata: async t => { const s = byId('shows', t.dataset.id), k = coreaCalc(s);
     if (!(await confirmAsk('Valider le prorata ?', `Les ventes après le break ne sont pas connues par tarif. Retenir pour cette date les recettes au prorata des ventes de chaque tarif : ${eur2(k.range.prorata)} HT (fourchette ${eur2(k.range.min)} à ${eur2(k.range.max)}) ?`, 'Valider le prorata'))) return;

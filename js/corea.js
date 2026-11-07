@@ -62,6 +62,20 @@ export function coreaTiers(s){
     return {label: t.label || '', price, vat, qty, after, unitHt, ht: r2(qty * unitHt)};
   });
 }
+/**
+ * Break des Conditions (texte du contrat, `cr_break`) lu comme un nombre de billets, SEULEMENT s'il n'y a aucune ambiguïté
+ * (demande d'Anthony du 07/11/2026) : un seul nombre entier positif dans le texte (« 450 », « 450 entrées payantes »,
+ * « 1 200 billets »), sans montant (€, euros), pourcentage ni décimale. Sinon null : rien n'est proposé.
+ * Ce n'est qu'une PROPOSITION : le texte reste tel quel, rien n'est enregistré sans clic, et le break reste à valider.
+ */
+export function breakFromText(txt){
+  const t = String(txt ?? '').trim(); if (!t) return null;
+  if (/[€%]|\beur(o|os)?\b|[0-9][.,][0-9]/i.test(t)) return null;
+  const nums = t.match(/\d{1,3}(?:[   ]\d{3})+(?!\d)|\d+/g) || [];
+  if (nums.length !== 1) return null;
+  const n = Number(nums[0].replace(/[   ]/g, ''));
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
 /** Break validé : seulement s'il a été validé à la main pour sa valeur actuelle (anciens breaks : validation obligatoire) */
 export const breakValidated = s => s?.break_even != null && s.break_even !== '' && !!s?.corea?.break_validated_at
   && Number(s.corea.break_value) === Number(s.break_even);
