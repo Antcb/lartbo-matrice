@@ -31,7 +31,7 @@ const longDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', 
 /** Ce que l'app sait déjà de la date (proposé quand l'organisateur n'a rien répondu) */
 function knownValues(s){
   const st = byId('structures', s.structure_id);
-  const defs = ficheDefaults({structure: st, venue: venueName(s.venue), city: s.city, cp: st?.postal_code || s.department, capacity: s.capacity ?? eventsOfStructure(st?.id).find(e => e.capacity)?.capacity ?? (st?.capacity_1 || null), ticketing_type: s.ticketing_type, cr_break: s.cr_break});
+  const defs = ficheDefaults({structure: st, venue: venueName(s.venue), city: s.city, address: s.address, postal_code: s.postal_code, cp: st?.postal_code || s.department, capacity: s.capacity ?? eventsOfStructure(st?.id).find(e => e.capacity)?.capacity ?? (st?.capacity_1 || null), ticketing_type: s.ticketing_type, cr_break: s.cr_break});
   return {...defs, ...(st?.admin || {}), ...(s.show_time ? {show_time: s.show_time} : {}), ...(s.set_length ? {set_length: s.set_length} : {})};
 }
 

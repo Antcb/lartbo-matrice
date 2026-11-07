@@ -419,6 +419,7 @@ Les factures de l'artiste sur les dates booking n'entrent dans **aucun** des tro
 - [DÉCIDÉ Q38] Correction des incohérences de structure : [CORRECTION] sans clé étrangère : `structure_events.structure_id`, `project_members.project_id`, `project_logs.project_id`, `attachments.*_id`, `notifications.*_id`, `projects.admin_structure_id`, `shows.prospect_id`, `prospects.mail_log_id` (aucune donnée orpheline au 21/10/2026) ; champs en double `projects.pennylane_customer_id` / `structures.pennylane_id`, capacité et tarif sur `structures` et `structure_events`. Avant d'ajouter une contrainte : contrôle des données existantes.
 - [EN PLACE] `project_id` et `project_ids` coexistent sur `tasks` et `prospects` (lecture : `projIds()`), cohérents au 21/10/2026.
 - Ville / département d'une date différents de ceux de sa structure (76 / 165 dates) : peut être voulu (lieu ≠ siège) ; ne pas « corriger » sans validation.
+- [v1.60.2, à valider par Anthony] **Lieu réel d'une date et d'un suivi** : une date a son lieu (`venue`, `address`, `postal_code`, `city`, `department` = code à 2 chiffres, `lat`/`lng`) ; un suivi peut avoir le sien (mêmes colonnes sur `prospects`, vides = la structure sert de repère). Le lieu se choisit parmi les fiches structures et leurs événements (`placeOfStructure`, `placeOfEvent`) ou par son adresse ; un nom tapé sans choix est gardé sans coordonnées inventées. Le département suit le code postal (`deptOf`, règle `{{cp}}`), jamais pour un lieu hors de France. Carte : la date est placée à ses coordonnées ; la structure (organisateur) ne sert de repère que si la date est dans sa ville (`showCoords`) ; le suivi part de son lieu (`suiviCoords`). Aucune date existante n'est modifiée en lot : un lieu se complète date par date.
 
 ### 7.3 Sécurité et RLS
 - [EN PLACE] RLS activé partout, politique `is_team()` (comptes de `app_users`). Pages publiques : uniquement via fonctions `SECURITY DEFINER` à jeton (`fiche_*`, `artist_*`, `rh_*`) et dépôt de fichiers vérifié par jeton (buckets `artiste`, `rh`).
@@ -510,7 +511,7 @@ Une règle présente des deux côtés est modifiée **dans la même version** de
 | Lien de page publique (« &test » dans l'espace de test) | `publicLink` (`selectors.js`), `mailVars` (`mail.js`) | SQL `mail_vars` (`{{lien_fiche}}`, sans « &test » : complété côté JS ; fonction SQL inchangée, décision du 22/10/2026) |
 | Mails / téléphones | `mailOk`, `checkMails` (`js/utils.js`) | SQL `contacts_clean` (v1.50 : ne déplace plus), `clean_phone`, `clean_email` |
 | Choix et remplissage des modèles de mail | `js/mail.js` | `apps-script/Code.gs` (`applies_`, `pickTemplate_`, `fill_`) |
-| Nom du lieu sans code, département | `contract.js` (`deptOf`) | `Code.gs` (`dept_`, `cpDept_`) ; SQL `mail_vars` (regex différente) |
+| Nom du lieu sans code, département | `contract.js` (`deptOf`), `forms.js` (`locateShow`) | `Code.gs` (`dept_`, `cpDept_`) ; SQL `mail_vars` (regex différente) ; `pennylane/regles.ts` (`codeLieu`, `describe`, `texteCommission` — v1.60.2) |
 | Nom du fichier de contrat | `contract.js` | `Code.gs` `contractName_` |
 | Exercice comptable (oct. → sept.) | `views/projects.js` `fiscalYear` | `Code.gs` `financeYear_` |
 | Encodage des mails Gmail | — | `Code.gs` ≈ `Prospection.gs` |

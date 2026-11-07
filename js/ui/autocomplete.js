@@ -11,7 +11,7 @@
  *                  destinataires (rcpt) d'une prospection — contacts liés uniquement à des structures inactives, même principe (v1.60.2)
  * Au choix, l'input caché reçoit l'identifiant et déclenche « change » (enregistrement direct ou formulaire).
  */
-import { byId, contactMails, isInactive, linksOfStructure, onlyInactive, showLabel, structName } from '../selectors.js';
+import { byId, contactMails, isInactive, linksOfStructure, onlyInactive, placeOfEvent, placeOfStructure, showLabel, structName } from '../selectors.js';
 import { S } from '../state.js';
 import { esc, fmtDate, hayOf, norm } from '../utils.js';
 import { searchPlaces } from '../geo.js';
@@ -67,9 +67,28 @@ export const SOURCES = {
   // Villes et adresses (France : Géoplateforme ; ailleurs : OpenStreetMap)
   places: { async: true, label: () => '', search: q => searchPlaces(q) },
   cities: { async: true, label: () => '', search: q => searchPlaces(q, {cities:true}), local: q => knownCities(q) },
+  // Lieu d'une date ou d'un suivi (v1.60.2) : salles / festivals connus (fiches structures et leurs événements) ; le nom tapé
+  // sans choisir reste tel quel. lieuxAdr : avec en plus les adresses (Géoplateforme / OpenStreetMap), pour le lieu d'un suivi.
+  lieux: { async: true, mixed: true, label: () => '', local: q => knownPlaces(q), search: async () => [] },
+  lieuxAdr: { async: true, mixed: true, label: () => '', local: q => knownPlaces(q),
+    search: async q => (await searchPlaces(q)).map(p => ({...p, id: p.label, venue: null, hint: 'adresse'})) },
   // adresse complète enregistrée telle quelle (membres, livraison des affiches…)
   fulladdr: { async: true, label: () => '', search: async q => (await searchPlaces(q)).map(p => ({...p, id: p.label, label: p.label})) },
 };
+
+/** Lieux connus (v1.60.2) : une suggestion porte le lieu entier (nom, adresse, code postal, ville, département, coordonnées) ;
+ *  structures inactives après les autres et signalées */
+function knownPlaces(q){
+  const rows = [...S.db.structures.map(r => ({st: r})), ...(S.db.structure_events || []).map(r => ({ev: r}))];
+  return rank(rows, q, x => x.st ? `${x.st.name} — ${[x.st.address, x.st.postal_code, x.st.city].filter(Boolean).join(' ')}`
+      : `${x.ev.name} — ${[x.ev.place, x.ev.city, structName(x.ev.structure_id)].filter(Boolean).join(' ')}`, 8)
+    .sort((a, b) => isInactive(a.st || byId('structures', a.ev.structure_id)) - isInactive(b.st || byId('structures', b.ev.structure_id)))
+    .map(x => { const pl = x.st ? placeOfStructure(x.st) : placeOfEvent(x.ev); if (!pl?.venue) return null;
+      const where = [pl.address, [pl.postal_code, pl.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+      return {...pl, id: pl.venue, label: pl.venue, street: pl.address, postcode: pl.postal_code, department_code: pl.department,
+        hint: [x.ev ? [x.ev.place, 'événement de ' + structName(x.ev.structure_id)].filter(Boolean).join(', ') : '', where, isInactive(x.st) ? 'inactive' : ''].filter(Boolean).join(' · ')}; })
+    .filter(Boolean);
+}
 
 /** Villes déjà connues (fiches structures localisées) : proposées tout de suite, avant la réponse de la Géoplateforme */
 let CITY_IDX = null, CITY_N = -1;
@@ -142,8 +161,9 @@ async function update(input){
     OPEN.items = local; OPEN.loading = !local.length; draw();
     items = await src.search(q); if (!OPEN || OPEN.token !== token) return; OPEN.loading = false;
     // villes connues d'abord, puis les autres (sans doublon)
-    const seen = new Set(local.map(x => norm(x.city) + '|' + x.department_code));
-    items = local.concat(items.filter(x => !seen.has(norm(x.city || '') + '|' + (x.department_code || '')))).slice(0, 10);
+    // lieux (v1.60.2) : lieux connus puis adresses, sans dédoublonnage par ville (plusieurs lieux dans une même ville)
+    const seen = src.mixed ? null : new Set(local.map(x => norm(x.city) + '|' + x.department_code));
+    items = local.concat(items.filter(x => !seen || !seen.has(norm(x.city || '') + '|' + (x.department_code || '')))).slice(0, src.mixed ? 12 : 10);
   }
   else items = src.search(q);
   // nouvelle prospection (v1.56) : structures inactives masquées par défaut, montrées seulement sur demande explicite
@@ -180,7 +200,10 @@ async function choose(i){
 function fillPlace(box, p){
   const root = box.closest('form') || document;
   // un lieu choisi remplace TOUT l'emplacement : ce que le nouveau lieu n'indique pas est vidé (pas d'ancien département / région qui traîne)
-  const set = (k, v) => { const el = root.querySelector(`[name="${box.dataset.fill}${k}"]`); v = v ?? ''; if (el && el !== box.querySelector('.ac-val') && el.value !== String(v)) { el.value = v; el.dispatchEvent(new Event('input', {bubbles:true})); if (!el.closest('form')) el.dispatchEvent(new Event('change', {bubbles:true})); } };
+  // champ cible lui-même à suggestions (ville, adresse d'une date — v1.60.2) : son texte visible suit, sinon il serait repris à l'enregistrement
+  const set = (k, v) => { const el = root.querySelector(`[name="${box.dataset.fill}${k}"]`); v = v ?? ''; if (el && el !== box.querySelector('.ac-val') && el.value !== String(v)) { el.value = v;
+    if (el.classList.contains('ac-val')){ const vis = el.closest('.ac')?.querySelector('.ac-input'); if (vis) vis.value = v; }
+    el.dispatchEvent(new Event('input', {bubbles:true})); if (!el.closest('form')) el.dispatchEvent(new Event('change', {bubbles:true})); } };
   set('address', p.street);
   set('postal_code', p.postcode); set('city', p.city); set('region', p.region); set('country', p.country);
   set('department_code', p.department_code); set('department_name', p.department_name);
