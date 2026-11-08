@@ -35,7 +35,14 @@ Décision d'Anthony du 08/11/2026 : aucune donnée fictive dans les comptes opé
   n'importe quelle table du schéma public (inventaire à l'exécution, toutes colonnes) contient un identifiant d'essai hors du
   périmètre (DÉPENDANCE OPÉRATIONNELLE) ; sinon TRACE CONSERVÉE : copie complète de chaque date (lignes, historique de clôture,
   artiste / coproducteur / structure d'essai) dans le journal `show_deletions`, puis retrait des seules lignes d'essai des tables
-  actives. Les journaux `finance_log` et `show_deletions` ne sont jamais modifiés ni vidés et ne bloquent pas le nettoyage.
+  actives. Classement explicite (en tête du script) : TRACES CONSERVÉES, jamais modifiées ni bloquantes — `finance_log`,
+  `show_deletions`, `client_errors` (journal des erreurs, relecture de a7216a9), `_probe`, `_koza_job`, `_lartbotrice_job` ; toute
+  autre table = dépendance opérationnelle (dont `pennylane_rattachements`, `_folder_jobs`, `notifications`). Option
+  `set essai.notifications = 'conserver';` : notifications du seul dossier d'essai copiées dans la trace puis retirées. Bilan du
+  nombre réel de lignes traitées (« rien à retirer » au second lancement).
+- `2026-11-08_v1.60.4_essai_promo_verification.sh` : 13 cas sur base jetable (client_errors citant l'essai → nettoyage réussi,
+  ligne intacte ; second lancement et base sans essai → rien à retirer ; clôture ; notification retirée avec / sans option ;
+  notification d'une date réelle ; dépendances opérationnelles → arrêt, rien touché).
 - `tests/outils/essai-promo.mjs extrait.json` : calcule, avec l'application elle-même, les trois scénarios sur les lignes réellement
   enregistrées (après déclencheurs) et compare aux attendus.
 - Exécuté le 08/11/2026 sur une base PostgreSQL 16 jetable locale (port 55493, toutes les migrations du dépôt, sans pg_net / pg_cron
