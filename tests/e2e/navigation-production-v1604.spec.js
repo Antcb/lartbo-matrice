@@ -157,3 +157,38 @@ test('v1.60.4 relecture : au clavier, la date confirmée s’ouvre dans Producti
   await expect(page.locator('tr[data-id="sh-2"] a[data-act="openShowProd"]')).toHaveCount(0);
   expectClean(ctx);
 });
+
+// Décision d'Anthony du 08/11/2026 (§4) : fiche STRUCTURE comme la fiche projet — clic sur une date confirmée = la bonne date dans
+// Production ; « Modifier » distinct ; option et date archivée : la fenêtre
+for (const [w, h, opts] of [[1440, 900, {}], [390, 844, { hasTouch: true, isMobile: true }]]) test.describe(`structure ${w} px`, () => {
+  test.use({ viewport: { width: w, height: h }, ...opts });
+  test(`v1.60.4 fiche structure, onglet Dates : date confirmée → Production à la bonne date ; Modifier → fenêtre ; option / archivée → fenêtre (${w} px)`, async ({ page }) => {
+    const ctx = await openApp(page);
+    await seed(page);
+    await brouille(page);
+    await fiche(page, 'structure', 'dates');
+    const row = page.locator('tr[data-id="sh-fut"]');
+    await expect(row).toHaveAttribute('data-act', 'openShowProd');
+    await expect(page.locator('tr[data-id="sh-2"]')).toHaveAttribute('data-act', 'editShow');
+    // « Modifier » : la fenêtre de cette date, la fiche reste ouverte
+    await row.getByRole('button', { name: 'Modifier' }).click();
+    await expect(page.locator('#modal')).toBeVisible();
+    await expect(page.locator('#modal')).toContainText('Salle Future');
+    await page.locator('#modal').evaluate(d => d.close());
+    expect(await page.evaluate(async () => (await import('./js/state.js')).S.view)).toBe('structures');
+    // option : la fenêtre
+    await page.locator('tr[data-id="sh-2"] td').nth(2).click();
+    await expect(page.locator('#modal')).toBeVisible();
+    await page.locator('#modal').evaluate(d => d.close());
+    // date archivée (repli « Sans suite, annulées et archivées ») : la fenêtre
+    await page.locator('.fold-head', { hasText: 'archivées' }).click();
+    await expect(page.locator('tr[data-id="sh-arch"]')).toHaveAttribute('data-act', 'editShow');
+    await expect(page.locator('tr[data-id="sh-arch"] button', { hasText: 'Modifier' })).toHaveCount(0);
+    // clic sur le lieu de la date confirmée : Production, à la bonne date (dépliée, à l'écran), année et filtre ajustés
+    await page.locator('tr[data-id="sh-fut"] td', { hasText: 'Salle Future' }).first().click();
+    await ouverteDansProduction(page, 'sh-fut');
+    expect(await page.evaluate(async () => { const { S } = await import('./js/state.js'); return [S.year, S.projects, [...S.openProd]]; }))
+      .toEqual([Y + 1, ['art-a'], ['sh-fut']]);
+    expectClean(ctx);
+  });
+});
