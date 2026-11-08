@@ -43,6 +43,8 @@ export async function callProspect(action, payload, account='anthony'){
   if (account === 'production') return callScript('prospect_' + action, payload);
   if (!scriptUrl()) throw new Error('Le script de prospection n’est pas encore installé : Réglages › Prospection.');
   const out = await callGoogle('prospect', action, payload);   // relais serveur : le code secret ne passe plus par le navigateur (v1.47)
+  // script installé plus ancien que l'application (ex. messagerie v1.63) : la marche à suivre plutôt que « Action inconnue »
+  if (!out.ok && /Action inconnue/i.test(out.error || '')) throw new Error('Le script de prospection (anthony@) n’est pas à jour : Réglages › Prospection › « Copier le code du script », colle-le dans le script Google puis redéploie (nouvelle version).');
   if (!out.ok) throw new Error(out.error || 'Erreur du script de prospection');
   return out;
 }

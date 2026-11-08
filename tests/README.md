@@ -28,6 +28,8 @@ de fusion vers `main` (`.github/workflows/tests.yml`). En cas d'échec, le rappo
 | `e2e/calculs.spec.js` | factures, commissions, TVA, budget d'une date, formats des montants et des dates (comportement actuel figé) |
 | `e2e/html.spec.js` | nettoyage du HTML des mails, échappement du texte |
 | `e2e/pages-publiques.spec.js` | fiche, artiste, salarié : jeton valide et jeton invalide |
+| `static/messagerie-regles.mjs` | messagerie (v1.63) : règles de la fonction `mail-sync` (accès, lignes, doublons) et script de prospection exécuté avec des services Google **simulés** (fil, brouillon, limite encodée, pièces jointes, rangement, historique) |
+| `e2e/messagerie-v161.spec.js`, `e2e/messagerie-v163.spec.js` | espace Mails sur la fausse base, script et synchronisation simulés (aucun envoi réel) |
 
 ## Règles
 - Chaque lot ajoute ses tests ; une règle changée volontairement met à jour le cas concerné avec sa justification.

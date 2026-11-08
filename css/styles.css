@@ -997,8 +997,6 @@ dialog.mail .mode-note{margin:0}
 .corea-block,.coprod-block{margin-top:var(--sp-3)}
 .cnm-block{margin:var(--sp-2) 0}
 /* v1.61 : messagerie intégrée (onglet Mails) */
-dialog.mail .mail-grid>input.mc-wide{grid-column:span 3}
-@media (max-width:900px){ dialog.mail .mail-grid>input.mc-wide{grid-column:auto} }
 .mail-list{display:flex;flex-direction:column;overflow:hidden}
 .mail-row{display:grid;grid-template-columns:minmax(140px,1.1fr) 3fr minmax(120px,1.2fr) auto;gap:var(--sp-2);align-items:center;text-align:left;padding:10px 14px;border:0;border-bottom:1px solid var(--line-2);background:var(--panel);color:var(--ink);font:inherit;cursor:pointer;min-height:var(--h-touch)}
 .mail-row:hover{background:var(--soft)}

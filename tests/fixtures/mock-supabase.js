@@ -194,7 +194,11 @@
         storage: { from: bucket => ({ upload: async () => ({ data: {}, error: null }),
           // fichiers effacés notés dans window.__calls ({ storageRemove: bucket, paths }) pour vérifier qu'aucun fichier ne reste orphelin
           remove: async paths => { window.__calls.push({ storageRemove: bucket, paths: [...paths] }); return { data: [], error: null }; },
-          createSignedUrl: async () => ({ data: { signedUrl: 'about:blank' }, error: null }), createSignedUrls: async p => ({ data: p.map(() => ({ signedUrl: 'about:blank' })), error: null }) }) },
+          // liens temporaires notés à part (window.__signed : stockage, chemin, durée) — messagerie v1.63 : pièces jointes des projets
+          createSignedUrl: async (path, expires) => { (window.__signed ||= []).push({ bucket, path, expires }); return { data: { signedUrl: 'about:blank#' + bucket + '/' + path }, error: null }; },
+          // window.__STORAGE_LIST = { bucket: [{name, metadata: {size}}] } : contenu simulé d'un dossier (tailles des documents)
+          list: async () => ({ data: (window.__STORAGE_LIST && window.__STORAGE_LIST[bucket]) || [], error: null }),
+          createSignedUrls: async p => ({ data: p.map(() => ({ signedUrl: 'about:blank' })), error: null }) }) },
         channel: () => { const c = { on: () => c, subscribe: () => c, unsubscribe: async () => 'ok' }; return c; },
         removeChannel: async () => 'ok',
         auth: {

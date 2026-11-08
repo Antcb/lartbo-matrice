@@ -56,6 +56,10 @@ tâche planifiée (Supabase, toutes les 5 min) → fonction serveur « mail-sync
 - Documents seulement en lien Drive : joints depuis le Drive si le compte anthony@ y a accès ; sinon signalés, avec la marche à suivre (partager le
   dossier avec anthony@, ou déposer le fichier dans la fiche artiste).
 
+### État au 08/11/2026 (branche dev/v1.63-messagerie)
+Exigences d'Anthony du 08/11 reprises dans CONVENTIONS.md §6.21 ; tout le parcours est développé et testé sans Google (script simulé,
+base locale, navigateur sur fausse base). Reste : l'essai réel (ESSAI_REEL_GOOGLE.md, une séance), puis l'activation en production.
+
 ### Première livraison (utilisable de bout en bout)
 Espace Mails (boîte de réception, recherche, non lus, « À rattacher », libellés) → lecture d'une conversation → rattachement → réponse /
 répondre à tous / transférer avec template et documents du projet → journal du suivi → rangement (libellé, archive, corbeille) → relance.

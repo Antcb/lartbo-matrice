@@ -13,9 +13,10 @@ import { attOk, attSizeHTML, fill, mailVars, todoOk, tplLabel } from './mail.js'
 import { callProspect, prospectVars } from './prospection.js';
 import { byId, contactMails, linksOfStructure, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName, suiviClosed } from './selectors.js';
 import { S } from './state.js';
+import { ARTIST_DOCS } from './artist-fields.js';
 import { ask, askText, confirmAsk } from './ui/dialog.js';
 import { openModal } from './ui/modal.js';
-import { recipientsHelp, syncChips } from './ui/recipients.js';
+import { recipientsField, syncChips } from './ui/recipients.js';
 import { rtStyle, rtToolbar, wrapMail } from './ui/richtext.js';
 import { getDraft, setDraft, clearDraft } from './ui/drafts.js';
 import { addDays, esc, fmtDate, toast, today, workDay } from './utils.js';
@@ -56,6 +57,10 @@ export function loadLabels(force = false){
     .then(() => { labelsLoading = null; return M.labels; });
 }
 
+/** Archivée = hors boîte de réception, ni corbeille ni spam (Gmail n'a pas de dossier « Archive » : c'est l'absence du libellé INBOX) */
+export const ARCHIVED = 'ARCHIVED';
+export const isArchived = t => { const l = t.labels || []; return !l.includes('INBOX') && !l.includes('TRASH') && !l.includes('SPAM'); };
+
 /** Conversations de la liste, selon le filtre choisi et la recherche dans la page */
 export function threadsShown(){
   const q = String(S.search.mails || '').trim().toLowerCase();
@@ -64,6 +69,7 @@ export function threadsShown(){
   else if (M.filter === 'inbox') list = list.filter(t => (t.labels || []).includes('INBOX'));
   else if (M.filter === 'unread') list = list.filter(t => t.unread);
   else if (M.filter === 'link') list = list.filter(t => t.link_status === 'a_rattacher' && !(t.labels || []).includes('SPAM'));
+  else if (M.filter === 'label' && M.label === ARCHIVED) list = list.filter(isArchived);
   else if (M.filter === 'label' && M.label) list = list.filter(t => (t.labels || []).includes(M.label));
   if (q) list = list.filter(t => [t.subject, t.snippet, ...(t.participants || []), structName(t.structure_id)].some(x => String(x || '').toLowerCase().includes(q)));
   return list.sort((a, b) => String(b.last_message_at || '').localeCompare(String(a.last_message_at || '')));
@@ -102,7 +108,17 @@ export function candidates(row){
 export async function linkThread(id){
   const row = byId('mail_threads', id); if (!row) return;
   const cand = candidates(row);
-  const values = {structure_id: row.structure_id || (cand.structures.length === 1 ? cand.structures[0].id : ''), prospect_id: row.prospect_id || '', project_id: row.project_id || '', show_id: row.show_id || ''};
+  // plusieurs structures possibles et aucune choisie : la question est posée, jamais de premier choix d'office (règle d'Anthony)
+  let picked = '';
+  if (!row.structure_id && cand.structures.length > 1){
+    picked = await ask({title: 'Plusieurs structures possibles', text: 'Les adresses de la conversation correspondent à plusieurs structures. Laquelle ?',
+      actions: [...cand.structures.map(s => ({value: s.id, label: s.name})), {value: 'autre', label: 'Une autre structure'}]});
+    if (picked == null) return;
+    if (picked === 'autre') picked = '';
+  }
+  const values = {structure_id: row.structure_id || picked || (cand.structures.length === 1 ? cand.structures[0].id : ''), prospect_id: row.prospect_id || '', project_id: row.project_id || '', show_id: row.show_id || ''};
+  // un seul suivi OUVERT pour la structure proposée : présélectionné (visible, modifiable) ; plusieurs : rien d'office
+  if (values.structure_id && !values.prospect_id){ const open = prospectsOfStructure(values.structure_id).filter(p => !suiviClosed(p)); if (open.length === 1) values.prospect_id = open[0].id; }
   const suiviOpts = st => prospectsOfStructure(st).map(p => [p.id, prospectTitle(p) + (suiviClosed(p) ? ' (clos)' : '')]);
   const showOpts = st => S.db.shows.filter(s => s.structure_id === st).sort((a, b) => String(b.date).localeCompare(String(a.date))).map(s => [s.id, `${fmtDate(s.date)} · ${projName(s.project_id)}`]);
   const help = cand.structures.length ? `Structures trouvées par les adresses exactes : ${cand.structures.map(s => esc(s.name)).join(', ')}.` : 'Aucune structure trouvée par les adresses exactes des participants.';
@@ -149,15 +165,34 @@ async function contextVars(ctx){
   return vars;
 }
 
-/** Documents d'un artiste déjà stockés (fiche artiste) : vraies pièces jointes, taille lue dans le stockage */
-async function artistDocs(projectId){
-  const p = byId('projects', projectId), docs = (p?.artist_docs || []).filter(d => d.path || d.file_id);
-  return Promise.all(docs.map(async d => {
-    let size = Number(d.size) || 0;
-    if (!size && d.path){ const i = d.path.lastIndexOf('/'), {data} = await sb.storage.from('artiste').list(d.path.slice(0, i), {search: d.path.slice(i + 1)});
-      size = Number(data?.find(x => x.name === d.path.slice(i + 1))?.metadata?.size) || 0; }
-    return {name: d.name || d.label || d.kind || 'Document', kind: d.label || d.kind || '', path: d.path || null, bucket: 'artiste', file_id: d.file_id || null, size, on: true};
-  }));
+const DOC_LABEL = k => (ARTIST_DOCS.find(d => d[0] === k) || [])[1] || '';
+/**
+ * Documents déjà stockés d'un artiste / projet (v1.63), sans nouveau téléversement : fiche artiste (fiche technique, dossier de presse,
+ * logos…), documents du projet, fichiers du suivi rattaché. Toujours de VRAIES pièces jointes (jamais un lien), lues par le script
+ * avec un lien temporaire (stockage privé, 10 min) ou avec les droits du compte Google (Drive) : aucun Drive installé sur l'ordinateur.
+ * Taille lue dans le stockage ou dans le Drive ; document Drive inaccessible : signalé, jamais joint ni remplacé par un lien.
+ */
+export async function projectDocs(projectId, prospectId = null){
+  const p = byId('projects', projectId), out = [];
+  for (const d of (p?.artist_docs || []).filter(d => d.path || d.file_id))
+    out.push({name: d.drive_name || d.name || 'Document', kind: DOC_LABEL(d.kind) || d.label || 'Fiche artiste', group: 'Fiche artiste',
+      path: d.path || null, bucket: d.path ? 'artiste' : null, file_id: d.path ? null : d.file_id || null, size: Number(d.size) || 0, on: true});
+  for (const a of S.db.attachments.filter(a => a.project_id === projectId && !a.task_id && a.path && a.mime !== 'link'))
+    out.push({name: a.name, kind: 'Document du projet', group: 'Projet', path: a.path, bucket: 'suivi', file_id: null, size: Number(a.size) || 0, on: true});
+  for (const f of prospectId ? S.db.prospect_files.filter(f => f.prospect_id === prospectId && f.path && f.mime !== 'link') : [])
+    out.push({name: f.name, kind: 'Fichier du suivi', group: 'Suivi', path: f.path, bucket: 'suivi', file_id: null, size: Number(f.size) || 0, on: true});
+  // tailles manquantes : stockage « artiste » (métadonnées) ; Drive : lues par le script de la boîte (droits de ce compte)
+  await Promise.all(out.filter(d => !d.size && d.bucket === 'artiste').map(async d => { const i = d.path.lastIndexOf('/');
+    const {data} = await sb.storage.from('artiste').list(d.path.slice(0, i), {search: d.path.slice(i + 1)});
+    d.size = Number(data?.find(x => x.name === d.path.slice(i + 1))?.metadata?.size) || 0; }));
+  const drive = out.filter(d => d.file_id);
+  if (drive.length){
+    try { const r = await callProspect('files_info', {ids: drive.map(d => d.file_id)});
+      for (const d of drive){ const f = (r.files || []).find(x => x.id === d.file_id);
+        if (f?.ok){ d.size = Number(f.size) || 0; d.name = f.name || d.name; } else d.blocked = f?.error || 'Inaccessible depuis ce compte Google'; } }
+    catch (e) { for (const d of drive) d.blocked = 'Taille et accès non vérifiés (' + e.message + ')'; }
+  }
+  return out;
 }
 
 /**
@@ -170,7 +205,10 @@ export async function compose(mode, row = null, msg = null){
   const targets = base && mode !== 'forward' && mode !== 'new' ? replyTargets(base, mode === 'reply_all') : {to: '', cc: ''};
   const ctx = {structure_id: row?.structure_id || '', contact_id: '', project_id: row?.project_id || (row?.prospect_id ? projIds(byId('prospects', row.prospect_id))[0] : '') || '', show_id: row?.show_id || ''};
   const contacts = ctx.structure_id ? linksOfStructure(ctx.structure_id) : [];
-  ctx.contact_id = contacts.find(c => targets.to && contactMails(c).toLowerCase().split(', ').some(e => targets.to.toLowerCase().includes(e)))?.id || '';
+  // contact des balises : celui dont une adresse est EXACTEMENT un destinataire, s'il est le seul (jamais le premier de la structure)
+  const toSet = new Set(targets.to.toLowerCase().split(',').map(x => x.trim()).filter(Boolean));
+  const hits = contacts.filter(c => contactMails(c).toLowerCase().split(', ').some(e => e && toSet.has(e)));
+  ctx.contact_id = hits.length === 1 ? hits[0].id : '';
   let files = saved.files || (mode === 'forward' ? [] : []), draftId = saved.draft_id || null, wantDraft = false;
   const keepFwd = mode === 'forward' ? (base?.attachments || []) : [];
   const sig = setting('prospect_signature') || '';
@@ -181,13 +219,13 @@ export async function compose(mode, row = null, msg = null){
   const extra = `<div class="mail-wrap">
     ${base ? `<p class="mode-note">${mode === 'forward' ? 'Transfert' : 'Réponse dans le fil'} « ${esc(base.subject || '')} » (${esc(base.from?.email || '')}, ${fmtDate(base.date)}) : le message d’origine est cité sous le texte.</p>` : ''}
     <div class="mail-grid">
-      <label for="mc-to">À</label><input id="mc-to" class="mc-wide" data-mails value="${esc(saved.to ?? targets.to)}">
-      ${recipientsHelp('mc-to', ctx.structure_id || null)}
-      <label for="mc-cc">Copie</label><input id="mc-cc" data-mails value="${esc(saved.cc ?? targets.cc)}">
-      <label for="mc-bcc">Copie cachée</label><input id="mc-bcc" class="mc-wide" data-mails value="${esc(saved.bcc || '')}">
+      <label for="mc-contact" class="rcpt-who">Interlocuteur</label><span class="mail-to rcpt-who"><select id="mc-contact"><option value="">— aucun —</option>${contacts.map(c => `<option value="${c.id}" ${c.id === ctx.contact_id ? 'selected' : ''}>${esc(c.display_name)}${contactMails(c) ? ` · ${esc(contactMails(c))}` : ' (pas de mail)'}</option>`).join('')}</select>
+        <small class="muted">prénom et balises des modèles ; ne change pas les destinataires</small><span class="rcpt-propose"></span></span>
+      <label for="mc-to-q">À</label>${recipientsField('mc-to', ctx.structure_id || null, {value: saved.to ?? targets.to, label: 'Destinataires', interlocutor: 'mc-contact'})}
+      <label for="mc-cc-q">Copie</label>${recipientsField('mc-cc', ctx.structure_id || null, {value: saved.cc ?? targets.cc, label: 'Copies'})}
+      <label for="mc-bcc-q">Copie cachée</label>${recipientsField('mc-bcc', ctx.structure_id || null, {value: saved.bcc || '', label: 'Copies cachées'})}
       <label for="mc-subj">Objet</label><input id="mc-subj" value="${esc(saved.subject ?? subjectDefault)}" ${mode === 'reply' || mode === 'reply_all' ? 'readonly title="Une réponse garde l’objet du fil"' : ''}>
       <label for="mc-proj">Artiste</label><select id="mc-proj"><option value="">—</option>${projs.map(p => `<option value="${p.id}" ${p.id === ctx.project_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
-      <label for="mc-contact">Contact (balises)</label><select id="mc-contact"><option value="">—</option>${contacts.map(c => `<option value="${c.id}" ${c.id === ctx.contact_id ? 'selected' : ''}>${esc(c.display_name)}</option>`).join('')}</select>
       <label for="mc-tpl">Modèle</label><span class="mail-to"><select id="mc-tpl"><option value="">— choisir —</option>${tpls.map(x => `<option value="${x.id}">${esc(x.name || 'Modèle')} · ${esc(tplLabel(x))}</option>`).join('')}</select>
         <button type="button" class="btn sm" id="mc-ins">Insérer</button></span>
     </div>
@@ -215,8 +253,9 @@ export async function compose(mode, row = null, msg = null){
       if (!(await attOk(files))) return false;
       if (send && !(await confirmAsk('Envoyer le mail ?', `Le mail part maintenant à ${m.to}${m.cc ? ` (copie : ${m.cc})` : ''}${m.bcc ? ` (copie cachée : ${m.bcc})` : ''}, depuis ${MAILBOX_ADDR()}.`, 'Envoyer le mail'))) return false;
       try {
+        // lien temporaire de 10 min pour le stockage « artiste » (lu une fois par le script) ; stockage « suivi » : fonction officielle
         const attachments = await Promise.all(files.filter(f => f.on).map(async f => f.path
-          ? {url: f.bucket === 'artiste' ? (await sb.storage.from('artiste').createSignedUrl(f.path, 3600)).data?.signedUrl : await signedUrl(f.path), name: f.name}
+          ? {url: f.bucket === 'artiste' ? (await sb.storage.from('artiste').createSignedUrl(f.path, 600)).data?.signedUrl : await signedUrl(f.path), name: f.name}
           : {id: f.file_id, name: f.name}));
         if (attachments.some(a => !a.url && !a.id)) throw new Error('Une pièce jointe est illisible : rien n’est parti.');
         const out = await callProspect('compose', {mode, thread_id: row?.gmail_thread_id || null, message_id: base?.id || null, to: m.to, cc: m.cc, bcc: m.bcc,
@@ -228,7 +267,12 @@ export async function compose(mode, row = null, msg = null){
           toast('Mail envoyé');
         } else { draftId = out.draft_id || draftId; keep(); toast('Brouillon enregistré dans Gmail'); }
         render(); return send;   // brouillon : la fenêtre reste ouverte
-      } catch (err) { toast(err.message, true); return false; }
+      } catch (err) {
+        // brouillon supprimé ou envoyé depuis Gmail / Apple Mail : rien n'est parti ; le prochain essai crée un nouveau brouillon
+        if (/BROUILLON_ABSENT/.test(err.message)){ draftId = null; keep();
+          toast('Le brouillon n’existe plus dans Gmail (envoyé ou supprimé depuis Gmail ou Apple Mail) : rien n’est parti. Vérifie « Envoyés », puis recommence si besoin (un nouveau brouillon sera créé).', true); }
+        else toast(err.message, true);
+        return false; }
     }});
   syncChips(document.querySelector('#modal')); drawFiles();
   ['#mc-to', '#mc-cc', '#mc-bcc', '#mc-subj'].forEach(s => $(s).addEventListener('input', keep));
@@ -237,6 +281,7 @@ export async function compose(mode, row = null, msg = null){
   $('#mc-body').addEventListener('blur', () => { const sel = getSelection(); if (sel.rangeCount && $('#mc-body').contains(sel.anchorNode)) range = sel.getRangeAt(0).cloneRange(); });
   $('#mc-proj').onchange = e => { ctx.project_id = e.target.value; };
   $('#mc-contact').onchange = e => { ctx.contact_id = e.target.value; };
+  $('#mc-contact').addEventListener('interlocutor', () => { ctx.contact_id = $('#mc-contact').value; });   // « Utiliser X comme interlocuteur »
   $('#mc-ins').onclick = async () => {
     const tp = byId('mail_templates', $('#mc-tpl').value); if (!tp) return toast('Choisis un modèle', true);
     const vars = await contextVars(ctx), html = fill(tp.html, vars, true);
@@ -253,14 +298,23 @@ export async function compose(mode, row = null, msg = null){
     if (missing.length) toast('À compléter avant l’envoi : ' + missing.join(', '), true);
   };
   $('#mc-docs').onclick = async () => {
-    if (!ctx.project_id) return toast('Choisis d’abord l’artiste', true);
-    const docs = await artistDocs(ctx.project_id);
-    if (!docs.length) return toast('Aucun document stocké pour cet artiste (fiche artiste)', true);
-    const choice = await ask({title: `Documents · ${projName(ctx.project_id)}`, text: 'Le document choisi part en vraie pièce jointe (pas de lien).',
-      actions: [...docs.map((d, i) => ({value: String(i), label: `${d.kind ? d.kind + ' · ' : ''}${d.name} (${fmtSize(d.size) || 'taille inconnue'})`})), {value: 'all', label: 'Tous les documents'}]});
-    if (choice == null) return;
-    for (const d of choice === 'all' ? docs : [docs[Number(choice)]]) if (!files.some(f => f.path && f.path === d.path)) files.push(d);
-    drawFiles();
+    if (!ctx.project_id && !row?.prospect_id) return toast('Choisis d’abord l’artiste', true);
+    const all = await projectDocs(ctx.project_id, row?.prospect_id || null);
+    const same = (f, d) => d.path ? f.path === d.path : f.file_id === d.file_id;
+    const docs = all.filter(d => !d.blocked && !files.some(f => same(f, d))), blocked = all.filter(d => d.blocked);
+    const why = blocked.length ? ` Non joignables (${blocked.map(d => d.name).join(', ')}) : document Drive inaccessible au compte ${MAILBOX_ADDR()} — partage son dossier avec ce compte, ou dépose le fichier dans la fiche artiste.` : '';
+    if (!docs.length) return toast((all.length ? 'Tous les documents sont déjà joints.' : 'Aucun document stocké pour cet artiste ni ce suivi.') + why, true);
+    // plusieurs pièces : la question revient après chaque ajout, jusqu'à « Terminé » (noms et tailles visibles)
+    let left = docs;
+    for (;;){
+      const choice = await ask({title: `Documents · ${projName(ctx.project_id) || 'suivi'}`, text: `Chaque document choisi part en vraie pièce jointe (pas de lien).${why}`,
+        actions: [...left.map((d, i) => ({value: String(i), label: `${d.kind} · ${d.name} (${fmtSize(d.size) || 'taille inconnue'})`})),
+          ...(left.length > 1 ? [{value: 'all', label: `Tous (${left.length})`}] : [])], cancel: files.length ? 'Terminé' : 'Annuler'});
+      if (choice == null) break;
+      const add = choice === 'all' ? left : [left[Number(choice)]];
+      files.push(...add.map(d => ({...d}))); left = left.filter(d => !add.includes(d)); drawFiles();
+      if (!left.length) break;
+    }
   };
   $('#mc-files').addEventListener('change', e => { const i = e.target.dataset.att; if (i != null){ files[i].on = e.target.checked; drawFiles(); } });
   $('#mc-up').addEventListener('change', async e => {
@@ -336,9 +390,16 @@ export const MAIL_ACTIONS = {
     if (/^(application\/pdf|image\/(png|jpeg|gif|webp))$/i.test(f.type)) window.open(u, '_blank', 'noopener');
     else { const a = document.createElement('a'); a.href = u; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }
     setTimeout(() => URL.revokeObjectURL(u), 60000); } catch (e) { toast(e.message, true); } },
-  mailAttKeep: async t => { const r = byId('mail_threads', M.open); if (!r?.prospect_id) return toast('Rattache d’abord la conversation à un suivi', true);
+  // conserver une pièce reçue : seulement sur action explicite, dans le suivi ou dans les documents du projet (artiste) rattachés
+  mailAttKeep: async t => { const r = byId('mail_threads', M.open); if (!r) return;
     const att = M.thread.messages.find(m => m.id === t.dataset.msg).attachments[Number(t.dataset.i)];
-    if (!(await confirmAsk('Conserver la pièce jointe ?', `« ${att.name} » (${fmtSize(att.size)}) est copiée dans les fichiers du suivi « ${prospectTitle(byId('prospects', r.prospect_id))} ».`, 'Conserver'))) return;
-    try { await uploadFiles({prospect_id: r.prospect_id}, [await fetchAttachment(t.dataset.msg, att)]); } catch (e) { toast(e.message, true); }
+    const pid = r.project_id || (r.prospect_id ? projIds(byId('prospects', r.prospect_id) || {})[0] : '') || '';
+    const actions = [...(r.prospect_id ? [{value: 'suivi', label: `Dans le suivi « ${prospectTitle(byId('prospects', r.prospect_id))} »`}] : []),
+      ...(pid ? [{value: 'projet', label: `Dans les documents de ${projName(pid)}`}] : [])];
+    if (!actions.length) return toast('Rattache d’abord la conversation à un suivi ou à un artiste', true);
+    const where = await ask({title: 'Conserver la pièce jointe ?', text: `« ${att.name} » (${fmtSize(att.size)}) est copiée ; l’original reste dans Gmail.`, actions});
+    if (where == null) return;
+    try { await uploadFiles(where === 'suivi' ? {prospect_id: r.prospect_id} : {project_id: pid}, [await fetchAttachment(t.dataset.msg, att)]); } catch (e) { toast(e.message, true); }
     render(); },
+  mailUntrash: () => { const r = byId('mail_threads', M.open); if (r) modify(r, {untrash: true}, 'Retirée de la corbeille de Gmail'); },
 };

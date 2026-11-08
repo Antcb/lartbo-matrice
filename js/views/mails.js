@@ -2,7 +2,7 @@
  * Onglet Mails (v1.61) : boîte anthony@ — boîte de réception, non lus, « À rattacher », libellés Gmail, recherche ; lecture d'une
  * conversation, rattachement (structure, suivi, artiste, date), réponse, rangement, relance. Gmail reste la référence.
  */
-import { LINK_LABEL, M, MAILBOX_ADDR, candidates, fmtSize, labelName, loadLabels, syncState, threadsShown, userLabels } from '../mailbox.js';
+import { ARCHIVED, LINK_LABEL, M, MAILBOX_ADDR, candidates, fmtSize, labelName, loadLabels, syncState, threadsShown, userLabels } from '../mailbox.js';
 import { byId, projName, prospectTitle, structName } from '../selectors.js';
 import { S } from '../state.js';
 import { viewHead } from '../ui/bits.js';
@@ -47,7 +47,7 @@ function list(){
 
 function reader(){
   const row = byId('mail_threads', M.open); if (!row) return '<div class="empty panel">Conversation introuvable.</div>';
-  const th = M.thread, c = candidates(row), inInbox = (row.labels || []).includes('INBOX');
+  const th = M.thread, c = candidates(row), inInbox = (row.labels || []).includes('INBOX'), inTrash = (row.labels || []).includes('TRASH');
   const bar = `<div class="mail-actions">
     <button class="btn sm" data-act="mailBack">← Liste</button>
     <button class="btn sm primary" data-act="mailCompose" data-mode="reply">Répondre</button>
@@ -55,11 +55,13 @@ function reader(){
     <button class="btn sm" data-act="mailCompose" data-mode="forward">Transférer</button>
     <span class="spacer"></span>
     <button class="btn sm" data-act="mailLabel">Libellés</button>
-    ${inInbox ? '<button class="btn sm" data-act="mailArchive">Archiver</button>' : '<button class="btn sm" data-act="mailInbox">Remettre en boîte de réception</button>'}
+    ${inTrash ? '' : inInbox ? '<button class="btn sm" data-act="mailArchive">Archiver</button>' : '<button class="btn sm" data-act="mailInbox">Remettre en boîte de réception</button>'}
     <button class="btn sm" data-act="mailUnread">Marquer non lu</button>
-    <button class="btn sm ghost danger" data-act="mailTrash">Corbeille</button></div>`;
+    ${inTrash ? '<button class="btn sm" data-act="mailUntrash">Retirer de la corbeille</button>' : '<button class="btn sm ghost danger" data-act="mailTrash">Corbeille</button>'}</div>`;
   const link = `<div class="panel pad mail-linkbox">${linkBadge(row)} ${row.link_reason ? `<span class="muted">${esc(row.link_reason)}</span>` : ''}
     ${row.structure_id ? `<p>Structure : <b>${esc(structName(row.structure_id))}</b>${row.prospect_id ? ` · Suivi : <b>${esc(prospectTitle(byId('prospects', row.prospect_id) || {}))}</b>` : ''}${row.project_id ? ` · Artiste : ${esc(projName(row.project_id))}` : ''}${row.show_id ? ` · Date : ${fmtDate(byId('shows', row.show_id)?.date)}` : ''}</p>` : ''}
+    ${!row.structure_id && c.structures.length > 1 ? `<p class="muted">Structures possibles : ${c.structures.map(s => esc(s.name)).join(', ')} — « Rattacher » pour choisir.</p>` : ''}
+    ${inTrash ? '<p class="muted">Dans la corbeille de Gmail (récupérable 30 jours) ; le journal du suivi est gardé.</p>' : !inInbox ? '<p class="muted">Archivée : hors boîte de réception, toujours dans Gmail (« Tous les messages ») et ses libellés.</p>' : ''}
     ${!row.structure_id && c.unknown.length ? `<p class="muted">Adresse${c.unknown.length > 1 ? 's' : ''} inconnue${c.unknown.length > 1 ? 's' : ''} : ${c.unknown.map(esc).join(', ')}</p>` : ''}
     <button class="btn sm" data-act="mailLink" data-id="${row.id}">${row.structure_id ? 'Corriger le rattachement' : 'Rattacher'}</button>
     ${row.prospect_id ? '<button class="btn sm" data-act="mailRelance">Programmer une relance</button>' : ''}
@@ -75,7 +77,7 @@ function reader(){
         <iframe class="mail-frame" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" title="Message de ${esc(m.from?.email || '')}" srcdoc="${esc(frameDoc(m.html, M.images.has(m.id)))}"></iframe>
         ${m.attachments?.length ? `<div class="ml-att">${m.attachments.map((a, i) => `<span class="att-chip">📎 ${esc(a.name)} <span class="muted">${fmtSize(a.size)}</span>
           <button class="btn sm ghost" data-act="mailAttPreview" data-msg="${esc(m.id)}" data-i="${i}">Ouvrir</button>
-          <button class="btn sm ghost" data-act="mailAttKeep" data-msg="${esc(m.id)}" data-i="${i}">Conserver dans le suivi</button></span>`).join('')}</div>` : ''}
+          <button class="btn sm ghost" data-act="mailAttKeep" data-msg="${esc(m.id)}" data-i="${i}">Conserver…</button></span>`).join('')}</div>` : ''}
         <div class="mail-actions"><button class="btn sm ghost" data-act="mailCompose" data-mode="reply" data-msg="${esc(m.id)}">Répondre à ce message</button></div>
       </article>`).join('');
   return `${bar}<h2 class="mail-title">${esc(row.subject || '(sans objet)')}</h2>${link}${body}`;
@@ -90,7 +92,7 @@ export function viewMails(){
       ${M.filter === 'search' ? '<button class="subtab" role="tab" aria-selected="true">Résultats Gmail</button>' : ''}</nav>
     <div class="filters"><select class="sel" data-change="mailLabelPick" aria-label="Libellé Gmail"><option value="">Libellé…</option>
       ${userLabels().map(l => `<option value="${esc(l.id)}" ${M.filter === 'label' && M.label === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}
-      <option value="SENT" ${M.label === 'SENT' ? 'selected' : ''}>Envoyés</option><option value="TRASH" ${M.label === 'TRASH' ? 'selected' : ''}>Corbeille</option></select>
+      <option value="SENT" ${M.label === 'SENT' ? 'selected' : ''}>Envoyés</option><option value="${ARCHIVED}" ${M.label === ARCHIVED ? 'selected' : ''}>Archivés</option><option value="TRASH" ${M.label === 'TRASH' ? 'selected' : ''}>Corbeille</option></select>
       <input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-mails" placeholder="Objet, adresse, structure…" data-search="mails" value="${esc(S.search.mails || '')}">
       <button class="btn sm" data-act="mailSearchGmail" title="Recherche dans tout Gmail (mêmes mots-clés que Gmail : from:, has:attachment…)">Chercher dans Gmail</button></div>`;
   return viewHead('Mails', {sub: `${esc(MAILBOX_ADDR())} · ${syncLine()}`, actions: '<button class="btn" data-act="mailRefresh">Actualiser</button> <button class="btn primary" data-act="mailCompose" data-mode="new">Nouveau mail</button>', filters})

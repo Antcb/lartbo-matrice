@@ -41,6 +41,7 @@ function doPost(e) {
     else if (a === 'compose') out = compose_(body);
     else if (a === 'attachment') out = attachment_(body);
     else if (a === 'history') out = history_(body);
+    else if (a === 'files_info') out = filesInfo_(body);   // v1.63 : taille et accès des documents Drive (lecture seule)
     else out = { ok: false, error: 'Action inconnue : ' + a };
   } catch (err) {
     out = { ok: false, error: String(err) };
@@ -204,9 +205,16 @@ function mimeDraft_(o) {
   var message = { raw: Utilities.base64EncodeWebSafe(mime) };
   if (o.threadId) message.threadId = o.threadId;
   // brouillon déjà enregistré (messagerie) : mis à jour, jamais dupliqué
-  var draft = o.draftId ? Gmail.Users.Drafts.update({ message: message }, 'me', o.draftId) : Gmail.Users.Drafts.create({ message: message }, 'me');
+  // (v1.63) brouillon disparu de Gmail (envoyé ou supprimé depuis Gmail / Apple Mail) : on s'arrête, jamais de second envoi ni de copie
+  var draft;
+  if (o.draftId) {
+    try { draft = Gmail.Users.Drafts.update({ message: message }, 'me', o.draftId); }
+    catch (err) { throw new Error('BROUILLON_ABSENT : le brouillon n’existe plus dans Gmail (envoyé ou supprimé depuis Gmail ou Apple Mail). Rien n’est parti.'); }
+  } else draft = Gmail.Users.Drafts.create({ message: message }, 'me');
   if (o.send) {
     var sent = Gmail.Users.Drafts.send({ id: draft.id }, 'me');
+    // confirmation de Gmail = identifiant du message envoyé ; sans lui, « non envoyé » (rien n'est noté au journal)
+    if (!sent || !sent.id) return { sent: false, error: 'Gmail n’a pas confirmé l’envoi' };
     return { sent: true, thread_id: sent.threadId, message_id: sent.id, sent_at: new Date().toISOString() };
   }
   return { sent: false, draft_id: draft.id, thread_id: draft.message.threadId, message_id: draft.message.id,
@@ -270,12 +278,15 @@ function hdr_(headers, name) {
   for (var i = 0; i < (headers || []).length; i++) if (String(headers[i].name).toLowerCase() === n) return headers[i].value;
   return '';
 }
-/** « Nom <a@b.fr>, c@d.fr » → [{name, email}] (adresses en minuscules) */
+/** « Nom <a@b.fr>, c@d.fr, "Nom, Prénom" <e@f.fr> » → [{name, email}] (adresses en minuscules).
+ *  (v1.63) une adresse seule n'est plus tronquée (« prog@x.fr » était lu « g@x.fr ») ; virgule entre guillemets gardée dans le nom. */
 function addrs_(v) {
   var out = [];
-  String(v || '').replace(/(?:"?([^"<,]*)"?\s*)?<?([A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})>?/g, function (m, name, email) {
-    out.push({ name: String(name || '').trim(), email: email.toLowerCase() });
-    return m;
+  (String(v || '').match(/(?:"[^"]*"|[^,"])+/g) || []).forEach(function (p) {
+    var m = p.match(/<\s*([^<>\s@]+@[^<>\s@]+)\s*>/) || p.match(/([A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/);
+    if (!m) return;
+    var lt = p.indexOf('<');
+    out.push({ name: lt >= 0 ? p.slice(0, lt).replace(/"/g, '').trim() : '', email: m[1].toLowerCase() });
   });
   return out;
 }
@@ -297,11 +308,18 @@ function parts_(payload, acc) {
   return acc;
 }
 
+/** Identifiants des messages auxquels celui-ci répond (In-Reply-To, References) : sert à reconnaître une conversation connue (v1.63) */
+function refs_(h) {
+  var out = [];
+  (hdr_(h, 'In-Reply-To') + ' ' + hdr_(h, 'References')).replace(/<[^<>\s]{1,250}>/g, function (id) { if (out.indexOf(id) < 0) out.push(id); return id; });
+  return out.slice(0, 50);
+}
+
 /** Résumé d'un message (sans corps) — sert à la liste, à la synchronisation et au journal */
 function msgMeta_(m, me) {
   var h = (m.payload || {}).headers || [], from = addrs_(hdr_(h, 'From'))[0] || { name: '', email: '' };
   var acc = parts_(m.payload, { html: '', text: '', attachments: [] });
-  return { id: m.id, thread_id: m.threadId, rfc_id: hdr_(h, 'Message-ID'), labels: m.labelIds || [],
+  return { id: m.id, thread_id: m.threadId, rfc_id: hdr_(h, 'Message-ID'), labels: m.labelIds || [], refs: refs_(h),
     from: from, reply_to: addrs_(hdr_(h, 'Reply-To')), to: addrs_(hdr_(h, 'To')), cc: addrs_(hdr_(h, 'Cc')),
     subject: hdr_(h, 'Subject'), date: new Date(Number(m.internalDate)).toISOString(), snippet: m.snippet || '',
     direction: from.email === me || (m.labelIds || []).indexOf('SENT') >= 0 ? 'out' : 'in',
@@ -464,4 +482,22 @@ function history_(b) {
     catch (err) { out.push({ id: id, missing: true }); }   // conversation supprimée définitivement depuis Gmail
   });
   return { ok: true, account: me, history_id: String(profile.historyId), threads: out, remaining: list.slice(limit), full: full };
+}
+
+/**
+ * Documents Drive proposés en pièces jointes (v1.63) : nom, taille et type, lus avec les droits de CE compte (rien n'est partagé,
+ * copié ni modifié). Fichier inaccessible : signalé (le partager avec ce compte, ou le déposer dans la fiche artiste).
+ * Document Google (Docs, Sheets…) : taille de sa version PDF, celle qui part en pièce jointe.
+ */
+function filesInfo_(b) {
+  var out = (b.ids || []).slice(0, 50).map(function (id) {
+    id = String(id || '');
+    if (!/^[\w-]{10,200}$/.test(id)) return { id: id, ok: false, error: 'Identifiant Drive refusé' };
+    try {
+      var f = DriveApp.getFileById(id), size = f.getSize();
+      if (!size) { var blob = f.getBlob(); size = blob.getBytes().length; return { id: id, ok: true, name: blob.getName(), size: size, mime: blob.getContentType() }; }
+      return { id: id, ok: true, name: f.getName(), size: size, mime: f.getMimeType() };
+    } catch (err) { return { id: id, ok: false, error: 'Inaccessible depuis ce compte Google' }; }
+  });
+  return { ok: true, files: out };
 }
