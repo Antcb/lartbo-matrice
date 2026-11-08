@@ -2,15 +2,18 @@
  * Brevo : ajoute dans Brevo les contacts de la Matrice qui n'y sont pas encore (mail, prénom, nom, structure).
  * Un mail déjà présent dans Brevo n'est JAMAIS modifié : ni ses champs, ni ses listes, ni son désabonnement.
  * Contact lié uniquement à des structures inactives (v1.60.2) : pas ajouté (hors prospection) ; rien n'est supprimé ni désabonné.
- * Appelée par un déclencheur de la base à chaque création ou modification d'un contact
- * (et quand on le rattache à une structure), ou par Réglages › Brevo pour tout envoyer d'un coup.
+ * Exception (depuis la v1.16) : un mail CRÉÉ par la Matrice (contacts.brevo_emails) garde prénom, nom et structure(s) à jour ;
+ * ajout ET retrait d'un rattachement à une structure (08/11/2026) : champ « structure » mis à jour, jamais de suppression, de
+ * désabonnement ni de retrait de liste. Fonction propre à chaque structure : lue, pas encore transmise (regles.ts).
+ * Appelée par un déclencheur de la base à chaque création ou modification d'un contact, à l'ajout ou au retrait d'un
+ * rattachement à une structure, à la réactivation d'une structure, ou par Réglages › Brevo pour tout envoyer d'un coup.
  * Réglages lus dans la table settings : brevo_api_key, brevo_list_id (une ou plusieurs listes, séparées par des virgules),
  * brevo_hook_secret (code partagé avec le déclencheur). Ces réglages ne sont lisibles que côté serveur (v1.47).
  * Accès : le déclencheur de la base (code x-hook-secret) ; « tout envoyer » (Réglages) : un compte de l'équipe connecté (v1.47 —
  * le navigateur n'a plus le code secret).
  */
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { aAjouter, type Link, names, onlyInactive } from "./regles.ts";
+import { aAjouter, attributes, type Champs, type ClientBrevo, type Contact, type Link, mailsOf, syncContact } from "./regles.ts";
 
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const API = "https://api.brevo.com/v3";
@@ -41,7 +44,7 @@ async function isTeam(auth: string) {
   return data === true;
 }
 
-let ATTRS: { first?: string; last?: string; struct?: string } | null = null;
+let ATTRS: Champs | null = null;
 /** Noms des champs Brevo du compte (PRENOM / FIRSTNAME…) ; crée « STRUCTURE » s'il n'existe aucun champ pour la structure */
 async function attrNames(key: string) {
   if (ATTRS) return ATTRS;
@@ -71,32 +74,24 @@ async function brevoEmails(key: string) {
   return out;
 }
 
-type Contact = { id: string; email: string | null; email_2?: string | null; first_name: string | null; last_name: string | null; display_name: string | null };
-
-/** Structures rattachées à chaque contact (nom, inactive ou non — v1.60.2) ; une erreur de lecture arrête tout (jamais d'ajout à l'aveugle) */
+/** Structures rattachées à chaque contact (nom, inactive ou non — v1.60.2 ; fonction ici — lue, pas transmise) ; une erreur de lecture arrête tout (jamais d'ajout à l'aveugle) */
 async function structuresOf(ids: string[]) {
   const out = new Map<string, Link[]>();
   for (let i = 0; i < ids.length; i += 500) {
-    const { data, error } = await sb.from("contact_structures").select("contact_id, structures(name, inactive_at)").in("contact_id", ids.slice(i, i + 500));
+    const { data, error } = await sb.from("contact_structures").select("contact_id, role, structures(name, inactive_at)").in("contact_id", ids.slice(i, i + 500));
     if (error) throw new Error(`Lecture des structures des contacts impossible : ${error.message}`);
     for (const r of (data || []) as any[]) if (r.structures) (out.get(r.contact_id) || out.set(r.contact_id, []).get(r.contact_id)!)
-      .push({ name: r.structures.name || "", inactive: !!r.structures.inactive_at });
+      .push({ name: r.structures.name || "", inactive: !!r.structures.inactive_at, role: r.role ?? null });
   }
   return out;
 }
 
-/** Mails valides d'un contact (mail 1 puis mail 2), en minuscules et sans doublon */
-const mailsOf = (c: Contact) => [...new Set([c.email, c.email_2].map((e) => String(e || "").trim().toLowerCase()).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
-
-function attributes(c: Contact, structs: string[], a: NonNullable<typeof ATTRS>) {
-  const at: Record<string, string> = {};
-  const first = c.first_name || (!c.last_name ? (c.display_name || "").split(" ")[0] : "");
-  const last = c.last_name || (!c.first_name ? (c.display_name || "").split(" ").slice(1).join(" ") : "");
-  if (a.first && first) at[a.first] = first;
-  if (a.last && last) at[a.last] = last;
-  if (a.struct && structs.length) at[a.struct] = structs.join(", ");
-  return at;
-}
+/** Appels réels à Brevo pour un contact (lecture, mise à jour des champs, création) : voir syncContact (regles.ts) */
+const client = (key: string): ClientBrevo => ({
+  lire: (email) => bfetch(`${API}/contacts/${encodeURIComponent(email)}`, { headers: { "api-key": key, accept: "application/json" } }),
+  modifier: (email, corps) => bfetch(`${API}/contacts/${encodeURIComponent(email)}`, { method: "PUT", headers: { "api-key": key, "content-type": "application/json" }, body: JSON.stringify(corps) }),
+  creer: (corps) => bfetch(`${API}/contacts`, { method: "POST", headers: { "api-key": key, "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(corps) }),
+});
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -132,7 +127,7 @@ Deno.serve(async (req) => {
       const { list, skipped_inactive } = aAjouter(cand, st);
       if (!list.length) return json({ ok: true, count: 0, skipped_inactive });
       const r = await bfetch(`${API}/contacts/import`, { method: "POST", headers: { "api-key": key, "content-type": "application/json" },
-        body: JSON.stringify({ jsonBody: list.map(({ c, email }) => ({ email, attributes: attributes(c, names(st.get(c.id)), a) })),
+        body: JSON.stringify({ jsonBody: list.map(({ c, email }) => ({ email, attributes: attributes(c, st.get(c.id), a) })),
           ...(listIds.length ? { listIds } : {}), updateExistingContacts: false, emptyContactsAttributes: false }) });
       if (!r.ok) return json({ ok: false, error: `Brevo ${r.status} : ${await r.text()}` });
       return json({ ok: true, count: list.length, skipped_inactive });
@@ -144,30 +139,12 @@ Deno.serve(async (req) => {
     const mails = c ? mailsOf(c as Contact) : [];
     if (!c || !mails.length) return json({ ok: true, skipped: "pas de mail" });
     const st = await structuresOf([c.id]);
-    const attrs = attributes(c as Contact, names(st.get(c.id)), a);
-    const held = onlyInactive(st.get(c.id));   // lié uniquement à des structures inactives : pas de nouveau contact Brevo (v1.60.2)
-    const skipped: string[] = [];
-    const errors: string[] = [], done: string[] = [], created: string[] = [];
     // mails créés par la Matrice (avant la v1.32 : seul le mail 1, signalé par brevo_created)
     const ours = new Set<string>((c.brevo_emails || []).map((e: string) => e.toLowerCase()));
-    if (c.brevo_created && !ours.size && c.email) { ours.add(c.email.trim().toLowerCase()); created.push(c.email.trim().toLowerCase()); }
-    for (const email of mails) {
-      const g = await bfetch(`${API}/contacts/${encodeURIComponent(email)}`, { headers: { "api-key": key, accept: "application/json" } });
-      if (!g.ok && g.status !== 404) { errors.push(`${email} : Brevo ${g.status} : ${(await g.text()).slice(0, 200)}`); continue; }
-      if (g.ok) {
-        // déjà dans Brevo : on n'y touche pas, sauf si c'est la Matrice qui l'a créé (on complète prénom / nom / structure)
-        if (ours.has(email)) await bfetch(`${API}/contacts/${encodeURIComponent(email)}`, { method: "PUT", headers: { "api-key": key, "content-type": "application/json" },
-          body: JSON.stringify({ attributes: attrs }) });
-        done.push(email); continue;
-      }
-      if (held) { skipped.push(email); continue; }
-      const r = await bfetch(`${API}/contacts`, { method: "POST", headers: { "api-key": key, "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({ email, attributes: attrs, ...(listIds.length ? { listIds } : {}) }) });
-      const txt = r.ok ? "" : await r.text();
-      if (r.ok) { ours.add(email); created.push(email); done.push(email); }
-      else if (/duplicate/i.test(txt)) done.push(email);
-      else errors.push(`${email} : Brevo ${r.status} : ${txt.slice(0, 200)}`);
-    }
+    const old: string[] = [];
+    if (c.brevo_created && !ours.size && c.email) { ours.add(c.email.trim().toLowerCase()); old.push(c.email.trim().toLowerCase()); }
+    const { done, created, skipped, errors } = await syncContact({ client: client(key), c: c as Contact, links: st.get(c.id), champs: a, listIds, ours });
+    created.unshift(...old);
     const err = errors.length ? errors.join(" · ") : null;
     // ajout des mails créés à la liste enregistrée, sans l'écraser (une autre synchronisation du même contact peut tourner en même temps)
     if (created.length) await sb.rpc("brevo_add_emails", { p_contact: c.id, p_emails: created });
