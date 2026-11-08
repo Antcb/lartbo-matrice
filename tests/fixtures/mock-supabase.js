@@ -124,6 +124,8 @@
       payments: DB.show_payments.filter(r => r.show_id === id).length, budget_lines: DB.budget_lines.filter(r => r.show_id === id).length,
       tasks: DB.tasks.filter(r => r.show_id === id).length, closures: DB.result_closures.filter(r => r.show_id === id).length }; };
   const RPC = {
+    // messagerie : boîte anthony@ réservée à son propriétaire (window.__MAILBOX_OWNER = false : autre membre de l'équipe)
+    is_mailbox_owner: () => window.__MAILBOX_OWNER ?? true,
     is_team: () => true,
     show_deletion_state: a => deletionState(a.p_show),
     delete_show: a => { const id = a.p_show, st = deletionState(id);

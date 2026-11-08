@@ -48,18 +48,38 @@ const isRefused = r => [r.ok, r.refused, r.searched, /rien n’a été consulté
 {
   const body = JSON.parse(await relay(' Titulaire@Exemple-Fictif.fr ', IDA, 1_800_000_000_000));
   eq('relais : corps envoyé', [body.caller, body.caller_ts, body.action], [ANTHONY, 1_800_000_000_000, 'mail_by_msgid']);
-  eq('relais : signature (adresse, action, Message-ID, horodatage)', body.caller_sig, createHmac('sha256', KEY).update(['matrice-boite-v1', ANTHONY, 'mail_by_msgid', IDA, '1800000000000'].join('|')).digest('hex'));
+  // (messagerie, relecture de f95da56) texte v2 : cible et boîte en plus — demande du relais vers « prospect » = boîte « anthony »
+  eq('relais : signature (cible, boîte, adresse, action, Message-ID, horodatage)', body.caller_sig, createHmac('sha256', KEY).update(['matrice-boite-v2', 'prospect', 'anthony', ANTHONY, 'mail_by_msgid', IDA, '1800000000000'].join('|')).digest('hex'));
   if ('caller_target' in body || /script\.google/.test(JSON.stringify(body))) fail('relais : l’adresse du script destinataire ne fait plus partie de la demande signée');
   if (JSON.stringify(body).includes(KEY)) fail('relais : la clé dédiée ne doit jamais figurer dans une requête');
   const forged = JSON.parse(await relay(AUTRE, IDA, Date.now(), { caller: ANTHONY, caller_sig: 'x', caller_ts: 1, secret: 'y', action: 'ping' }));
-  eq('relais : le navigateur ne remplace ni l’identité ni sa signature', [forged.caller, forged.action, forged.secret, forged.caller_sig === await callerSig(KEY, AUTRE, 'mail_by_msgid', IDA, forged.caller_ts)], [AUTRE, 'mail_by_msgid', SECRET, true]);
+  eq('relais : le navigateur ne remplace ni l’identité ni sa signature', [forged.caller, forged.action, forged.secret, forged.caller_sig === await callerSig(KEY, 'prospect', 'anthony', AUTRE, 'mail_by_msgid', IDA, forged.caller_ts)], [AUTRE, 'mail_by_msgid', SECRET, true]);
   eq('relais : sans clé dédiée, aucune signature', JSON.parse(await outgoingBody({ message_id: IDA }, 'mail_by_msgid', SECRET, ANTHONY, '')).caller_sig, '');
   const src = readFileSync(join(ROOT, 'supabase/functions/script-google/index.ts'), 'utf8');
-  if (!/user\.auth\.getUser\(jwt\)/.test(src) || !/import_secret', \{ k: 'mailbox_sign_key' \}/.test(src) || !/outgoingBody\(payload, body\.action, secret, email, String\(signKey \|\| ''\)\)/.test(src) || !/body: outgoing,/.test(src))
+  if (!/user\.auth\.getUser\(jwt\)/.test(src) || !/import_secret', \{ k: 'mailbox_sign_key' \}/.test(src) || !/outgoingBody\(payload, body\.action, secret, email, String\(signKey \|\| ''\), Date\.now\(\), body\?\.target \|\| 'main'\)/.test(src) || !/body: outgoing,/.test(src))
     fail('relais script-google : adresse de la session vérifiée (getUser), clé dédiée lue par import_secret, corps signé (outgoingBody)');
   if (src.indexOf("rpc('is_team')") < 0 || src.indexOf("rpc('is_team')") > src.indexOf('getUser(jwt)')) fail('relais script-google : is_team doit rester vérifié avant tout');
   const mig = readFileSync(join(ROOT, 'supabase/migrations/2026-11-08_v1.60.4_cle_boite.sql'), 'utf8');
   if (!/'mailbox_sign_key'/.test(mig) || !/on conflict \(key\) do nothing/.test(mig) || /on conflict \(key\) do update/.test(mig)) fail('migration cle_boite : clé créée une seule fois, jamais régénérée');
+}
+
+// 1b. Adresse du script de la boîte (prospect_script_url) : modifiable par son titulaire seulement (migration titulaire)
+{
+  const mig = readFileSync(join(ROOT, 'supabase/migrations/2026-11-08_v1.60.4_titulaire.sql'), 'utf8');
+  const code = mig.split('\n').filter(l => !/^\s*--/.test(l)).join('\n');
+  if (/[\w.+-]+@[\w-]+\.[\w.]+/.test(code)) fail('migration titulaire : aucune adresse ne doit y être écrite');
+  if (/insert\s+into\s+private\.mailbox_owners/i.test(code)) fail('migration titulaire : le registre doit rester vide (inscription séparée)');
+  for (const [label, re] of [['registre', /create table if not exists private\.mailbox_owners/], ['is_mailbox_owner', /create or replace function public\.is_mailbox_owner/],
+    ['setting_write_ok stable + ligne titulaire', /setting_write_ok\(k text, v jsonb\) returns boolean\s+language sql stable[\s\S]*k = 'prospect_script_url' and not public\.is_mailbox_owner\('anthony'\) then false/],
+    ['règle de modification (ligne existante)', /settings_team_update[\s\S]*using \([^;]*key <> 'prospect_script_url' or public\.is_mailbox_owner\('anthony'\)\)/],
+    ['règle d’effacement (ligne existante)', /settings_team_delete[\s\S]*using \([^;]*key <> 'prospect_script_url' or public\.is_mailbox_owner\('anthony'\)\)/]])
+    if (!re.test(mig)) fail(`migration titulaire : ${label}`);
+  if (/drive_webhook_url'[^\n]*is_mailbox_owner/.test(code)) fail('migration titulaire : drive_webhook_url ne doit pas changer');
+  const op = readFileSync(join(ROOT, 'supabase/operations/2026-11-08_v1.60.4_inscription_titulaire.sql'), 'utf8');
+  if (!/'ADRESSE_DU_TITULAIRE'/.test(op) || /[\w.+-]+@[\w-]+\.[\w.]+/.test(op.split('\n').filter(l => !/^\s*--/.test(l)).join('\n')) || !/on conflict \(mailbox\) do nothing/.test(op) || !/public\.app_users/.test(op))
+    fail('inscription du titulaire : un seul paramètre, aucune adresse écrite, compte de l’équipe exigé, jamais de remplacement');
+  const ui = readFileSync(join(ROOT, 'js/views/settings.js'), 'utf8');
+  if (!/kt === 'prospect_script_url'\)\{ const \{data: owner\} = await sb\.rpc\('is_mailbox_owner', \{p_mailbox: 'anthony'\}\)/.test(ui)) fail('Réglages : garde du titulaire avant d’enregistrer prospect_script_url');
 }
 
 // 2. Boîte anthony@ (Prospection.gs) : seul son titulaire, via le relais, au moment de la demande, une seule fois
@@ -77,7 +97,10 @@ const P = 'apps-script/Prospection.gs';
   const cases = [
     ['autre membre de l’équipe (via le relais)', await relay(AUTRE), TITULAIRE],
     ['appel direct avec le code secret des scripts (ancienne signature)', { action: 'mail_by_msgid', secret: SECRET, message_id: IDA, caller: ANTHONY, caller_ts: now, caller_sig: createHmac('sha256', SECRET).update('matrice-caller:' + ANTHONY).digest('hex') }, SIGNATURE],
-    ['appel direct, signature faite avec le code secret des scripts', { action: 'mail_by_msgid', secret: SECRET, message_id: IDA, caller: ANTHONY, caller_ts: now, caller_sig: await callerSig(SECRET, ANTHONY, 'mail_by_msgid', IDA, now) }, SIGNATURE],
+    ['appel direct, signature faite avec le code secret des scripts', { action: 'mail_by_msgid', secret: SECRET, message_id: IDA, caller: ANTHONY, caller_ts: now, caller_sig: await callerSig(SECRET, 'prospect', 'anthony', ANTHONY, 'mail_by_msgid', IDA, now) }, SIGNATURE],
+    // (relecture de f95da56) demande signée pour le script PRINCIPAL (cible « main », adresse drive_webhook_url) : refusée ici
+    ['demande signée pour le script principal (cible main)', JSON.parse(await outgoingBody({ message_id: IDA }, 'mail_by_msgid', SECRET, ANTHONY, KEY, now, 'main')), SIGNATURE],
+    ['signature v1 (sans cible ni boîte, avant f95da56)', { action: 'mail_by_msgid', secret: SECRET, message_id: IDA, caller: ANTHONY, caller_ts: now, caller_sig: createHmac('sha256', KEY).update(['matrice-boite-v1', ANTHONY, 'mail_by_msgid', IDA, String(now)].join('|')).digest('hex') }, SIGNATURE],
     ['rejeu sur un autre Message-ID', { ...captured, message_id: IDB }, SIGNATURE],
     ['rejeu avec un autre horodatage', { ...captured, caller_ts: now + 1 }, SIGNATURE],
     ['horodatage expiré (6 minutes)', await relay(ANTHONY, IDA, now - 6 * 60 * 1000), EXPIREE],

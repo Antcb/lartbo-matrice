@@ -47,7 +47,8 @@ Deno.serve(async (req) => {
     const payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload) ? body.payload : {};
     // clé DÉDIÉE de signature de l'identité (schéma privé, migration v1.60.4 cle_boite) : jamais transmise, seule la signature part
     const { data: signKey } = await admin.rpc('import_secret', { k: 'mailbox_sign_key' });
-    const outgoing = await outgoingBody(payload, body.action, secret, email, String(signKey || ''));
+    // (relecture de f95da56) la cible fait partie de la signature : une demande signée pour « main » ne vaut rien pour « prospect »
+    const outgoing = await outgoingBody(payload, body.action, secret, email, String(signKey || ''), Date.now(), body?.target || 'main');
     const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), LIMIT_MS);
     let r: Response;
     try {

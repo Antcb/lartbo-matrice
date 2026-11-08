@@ -91,6 +91,7 @@ export function viewSettings(){
       <div class="steps">
         <label for="set-pscript">Adresse du script de prospection</label><input id="set-pscript" data-setting-text="prospect_script_url" value="${esc(setting('prospect_script_url')||'')}" placeholder="https://script.google.com/macros/s/…/exec">
       </div>
+      <p class="help">Modifiable seulement par le titulaire de la boîte anthony@ (compte d’Anthony), contrôlé par la base : le serveur y envoie des demandes signées en son nom.</p>
       <div class="vh-actions mt"><button class="btn sm" data-act="testProspectScript">Tester</button></div>
       <p class="help mt">Chloé peut aussi prospecter depuis <b>production@</b> : choisis « Envoyé par : Production » dans la fenêtre de prospection. Ces mails passent par le script Google principal (Réglages › Google) : il faut y avoir ajouté le service <b>Gmail API</b> (Services › + › Gmail API) pour les relances.</p>
       <h4 class="block-title mt mb-sm">Signature d’Anthony (mails envoyés par anthony@)</h4>
@@ -174,6 +175,10 @@ document.addEventListener('change', async e => {
     // adresses où le serveur envoie le code secret : seulement un script Google publié (même contrôle que la base et script-google, v1.47)
     if (['drive_webhook_url', 'prospect_script_url'].includes(kt) && v && !/^https:\/\/script\.google\.com\/(a\/macros\/[\w.-]+|macros)\/s\/[\w-]+\/exec$/.test(v)){
       toast('Colle l’adresse du déploiement du script Google : elle commence par https://script.google.com/ et finit par /exec', true); e.target.value = setting(kt) || ''; return; }
+    // adresse du script de la boîte anthony@ : la base n'en accepte la modification que de son titulaire (messagerie v1.63) ;
+    // vérifié ici d'abord pour dire pourquoi, sans toucher au réglage
+    if (kt === 'prospect_script_url'){ const {data: owner} = await sb.rpc('is_mailbox_owner', {p_mailbox: 'anthony'});
+      if (owner !== true){ toast('Adresse du script de la boîte anthony@ : modifiable seulement par le titulaire de la boîte (compte d’Anthony). Rien n’a été changé.', true); e.target.value = setting(kt) || ''; return; } }
     if (await setSetting(kt, v)){ e.target.value = v; toast('Réglage enregistré'); if (/^mail_font/.test(kt)) render(); }
     return; }
   const k = e.target.dataset.actSetting; if (!k) return;
