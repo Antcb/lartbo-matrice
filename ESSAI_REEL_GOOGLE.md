@@ -48,13 +48,16 @@ l'essai, seuls les agendas que de vrais artistes auront partagés seront reliés
    b. https://script.google.com connecté avec **production@** › « Nouveau projet » › nommer `Matrice Agendas` › coller dans `Code.gs` ;
    c. « Copier le fichier appsscript.json » dans l'application › script.google.com › ⚙ Paramètres du projet › cocher « Afficher le fichier
       manifeste » › ouvrir `appsscript.json` › tout remplacer par le texte copié › Enregistrer ;
-   d. le secret : Supabase › projet concerné › Table Editor › schéma **private** › table `import_secrets` › ligne `cal_script_secret` ›
-      copier la valeur (jamais dans une conversation) › script.google.com › ⚙ › « Propriétés du script » › Ajouter : nom
-      `SECRET_AGENDAS`, valeur collée › Enregistrer ;
+   d. le secret (seul chemin, le même que l'aide des Réglages) : Supabase › projet concerné › **Table Editor** › en haut à gauche,
+      liste des schémas : **private** › table `import_secrets` › ligne `cal_script_secret` › copier la valeur de la colonne `value`
+      (jamais dans une conversation) › script.google.com › ⚙ › « Propriétés du script » › Ajouter : nom `SECRET_AGENDAS`, valeur
+      collée › Enregistrer ;
    e. « Déployer » › « Nouveau déploiement » › type « Application Web » › Exécuter en tant que : **moi** › Accès : **tout le monde** ›
       Déployer › autoriser (seul accès demandé : voir les agendas) › copier l'adresse qui finit par `/exec` ;
    f. Application › Réglages › « Adresse du script des agendas » › coller › « Tester » (attendu : « Script des agendas OK : N agendas visibles par production@ (script v…) »).
    En production, refaire seulement d et f avec le secret et l'application de production (même script, même adresse).
+   **Dès que `SECRET_AGENDAS` reçoit la valeur de production, le projet de test ne peut plus appeler le script** (son secret est
+   refusé : « Code secret du script des calendriers incorrect ») : c'est voulu — un seul projet lit les agendas à la fois.
 4. **Activation** (Claude) : adresse de la fonction dans `private.sync_urls` → synchronisation toutes les 5 minutes.
 5. **Essais** (Anthony dans l'application, Claude relève les preuves) :
 
@@ -62,7 +65,7 @@ l'essai, seuls les agendas que de vrais artistes auront partagés seront reliés
 |---|---|---|
 | A1 | fiche de l'artiste fictif › « Relier son agenda Google » | A et B proposés (B « disponibilités seulement »), jamais l'agenda principal de production@ ; choisir A (et rien d'autre : seuls les noms des autres agendas sont listés, aucun n'est lu) |
 | A2 | Booking, année 2026 puis 2027 | E1–E6, E8–E10 en indisponibilités « Agenda Google » ; E6 « Indisponible » ; E7 absent ; E8 « jusqu'au 23/12 » ; E9 : 3 lignes (11/01 à 20 h) |
-| A3 | carte | repères Paris et Lyon distincts ; « Localisation à préciser » : E5 ; rien pour E3, E4 |
+| A3 | carte | repères Paris et Lyon distincts ; « Localisation à préciser » : E5 (ville ambiguë) et E10 (« Show New York », sans lieu) ; rien pour E3, E4 |
 | A4 | nouvelle date en option le **12/12/2026** | une alerte : E1 « chevauchement horaire » ; Annuler n'enregistre rien |
 | A5 | nouvelle date en option le **09/01/2027** | une alerte : E10 « événement artiste le même jour » ; « Enregistrer quand même » enregistre |
 | A6 | nouvelle date en option le **10/01/2027** | une alerte : E10 « chevauchement horaire » (2 h à Paris) |
