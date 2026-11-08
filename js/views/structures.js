@@ -6,7 +6,7 @@ import { lingering } from '../data.js';
 import { distKm } from '../geo.js';
 import { suiviClosed, byId, eventsOfStructure, isInactive, relanceTaskSuspended, lastExchange, linkRole, linksOfContact, linksOfStructure, projName, prospectsOfStructure, showsOfStructure, tasksOfStructure } from '../selectors.js';
 import { S } from '../state.js';
-import { archivedTag, curTab, fold, pstBadge, showEditBtn, showRowAttrs, stBadge, stSelect, tabsBar, tag, viewHead } from '../ui/bits.js';
+import { archivedTag, curTab, fold, pstBadge, showEditBtn, showRowAttrs, showRowDate, stBadge, stSelect, tabsBar, tag, viewHead } from '../ui/bits.js';
 import { cAc, cIn, cSel } from '../ui/cells.js';
 import { EVENT_KINDS, PRICING, isOff } from '../constants.js';
 import { acInput } from '../ui/autocomplete.js';
@@ -52,7 +52,7 @@ export function structurePage(st){
     // dates archivées (v1.60.3) : avec les dates sans suite / annulées, signalées « date archivée » (historique de la structure)
     const live = shows.filter(x => !isOff(x.status) && !x.archived_at), off = shows.filter(x => isOff(x.status) || x.archived_at);
     const table = list => `<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Artiste</th><th>Lieu</th><th>Statut</th><th class="num">Cachet</th><th>Contrat</th><th></th></tr></thead><tbody>
-      ${list.map(x=>`<tr class="click" ${showRowAttrs(x)}><td class="nowrap">${fmtDate(x.date)}</td><td>${esc(projName(x.project_id))}</td><td>${esc(x.venue)}${archivedTag(x)}<span class="sub">${esc(x.city||'')}</span></td><td>${stSelect(x)}</td><td class="num">${eur(x.fee_ht)}</td><td>${esc(x.contract_type||'')}</td><td class="row-acts">${showEditBtn(x)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Aucune date en cours avec cette structure.</td></tr>'}
+      ${list.map(x=>`<tr class="click" ${showRowAttrs(x)}><td class="nowrap">${showRowDate(x)}</td><td>${esc(projName(x.project_id))}</td><td>${esc(x.venue)}${archivedTag(x)}<span class="sub">${esc(x.city||'')}</span></td><td>${stSelect(x)}</td><td class="num">${eur(x.fee_ht)}</td><td>${esc(x.contract_type||'')}</td><td class="row-acts">${showEditBtn(x)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Aucune date en cours avec cette structure.</td></tr>'}
       </tbody></table></div>`;
     body = `<div class="vh-actions mb"><button class="btn primary" data-act="newShowFor" data-id="${st.id}">Nouvelle date</button></div>
       ${table(live)}${off.length ? fold('struct-off-dates', 'Sans suite, annulées et archivées', table(off), {count: off.length}) : ''}`;

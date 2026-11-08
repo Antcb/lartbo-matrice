@@ -19,6 +19,9 @@ export const stSelect = s => `<select class="st-sel" data-t="shows" data-id="${s
 export const showRowAct = s => CONFIRMED_PROD.includes(s.status) && !s.archived_at ? 'openShowProd' : 'editShow';
 export const showRowAttrs = s => showRowAct(s) === 'openShowProd'
   ? `data-act="openShowProd" data-id="${esc(s.id)}" title="Ouvrir cette date dans Production"` : `data-act="editShow" data-id="${esc(s.id)}"`;
+/** Date d'une ligne : pour une date qui s'ouvre dans Production, un vrai lien (atteignable au clavier, Entrée) en plus du clic sur la ligne */
+export const showRowDate = s => showRowAct(s) === 'openShowProd'
+  ? `<a href="#" data-act="openShowProd" data-id="${esc(s.id)}" title="Ouvrir cette date dans Production">${fmtDate(s.date)}</a>` : fmtDate(s.date);
 export const showEditBtn = s => showRowAct(s) === 'openShowProd'
   ? `<button type="button" class="btn sm" data-act="editShow" data-id="${esc(s.id)}" title="Ouvrir la fenêtre de la date">Modifier</button>` : '';
 
