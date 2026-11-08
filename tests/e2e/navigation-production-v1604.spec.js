@@ -106,3 +106,54 @@ test('v1.60.4 budget de l’artiste (Production) : la date d’une autre année 
   await ouverteDansProduction(page, 'sh-fut');
   expectClean(ctx);
 });
+
+// Relecture v1.60.4 (B2) : « Modifier » ne recouvre jamais le lieu ni une autre information, sur téléphone comme sur ordinateur ;
+// (b) la date reste ouvrable dans Production au clavier (lien focusable), en plus du bouton « Modifier »
+const recouvrements = page => page.evaluate(() => {
+  const R = e => e.getBoundingClientRect(), out = [];
+  const inter = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5;
+  document.querySelectorAll('[data-act="openShowProd"] button[data-act="editShow"]').forEach(btn => {
+    const row = btn.closest('[data-act="openShowProd"]');
+    const others = [...row.querySelectorAll('b, .muted, .d, select, td > a, .sub')].filter(e => !e.contains(btn) && !btn.contains(e) && R(e).width > 0);
+    others.forEach(o => { if (inter(R(btn), R(o))) out.push(`${row.dataset.id} : « Modifier » recouvre « ${o.textContent.trim().slice(0, 30)} »`); });
+    row.querySelectorAll('b').forEach(b => { if (b.scrollWidth > b.clientWidth + 1 || R(b).right > R(row).right + 0.5) out.push(`${row.dataset.id} : lieu coupé`); });
+  });
+  return out;
+});
+for (const [w, h, opts] of [[1280, 900, {}], [390, 844, { hasTouch: true, isMobile: true }]]) test(`v1.60.4 relecture : « Modifier » ne recouvre ni le lieu ni le statut — aperçu, onglet Dates, fiche structure (${w} px)`, async ({ browser }) => {
+  const ctx2 = await browser.newContext({ viewport: { width: w, height: h }, ...opts, locale: 'fr-FR', timezoneId: 'Europe/Paris' });
+  const page = await ctx2.newPage();
+  const ctx = await openApp(page);
+  await page.evaluate(async rows => { const { S, touch } = await import('./js/state.js');
+    for (const r of rows) { window.__DB.shows.push(structuredClone(r)); S.db.shows.push(structuredClone(r)); } touch('shows'); },
+    [{ ...FUT, venue: 'Théâtre municipal de la Grande Ville Fictive' }, ARCH]);
+  for (const [kind, tab] of [['projet', 'overview'], ['projet', 'dates'], ['structure', 'dates']]) {
+    await fiche(page, kind, tab);
+    await expect(page.locator('[data-act="openShowProd"] button[data-act="editShow"]').first()).toBeVisible();
+    expect(await recouvrements(page), `${kind} ${tab}`).toEqual([]);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(w);
+  expectClean(ctx);
+  await ctx2.close();
+});
+
+test('v1.60.4 relecture : au clavier, la date confirmée s’ouvre dans Production (lien de la date, Entrée) ; « Modifier » au clavier ouvre la fenêtre', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page);
+  for (const [kind, tab, sel] of [['projet', 'overview', '.plan-row[data-id="sh-fut"]'], ['projet', 'dates', 'tr[data-id="sh-fut"]'], ['structure', 'dates', 'tr[data-id="sh-fut"]']]) {
+    await fiche(page, kind, tab);
+    const link = page.locator(`${sel} a[data-act="openShowProd"]`);
+    await link.focus();
+    await expect(link).toBeFocused();
+    await page.keyboard.press('Enter');
+    await ouverteDansProduction(page, 'sh-fut');
+  }
+  await fiche(page, 'projet', 'dates');
+  await page.locator('tr[data-id="sh-fut"] button[data-act="editShow"]').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#modal')).toBeVisible();
+  // date non confirmée : pas de lien vers Production
+  await page.locator('#modal').evaluate(d => d.close());
+  await expect(page.locator('tr[data-id="sh-2"] a[data-act="openShowProd"]')).toHaveCount(0);
+  expectClean(ctx);
+});

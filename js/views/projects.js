@@ -13,7 +13,7 @@ import { CONFIRMED_PROD, LOG_ICON, stClass, viaArtbo } from '../constants.js';
 import { save, sb, signedCached, signedUrl } from '../data.js';
 import { defaultCommission, projectCommission, publicLink, setting, suiviClosed, attachmentsOf, byId, isDone, lastExchange, logsOfProject, membersOfProject, prospectsOfProject, showsOfProject, spectaclesOf, structName, tasksOfProject } from '../selectors.js';
 import { S, touch } from '../state.js';
-import { archivedTag, curTab, dropZone, fileRow, fold, pstBadge, showEditBtn, showRowAttrs, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
+import { archivedTag, curTab, dropZone, fileRow, fold, pstBadge, showEditBtn, showRowAttrs, showRowDate, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cAc, cChk, cIn, cSel } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';
 import { badMails, checkMails, esc, eur, fmtDate, md, toast, today, url, pct } from '../utils.js';
@@ -116,7 +116,7 @@ function overview(p, {shows, tasks, suivis}){
   ${p.mode === 'booking' || spectaclesOf(p.id).length ? '' : `<div class="panel pad mt-lg"><h3 class="block-title">Budget type historique de l’artiste <span class="badge">temporaire</span> <span class="muted title-note">· posé sur les nouvelles dates confirmées sans spectacle</span></h3>
     <p class="help mb">Ancien budget type, gardé tant que l’artiste n’a pas de spectacle. Le parcours principal est le budget type par spectacle : crée un spectacle ci-dessus ; ce bloc disparaît alors de l’aperçu (ses valeurs restent pour les dates sans spectacle).</p>${templateForm(p.id)}</div>`}
   <div class="struct-hero mt-lg">
-    <div class="panel pad"><h3 class="block-title">Prochaines dates</h3>${next.map(s=>`<div class="plan-row click" ${showRowAttrs(s)}><span class="d">${fmtDate(s.date)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span><span class="plan-acts">${showEditBtn(s)}${stSelect(s)}</span></div>`).join('') || '<p class="muted m0">Aucune date à venir.</p>'}</div>
+    <div class="panel pad"><h3 class="block-title">Prochaines dates</h3>${next.map(s=>`<div class="plan-row click" ${showRowAttrs(s)}><span class="d">${showRowDate(s)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span><span class="plan-acts">${showEditBtn(s)}${stSelect(s)}</span></div>`).join('') || '<p class="muted m0">Aucune date à venir.</p>'}</div>
     <div class="panel pad"><h3 class="block-title">En cours</h3>
       <p class="mb-sm"><b>${tasks.filter(t=>!isDone(t)).length}</b> tâche(s) à faire · <b>${suivis.filter(x=>!suiviClosed(x)).length}</b> suivi(s) ouverts</p>
       ${p.notes?`<div class="md">${md(p.notes)}</div>`:''}</div>
@@ -126,7 +126,7 @@ function overview(p, {shows, tasks, suivis}){
 function datesTab(p, {shows}){
   const list = shows.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   return `<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Lieu</th><th>Structure</th><th>Statut</th><th class="num">Cachet</th><th>Contrat</th><th></th></tr></thead><tbody>
-    ${list.map(s=>`<tr class="click" ${showRowAttrs(s)}><td class="nowrap">${fmtDate(s.date)}</td><td><b>${esc(s.venue)}</b>${archivedTag(s)}<span class="sub">${esc(s.city||'')}</span></td><td>${esc(structName(s.structure_id))}</td><td>${stSelect(s)}</td><td class="num">${eur(s.fee_ht)}</td><td>${esc(s.contract_type||'')}</td><td class="row-acts">${showEditBtn(s)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Aucune date.</td></tr>'}
+    ${list.map(s=>`<tr class="click" ${showRowAttrs(s)}><td class="nowrap">${showRowDate(s)}</td><td><b>${esc(s.venue)}</b>${archivedTag(s)}<span class="sub">${esc(s.city||'')}</span></td><td>${esc(structName(s.structure_id))}</td><td>${stSelect(s)}</td><td class="num">${eur(s.fee_ht)}</td><td>${esc(s.contract_type||'')}</td><td class="row-acts">${showEditBtn(s)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Aucune date.</td></tr>'}
   </tbody></table></div>`;
 }
 

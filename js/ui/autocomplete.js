@@ -236,11 +236,14 @@ function fillPlace(box, p){
   set('lat', p.lat); set('lng', p.lng);
 }
 
-document.addEventListener('input', e => { if (e.target.classList?.contains('ac-input')){ clearTimeout(e.target._t); const t = e.target; const async = SOURCES[t.closest('.ac').dataset.ac].async; t._t = setTimeout(() => update(t), async ? 160 : 60); } });
+document.addEventListener('input', e => { if (e.target.classList?.contains('ac-input')){ clearTimeout(e.target._t); const t = e.target; const async = SOURCES[t.closest('.ac').dataset.ac].async; t._t = setTimeout(() => { t._t = null; update(t); }, async ? 160 : 60); } });
 // tout le texte est sélectionné au clic (on tape par-dessus) ; pas sur téléphone, où la sélection forcée gêne le « Coller »
 document.addEventListener('focusin', e => { if (e.target.classList?.contains('ac-input')){ if (!matchMedia('(pointer:coarse)').matches) e.target.select(); if (e.target.value || SOURCES[e.target.closest('.ac').dataset.ac].empty) update(e.target); } });
 document.addEventListener('keydown', e => {
   if (!e.target.classList?.contains('ac-input')) return;
+  // Entrée tapée avant la fin du délai de recherche (60 ms) : la liste est d'abord remise à jour sur le texte tapé, pour ne jamais
+  // choisir une suggestion de la saisie précédente (relecture v1.60.4) ; sources locales seulement (calcul immédiat)
+  if (e.key === 'Enter' && e.target._t && !SOURCES[e.target.closest('.ac').dataset.ac].async){ clearTimeout(e.target._t); e.target._t = null; update(e.target); }
   if (!OPEN || OPEN.input !== e.target){ if (e.key === 'ArrowDown'){ update(e.target); e.preventDefault(); } return; }
   if (e.key === 'ArrowDown'){ OPEN.idx = Math.min(OPEN.idx+1, OPEN.items.length-1); draw(); e.preventDefault(); }
   else if (e.key === 'ArrowUp'){ OPEN.idx = Math.max(OPEN.idx-1, 0); draw(); e.preventDefault(); }

@@ -118,3 +118,48 @@ test.describe('« Payé par »', () => {
     expectClean(ctx);
   });
 });
+
+// Relecture v1.60.4 : (a) nom très long (55 caractères) coupé net à deux lignes, rien ne déborde sous le texte ni hors du cadre ;
+// (c) saisie rapide puis Entrée dans « Copie » : la suggestion du texte tapé, jamais celle de la saisie précédente
+test('v1.60.4 relecture : « Payé par » avec un nom de 55 caractères — deux lignes au plus, coupe nette, info-bulle complète', async ({ page }) => {
+  const LONG = 'Compte dédié Artiste Alpha Production Tournée 2027 Bred';
+  expect(LONG.length).toBe(55);
+  const ctx = await openApp(page);
+  await page.evaluate(async long => { const { S, touch } = await import('./js/state.js');
+    for (const db of [S.db, window.__DB]) { db.projects.find(p => p.id === 'art-a').account_name = long;
+      db.budget_lines.push({ id: 'bl-1', show_id: 'sh-1', project_id: 'art-a', category: 'Transport', label: 'Train', supplier: 'Transporteur', payer: 'compte', forecast: 1234567.89, amount: 1234567.89, sort: 1 }); }
+    touch('projects'); touch('budget_lines');
+    const a = await import('./js/app.js'); a.go('production'); S.openProd.add('sh-1'); S.tab['prod:sh-1'] = 'budget'; a.render(); }, LONG);
+  const m = await page.evaluate(() => { const box = document.querySelector('tr[data-budget-line="bl-1"] .sel-text'), lab = box.querySelector('.sel-text-lab');
+    const lh = parseFloat(getComputedStyle(lab).lineHeight), b = box.getBoundingClientRect(), l = lab.getBoundingClientRect(), cs = getComputedStyle(box);
+    const w = box.closest('.tbl-wrap');
+    return { lines: Math.round(l.height / lh), labBottom: l.bottom, boxInner: b.bottom - parseFloat(cs.borderBottomWidth) - parseFloat(cs.paddingBottom),
+      labRight: l.right, boxRight: b.right, width: b.width, over: w.scrollWidth - w.clientWidth,
+      nums: [...document.querySelectorAll('tr[data-budget-line="bl-1"] input[type=number]')].map(i => i.scrollWidth - i.clientWidth) }; });
+  expect(m.lines, JSON.stringify(m)).toBe(2);
+  expect(m.labBottom, `rien sous le texte ${JSON.stringify(m)}`).toBeLessThanOrEqual(m.boxInner + 0.5);
+  expect(m.labRight).toBeLessThanOrEqual(m.boxRight);
+  expect(m.width).toBeLessThanOrEqual(170);
+  expect(m.over).toBeLessThanOrEqual(0);
+  expect(m.nums.every(d => d <= 0)).toBe(true);
+  await expect(page.locator('tr[data-budget-line="bl-1"] .sel-text')).toHaveAttribute('title', `Payé par : ${LONG}`);
+  expectClean(ctx);
+});
+
+test('v1.60.4 relecture : « Copie », saisie rapide puis Entrée → la suggestion du texte tapé (pas la précédente)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, DATA);
+  await open(page, 'boucle_tech');
+  await ouverte(page);
+  const cc = page.locator('#ml-cc-q');
+  await cc.click();
+  await cc.pressSequentially('alice', { delay: 10 });
+  await expect(page.locator('.ac-list .ac-item').first()).toContainText('Alice');
+  // nouvelle saisie tapée vite, Entrée aussitôt (avant le délai de recherche de 60 ms)
+  await cc.fill('');
+  await cc.pressSequentially('bruno', { delay: 0 });
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-rcpt="ml-cc"] .rcpt-chip')).toHaveCount(1);
+  expect(await page.locator('#ml-cc').inputValue()).toBe('bruno@exemple.invalid');
+  expectClean(ctx);
+});

@@ -208,8 +208,8 @@ td:not(.num) > :is(input:not([type=checkbox]):not([type=radio]),select:not(.dept
 td.num > :is(input,.dt){margin-right:-9px}
 /* choix dont le libellé choisi reste lisible en entier (cSelText, v1.60.4 — « Payé par ») : libellé sur deux lignes au plus, liste native
    transparente posée dessus (clic, clavier, enregistrement inchangés) ; même cadre que les champs de cellule (survol, focus) */
-.sel-text{position:relative;display:block;min-width:0;border:1px solid transparent;border-radius:var(--r-sm)}
-.sel-text-lab{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;padding:6px 24px 6px 8px;line-height:1.3;min-height:var(--h-sm);box-sizing:border-box}
+.sel-text{position:relative;display:flex;align-items:center;min-width:0;min-height:var(--h-sm);padding:4px 24px 4px 8px;box-sizing:border-box;border:1px solid transparent;border-radius:var(--r-sm)}
+.sel-text-lab{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;line-height:1.3;max-height:2.6em;min-width:0}   /* deux lignes au plus, coupe nette (marges sur le cadre, pas sur le texte : relecture v1.60.4) */
 .sel-text::after{content:'▾';position:absolute;right:8px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;pointer-events:none}
 td .sel-text>select{position:absolute;inset:0;width:100%;height:100%;max-width:none;opacity:0;cursor:pointer;margin:0}
 .sel-text:hover{border-color:var(--line)}
@@ -350,6 +350,7 @@ td .ac-input:hover{border-color:var(--line)}
 .plan-row.target{background:var(--brand-tint)}
 .plan-row .d{font-variant-numeric:tabular-nums;font-weight:600}
 .plan-row .plan-acts{display:flex;gap:6px;align-items:center}   /* « Modifier » + statut (v1.60.4) */
+@media (max-width:760px){ .plan-row:has(.plan-acts){grid-template-columns:86px minmax(0,1fr)} .plan-row .plan-acts{grid-column:1/-1;justify-content:flex-end;flex-wrap:wrap} }   /* téléphone : actions à la ligne, le lieu garde toute la largeur (relecture v1.60.4) */
 .near-list{font-size:13px}
 .near-list li{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:6px 0;border-top:1px solid var(--line-2)}
 .near-list ul{list-style:none;margin:0;padding:0}
