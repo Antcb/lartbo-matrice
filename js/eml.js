@@ -69,6 +69,9 @@ const addr = v => (decodeWords(v).match(/[^\s<>,"]+@[^\s<>,"]+/) || [])[0]?.toLo
 const nameOf = v => { const d = decodeWords(v).trim(); const m = d.match(/^"?([^"<]+?)"?\s*</); return (m ? m[1] : d).trim(); };
 const isoDate = v => { const d = new Date(v); return isNaN(d) ? null : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
+/** Message-ID lu dans les en-têtes d'un mail brut (début du fichier suffit), ou '' (v1.60.4 : mails joints avant la v1.60.4) */
+export const messageIdOf = raw => { const v = String(splitHead(String(raw || '')).h['message-id'] || '').trim(); return msgIdOk(v) ? v : ''; };
+
 /** Participants d'un en-tête (De, À, Cc) en texte lisible, borné */
 const people = v => decodeWords(v || '').replace(/\s+/g, ' ').trim().slice(0, 300);
 

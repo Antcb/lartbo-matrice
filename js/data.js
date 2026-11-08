@@ -8,7 +8,7 @@ import { TEAM_NAMES } from './constants.js';
 import { LINGER_MS } from './constants.js';
 import { byId, linksOfStructure, prospectTitle } from './selectors.js';
 import { S, TABLES, localGet, localSet, touch } from './state.js';
-import { toast, today } from './utils.js';
+import { runAct, toast, today } from './utils.js';
 
 export const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
 
@@ -347,6 +347,29 @@ async function keyOwner(table, key){
 export async function mailAttachedTo(key){
   return await keyOwner('prospect_files', key) || await keyOwner('prospect_logs', key);
 }
+
+/**
+ * Mails joints AVANT la v1.60.4 (fichier .eml dans un suivi, sans clé import_key) : reconnus par le Message-ID lu dans le fichier
+ * déjà stocké — LECTURE SEULE (téléchargement du début du fichier, rien n'est modifié en base ni dans le stockage, aucune clé
+ * ajoutée aux lignes historiques). Résultat gardé pour la session (chemin → Message-ID). LEGACY_SCAN_MAX fichiers au plus,
+ * les plus récents d'abord ; un fichier illisible est simplement ignoré.
+ */
+const LEGACY_IDS = new Map();
+export const LEGACY_SCAN_MAX = 300;
+const legacyEml = f => !f.import_key && (f.mime === 'message/rfc822' || /\.eml$/i.test(f.name || ''));
+export async function legacyMailOwner(msgId){
+  const {messageIdOf} = await import('./eml.js');
+  const files = S.db.prospect_files.filter(legacyEml).sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))).slice(0, LEGACY_SCAN_MAX);
+  for (const f of files){
+    if (!LEGACY_IDS.has(f.path)){
+      let id = '';
+      try { const {data} = await sb.storage.from('suivi').download(f.path); if (data) id = messageIdOf(await data.slice(0, 65536).text()); } catch { id = ''; }
+      LEGACY_IDS.set(f.path, id);
+    }
+    if (LEGACY_IDS.get(f.path) === msgId) return f.prospect_id;
+  }
+  return null;
+}
 /**
  * Ce qui est déjà joint d'un mail dans un suivi (v1.60.4, relecture) — clé par clé : original (msgid:<id>), journal (même clé, ou
  * même entrée d'avant la v1.60.4), pièces extraites (msgid:<id>:pj:<n>). {other: suivi qui en porte déjà une partie | null,
@@ -356,10 +379,15 @@ export async function mailParts(pid, key, m){
   const orig = await keyOwner('prospect_files', key), log = await keyOwner('prospect_logs', key);
   const pjOwners = [];
   for (let i = 1; i <= m.attachments.length; i++) pjOwners.push(await keyOwner('prospect_files', `${key}:pj:${i}`));
-  const other = [orig, log, ...pjOwners].find(x => x && x !== pid) || null;
+  let other = [orig, log, ...pjOwners].find(x => x && x !== pid) || null;
   const inLog = !!emlEntry(pid, m)?.exists;
-  // déjà au journal sans aucune clé (joint avant la v1.60.4) : refusé comme doublon, rien n'est rajouté
-  const legacy = !orig && !log && !pjOwners.some(Boolean) && inLog;
+  // joint avant la v1.60.4 (aucune clé) : reconnu par la même entrée au journal de ce suivi, ou par le Message-ID du .eml déjà
+  // stocké (dans ce suivi ou un autre, lecture seule) — refusé comme doublon, rien n'est rajouté ni modifié
+  let legacy = false;
+  if (!orig && !log && !pjOwners.some(Boolean)){
+    const old = inLog ? pid : await legacyMailOwner(key.replace(/^msgid:/, ''));
+    if (old && old !== pid) other = old; else if (old) legacy = true;
+  }
   return {other, legacy, original: !orig, log: !log && !inLog, pj: pjOwners.map((o, i) => o ? 0 : i + 1).filter(Boolean)};
 }
 export const mailPartsMissing = st => st.original || st.log || st.pj.length > 0;
@@ -405,7 +433,7 @@ export async function uploadFiles(owner, files){
   const table = pid ? 'prospect_files' : 'attachments';
   const folder = pid || (base.task_id ? 'task/' + base.task_id : 'project/' + base.project_id);
   toast(`Envoi de ${files.length} fichier(s)…`);
-  let ok = 0; const done = [], failed = [];
+  let ok = 0, elsewhere = null; const done = [], failed = [];
   const eml = pid ? await import('./eml.js') : null;
   for (const file of files){
     let mail = null;
@@ -414,10 +442,10 @@ export async function uploadFiles(owner, files){
     let plan = {original: true, log: true, pj: (mail?.attachments || []).map((_, i) => i + 1)};
     if (key && mail){
       plan = await mailParts(pid, key, mail);
-      if (plan.other){ failed.push([file.name, otherText(plan.other)]); continue; }
+      if (plan.other){ failed.push([file.name, otherText(plan.other)]); elsewhere = elsewhere || plan.other; continue; }
       if (plan.legacy){ failed.push([file.name, 'déjà au journal de ce suivi (joint avant la v1.60.4) : rien n’a été ajouté']); continue; }
       if (!mailPartsMissing(plan)){ failed.push([file.name, 'déjà joint à ce suivi en entier (même Message-ID) : rien n’a été ajouté']); continue; }
-    } else if (key){ const where = await mailAttachedTo(key); if (where){ failed.push([file.name, where === pid ? 'déjà joint à ce suivi (même Message-ID) : rien n’a été ajouté' : otherText(where)]); continue; } }
+    } else if (key){ const where = await mailAttachedTo(key); if (where){ failed.push([file.name, where === pid ? 'déjà joint à ce suivi (même Message-ID) : rien n’a été ajouté' : otherText(where)]); if (where !== pid) elsewhere = elsewhere || where; continue; } }
     if (plan.original){
       const [stored, why] = await storeOne(table, folder, base, file, key ? {import_key: key} : {});
       if (!stored){ failed.push([file.name, why]); continue; }
@@ -434,9 +462,12 @@ export async function uploadFiles(owner, files){
   }
   // bilan qui reste affiché tant qu'on ne le ferme pas : fichiers ajoutés et refusés, avec le motif (v1.53, aucune perte silencieuse)
   if (failed.length){
-    const {inform} = await import('./ui/dialog.js');
-    await inform({title: `${ok} fichier${ok > 1 ? 's' : ''} ajouté${ok > 1 ? 's' : ''}, ${failed.length} refusé${failed.length > 1 ? 's' : ''}`,
-      text: [...done.map(n => `✓ ${n}`), ...failed.map(([n, why]) => `✗ ${n} — ${why}`)].join('\n')});
+    const {ask, inform} = await import('./ui/dialog.js');
+    const title = `${ok} fichier${ok > 1 ? 's' : ''} ajouté${ok > 1 ? 's' : ''}, ${failed.length} refusé${failed.length > 1 ? 's' : ''}`;
+    const text = [...done.map(n => `✓ ${n}`), ...failed.map(([n, why]) => `✗ ${n} — ${why}`)].join('\n');
+    // (v1.60.4) mail déjà rattaché à un autre suivi : accès direct à ce suivi (action existante « openSuivi »)
+    if (elsewhere){ if (await ask({title, text, actions: [{value: true, label: 'Ouvrir le suivi concerné'}], cancel: 'Fermer'})) runAct('openSuivi', elsewhere); }
+    else await inform({title, text});
   } else if (ok) toast(`${ok} fichier${ok > 1 ? 's' : ''} ajouté${ok > 1 ? 's' : ''} : ${done.join(', ')}`);
   return ok;
 }

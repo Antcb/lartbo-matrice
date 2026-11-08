@@ -8,6 +8,7 @@
 //     l'en-tête, brouillons exclus, plusieurs correspondances refusées, taille bornée, identifiant invalide refusé sans recherche,
 //     code secret exigé.
 import vm from 'node:vm';
+import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -104,7 +105,7 @@ if (gsRe !== String(MSGID_RE)) fail('scripts', `expression du Message-ID différ
 if (!new RegExp(`var MSGID_MAX_ = ${MSGID_MAX};`).test(bCode)) fail('scripts', 'longueur maximale du Message-ID différente entre eml.js et les scripts');
 if (MSG_RAW_MAX !== 20 * 1024 * 1024 || !/var MSG_RAW_MAX_ = 20 \* 1024 \* 1024;/.test(bCode)) fail('scripts', 'taille maximale du contenu brut différente entre eml.js et les scripts');
 if (!/action === 'mail_by_msgid'\) out = mailByMsgId_\(body\.message_id\)/.test(gsCode)) fail('scripts', 'Code.gs : action mail_by_msgid non branchée dans doPost');
-if (!/a === 'mail_by_msgid'\) out = mailByMsgId_\(body\.message_id\)/.test(gsProsp)) fail('scripts', 'Prospection.gs : action mail_by_msgid non branchée dans doPost');
+if (!/a === 'mail_by_msgid'\) out = ownerOnly_\(body\) \|\| mailByMsgId_\(body\.message_id\)/.test(gsProsp)) fail('scripts', 'Prospection.gs : action mail_by_msgid non branchée dans doPost');
 for (const [n, src] of [['Code.gs', gsCode], ['Prospection.gs', gsProsp]])
   if (!/var SCRIPT_VERSION = 'v1\.60\.4'/.test(src)) fail('scripts', `${n} : SCRIPT_VERSION doit être 'v1.60.4'`);
 
@@ -131,12 +132,15 @@ function run(file, msgs, call){
   const props = { WEBHOOK_SECRET: 'secret-de-test' };
   const ctx = { GmailApp, Logger: { log() {} }, Session: { getEffectiveUser: () => ({ getEmail: () => 'boite@example.com' }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k], getProperties: () => props }) },
-    ContentService: { createTextOutput: s => ({ setMimeType: () => s }), MimeType: { JSON: 'json' } }, Utilities: { formatDate: () => '' } };
+    ContentService: { createTextOutput: s => ({ setMimeType: () => s }), MimeType: { JSON: 'json' } },
+    Utilities: { formatDate: () => '', Charset: { UTF_8: 'utf8' }, computeHmacSha256Signature: (v, k) => [...createHmac('sha256', k).update(v).digest()].map(b => (b > 127 ? b - 256 : b)) } };
   vm.createContext(ctx); vm.runInContext(file, ctx);
   const out = call(ctx);
   return { out: typeof out === 'string' ? JSON.parse(out) : JSON.parse(JSON.stringify(out)), ...log };
 }
-const post = body => ctx => ctx.doPost({ postData: { contents: JSON.stringify(body) } });
+// identité du titulaire de la boîte (compte qui exécute le script), signée comme par le relais script-google (v1.60.4)
+const OWNER = { caller: 'boite@example.com', caller_sig: createHmac('sha256', 'secret-de-test').update('matrice-caller:boite@example.com').digest('hex') };
+const post = body => ctx => ctx.doPost({ postData: { contents: JSON.stringify({ ...OWNER, ...body }) } });
 for (const [name, file] of [['Code.gs', gsCode], ['Prospection.gs', gsProsp]]){
   const cat = `lecture seule ${name}`;
   try {

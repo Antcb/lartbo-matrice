@@ -2,9 +2,10 @@
 // Le navigateur n'a plus le code secret des scripts : il appelle cette fonction avec la session de l'utilisateur ; la fonction vérifie
 // que c'est un compte de l'équipe (is_team), lit l'adresse du script et le code secret côté serveur, et transmet la demande.
 //   POST { target: 'main' | 'prospect', action, payload } → réponse du script ({ ok, … }) ou { ok: false, error: 'message français' }
-// Les scripts eux-mêmes ne changent pas (même code secret, mêmes actions). Les appels de la base (dossier Drive d'une date…)
+// (v1.60.4) Le relais transmet aussi l'adresse du compte connecté, signée (identite.ts). Les appels de la base (dossier Drive d'une date…)
 // et de la fonction pennylane passent toujours directement, côté serveur.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
+import { outgoingBody } from './identite.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -26,6 +27,13 @@ Deno.serve(async (req) => {
     const user = createClient(URL_, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization') || '' } }, auth: { persistSession: false } });
     const { data: team } = await user.rpc('is_team');
     if (team !== true) return json({ ok: false, error: 'Accès refusé : connecte-toi avec un compte de l’équipe.' }, 403);
+    // (v1.60.4) adresse du compte connecté, vérifiée par Supabase Auth : transmise signée au script (identite.ts), qui peut ainsi
+    // réserver une action au titulaire de sa boîte (recherche par Message-ID dans anthony@)
+    // (jeton passé explicitement : sans session gardée, getUser() sans argument ne lirait pas l'en-tête Authorization)
+    const jwt = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+    const { data: who } = await user.auth.getUser(jwt);
+    const email = String(who?.user?.email || '').trim().toLowerCase();
+    if (!email) return json({ ok: false, error: 'Accès refusé : compte connecté illisible, reconnecte-toi.' }, 403);
     const body = await req.json().catch(() => null);
     const t = Object.hasOwn(TARGETS, body?.target || 'main') ? TARGETS[body?.target || 'main'] : null;
     if (!t || typeof body?.action !== 'string' || !/^[a-z_]{2,40}$/.test(body.action)) return json({ ok: false, error: 'Demande illisible' }, 400);
@@ -35,12 +43,13 @@ Deno.serve(async (req) => {
     const url = val(t.key), secret = val('drive_webhook_secret');
     if (!url) return json({ ok: false, error: t.missing });
     if (!scriptUrlOk(url)) return json({ ok: false, error: 'L’adresse du script Google enregistrée dans les Réglages n’est pas une adresse de script publiée (…/exec).' });
-    // le code secret et l'action passent en dernier : rien dans « payload » ne peut les remplacer
+    // le code secret, l'action et l'identité signée passent en dernier : rien dans « payload » ne peut les remplacer
     const payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload) ? body.payload : {};
+    const outgoing = await outgoingBody(payload, body.action, secret, email);
     const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), LIMIT_MS);
     let r: Response;
     try {
-      r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ ...payload, action: body.action, secret }), signal: ctl.signal });
+      r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: outgoing, signal: ctl.signal });
     } catch (e) {
       if (ctl.signal.aborted) return json({ ok: false, error: 'Le script Google met plus de 2 minutes : il continue sans doute en arrière-plan. Réessaie ou vérifie le résultat dans quelques minutes.' }, 504);
       throw e;
