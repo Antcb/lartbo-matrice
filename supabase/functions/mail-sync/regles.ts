@@ -15,13 +15,14 @@ export function same(a: string, b: string) {
 }
 
 /**
- * Accès : secret DÉDIÉ de la tâche planifiée (synchronisation planifiée seulement) ou session d'un membre de l'équipe.
- * Tout le reste : refusé (403), avant toute lecture de Gmail ou écriture en base.
+ * Accès : secret DÉDIÉ de la tâche planifiée (synchronisation planifiée seulement) ou session du PROPRIÉTAIRE de la boîte
+ * (anthony@ réservée au compte d'Anthony, décision du 08/11/2026 ; is_mailbox_owner exécuté avec la session de l'appelant).
+ * Tout le reste — autre membre de l'équipe compris : refusé (403), avant toute lecture de Gmail ou écriture en base.
  */
-export function acces(o: { hook: string; hookSecret: string | null; team: boolean; mode: 'sync' | 'threads' }) {
+export function acces(o: { hook: string; hookSecret: string | null; owner: boolean; mode: 'sync' | 'threads' }) {
   const parHook = !!o.hook && !!o.hookSecret && same(o.hook, String(o.hookSecret));
-  if (!parHook && !o.team) return { ok: false, status: 403, error: 'Accès refusé : connecte-toi avec un compte de l’équipe.' };
-  if (o.mode === 'threads' && !o.team) return { ok: false, status: 403, error: 'Réservé à l’équipe' };
+  if (!parHook && !o.owner) return { ok: false, status: 403, error: 'Accès refusé : la boîte anthony@ est réservée au compte d’Anthony.' };
+  if (o.mode === 'threads' && !o.owner) return { ok: false, status: 403, error: 'Réservé au compte d’Anthony' };
   return { ok: true, status: 200, error: '' };
 }
 

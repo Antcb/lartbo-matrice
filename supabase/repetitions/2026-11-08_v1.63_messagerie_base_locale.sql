@@ -29,7 +29,7 @@ create table public.prospects (id uuid primary key default gen_random_uuid(), na
 create table public.prospect_logs (id uuid primary key default gen_random_uuid(), prospect_id uuid not null references public.prospects(id) on delete cascade,
   date date, kind text default 'Appel', contact_name text, body text, author text, import_key text unique, created_at timestamptz default now());
 create table public.tasks (id uuid primary key default gen_random_uuid(), title text not null, status text not null default 'To Do' check (status in ('To Do','In Progress','Done','Cancelled')),
-  prospect_id uuid, auto_kind text, notes text, done_at timestamptz, created_at timestamptz default now());
+  prospect_id uuid, auto_kind text, notes text, done_at timestamptz, deadline date, created_at timestamptz default now());
 create table public.notifications (id uuid primary key default gen_random_uuid(), created_at timestamptz default now(), kind text, title text not null, body text,
   dedupe_key text unique, read_by text[] not null default '{}');
 create schema if not exists private;

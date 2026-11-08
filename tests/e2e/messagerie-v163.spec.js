@@ -307,7 +307,7 @@ test('relecture B4 : « Relances à vérifier » — rien n’est rétabli sans 
   expect(await rpcs(page, 'mail_restore_relances')).toEqual([]);
   await ouvrirNotif();
   await dlg(page).locator('button', { hasText: 'Rétablir les relances' }).click();
-  await expect.poll(() => rpcs(page, 'mail_restore_relances')).toEqual([{ p_message: 'msg-uuid-1', p_prospect: 'pr-1' }]);
+  await expect.poll(() => rpcs(page, 'mail_restore_relances')).toEqual([{ p_message: 'msg-uuid-1', p_prospect: 'pr-1', p_deadline: null }]);
   expectClean(ctx);
 });
 
@@ -342,5 +342,61 @@ test('relecture : images intégrées non proposées au transfert ; liens des mai
   await page.locator('.mail-actions [data-act=mailCompose][data-mode=forward]').first().click();
   await expect(page.locator('#modal label.check')).toContainText('Joindre les 1 pièce jointe d’origine (fiche.pdf');
   await expect(page.locator('#modal label.check')).not.toContainText('logo.png');
+  expectClean(ctx);
+});
+
+// ── Décisions d'Anthony du 08/11/2026 ────────────────────────────────────────────────────────────────────────────────────
+test('08/11 : boîte anthony@ réservée au compte d’Anthony — un autre membre de l’équipe voit l’explication, aucun appel à la boîte', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.evaluate(() => { window.__MAILBOX_OWNER = false; });
+  await preparer(page);
+  await expect(page.locator('main')).toContainText('La boîte anthony@ est réservée au compte d’Anthony');
+  await expect(page.locator('.mail-row')).toHaveCount(0);
+  expect(await page.evaluate(() => window.__script.length)).toBe(0);
+  expect(await page.evaluate(() => window.__calls.filter(c => c.fn === 'mail-sync').length)).toBe(0);
+  expectClean(ctx);
+});
+
+test('08/11 : rétablir des relances dont l’échéance est passée demande une échéance FUTURE (Annuler ne rétablit rien)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page);
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
+    const n = { id: 'nt-rel2', kind: 'suivi', title: 'Relances à vérifier — Suivi', body: 'Relances de « Suivi » annulées par un message désormais rattaché à « Autre » : à vérifier.',
+      dedupe_key: 'mail-relances:msg-uuid-2:pr-1', created_at: new Date().toISOString(), read_by: [] };
+    S.db.notifications.push(n); window.__DB.notifications.push({ ...n }); touch('notifications');
+    window.__RPC_ERROR = { mail_restore_relances: { code: 'P0001', message: 'ECHEANCE_REQUISE:1' } }; (await import('./js/app.js')).render(); });
+  const ouvrirNotif = async () => { await page.locator('[data-act=toggleNotifs]').first().click(); await page.locator('[data-act=openNotif][data-id=nt-rel2]').click(); };
+  await ouvrirNotif();
+  await dlg(page).locator('button', { hasText: 'Rétablir les relances' }).click();
+  await expect(dlg(page)).toContainText('Nouvelle échéance');
+  await dlg(page).locator('button', { hasText: 'Annuler' }).click();
+  expect((await rpcs(page, 'mail_restore_relances')).length).toBe(1);   // seulement la demande refusée faute d'échéance
+  await ouvrirNotif();
+  await dlg(page).locator('button', { hasText: 'Rétablir les relances' }).click();
+  await expect(dlg(page)).toContainText('Nouvelle échéance');   // la demande sans échéance a été refusée par le serveur simulé
+  await page.evaluate(() => { window.__RPC_ERROR = null; });
+  const champ = dlg(page).locator('input');
+  const jour = await page.evaluate(async () => { const u = await import('./js/utils.js'); return u.fmtDate(u.today()); });
+  await champ.fill(jour);
+  await dlg(page).locator('button', { hasText: 'Valider' }).click();
+  await expect(dlg(page)).toContainText('après aujourd’hui');   // la date du jour est refusée
+  const futur = await page.evaluate(async () => { const u = await import('./js/utils.js'); return u.fmtDate(u.addDays(u.today(), 9)); });
+  await champ.fill(futur);
+  await dlg(page).locator('button', { hasText: 'Valider' }).click();
+  const iso = futur.split('/').reverse().join('-');
+  await expect.poll(async () => (await rpcs(page, 'mail_restore_relances')).slice(-1)).toEqual([{ p_message: 'msg-uuid-2', p_prospect: 'pr-1', p_deadline: iso }]);
+  expectClean(ctx);
+});
+
+test('08/11 : absence automatique signalée dans la conversation (relances maintenues) ; limite des brouillons Gmail / Apple Mail affichée', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page);
+  await page.evaluate(() => { const old = window.__FN_REPLY['script-google'];
+    window.__FN_REPLY['script-google'] = b => b.action === 'thread' ? { ok: true, thread: { id: 'bbb222', messages: [{ id: 'b-oof', auto: 'auto', from: { name: 'Camille', email: 'camille@example.com' }, reply_to: [], to: [], cc: [],
+      subject: 'Réponse automatique : absente', date: '2026-11-04T09:00:00Z', direction: 'in', html: '<p>Absente jusqu’au 15</p>', attachments: [] }] } } : old(b); });
+  await ouvrir(page, 'Proposition');
+  await expect(page.locator('.mail-msg .mail-auto-tag')).toContainText('Réponse automatique · relances maintenues');
+  await page.locator('.mail-actions [data-act=mailCompose][data-mode=reply]').first().click();
+  await expect(page.locator('#modal')).toContainText('Un brouillon commencé dans Gmail ou Apple Mail se termine là-bas');
   expectClean(ctx);
 });

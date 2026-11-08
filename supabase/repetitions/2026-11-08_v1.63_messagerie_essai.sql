@@ -9,7 +9,9 @@ create or replace function pg_temp.ok(cond boolean, essai text) returns void lan
 begin if not coalesce(cond, false) then raise exception 'ÉCHEC : %', essai; end if; insert into bilan (essai) values (essai); end $$;
 
 -- ── Données fictives ───────────────────────────────────────────────────────────────────────────────────────────────
-insert into app_users values ('equipe@example.com');
+insert into app_users values ('equipe@example.com'), ('collegue@example.com');
+-- propriétaire fictif de la boîte (la migration inscrit anthony@ ; ici un compte d'essai, transaction annulée à la fin)
+update private.mailbox_owners set email = 'equipe@example.com' where mailbox = 'anthony';
 insert into projects (id, name) values ('00000000-0000-0000-0000-0000000000a1', 'Artiste Alpha');
 insert into structures (id, name) values
   ('00000000-0000-0000-0000-000000000001', 'Salle Une'), ('00000000-0000-0000-0000-000000000002', 'Festival Deux'),
@@ -174,7 +176,7 @@ do $$ declare t uuid; begin
   t := (select id from mail_threads where gmail_thread_id = 't03');
   perform set_config('request.jwt.claims', '{"email":"intrus@example.net"}', true);
   begin perform public.mail_link_manual(t, '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000f1', null, null);
-    perform pg_temp.ok(false, 'hors équipe refusé'); exception when others then perform pg_temp.ok(sqlerrm like 'Réservé à l''équipe%', 'rattachement manuel : compte hors équipe refusé'); end;
+    perform pg_temp.ok(false, 'hors équipe refusé'); exception when others then perform pg_temp.ok(sqlerrm like 'Boîte réservée%', 'rattachement manuel : compte hors équipe refusé'); end;
   perform set_config('request.jwt.claims', '{"email":"equipe@example.com"}', true);
   begin perform public.mail_link_manual(t, '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000f1', null, null);
     perform pg_temp.ok(false, 'suivi d''une autre structure'); exception when others then perform pg_temp.ok(sqlerrm like 'Ce suivi n''appartient pas%', 'suivi d''une autre structure refusé'); end;
@@ -206,8 +208,10 @@ insert into contacts (id, display_name, email) values ('00000000-0000-0000-0000-
 insert into contact_structures values ('00000000-0000-0000-0000-0000000000ca', '00000000-0000-0000-0000-00000000000a');
 insert into prospects (id, name, structure_id, status) values ('00000000-0000-0000-0000-0000000000aa', 'Suivi A', '00000000-0000-0000-0000-00000000000a', 'Mailed'),
   ('00000000-0000-0000-0000-0000000000bb', 'Suivi B', '00000000-0000-0000-0000-00000000000b', 'Mailed');
+insert into tasks (id, title, prospect_id, auto_kind, created_at, deadline) values
+  ('00000000-0000-0000-0000-0000000000e1', 'Relance A', '00000000-0000-0000-0000-0000000000aa', 'relance_mail', now() - interval '5 days', current_date - 1),
+  ('00000000-0000-0000-0000-0000000000e4', 'Relance A2', '00000000-0000-0000-0000-0000000000aa', 'relance_tel', now() - interval '5 days', current_date + 20);
 insert into tasks (id, title, prospect_id, auto_kind, created_at) values
-  ('00000000-0000-0000-0000-0000000000e1', 'Relance A', '00000000-0000-0000-0000-0000000000aa', 'relance_mail', now() - interval '5 days'),
   ('00000000-0000-0000-0000-0000000000e2', 'Relance B', '00000000-0000-0000-0000-0000000000bb', 'relance_mail', now() - interval '5 days');
 insert into shows (id, structure_id) values ('00000000-0000-0000-0000-0000000000d5', '00000000-0000-0000-0000-00000000000a');
 do $$ declare t uuid; a uuid := '00000000-0000-0000-0000-0000000000aa'; b uuid := '00000000-0000-0000-0000-0000000000bb'; m uuid; k text; begin
@@ -229,9 +233,18 @@ do $$ declare t uuid; a uuid := '00000000-0000-0000-0000-0000000000aa'; b uuid :
   begin perform public.mail_restore_relances(m, a); perform pg_temp.ok(false, 'rétablissement hors équipe');
     exception when others then perform pg_temp.ok(sqlerrm like 'Réservé à l''équipe%', 'B4 : rétablissement refusé hors équipe'); end;
   perform set_config('request.jwt.claims', '{"email":"equipe@example.com"}', true);
-  perform pg_temp.ok(public.mail_restore_relances(m, a) = 1, 'B4 : une relance de A rétablie sur demande');
-  perform pg_temp.ok((select status = 'To Do' and done_at is null and notes like '%Rétablie à la main%' from tasks where title = 'Relance A'), 'B4 : relance A « À faire », raison notée');
-  perform pg_temp.ok(public.mail_restore_relances(m, a) = 0, 'B4 : rétablissement unique (rien la seconde fois)');
+  begin perform public.mail_restore_relances(m, a); perform pg_temp.ok(false, 'échéance passée sans date');
+    exception when others then perform pg_temp.ok(sqlerrm = 'ECHEANCE_REQUISE:1', 'rétablissement : échéance passée → échéance future demandée, rien rétabli'); end;
+  perform pg_temp.ok((select status from tasks where title = 'Relance A') = 'Cancelled', 'rétablissement refusé : relances toujours annulées');
+  begin perform public.mail_restore_relances(m, a, current_date); perform pg_temp.ok(false, 'échéance du jour');
+    exception when others then perform pg_temp.ok(sqlerrm like 'Échéance à choisir après aujourd''hui%', 'rétablissement : échéance passée ou du jour refusée'); end;
+  -- rétablissement par un autre membre de l'équipe (droits du suivi, pas de la boîte)
+  perform set_config('request.jwt.claims', '{"email":"collegue@example.com"}', true);
+  perform pg_temp.ok(public.mail_restore_relances(m, a, current_date + 7) = 2, 'B4 : relances de A rétablies sur demande (équipe)');
+  perform pg_temp.ok((select status = 'To Do' and done_at is null and deadline = current_date + 7 and notes like '%Rétablie à la main%' from tasks where title = 'Relance A')
+    and (select deadline from tasks where title = 'Relance A2') = current_date + 20, 'rétablissement : échéance future appliquée seulement à la relance échue');
+  perform set_config('request.jwt.claims', '{"email":"equipe@example.com"}', true);
+  perform pg_temp.ok(public.mail_restore_relances(m, a, current_date + 3) = 0, 'B4 : rétablissement unique (rien la seconde fois)');
   perform pg_temp.ok(public.mail_restore_relances(m, b) = 0 and (select status from tasks where title = 'Relance B') = 'Cancelled', 'B4 : jamais pour le suivi actuel de la conversation');
   perform set_config('request.jwt.claims', '', true);
 end $$;
@@ -254,6 +267,8 @@ do $$ declare t uuid := (select id from mail_threads where gmail_thread_id = 'ab
     and (select body like 'Réponse automatique — %' from prospect_logs where gmail_message_id = 'ab01-oof'), 'B5 : non-remise et réponse automatique marquées au journal');
   perform pg_temp.ok((select count(*) from notifications where dedupe_key in (select 'mail-reponse:' || id from mail_messages where gmail_message_id like 'ab01-%' and gmail_message_id <> 'ab01-1')) = 0,
     'B5 : aucune notification « Réponse reçue » pour ces messages');
+  perform pg_temp.ok((select count(*) from notifications where dedupe_key = 'mail-auto:' || (select id from mail_messages where gmail_message_id = 'ab01-oof') and title like 'Réponse automatique — %' and body like '%relances maintenues%') = 1
+    and (select count(*) from notifications where dedupe_key like 'mail-auto:%') = 1, 'décision 08/11 : absence automatique signalée (une notification), relances maintenues');
   begin insert into mail_messages (thread_id, gmail_message_id, direction, sent_at, auto_kind) values (t, 'ab01-x', 'in', now(), 'pirate');
     perform pg_temp.ok(false, 'type inconnu'); exception when check_violation then perform pg_temp.ok(true, 'B5 : type de message automatique contrôlé'); end;
 end $$;
@@ -295,8 +310,31 @@ set local role authenticated;
 select set_config('request.jwt.claims', '{"email":"intrus@example.net"}', true) \gset ignore_
 do $$ begin perform pg_temp.ok((select count(*) from mail_threads) = 0 and (select count(*) from mail_messages) = 0, 'RLS : compte hors équipe, aucune conversation'); end $$;
 select set_config('request.jwt.claims', '{"email":"equipe@example.com"}', true) \gset ignore_
-do $$ begin perform pg_temp.ok((select count(*) from mail_threads) > 0, 'RLS : équipe, conversations visibles'); end $$;
+do $$ begin perform pg_temp.ok((select count(*) from mail_threads) > 0, 'RLS : propriétaire de la boîte, conversations visibles'); end $$;
 reset role;
+
+-- ── Boîte anthony@ réservée au compte d'Anthony (décision du 08/11/2026) ────────────────────────────────────────────────
+set local role authenticated;
+select set_config('request.jwt.claims', '{"email":"collegue@example.com"}', true) \gset ignore_
+do $$ begin
+  perform pg_temp.ok(public.is_team() and not public.is_mailbox_owner('anthony'), 'autre membre de l''équipe : pas propriétaire de la boîte');
+  perform pg_temp.ok((select count(*) from mail_threads) = 0 and (select count(*) from mail_messages) = 0 and (select count(*) from mail_sync_state) = 0,
+    'autre membre de l''équipe : aucune conversation de la boîte visible (RLS)');
+  perform pg_temp.ok((select count(*) from prospect_logs where author = 'Messagerie') > 0, 'messages rattachés : visibles dans le journal des suivis (droits habituels)');
+  begin perform public.mail_link_manual((select id from mail_threads limit 1), null, null, null, null); perform pg_temp.ok(true, 'aucune ligne visible : rien à rattacher');
+    exception when others then perform pg_temp.ok(sqlerrm like 'Boîte réservée%', 'autre membre : rattachement manuel refusé'); end;
+end $$;
+reset role;
+do $$ declare t uuid := (select id from mail_threads where gmail_thread_id = 't07'); begin
+  perform set_config('request.jwt.claims', '{"email":"collegue@example.com"}', true);
+  begin perform public.mail_link_manual(t, null, null, null, null); perform pg_temp.ok(false, 'collègue rattache');
+    exception when others then perform pg_temp.ok(sqlerrm like 'Boîte réservée à son propriétaire%', 'autre membre de l''équipe : rattachement manuel refusé côté serveur'); end;
+  perform set_config('request.jwt.claims', '{"email":"equipe@example.com"}', true);
+  perform pg_temp.ok(public.is_mailbox_owner('anthony') and not public.is_mailbox_owner('production'), 'propriétaire : sa boîte seulement');
+  perform pg_temp.ok(not has_table_privilege('authenticated', 'private.mailbox_owners', 'update') and not has_table_privilege('authenticated', 'private.mailbox_owners', 'select'),
+    'propriétaire de la boîte inscrit hors d''atteinte des comptes');
+  perform set_config('request.jwt.claims', '', true);
+end $$;
 
 -- ── Tâche planifiée : rien sans adresse inscrite, jamais vers un autre serveur, secret dans l'en-tête seulement ─────────────
 do $$ begin

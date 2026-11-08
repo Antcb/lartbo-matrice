@@ -1,6 +1,6 @@
 // Messagerie intégrée (v1.61) — synchronisation de la boîte anthony@ (Gmail = référence) vers L'ArtBotrice.
 //   - tâche planifiée de la base (toutes les 5 min, en-tête x-hook-secret = secret serveur dédié « mail_sync_hook ») : { mode: 'sync' }
-//   - équipe connectée (is_team) : { mode: 'sync' } (« Actualiser ») ou { mode: 'threads', ids: [...] } (conversations ouvertes /
+//   - propriétaire de la boîte connecté (is_mailbox_owner, compte d'Anthony) : { mode: 'sync' } (« Actualiser ») ou { mode: 'threads', ids: [...] } (conversations ouvertes /
 //     trouvées par une recherche Gmail : relues côté serveur, jamais reprises telles que fournies par le navigateur).
 // Le script de prospection lit Gmail ; cette fonction enregistre conversations et messages (identifiants Gmail uniques : aucun doublon),
 // ne touche jamais au rattachement existant, puis lance mail_process (rattachement automatique, journal du suivi, suspension des relances).
@@ -63,17 +63,17 @@ Deno.serve(async (req) => {
   // dans le navigateur, une adresse ou un journal) ; sinon compte de l'équipe. Sans justificatif ou justificatif faux : 403.
   const hook = req.headers.get('x-hook-secret') || '';
   const { data: hookSecret } = hook ? await admin.rpc('import_secret', { k: 'mail_sync_hook' }) : { data: null };
-  // session de l'appelant : is_team() exécuté avec SA session (jamais avec le rôle serveur)
-  let team = false;
+  // session de l'appelant : propriétaire de la boîte (is_mailbox_owner) vérifié avec SA session (jamais avec le rôle serveur)
+  let owner = false;
   if (req.headers.get('Authorization')) {
     const user = createClient(URL_, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization') || '' } }, auth: { persistSession: false } });
-    const { data } = await user.rpc('is_team');
-    team = data === true;
+    const { data } = await user.rpc('is_mailbox_owner', { p_mailbox: MAILBOX });
+    owner = data === true;
   }
   const body = await req.json().catch(() => ({}));
   const mode = body?.mode === 'threads' ? 'threads' : 'sync';
   // le secret de la tâche planifiée ne sert qu'à la synchronisation planifiée ; relire des conversations précises = compte de l'équipe
-  const ok = acces({ hook, hookSecret: hookSecret ? String(hookSecret) : null, team, mode });
+  const ok = acces({ hook, hookSecret: hookSecret ? String(hookSecret) : null, owner, mode });
   if (!ok.ok) return json({ ok: false, error: ok.error }, ok.status);
   if (!url) return json({ ok: false, error: 'Le script de prospection n’est pas encore installé : Réglages › Prospection.' });
   if (!scriptUrlOk(url)) return json({ ok: false, error: 'L’adresse du script de prospection n’est pas une adresse de script publiée (…/exec).' });

@@ -16,16 +16,33 @@ const J = (x) => JSON.parse(JSON.stringify(x));   // valeurs venues du bac à sa
 
 // ── 1. Règles de la fonction serveur ─────────────────────────────────────────────────────────────────────────────────
 t('accès : sans justificatif, faux secret, secret vide → 403', () => {
-  assert.equal(acces({ hook: '', hookSecret: 'abc', team: false, mode: 'sync' }).status, 403);
-  assert.equal(acces({ hook: 'faux', hookSecret: 'abc', team: false, mode: 'sync' }).status, 403);
-  assert.equal(acces({ hook: '', hookSecret: '', team: false, mode: 'sync' }).status, 403);
-  assert.equal(acces({ hook: 'abc', hookSecret: null, team: false, mode: 'sync' }).status, 403);
+  assert.equal(acces({ hook: '', hookSecret: 'abc', owner: false, mode: 'sync' }).status, 403);
+  assert.equal(acces({ hook: 'faux', hookSecret: 'abc', owner: false, mode: 'sync' }).status, 403);
+  assert.equal(acces({ hook: '', hookSecret: '', owner: false, mode: 'sync' }).status, 403);
+  assert.equal(acces({ hook: 'abc', hookSecret: null, owner: false, mode: 'sync' }).status, 403);
 });
 t('accès : secret dédié → synchronisation planifiée seulement ; relire des conversations précises → équipe', () => {
-  assert.equal(acces({ hook: 'abc', hookSecret: 'abc', team: false, mode: 'sync' }).ok, true);
-  assert.equal(acces({ hook: 'abc', hookSecret: 'abc', team: false, mode: 'threads' }).status, 403);
-  assert.equal(acces({ hook: '', hookSecret: 'abc', team: true, mode: 'threads' }).ok, true);
+  assert.equal(acces({ hook: 'abc', hookSecret: 'abc', owner: false, mode: 'sync' }).ok, true);
+  assert.equal(acces({ hook: 'abc', hookSecret: 'abc', owner: false, mode: 'threads' }).status, 403);
+  assert.equal(acces({ hook: '', hookSecret: 'abc', owner: true, mode: 'threads' }).ok, true);
   assert.equal(same('abc', 'abd'), false); assert.equal(same('abc', 'abc'), true);
+});
+t('boîte anthony@ réservée au compte d’Anthony : autre membre de l’équipe refusé par mail-sync', () => {
+  // un membre de l'équipe qui n'est pas le propriétaire : owner = false (is_mailbox_owner côté base, avec sa session)
+  assert.equal(acces({ hook: '', hookSecret: 'abc', owner: false, mode: 'sync' }).status, 403);
+  assert.equal(acces({ hook: '', hookSecret: 'abc', owner: false, mode: 'threads' }).status, 403);
+  assert.match(acces({ hook: '', hookSecret: 'abc', owner: false, mode: 'sync' }).error, /réservée au compte d’Anthony/);
+});
+t('relais script-google : toutes les actions de messagerie du script exigent le propriétaire, contrôle AVANT l’appel du script', () => {
+  const relais = readFileSync(new URL('../../supabase/functions/script-google/index.ts', import.meta.url), 'utf8');
+  const gs = readFileSync(new URL('../../apps-script/Prospection.gs', import.meta.url), 'utf8');
+  const liste = JSON.parse((relais.match(/OWNER_ONLY[^=]*=\s*\{\s*prospect:\s*(\[[^\]]*\])/) || [])[1].replace(/'/g, '"'));
+  const messagerie = ['threads', 'thread', 'labels', 'modify', 'compose', 'attachment', 'history', 'files_info'];
+  for (const a of messagerie) { assert.ok(liste.includes(a), 'action non protégée : ' + a); assert.ok(gs.includes(`a === '${a}'`), 'action absente du script : ' + a); }
+  for (const a of ['mail', 'reply', 'status', 'ping']) assert.ok(!liste.includes(a), 'prospection : droits de l’équipe conservés (' + a + ')');
+  const iCheck = relais.indexOf("rpc('is_mailbox_owner'"), iFetch = relais.indexOf('await fetch(url');
+  assert.ok(iCheck > 0 && iCheck < iFetch, 'contrôle du propriétaire avant tout appel du script');
+  assert.match(relais, /owner !== true\) return json\(\{ ok: false, error: 'La boîte anthony@ est réservée au compte d’Anthony\.' \}, 403\)/);
 });
 t('adresse du script : seulement une adresse publiée script.google.com/…/exec', () => {
   assert.ok(scriptUrlOk('https://script.google.com/macros/s/AKfy_essai-1/exec'));

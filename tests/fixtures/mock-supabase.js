@@ -136,6 +136,8 @@
     // messagerie : boîte anthony@ réservée à son propriétaire (window.__MAILBOX_OWNER = false : autre membre de l'équipe)
     is_mailbox_owner: () => window.__MAILBOX_OWNER ?? true,
     is_team: () => true,
+    // messagerie : boîte anthony@ réservée à son propriétaire (window.__MAILBOX_OWNER = false : autre membre de l'équipe)
+    is_mailbox_owner: () => window.__MAILBOX_OWNER ?? true,
     show_deletion_state: a => deletionState(a.p_show),
     delete_show: a => { const id = a.p_show, st = deletionState(id);
       DB.show_deletions.push({ id: DB.show_deletions.length + 1, show_id: id, actor: USER, snapshot: { show: DB.shows.find(x => x.id === id), result_closures: DB.result_closures.filter(r => r.show_id === id) } });

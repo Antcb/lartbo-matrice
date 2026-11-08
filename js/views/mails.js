@@ -2,7 +2,7 @@
  * Onglet Mails (v1.61) : boîte anthony@ — boîte de réception, non lus, « À rattacher », libellés Gmail, recherche ; lecture d'une
  * conversation, rattachement (structure, suivi, artiste, date), réponse, rangement, relance. Gmail reste la référence.
  */
-import { ARCHIVED, LINK_LABEL, M, MAILBOX_ADDR, linkState, candidates, fmtSize, labelName, loadLabels, syncState, threadsShown, userLabels } from '../mailbox.js';
+import { ARCHIVED, LINK_LABEL, M, MAILBOX_ADDR, checkOwner, linkState, candidates, fmtSize, labelName, loadLabels, syncState, threadsShown, userLabels } from '../mailbox.js';
 import { byId, projName, prospectTitle, structName } from '../selectors.js';
 import { S } from '../state.js';
 import { viewHead } from '../ui/bits.js';
@@ -72,6 +72,7 @@ function reader(){
     : M.error && !th ? `<div class="empty panel mail-err" role="alert">${esc(M.error)}</div>`
     : (th?.messages || []).map(m => `<article class="panel pad mail-msg">
         <header class="mail-msg-head"><b>${esc(m.from?.name || m.from?.email || '')}</b> <span class="muted">&lt;${esc(m.from?.email || '')}&gt;</span>
+          ${m.auto === 'ndr' ? '<span class="badge mail-auto-tag">Avis de non-remise</span>' : m.auto === 'auto' ? '<span class="badge mail-auto-tag">Réponse automatique · relances maintenues</span>' : ''}
           <span class="spacer"></span><span class="muted">${esc(when(m.date))}</span></header>
         <p class="muted mail-msg-to">À : ${esc((m.to || []).map(a => a.email).join(', '))}${m.cc?.length ? ` · Copie : ${esc(m.cc.map(a => a.email).join(', '))}` : ''}</p>
         ${hasRemote(m.html) ? `<p class="muted mail-img-note">Images distantes bloquées (elles peuvent signaler l’ouverture du mail à l’expéditeur).
@@ -86,6 +87,11 @@ function reader(){
 }
 
 export function viewMails(){
+  // boîte réservée au compte d'Anthony (contrôle réel : serveur) ; les autres comptes voient pourquoi la liste est vide
+  if (M.owner === undefined){ checkOwner().then(() => { if (S.view === 'mails') import('../app.js').then(a => a.render()); });
+    return viewHead('Mails', {sub: esc(MAILBOX_ADDR())}) + '<div class="empty panel">Vérification de l’accès à la boîte…</div>'; }
+  if (!M.owner) return viewHead('Mails', {sub: esc(MAILBOX_ADDR())})
+    + '<div class="empty panel">La boîte anthony@ est réservée au compte d’Anthony. Les mails rattachés à un suivi restent dans le journal de ce suivi.</div>';
   if (M.labels == null) loadLabels().then(() => { if (S.view === 'mails') import('../app.js').then(a => a.render()); });
   const n = k => k === 'inbox' ? S.db.mail_threads.filter(t => (t.labels || []).includes('INBOX')).length
     : k === 'unread' ? S.db.mail_threads.filter(t => t.unread).length : S.db.mail_threads.filter(t => t.link_status === 'a_rattacher' && !(t.labels || []).includes('SPAM') && !(t.labels || []).includes('TRASH')).length;

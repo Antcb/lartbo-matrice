@@ -36,12 +36,21 @@ export const LINK_LABEL = {auto: 'Rattaché automatiquement', manuel: 'Rattaché
 export const linkState = t => t.link_status === 'manuel' && !t.structure_id && !t.prospect_id ? 'aucun' : t.link_status;
 
 /** État de l'espace Mails (mémoire de la page) */
-export const M = {filter: 'inbox', label: '', labels: null, search: null, open: null, thread: null, loading: false, error: '', images: new Set()};
+export const M = {owner: undefined, filter: 'inbox', label: '', labels: null, search: null, open: null, thread: null, loading: false, error: '', images: new Set()};
 
 export const fmtSize = n => !n ? '' : n > 1e6 ? (n / 1048576).toFixed(1).replace('.', ',') + ' Mo' : Math.max(1, Math.round(n / 1024)) + ' Ko';
 export const labelName = id => SYSTEM_LABELS[id] || (M.labels || []).find(l => l.id === id)?.name || id;
 export const userLabels = () => (M.labels || []).filter(l => l.type === 'user').sort((a, b) => a.name.localeCompare(b.name, 'fr'));
 export const syncState = () => S.db.mail_sync_state.find(r => r.mailbox === 'anthony') || null;
+
+/**
+ * Accès à la boîte anthony@ : réservé au compte d'Anthony (décision du 08/11/2026). Contrôlé par le serveur (is_mailbox_owner :
+ * relais des scripts, fonction mail-sync, tables) ; ici seulement pour afficher une explication au lieu d'une liste vide.
+ */
+let ownerLoading = null;
+export function checkOwner(){
+  return ownerLoading ||= sb.rpc('is_mailbox_owner', {p_mailbox: 'anthony'}).then(({data}) => { M.owner = data === true; }, () => { M.owner = false; });
+}
 
 /** Synchronisation par la fonction serveur (jamais de secret dans le navigateur) ; ids : conversations Gmail à relire tout de suite */
 export async function mailSync(ids = null){
@@ -242,7 +251,8 @@ export async function compose(mode, row = null, msg = null){
       <button type="button" class="btn sm" id="mc-docs">Ajouter depuis un projet/spectacle</button>
       <label class="btn sm file-btn">Ajouter un fichier<input type="file" class="file-input" multiple id="mc-up"></label></div>
     ${keepFwd.length ? `<label class="check"><input type="checkbox" id="mc-keep" checked> Joindre les ${keepFwd.length} pièce${keepFwd.length > 1 ? 's' : ''} jointe${keepFwd.length > 1 ? 's' : ''} d’origine (${keepFwd.map(a => esc(a.name) + ' ' + fmtSize(a.size)).join(', ')})</label>` : ''}
-    <p class="help">Envoyé depuis <b>${esc(MAILBOX_ADDR())}</b>. Le journal du suivi est complété quand Gmail confirme l’envoi (jamais avant) ; la réponse apparaît dans « Envoyés » de Gmail et d’Apple Mail.</p></div>`;
+    <p class="help">Envoyé depuis <b>${esc(MAILBOX_ADDR())}</b>. Le journal du suivi est complété quand Gmail confirme l’envoi (jamais avant) ; la réponse apparaît dans « Envoyés » de Gmail et d’Apple Mail.</p>
+    <p class="help">Un brouillon commencé dans Gmail ou Apple Mail se termine là-bas : il n’est pas repris ici dans cette version.</p></div>`;
   const $ = sel => document.querySelector('#modal ' + sel);
   const current = () => ({to: $('#mc-to').value.trim(), cc: $('#mc-cc').value.trim(), bcc: $('#mc-bcc').value.trim(), subject: $('#mc-subj').value.trim(), html: $('#mc-body').innerHTML});
   const keep = () => { setDraft(key, {...current(), files, draft_id: draftId}); };
@@ -372,7 +382,16 @@ export async function restoreRelancesAsk(n){
   const choice = await ask({title: 'Relances à vérifier', text: `${n.body || ''}\nRétablir les relances de « ${p ? prospectTitle(p) : 'ce suivi'} » ? Elles redeviennent « À faire » avec leurs échéances d'origine.`,
     actions: [{value: 'ok', label: 'Rétablir les relances'}]});
   if (choice !== 'ok') return false;
-  const {data, error} = await sb.rpc('mail_restore_relances', {p_message: msgId, p_prospect: prospectId});
+  let {data, error} = await sb.rpc('mail_restore_relances', {p_message: msgId, p_prospect: prospectId, p_deadline: null});
+  // relance dont l'échéance est passée : une échéance FUTURE est demandée (jamais inventée) ; Annuler ne rétablit rien
+  if (error && /ECHEANCE_REQUISE/.test(error.message || '')){
+    const n = Number((error.message.match(/ECHEANCE_REQUISE:(\d+)/) || [])[1]) || 1;
+    const def = workDay(addDays(today(), 2));
+    const v = await askText({title: 'Nouvelle échéance', text: `${n} relance${n > 1 ? 's ont' : ' a'} une échéance passée : choisis la date à laquelle ${n > 1 ? 'elles reviennent' : 'elle revient'} (après aujourd’hui). Les autres gardent la leur.`,
+      label: 'Échéance (JJ/MM/AAAA)', value: fmtDate(def), check: x => !/^\d{2}\/\d{2}\/\d{4}$/.test(x) ? 'Format JJ/MM/AAAA' : x.split('/').reverse().join('-') <= today() ? 'Choisis une date après aujourd’hui' : ''});
+    if (!v) return false;
+    ({data, error} = await sb.rpc('mail_restore_relances', {p_message: msgId, p_prospect: prospectId, p_deadline: v.split('/').reverse().join('-')}));
+  }
   if (error){ toast('Rétablissement impossible : ' + error.message, true); return false; }
   const {fetchAll} = await import('./data.js'), {touch} = await import('./state.js');
   S.db.tasks = await fetchAll('tasks'); touch('tasks');

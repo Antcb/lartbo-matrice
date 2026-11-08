@@ -1009,6 +1009,7 @@ dialog.mail .mode-note{margin:0}
 .mail-link.mail-a_rattacher{border-color:var(--warn);color:var(--warn)}
 .mail-link.mail-auto,.mail-link.mail-manuel{border-color:var(--ok);color:var(--ok)}
 .mail-li{display:block;min-width:0}
+.mail-auto-tag{border-color:var(--warn);color:var(--warn)}
 .mail-li>.mail-row{width:100%}
 .mail-err{color:var(--danger);font-weight:600}
 .mail-actions{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;margin:0 0 var(--sp-2)}

@@ -111,11 +111,26 @@ comment on table public.mail_sync_state is 'Synchronisation de la messagerie : p
 alter table public.prospect_logs add column if not exists gmail_message_id text;
 create index if not exists prospect_logs_gmail_message on public.prospect_logs (gmail_message_id) where gmail_message_id is not null;
 
+-- ── Boîte anthony@ réservée au compte d'Anthony (décision du 08/11/2026) ─────────────────────────────────────────────────
+-- Propriétaire de chaque boîte : schéma privé (ni l'application ni un compte de l'équipe ne peuvent le modifier ; changement = SQL).
+-- Les conversations ne sont visibles que de lui ; les messages rattachés à un suivi restent dans le journal du suivi (droits habituels).
+create table if not exists private.mailbox_owners (mailbox text primary key, email text not null);
+revoke all on private.mailbox_owners from public, anon, authenticated;
+insert into private.mailbox_owners (mailbox, email) values ('anthony', 'anthony@lartboristerie.com') on conflict (mailbox) do nothing;
+create or replace function public.is_mailbox_owner(p_mailbox text default 'anthony') returns boolean
+language sql stable security definer set search_path = public, private as $$
+  select public.is_team() and exists (select 1 from private.mailbox_owners o
+    where o.mailbox = coalesce(p_mailbox, 'anthony') and lower(o.email) = lower(coalesce(auth.jwt() ->> 'email', '')))
+$$;
+revoke all on function public.is_mailbox_owner(text) from public, anon;
+grant execute on function public.is_mailbox_owner(text) to authenticated, service_role;
+
 do $$ declare t text; begin
   foreach t in array array['mail_threads', 'mail_messages', 'mail_sync_state'] loop
     execute format('alter table public.%I enable row level security', t);
-    execute format('drop policy if exists team_all on public.%I', t);
-    execute format('create policy team_all on public.%I for all to authenticated using (public.is_team()) with check (public.is_team())', t);
+    execute format('drop policy if exists team_all on public.%I', t);   -- (version de travail : toute l'équipe ; jamais publiée)
+    execute format('drop policy if exists mailbox_owner on public.%I', t);
+    execute format('create policy mailbox_owner on public.%I for all to authenticated using (public.is_mailbox_owner(mailbox)) with check (public.is_mailbox_owner(mailbox))', t);
     execute format('revoke all on public.%I from anon', t);
     if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
        and not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
@@ -213,7 +228,16 @@ language plpgsql security definer set search_path = public as $$
 declare m mail_messages%rowtype; ids uuid[]; st_name text;
 begin
   select * into m from mail_messages where id = p_msg;
-  if not found or p_prospect is null or not public.mail_is_reply(m) then return 0; end if;
+  if not found or p_prospect is null then return 0; end if;
+  -- réponse automatique (absence) : SIGNALÉE, relances maintenues, aucune reprogrammation tirée de son texte (décision du 08/11/2026)
+  if m.direction = 'in' and m.auto_kind = 'auto' and coalesce(m.sent_at, now()) > now() - interval '3 days' then
+    select s.name into st_name from prospects p left join structures s on s.id = p.structure_id where p.id = p_prospect;
+    insert into notifications (kind, title, body, dedupe_key)
+      values ('suivi', 'Réponse automatique — ' || coalesce(st_name, 'suivi'), coalesce(m.from_addr, '') || ' : « ' || coalesce(m.subject, '')
+        || ' » (absence ou accusé automatique : relances maintenues)', 'mail-auto:' || m.id)
+      on conflict (dedupe_key) do nothing;
+  end if;
+  if not public.mail_is_reply(m) then return 0; end if;
   with c as (
     update tasks set status = 'Cancelled', done_at = now(),
       notes = coalesce(notes || E'\n', '') || 'Suspendue automatiquement : réponse reçue le '
@@ -315,7 +339,7 @@ create or replace function public.mail_link_manual(p_thread uuid, p_structure uu
 language plpgsql security definer set search_path = public as $$
 declare old uuid; m record; a_name text; b_name text; n int;
 begin
-  if not public.is_team() then raise exception 'Réservé à l''équipe'; end if;
+  if not public.is_mailbox_owner((select mailbox from mail_threads where id = p_thread)) then raise exception 'Boîte réservée à son propriétaire (compte d''Anthony)'; end if;
   if p_prospect is not null and p_structure is not null and not exists (select 1 from prospects where id = p_prospect and structure_id = p_structure) then
     raise exception 'Ce suivi n''appartient pas à cette structure';
   end if;
@@ -354,14 +378,27 @@ begin
   return n;
 end $$;
 
-/** Rétablit, sur demande de l'équipe, les relances d'un suivi annulées par un message rattaché depuis à un autre suivi */
-create or replace function public.mail_restore_relances(p_message uuid, p_prospect uuid) returns integer
+/**
+ * Rétablit, sur demande de l'équipe, les relances d'un suivi annulées par un message rattaché depuis à un autre suivi
+ * (décision du 08/11/2026 : jamais automatiquement). Une relance dont l'échéance est passée (ou absente) demande une échéance
+ * FUTURE choisie par l'équipe : sans elle, rien n'est rétabli (« ECHEANCE_REQUISE »).
+ */
+-- version de travail à deux paramètres (jamais publiée) remplacée par celle-ci
+drop function if exists public.mail_restore_relances(uuid, uuid);
+create or replace function public.mail_restore_relances(p_message uuid, p_prospect uuid, p_deadline date default null) returns integer
 language plpgsql security definer set search_path = public as $$
-declare ids uuid[];
+declare ids uuid[]; jour date := (now() at time zone 'Europe/Paris')::date; n_passees int;
 begin
   if not public.is_team() then raise exception 'Réservé à l''équipe'; end if;
+  if p_deadline is not null and p_deadline <= jour then raise exception 'Échéance à choisir après aujourd''hui'; end if;
+  select count(*) into n_passees from tasks k, mail_messages x
+    where x.id = p_message and k.id = any(x.suspended_tasks) and k.prospect_id = p_prospect and k.status = 'Cancelled'
+      and (k.deadline is null or k.deadline <= jour)
+      and (select prospect_id from mail_threads where id = x.thread_id) is distinct from p_prospect;
+  if n_passees > 0 and p_deadline is null then raise exception 'ECHEANCE_REQUISE:%', n_passees; end if;
   with r as (
     update tasks k set status = 'To Do', done_at = null,
+      deadline = case when k.deadline is null or k.deadline <= jour then p_deadline else k.deadline end,
       notes = coalesce(k.notes || E'\n', '') || 'Rétablie à la main le ' || to_char(now() at time zone 'Europe/Paris', 'DD/MM/YYYY')
         || ' (le message qui l''avait suspendue est rattaché à un autre suivi).'
       from mail_messages x
@@ -377,8 +414,8 @@ revoke all on function public.mail_link_thread(uuid), public.mail_journal(uuid),
   public.mail_suspend(uuid, uuid), public.mail_is_reply(mail_messages) from public, anon, authenticated;
 grant execute on function public.mail_link_thread(uuid), public.mail_journal(uuid), public.mail_process(uuid[]),
   public.mail_suspend(uuid, uuid), public.mail_is_reply(mail_messages) to service_role;
-revoke all on function public.mail_link_manual(uuid, uuid, uuid, uuid, uuid), public.mail_restore_relances(uuid, uuid) from public, anon;
-grant execute on function public.mail_link_manual(uuid, uuid, uuid, uuid, uuid), public.mail_restore_relances(uuid, uuid) to authenticated, service_role;
+revoke all on function public.mail_link_manual(uuid, uuid, uuid, uuid, uuid), public.mail_restore_relances(uuid, uuid, date) from public, anon;
+grant execute on function public.mail_link_manual(uuid, uuid, uuid, uuid, uuid), public.mail_restore_relances(uuid, uuid, date) to authenticated, service_role;
 
 -- ── Synchronisation toutes les 5 minutes : appel de la fonction serveur « mail-sync » ; inactive tant que private.sync_urls n'a pas son adresse ──
 -- adresses des fonctions appelées par les tâches planifiées : schéma privé (inaccessible à l'application et aux comptes de l'équipe)

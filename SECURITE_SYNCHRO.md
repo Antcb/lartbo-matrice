@@ -9,6 +9,7 @@ la protection : chaque fonction contrôle elle-même chaque appel, avant de renv
 |---|---|---|
 | Tâche planifiée de la base (toutes les 5 min) | en-tête `x-hook-secret` = secret serveur **dédié** (`mail_sync_hook` / `cal_sync_hook`) | secret lu côté serveur (`import_secret`, réservé au rôle serveur), comparaison à temps constant |
 | Membre de l'équipe dans l'application (« Actualiser », choix d'un agenda…) | session Supabase de l'utilisateur (`Authorization: Bearer …`) | `is_team()` exécuté **avec la session de l'appelant** |
+| Messagerie (`mail-sync` : « Actualiser », conversations ouvertes) | session du **propriétaire de la boîte** (décision du 08/11/2026) | `is_mailbox_owner('anthony')` exécuté avec la session de l'appelant ; tout autre membre de l'équipe → 403 |
 
 Tout autre appel (aucun justificatif, secret faux ou vide, session d'un compte hors équipe, session expirée) → **403** : rien n'est
 renvoyé ni écrit (la fonction lit seulement ses réglages et le secret pour décider). Le secret de la tâche planifiée ne permet QUE la synchronisation planifiée : les actions de l'application (relire des conversations
