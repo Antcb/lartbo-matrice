@@ -59,6 +59,21 @@ cas notification_option ok "set essai.notifications = 'conserver';" "select coun
 # 6. notification d'une date RÉELLE qui cite l'artiste d'essai : jamais retirée, arrêt même avec l'option
 base avec_essai "insert into notifications(title,show_id,project_id,read_by) values ('Réelle','44444444-4444-4444-a444-444444444444','${E}01','{}')"
 cas notification_date_reelle arret "set essai.notifications = 'conserver';"
+# 6 bis (relecture de 932725a) : avec l'option, une notification liée AUSSI à une donnée réelle bloque toujours
+base avec_essai "insert into tasks(id,title,status,tags,project_ids) values ('77777777-7777-4777-a777-777777777777','Tâche réelle','To Do','{}','{}'); insert into notifications(title,show_id,task_id,read_by) values ('N1','${E}11','77777777-7777-4777-a777-777777777777','{}')"
+cas "N1 notification d'une date d'essai ET d'une tâche réelle" arret "set essai.notifications = 'conserver';"
+base avec_essai "insert into notifications(title,show_id,project_id,read_by) values ('N2','${E}12','$T','{}')"
+cas "N2 notification d'une date d'essai mais de l'artiste réel" arret "set essai.notifications = 'conserver';"
+base avec_essai "insert into notifications(title,body,show_id,read_by) values ('N3','voir aussi la date 44444444-4444-4444-a444-444444444444','${E}12','{}')"
+cas "N3 notification d'essai qui cite une autre référence" arret "set essai.notifications = 'conserver';"
+# 6 ter : notification de l'artiste d'essai sans date (option) : copiée puis retirée avec le dossier
+base avec_essai "insert into notifications(title,project_id,read_by) values ('Artiste essai','${E}01','{}')"
+cas "notification de l'artiste d'essai (option)" ok "set essai.notifications = 'conserver';" "select count(*) = 1 from show_deletions, jsonb_array_elements(snapshot->'notifications') n where n->>'title' = 'Artiste essai'"
+# 6 quater (K1) : files de tâches techniques absentes du dépôt (_koza_job, _lartbotrice_job, _probe) = dépendances, jamais des traces
+for k in _koza_job _lartbotrice_job _probe; do
+  base avec_essai "create table if not exists public.$k (id bigserial primary key, payload jsonb); insert into public.$k(payload) values ('{\"show_id\": \"${E}11\"}')"
+  cas "K1 $k qui cite l'essai" arret ""
+done
 # 7. dépendances opérationnelles : arrêt, rien touché
 for d in \
   "insert into mail_templates(project_id,kind,subject,html,attachments,applies_to,project_ids) values ('${E}01','prospection','x','x','[]','all','{}')" \
