@@ -48,3 +48,56 @@ export async function chooseCity(location: string, defaultCountry: string | null
   if (found.some((f) => km([found[0].lng, found[0].lat], [f.lng, f.lat]) > 30)) return null;
   return found[0];
 }
+
+/** Événement renvoyé par le script « Agendas » (apps-script/calendrier/Calendrier.gs, events_) */
+export type Ev = { id: string; time_zone?: string | null; recurring_id?: string | null; title?: string | null; location?: string | null; start?: string | null;
+  end?: string | null; start_date?: string | null; end_date?: string | null; transparency?: string; visibility?: string; type?: string };
+/** Ligne déjà enregistrée (artist_calendar_events) utile au calcul */
+export type Old = { gcal_event_id: string; city?: string | null; lat?: number | null; lng?: number | null; geo_status?: string | null; geo_key?: string | null;
+  start_at?: string | null; end_at?: string | null; start_date?: string | null; end_date?: string | null; deleted_at?: string | null };
+
+/**
+ * Passage de synchronisation, SANS réseau ni base (testé par tests/static/agendas-regles.mjs) — décisions d'Anthony du 06/11/2026 :
+ *  - une ligne par OCCURRENCE (identifiant d'occurrence Google : récurrences développées, exception = même identifiant mis à jour),
+ *    dédoublonnée (la dernière lue l'emporte) : aucune ligne en double, même si Google renvoie deux fois la même occurrence ;
+ *  - privé / confidentiel, ou agenda partagé en « disponibilités seulement » : ni titre ni lieu (jamais enregistrés) ;
+ *  - « Disponible » dans Google (transparent) : busy = false (jamais bloquant) ;
+ *  - journée entière : dates calendaires telles quelles (fin exclue, règle Google), sans fuseau ni heure ;
+ *  - « Show » (mot entier) + lieu : ville reconnue (chooseCity) ou « à préciser » ; repris tel quel si lieu ET pays inchangés ;
+ *  - disparues : occurrences enregistrées non supprimées, absentes de la réponse, qui CHEVAUCHENT la fenêtre lue (fin après time_min,
+ *    début avant time_max) → marquées supprimées (jamais effacées) ; une occurrence passée hors fenêtre reste telle quelle.
+ */
+export async function planSync(j: { mode?: string; events?: Ev[] }, cal: { id: string; project_id: string; default_country?: string | null },
+  old: Old[], tmin: string, tmax: string, city: (loc: string, cc: string | null) => Promise<Place | null>, nowIso: string) {
+  const fb = j.mode === 'disponibilites';
+  const country = String(cal.default_country || 'FR').toUpperCase();
+  const prev = new Map(old.map((o) => [o.gcal_event_id, o]));
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const e of j.events || []) {
+    if (!e || !e.id) continue;
+    const priv = fb || e.visibility === 'private' || e.visibility === 'confidential';
+    const title = priv ? null : (e.title || null), location = priv ? null : (e.location || null);
+    const isShow = isShowTitle(title);
+    let geo: Record<string, unknown> = { city: null, lat: null, lng: null, geo_key: null, geo_status: location ? 'a_preciser' : 'sans_lieu' };
+    if (isShow && location) {
+      const p = prev.get(e.id);
+      if (p && p.geo_key === country + '|' + location && p.geo_status && p.geo_status !== 'sans_lieu') geo = { city: p.city ?? null, lat: p.lat ?? null, lng: p.lng ?? null, geo_status: p.geo_status };
+      else { const c = await city(location, country); if (c) geo = { city: c.city, lat: c.lat, lng: c.lng, geo_status: 'ok' }; }
+      geo.geo_key = country + '|' + location;
+    }
+    const allDay = !!e.start_date;
+    byId.set(e.id, { calendar_ref: cal.id, project_id: cal.project_id, gcal_event_id: e.id, recurring_id: e.recurring_id || null,
+      all_day: allDay, start_at: allDay ? null : (e.start || null), end_at: allDay ? null : (e.end || e.start || null),
+      start_date: allDay ? e.start_date : null, end_date: allDay ? (e.end_date || null) : null,
+      time_zone: allDay ? null : (e.time_zone || null),   // jour local de l'événement (affichage) ; conflits comparés sur les instants
+      busy: e.transparency !== 'transparent', private: priv, title, location, is_show: isShow, ...geo, deleted_at: null, updated_at: nowIso });
+  }
+  const rows = [...byId.values()];
+  const seen = new Set(byId.keys());
+  const t0 = Date.parse(tmin), t1 = Date.parse(tmax), d0 = tmin.slice(0, 10), d1 = tmax.slice(0, 10);
+  const inWindow = (o: Old) => o.start_date
+    ? (o.end_date || o.start_date) > d0 && o.start_date <= d1
+    : !!o.start_at && Date.parse(o.end_at || o.start_at) > t0 && Date.parse(o.start_at) < t1;
+  const gone = old.filter((o) => !o.deleted_at && !seen.has(o.gcal_event_id) && inWindow(o)).map((o) => o.gcal_event_id);
+  return { rows, gone, mode: fb ? 'disponibilites' : 'details', scrub: fb };
+}

@@ -23,6 +23,12 @@ ailleurs que sur le projet de test (contrôle de l'adresse des fonctions, absenc
   journal en lecture seule ; tâches détachées annotées ; archivage / restauration et leurs refus ; aucun rappel pour une date
   archivée ; gardes de generate_reminders, fiche_get et fiche_submit ; fiche publique « Dossier indisponible » ; notifications
   retirées ; restauration avec relances suspendues puis réactivation explicite ; alerte de facture sur une date archivée). Données fictives uniquement.
+- `2026-11-08_v1.62_agendas_base_locale.sql` puis la migration v1.62 agendas (deux fois : rejouable, secret dédié conservé) puis
+  `2026-11-08_v1.62_agendas_essai.sql` : droits (équipe, hors équipe, anon), une ligne par occurrence, un agenda par artiste et un
+  artiste par agenda, association retirée à la suppression d'une date, schéma privé inaccessible, tâche planifiée (aucun appel sans
+  adresse, vers une adresse étrangère ou sans agenda actif ; secret en en-tête seulement), temps réel et RLS. Gardes essayées à la main :
+  structure différente de `artist_calendars`, autre `cal_sync_tick`, dépendance absente → arrêt sans rien appliquer ; `private.sync_urls`
+  déjà créée par la messagerie → acceptée. Données fictives uniquement (essai du 08/11/2026 : réussi).
 
 ## Cas d'essai isolé « ESSAI promo » (v1.60.4) — hors production uniquement
 

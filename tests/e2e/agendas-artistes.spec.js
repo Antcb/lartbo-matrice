@@ -152,3 +152,122 @@ test('agendas : jour local de l’événement affiché ; conflit = horaires rée
   expect(r.a02).toEqual(['e-b:chevauchement horaire']);              // une seule alerte ; « Disponible » ignoré
   expectClean(ctx);
 });
+
+// ── v1.62 : fiche artiste (choix, état, actions), perte d'accès, dates archivées, aucune incidence financière ──
+const invokes = page => page.evaluate(() => window.__calls.filter(c => c.fn === 'cal-sync').map(c => c.body));
+async function ficheArtiste(page) {
+  await page.evaluate(async () => { const { editProject } = await import('./js/forms.js'); const { S } = await import('./js/state.js'); editProject(S.db.projects[0].id); });
+  return page.locator('#modal .cal-panel');
+}
+
+test('fiche artiste : choix explicite parmi les agendas partagés avec production@ (principal exclu, « disponibilités seulement » signalé)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.evaluate(() => {
+    window.__FN_DATA = { 'cal-sync': b => b.mode === 'calendars'
+      ? { ok: true, calendars: [{ id: 'production@x', name: 'production@', access: 'owner', primary: true },
+        { id: 'a@group', name: 'Artiste essai A', access: 'reader' }, { id: 'b@group', name: 'Artiste essai B', access: 'freeBusyReader' }] }
+      : { ok: true, results: [] } };
+    for (const db of [window.__DB]) { db.artist_calendars = []; db.artist_calendar_events = []; }
+  });
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js'); S.db.artist_calendars = []; S.db.artist_calendar_events = []; touch('artist_calendars'); });
+  const panel = await ficheArtiste(page);
+  await expect(panel).toContainText('Aucun agenda relié');
+  await panel.locator('[data-act=calConnect]').click();
+  const dlg = page.locator('dialog[open]', { hasText: 'Agendas partagés avec production@' });
+  await expect(dlg).toContainText('Artiste essai A');
+  await expect(dlg).toContainText('Artiste essai B (disponibilités seulement)');
+  await expect(dlg.locator('button', { hasText: /^production@$/ })).toHaveCount(0);   // agenda principal de production@ jamais proposé
+  await dlg.locator('button', { hasText: 'Artiste essai B' }).click();
+  await expect.poll(() => page.evaluate(() => window.__calls.filter(c => c.table === 'artist_calendars' && c.op === 'insert').map(c => [c.patch.calendar_id, c.patch.access, c.patch.status]))).toEqual([['b@group', 'freeBusyReader', 'actif']]);
+  await expect.poll(() => invokes(page)).toEqual([{ mode: 'calendars' }, { mode: 'sync', project_id: await page.evaluate(async () => (await import('./js/state.js')).S.db.projects[0].id) }]);
+  // rien n'est jamais écrit dans Google : seules les actions « calendars » et « sync » (lecture) sont demandées au serveur
+  expect((await invokes(page)).every(b => ['calendars', 'sync'].includes(b.mode))).toBe(true);
+  expectClean(ctx);
+});
+
+test('fiche artiste : état, dernière synchronisation, erreur ; Actualiser, Suspendre, Reprendre, Déconnecter (avec confirmation)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page);
+  await page.evaluate(() => { window.__FN_DATA = { 'cal-sync': { ok: true, results: [] } }; });
+  let panel = await ficheArtiste(page);
+  await expect(panel).toContainText('Agenda fictif');
+  await expect(panel).toContainText('✓ à jour');
+  await expect(panel).toContainText('Dernière synchronisation réussie :');
+  await expect(panel.locator('select[data-f=default_country]')).toHaveValue('FR');   // France par défaut, visible et modifiable
+  await panel.locator('[data-act=calRefresh]').click();
+  await expect.poll(() => invokes(page)).toEqual([{ mode: 'sync', project_id: await page.evaluate(async () => (await import('./js/state.js')).S.db.projects[0].id) }]);
+  await panel.locator('[data-act=calPause]').click();
+  await expect.poll(() => page.evaluate(() => window.__calls.filter(c => c.table === 'artist_calendars' && c.op === 'update').map(c => c.patch.status))).toEqual(['pause']);
+  await page.locator('#modal').evaluate(d => d.close());
+  panel = await ficheArtiste(page);
+  await expect(panel).toContainText('Synchronisation suspendue.');
+  await panel.locator('[data-act=calResume]').click();
+  await expect.poll(() => page.evaluate(() => window.__calls.filter(c => c.table === 'artist_calendars' && c.op === 'update').map(c => c.patch.status))).toEqual(['pause', 'actif']);
+  await expect.poll(async () => (await invokes(page)).length).toBe(2);   // reprise = relecture immédiate
+  // erreur affichée telle quelle ; « disponibilités plus à jour », jamais « à jour »
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js'); Object.assign(S.db.artist_calendars[0], { status: 'actif', last_error: 'Agenda inaccessible (partage retiré ?) : notFound' }); touch('artist_calendars'); });
+  await page.locator('#modal').evaluate(d => d.close());
+  panel = await ficheArtiste(page);
+  await expect(panel).toContainText('Erreur : Agenda inaccessible (partage retiré ?)');
+  await expect(panel).toContainText('disponibilités plus à jour');
+  await panel.locator('[data-act=calDisconnect]').click();
+  await page.locator('dialog[open] button[data-ask]', { hasText: 'Annuler' }).click();
+  expect(await page.evaluate(() => window.__calls.filter(c => c.table === 'artist_calendars' && c.op === 'update' && c.patch.status === 'deconnecte').length)).toBe(0);
+  await panel.locator('[data-act=calDisconnect]').click();
+  await page.locator('dialog[open] button[data-ask]', { hasText: 'Déconnecter' }).click();
+  await expect.poll(() => page.evaluate(() => window.__calls.filter(c => c.table === 'artist_calendars' && c.op === 'update' && c.patch.status === 'deconnecte').length)).toBe(1);
+  // déconnecté : plus aucun événement affiché ni bloquant
+  await page.locator('#modal').evaluate(d => d.close());
+  await page.evaluate(async () => (await import('./js/app.js')).render());
+  await expect(page.locator('.gig.cal-unav')).toHaveCount(0);
+  expectClean(ctx);
+});
+
+test('perte d’accès : avis visible dans Booking, jamais présenté comme libre ; une nouvelle date avertit même sans événement', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page);
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
+    Object.assign(S.db.artist_calendars[0], { last_error: 'Agenda inaccessible (partage retiré ?) : notFound' }); S.db.artist_calendar_events = []; touch('artist_calendars'); touch('artist_calendar_events');
+    (await import('./js/app.js')).render(); });
+  await expect(page.locator('.cal-stale')).toContainText('Disponibilités plus à jour');
+  await expect(page.locator('.cal-stale')).toContainText('partage retiré');
+  await expect(page.locator('.cal-stale')).toContainText('ne veut pas dire « libre »');
+  const ok = page.evaluate(async Y => { const { calCheckBeforeSave } = await import('./js/calendars.js'); const { S } = await import('./js/state.js');
+    return calCheckBeforeSave({ project_id: S.db.projects[0].id, date: `${Y}-09-01`, status: 'Option Salle' }); }, Y);
+  await expect(page.locator('dialog[open]', { hasText: 'Agenda pas à jour' })).toContainText('partage retiré');
+  await page.locator('dialog[open] button', { hasText: 'Annuler' }).click();
+  expect(await ok).toBe(false);
+  expectClean(ctx);
+});
+
+test('dates archivées : jamais proposées à l’association, hors conflits ; l’événement associé à une date archivée redevient visible', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page);
+  await page.evaluate(async Y => { const { S, touch } = await import('./js/state.js'); const ART = S.db.projects[0].id;
+    for (const db of [S.db, window.__DB]) db.shows.push({ id: 'sh-arch', project_id: ART, venue: 'Salle archivée', city: 'Lyon', date: `${Y}-04-02`, status: 'Confirmée Artiste', archived_at: '2026-11-07T10:00:00Z' });
+    touch('shows'); (await import('./js/app.js')).render(); }, Y);
+  // association : la date archivée n'est pas proposée
+  await page.locator('.gig.cal-unav', { hasText: 'SHOW Lyon' }).locator('[data-act=calAssociate]').click();
+  await expect(page.locator('.toast').filter({ hasText: 'Aucune date « Option / Confirmée Artiste »' }).first()).toBeVisible();
+  // événement déjà associé à une date ensuite archivée : il réapparaît (liste, carte), sans double affichage avec la date archivée
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js'); S.db.artist_calendar_events.find(e => e.id === 'e-show').show_id = 'sh-arch'; touch('artist_calendar_events'); (await import('./js/app.js')).render(); });
+  await expect(page.locator('.gig.cal-unav', { hasText: 'SHOW Lyon' })).toContainText('Date artiste — calendrier Google');
+  await expect(page.locator('.gig:not(.cal-unav)', { hasText: 'Salle archivée' })).toHaveCount(0);
+  expect(await page.evaluate(async Y => (await import('./js/calendars.js')).calMapPoints(null, Y).points.length, Y)).toBe(1);
+  // une date archivée n'entre dans aucun conflit (aucune question)
+  expect(await page.evaluate(async Y => { const { calCheckBeforeSave } = await import('./js/calendars.js'); const { S } = await import('./js/state.js');
+    return calCheckBeforeSave({ project_id: S.db.projects[0].id, date: `${Y}-03-11`, status: 'Option Salle', archived_at: '2026-11-07T10:00:00Z' }); }, Y)).toBe(true);
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  expectClean(ctx);
+});
+
+test('aucune incidence financière : chiffres de Booking identiques avec ou sans agenda ; aucune écriture sur les dates, factures ou budgets', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js'); S.year = new Date().getFullYear() + 1; S.db.artist_calendars = []; S.db.artist_calendar_events = []; touch('artist_calendars'); const app = await import('./js/app.js'); app.go('booking'); app.render(); });
+  const avant = await page.locator('.view-head .vh-title .sub').textContent();
+  await preparer(page);
+  const apres = await page.locator('.view-head .vh-title .sub').textContent();
+  expect(apres).toBe(avant);
+  expect(await page.evaluate(() => window.__calls.filter(c => ['shows', 'show_payments', 'budget_lines', 'commission_transfers'].includes(c.table) && c.op !== 'select').length)).toBe(0);
+  expectClean(ctx);
+});

@@ -1,52 +1,50 @@
-# Essais réels Gmail et Agenda — comptes de TEST (préparé le 07/11/2026)
+# Essai réel Google Agenda — une seule séance guidée (≈ 30 min) · v1.62 agendas des artistes
 
-Rien n'est lancé ni créé sans Anthony. Aucun contact réel, aucune boîte ni agenda réel, aucune donnée de production.
-Base : projet Supabase **de test**, après la séance V1.57 → V1.60 (son état de départ n'est pas modifié avant).
+Préparé le 08/11/2026. Rien n'est lancé sans Anthony. Côté base : projet Supabase **de test** uniquement. Côté Google : lecture seule
+(le script ne demande que « Voir vos agendas » ; il ne peut rien créer, modifier ni supprimer).
+La messagerie a son propre essai (ESSAI_GMAIL_REEL.md) : **ce lot se teste et se livre sans elle**.
 
-## Comptes : deux suffisent (minimum réellement nécessaire)
-| Compte | Rôle | Pourquoi il ne peut pas être fusionné avec l'autre |
+## Faut-il un compte Google de test ?
+| Besoin | Compte de test ? | Pourquoi |
 |---|---|---|
-| **T1** | joue **anthony@** (script Prospection, messagerie) **et production@** (script Agendas, lecture seule) | — |
-| **T2** | joue les **correspondants** (organisateurs) et l'**artiste** (propriétaire des agendas partagés) | une réponse doit venir d'un AUTRE expéditeur (fil, rattachement, suspension de relance) ; un agenda ne se partage pas avec soi-même |
+| Recevoir les partages et lire les agendas | **Non** : production@ (le vrai compte, en lecture seule) | c'est le compte retenu ; le script ne voit que les agendas qu'on lui partage |
+| Agendas d'artiste à lire | **Non** : deux agendas **créés par Anthony** dans son propre Google (« Essai artiste A », « Essai artiste B ») | un agenda secondaire se crée, se partage, se vide et se supprime sans toucher à ses agendas réels |
+| Base, fonction serveur, tâche planifiée | **Non** : projet Supabase de test (fait par Claude, avec l'accord d'Anthony au moment de la séance) | — |
+| Seul cas qui en exige un : ne pas vouloir installer le script sur production@ | Oui (un compte qui joue production@) | sinon inutile |
 
-**B1 et B3 sur un même compte (T1) : oui, sans compromettre les scénarios.** Les deux rôles n'ont rien en commun dans le code :
-- deux projets Apps Script distincts sur T1 (« Prospection » et « Agendas »), deux déploiements, deux adresses ; leur propriété
-  WEBHOOK_SECRET porte le même code que les autres scripts Google (`drive_webhook_secret`), comme en production — c'est le code avec
-  lequel le serveur les appelle ; le secret des appels automatiques (`mail_sync_hook` / `cal_sync_hook`) est, lui, propre au serveur ;
-- le script Agendas n'a que l'accès « lecture des agendas » (manifeste en lecture seule) ; le script Prospection garde ses accès Gmail ;
-- les agendas de T1 lui-même (principal) sont exclus du choix ; seuls ceux partagés par T2 sont proposés ;
-- seule différence avec la production (deux comptes distincts) : les invitations de partage d'agenda arrivent dans la boîte de T1
-  — elles servent alors de test « conversation inconnue → À rattacher ».
+## Ce qu'Anthony fait (web uniquement, une étape à la fois, Claude attend sa confirmation)
+1. **Créer les deux agendas d'essai** — calendar.google.com (son compte) › « Autres agendas » › **+** › « Créer un agenda » : « Essai artiste A », puis « Essai artiste B ».
+2. **Les partager avec production@** — paramètres de l'agenda › « Partager avec des personnes » › production@ :
+   A = « **Afficher tous les détails des événements** » ; B = « **Afficher uniquement les disponibilités (masquer les détails)** ».
+3. **Installer le script sur production@** — dans l'application (projet de test) : Réglages › « Agendas des artistes » : « Copier le code du
+   script » et « Copier le fichier appsscript.json », puis sur script.google.com **connecté avec production@** : nouveau projet
+   « Matrice Agendas », coller le code, afficher et remplacer le manifeste ; Propriétés du script › `WEBHOOK_SECRET` = le code des scripts
+   Google **du projet de test** (Supabase › Table Editor › `settings` › `drive_webhook_secret` — jamais dans la conversation).
+4. **Déployer et autoriser** — Déployer › Nouveau déploiement › Application Web · Exécuter en tant que : moi · Accès : tout le monde ›
+   autoriser (un seul accès demandé : **voir** les agendas) › coller l'adresse …/exec dans Réglages › « Tester » (attendu : « 2 agendas… (script v1.6x) »).
+5. **Relier** — fiche d'un artiste fictif du projet de test › « Relier son agenda Google » › « Essai artiste A ».
+6. **Créer les événements d'essai** dans « Essai artiste A » (liste ci-dessous), puis « Actualiser » dans la fiche ; Claude relève les preuves.
 
-Destinataires d'essai : T2 et ses alias (`T2+salle@…`, `T2+copie@…`) uniquement.
-
-## Ce qu'Anthony fournit, en une seule fois (web uniquement, pas à pas au moment voulu)
-1. Deux adresses Google de test, T1 et T2 (créées ou désignées par lui ; je ne crée rien).
-2. Sur T1 : coller et déployer les deux scripts (je fournis les étapes et le code), autoriser : Gmail et Drive (Prospection, accès
-   habituels du script), **lecture des agendas** seulement (Agendas).
-3. Sur T2 : créer deux agendas « Artiste essai A » (partagé avec T1 : « Afficher tous les détails des événements ») et « Artiste essai B »
-   (partagé avec T1 : « Afficher uniquement les disponibilités »).
-4. Reporter lui-même le code des scripts Google du projet de test (Supabase › Table Editor › `settings` › `drive_webhook_secret` ;
-   jamais affiché dans l'application, jamais dans la conversation) dans la propriété WEBHOOK_SECRET de chacun des deux scripts.
-
-## Scénarios
-Messagerie (détail : ESSAI_GMAIL_REEL.md) : réponse et réponse à tous dans le bon fil ; brouillon et reprise ; documents joints réellement
-reçus (taille, limite sur le message encodé) ; classement visible dans Gmail et changements faits dans Gmail répercutés ; synchronisation
-sans doublon ; suspension de la relance à réception d'une réponse ; images distantes bloquées ; panne du script.
-
-Agendas :
-| # | Scénario (sur les agendas de T2) | Preuve attendue |
+## Événements à créer et preuves attendues
+| # | Dans « Essai artiste A » (sauf mention) | Preuve attendue dans l'application |
 |---|---|---|
-| A1 | « Artiste essai A » relié à un artiste fictif | liste des agendas : A et B proposés, pas l'agenda principal de T1 |
-| A2 | création, modification (heure, lieu, titre), suppression d'un événement | répercuté au passage suivant ; suppression : plus affiché, ligne gardée « supprimée » |
-| A3 | événement récurrent (chaque semaine) + une exception modifiée + une occurrence supprimée | une ligne par occurrence, exception à jour, occurrence supprimée absente, aucun doublon |
-| A4 | journée entière, puis trois jours | dates calendaires exactes (fin incluse à l'écran), sans décalage |
-| A5 | événement à New York 20 h (fuseau de l'événement) | affiché le jour local ; conflit avec une date le lendemain à Paris (instants réels) |
-| A6 | « [SHOW] Bataclan, Paris », « Showroom », « show - Le Transbordeur, 69100 Lyon » | repère pour Paris (France par défaut) et Lyon ; rien pour Showroom |
-| A7 | événement « Disponible » | ne bloque pas, aucun avertissement |
-| A8 | événement privé | « Indisponible », sans titre ni lieu enregistrés |
-| A9 | « Artiste essai B » (disponibilités seulement) | périodes « Indisponible » sans détail ; mode « disponibilités seulement » affiché |
-| A10 | T2 retire le partage | « disponibilités plus à jour », erreur affichée, jamais « libre » |
-| A11 | option posée sur un jour occupé (Intérêt puis Option) | avertissement, Annuler n'enregistre rien, confirmation enregistre |
-| A12 | association d'un « Show » à une date « Confirmée Artiste » | date inchangée, plus de double affichage |
-| A13 | appels de la synchronisation sans justificatif / faux secret / compte hors équipe | refusés (403) — voir SECURITE_SYNCHRO.md |
+| A1 | — | liste des agendas : A et B (B « disponibilités seulement »), jamais l'agenda principal de production@ |
+| A2 | « Répétition » un mardi 14 h–16 h ; puis changer l'heure et le titre ; puis le supprimer | ligne mise à jour au passage suivant, puis plus affichée (gardée « supprimée »), jamais en double |
+| A3 | « Cours » chaque lundi pendant 4 semaines ; modifier l'heure d'**une** occurrence ; supprimer **une autre** | 3 lignes, l'exception à jour, l'occurrence supprimée absente |
+| A4 | « Vacances » journée entière sur 3 jours | « jusqu'au » = le 3ᵉ jour, sans décalage |
+| A5 | « Show New York » 20 h, fuseau de l'événement **New York** | affiché le jour de New York ; option posée le lendemain à Paris → « chevauchement horaire » |
+| A6 | « [SHOW] Bataclan, Paris » · « show - Le Transbordeur, 69100 Lyon » · « Showroom Paris » · « Show » lieu « Saint-Denis » | repères Paris et Lyon « Date artiste — calendrier Google » ; Showroom : rien ; Saint-Denis : « localisation à préciser » |
+| A7 | un événement réglé sur « **Disponible** » | ni indisponibilité ni avertissement |
+| A8 | un événement « **Privé** » (visibilité) | « Indisponible », sans titre ni lieu (vérifié dans la table par Claude) |
+| A9 | dans « Essai artiste B » : un événement quelconque ; relier B à un 2ᵉ artiste fictif | période « Indisponible » sans détail, mode « disponibilités seulement » |
+| A10 | retirer le partage de A avec production@ | erreur affichée, « disponibilités plus à jour » dans la fiche et en tête de Booking, jamais « libre » |
+| A11 | (après remise du partage) Intérêt puis Option sur un jour occupé | une seule alerte avec la raison ; Annuler n'enregistre rien ; « Enregistrer quand même » enregistre |
+| A12 | une date « Confirmée Artiste » le jour d'un « Show » | « Associer à une date » : date inchangée, plus de double affichage |
+| A13 | (Claude) appels de la fonction sans justificatif / faux secret / compte hors équipe | refusés (403) — SECURITE_SYNCHRO.md |
+
+Après la séance : retirer les partages, supprimer les deux agendas d'essai (ou les garder pour un prochain essai), déconnecter dans la fiche.
+
+## Ce que Claude fait sur le projet de test (avec l'accord d'Anthony, jamais sur la production)
+Migration `2026-11-06_v1.62_agendas_artistes.sql` (gardes d'empreinte ; déjà essayée sur une base locale jetable), déploiement de la
+fonction `cal-sync` (vérification du jeton par la passerelle désactivée : la fonction contrôle elle-même chaque appel), réglage
+`calendar_script_url` (fait par Anthony à l'étape 4), adresse de la fonction dans `private.sync_urls` (active la tâche toutes les 5 min).

@@ -9,7 +9,7 @@
 // « Show » (titre, sans casse) + lieu qui désigne une ville → repère de carte ; sinon « localisation à préciser », jamais approximatif.
 // Aucune ligne financière, aucune date de booking créée ou modifiée.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { chooseCity, isShowTitle } from './regles.ts';
+import { chooseCity, planSync } from './regles.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -48,50 +48,34 @@ async function photon(q: string): Promise<any[]> {
 }
 async function cityOf(location: string, country: string | null) { try { return await chooseCity(location, country, photon); } catch { return null; } }   // indisponible : à préciser
 
-type Ev = { id: string; time_zone?: string | null; recurring_id?: string | null; title?: string | null; location?: string | null; start?: string | null; end?: string | null;
-  start_date?: string | null; end_date?: string | null; transparency?: string; visibility?: string; type?: string };
-
 async function syncOne(cal: any, url: string, secret: string) {
   const now = Date.now(), tmin = new Date(now - 30 * DAY).toISOString(), tmax = new Date(now + 548 * DAY).toISOString();
   await admin.from('artist_calendars').update({ last_run_at: new Date().toISOString() }).eq('id', cal.id);
   try {
     const j = await script(url, secret, 'events', { calendar_id: cal.calendar_id, time_min: tmin, time_max: tmax });
-    const fb = j.mode === 'disponibilites';
-    const { data: old } = await admin.from('artist_calendar_events').select('gcal_event_id, location, city, lat, lng, geo_status, geo_key').eq('calendar_ref', cal.id);
-    const country = String(cal.default_country || 'FR').toUpperCase();
-    const prev = new Map((old || []).map((o: any) => [o.gcal_event_id, o]));
-    const rows = [];
-    for (const e of (j.events || []) as Ev[]) {
-      const priv = fb || e.visibility === 'private' || e.visibility === 'confidential';
-      const title = priv ? null : (e.title || null), location = priv ? null : (e.location || null);
-      const isShow = isShowTitle(title);
-      let geo: any = { city: null, lat: null, lng: null, geo_key: null, geo_status: location ? 'a_preciser' : 'sans_lieu' };
-      if (isShow && location) {
-        const p: any = prev.get(e.id);
-        // déjà localisé avec le même lieu ET le même pays par défaut : repris tel quel ; sinon recalculé
-        if (p && p.geo_key === country + '|' + location && p.geo_status !== 'sans_lieu') geo = { city: p.city, lat: p.lat, lng: p.lng, geo_status: p.geo_status };
-        else { const c = await cityOf(location, country); if (c) geo = { city: c.city, lat: c.lat, lng: c.lng, geo_status: 'ok' }; }
-        geo.geo_key = country + '|' + location;
-      }
-      const allDay = !!e.start_date;
-      rows.push({ calendar_ref: cal.id, project_id: cal.project_id, gcal_event_id: e.id, recurring_id: e.recurring_id || null,
-        all_day: allDay, start_at: allDay ? null : e.start, end_at: allDay ? null : e.end, start_date: allDay ? e.start_date : null, end_date: allDay ? e.end_date : null,
-        time_zone: allDay ? null : (e.time_zone || null),   // jour local de l'événement (affichage) ; conflits comparés sur les instants
-        busy: e.transparency !== 'transparent', private: priv, title, location, is_show: isShow, ...geo, deleted_at: null, updated_at: new Date().toISOString() });
+    const { data: old, error: oe } = await admin.from('artist_calendar_events')
+      .select('gcal_event_id, city, lat, lng, geo_status, geo_key, start_at, end_at, start_date, end_date, deleted_at').eq('calendar_ref', cal.id);
+    if (oe) { console.error('Lecture des événements', oe.message); throw new Explique('Lecture des événements enregistrés impossible pour le moment.'); }
+    // règles (une ligne par occurrence, privé, disponibilités, journée entière, « Show », disparues) : regles.ts planSync, testées
+    const plan = await planSync(j, cal, old || [], tmin, tmax, cityOf, new Date().toISOString());
+    // partage passé en « disponibilités seulement » : plus aucun titre ni lieu gardé pour cet agenda, lignes anciennes comprises
+    if (plan.scrub) {
+      const { error } = await admin.from('artist_calendar_events').update({ title: null, location: null, city: null, lat: null, lng: null, is_show: false,
+        geo_status: 'sans_lieu', geo_key: null, private: true }).eq('calendar_ref', cal.id).eq('private', false);
+      if (error) { console.error('Masquage des détails', error.message); throw new Explique('Masquage des détails impossible pour le moment.'); }
     }
-    for (let i = 0; i < rows.length; i += 500) {
-      const { error } = await admin.from('artist_calendar_events').upsert(rows.slice(i, i + 500), { onConflict: 'calendar_ref,gcal_event_id' });
+    for (let i = 0; i < plan.rows.length; i += 500) {
+      const { error } = await admin.from('artist_calendar_events').upsert(plan.rows.slice(i, i + 500), { onConflict: 'calendar_ref,gcal_event_id' });
       if (error) { console.error('Enregistrement des événements', error.message); throw new Explique('Enregistrement des événements impossible pour le moment.'); }
     }
     // occurrences de la fenêtre absentes de Google : supprimées dans l'agenda → marquées, jamais effacées
-    const seen = new Set(rows.map((r) => r.gcal_event_id));
-    const gone = (old || []).map((o: any) => o.gcal_event_id).filter((id: string) => !seen.has(id));
-    for (let i = 0; i < gone.length; i += 200) {
-      await admin.from('artist_calendar_events').update({ deleted_at: new Date().toISOString() }).eq('calendar_ref', cal.id).in('gcal_event_id', gone.slice(i, i + 200))
-        .is('deleted_at', null).or(`start_at.gte.${tmin},start_date.gte.${tmin.slice(0, 10)}`);
+    for (let i = 0; i < plan.gone.length; i += 200) {
+      const { error } = await admin.from('artist_calendar_events').update({ deleted_at: new Date().toISOString() }).eq('calendar_ref', cal.id)
+        .in('gcal_event_id', plan.gone.slice(i, i + 200)).is('deleted_at', null);
+      if (error) { console.error('Suppressions', error.message); throw new Explique('Enregistrement des suppressions impossible pour le moment.'); }
     }
-    await admin.from('artist_calendars').update({ last_ok_at: new Date().toISOString(), last_error: null, mode: j.mode }).eq('id', cal.id);
-    return { project_id: cal.project_id, ok: true, events: rows.length, removed: gone.length };
+    await admin.from('artist_calendars').update({ last_ok_at: new Date().toISOString(), last_error: null, mode: plan.mode }).eq('id', cal.id);
+    return { project_id: cal.project_id, ok: true, events: plan.rows.length, removed: plan.gone.length };
   } catch (e) {
     if (!(e instanceof Explique)) console.error(e);
     const msg = shown(e);
@@ -124,7 +108,7 @@ Deno.serve(async (req) => {
     if (body?.mode === 'calendars') {
       if (!team) return json({ ok: false, error: 'Réservé à l’équipe' }, 403);
       const j = await script(url, secret, 'calendars');
-      return json({ ok: true, calendars: j.calendars || [] });
+      return json({ ok: true, calendars: j.calendars || [], version: j.version || null });
     }
     let q = admin.from('artist_calendars').select('*').eq('status', 'actif');
     if (team && body?.project_id) q = q.eq('project_id', String(body.project_id));

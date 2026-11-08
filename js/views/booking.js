@@ -11,7 +11,7 @@ import { byId, isArchived, projFilterOk, projName, showCoords, showPlace, showPl
 import { S } from '../state.js';
 import { filterBar, fold, stBadge, stSelect, viewHead } from '../ui/bits.js';
 import { $, daysBetween, esc, eur, fmtDate, fmtShort } from '../utils.js';
-import { calBookingRows, calMapPoints, calRowHTML, evSpan } from '../calendars.js';
+import { calBookingRows, calMapPoints, calRowHTML, calStaleNotice, evSpan } from '../calendars.js';
 
 export function viewBooking(){
   const all = showsFiltered();
@@ -49,7 +49,7 @@ export function viewBooking(){
     <button class="btn sm ${S.bookingPane!=='map'?'on':''}" data-act="bookingPane" data-p="list">Liste</button>
     <button class="btn sm ${S.bookingPane==='map'?'on':''}" data-act="bookingPane" data-p="map">Carte et trajets</button></div>
   <div class="booking pane-${S.bookingPane==='map'?'map':'list'}">
-    <div class="list-wrap">${S.showArchived && archived.length ? archivedPanel(archived) : ''}${list || `<div class="empty panel">Aucune date en ${S.year}. Ajoute un intérêt avec « Nouvelle date ».</div>`}</div>
+    <div class="list-wrap">${calStaleNotice(projIds)}${S.showArchived && archived.length ? archivedPanel(archived) : ''}${list || `<div class="empty panel">Aucune date en ${S.year}. Ajoute un intérêt avec « Nouvelle date ».</div>`}</div>
     <aside class="side side-booking">
       <div class="map-box"><div id="map-slot" role="region" aria-label="Carte des dates"></div></div>
       <div class="legend">${legend(shows)}</div>

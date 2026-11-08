@@ -12,7 +12,7 @@
  */
 import { render } from './app.js';
 import { insert, save, sb } from './data.js';
-import { byId, projName } from './selectors.js';
+import { byId, isArchived, projName } from './selectors.js';
 import { S } from './state.js';
 import { ask, confirmAsk, copyText } from './ui/dialog.js';
 import { esc, fmtDate, toast } from './utils.js';
@@ -53,6 +53,9 @@ export function calFresh(cal){
   return Date.now() - new Date(cal.last_ok_at).getTime() < STALE_MIN * 60000;
 }
 export const evLabel = e => e.private || !e.title ? 'Indisponible' : e.title;
+/** Événement associé à une date existante ET active : la date le représente déjà (pas de double affichage). Date archivée (v1.60.3) ou
+ *  supprimée : l'association ne compte plus — la date sort des listes, des calendriers et des conflits, l'événement Google redevient visible. */
+export const calLinked = e => { const s = e?.show_id ? byId('shows', e.show_id) : null; return !!s && !isArchived(s); };
 
 /**
  * Indisponibilités (occupé seulement ; « Disponible » jamais) en conflit avec une date de l'artiste — décision d'Anthony du 07/11/2026 :
@@ -67,7 +70,7 @@ export function calOverlaps(v){
   const from = midnightIn(a), to = midnightIn(nextDay(b));
   const out = [];
   for (const e of calEvents([v.project_id])){
-    if (!e.busy || e.show_id) continue;
+    if (!e.busy || calLinked(e)) continue;
     const hour = !e.all_day && e.start_at && new Date(e.start_at).getTime() < to && new Date(e.end_at || e.start_at).getTime() > from;
     const [x, y] = evSpan(e), day = !!x && x <= b && y >= a;
     if (hour || day) out.push({...e, why: hour ? CAL_WHY.heure : CAL_WHY.jour});
@@ -79,7 +82,8 @@ export function calOverlaps(v){
 /** Engagement d'une date : 0 annulée / sans suite, 1 intérêt, 2 option ou confirmée */
 const level = st => isOff(st) ? 0 : /^Intérêt/.test(st || '') ? 1 : 2;
 export async function calCheckBeforeSave(v, before = null){
-  if (!v.project_id || !v.date || isOff(v.status)) return true;
+  // date archivée (v1.60.3) : hors des calendriers et des conflits ; annulée / sans suite : n'occupe rien
+  if (!v.project_id || !v.date || isOff(v.status) || isArchived(v)) return true;
   // même règle sur tous les chemins (fenêtre de date, prospection, statut changé dans la liste) : on avertit quand une date est créée,
   // déplacée, change d'artiste, ou s'engage davantage (annulée → active, intérêt → option / confirmée) ; sinon rien à redemander
   if (before && before.date === v.date && (before.date_end || null) === (v.date_end || null) && before.project_id === v.project_id
@@ -136,7 +140,7 @@ async function reload(){
 export const CAL_ACTIONS = {
   copyCalendarScript: async () => { try { await copyText(await (await fetch('apps-script/calendrier/Calendrier.gs?v=' + Date.now())).text(), 'Code copié : colle-le dans Code.gs du projet « Matrice Agendas »'); } catch (err) { toast('Copie impossible : ' + err.message, true); } },
   copyCalendarManifest: async () => { try { await copyText(await (await fetch('apps-script/calendrier/appsscript.json?v=' + Date.now())).text(), 'appsscript.json copié : remplace le contenu du manifeste du projet « Matrice Agendas »'); } catch (err) { toast('Copie impossible : ' + err.message, true); } },
-  testCalendarScript: async () => { const out = await invoke({mode: 'calendars'}); toast(out.ok ? `Script des agendas OK : ${out.calendars.length} agenda${out.calendars.length > 1 ? 's' : ''} visible${out.calendars.length > 1 ? 's' : ''} par production@` : out.error, !out.ok); },
+  testCalendarScript: async () => { const out = await invoke({mode: 'calendars'}); toast(out.ok ? `Script des agendas OK : ${out.calendars.length} agenda${out.calendars.length > 1 ? 's' : ''} visible${out.calendars.length > 1 ? 's' : ''} par production@${out.version ? ` (script ${out.version})` : ' (script sans numéro de version : à mettre à jour)'}` : out.error, !out.ok); },
   /** Choix explicite de l'agenda parmi ceux partagés avec production@ */
   calConnect: async t => {
     const pid = t.dataset.id, out = await invoke({mode: 'calendars'});
@@ -174,8 +178,9 @@ export const CAL_ACTIONS = {
     const e = byId('artist_calendar_events', t.dataset.id); if (!e) return;
     const [a, b] = evSpan(e);
     const lo = prevDay(a), hi = nextDay(b);   // à un jour près (fin de soirée, fuseau)
-    const cands = S.db.shows.filter(s => s.project_id === e.project_id && /Artiste$/.test(s.status || '') && s.date && s.date >= lo && s.date <= hi);
-    if (e.show_id){
+    // dates archivées (v1.60.3) jamais proposées : elles ne sont plus dans les calendriers
+    const cands = S.db.shows.filter(s => s.project_id === e.project_id && !isArchived(s) && /Artiste$/.test(s.status || '') && s.date && s.date >= lo && s.date <= hi);
+    if (calLinked(e)){
       if (!(await confirmAsk('Dissocier ?', 'L’événement Google et la date redeviennent indépendants (rien n’est supprimé).', 'Dissocier'))) return;
       await save('artist_calendar_events', e.id, {show_id: null}); return;
     }
@@ -193,20 +198,27 @@ const localTime = e => { const tz = e.time_zone || 'Europe/Paris'; let h;
 
 /** Lignes d'indisponibilité pour la liste Booking (affichées à part, origine Google) */
 export function calBookingRows(projectIds, year){
-  return calEvents(projectIds).filter(e => e.busy && !e.show_id).map(e => ({e, span: evSpan(e)})).filter(x => x.span[0] && x.span[0].slice(0, 4) <= String(year) && x.span[1].slice(0, 4) >= String(year))
+  return calEvents(projectIds).filter(e => e.busy && !calLinked(e)).map(e => ({e, span: evSpan(e)})).filter(x => x.span[0] && x.span[0].slice(0, 4) <= String(year) && x.span[1].slice(0, 4) >= String(year))
     .sort((x, y) => x.span[0].localeCompare(y.span[0]));
 }
 export function calRowHTML({e, span: [a, b]}, showArtist){
   const cal = byId('artist_calendars', e.calendar_ref), stale = !calFresh(cal);
   return `<div class="gig cal-unav" title="Indisponibilité lue dans l’agenda Google de l’artiste (lecture seule)">
     <div class="day"><b>${a.slice(8)}</b><span>${new Date(a + 'T12:00:00').toLocaleDateString('fr-FR', {weekday: 'short'})}</span></div>
-    <div class="what"><b>${esc(evLabel(e))}</b><small>Agenda Google${showArtist ? ' · ' + esc(projName(e.project_id)) : ''}${b !== a ? ' · jusqu’au ' + fmtDate(b) : ''}${e.all_day ? '' : ' · ' + localTime(e)}${stale ? ' · <span class="warn-txt">disponibilités plus à jour</span>' : ''}</small></div>
-    <div class="right">${e.is_show ? `<button type="button" class="btn sm ghost" data-act="calAssociate" data-id="${e.id}">${e.show_id ? 'Dissocier' : 'Associer à une date'}</button>` : ''}<span class="badge cal-badge">📅 Google</span></div></div>`;
+    <div class="what"><b>${esc(evLabel(e))}</b><small>${e.is_show ? 'Date artiste — calendrier Google' : 'Agenda Google'}${showArtist ? ' · ' + esc(projName(e.project_id)) : ''}${b !== a ? ' · jusqu’au ' + fmtDate(b) : ''}${e.all_day ? '' : ' · ' + localTime(e)}${stale ? ' · <span class="warn-txt">disponibilités plus à jour</span>' : ''}</small></div>
+    <div class="right">${e.is_show ? `<button type="button" class="btn sm ghost" data-act="calAssociate" data-id="${e.id}">${calLinked(e) ? 'Dissocier' : 'Associer à une date'}</button>` : ''}<span class="badge cal-badge">📅 Google</span></div></div>`;
+}
+
+/** Agendas reliés mais pas à jour (pause, erreur, accès perdu, synchronisation trop ancienne) des artistes affichés : jamais « libre » */
+export function calStaleNotice(projectIds){
+  const bad = S.db.artist_calendars.filter(c => c.status !== 'deconnecte' && projectIds.includes(c.project_id) && !calFresh(c));
+  if (!bad.length) return '';
+  return `<p class="help warn-txt cal-stale" role="status">⚠︎ Disponibilités plus à jour — ${bad.map(c => esc(`${projName(c.project_id)} : ${calStatusText(c)}`)).join(' · ')}. L’absence d’indisponibilité ne veut pas dire « libre ».</p>`;
 }
 
 /** Repères de carte des « Show » d'agenda (ville reconnue) et liste « localisation à préciser » */
 export function calMapPoints(projectIds, year){
-  const ev = calEvents(projectIds || S.db.projects.filter(p => p.active || S.showInactive).map(p => p.id)).filter(e => e.is_show && !e.show_id && (evSpan(e)[0] || '').startsWith(String(year)));
+  const ev = calEvents(projectIds || S.db.projects.filter(p => p.active || S.showInactive).map(p => p.id)).filter(e => e.is_show && !calLinked(e) && (evSpan(e)[0] || '').startsWith(String(year)));
   return {points: ev.filter(e => e.geo_status === 'ok' && e.lat != null).map(e => ({lat: e.lat, lng: e.lng, color: '#FFFFFF', gcal: true, hover: true,
     label: `<b>Date artiste — calendrier Google</b><br>${esc(e.title || '')}<br>${fmtDate(evSpan(e)[0])} — ${esc(e.city || '')} · ${esc(projName(e.project_id))}`})),
     toLocate: ev.filter(e => e.geo_status !== 'ok')};

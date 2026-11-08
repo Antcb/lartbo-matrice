@@ -188,6 +188,9 @@
         // window.__FN_ERROR = { nom: 'message' } : la fonction serveur répond par cette erreur (essais de la file des résumés IA)
         functions: { invoke: async (name, o) => { window.__calls.push({ fn: name, body: o && o.body, url: String(url) });
           const err = window.__FN_ERROR && window.__FN_ERROR[name];
+          // window.__FN_DATA = { nom: réponse | (body) => réponse } : réponse simulée de la fonction serveur (agendas des artistes…)
+          const d = window.__FN_DATA && window.__FN_DATA[name];
+          if (!err && d) return { data: clone(typeof d === 'function' ? d(o && o.body) : d), error: null };
           return err ? { data: null, error: { message: err } } : { data: { ok: true }, error: null }; } },
         storage: { from: bucket => ({ upload: async () => ({ data: {}, error: null }),
           // fichiers effacés notés dans window.__calls ({ storageRemove: bucket, paths }) pour vérifier qu'aucun fichier ne reste orphelin
