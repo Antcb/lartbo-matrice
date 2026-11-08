@@ -998,7 +998,7 @@ dialog.mail .mode-note{margin:0}
 .cnm-block{margin:var(--sp-2) 0}
 /* v1.61 : messagerie intégrée (onglet Mails) */
 .mail-list{display:flex;flex-direction:column;overflow:hidden}
-.mail-row{display:grid;grid-template-columns:minmax(140px,1.1fr) 3fr minmax(120px,1.2fr) auto;gap:var(--sp-2);align-items:center;text-align:left;padding:10px 14px;border:0;border-bottom:1px solid var(--line-2);background:var(--panel);color:var(--ink);font:inherit;cursor:pointer;min-height:var(--h-touch)}
+.mail-row{display:grid;grid-template-columns:minmax(140px,1.1fr) 3fr minmax(120px,1.2fr) auto;gap:var(--sp-2);align-items:center;text-align:left;padding:var(--sp-2) var(--sp-3);border:0;border-bottom:1px solid var(--line-2);background:var(--panel);color:var(--ink);font:inherit;cursor:pointer;min-height:var(--h-touch)}
 .mail-row:hover{background:var(--soft)}
 .mail-row:focus-visible{outline:2px solid var(--brand-2);outline-offset:-2px}
 .mail-row.unread .mail-who,.mail-row.unread .mail-subj b{font-weight:700}
@@ -1008,6 +1008,8 @@ dialog.mail .mode-note{margin:0}
 .mail-date{font-size:12px;white-space:nowrap}
 .mail-link.mail-a_rattacher{border-color:var(--warn);color:var(--warn)}
 .mail-link.mail-auto,.mail-link.mail-manuel{border-color:var(--ok);color:var(--ok)}
+.mail-li{display:block;min-width:0}
+.mail-li>.mail-row{width:100%}
 .mail-err{color:var(--danger);font-weight:600}
 .mail-actions{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;margin:0 0 var(--sp-2)}
 .mail-title{margin:var(--sp-1) 0 var(--sp-2)}
@@ -1015,7 +1017,7 @@ dialog.mail .mode-note{margin:0}
 .mail-linkbox p{flex-basis:100%;margin:0}
 .mail-msg{margin-bottom:var(--sp-2)}
 .mail-msg-head{display:flex;gap:var(--sp-1);align-items:baseline;flex-wrap:wrap}
-.mail-msg-to{font-size:12px;margin:2px 0 var(--sp-1)}
+.mail-msg-to{font-size:12px;margin:0 0 var(--sp-1)}
 .mail-frame{width:100%;min-height:320px;border:1px solid var(--line-2);border-radius:var(--r);background:var(--panel)}
 @media (max-width:760px){
   .mail-row{grid-template-columns:1fr auto;grid-template-areas:"who date" "subj subj" "meta meta"}

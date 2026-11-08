@@ -18,7 +18,7 @@
  * avec le code écrit en dur continue de fonctionner tel quel (la Matrice envoie toujours le même code, depuis son serveur).
  */
 /** Version du code (renvoyée par « ping », pour vérifier le redéploiement) */
-var SCRIPT_VERSION = 'v1.60.4';
+var SCRIPT_VERSION = 'v1.61.0';
 var SECRET = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET') || '';
 
 function doPost(e) {
@@ -292,7 +292,7 @@ function addrs_(v) {
 }
 /** Conversation sans corps de message, mais avec la structure des parties (noms et tailles des pièces jointes) */
 var META_FIELDS_ = 'id,messages(id,threadId,labelIds,internalDate,snippet,payload(mimeType,filename,headers,body(size,attachmentId),'
-  + 'parts(mimeType,filename,body(size,attachmentId),parts(mimeType,filename,body(size,attachmentId),parts(mimeType,filename,body(size,attachmentId))))))';
+  + 'parts(mimeType,filename,headers,body(size,attachmentId),parts(mimeType,filename,headers,body(size,attachmentId),parts(mimeType,filename,headers,body(size,attachmentId))))))';
 function threadLight_(id) { return Gmail.Users.Threads.get('me', id, { format: 'full', fields: META_FIELDS_ }); }
 function me_() { return Session.getEffectiveUser().getEmail().toLowerCase(); }
 function b64dec_(data) { return Utilities.newBlob(Utilities.base64DecodeWebSafe(data)).getDataAsString('UTF-8'); }
@@ -301,7 +301,9 @@ function b64dec_(data) { return Utilities.newBlob(Utilities.base64DecodeWebSafe(
 function parts_(payload, acc) {
   if (!payload) return acc;
   var mime = payload.mimeType || '', fn = payload.filename || '', body = payload.body || {};
-  if (fn && (body.attachmentId || body.data)) acc.attachments.push({ name: fn, size: body.size || 0, mime: mime, id: body.attachmentId || '' });
+  // (v1.63) image intégrée au texte (Content-ID / inline) : marquée, jamais proposée comme pièce à transférer
+  var disp = String(hdr_(payload.headers, 'Content-Disposition') || ''), inline = !!hdr_(payload.headers, 'Content-ID') && !/^\s*attachment/i.test(disp) || /^\s*inline/i.test(disp);
+  if (fn && (body.attachmentId || body.data)) acc.attachments.push({ name: fn, size: body.size || 0, mime: mime, id: body.attachmentId || '', inline: inline });
   else if (mime === 'text/html' && body.data && !acc.html) acc.html = b64dec_(body.data);
   else if (mime === 'text/plain' && body.data && !acc.text) acc.text = b64dec_(body.data);
   (payload.parts || []).forEach(function (p) { parts_(p, acc); });
@@ -323,8 +325,28 @@ function msgMeta_(m, me) {
     from: from, reply_to: addrs_(hdr_(h, 'Reply-To')), to: addrs_(hdr_(h, 'To')), cc: addrs_(hdr_(h, 'Cc')),
     subject: hdr_(h, 'Subject'), date: new Date(Number(m.internalDate)).toISOString(), snippet: m.snippet || '',
     direction: from.email === me || (m.labelIds || []).indexOf('SENT') >= 0 ? 'out' : 'in',
-    attachments: acc.attachments.map(function (a) { return { name: a.name, size: a.size, mime: a.mime, id: a.id }; }),
+    attachments: acc.attachments.map(function (a) { return { name: a.name, size: a.size, mime: a.mime, id: a.id, inline: a.inline }; }),
+    auto: autoKind_(m.payload, from.email, hdr_(h, 'Subject')),
     draft: (m.labelIds || []).indexOf('DRAFT') >= 0 };
+}
+
+/**
+ * (v1.63, relecture) Message automatique, reconnu par ses EN-TÊTES (jamais par l'expéditeur seul) :
+ *  'ndr'  : avis de non-remise — rapport de remise (multipart/report), X-Failed-Recipients, expéditeur système (mailer-daemon,
+ *           postmaster, microsoftexchange… d'Exchange) ;
+ *  'auto' : réponse automatique (absence…) — Auto-Submitted autre que « no », X-Autoreply / X-Autorespond, Precedence auto_reply,
+ *           X-MS-Exchange-Inbox-Rules-Loop / Out of office d'Exchange ; '' : message ordinaire.
+ * Ni l'un ni l'autre ne suspend les relances (le serveur ne compte que les vraies réponses).
+ */
+function autoKind_(payload, from, subject) {
+  var h = (payload || {}).headers || [], mime = String((payload || {}).mimeType || '').toLowerCase();
+  var ct = String(hdr_(h, 'Content-Type') || '').toLowerCase(), local = String(from || '').split('@')[0].toLowerCase();
+  if (mime === 'multipart/report' || /multipart\/report/.test(ct) || hdr_(h, 'X-Failed-Recipients')
+    || /^(mailer-daemon|mail-daemon|postmaster|microsoftexchange[0-9a-f]*)$/.test(local)) return 'ndr';
+  var as = String(hdr_(h, 'Auto-Submitted') || '').trim().toLowerCase();
+  if ((as && as !== 'no') || hdr_(h, 'X-Autoreply') || hdr_(h, 'X-Autorespond') || /auto_reply/i.test(hdr_(h, 'Precedence') || '')
+    || /^oof$/i.test(String(hdr_(h, 'X-Auto-Response-Suppress') || '').trim()) && /^(automatic reply|réponse automatique|absence)/i.test(subject || '')) return 'auto';
+  return '';
 }
 
 /** Liste de conversations : boîte de réception (défaut), libellé, recherche Gmail, non lus ; par pages de 25 au plus */
@@ -424,6 +446,9 @@ function strictBlobs_(list) {
   var total = 0, out = (list || []).map(function (f) {   // taille brute ; la limite réelle est vérifiée sur le message encodé (mimeDraft_)
     var blob;
     try {
+      // (v1.63, relecture) seulement un lien temporaire SIGNÉ du stockage Supabase : aucune autre adresse n'est lue par ce script
+      if (f.url && !/^https:\/\/[a-z0-9]+\.supabase\.co\/storage\/v1\/object\/sign\/[^\s]+$/.test(String(f.url))) throw new Error('adresse refusée (lien temporaire du stockage attendu)');
+      if (f.id && !/^[\w-]{10,200}$/.test(String(f.id))) throw new Error('identifiant Drive refusé');
       if (f.url) blob = UrlFetchApp.fetch(f.url).getBlob().setName(f.name || 'piece-jointe');
       else if (f.id) blob = DriveApp.getFileById(f.id).getBlob();
     } catch (err) { throw new Error('Pièce jointe illisible : ' + (f.name || f.id || '?') + ' (' + err.message + '). Rien n’est parti.'); }

@@ -2,7 +2,7 @@
  * Onglet Mails (v1.61) : boîte anthony@ — boîte de réception, non lus, « À rattacher », libellés Gmail, recherche ; lecture d'une
  * conversation, rattachement (structure, suivi, artiste, date), réponse, rangement, relance. Gmail reste la référence.
  */
-import { ARCHIVED, LINK_LABEL, M, MAILBOX_ADDR, candidates, fmtSize, labelName, loadLabels, syncState, threadsShown, userLabels } from '../mailbox.js';
+import { ARCHIVED, LINK_LABEL, M, MAILBOX_ADDR, linkState, candidates, fmtSize, labelName, loadLabels, syncState, threadsShown, userLabels } from '../mailbox.js';
 import { byId, projName, prospectTitle, structName } from '../selectors.js';
 import { S } from '../state.js';
 import { viewHead } from '../ui/bits.js';
@@ -17,7 +17,8 @@ const when = iso => { if (!iso) return ''; const d = new Date(iso);
  */
 export function frameDoc(html, remoteImages = false){
   const csp = `default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:${remoteImages ? ' https:' : ''}; form-action 'none'; base-uri 'none'`;
-  const clean = String(html || '').replace(/<script\b[\s\S]*?(<\/script\s*>|$)/gi, '');   // en plus du cadre sans script : retirés d'avance
+  const clean = String(html || '').replace(/<script\b[\s\S]*?(<\/script\s*>|$)/gi, '')   // en plus du cadre sans script : retirés d'avance
+    .replace(/<(a|area)(\s|>)/gi, '<$1 rel="noopener noreferrer"$2');   // liens : ni accès à la page d'origine, ni adresse de provenance
   return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><base target="_blank">${clean}`;
 }
 const hasRemote = html => /<img[^>]+src\s*=\s*["']?\s*(https?:)?\/\//i.test(html || '') || /url\(\s*["']?\s*(https?:)?\/\//i.test(html || '');
@@ -31,18 +32,19 @@ function syncLine(){
     + (st.last_error ? ` <span class="mail-err" role="alert">Erreur au dernier passage (${esc(when(st.last_run_at))}) : ${esc(st.last_error)}</span>` : '');
 }
 
-const linkBadge = t => `<span class="badge mail-link mail-${t.link_status}">${esc(LINK_LABEL[t.link_status] || t.link_status)}</span>`;
+const linkBadge = t => { const k = linkState(t); return `<span class="badge mail-link mail-${k}">${esc(LINK_LABEL[k] || k)}</span>`; };
 const ctxText = t => [structName(t.structure_id), t.prospect_id ? 'suivi' : '', t.project_id ? projName(t.project_id) : '', t.show_id ? fmtDate(byId('shows', t.show_id)?.date) : ''].filter(Boolean).join(' · ');
 
 function list(){
   const rows = threadsShown();
   if (!rows.length) return `<div class="empty panel">${M.filter === 'link' ? 'Aucune conversation à rattacher.' : 'Aucune conversation ici.'}${S.db.mail_threads.length ? '' : ' La messagerie se remplit à la première synchronisation.'}</div>`;
-  return `<div class="panel mail-list" role="list">${rows.map(t => `<button type="button" class="mail-row ${t.unread ? 'unread' : ''}" role="listitem" data-act="mailOpen" data-id="${t.id}">
+  // (v1.63) liste accessible : chaque ligne est un élément de liste qui CONTIENT un bouton (le bouton garde son rôle)
+  return `<div class="panel mail-list" role="list">${rows.map(t => `<div role="listitem" class="mail-li"><button type="button" class="mail-row ${t.unread ? 'unread' : ''}" data-act="mailOpen" data-id="${t.id}">
       <span class="mail-who">${esc((t.participants || []).slice(0, 3).join(', ') || '—')}${t.message_count > 1 ? ` <span class="count">${t.message_count}</span>` : ''}</span>
       <span class="mail-subj"><b>${esc(t.subject || '(sans objet)')}</b> <span class="muted">${esc(t.snippet || '')}</span></span>
       <span class="mail-meta">${linkBadge(t)}${t.structure_id ? ` <span class="muted">${esc(ctxText(t))}</span>` : ''}
         ${(t.labels || []).filter(l => !HIDDEN_LABELS.test(l)).map(l => `<span class="badge tag">${esc(labelName(l))}</span>`).join('')}</span>
-      <span class="mail-date muted">${esc(when(t.last_message_at))}</span></button>`).join('')}</div>`;
+      <span class="mail-date muted">${esc(when(t.last_message_at))}</span></button></div>`).join('')}</div>`;
 }
 
 function reader(){
@@ -75,7 +77,7 @@ function reader(){
         ${hasRemote(m.html) ? `<p class="muted mail-img-note">Images distantes bloquées (elles peuvent signaler l’ouverture du mail à l’expéditeur).
           ${M.images.has(m.id) ? '<b>Affichées pour ce message.</b>' : `<button class="btn sm ghost" data-act="mailImages" data-msg="${esc(m.id)}">Afficher les images</button>`}</p>` : ''}
         <iframe class="mail-frame" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" title="Message de ${esc(m.from?.email || '')}" srcdoc="${esc(frameDoc(m.html, M.images.has(m.id)))}"></iframe>
-        ${m.attachments?.length ? `<div class="ml-att">${m.attachments.map((a, i) => `<span class="att-chip">📎 ${esc(a.name)} <span class="muted">${fmtSize(a.size)}</span>
+        ${m.attachments?.some(a => !a.inline) ? `<div class="ml-att">${m.attachments.map((a, i) => a.inline ? '' : `<span class="att-chip">📎 ${esc(a.name)} <span class="muted">${fmtSize(a.size)}</span>
           <button class="btn sm ghost" data-act="mailAttPreview" data-msg="${esc(m.id)}" data-i="${i}">Ouvrir</button>
           <button class="btn sm ghost" data-act="mailAttKeep" data-msg="${esc(m.id)}" data-i="${i}">Conserver…</button></span>`).join('')}</div>` : ''}
         <div class="mail-actions"><button class="btn sm ghost" data-act="mailCompose" data-mode="reply" data-msg="${esc(m.id)}">Répondre à ce message</button></div>

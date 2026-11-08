@@ -186,6 +186,100 @@ do $$ declare t uuid; begin
   perform set_config('request.jwt.claims', '', true);
 end $$;
 
+-- ── Relecture v1.63 : retrait manuel conservé (B3) ────────────────────────────────────────────────────────────────────────
+do $$ declare t uuid; begin
+  perform set_config('request.jwt.claims', '{"email":"equipe@example.com"}', true);
+  t := pg_temp.conv('r01', '{camille@example.com}');
+  perform pg_temp.msg(t, 'r01-1', 'in', 'camille@example.com', '<r01@example.com>', null, now() - interval '2 hours');
+  perform pg_temp.sync(t);
+  perform pg_temp.ok((select link_status from mail_threads where id = t) = 'auto', 'B3 préalable : rattachement automatique');
+  perform public.mail_link_manual(t, null, null, null, null);
+  perform pg_temp.sync(t); perform pg_temp.sync(t);
+  perform pg_temp.ok((select link_status = 'manuel' and prospect_id is null and structure_id is null and link_reason like 'Aucun suivi%' from mail_threads where id = t),
+    'B3 : « aucun suivi » choisi à la main, jamais refait par la synchronisation');
+  perform set_config('request.jwt.claims', '', true);
+end $$;
+
+-- ── Relecture v1.63 : correction du suivi A → B (B4) ─────────────────────────────────────────────────────────────────────
+insert into structures (id, name) values ('00000000-0000-0000-0000-00000000000a', 'Salle A'), ('00000000-0000-0000-0000-00000000000b', 'Salle B');
+insert into contacts (id, display_name, email) values ('00000000-0000-0000-0000-0000000000ca', 'Prog A', 'prog@a.example');
+insert into contact_structures values ('00000000-0000-0000-0000-0000000000ca', '00000000-0000-0000-0000-00000000000a');
+insert into prospects (id, name, structure_id, status) values ('00000000-0000-0000-0000-0000000000aa', 'Suivi A', '00000000-0000-0000-0000-00000000000a', 'Mailed'),
+  ('00000000-0000-0000-0000-0000000000bb', 'Suivi B', '00000000-0000-0000-0000-00000000000b', 'Mailed');
+insert into tasks (id, title, prospect_id, auto_kind, created_at) values
+  ('00000000-0000-0000-0000-0000000000e1', 'Relance A', '00000000-0000-0000-0000-0000000000aa', 'relance_mail', now() - interval '5 days'),
+  ('00000000-0000-0000-0000-0000000000e2', 'Relance B', '00000000-0000-0000-0000-0000000000bb', 'relance_mail', now() - interval '5 days');
+insert into shows (id, structure_id) values ('00000000-0000-0000-0000-0000000000d5', '00000000-0000-0000-0000-00000000000a');
+do $$ declare t uuid; a uuid := '00000000-0000-0000-0000-0000000000aa'; b uuid := '00000000-0000-0000-0000-0000000000bb'; m uuid; k text; begin
+  t := pg_temp.conv('ab01', '{prog@a.example}');
+  perform pg_temp.msg(t, 'ab01-1', 'in', 'prog@a.example', '<ab01@a.example>', null, now() - interval '1 day');
+  perform pg_temp.sync(t);
+  perform pg_temp.ok((select prospect_id from mail_threads where id = t) = a and (select status from tasks where title = 'Relance A') = 'Cancelled', 'B4 préalable : réponse rattachée à A, relance A suspendue');
+  perform set_config('request.jwt.claims', '{"email":"equipe@example.com"}', true);
+  begin perform public.mail_link_manual(t, '00000000-0000-0000-0000-00000000000b', b, null, '00000000-0000-0000-0000-0000000000d5');
+    perform pg_temp.ok(false, 'date d''une autre structure'); exception when others then perform pg_temp.ok(sqlerrm like 'Cette date n''appartient pas%', 'date d''une autre structure refusée'); end;
+  perform public.mail_link_manual(t, '00000000-0000-0000-0000-00000000000b', b, null, null);
+  perform pg_temp.ok((select status from tasks where title = 'Relance B') = 'Cancelled', 'B4 : correction vers B, relance B suspendue (même règle)');
+  perform pg_temp.ok((select status from tasks where title = 'Relance A') = 'Cancelled', 'B4 : relance A non rétablie d''office');
+  m := (select id from mail_messages where gmail_message_id = 'ab01-1');
+  select dedupe_key into k from notifications where dedupe_key = 'mail-relances:' || m || ':' || a;
+  perform pg_temp.ok(k is not null and (select body like 'Relances de « Suivi A » annulées par un message désormais rattaché à « Suivi B » : à vérifier%' from notifications where dedupe_key = k),
+    'B4 : notification « Relances de A annulées … rattaché à B : à vérifier »');
+  perform set_config('request.jwt.claims', '{"email":"intrus@example.net"}', true);
+  begin perform public.mail_restore_relances(m, a); perform pg_temp.ok(false, 'rétablissement hors équipe');
+    exception when others then perform pg_temp.ok(sqlerrm like 'Réservé à l''équipe%', 'B4 : rétablissement refusé hors équipe'); end;
+  perform set_config('request.jwt.claims', '{"email":"equipe@example.com"}', true);
+  perform pg_temp.ok(public.mail_restore_relances(m, a) = 1, 'B4 : une relance de A rétablie sur demande');
+  perform pg_temp.ok((select status = 'To Do' and done_at is null and notes like '%Rétablie à la main%' from tasks where title = 'Relance A'), 'B4 : relance A « À faire », raison notée');
+  perform pg_temp.ok(public.mail_restore_relances(m, a) = 0, 'B4 : rétablissement unique (rien la seconde fois)');
+  perform pg_temp.ok(public.mail_restore_relances(m, b) = 0 and (select status from tasks where title = 'Relance B') = 'Cancelled', 'B4 : jamais pour le suivi actuel de la conversation');
+  perform set_config('request.jwt.claims', '', true);
+end $$;
+
+-- ── Relecture v1.63 : avis de non-remise, réponse automatique, message de l'équipe (B5) ─────────────────────────────────────
+insert into tasks (id, title, prospect_id, auto_kind, created_at) values
+  ('00000000-0000-0000-0000-0000000000e3', 'Relance B2', '00000000-0000-0000-0000-0000000000bb', 'relance_mail', now() - interval '1 hour');
+do $$ declare t uuid := (select id from mail_threads where gmail_thread_id = 'ab01'); begin
+  insert into mail_messages (thread_id, gmail_message_id, direction, from_addr, subject, sent_at, auto_kind)
+    values (t, 'ab01-ndr', 'in', 'relais@b.example', 'Undeliverable', now(), 'ndr');
+  insert into mail_messages (thread_id, gmail_message_id, direction, from_addr, subject, sent_at)
+    values (t, 'ab01-exch', 'in', 'microsoftexchange329e71ec88ae4615bbc36ab6ce41109e@b.example', 'Non remis : Hello', now());
+  insert into mail_messages (thread_id, gmail_message_id, direction, from_addr, subject, sent_at, auto_kind)
+    values (t, 'ab01-oof', 'in', 'prog@a.example', 'Réponse automatique : absent', now(), 'auto');
+  insert into mail_messages (thread_id, gmail_message_id, direction, from_addr, subject, sent_at)
+    values (t, 'ab01-team', 'in', 'EQUIPE@example.com', 'Re: depuis production@', now());
+  perform public.mail_journal(t);
+  perform pg_temp.ok((select status from tasks where title = 'Relance B2') = 'To Do', 'B5 : avis de non-remise (en-têtes, Exchange), réponse automatique et message de l''équipe ne suspendent pas');
+  perform pg_temp.ok((select body like 'Avis de non-remise — %' from prospect_logs where gmail_message_id = 'ab01-ndr')
+    and (select body like 'Réponse automatique — %' from prospect_logs where gmail_message_id = 'ab01-oof'), 'B5 : non-remise et réponse automatique marquées au journal');
+  perform pg_temp.ok((select count(*) from notifications where dedupe_key in (select 'mail-reponse:' || id from mail_messages where gmail_message_id like 'ab01-%' and gmail_message_id <> 'ab01-1')) = 0,
+    'B5 : aucune notification « Réponse reçue » pour ces messages');
+  begin insert into mail_messages (thread_id, gmail_message_id, direction, sent_at, auto_kind) values (t, 'ab01-x', 'in', now(), 'pirate');
+    perform pg_temp.ok(false, 'type inconnu'); exception when check_violation then perform pg_temp.ok(true, 'B5 : type de message automatique contrôlé'); end;
+end $$;
+
+-- ── Relecture v1.63 : dépose Apple Mail ↔ synchronisation, dans les deux sens (B1) ────────────────────────────────────────
+-- forme exacte de la clé écrite par la dépose (js/data.js, v1.60.4) : « msgid:<Message-ID> », Message-ID entre chevrons
+do $$ declare t uuid; p uuid := '00000000-0000-0000-0000-0000000000aa'; owner uuid; begin
+  -- 1. synchronisation d'abord : la ligne du journal porte la clé ; la dépose du même mail la trouve (mailParts/keyOwner) → aucune 2e ligne
+  t := pg_temp.conv('ap01', '{prog@a.example}');
+  update mail_threads set link_status = 'manuel', prospect_id = p, structure_id = '00000000-0000-0000-0000-00000000000a' where id = t;
+  perform pg_temp.msg(t, 'ap01-1', 'in', 'prog@a.example', '<9F1C2E3A-1B2C@exemple-fictif.fr>', null, now() - interval '3 hours');
+  perform pg_temp.sync(t);
+  select prospect_id into owner from prospect_logs where import_key = 'msgid:<9F1C2E3A-1B2C@exemple-fictif.fr>';
+  perform pg_temp.ok(owner = p, 'B1 : synchronisation puis dépose — la clé de la dépose désigne déjà ce suivi (rien n''est rajouté au journal)');
+  -- 2. dépose d'abord (ligne écrite comme mailToJournal), puis synchronisation : reliée, une seule ligne
+  insert into prospect_logs (prospect_id, date, kind, body, author, import_key) values (p, current_date, 'Mail', 'Reçu — **Programmation**', 'equipe@example.com', 'msgid:<AA-depose@exemple-fictif.fr>');
+  perform pg_temp.msg(t, 'ap01-2', 'in', 'prog@a.example', '<AA-depose@exemple-fictif.fr>', null, now() - interval '2 hours');
+  perform pg_temp.sync(t);
+  perform pg_temp.ok((select count(*) from prospect_logs where import_key = 'msgid:<AA-depose@exemple-fictif.fr>' or gmail_message_id = 'ap01-2') = 1, 'B1 : dépose puis synchronisation — une seule ligne au journal');
+  -- 3. réponse écrite dans Apple Mail à ce mail déposé, arrivée dans un NOUVEAU fil : rattachée au suivi du mail déposé
+  t := pg_temp.conv('ap02', '{autre.adresse@exemple-fictif.fr}');
+  perform pg_temp.msg(t, 'ap02-1', 'out', 'anthony@example.com', '<rep-apple@example.org>', '{<AA-depose@exemple-fictif.fr>}', now());
+  perform pg_temp.sync(t);
+  perform pg_temp.ok((select prospect_id from mail_threads where id = t) = p, 'B1 : réponse depuis Apple Mail à un mail déposé : rattachée au même suivi');
+end $$;
+
 -- ── Droits ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 do $$ begin
   perform pg_temp.ok(not has_function_privilege('authenticated', 'public.mail_process(uuid[])', 'execute'), 'mail_process interdit aux comptes');

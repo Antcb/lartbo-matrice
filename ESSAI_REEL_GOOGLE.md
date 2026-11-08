@@ -48,6 +48,13 @@ domaine (elle sera de toute façon vérifiée à l'activation en production).
 | A11–A12 | option sur un jour occupé ; « Show » associé à une date confirmée | avertissement puis confirmation ; plus de double affichage |
 | A13 | appels de synchronisation sans justificatif / faux secret / compte hors équipe | 403 (SECURITE_SYNCHRO.md) |
 
+## Ordre de publication OBLIGATOIRE (production)
+1. **Migration** `2026-11-06_v1.61_messagerie.sql` appliquée en production **avant** la fusion de la branche (la fusion publie
+   l'interface, qui écrit `prospect_logs.gmail_message_id`). L'interface reste tolérante — si la colonne manque, la ligne du journal
+   est écrite sans l'identifiant, jamais perdue — mais la synchronisation ne peut alors reconnaître ces envois que par le jour et le texte.
+2. Fusion (interface) ; 3. fonction `mail-sync` (index.ts + regles.ts) ; 4. script Prospection d'anthony@ redéployé (version v1.61.0,
+   « ping ») ; 5. en dernier, ligne `private.sync_urls` (active la tâche toutes les 5 min).
+Le lot Apple Mail v1.60.4 est publié **avant** la messagerie (branche rebasée dessus).
+
 ## Après l'essai, pour la production (autorisations séparées, plus tard)
-Script Prospection d'anthony@ remplacé et redéployé (même adresse), migration et fonction `mail-sync` en production, puis ligne
-`private.sync_urls` (active la tâche toutes les 5 min). Chacune sur accord explicite d'Anthony.
+Dans l'ordre ci-dessus, chacune sur accord explicite d'Anthony.

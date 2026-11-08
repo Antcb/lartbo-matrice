@@ -12,13 +12,16 @@
 -- Retour arrière : désactiver la tâche planifiée (ou retirer la ligne de private.sync_urls) ; les tables peuvent rester (vides = aucun effet).
 -- Rejouable (v1.63) : chaque objet est créé « s'il n'existe pas » ou remplacé à l'identique ; aucune donnée existante n'est réécrite.
 -- Garde : s'arrête AVANT toute création si un prérequis manque (base d'une autre application, migration antérieure absente).
+-- Une seule transaction (v1.63, relecture) : une erreur en cours de route n'en laisse aucune partie appliquée.
 -- =====================================================================================================
+begin;
 do $$
 declare manque text[] := '{}';
 begin
   if to_regclass('public.prospects') is null then manque := manque || 'table prospects'::text; end if;
   if to_regclass('public.prospect_logs') is null then manque := manque || 'table prospect_logs'::text; end if;
   if to_regclass('public.contacts') is null or to_regclass('public.contact_structures') is null then manque := manque || 'tables contacts / contact_structures'::text; end if;
+  if to_regclass('public.shows') is null or to_regclass('public.app_users') is null then manque := manque || 'tables shows / app_users'::text; end if;
   if to_regclass('public.tasks') is null or to_regclass('public.notifications') is null then manque := manque || 'tables tasks / notifications'::text; end if;
   if to_regclass('private.import_secrets') is null then manque := manque || 'private.import_secrets (migration v1.22)'::text; end if;
   if to_regprocedure('public.is_team()') is null then manque := manque || 'fonction is_team()'::text; end if;
@@ -82,6 +85,14 @@ create table if not exists public.mail_messages (
 comment on table public.mail_messages is 'Messages Gmail (copie de travail, sans le corps) ; une seule ligne par message (v1.61)';
 create index if not exists mail_messages_thread_idx on public.mail_messages (thread_id, sent_at);
 alter table public.mail_messages add column if not exists ref_ids text[] not null default '{}';
+-- (v1.63, relecture) avis de non-remise / réponse automatique reconnus par leurs en-têtes (script) ; relances suspendues par ce message
+alter table public.mail_messages add column if not exists auto_kind text;
+alter table public.mail_messages add column if not exists suspended_tasks uuid[] not null default '{}';
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'mail_messages_auto_kind_check') then
+    alter table public.mail_messages add constraint mail_messages_auto_kind_check check (auto_kind in ('ndr', 'auto'));
+  end if;
+end $$;
 create index if not exists mail_messages_rfc_idx on public.mail_messages (rfc_message_id) where rfc_message_id is not null;
 
 create table if not exists public.mail_sync_state (
@@ -185,23 +196,61 @@ begin
   update mail_threads set link_status = 'a_rattacher', link_reason = reason where id = p_thread;
 end $$;
 
--- ── Journal du suivi (une seule ligne par message) et relances suspendues à la réponse ──────────────────────────────────
+-- ── Réponse reçue : relances suspendues (règle unique, appelée par le journal et par la correction du suivi) ────────────────
+-- Seule une VRAIE réponse d'un correspondant suspend : jamais un avis de non-remise (« ndr », reconnu par ses en-têtes dans le
+-- script, ou par l'expéditeur), jamais une réponse automatique (« auto » : absence… — décision d'Anthony en attente, v1.63), jamais un
+-- message d'un membre de l'équipe (production@…). Les tâches suspendues sont notées sur le message (suspended_tasks) : une correction
+-- de suivi peut ainsi les signaler, et les rétablir sur demande (mail_restore_relances).
+create or replace function public.mail_is_reply(m mail_messages) returns boolean
+language sql stable security definer set search_path = public as $$
+  select m.direction = 'in' and m.auto_kind is null
+    and coalesce(m.from_addr, '') !~* '^(mailer-daemon|mail-daemon|postmaster|microsoftexchange[0-9a-f]*)@'
+    and not exists (select 1 from app_users u where lower(u.email) = lower(coalesce(m.from_addr, '')))
+$$;
+
+create or replace function public.mail_suspend(p_msg uuid, p_prospect uuid) returns integer
+language plpgsql security definer set search_path = public as $$
+declare m mail_messages%rowtype; ids uuid[]; st_name text;
+begin
+  select * into m from mail_messages where id = p_msg;
+  if not found or p_prospect is null or not public.mail_is_reply(m) then return 0; end if;
+  with c as (
+    update tasks set status = 'Cancelled', done_at = now(),
+      notes = coalesce(notes || E'\n', '') || 'Suspendue automatiquement : réponse reçue le '
+        || to_char(coalesce(m.sent_at, now()) at time zone 'Europe/Paris', 'DD/MM/YYYY') || ' (' || coalesce(m.from_addr, '?') || ').'
+      where prospect_id = p_prospect and auto_kind in ('relance_mail', 'relance_tel') and status not in ('Done', 'Cancelled')
+        and created_at < coalesce(m.sent_at, now())
+      returning id)
+  select coalesce(array_agg(id), '{}') into ids from c;
+  if cardinality(ids) > 0 then update mail_messages set suspended_tasks = suspended_tasks || ids where id = p_msg; end if;
+  -- signalement : seulement pour une réponse récente (pas pour l'historique repris à la première synchronisation)
+  if coalesce(m.sent_at, now()) > now() - interval '3 days' then
+    select s.name into st_name from prospects p left join structures s on s.id = p.structure_id where p.id = p_prospect;
+    insert into notifications (kind, title, body, dedupe_key)
+      values ('suivi', 'Réponse reçue — ' || coalesce(st_name, 'suivi'), coalesce(m.from_addr, '') || ' : « ' || coalesce(m.subject, '') || ' »',
+        'mail-reponse:' || m.id)
+      on conflict (dedupe_key) do nothing;
+  end if;
+  return cardinality(ids);
+end $$;
+
+-- ── Journal du suivi (une seule ligne par message) ─────────────────────────────────────────────────────────────────────────
 create or replace function public.mail_journal(p_thread uuid) returns integer
 language plpgsql security definer set search_path = public as $$
-declare t mail_threads%rowtype; m record; log_id uuid; n int := 0; st_name text; rt record;
+declare t mail_threads%rowtype; m record; log_id uuid; n int := 0;
 begin
   select * into t from mail_threads where id = p_thread;
   if not found or t.prospect_id is null then return 0; end if;
-  select s.name into st_name from structures s where s.id = t.structure_id;
   for m in select * from mail_messages where thread_id = p_thread and prospect_log_id is null order by sent_at for update loop
     -- mail envoyé depuis L'ArtBotrice : déjà au journal. Reconnu par son identifiant Gmail ; pour les lignes d'avant la v1.61 (sans
     -- identifiant), par une ligne « Mail » du même suivi écrite par l'équipe le même jour (ou brouillon sans date), pas encore reliée.
     log_id := null;
-    -- mail déjà joint au suivi par une dépose (Apple Mail, .eml : clé « msgid:<Message-ID> ») : relié, jamais réécrit (v1.63)
+    -- mail déjà joint au suivi par une dépose (Apple Mail, .eml : clé « msgid:<Message-ID> », v1.60.4) : relié, jamais réécrit
     if m.rfc_message_id is not null then
       select l.id into log_id from prospect_logs l where l.prospect_id = t.prospect_id and l.import_key = 'msgid:' || m.rfc_message_id limit 1;
       if log_id is not null then
         update mail_messages set prospect_log_id = log_id where id = m.id;
+        perform public.mail_suspend(m.id, t.prospect_id);
         continue;
       end if;
     end if;
@@ -226,9 +275,11 @@ begin
     insert into prospect_logs (prospect_id, date, kind, contact_name, body, author, gmail_message_id, import_key)
     values (t.prospect_id, (coalesce(m.sent_at, now()) at time zone 'Europe/Paris')::date, 'Mail',
       case when m.direction = 'in' then coalesce(nullif(m.from_name, ''), m.from_addr) end,
-      (case when m.direction = 'in' then 'Mail reçu de ' || coalesce(m.from_addr, '?') else 'Mail envoyé à ' || array_to_string(m.to_addrs || m.cc_addrs, ', ') end)
+      (case m.auto_kind when 'ndr' then 'Avis de non-remise — ' when 'auto' then 'Réponse automatique — ' else '' end)
+        || (case when m.direction = 'in' then 'Mail reçu de ' || coalesce(m.from_addr, '?') else 'Mail envoyé à ' || array_to_string(m.to_addrs || m.cc_addrs, ', ') end)
         || ' — « ' || coalesce(m.subject, '') || ' »'
-        || case when jsonb_array_length(m.attachments) > 0 then ' — pièces jointes : ' || (select string_agg(a->>'name', ', ') from jsonb_array_elements(m.attachments) a) else '' end
+        || coalesce(' — pièces jointes : ' || (select string_agg(a->>'name', ', ') from jsonb_array_elements(m.attachments) a
+             where not coalesce((a->>'inline')::boolean, false)), '')   -- images intégrées au texte : pas des pièces jointes
         || case when coalesce(m.snippet, '') <> '' then E'\n' || m.snippet else '' end,
       'Messagerie', m.gmail_message_id,
       case when m.rfc_message_id is not null and not exists (select 1 from prospect_logs k where k.import_key = 'msgid:' || m.rfc_message_id)
@@ -236,25 +287,8 @@ begin
     returning id into log_id;
     update mail_messages set prospect_log_id = log_id where id = m.id;
     n := n + 1;
-    -- réponse reçue : les relances automatiques ouvertes du suivi, créées AVANT ce message, sont suspendues (annulées, avec la raison)
-    -- et la réponse est signalée ; « Programmer une relance » en recrée une au besoin
-    -- (un avis de non-remise n'est pas une réponse : relances gardées)
-    if m.direction = 'in' and coalesce(m.from_addr, '') !~ '^(mailer-daemon|postmaster)@' then
-      for rt in select id from tasks where prospect_id = t.prospect_id and auto_kind in ('relance_mail', 'relance_tel')
-                  and status not in ('Done', 'Cancelled') and created_at < coalesce(m.sent_at, now()) loop
-        update tasks set status = 'Cancelled', done_at = now(),
-          notes = coalesce(notes || E'\n', '') || 'Suspendue automatiquement : réponse reçue le '
-            || to_char(coalesce(m.sent_at, now()) at time zone 'Europe/Paris', 'DD/MM/YYYY') || ' (' || coalesce(m.from_addr, '?') || ').'
-          where id = rt.id;
-      end loop;
-      -- signalement : seulement pour une réponse récente (pas pour l'historique repris à la première synchronisation)
-      if coalesce(m.sent_at, now()) > now() - interval '3 days' then
-      insert into notifications (kind, title, body, dedupe_key)
-        values ('suivi', 'Réponse reçue — ' || coalesce(st_name, 'suivi'), coalesce(m.from_addr, '') || ' : « ' || coalesce(m.subject, '') || ' »',
-          'mail-reponse:' || m.id)
-        on conflict (dedupe_key) do nothing;
-      end if;
-    end if;
+    -- réponse reçue : relances automatiques ouvertes du suivi, créées AVANT ce message, suspendues (annulées avec la raison), signalée
+    perform public.mail_suspend(m.id, t.prospect_id);
   end loop;
   return n;
 end $$;
@@ -271,32 +305,80 @@ begin
   return n;
 end $$;
 
-/** Rattachement manuel (équipe) : structure, suivi, artiste, date ; le journal suit */
+/**
+ * Rattachement manuel (équipe) : structure, suivi, artiste, date ; le journal suit.
+ * (v1.63, relecture) « Aucun suivi » choisi à la main = statut « manuel » sans suivi : jamais refait automatiquement.
+ * Suivi corrigé A → B : les réponses déjà reçues suspendent les relances de B (même règle) ; les relances de A annulées par ces
+ * messages ne sont PAS rétablies d'office (question à Anthony) : notification « à vérifier », rétablissement sur demande.
+ */
 create or replace function public.mail_link_manual(p_thread uuid, p_structure uuid, p_prospect uuid, p_project uuid, p_show uuid) returns integer
 language plpgsql security definer set search_path = public as $$
+declare old uuid; m record; a_name text; b_name text; n int;
 begin
   if not public.is_team() then raise exception 'Réservé à l''équipe'; end if;
   if p_prospect is not null and p_structure is not null and not exists (select 1 from prospects where id = p_prospect and structure_id = p_structure) then
     raise exception 'Ce suivi n''appartient pas à cette structure';
   end if;
+  if p_show is not null and p_structure is not null and not exists (select 1 from shows where id = p_show and structure_id = p_structure) then
+    raise exception 'Cette date n''appartient pas à cette structure';
+  end if;
+  select prospect_id into old from mail_threads where id = p_thread for update;
+  if not found then raise exception 'Conversation introuvable'; end if;
   -- suivi corrigé : les lignes écrites par la messagerie suivent la conversation (les lignes écrites par l'équipe restent où elles sont)
   update prospect_logs l set prospect_id = p_prospect
     where p_prospect is not null and l.author = 'Messagerie' and l.prospect_id is distinct from p_prospect
       and l.id in (select prospect_log_id from mail_messages where thread_id = p_thread and prospect_log_id is not null);
   update mail_messages set prospect_log_id = null
     where thread_id = p_thread and prospect_log_id in (select id from prospect_logs where author is distinct from 'Messagerie')
-      and p_prospect is distinct from (select prospect_id from mail_threads where id = p_thread);
+      and p_prospect is distinct from old;
   update mail_threads set structure_id = p_structure, prospect_id = p_prospect, project_id = p_project, show_id = p_show,
-    link_status = case when p_structure is null and p_prospect is null then 'a_rattacher' else 'manuel' end,
-    link_reason = case when p_structure is null and p_prospect is null then 'Rattachement retiré' else 'Rattaché à la main' end
+    link_status = 'manuel',
+    link_reason = case when p_structure is null and p_prospect is null then 'Aucun suivi (choisi à la main)' else 'Rattaché à la main' end
     where id = p_thread;
-  return public.mail_journal(p_thread);
+  if old is not null and old is distinct from p_prospect then
+    select name into a_name from prospects where id = old;
+    select name into b_name from prospects where id = p_prospect;
+    for m in select x.id from mail_messages x where x.thread_id = p_thread
+               and exists (select 1 from tasks k where k.id = any(x.suspended_tasks) and k.prospect_id = old and k.status = 'Cancelled') loop
+      insert into notifications (kind, title, body, dedupe_key)
+        values ('suivi', 'Relances à vérifier — ' || coalesce(a_name, 'suivi'),
+          'Relances de « ' || coalesce(a_name, 'suivi') || ' » annulées par un message désormais rattaché à « ' || coalesce(b_name, 'aucun suivi')
+            || ' » : à vérifier. Ouvrir pour les rétablir.', 'mail-relances:' || m.id || ':' || old)
+        on conflict (dedupe_key) do nothing;
+    end loop;
+  end if;
+  n := public.mail_journal(p_thread);
+  if p_prospect is not null and p_prospect is distinct from old then
+    for m in select id from mail_messages where thread_id = p_thread order by sent_at loop perform public.mail_suspend(m.id, p_prospect); end loop;
+  end if;
+  return n;
 end $$;
 
-revoke all on function public.mail_link_thread(uuid), public.mail_journal(uuid), public.mail_process(uuid[]) from public, anon, authenticated;
-grant execute on function public.mail_link_thread(uuid), public.mail_journal(uuid), public.mail_process(uuid[]) to service_role;
-revoke all on function public.mail_link_manual(uuid, uuid, uuid, uuid, uuid) from public, anon;
-grant execute on function public.mail_link_manual(uuid, uuid, uuid, uuid, uuid) to authenticated, service_role;
+/** Rétablit, sur demande de l'équipe, les relances d'un suivi annulées par un message rattaché depuis à un autre suivi */
+create or replace function public.mail_restore_relances(p_message uuid, p_prospect uuid) returns integer
+language plpgsql security definer set search_path = public as $$
+declare ids uuid[];
+begin
+  if not public.is_team() then raise exception 'Réservé à l''équipe'; end if;
+  with r as (
+    update tasks k set status = 'To Do', done_at = null,
+      notes = coalesce(k.notes || E'\n', '') || 'Rétablie à la main le ' || to_char(now() at time zone 'Europe/Paris', 'DD/MM/YYYY')
+        || ' (le message qui l''avait suspendue est rattaché à un autre suivi).'
+      from mail_messages x
+      where x.id = p_message and k.id = any(x.suspended_tasks) and k.prospect_id = p_prospect and k.status = 'Cancelled'
+        and (select prospect_id from mail_threads where id = x.thread_id) is distinct from p_prospect
+      returning k.id)
+  select coalesce(array_agg(id), '{}') into ids from r;
+  update mail_messages set suspended_tasks = array(select u from unnest(suspended_tasks) u where not u = any(ids)) where id = p_message;
+  return cardinality(ids);
+end $$;
+
+revoke all on function public.mail_link_thread(uuid), public.mail_journal(uuid), public.mail_process(uuid[]),
+  public.mail_suspend(uuid, uuid), public.mail_is_reply(mail_messages) from public, anon, authenticated;
+grant execute on function public.mail_link_thread(uuid), public.mail_journal(uuid), public.mail_process(uuid[]),
+  public.mail_suspend(uuid, uuid), public.mail_is_reply(mail_messages) to service_role;
+revoke all on function public.mail_link_manual(uuid, uuid, uuid, uuid, uuid), public.mail_restore_relances(uuid, uuid) from public, anon;
+grant execute on function public.mail_link_manual(uuid, uuid, uuid, uuid, uuid), public.mail_restore_relances(uuid, uuid) to authenticated, service_role;
 
 -- ── Synchronisation toutes les 5 minutes : appel de la fonction serveur « mail-sync » ; inactive tant que private.sync_urls n'a pas son adresse ──
 -- adresses des fonctions appelées par les tâches planifiées : schéma privé (inaccessible à l'application et aux comptes de l'équipe)
@@ -326,3 +408,5 @@ do $$ declare deja boolean; begin
     if not deja then perform cron.schedule('mail-sync', '*/5 * * * *', 'select public.mail_sync_tick()'); end if;
   end if;
 end $$;
+
+commit;

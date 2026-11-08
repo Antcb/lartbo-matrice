@@ -9,7 +9,7 @@ Rien n'est lancé sans son accord. La séance (comptes, autorisations, déploiem
 | Fil : `threadId`, `In-Reply-To`, `References`, objet « Re: » / « Tr : » ; brouillon mis à jour, jamais copié ; brouillon disparu → rien ne part | `tests/static/messagerie-regles.mjs` (script exécuté avec des services Google simulés) |
 | Envoi « envoyé » seulement avec l'identifiant renvoyé par Gmail ; journal écrit par la synchronisation (jamais avant) | idem + `e2e/messagerie-v161.spec.js` (envoi non confirmé) |
 | Limite 25 Mo sur le message **encodé** (navigateur et script) ; pièces illisibles → rien ne part ; jamais un lien à la place | idem + `e2e/messagerie-v163.spec.js` |
-| Rattachement : unique → auto (raison visible) ; plusieurs contacts d'une structure → structure ; plusieurs structures / suivis → choix ; fil connu par `References` (réponse Apple Mail) ; déjà rattachée → gardée | `supabase/repetitions/2026-11-08_v1.63_messagerie_essai.sql` (42 essais, base PostgreSQL locale) + e2e |
+| Rattachement : unique → auto (raison visible) ; plusieurs contacts d'une structure → structure ; plusieurs structures / suivis → choix ; fil connu par `References` (réponse Apple Mail) ; déjà rattachée → gardée | `supabase/repetitions/2026-11-08_v1.63_messagerie_essai.sql` (61 essais, base PostgreSQL locale) + e2e |
 | Aucun doublon (synchronisations répétées, envoi depuis L'ArtBotrice, mail déposé depuis Apple Mail) ; relances suspendues à la réponse | essai SQL |
 | Libellé / archive / corbeille distincts, jamais de suppression définitive ; images distantes et scripts bloqués | script simulé + e2e |
 | Accès : secret dédié de la tâche planifiée ; actions de l'application réservées à l'équipe | script simulé (règles `mail-sync`) + essai SQL (droits, RLS, adresse de la tâche) |
@@ -26,7 +26,7 @@ Rien n'est lancé sans son accord. La séance (comptes, autorisations, déploiem
 | 7 | Libellé, archive, corbeille, retour de corbeille depuis l'application | visibles dans Gmail web de T1 |
 | 8 | Dans Gmail web de T1 (et Apple Mail si ajouté) : libellé, archive, lu, réponse | repris à la synchronisation suivante ; réponse au journal une fois |
 | 9 | « Actualiser » trois fois + deux passages planifiés | aucun doublon ; dernière synchronisation à jour |
-| 10 | Relance programmée, puis T2 répond | relance « Suspendue automatiquement : réponse reçue le … » ; une notification |
+| 10 | Relance programmée, puis T2 répond ; puis réponse d'absence automatique et adresse inexistante (avis de non-remise) | réponse : relance suspendue, une notification ; absence et non-remise : marquées au journal, relance gardée |
 | 11 | T2 envoie un mail avec une image hébergée | image non chargée avant « Afficher les images » (journal réseau) |
 | 12 | Adresse du script faussée dans Réglages du projet de test | erreur affichée avec l'heure ; « dernière synchronisation réussie » inchangée |
 

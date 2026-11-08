@@ -58,6 +58,8 @@ t('messages : brouillon jamais enregistré (un brouillon n’est pas un envoi), 
   assert.ok(rows[1].ref_ids.every((x) => /^<.+>$/.test(x)));
   assert.equal(rows[0].attachments[0].name, 'fiche.pdf');
   assert.ok(!('id' in rows[0].attachments[0]), 'identifiant de pièce Gmail non stocké');
+  const auto = messageRows('anthony', 'u', { ...TH, messages: [{ ...TH.messages[0], id: 'n1', auto: 'ndr' }, { ...TH.messages[0], id: 'n2', auto: 'auto' }, { ...TH.messages[1], id: 'n3', auto: 'ndr' }, { ...TH.messages[0], id: 'n4', auto: 'pirate' }] });
+  assert.deepEqual(auto.map((r) => r.auto_kind), ['ndr', 'auto', null, null]);   // message envoyé ou valeur inconnue : jamais « automatique »
 });
 
 // ── 2. Script Google simulé ──────────────────────────────────────────────────────────────────────────────────────────
@@ -175,27 +177,27 @@ t('envoi : « envoyé » seulement si Gmail renvoie l’identifiant du message',
   assert.equal(ctx.compose_({ mode: 'reply', thread_id: 'th1', to: 'prog@example.com', html: 'x', send: true }).sent, false);
 });
 t('pièces jointes : vraies pièces (stockage par lien temporaire, Drive avec les droits du compte), illisible → rien ne part', () => {
-  const { ctx, log, raw } = bac({ threads: { th1: FIL }, urls: { 'https://stockage.example/signe': Buffer.from('%PDF-essai') }, driveFiles: { drv1: { bytes: Buffer.from('%PDF-drive'), name: 'Dossier de presse.pdf' } } });
+  const { ctx, log, raw } = bac({ threads: { th1: FIL }, urls: { 'https://abcdefghijkl.supabase.co/storage/v1/object/sign/artiste/ft.pdf?token=essai': Buffer.from('%PDF-essai') }, driveFiles: { 'drive-dp-00001': { bytes: Buffer.from('%PDF-drive'), name: 'Dossier de presse.pdf' } } });
   ctx.compose_({ mode: 'new', to: 'a@example.net', subject: 'Docs', html: 'x', send: true,
-    attachments: [{ url: 'https://stockage.example/signe', name: 'Fiche technique.pdf' }, { id: 'drv1', name: 'Dossier de presse.pdf' }] });
+    attachments: [{ url: 'https://abcdefghijkl.supabase.co/storage/v1/object/sign/artiste/ft.pdf?token=essai', name: 'Fiche technique.pdf' }, { id: 'drive-dp-00001', name: 'Dossier de presse.pdf' }] });
   const m = raw(log.created[0]);
   assert.equal((m.match(/Content-Disposition: attachment/g) || []).length, 2);
   assert.ok(m.includes(b64('%PDF-essai')) && m.includes(b64('%PDF-drive')));
-  assert.ok(!m.includes('stockage.example'), 'aucun lien à la place de la pièce');
+  assert.ok(!m.includes('supabase.co'), 'aucun lien à la place de la pièce');
   const { ctx: c2, log: l2 } = bac({ threads: { th1: FIL } });
   assert.throws(() => c2.compose_({ mode: 'new', to: 'a@example.net', subject: 'x', html: 'x', send: true, attachments: [{ id: 'interdit', name: 'privé.pdf' }] }), /Pièce jointe illisible.*Rien n’est parti/);
   assert.equal(l2.created.length + l2.sent.length, 0);
 });
 t('limite Gmail mesurée sur le message ENCODÉ : 18,5 Mo bruts refusés (≈ 25,4 Mo encodés), 17 Mo acceptés', () => {
   const Mo = 1024 * 1024;
-  const gros = bac({ urls: { 'u:gros': Buffer.alloc(Math.round(18.5 * Mo), 65) } });
-  assert.throws(() => gros.ctx.compose_({ mode: 'new', to: 'a@example.net', subject: 'x', html: 'x', send: true, attachments: [{ url: 'u:gros', name: 'gros.wav' }] }), /trop lourd/i);
+  const gros = bac({ urls: { 'https://abcdefghijkl.supabase.co/storage/v1/object/sign/suivi/gros?token=x': Buffer.alloc(Math.round(18.5 * Mo), 65) } });
+  assert.throws(() => gros.ctx.compose_({ mode: 'new', to: 'a@example.net', subject: 'x', html: 'x', send: true, attachments: [{ url: 'https://abcdefghijkl.supabase.co/storage/v1/object/sign/suivi/gros?token=x', name: 'gros.wav' }] }), /trop lourd/i);
   assert.equal(gros.log.created.length, 0, 'rien n’est créé dans Gmail');
-  const ok = bac({ urls: { 'u:moyen': Buffer.alloc(17 * Mo, 65) } });
-  assert.equal(ok.ctx.compose_({ mode: 'new', to: 'a@example.net', subject: 'x', html: 'x', send: true, attachments: [{ url: 'u:moyen', name: 'moyen.wav' }] }).sent, true);
+  const ok = bac({ urls: { 'https://abcdefghijkl.supabase.co/storage/v1/object/sign/suivi/moyen?token=x': Buffer.alloc(17 * Mo, 65) } });
+  assert.equal(ok.ctx.compose_({ mode: 'new', to: 'a@example.net', subject: 'x', html: 'x', send: true, attachments: [{ url: 'https://abcdefghijkl.supabase.co/storage/v1/object/sign/suivi/moyen?token=x', name: 'moyen.wav' }] }).sent, true);
   // deux pièces de 9,5 Mo : sous 25 Mo bruts, au-dessus une fois encodées
-  const deux = bac({ urls: { 'u:a': Buffer.alloc(Math.round(9.5 * Mo), 65), 'u:b': Buffer.alloc(Math.round(9.5 * Mo), 66) } });
-  assert.throws(() => deux.ctx.compose_({ mode: 'new', to: 'a@example.net', subject: 'x', html: 'x', send: true, attachments: [{ url: 'u:a', name: 'a' }, { url: 'u:b', name: 'b' }] }), /trop lourd/i);
+  const deux = bac({ urls: { 'https://abcdefghijkl.supabase.co/storage/v1/object/sign/suivi/a?token=x': Buffer.alloc(Math.round(9.5 * Mo), 65), 'https://abcdefghijkl.supabase.co/storage/v1/object/sign/suivi/b?token=x': Buffer.alloc(Math.round(9.5 * Mo), 66) } });
+  assert.throws(() => deux.ctx.compose_({ mode: 'new', to: 'a@example.net', subject: 'x', html: 'x', send: true, attachments: [{ url: 'https://abcdefghijkl.supabase.co/storage/v1/object/sign/suivi/a?token=x', name: 'a' }, { url: 'https://abcdefghijkl.supabase.co/storage/v1/object/sign/suivi/b?token=x', name: 'b' }] }), /trop lourd/i);
 });
 t('adresses : seule, avec nom, nom entre guillemets avec virgule, plusieurs (jamais tronquées)', () => {
   const { ctx } = bac();
@@ -203,6 +205,32 @@ t('adresses : seule, avec nom, nom entre guillemets avec virgule, plusieurs (jam
   assert.deepEqual(J(ctx.addrs_('Camille Exemple <Camille@Example.com>, dom@example.org')), [{ name: 'Camille Exemple', email: 'camille@example.com' }, { name: '', email: 'dom@example.org' }]);
   assert.deepEqual(J(ctx.addrs_('"Exemple, Camille" <c@example.com>')), [{ name: 'Exemple, Camille', email: 'c@example.com' }]);
   assert.deepEqual(J(ctx.addrs_('')), []);
+});
+t('pièces jointes : seuls les liens signés du stockage Supabase et des identifiants Drive valides sont lus', () => {
+  const { ctx, log } = bac({ urls: { 'https://pirate.example.net/x': Buffer.from('x') } });
+  assert.throws(() => ctx.compose_({ mode: 'new', to: 'a@example.net', subject: 'x', html: 'x', send: true, attachments: [{ url: 'https://pirate.example.net/x', name: 'x' }] }), /adresse refusée.*Rien n’est parti/);
+  assert.throws(() => ctx.compose_({ mode: 'new', to: 'a@example.net', subject: 'x', html: 'x', send: true, attachments: [{ url: 'https://abcdefghijkl.supabase.co/storage/v1/object/sign/x?t=1 https://pirate', name: 'x' }] }), /adresse refusée/);
+  assert.throws(() => ctx.compose_({ mode: 'new', to: 'a@example.net', subject: 'x', html: 'x', send: true, attachments: [{ id: '../../x', name: 'x' }] }), /identifiant Drive refusé/);
+  assert.equal(log.fetched.length + log.created.length, 0);
+});
+t('messages automatiques reconnus par leurs en-têtes : avis de non-remise (rapport, X-Failed-Recipients, Exchange), réponse automatique', () => {
+  const { ctx } = bac();
+  const k = (h, mime = 'text/plain') => ctx.autoKind_({ mimeType: mime, headers: Object.entries(h).map(([name, value]) => ({ name, value })) }, (h.From || '').replace(/.*<|>.*/g, ''), h.Subject || '');
+  assert.equal(k({ From: 'Mail Delivery Subsystem <mailer-daemon@googlemail.com>' }), 'ndr');
+  assert.equal(k({ From: 'microsoftexchange329e71ec88ae4615bbc36ab6ce41109e@b.example', Subject: 'Non remis : Hello' }), 'ndr');
+  assert.equal(k({ From: 'robot@b.example', 'Content-Type': 'multipart/report; report-type=delivery-status' }, 'multipart/report'), 'ndr');
+  assert.equal(k({ From: 'relais@b.example', 'X-Failed-Recipients': 'x@b.example' }), 'ndr');
+  assert.equal(k({ From: 'camille@example.com', 'Auto-Submitted': 'auto-replied', Subject: 'Absence' }), 'auto');
+  assert.equal(k({ From: 'camille@example.com', 'X-Autoreply': 'yes' }), 'auto');
+  assert.equal(k({ From: 'camille@example.com', 'Auto-Submitted': 'no', Subject: 'Re: Proposition' }), '');
+  assert.equal(k({ From: 'camille@example.com', Subject: 'Re: Proposition' }), '');
+});
+t('image intégrée au texte (Content-ID) : marquée, distincte d’une vraie pièce jointe', () => {
+  const { ctx } = bac();
+  const acc = ctx.parts_({ mimeType: 'multipart/related', parts: [
+    { mimeType: 'image/png', filename: 'logo.png', headers: [{ name: 'Content-ID', value: '<logo1>' }, { name: 'Content-Disposition', value: 'inline; filename=logo.png' }], body: { attachmentId: 'i1', size: 900 } },
+    { mimeType: 'application/pdf', filename: 'fiche.pdf', headers: [{ name: 'Content-Disposition', value: 'attachment; filename=fiche.pdf' }], body: { attachmentId: 'a1', size: 1000 } }] }, { html: '', text: '', attachments: [] });
+  assert.deepEqual(J(acc.attachments.map(a => [a.name, a.inline])), [['logo.png', true], ['fiche.pdf', false]]);
 });
 t('lecture : brouillons exclus du fil, participants sans la boîte, adresse de réponse, pièces (nom, taille), références', () => {
   const { ctx } = bac({ threads: { th1: FIL } });

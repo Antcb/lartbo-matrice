@@ -8,7 +8,7 @@
  *     seulement une fois l'envoi confirmé par Gmail (aucun doublon : identifiant Gmail du message).
  */
 import { render } from './app.js';
-import { insert, sb, signedUrl, uploadFiles } from './data.js';
+import { insert, sb, uploadFiles } from './data.js';
 import { attOk, attSizeHTML, fill, mailVars, todoOk, tplLabel } from './mail.js';
 import { callProspect, prospectVars } from './prospection.js';
 import { byId, contactMails, linksOfStructure, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName, suiviClosed } from './selectors.js';
@@ -22,7 +22,8 @@ import { getDraft, setDraft, clearDraft } from './ui/drafts.js';
 import { addDays, esc, fmtDate, toast, today, workDay } from './utils.js';
 
 export const MAILBOX_ADDR = () => String(setting('prospect_from') || 'anthony@lartboristerie.com').toLowerCase();
-const GMAIL_MAX_BYTES = 25 * 1024 * 1024;   // Gmail : 25 Mo pour le message ENCODÉ (vérifié aussi, exactement, par le script)
+const GMAIL_MAX_BYTES = 25 * 1024 * 1024;
+export const MAIL_LINK_SECONDS = 600;   // lien temporaire d'une pièce jointe envoyée au script (CONVENTIONS §6.21)   // Gmail : 25 Mo pour le message ENCODÉ (vérifié aussi, exactement, par le script)
 /** Taille du message une fois encodé : pièces jointes en base64 (4/3, lignes de 76 caractères + retour), texte HTML et texte brut
  *  en base64, en-têtes et séparateurs (marge de 16 Ko par pièce + 32 Ko). Estimation par excès : le script mesure le message réel. */
 export const encodedSize = (fileBytes, htmlChars = 0) => {
@@ -30,7 +31,9 @@ export const encodedSize = (fileBytes, htmlChars = 0) => {
   return Math.ceil(fileBytes.reduce((a, n) => a + b64(Number(n) || 0) + 16384, 0) + 2 * b64(htmlChars * 3) + 32768);
 };
 const SYSTEM_LABELS = {INBOX: 'Boîte de réception', SENT: 'Envoyés', STARRED: 'Suivis', IMPORTANT: 'Important', UNREAD: 'Non lu', TRASH: 'Corbeille', SPAM: 'Spam', DRAFT: 'Brouillons'};
-export const LINK_LABEL = {auto: 'Rattaché automatiquement', manuel: 'Rattaché à la main', a_rattacher: 'À rattacher'};
+export const LINK_LABEL = {auto: 'Rattaché automatiquement', manuel: 'Rattaché à la main', a_rattacher: 'À rattacher', aucun: 'Aucun suivi (choisi à la main)'};
+/** État affiché : un retrait manuel (« manuel » sans structure ni suivi) n'est plus « À rattacher » et n'est jamais refait automatiquement */
+export const linkState = t => t.link_status === 'manuel' && !t.structure_id && !t.prospect_id ? 'aucun' : t.link_status;
 
 /** État de l'espace Mails (mémoire de la page) */
 export const M = {filter: 'inbox', label: '', labels: null, search: null, open: null, thread: null, loading: false, error: '', images: new Set()};
@@ -134,7 +137,7 @@ export async function linkThread(id){
       const {error} = await sb.rpc('mail_link_manual', {p_thread: id, p_structure: v.structure_id || null, p_prospect: v.prospect_id || null, p_project: v.project_id || null, p_show: v.show_id || null});
       if (error){ toast('Rattachement impossible : ' + error.message, true); return false; }
       await mailSync([row.gmail_thread_id]).catch(e => toast(e.message, true));
-      toast(v.structure_id || v.prospect_id ? 'Conversation rattachée' : 'Rattachement retiré');
+      toast(v.structure_id || v.prospect_id ? 'Conversation rattachée' : 'Rattachement retiré : la conversation reste sans suivi (jamais rattachée automatiquement)');
       return true;
     }});
   // structure changée : suivis et dates proposés relus pour la structure choisie (jamais ceux d'une autre)
@@ -200,8 +203,11 @@ export async function projectDocs(projectId, prospectId = null){
  * Aucun texte, destinataire ni pièce jointe n'est remplacé en silence : un modèle s'INSÈRE (au curseur, sinon à la fin).
  */
 export async function compose(mode, row = null, msg = null){
-  const key = `mail:${mode}:${row?.gmail_thread_id || 'new'}`, saved = getDraft(key) || {};
-  const t = M.thread, base = msg || t?.messages?.[t.messages.length - 1] || null;
+  // (v1.63, relecture) « Nouveau mail » est vraiment nouveau, même depuis une conversation ouverte : aucun fil, aucun « Re: »
+  if (mode === 'new'){ row = null; msg = null; }
+  const t = mode === 'new' ? null : M.thread, base = msg || t?.messages?.[t.messages.length - 1] || null;
+  // brouillon local propre au message visé (répondre à un message précis ≠ répondre au dernier)
+  const key = `mail:${mode}:${row?.gmail_thread_id || 'new'}:${msg?.id || ''}`, saved = getDraft(key) || {};
   const targets = base && mode !== 'forward' && mode !== 'new' ? replyTargets(base, mode === 'reply_all') : {to: '', cc: ''};
   const ctx = {structure_id: row?.structure_id || '', contact_id: '', project_id: row?.project_id || (row?.prospect_id ? projIds(byId('prospects', row.prospect_id))[0] : '') || '', show_id: row?.show_id || ''};
   const contacts = ctx.structure_id ? linksOfStructure(ctx.structure_id) : [];
@@ -210,7 +216,8 @@ export async function compose(mode, row = null, msg = null){
   const hits = contacts.filter(c => contactMails(c).toLowerCase().split(', ').some(e => e && toSet.has(e)));
   ctx.contact_id = hits.length === 1 ? hits[0].id : '';
   let files = saved.files || (mode === 'forward' ? [] : []), draftId = saved.draft_id || null, wantDraft = false;
-  const keepFwd = mode === 'forward' ? (base?.attachments || []) : [];
+  // transfert : seules les vraies pièces jointes d'origine (les images intégrées au texte ne sont ni listées ni jointes)
+  const keepFwd = mode === 'forward' ? (base?.attachments || []).filter(a => !a.inline) : [];
   const sig = setting('prospect_signature') || '';
   const subjectDefault = !base ? '' : mode === 'forward' ? (/^(tr|fwd?)\s*:/i.test(base.subject) ? base.subject : 'Tr : ' + base.subject) : (/^re\s*:/i.test(base.subject) ? base.subject : 'Re: ' + base.subject);
   const tpls = S.db.mail_templates.slice().sort((a, b) => (a.kind || '').localeCompare(b.kind || '') || (a.name || '').localeCompare(b.name || ''));
@@ -253,9 +260,10 @@ export async function compose(mode, row = null, msg = null){
       if (!(await attOk(files))) return false;
       if (send && !(await confirmAsk('Envoyer le mail ?', `Le mail part maintenant à ${m.to}${m.cc ? ` (copie : ${m.cc})` : ''}${m.bcc ? ` (copie cachée : ${m.bcc})` : ''}, depuis ${MAILBOX_ADDR()}.`, 'Envoyer le mail'))) return false;
       try {
-        // lien temporaire de 10 min pour le stockage « artiste » (lu une fois par le script) ; stockage « suivi » : fonction officielle
+        // pièces jointes : lien temporaire DÉDIÉ de 10 min (lu une seule fois par le script), stockage « artiste » ou « suivi » —
+        // jamais le lien de 6 h mis en cache pour l'affichage (signedUrl)
         const attachments = await Promise.all(files.filter(f => f.on).map(async f => f.path
-          ? {url: f.bucket === 'artiste' ? (await sb.storage.from('artiste').createSignedUrl(f.path, 600)).data?.signedUrl : await signedUrl(f.path), name: f.name}
+          ? {url: (await sb.storage.from(f.bucket || 'suivi').createSignedUrl(f.path, MAIL_LINK_SECONDS)).data?.signedUrl, name: f.name}
           : {id: f.file_id, name: f.name}));
         if (attachments.some(a => !a.url && !a.id)) throw new Error('Une pièce jointe est illisible : rien n’est parti.');
         const out = await callProspect('compose', {mode, thread_id: row?.gmail_thread_id || null, message_id: base?.id || null, to: m.to, cc: m.cc, bcc: m.bcc,
@@ -322,7 +330,7 @@ export async function compose(mode, row = null, msg = null){
       const path = `mails/messagerie/${Date.now()}_${f.name.replace(/[^\w.\-]+/g, '_')}`;
       const {error} = await sb.storage.from('suivi').upload(path, f, {contentType: f.type || 'application/octet-stream'});
       if (error){ toast('Envoi impossible : ' + error.message, true); continue; }
-      files.push({path, name: f.name, size: f.size, on: true});
+      files.push({path, bucket: 'suivi', name: f.name, size: f.size, on: true});
     }
     e.target.value = ''; drawFiles();
   });
@@ -354,6 +362,24 @@ async function scheduleRelance(row){
   toast('Relance programmée le ' + fmtDate(deadline)); render();
 }
 
+/**
+ * Notification « Relances à vérifier » (correction du suivi d'une conversation, v1.63) : rien n'est rétabli d'office ;
+ * l'équipe choisit « Rétablir les relances » (fonction serveur mail_restore_relances) ou « Annuler ».
+ */
+export async function restoreRelancesAsk(n){
+  const [, msgId, prospectId] = String(n.dedupe_key || '').split(':');
+  const p = byId('prospects', prospectId);
+  const choice = await ask({title: 'Relances à vérifier', text: `${n.body || ''}\nRétablir les relances de « ${p ? prospectTitle(p) : 'ce suivi'} » ? Elles redeviennent « À faire » avec leurs échéances d'origine.`,
+    actions: [{value: 'ok', label: 'Rétablir les relances'}]});
+  if (choice !== 'ok') return false;
+  const {data, error} = await sb.rpc('mail_restore_relances', {p_message: msgId, p_prospect: prospectId});
+  if (error){ toast('Rétablissement impossible : ' + error.message, true); return false; }
+  const {fetchAll} = await import('./data.js'), {touch} = await import('./state.js');
+  S.db.tasks = await fetchAll('tasks'); touch('tasks');
+  toast(data ? `${data} relance${data > 1 ? 's' : ''} rétablie${data > 1 ? 's' : ''}` : 'Aucune relance à rétablir (déjà rétablie ou terminée)');
+  render(); return true;
+}
+
 export const MAIL_ACTIONS = {
   mailFilter: t => { M.filter = t.dataset.f; M.label = t.dataset.label || ''; M.open = null; render(); },
   mailLabelPick: t => { M.filter = t.value ? 'label' : 'inbox'; M.label = t.value; M.open = null; render(); },
@@ -367,7 +393,8 @@ export const MAIL_ACTIONS = {
   mailOpen: t => openThread(t.dataset.id),
   mailImages: t => { M.images.add(t.dataset.msg); render(); },   // images distantes : seulement sur demande, pour ce message
   mailBack: () => { M.open = null; M.thread = null; render(); },
-  mailCompose: t => compose(t.dataset.mode, M.open ? byId('mail_threads', M.open) : null, t.dataset.msg ? M.thread?.messages.find(m => m.id === t.dataset.msg) : null),
+  mailCompose: t => t.dataset.mode === 'new' ? compose('new')
+    : compose(t.dataset.mode, M.open ? byId('mail_threads', M.open) : null, t.dataset.msg ? M.thread?.messages.find(m => m.id === t.dataset.msg) : null),
   mailLink: t => linkThread(t.dataset.id || M.open),
   mailNewContact: async t => { const {editContact} = await import('./forms.js').catch(() => ({})); if (editContact) editContact(null, {email: t.dataset.mail}); else toast('Crée le contact depuis l’onglet Contacts', true); },
   mailArchive: () => { const r = byId('mail_threads', M.open); if (r) modify(r, {archive: true}, 'Archivée (retirée de la boîte de réception)'); },

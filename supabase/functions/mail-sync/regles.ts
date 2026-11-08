@@ -3,7 +3,7 @@
 
 export type Addr = { email: string; name?: string };
 export type Msg = { id: string; rfc_id?: string; refs?: string[]; from: Addr; to: Addr[]; cc: Addr[]; subject: string; date: string; snippet: string;
-  direction: 'in' | 'out'; draft?: boolean; attachments: { name: string; size: number; mime: string }[] };
+  direction: 'in' | 'out'; draft?: boolean; auto?: string; attachments: { name: string; size: number; mime: string; inline?: boolean }[] };
 export type Thread = { id: string; missing?: boolean; subject: string; snippet: string; last_at: string | null; count: number; unread: boolean;
   labels: string[]; participants: Addr[]; messages: Msg[] };
 
@@ -47,8 +47,11 @@ export function messageRows(mailbox: string, threadId: string, t: Thread) {
   return (t.messages || []).filter((m) => m && m.id && !m.draft && !seen.has(m.id) && seen.add(m.id)).map((m) => ({
     thread_id: threadId, mailbox, gmail_message_id: m.id, rfc_message_id: rfcOk(m.rfc_id) ? String(m.rfc_id).trim() : null,
     ref_ids: (m.refs || []).filter(rfcOk).map((x) => String(x).trim()).slice(0, 50),
-    direction: m.direction === 'out' ? 'out' : 'in', from_addr: low(m.from?.email) || null, from_name: m.from?.name || null,
+    direction: m.direction === 'out' ? 'out' : 'in',
+    // avis de non-remise / réponse automatique (en-têtes lus par le script) : jamais comptés comme une réponse
+    auto_kind: m.direction === 'out' ? null : m.auto === 'ndr' || m.auto === 'auto' ? m.auto : null,
+    from_addr: low(m.from?.email) || null, from_name: m.from?.name || null,
     to_addrs: (m.to || []).map((a) => low(a.email)).filter(Boolean), cc_addrs: (m.cc || []).map((a) => low(a.email)).filter(Boolean),
     subject: m.subject || null, snippet: m.snippet || null, sent_at: m.date || null,
-    attachments: (m.attachments || []).map((a) => ({ name: a.name, size: a.size, mime: a.mime })) }));
+    attachments: (m.attachments || []).map((a) => ({ name: a.name, size: a.size, mime: a.mime, ...(a.inline ? { inline: true } : {}) })) }));
 }

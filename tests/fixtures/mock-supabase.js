@@ -90,6 +90,9 @@
       // (v1.60.7) ou une fonction (ligne insérée → erreur ou rien) : refus selon le contenu (ex. colonne pas encore créée)
       if (st.op === 'insert' && window.__INSERT_ERROR && window.__INSERT_ERROR[table]){ const ie = window.__INSERT_ERROR[table], err = typeof ie === 'function' ? ie(st.patch) : ie;
         if (err) return { data: null, error: err }; }
+      // window.__MISSING_COL = { table: 'colonne' } : colonne absente de la base (migration pas encore appliquée), comme PostgREST (PGRST204)
+      if ((st.op === 'insert' || st.op === 'update') && window.__MISSING_COL && window.__MISSING_COL[table] && [].concat(st.patch).some(r => r && window.__MISSING_COL[table] in r))
+        return { data: null, error: { code: 'PGRST204', message: `Could not find the '${window.__MISSING_COL[table]}' column of '${table}' in the schema cache` } };
       if (st.op === 'insert') { const arr = (Array.isArray(st.patch) ? st.patch : [st.patch]).map(r => ({ id: uid(), ...r })); rows.push(...arr); return { data: clone(st.single ? arr[0] : arr), error: null }; }
       // imitation du déclencheur settings_delais_instant (v1.64) : marqueur « @enregistrement » des versions ajoutées → instant du serveur
       if (st.op === 'upsert' && table === 'settings') { const now = window.__SERVER_NOW || new Date().toISOString(), arr = Array.isArray(st.patch) ? st.patch : [st.patch];

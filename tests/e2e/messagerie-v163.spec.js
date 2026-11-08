@@ -242,3 +242,105 @@ test('v1.63 : script de prospection pas à jour (action inconnue) → marche à 
   await expect(page.locator('.mail-err[role=alert]')).toContainText('n’est pas à jour : Réglages › Prospection');
   expectClean(ctx);
 });
+
+// ── Relecture v1.63 ─────────────────────────────────────────────────────────────────────────────────────────────────────
+test('relecture B6 : « Nouveau mail » depuis une conversation ouverte = vraiment nouveau (aucun fil, aucun « Re: »)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page);
+  await ouvrir(page, 'Proposition');
+  await page.locator('.view-head [data-act=mailCompose][data-mode=new], [data-act=mailCompose][data-mode=new]').first().click();
+  await expect(page.locator('#mc-subj')).toHaveValue('');
+  await expect(page.locator('#modal .mode-note')).toHaveCount(0);
+  await expect(page.locator('#mc-to')).toHaveValue('');
+  await page.evaluate(() => { const i = document.querySelector('#mc-to'); i.value = 'nouveau@example.net'; i.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.locator('#mc-subj').fill('Sujet neuf');
+  await page.locator('#modal button[type=submit]').click();
+  await dlg(page).locator('button', { hasText: 'Envoyer le mail' }).click();
+  await expect.poll(async () => (await script(page, 'compose')).length).toBe(1);
+  expect((await script(page, 'compose'))[0]).toMatchObject({ mode: 'new', thread_id: null, message_id: null, subject: 'Sujet neuf' });
+  expectClean(ctx);
+});
+
+test('relecture B7 : fichier du suivi joint par un lien DÉDIÉ de 10 min (jamais le lien de 6 h mis en cache)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page);
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
+    for (const db of [S.db, window.__DB]) { db.mail_threads.find(t => t.id === 'mt-b').prospect_id = 'pr-1';
+      db.prospect_files.push({ id: 'pf-1', prospect_id: 'pr-1', name: 'Contrat signé.pdf', path: 'pr-1/contrat.pdf', size: 5000, mime: 'application/pdf' }); }
+    touch('mail_threads'); touch('prospect_files'); });
+  await ouvrir(page, 'Proposition');
+  await page.locator('.mail-actions [data-act=mailCompose][data-mode=reply]').first().click();
+  await page.locator('#mc-docs').click();
+  await dlg(page).locator('button', { hasText: 'Fichier du suivi · Contrat signé.pdf' }).click();   // seul document : la question se ferme
+  await expect(page.locator('#mc-files')).toContainText('Contrat signé.pdf');
+  await page.locator('#modal button[type=submit]').click();
+  await dlg(page).locator('button', { hasText: 'Envoyer le mail' }).click();
+  await expect.poll(async () => (await script(page, 'compose')).length).toBe(1);
+  expect((await script(page, 'compose'))[0].attachments).toEqual([{ url: 'about:blank#suivi/pr-1/contrat.pdf', name: 'Contrat signé.pdf' }]);
+  expect(await page.evaluate(() => window.__signed)).toEqual([{ bucket: 'suivi', path: 'pr-1/contrat.pdf', expires: 600 }]);
+  expectClean(ctx);
+});
+
+test('relecture B3 : rattachement retiré à la main → « Aucun suivi (choisi à la main) », hors « À rattacher »', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page);
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
+    Object.assign(S.db.mail_threads.find(t => t.id === 'mt-a'), { link_status: 'manuel', link_reason: 'Aucun suivi (choisi à la main)' }); touch('mail_threads');
+    (await import('./js/app.js')).render(); });
+  await expect(page.locator('.mail-row', { hasText: 'Disponibilités printemps' })).toContainText('Aucun suivi (choisi à la main)');
+  await page.locator('[data-act=mailFilter][data-f=link]').click();
+  await expect(page.locator('.mail-row', { hasText: 'Disponibilités printemps' })).toHaveCount(0);
+  expectClean(ctx);
+});
+
+test('relecture B4 : « Relances à vérifier » — rien n’est rétabli sans le bouton ; « Rétablir les relances » appelle le serveur', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page);
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
+    const n = { id: 'nt-rel', kind: 'suivi', title: 'Relances à vérifier — Suivi', body: 'Relances de « Suivi » annulées par un message désormais rattaché à « Autre » : à vérifier. Ouvrir pour les rétablir.',
+      dedupe_key: 'mail-relances:msg-uuid-1:pr-1', created_at: new Date().toISOString(), read_by: [] };
+    S.db.notifications.push(n); window.__DB.notifications.push({ ...n }); touch('notifications'); (await import('./js/app.js')).render(); });
+  const ouvrirNotif = async () => { await page.locator('[data-act=toggleNotifs]').first().click(); await page.locator('[data-act=openNotif][data-id=nt-rel]').click(); };
+  await ouvrirNotif();
+  await expect(dlg(page)).toContainText('Relances à vérifier');
+  await dlg(page).locator('button', { hasText: 'Annuler' }).click();
+  expect(await rpcs(page, 'mail_restore_relances')).toEqual([]);
+  await ouvrirNotif();
+  await dlg(page).locator('button', { hasText: 'Rétablir les relances' }).click();
+  await expect.poll(() => rpcs(page, 'mail_restore_relances')).toEqual([{ p_message: 'msg-uuid-1', p_prospect: 'pr-1' }]);
+  expectClean(ctx);
+});
+
+test('relecture B2 : journal d’un envoi écrit même si la colonne gmail_message_id n’existe pas encore (interface avant la migration)', async ({ page }) => {
+  const ctx = await openApp(page);
+  const r = await page.evaluate(async () => {
+    const { insertMailLog } = await import('./js/prospection.js');
+    const row = { prospect_id: 'pr-1', date: '2026-11-08', kind: 'Mail', author: 'testeur@example.com', body: '**Relance n°1** essai' };
+    window.__MISSING_COL = { prospect_logs: 'gmail_message_id' };
+    const sans = await insertMailLog({ ...row, body: '**Relance n°1** avant migration' }, 'gm-1');
+    window.__MISSING_COL = null;
+    const avec = await insertMailLog({ ...row, body: '**Relance n°2** après migration' }, 'gm-2');
+    const logs = window.__DB.prospect_logs.filter(l => /^\*\*Relance n°[12]\*\* (avant|après)/.test(l.body));
+    return { sans: !!sans, avec: !!avec, logs: logs.map(l => [l.body.slice(0, 14), l.gmail_message_id ?? null]) };
+  });
+  expect(r).toEqual({ sans: true, avec: true, logs: [['**Relance n°1*', null], ['**Relance n°2*', 'gm-2']] });
+  expectClean(ctx);
+});
+
+test('relecture : images intégrées non proposées au transfert ; liens des mails sans accès à la page ni provenance ; liste accessible', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page);
+  await page.evaluate(() => { const old = window.__FN_REPLY['script-google'];
+    window.__FN_REPLY['script-google'] = b => b.action === 'thread' ? { ok: true, thread: { id: 'bbb222', messages: [{ id: 'b-9', from: { name: 'Camille', email: 'camille@example.com' }, reply_to: [], to: [], cc: [],
+      subject: 'Re: Proposition Artiste Alpha', date: '2026-11-04T09:00:00Z', direction: 'in', html: '<p><a href="https://example.com/x">lien</a></p>',
+      attachments: [{ name: 'logo.png', size: 900, mime: 'image/png', id: 'i1', inline: true }, { name: 'fiche.pdf', size: 120000, mime: 'application/pdf', id: 'a1' }] }] } } : old(b); });
+  await expect(page.locator('.mail-list .mail-li[role=listitem] > button.mail-row').first()).toBeVisible();
+  expect(await page.locator('button.mail-row[role]').count()).toBe(0);
+  await ouvrir(page, 'Proposition');
+  await expect(page.locator('.mail-msg .att-chip')).toHaveCount(1);
+  expect(await page.locator('iframe.mail-frame').getAttribute('srcdoc')).toContain('<a rel="noopener noreferrer" href="https://example.com/x">');
+  await page.locator('.mail-actions [data-act=mailCompose][data-mode=forward]').first().click();
+  await expect(page.locator('#modal label.check')).toContainText('Joindre les 1 pièce jointe d’origine (fiche.pdf');
+  await expect(page.locator('#modal label.check')).not.toContainText('logo.png');
+  expectClean(ctx);
+});

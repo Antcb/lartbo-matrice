@@ -97,6 +97,8 @@ export const ACTIONS = {
   openNotif: async t => { const n = byId('notifications', t.dataset.id); const me = S.user.email;
     if (!(n.read_by||[]).includes(me)) await save('notifications', n.id, {read_by:[...(n.read_by||[]), me]}, {rerender:false});
     S.notifOpen = false;
+    // relances annulées par un message rattaché depuis à un autre suivi (messagerie v1.63) : rétablies seulement sur demande
+    if (String(n.dedupe_key || '').startsWith('mail-relances:')){ render(); const {restoreRelancesAsk} = await import('./mailbox.js'); await restoreRelancesAsk(n); return; }
     // date archivée (alerte « facture sur une date archivée », v1.60.3) : ouverte dans Booking › Dates archivées
     if (n.show_id && byId('shows', n.show_id)?.archived_at){ S.view = 'booking'; S.showArchived = true; render(); return; }
     if (n.show_id){ const s = byId('shows', n.show_id); if (s){ S.view='production'; S.year = Number((s.date||'').slice(0,4)) || S.year; S.openProd.add(s.id); render(); document.getElementById('prod-'+s.id)?.scrollIntoView({block:'center'}); return; } }

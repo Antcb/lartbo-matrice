@@ -7,7 +7,7 @@
  */
 import { ask, confirmAsk } from './ui/dialog.js';
 import { render } from './app.js';
-import { contentTypeOf, insert, legacyMailOwner, legacyUnverifiedOk, mailAttachedTo, purgeStored, remove, save, sb, signedUrl, threadStatus, typedFile, uploadDetail } from './data.js';
+import { contentTypeOf, insert, insertRow, legacyMailOwner, legacyUnverifiedOk, mailAttachedTo, purgeStored, remove, save, sb, signedUrl, threadStatus, typedFile, uploadDetail } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
 import { PROSPECT_TAGS, attOk, attSizeHTML, callGoogle, callScript, fill, todoOk, tplLabel, tplProjects } from './mail.js';
 import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, placeOfEvent, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName } from './selectors.js';
@@ -244,8 +244,8 @@ async function recordProspection(st, {to, subject, html, send, out, pids, contac
     p = await insert('prospects', {name: 'Suivi', structure_id: st.id, project_ids: pids, project_id: pids[0], status: 'Mailed', last_contact: send ? now : null});
     if (!p) return;
   }
-  const log = await insert('prospect_logs', {prospect_id: p.id, date: send ? now : null, kind: 'Mail', contact_name: contact?.display_name || to, contact_id: contact?.id || null,
-    author: S.user.email, body: `**Prospection${send ? '' : DRAFT_MARK}** · ${andList(pids.map(projName))}${account === 'production' ? ' · depuis production@' : ''}\n**Objet :** ${subject}\n\n${plain(html)}`, body_html: html, ...(send && out.message_id ? {gmail_message_id: out.message_id} : {})});
+  const log = await insertMailLog({prospect_id: p.id, date: send ? now : null, kind: 'Mail', contact_name: contact?.display_name || to, contact_id: contact?.id || null,
+    author: S.user.email, body: `**Prospection${send ? '' : DRAFT_MARK}** · ${andList(pids.map(projName))}${account === 'production' ? ' · depuis production@' : ''}\n**Objet :** ${subject}\n\n${plain(html)}`, body_html: html}, send ? out.message_id : null);
   await save('prospects', p.id, {mail_account: account === 'production' ? 'production' : null, mail_thread_id: out.thread_id, mail_to: to, mail_subject: subject, mail_sent_at: send ? (out.sent_at || new Date().toISOString()) : null,
     mail_log_id: log?.id || null, relances: 0, ...(send ? {last_contact: now} : {})}, {rerender: false});
   // date proposée → une date en « Intérêt » par artiste
@@ -268,12 +268,26 @@ export function relanceHistory(p){
 const historyText = (p, extra=[]) => { const h = relanceHistory(p); const r = [...h.relances, ...extra];
   return [h.sent && `prospection le ${fmtDate(h.sent)}`, r.length && `relance${r.length > 1 ? 's' : ''} le ${r.map(fmtDate).join(', ')}`].filter(Boolean).join(' · '); };
 
+/**
+ * Ligne « Mail » du journal après un envoi (prospection, relance). msgId : identifiant Gmail du message envoyé, gardé pour que la
+ * synchronisation de la messagerie le reconnaisse (aucun doublon). Colonne absente (interface publiée avant la migration de la
+ * messagerie) : la ligne est écrite SANS l'identifiant — jamais perdue ; la synchronisation la reconnaît alors par le jour et le texte.
+ */
+export async function insertMailLog(row, msgId = null){
+  if (!msgId) return insert('prospect_logs', row);
+  const r = await insertRow('prospect_logs', {...row, gmail_message_id: msgId});
+  if (!r.error) return r.data;
+  if (['PGRST204', '42703'].includes(r.error.code) || /gmail_message_id/.test(r.error.message || '')) return insert('prospect_logs', row);
+  toast('Création impossible : ' + r.error.message, true);
+  return null;
+}
+
 /** Après une relance : journal (avec l'historique des relances), compteur, tâche suivante (mail, ou téléphone après 3 relances) */
 async function recordRelance(p, st, {to, html, send, out, contact}){
   const now = today(), n = (p.relances || 0) + 1;
   const before = historyText(p);
-  const log = await insert('prospect_logs', {prospect_id: p.id, date: send ? now : null, kind: 'Mail', contact_name: contact?.display_name || to, contact_id: contact?.id || null,
-    author: S.user.email, body: `**Relance n°${n}${send ? '' : DRAFT_MARK}** (en réponse à « ${p.mail_subject || ''} »)${before ? `\n_Avant : ${before}_` : ''}\n\n${plain(html)}`, body_html: html, ...(send && out.message_id ? {gmail_message_id: out.message_id} : {})});   // messagerie (v1.61) : reconnu à la synchronisation, aucun doublon
+  const log = await insertMailLog({prospect_id: p.id, date: send ? now : null, kind: 'Mail', contact_name: contact?.display_name || to, contact_id: contact?.id || null,
+    author: S.user.email, body: `**Relance n°${n}${send ? '' : DRAFT_MARK}** (en réponse à « ${p.mail_subject || ''} »)${before ? `\n_Avant : ${before}_` : ''}\n\n${plain(html)}`, body_html: html}, send ? out.message_id : null);
   // une relance ne compte (et ne fait avancer la tâche) qu'une fois partie : en brouillon, on attend l'envoi depuis Gmail
   await save('prospects', p.id, {mail_log_id: log?.id || null, ...(send ? {relances: n, last_contact: now} : {})}, {rerender: false});
   if (send) await relanceTask(st, projIds(p), p.mail_subject, true, byId('prospects', p.id), n);
