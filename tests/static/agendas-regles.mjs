@@ -1,6 +1,6 @@
 // Règles des agendas des artistes sur de FAUSSES données : aucun appel au service de lieux ni à Google.
 import assert from 'node:assert/strict';
-import { chooseCity, isShowTitle, planSync, replyProblem } from '../../supabase/functions/cal-sync/regles.ts';
+import { chooseCity, cityFinder, isShowTitle, planSync, replyProblem, runPass } from '../../supabase/functions/cal-sync/regles.ts';
 
 const F = (name, cc, lng, lat, postcode) => ({ properties: { name, countrycode: cc, postcode }, geometry: { coordinates: [lng, lat] } });
 const DB = {
@@ -163,6 +163,40 @@ t('relecture B1 : réponse « disponibilités » d’un script sans numéro de v
   assert.match(replyProblem({ mode: 'disponibilites', events: [] }), /pas à jour/);
   assert.equal(replyProblem({ mode: 'disponibilites', version: 'v1.61.0' }), null);
   assert.equal(replyProblem({ mode: 'details' }), null);
+});
+
+t('F4 : localisations bornées par le temps restant du passage (et par leur nombre) ; au-delà, réessayées plus tard', async () => {
+  let now = 0; const clock = () => now; let appels = 0;
+  const lent = async (l, c) => { appels++; now += 7_000; return chooseCity(l, c, photon); };   // chaque appel « dure » 7 s
+  const f = cityFinder(lent, { perPass: 20, deadline: 30_000, callMs: 8_000, clock });
+  const r = [];
+  for (let i = 0; i < 6; i++) r.push(await f('Bataclan, Paris', 'FR'));
+  // 0 s, 7 s, 14 s, 21 s → tentés (fin d'appel ≤ 30 s) ; à 28 s, 28 + 8 > 30 : plus rien
+  assert.equal(appels, 4); assert.deepEqual(r.map(x => x === undefined ? 'plus tard' : x.city), ['Paris', 'Paris', 'Paris', 'Paris', 'plus tard', 'plus tard']);
+  const g = cityFinder(async () => ({ city: 'X', lat: 0, lng: 0, country: 'FR' }), { perPass: 2, clock });
+  assert.deepEqual([await g('a', 'FR'), await g('b', 'FR'), await g('c', 'FR')].map(x => x?.city), ['X', 'X', undefined]);
+  const h = cityFinder(async () => { throw new Error('délai'); }, { clock });
+  assert.equal(await h('a', 'FR'), undefined);   // délai ou panne du service : réessayé, jamais « à préciser » figé
+});
+
+t('F4 : last_run_at écrit AU DÉBUT de chaque agenda ; un agenda interrompu passe en fin de file ; durée totale bornée', async () => {
+  let now = Date.parse('2027-01-01T00:00:00Z'); const clock = () => now;
+  const cals = [{ id: 'A', last_run_at: '2026-12-31T23:50:00Z' }, { id: 'B', last_run_at: null }, { id: 'C', last_run_at: '2026-12-31T23:55:00Z' }];
+  const journal = [];
+  const markStart = async (c, at) => { journal.push(`début ${c.id}`); c.last_run_at = at; };
+  // 1er passage : B (jamais lu) puis A ; A est interrompu (la fonction s'arrête : plus de temps) — C reporté
+  const p1 = await runPass(cals, { clock, budgetMs: 120_000, markStart, syncOne: async c => { journal.push(`lecture ${c.id}`); now += c.id === 'A' ? 110_000 : 5_000; return c.id; } });
+  assert.deepEqual(journal, ['début B', 'lecture B', 'début A', 'lecture A']);
+  assert.deepEqual([p1.results, p1.skipped], [['B', 'A'], 1]);
+  assert.ok(cals.find(c => c.id === 'A').last_run_at > '2027-01-01');   // marqué dès le début, même si sa lecture n'a pas abouti
+  // passage suivant : C (le plus ancien) d'abord, l'agenda interrompu A en dernier
+  journal.length = 0; now += 300_000;
+  await runPass(cals, { clock, markStart, syncOne: async c => { journal.push(`lecture ${c.id}`); now += 1_000; return c.id; } });
+  assert.deepEqual(journal.filter(x => x.startsWith('lecture')), ['lecture C', 'lecture B', 'lecture A']);
+  // délai accordé à un agenda : jamais au-delà du temps restant (marge de 5 s), plafonné à 110 s
+  const waits = []; now = 0;
+  await runPass([{ id: 'X' }, { id: 'Y' }], { clock, budgetMs: 120_000, markStart: async () => {}, syncOne: async (c, w) => { waits.push(w); now += 90_000; } });
+  assert.deepEqual(waits, [110_000, 25_000]);
 });
 
 let ok = 0;

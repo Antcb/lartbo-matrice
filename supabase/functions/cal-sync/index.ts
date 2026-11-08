@@ -9,7 +9,7 @@
 // « Show » (titre, sans casse) + lieu qui désigne une ville → repère de carte ; sinon « localisation à préciser », jamais approximatif.
 // Aucune ligne financière, aucune date de booking créée ou modifiée.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { chooseCity, planSync, replyProblem, SYNC_COLS } from './regles.ts';
+import { chooseCity, cityFinder, planSync, replyProblem, runPass, SYNC_COLS } from './regles.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -41,8 +41,8 @@ async function script(url: string, secret: string, action: string, payload: Reco
 }
 
 /** Ville d'un lieu : règles dans regles.ts (pays écrit, sinon pays par défaut de l'agenda ; élément exact ; code postal) */
-// délai maximal de chaque appel au service de lieux (8 s) et nombre de localisations tentées par passage (20) : le reste est réessayé
-// au passage suivant (city() → undefined, regles.ts planSync), jamais placé au hasard
+// délai maximal de chaque appel au service de lieux (8 s) ; nombre de localisations par passage (20) et échéance du passage : regles.ts
+// cityFinder — le reste est réessayé au passage suivant (city() → undefined, planSync), jamais placé au hasard
 const PHOTON_MS = 8_000, GEO_PER_PASS = 20;
 async function photon(q: string): Promise<any[]> {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), PHOTON_MS);
@@ -52,18 +52,9 @@ async function photon(q: string): Promise<any[]> {
     return (await r.json()).features || [];
   } finally { clearTimeout(timer); }
 }
-function cityFinder() {
-  let left = GEO_PER_PASS;
-  return async (location: string, country: string | null) => {
-    if (left <= 0) return undefined;   // budget du passage épuisé : réessayé plus tard
-    left--;
-    try { return await chooseCity(location, country, photon); } catch { return undefined; }   // indisponible / délai : réessayé plus tard
-  };
-}
-
 async function syncOne(cal: any, url: string, secret: string, wait: number, city: ReturnType<typeof cityFinder>) {
   const now = Date.now(), tmin = new Date(now - 30 * DAY).toISOString(), tmax = new Date(now + 548 * DAY).toISOString();
-  const runAt = new Date().toISOString();   // écrit avec le résultat : une seule écriture de l'agenda par passage (temps réel)
+  // last_run_at est écrit au DÉBUT de la lecture (runPass, markStart) : un agenda interrompu passe en fin de file au passage suivant
   try {
     const j = await script(url, secret, 'events', { calendar_id: cal.calendar_id, time_min: tmin, time_max: tmax }, wait);
     // un script sans numéro de version (antérieur à la relecture B1) prenait une limite d'usage pour un partage « disponibilités » et
@@ -89,12 +80,12 @@ async function syncOne(cal: any, url: string, secret: string, wait: number, city
         .in('gcal_event_id', plan.gone.slice(i, i + 200)).is('deleted_at', null);
       if (error) { console.error('Suppressions', error.message); throw new Explique('Enregistrement des suppressions impossible pour le moment.'); }
     }
-    await admin.from('artist_calendars').update({ last_run_at: runAt, last_ok_at: new Date().toISOString(), last_error: null, mode: plan.mode }).eq('id', cal.id);
+    await admin.from('artist_calendars').update({ last_ok_at: new Date().toISOString(), last_error: null, mode: plan.mode }).eq('id', cal.id);
     return { project_id: cal.project_id, ok: true, events: plan.rows.length, removed: plan.gone.length };
   } catch (e) {
     if (!(e instanceof Explique)) console.error(e);
     const msg = shown(e);
-    await admin.from('artist_calendars').update({ last_run_at: runAt, last_error: msg }).eq('id', cal.id);
+    await admin.from('artist_calendars').update({ last_error: msg }).eq('id', cal.id);
     return { project_id: cal.project_id, ok: false, error: msg };
   }
 }
@@ -136,14 +127,15 @@ Deno.serve(async (req) => {
     if (team && body?.project_id) q = q.eq('project_id', String(body.project_id));
     const { data: cals, error } = await q;
     if (error) { console.error('Lecture des agendas', error.message); throw new Explique('Lecture des agendas impossible pour le moment.'); }
-    const results = [];
-    const started = Date.now(), BUDGET = 120_000, city = cityFinder();
-    let skipped = 0;
-    for (const c of cals || []) {
-      const left = BUDGET - (Date.now() - started);
-      if (left < 15_000) { skipped++; continue; }   // reporté : prochain passage (rotation par last_run_at)
-      results.push(await syncOne(c, url, secret, Math.min(110_000, left - 5_000), city));
-    }
+    // rotation, last_run_at au début de chaque agenda, durée bornée à 120 s (localisations comprises) : regles.ts runPass / cityFinder
+    let city: ReturnType<typeof cityFinder> | null = null;
+    const { results, skipped } = await runPass((cals || []) as any[], {
+      markStart: async (c, at) => { await admin.from('artist_calendars').update({ last_run_at: at }).eq('id', c.id); },
+      syncOne: (c, wait, deadline) => {
+        city ||= cityFinder((loc, cc) => chooseCity(loc, cc, photon), { perPass: GEO_PER_PASS, deadline, callMs: PHOTON_MS });
+        return syncOne(c, url, secret, wait, city);
+      },
+    });
     return json({ ok: results.every((r) => r.ok), results, skipped, error: results.find((r) => !r.ok)?.error });
   } catch (e) {
     if (!(e instanceof Explique)) console.error(e);

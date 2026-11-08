@@ -6,7 +6,7 @@
 --     un événement supprimé dans Google est marqué « supprimé » (jamais effacé en silence) ; « Show » + ville → repère de carte ;
 --     association EXPLICITE possible avec une date « Option / Confirmée artiste » existante (jamais de conversion).
 --   - temps réel : les deux tables sont publiées (les autres postes voient les changements) ; la synchronisation n'écrit que les lignes
---     réellement modifiées (cal-sync/regles.ts planSync) et l'agenda une fois par passage : aucun message quand rien ne change ;
+--     réellement modifiées (cal-sync/regles.ts planSync) ; l'agenda deux fois par passage (début de lecture, résultat) ;
 --   - cal_sync_tick : appelée par la tâche planifiée « cal-sync » ; ne fait RIEN tant que l'adresse de la fonction n'est pas inscrite dans
 --     private.sync_urls (schéma privé : aucun compte connecté ne peut l'écrire, le code des scripts Google ne part jamais ailleurs).
 -- Retour arrière : désactiver la tâche planifiée (ou retirer la ligne de private.sync_urls) ; tables vides = aucun effet.
