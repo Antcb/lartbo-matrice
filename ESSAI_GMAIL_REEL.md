@@ -7,7 +7,7 @@ donnée de production.** Rien n'est lancé avant son message « je suis devant l
 ## 1. Deux comptes de test à désigner (indispensables, et suffisants)
 | Compte | Rôle | Pourquoi un seul compte ne suffit pas |
 |---|---|---|
-| **T1** | joue la boîte **anthony@** (script de prospection) | — |
+| **T1** | joue la boîte **anthony@** (script de prospection) **et** le compte d'Anthony dans l'application de test : le script n'accepte une action de boîte que si l'identité signée par le serveur = le compte qui l'exécute (règle de la v1.60.4) | — |
 | **T2** | joue les **correspondants** (organisateurs) ; alias `T2+salle@…`, `T2+copie@…` pour les copies | un message de T1 vers un alias de T1 reste un message **envoyé par T1** : il ne peut tester ni une réponse reçue (rattachement, relance suspendue, absence automatique), ni une réponse écrite dans un autre logiciel |
 
 Comptes Gmail gratuits possibles. Anthony les crée ou les désigne ; je n'en crée aucun ; aucun mot de passe dans la conversation.
@@ -15,22 +15,27 @@ Comptes Gmail gratuits possibles. Anthony les crée ou les désigne ; je n'en cr
 ## 2. Une seule demande d'autorisation (tout ce que la séance nécessite)
 Anthony autorise en une fois, **sur le projet Supabase de TEST uniquement** :
 1. appliquer la migration `supabase/migrations/2026-11-06_v1.61_messagerie.sql` (une transaction, rejouable) ;
-2. inscrire le propriétaire de la boîte d'essai : `private.mailbox_owners` (`anthony` → **son** adresse de connexion à l'application de test) ;
-3. déployer la fonction `mail-sync` (`index.ts` + `regles.ts`, vérification du jeton désactivée : la fonction contrôle chaque appel,
-   SECURITE_SYNCHRO.md) et la fonction `script-google` à jour (boîte réservée au propriétaire) ;
+2. ajouter **T1** comme membre de l'équipe du projet de test (connexion à l'application de test avec T1) et l'inscrire titulaire de la
+   boîte d'essai : `private.mailbox_owners` (`anthony` → adresse de T1) — aucune adresse n'est écrite dans le code ni la migration ;
+   la migration de la clé de boîte `2026-11-08_v1.60.4_cle_boite.sql` doit être appliquée avant (prérequis vérifié) ;
+3. déployer la fonction `mail-sync` (`index.ts`, `regles.ts` et `../script-google/identite.ts`, vérification du jeton désactivée : la
+   fonction contrôle chaque appel, SECURITE_SYNCHRO.md) et la fonction `script-google` à jour (`index.ts`, `identite.ts`) ;
 4. inscrire l'adresse de la tâche planifiée dans `private.sync_urls` (synchronisation toutes les 5 min, projet de test seulement) ;
 5. créer des données fictives : structures, contacts aux adresses de T2, suivis, un artiste fictif avec une fiche technique ;
-6. **côté Google (sur T1)** : un projet Apps Script « Prospection (essai) », avec les accès que Google demandera à l'autorisation :
+6. **côté Google (sur T1)** : un projet Apps Script « Prospection (essai) », propriétés `WEBHOOK_SECRET` et `CLE_BOITE` (recopiées par
+   Anthony depuis le projet de test, jamais dans la conversation), avec les accès que Google demandera à l'autorisation :
    lire, modifier, rédiger et envoyer des mails ; voir les fichiers Drive ; se connecter à un service externe (pièces jointes) ;
 7. **côté Google (sur T2)** : deux PDF dans Drive, l'un partagé avec T1 (lecteur), l'autre non ;
 8. retour arrière après l'essai : ligne `private.sync_urls` retirée (tables laissées, vides d'effet).
 
 ## 3. Ordre de publication OBLIGATOIRE (essai puis production)
-1. **Migration** (avant la fusion : l'interface écrit `prospect_logs.gmail_message_id` ; si la colonne manquait, la ligne serait
+0. **Clé de la boîte** `2026-11-08_v1.60.4_cle_boite.sql` (publiée avec Apple Mail v1.60.4 ; prérequis vérifié par la migration) ;
+1. **Migration** messagerie (avant la fusion : l'interface écrit `prospect_logs.gmail_message_id` ; si la colonne manquait, la ligne serait
    écrite sans l'identifiant — jamais perdue — mais reconnue seulement par le jour et le texte) ;
 2. **interface** (fusion de la branche, après la v1.60.4 Apple Mail) ;
 3. **fonction `mail-sync`** (et `script-google` à jour) ;
-4. **script `Prospection.gs`** redéployé (« ping » doit renvoyer `v1.61.0`) ;
+4. **script `Prospection.gs`** redéployé (« ping » doit renvoyer `v1.61.0` ; propriété `CLE_BOITE` déjà en place depuis la v1.60.4) ;
+   inscription du titulaire (`private.mailbox_owners`, adresse de connexion d'Anthony = compte qui exécute le script) ;
 5. en dernier, **`private.sync_urls`** (active la synchronisation planifiée).
 En production : même ordre, sur autorisation séparée après l'essai.
 
@@ -39,10 +44,12 @@ En production : même ordre, sur autorisation séparée après l'essai.
 2. **T2 › drive.google.com** : déposer deux PDF ; Partager le premier avec T1 (Lecteur), pas le second.
 3. **T1 › script.google.com** › Nouveau projet › coller le code (application de test › Réglages › Prospection › « Copier le code du
    script ») › Services › + › **Gmail API** › Ajouter › Paramètres du projet › Propriétés du script › `WEBHOOK_SECRET` = valeur de
-   `drive_webhook_secret` du projet de **test** (Supabase › Table Editor › `settings`, recopiée par Anthony, jamais dans la conversation)
+   `drive_webhook_secret` du projet de **test** (Supabase › Table Editor › `settings`) et `CLE_BOITE` = valeur de `mailbox_sign_key`
+   (Table Editor › schéma `private` › `import_secrets`) — recopiées par Anthony, jamais dans la conversation
    › Déployer › Nouveau déploiement › Application Web (Exécuter en tant que : moi · Accès : tout le monde) › **Autoriser**
    (écran « application non validée » : Paramètres avancés › Continuer) › copier l'adresse `…/exec`.
-4. **Application de test** (bandeau TEST) › Réglages › Prospection : coller l'adresse ; « Tester le script » doit afficher `v1.61.0`.
+4. **Application de test** (bandeau TEST), connecté avec **T1** › Réglages › Prospection : coller l'adresse ; « Tester le script »
+   doit afficher `v1.61.0`.
 5. Je fais les étapes Supabase 1 à 5 de la demande (§2) et je confirme chacune.
 6. Facultatif : ajouter T1 dans Apple Mail (Réglages Système › Comptes Internet) ; sinon « non vérifié avec Apple Mail ».
 7. Scénarios (§5), puis retour arrière (§2.8).
@@ -64,12 +71,13 @@ En production : même ordre, sur autorisation séparée après l'essai.
 | 12 | Conversation corrigée de A vers B | relances de B suspendues ; A non réactivée ; notification « Relances à vérifier » → « Rétablir les relances » demande une échéance future si la leur est passée |
 | 13 | T2 envoie une image hébergée | non chargée avant « Afficher les images » |
 | 14 | Adresse du script faussée | erreur affichée avec l'heure ; « dernière synchronisation réussie » inchangée |
-| 15 | Un autre compte de l'équipe de test ouvre « Mails » | « réservée au compte d'Anthony » ; relais et `mail-sync` répondent 403 ; journal des suivis toujours visible |
+| 15 | Un autre compte de l'équipe de test (celui d'Anthony) ouvre « Mails » | « réservée au compte d'Anthony » ; le script refuse ses actions de boîte (« réservée à son titulaire ») ; `mail-sync` répond 403 ; journal des suivis toujours visible |
+| 16 | Propriété `CLE_BOITE` retirée du script, puis remise | « ajoute la propriété CLE_BOITE », rien lu ni envoyé ; la synchronisation affiche l'erreur et reprend ensuite |
 
 Contrôles en base de test après chaque bloc : `mail_messages` (identifiant Gmail unique), `prospect_logs` (`author = 'Messagerie'`),
 `tasks` de relance, `notifications` (`mail-reponse:%`, `mail-auto:%`, `mail-relances:%`), `mail_sync_state`.
 
 ## 6. Déjà vérifié sans Google (simulé, réseau bloqué)
 Script de prospection exécuté avec des services Google simulés (`tests/static/messagerie-regles.mjs`), base PostgreSQL locale jetable
-(`supabase/repetitions/2026-11-08_v1.63_messagerie_essai.sql`, 72 essais), navigateur sur fausse base (`e2e/messagerie-*.spec.js`).
+(`supabase/repetitions/2026-11-08_v1.63_messagerie_essai.sql`, 75 essais), navigateur sur fausse base (`e2e/messagerie-*.spec.js`).
 Non couvert : production@ (plus tard).

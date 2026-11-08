@@ -6,7 +6,9 @@
 // ne touche jamais au rattachement existant, puis lance mail_process (rattachement automatique, journal du suivi, suspension des relances).
 // Rien n'est envoyé ni modifié dans Gmail ici. Dernier passage et erreur visibles dans l'espace Mails (mail_sync_state).
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { acces, messageRows, scriptUrlOk, threadIds, threadRow, type Thread } from './regles.ts';
+import { acces, compteOk, messageRows, scriptUrlOk, threadIds, threadRow, type Thread } from './regles.ts';
+// même signature que le relais script-google (v1.60.4) : clé dédiée mailbox_sign_key, jamais transmise
+import { outgoingBody } from '../script-google/identite.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -19,13 +21,23 @@ const LIMIT_MS = 120_000;
 class Explique extends Error {}
 const shown = (e: unknown) => e instanceof Explique ? e.message.slice(0, 500) : 'Erreur interne de la synchronisation (détail dans le journal du serveur).';
 
-async function script(url: string, secret: string, action: string, payload: Record<string, unknown>) {
+/**
+ * Appel d'une action de BOÎTE du script (history, thread), signé AU NOM DU TITULAIRE inscrit (private.mailbox_owners), avec la clé
+ * dédiée — exactement comme le relais signe pour une session : même texte signé, même fenêtre de 5 minutes, même usage unique.
+ * Pourquoi ce choix (synchronisation planifiée, sans session) : seul ce code serveur, lancé par la tâche planifiée (secret dédié
+ * mail_sync_hook) ou par le titulaire lui-même (session vérifiée), lit la clé et le titulaire (rôle serveur, schéma privé) ; rien
+ * n'est envoyé au navigateur ni à un journal ; la signature couvre la demande entière (identite.ts), donc ne sert qu'à cette lecture.
+ * Ni secret de session ni compte technique de plus : le script applique UNE règle (identité signée = compte qui l'exécute).
+ * Réponse acceptée seulement si le compte qui exécute le script est ce titulaire (adresse du script remplacée → arrêt, rien d'écrit).
+ */
+async function script(url: string, secret: string, key: string, owner: string, action: string, payload: Record<string, unknown>) {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), LIMIT_MS);
   try {
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ ...payload, action, secret }), signal: ctl.signal });
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: await outgoingBody(payload, action, secret, owner, key), signal: ctl.signal });
     const txt = await r.text();
     let j: any; try { j = JSON.parse(txt); } catch { throw new Explique('Réponse illisible du script de prospection'); }
     if (!j?.ok) throw new Explique(String(j?.error || '').slice(0, 300) || 'Le script de prospection a refusé la demande');
+    if (!compteOk(j.account, owner)) throw new Explique('Le script de prospection ne s’exécute pas sous le compte titulaire de la boîte : synchronisation arrêtée, rien n’est enregistré.');
     return j;
   } catch (e) {
     if (ctl.signal.aborted) throw new Explique('Le script de prospection met plus de 2 minutes : synchronisation reprise au prochain passage.');
@@ -64,18 +76,24 @@ Deno.serve(async (req) => {
   const hook = req.headers.get('x-hook-secret') || '';
   const { data: hookSecret } = hook ? await admin.rpc('import_secret', { k: 'mail_sync_hook' }) : { data: null };
   // session de l'appelant : propriétaire de la boîte (is_mailbox_owner) vérifié avec SA session (jamais avec le rôle serveur)
-  let owner = false;
+  let isOwner = false;
   if (req.headers.get('Authorization')) {
     const user = createClient(URL_, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization') || '' } }, auth: { persistSession: false } });
     const { data } = await user.rpc('is_mailbox_owner', { p_mailbox: MAILBOX });
-    owner = data === true;
+    isOwner = data === true;
   }
   const body = await req.json().catch(() => ({}));
   const mode = body?.mode === 'threads' ? 'threads' : 'sync';
   // le secret de la tâche planifiée ne sert qu'à la synchronisation planifiée ; relire des conversations précises = compte de l'équipe
-  const ok = acces({ hook, hookSecret: hookSecret ? String(hookSecret) : null, owner, mode });
+  const ok = acces({ hook, hookSecret: hookSecret ? String(hookSecret) : null, owner: isOwner, mode });
   if (!ok.ok) return json({ ok: false, error: ok.error }, ok.status);
   if (!url) return json({ ok: false, error: 'Le script de prospection n’est pas encore installé : Réglages › Prospection.' });
+  // titulaire inscrit et clé de la boîte (rôle serveur seulement) : sans eux, rien n'est lu
+  const { data: ownerEmail } = await admin.rpc('mailbox_owner_email', { p_mailbox: MAILBOX });
+  const { data: signKey } = await admin.rpc('import_secret', { k: 'mailbox_sign_key' });
+  const owner = String(ownerEmail || '').trim().toLowerCase(), key = String(signKey || '');
+  if (!owner) return json({ ok: false, error: 'Titulaire de la boîte anthony@ pas encore inscrit (ESSAI_GMAIL_REEL.md) : rien n’est synchronisé.' });
+  if (!key) return json({ ok: false, error: 'Clé de la boîte absente (migration v1.60.4 cle_boite) : rien n’est synchronisé.' });
   if (!scriptUrlOk(url)) return json({ ok: false, error: 'L’adresse du script de prospection n’est pas une adresse de script publiée (…/exec).' });
 
   const now = new Date().toISOString();
@@ -84,7 +102,7 @@ Deno.serve(async (req) => {
     if (mode === 'threads') {
       const ids = threadIds(body.ids);
       for (const id of ids) {
-        const j = await script(url, secret, 'thread', { thread_id: id });
+        const j = await script(url, secret, key, owner, 'thread', { thread_id: id });
         threads.push(j.thread);
       }
     } else {
@@ -94,10 +112,10 @@ Deno.serve(async (req) => {
       await admin.from('mail_sync_state').upsert({ mailbox: MAILBOX, last_run_at: now }, { onConflict: 'mailbox' });
       const pending: string[] = state?.pending || [];
       if (pending.length) {
-        const j = await script(url, secret, 'history', { ids: pending.slice(0, 30) });
+        const j = await script(url, secret, key, owner, 'history', { ids: pending.slice(0, 30) });
         threads = j.threads || []; pendingAfter = pending.slice(30);
       } else {
-        const j = await script(url, secret, 'history', { start_history_id: state?.history_id || null, max: 30 });
+        const j = await script(url, secret, key, owner, 'history', { start_history_id: state?.history_id || null, max: 30 });
         threads = j.threads || []; pendingAfter = (j.remaining || []).map(String);
         historyId = j.history_id ? String(j.history_id) : null;
       }

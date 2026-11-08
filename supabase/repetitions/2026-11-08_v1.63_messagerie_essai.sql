@@ -10,8 +10,19 @@ begin if not coalesce(cond, false) then raise exception 'ÉCHEC : %', essai; end
 
 -- ── Données fictives ───────────────────────────────────────────────────────────────────────────────────────────────
 insert into app_users values ('equipe@example.com'), ('collegue@example.com');
--- propriétaire fictif de la boîte (la migration inscrit anthony@ ; ici un compte d'essai, transaction annulée à la fin)
-update private.mailbox_owners set email = 'equipe@example.com' where mailbox = 'anthony';
+-- registre vide après la migration (aucune adresse écrite) : boîte fermée à tous
+do $$ begin
+  perform set_config('request.jwt.claims', '{"email":"equipe@example.com"}', true);
+  perform pg_temp.ok((select count(*) from private.mailbox_owners) = 0 and not public.is_mailbox_owner('anthony'), 'titulaire non inscrit : aucune adresse écrite par la migration, boîte fermée à tous');
+  perform set_config('request.jwt.claims', '', true);
+end $$;
+-- titulaire fictif inscrit comme dans la séance (une ligne, sur autorisation) ; transaction annulée à la fin
+insert into private.mailbox_owners (mailbox, email) values ('anthony', 'Equipe@Example.com');
+do $$ begin
+  perform pg_temp.ok(public.mailbox_owner_email('anthony') = 'equipe@example.com', 'adresse du titulaire lue par le serveur (minuscules)');
+  perform pg_temp.ok(not has_function_privilege('authenticated', 'public.mailbox_owner_email(text)', 'execute') and not has_function_privilege('anon', 'public.mailbox_owner_email(text)', 'execute'),
+    'adresse du titulaire : lisible par le rôle serveur seulement');
+end $$;
 insert into projects (id, name) values ('00000000-0000-0000-0000-0000000000a1', 'Artiste Alpha');
 insert into structures (id, name) values
   ('00000000-0000-0000-0000-000000000001', 'Salle Une'), ('00000000-0000-0000-0000-000000000002', 'Festival Deux'),

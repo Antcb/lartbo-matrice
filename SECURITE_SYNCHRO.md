@@ -11,6 +11,8 @@ la protection : chaque fonction contrôle elle-même chaque appel, avant de renv
 | Membre de l'équipe dans l'application (« Actualiser », choix d'un agenda…) | session Supabase de l'utilisateur (`Authorization: Bearer …`) | `is_team()` exécuté **avec la session de l'appelant** |
 | Messagerie (`mail-sync` : « Actualiser », conversations ouvertes) | session du **propriétaire de la boîte** (décision du 08/11/2026) | `is_mailbox_owner('anthony')` exécuté avec la session de l'appelant ; tout autre membre de l'équipe → 403 |
 
+Appels de `mail-sync` vers le script de prospection (`history`, `thread`) : identité du **titulaire inscrit** signée par le serveur avec la clé dédiée `mailbox_sign_key` (même mécanisme que le relais, `script-google/identite.ts`) ; la synchronisation planifiée n'a pas de session, mais seul ce code serveur, déclenché par le secret `mail_sync_hook` ou par la session du titulaire, lit la clé et l'adresse (rôle serveur, schéma privé). Réponse acceptée seulement si le compte qui exécute le script est ce titulaire.
+
 Tout autre appel (aucun justificatif, secret faux ou vide, session d'un compte hors équipe, session expirée) → **403** : rien n'est
 renvoyé ni écrit (la fonction lit seulement ses réglages et le secret pour décider). Le secret de la tâche planifiée ne permet QUE la synchronisation planifiée : les actions de l'application (relire des conversations
 précises, liste des agendas, actualisation d'un seul artiste) exigent une session de l'équipe.

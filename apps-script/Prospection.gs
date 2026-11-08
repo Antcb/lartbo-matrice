@@ -12,7 +12,8 @@
  *  5. Paramètres du projet (roue dentée) › Propriétés du script › ajouter WEBHOOK_SECRET = le code secret des scripts
  *     (même valeur que le script principal ; il n'est plus affiché dans la Matrice : Supabase › table settings › drive_webhook_secret).
  *  6. (v1.60.4) Même endroit : ajouter CLE_BOITE = la clé de la boîte (Supabase › Table Editor › schéma private ›
- *     import_secrets › ligne mailbox_sign_key › valeur). Sans elle, la recherche d'un message par son identifiant est refusée.
+ *     import_secrets › ligne mailbox_sign_key › valeur). Sans elle, toutes les actions de la boîte (messagerie v1.63, recherche
+ *     d'un message par son identifiant) sont refusées ; la prospection (mail, relance, statut) n'en dépend pas.
  *
  * Le code secret n'est jamais écrit dans ce code (v1.47) : il est lu dans les propriétés du script. Un script déjà installé
  * avec le code écrit en dur continue de fonctionner tel quel (la Matrice envoie toujours le même code, depuis son serveur).
@@ -28,11 +29,15 @@ function doPost(e) {
     if (!SECRET) return json_({ ok: false, error: 'Script de prospection : ajoute la propriété WEBHOOK_SECRET (Paramètres du projet › Propriétés du script)' });
     if (!body.secret || body.secret !== SECRET) return json_({ ok: false, error: 'Code secret du script de prospection incorrect' });
     var a = body.action;
-    if (a === 'ping') out = { ok: true, account: Session.getEffectiveUser().getEmail(), version: SCRIPT_VERSION };
+    // (v1.63) toutes les actions de BOÎTE (lecture, envoi, rangement, documents, recherche par Message-ID) : titulaire seulement,
+    // identité signée par le relais (même clé, même règle) — contrôlé avant toute lecture de Gmail ou de Drive
+    var refus = BOITE_[a] ? ownerOnly_(body, a) : null;
+    if (refus) out = refus;
+    else if (a === 'ping') out = { ok: true, account: Session.getEffectiveUser().getEmail(), version: SCRIPT_VERSION };
     else if (a === 'mail') out = mail_(body);
     else if (a === 'reply') out = reply_(body);
     else if (a === 'status') out = status_(body.thread_id);
-    else if (a === 'mail_by_msgid') out = ownerOnly_(body, a) || mailByMsgId_(body.message_id);   // v1.60.4 : lecture seule, titulaire de la boîte seulement
+    else if (a === 'mail_by_msgid') out = mailByMsgId_(body.message_id);   // v1.60.4 : lecture seule, titulaire de la boîte seulement (BOITE_)
     // messagerie intégrée (v1.61) : Gmail reste la référence ; aucune suppression définitive
     else if (a === 'threads') out = threads_(body);
     else if (a === 'thread') out = thread_(body);
@@ -68,13 +73,29 @@ function blobs_(list) {
  * connaître l'identifiant d'un message (ou le code secret des scripts) n'autorise pas à consulter la boîte.
  * Le relais serveur script-google transmet l'adresse du compte connecté (session vérifiée par Supabase Auth) avec une signature
  * HMAC-SHA256 calculée avec une CLÉ DÉDIÉE, jamais transmise : propriété CLE_BOITE de ce script (copie de la clé
- * « mailbox_sign_key » de la base, supabase/functions/script-google/identite.ts). La signature couvre la cible (« prospect »)
- * et la boîte (« anthony ») de CE script (CIBLE_, BOITE_NOM_), l'adresse, l'action, le Message-ID et l'horodatage ; accepté seulement si : clé présente, signature juste, horodatage à moins de 5 minutes, signature
+ * « mailbox_sign_key » de la base, supabase/functions/script-google/identite.ts). La signature couvre adresse, action,
+ * Message-ID et horodatage ; accepté seulement si : clé présente, signature juste, horodatage à moins de 5 minutes, signature
  * jamais vue (usage unique, sous verrou), et adresse = compte Google qui exécute ce script (titulaire de la boîte). Chaque refus
  * dit sa vraie cause. Aucune adresse écrite ici.
  */
-/** (relecture de f95da56) constantes propres à CE script : la signature doit les nommer (cible et boîte) */
-var CIBLE_ = 'prospect', BOITE_NOM_ = 'anthony';
+/** Actions de boîte (v1.63) : réservées au titulaire, chacune vérifiée par ownerOnly_ avant d'être exécutée */
+var BOITE_ = { mail_by_msgid: 1, threads: 1, thread: 1, labels: 1, modify: 1, compose: 1, attachment: 1, history: 1, files_info: 1 };
+var RESERVES_ = ['action', 'secret', 'caller', 'caller_ts', 'caller_sig'];
+/** Forme canonique d'une valeur JSON (clés triées) : même calcul que canon() du relais (identite.ts) */
+function canon_(v) {
+  if (Array.isArray(v)) return '[' + v.map(canon_).join(',') + ']';
+  if (v && typeof v === 'object') return '{' + Object.keys(v).sort().filter(function (k) { return v[k] !== undefined; })
+    .map(function (k) { return JSON.stringify(k) + ':' + canon_(v[k]); }).join(',') + '}';
+  return JSON.stringify(v === undefined ? null : v);
+}
+/** Identifiant signé : Message-ID pour mail_by_msgid ; sinon « sha256: » + empreinte de la demande entière (champs réservés exclus) */
+function identOf_(b, action) {
+  if (action === 'mail_by_msgid') return typeof b.message_id === 'string' ? b.message_id : '';
+  var rest = {};
+  Object.keys(b).forEach(function (k) { if (RESERVES_.indexOf(k) < 0) rest[k] = b[k]; });
+  var d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, canon_(rest), Utilities.Charset.UTF_8);
+  return 'sha256:' + d.map(function (x) { return ('0' + (x & 255).toString(16)).slice(-2); }).join('');
+}
 var CLE_BOITE_ = PropertiesService.getScriptProperties().getProperty('CLE_BOITE') || '';
 var CALLER_WINDOW_MS_ = 5 * 60 * 1000;
 var REFUS_ = {
@@ -89,9 +110,8 @@ function callerOk_(b, action) {
   if (!CLE_BOITE_) return { why: REFUS_.cle };
   var who = typeof b.caller === 'string' ? b.caller.trim().toLowerCase() : '';
   var ts = Number(b.caller_ts), sig = typeof b.caller_sig === 'string' ? b.caller_sig : '';
-  var msgid = typeof b.message_id === 'string' ? b.message_id : '';
   if (!who || !sig || !isFinite(ts)) return { why: REFUS_.signature };
-  var text = ['matrice-boite-v2', CIBLE_, BOITE_NOM_, who, action, msgid, String(ts)].join('|');
+  var text = ['matrice-boite-v1', who, action, identOf_(b, action), String(ts)].join('|');
   var bytes = Utilities.computeHmacSha256Signature(text, CLE_BOITE_, Utilities.Charset.UTF_8);
   var hex = bytes.map(function (x) { return ('0' + (x & 255).toString(16)).slice(-2); }).join('');
   if (hex !== sig) return { why: REFUS_.signature };
@@ -111,7 +131,7 @@ function ownerOnly_(b, action) {
   if (r.why) return { ok: false, refused: true, error: r.why };
   var me = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase();
   if (me && r.who === me) return null;
-  return { ok: false, refused: true, error: 'Recherche dans la boîte ' + (me || 'de ce script') + ' réservée à son titulaire : rien n’a été consulté.' };
+  return { ok: false, refused: true, error: 'Boîte ' + (me || 'de ce script') + ' réservée à son titulaire : rien n’a été consulté.' };
 }
 
 // ─────────────── Message retrouvé par son Message-ID (v1.60.4) ───────────────

@@ -23,7 +23,9 @@ begin
   if to_regclass('public.contacts') is null or to_regclass('public.contact_structures') is null then manque := manque || 'tables contacts / contact_structures'::text; end if;
   if to_regclass('public.shows') is null or to_regclass('public.app_users') is null then manque := manque || 'tables shows / app_users'::text; end if;
   if to_regclass('public.tasks') is null or to_regclass('public.notifications') is null then manque := manque || 'tables tasks / notifications'::text; end if;
-  if to_regclass('private.import_secrets') is null then manque := manque || 'private.import_secrets (migration v1.22)'::text; end if;
+  if to_regclass('private.import_secrets') is null then manque := manque || 'private.import_secrets (migration v1.22)'::text;
+  elsif not exists (select 1 from private.import_secrets where key = 'mailbox_sign_key') then
+    manque := manque || 'clé de la boîte mailbox_sign_key (migration 2026-11-08_v1.60.4_cle_boite.sql)'::text; end if;
   if to_regprocedure('public.is_team()') is null then manque := manque || 'fonction is_team()'::text; end if;
   if to_regprocedure('public.touch_updated_at()') is null then manque := manque || 'fonction touch_updated_at()'::text; end if;
   if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'prospects' and column_name = 'mail_thread_id')
@@ -112,11 +114,21 @@ alter table public.prospect_logs add column if not exists gmail_message_id text;
 create index if not exists prospect_logs_gmail_message on public.prospect_logs (gmail_message_id) where gmail_message_id is not null;
 
 -- ── Boîte anthony@ réservée au compte d'Anthony (décision du 08/11/2026) ─────────────────────────────────────────────────
--- Propriétaire de chaque boîte : schéma privé (ni l'application ni un compte de l'équipe ne peuvent le modifier ; changement = SQL).
--- Les conversations ne sont visibles que de lui ; les messages rattachés à un suivi restent dans le journal du suivi (droits habituels).
+-- Titulaire = le compte Google qui EXÉCUTE le script de la boîte (même règle que la v1.60.4 : Prospection.gs le vérifie lui-même,
+-- identité signée par le relais avec la clé dédiée mailbox_sign_key). Ce registre en garde la copie côté base, pour ce que le script
+-- ne peut pas contrôler : lecture des copies (conversations, messages) et identité signée de la synchronisation planifiée (sans
+-- session). Schéma privé : ni l'application ni un compte ne peuvent le modifier ; AUCUNE adresse écrite ici — la ligne est inscrite
+-- une fois, sur autorisation (ESSAI_GMAIL_REEL.md) ; tant qu'elle manque, la boîte est fermée à tous. La synchronisation vérifie à
+-- chaque passage que le compte qui exécute le script est bien ce titulaire (sinon elle s'arrête, rien n'est écrit).
 create table if not exists private.mailbox_owners (mailbox text primary key, email text not null);
 revoke all on private.mailbox_owners from public, anon, authenticated;
-insert into private.mailbox_owners (mailbox, email) values ('anthony', 'anthony@lartboristerie.com') on conflict (mailbox) do nothing;
+/** Adresse du titulaire inscrit (fonction serveur mail-sync seulement) */
+create or replace function public.mailbox_owner_email(p_mailbox text) returns text
+language sql stable security definer set search_path = public, private as $$
+  select lower(email) from private.mailbox_owners where mailbox = p_mailbox
+$$;
+revoke all on function public.mailbox_owner_email(text) from public, anon, authenticated;
+grant execute on function public.mailbox_owner_email(text) to service_role;
 create or replace function public.is_mailbox_owner(p_mailbox text default 'anthony') returns boolean
 language sql stable security definer set search_path = public, private as $$
   select public.is_team() and exists (select 1 from private.mailbox_owners o

@@ -8,7 +8,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { acces, messageRows, same, scriptUrlOk, threadIds, threadRow } from '../../supabase/functions/mail-sync/regles.ts';
+import { createHash, createHmac } from 'node:crypto';
+import { acces, compteOk, messageRows, same, scriptUrlOk, threadIds, threadRow } from '../../supabase/functions/mail-sync/regles.ts';
+import { canon, identOf, outgoingBody } from '../../supabase/functions/script-google/identite.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -33,16 +35,14 @@ t('boîte anthony@ réservée au compte d’Anthony : autre membre de l’équip
   assert.equal(acces({ hook: '', hookSecret: 'abc', owner: false, mode: 'threads' }).status, 403);
   assert.match(acces({ hook: '', hookSecret: 'abc', owner: false, mode: 'sync' }).error, /réservée au compte d’Anthony/);
 });
-t('relais script-google : toutes les actions de messagerie du script exigent le propriétaire, contrôle AVANT l’appel du script', () => {
+t('une seule règle : toutes les actions de boîte du script sont réservées au titulaire (BOITE_), pas de second contrôle dans le relais', () => {
   const relais = readFileSync(new URL('../../supabase/functions/script-google/index.ts', import.meta.url), 'utf8');
   const gs = readFileSync(new URL('../../apps-script/Prospection.gs', import.meta.url), 'utf8');
-  const liste = JSON.parse((relais.match(/OWNER_ONLY[^=]*=\s*\{\s*prospect:\s*(\[[^\]]*\])/) || [])[1].replace(/'/g, '"'));
-  const messagerie = ['threads', 'thread', 'labels', 'modify', 'compose', 'attachment', 'history', 'files_info'];
-  for (const a of messagerie) { assert.ok(liste.includes(a), 'action non protégée : ' + a); assert.ok(gs.includes(`a === '${a}'`), 'action absente du script : ' + a); }
-  for (const a of ['mail', 'reply', 'status', 'ping']) assert.ok(!liste.includes(a), 'prospection : droits de l’équipe conservés (' + a + ')');
-  const iCheck = relais.indexOf("rpc('is_mailbox_owner'"), iFetch = relais.indexOf('await fetch(url');
-  assert.ok(iCheck > 0 && iCheck < iFetch, 'contrôle du propriétaire avant tout appel du script');
-  assert.match(relais, /owner !== true\) return json\(\{ ok: false, error: 'La boîte anthony@ est réservée au compte d’Anthony\.' \}, 403\)/);
+  const boite = Object.keys(JSON.parse((gs.match(/var BOITE_ = (\{[^}]*\})/) || [])[1].replace(/(\w+):/g, '"$1":')));
+  assert.deepEqual(boite.sort(), ['attachment', 'compose', 'files_info', 'history', 'labels', 'mail_by_msgid', 'modify', 'thread', 'threads']);
+  for (const a of boite) assert.ok(gs.includes(`a === '${a}'`), 'action absente du script : ' + a);
+  for (const a of ['mail', 'reply', 'status', 'ping']) assert.ok(!boite.includes(a), 'prospection : droits de l’équipe conservés (' + a + ')');
+  assert.ok(!/OWNER_ONLY|is_mailbox_owner/.test(relais), 'aucun second mécanisme dans le relais');
 });
 t('adresse du script : seulement une adresse publiée script.google.com/…/exec', () => {
   assert.ok(scriptUrlOk('https://script.google.com/macros/s/AKfy_essai-1/exec'));
@@ -91,7 +91,8 @@ const b64 = (x) => Buffer.from(typeof x === 'string' ? x : Buffer.from(x)).toStr
 const blob = (bytes, name = '', type = 'application/octet-stream') => ({
   _b: Buffer.from(bytes), getBytes() { return this._b; }, getName() { return name; }, getContentType() { return type; },
   setName(n) { name = n; return this; }, setDataFromString(s) { this._b = Buffer.from(String(s), 'utf8'); return this; }, getDataAsString() { return this._b.toString('utf8'); } });
-function bac({ threads = {}, history = null, historyError = false, driveFiles = {}, urls = {}, sendNoId = false, updateFails = false } = {}) {
+const CLE = 'cle-boite-fictive', TITULAIRE = ME;
+function bac({ threads = {}, history = null, historyError = false, driveFiles = {}, urls = {}, sendNoId = false, updateFails = false, cle = CLE } = {}) {
   const log = { created: [], updated: [], sent: [], modified: [], trashed: [], untrashed: [], fetched: [] };
   const hdrs = (o) => Object.entries(o).map(([name, value]) => ({ name, value }));
   const Gmail = { Users: {
@@ -111,8 +112,11 @@ function bac({ threads = {}, history = null, historyError = false, driveFiles = 
     Messages: { Attachments: { get: () => ({ size: 10, data: 'eA' }) } },
     getProfile: () => ({ historyId: '999' }),
   } };
+  const cache = {};
   const ctx = {
-    PropertiesService: { getScriptProperties: () => ({ getProperty: () => 'secret-essai' }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => ({ WEBHOOK_SECRET: 'secret-essai', CLE_BOITE: cle })[k] ?? null }) },
+    LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
+    CacheService: { getScriptCache: () => ({ get: (k) => cache[k] ?? null, put: (k, v) => { cache[k] = v; } }) },
     Session: { getEffectiveUser: () => ({ getEmail: () => ME }) },
     ContentService: { createTextOutput: (s) => ({ setMimeType: () => s }), MimeType: { JSON: 'json' } },
     Logger: { log() {} },
@@ -121,6 +125,10 @@ function bac({ threads = {}, history = null, historyError = false, driveFiles = 
       base64DecodeWebSafe: (s) => Buffer.from(s, 'base64url'), Charset: { UTF_8: 'UTF-8' },
       newBlob: (x) => blob(typeof x === 'string' ? Buffer.from(x, 'utf8') : x),
       formatDate: () => '08/11/2026 à 09:00',
+      // mêmes calculs que Google : octets signés (-128…127)
+      computeHmacSha256Signature: (v, k) => [...createHmac('sha256', k).update(v).digest()].map((b) => (b > 127 ? b - 256 : b)),
+      computeDigest: (_alg, v) => [...createHash('sha256').update(v, 'utf8').digest()].map((b) => (b > 127 ? b - 256 : b)),
+      DigestAlgorithm: { SHA_256: 'SHA_256' },
     },
     UrlFetchApp: { fetch: (u) => { log.fetched.push(u); if (!urls[u]) throw new Error('404'); return { getBlob: () => blob(urls[u], 'x', 'application/pdf') }; } },
     DriveApp: { getFileById: (id) => { const f = driveFiles[id]; if (!f) throw new Error('Accès refusé');
@@ -296,9 +304,67 @@ t('documents Drive : taille et nom lus avec les droits du compte ; inaccessible 
   assert.match(r[2].error, /Inaccessible/);
 });
 
+// ── Accès à la boîte : UNE règle (v1.60.4) pour toutes les actions de messagerie ──────────────────────────────────────────
+const appel = (ctx, body) => JSON.parse(ctx.doPost({ postData: { contents: typeof body === 'string' ? body : JSON.stringify(body) } }));
+const ACTIONS_BOITE = [['threads', {}], ['thread', { thread_id: 'th1' }], ['labels', {}], ['modify', { thread_id: 'th1', archive: true }],
+  ['compose', { mode: 'new', to: 'a@example.net', subject: 'x', html: 'x', send: false }], ['attachment', { message_id: 'g1', attachment_id: 'att1' }],
+  ['history', { start_history_id: '1' }], ['files_info', { ids: [] }]];
+t('empreinte de la demande : même valeur au relais (identite.ts) et dans le script (unicode, émojis, tableaux, nombres, clés désordonnées)', async () => {
+  const { ctx } = bac();
+  const charge = { z: 1.5, a: ['é', { y: null, b: true }], html: '<p>Café 🎵 « test »</p>\n', n: 0, vide: {}, liste: [] };
+  const relais = await identOf('compose', { ...charge, secret: 'ignoré', caller: 'x' });
+  assert.equal(relais, ctx.identOf_({ ...JSON.parse(JSON.stringify(charge)), action: 'compose', secret: 's', caller: 'c', caller_ts: 1, caller_sig: 'x' }, 'compose'));
+  assert.equal(relais, 'sha256:' + createHash('sha256').update(canon(charge), 'utf8').digest('hex'));
+  assert.equal(await identOf('mail_by_msgid', { message_id: '<a@b.fr>' }), '<a@b.fr>');   // v1.60.4 inchangé
+});
+t('toutes les actions de boîte : sans identité signée → refusées AVANT toute lecture (motif « signature »)', async () => {
+  const { ctx, log } = bac({ threads: { th1: FIL } });
+  for (const [a, p] of ACTIONS_BOITE) {
+    const r = appel(ctx, { ...p, action: a, secret: 'secret-essai' });
+    assert.equal(r.refused, true, a); assert.match(r.error, /non signée ou signature invalide/, a);
+  }
+  assert.equal(log.created.length + log.modified.length + log.fetched.length, 0);
+  assert.equal(appel(ctx, { action: 'ping', secret: 'secret-essai' }).ok, true);   // prospection et ping : droits inchangés
+});
+t('titulaire (identité signée par le relais) accepté ; autre membre de l’équipe refusé « réservée à son titulaire »', async () => {
+  for (const [a, p] of ACTIONS_BOITE) {
+    const { ctx } = bac({ threads: { th1: FIL } });
+    const ok = appel(ctx, await outgoingBody(p, a, 'secret-essai', TITULAIRE, CLE));
+    assert.equal(ok.refused, undefined, a + ' : ' + ok.error);
+    const non = appel(ctx, await outgoingBody(p, a, 'secret-essai', 'collegue@example.net', CLE));
+    assert.equal(non.refused, true, a); assert.match(non.error, /réservée à son titulaire/, a);
+  }
+});
+t('signature captée : inutilisable pour une AUTRE demande (autre conversation, autre destinataire) ; rejeu à l’identique refusé', async () => {
+  const { ctx, log } = bac({ threads: { th1: FIL, th2: FIL } });
+  const capte = JSON.parse(await outgoingBody({ thread_id: 'th1' }, 'thread', 'secret-essai', TITULAIRE, CLE));
+  assert.match(appel(ctx, { ...capte, thread_id: 'th2' }).error, /signature invalide/);
+  const envoi = JSON.parse(await outgoingBody({ mode: 'new', to: 'a@example.net', subject: 'x', html: 'x', send: true }, 'compose', 'secret-essai', TITULAIRE, CLE));
+  assert.match(appel(ctx, { ...envoi, to: 'pirate@example.net' }).error, /signature invalide/);
+  assert.match(appel(ctx, { ...envoi, action: 'modify' }).error, /signature invalide/);
+  assert.equal(log.sent.length, 0);
+  assert.equal(appel(ctx, capte).ok, true);
+  assert.match(appel(ctx, capte).error, /déjà utilisée/);
+  const { ctx: c2 } = bac({ threads: { th1: FIL }, cle: '' });
+  assert.match(appel(c2, await outgoingBody({ thread_id: 'th1' }, 'thread', 'secret-essai', TITULAIRE, CLE)).error, /ajoute la propriété CLE_BOITE/);
+});
+t('synchronisation planifiée : signée au nom du titulaire inscrit, côté serveur ; réponse d’un autre compte refusée', () => {
+  const src = readFileSync(new URL('../../supabase/functions/mail-sync/index.ts', import.meta.url), 'utf8');
+  assert.match(src, /import \{ outgoingBody \} from '\.\.\/script-google\/identite\.ts'/);
+  assert.match(src, /rpc\('mailbox_owner_email', \{ p_mailbox: MAILBOX \}\)/);
+  assert.match(src, /rpc\('import_secret', \{ k: 'mailbox_sign_key' \}\)/);
+  assert.match(src, /body: await outgoingBody\(payload, action, secret, owner, key\)/);
+  assert.match(src, /if \(!compteOk\(j\.account, owner\)\) throw/);
+  assert.ok(!/JSON\.stringify\(\{ \.\.\.payload, action, secret \}\)/.test(src), 'plus aucun appel non signé');
+  assert.equal(compteOk('Titulaire@Example.org', 'titulaire@example.org'), true);
+  assert.equal(compteOk('autre@example.org', 'titulaire@example.org'), false);
+  assert.equal(compteOk(undefined, 'titulaire@example.org'), false);
+  assert.equal(compteOk('x@example.org', ''), false);
+});
+
 let ok = 0;
 for (const [nom, f] of cas) {
-  try { f(); ok++; console.log('  ✓ ' + nom); }
+  try { await f(); ok++; console.log('  ✓ ' + nom); }
   catch (e) { console.error('  ✘ ' + nom + '\n    ' + (e.stack || e).toString().split('\n').slice(0, 14).join('\n    ')); }
 }
 console.log(`Messagerie (règles serveur et script Google simulé) : ${ok}/${cas.length} cas vérifiés.`);

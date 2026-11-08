@@ -56,3 +56,6 @@ export function messageRows(mailbox: string, threadId: string, t: Thread) {
     subject: m.subject || null, snippet: m.snippet || null, sent_at: m.date || null,
     attachments: (m.attachments || []).map((a) => ({ name: a.name, size: a.size, mime: a.mime, ...(a.inline ? { inline: true } : {}) })) }));
 }
+
+/** Réponse du script acceptée seulement si le compte qui l'exécute (« account ») est le titulaire inscrit (adresse remplacée → refus) */
+export const compteOk = (account: unknown, owner: string) => !!owner && String(account || '').trim().toLowerCase() === owner.trim().toLowerCase();

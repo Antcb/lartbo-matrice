@@ -18,14 +18,7 @@ const TARGETS: Record<string, { key: string; missing: string; unreadable: string
   main: { key: 'drive_webhook_url', missing: 'Le script Google (Apps Script) n’est pas encore installé.', unreadable: 'Réponse illisible du script' },
   prospect: { key: 'prospect_script_url', missing: 'Le script de prospection n’est pas encore installé : Réglages › Prospection.', unreadable: 'Réponse illisible du script de prospection' },
 };
-const LIMIT_MS = 140_000;
-/**
- * Boîte anthony@ réservée au compte d'Anthony (décision du 08/11/2026) : les actions qui LISENT ou RANGENT la boîte (messagerie)
- * exigent le propriétaire inscrit côté serveur (is_mailbox_owner, schéma privé), contrôlé ici avec la session de l'appelant —
- * jamais seulement un bouton masqué. La prospection (mail, reply, status, ping) garde les droits de l'équipe.
- * (« mail_by_msgid », lot Apple Mail v1.60.4 : restriction traitée dans ce lot.)
- */
-export const OWNER_ONLY: Record<string, string[]> = { prospect: ['threads', 'thread', 'labels', 'modify', 'compose', 'attachment', 'history', 'files_info'] };   // la fonction serveur est coupée à 150 s (offre gratuite) : on répond avant
+const LIMIT_MS = 140_000;   // la fonction serveur est coupée à 150 s (offre gratuite) : on répond avant
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -44,10 +37,6 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => null);
     const t = Object.hasOwn(TARGETS, body?.target || 'main') ? TARGETS[body?.target || 'main'] : null;
     if (!t || typeof body?.action !== 'string' || !/^[a-z_]{2,40}$/.test(body.action)) return json({ ok: false, error: 'Demande illisible' }, 400);
-    if ((OWNER_ONLY[body?.target || 'main'] || []).includes(body.action)) {
-      const { data: owner } = await user.rpc('is_mailbox_owner', { p_mailbox: 'anthony' });
-      if (owner !== true) return json({ ok: false, error: 'La boîte anthony@ est réservée au compte d’Anthony.' }, 403);
-    }
     const { data: st, error } = await admin.from('settings').select('key, value').in('key', [t.key, 'drive_webhook_secret']);
     if (error) { console.error('réglages', error.message); return json({ ok: false, error: 'Réglages illisibles pour le moment : réessaie dans un instant.' }, 500); }
     const val = (k: string) => String(st?.find((r: any) => r.key === k)?.value ?? '').trim();

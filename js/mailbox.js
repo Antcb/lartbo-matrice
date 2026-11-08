@@ -44,8 +44,9 @@ export const userLabels = () => (M.labels || []).filter(l => l.type === 'user').
 export const syncState = () => S.db.mail_sync_state.find(r => r.mailbox === 'anthony') || null;
 
 /**
- * Accès à la boîte anthony@ : réservé au compte d'Anthony (décision du 08/11/2026). Contrôlé par le serveur (is_mailbox_owner :
- * relais des scripts, fonction mail-sync, tables) ; ici seulement pour afficher une explication au lieu d'une liste vide.
+ * Accès à la boîte anthony@ : réservé au compte d'Anthony (décision du 08/11/2026). Contrôlé hors du navigateur : par le script de
+ * prospection (identité signée par le relais = compte qui l'exécute, règle de la v1.60.4) et par la base (is_mailbox_owner : tables,
+ * fonction mail-sync) ; ici seulement pour afficher une explication au lieu d'une liste vide.
  */
 let ownerLoading = null;
 export function checkOwner(){

@@ -108,7 +108,9 @@ if (gsRe !== String(MSGID_RE)) fail('scripts', `expression du Message-ID différ
 if (!new RegExp(`var MSGID_MAX_ = ${MSGID_MAX};`).test(bCode)) fail('scripts', 'longueur maximale du Message-ID différente entre eml.js et les scripts');
 if (MSG_RAW_MAX !== 20 * 1024 * 1024 || !/var MSG_RAW_MAX_ = 20 \* 1024 \* 1024;/.test(bCode)) fail('scripts', 'taille maximale du contenu brut différente entre eml.js et les scripts');
 if (!/action === 'mail_by_msgid'\) out = mailByMsgId_\(body\.message_id\)/.test(gsCode)) fail('scripts', 'Code.gs : action mail_by_msgid non branchée dans doPost');
-if (!/a === 'mail_by_msgid'\) out = ownerOnly_\(body, a\) \|\| mailByMsgId_\(body\.message_id\)/.test(gsProsp)) fail('scripts', 'Prospection.gs : action mail_by_msgid non branchée dans doPost');
+// (v1.63) Prospection.gs : toutes les actions de boîte, dont mail_by_msgid, passent par ownerOnly_ AVANT d'être exécutées (BOITE_)
+if (!/a === 'mail_by_msgid'\) out = mailByMsgId_\(body\.message_id\)/.test(gsProsp) || !/var refus = BOITE_\[a\] \? ownerOnly_\(body, a\) : null;\s*if \(refus\) out = refus;/.test(gsProsp)
+  || !/var BOITE_ = \{[^}]*mail_by_msgid: 1/.test(gsProsp)) fail('scripts', 'Prospection.gs : action mail_by_msgid non branchée dans doPost ou non réservée au titulaire');
 // version du code renvoyée par « ping » : celle de la dernière modification de CHAQUE script (Prospection.gs : messagerie v1.61.0)
 for (const [n, src, v] of [['Code.gs', gsCode, '1.60.4'], ['Prospection.gs', gsProsp, '1.61.0']])
   if (!new RegExp(`var SCRIPT_VERSION = 'v${v.replace(/\./g, '\\.')}'`).test(src)) fail('scripts', `${n} : SCRIPT_VERSION doit être 'v${v}'`);
