@@ -83,12 +83,12 @@ for (const [w, h] of [[375, 667], [390, 844], [430, 932]]) {
 
 test.describe('ordinateur', () => {
   test.use({ viewport: { width: 1280, height: 900 } });
-  test('v1.52.1 ordinateur inchangé : fenêtre de mail en grille à 4 colonnes, largeur limitée', async ({ page }) => {
+  test('v1.52.1 ordinateur : fenêtre de mail en grille libellé / champ (2 colonnes depuis la v1.60.4, retour d’Anthony du 08/11), largeur limitée', async ({ page }) => {
     const ctx = await openApp(page);
     await seed(page);
     await page.evaluate(async () => { (await import('./js/prospection.js')).openProspection('st-1'); });
     const cols = await page.locator('#modal .mail-grid').evaluate(e => getComputedStyle(e).gridTemplateColumns.split(' ').length);
-    expect(cols).toBe(4);
+    expect(cols).toBe(2);   // v1.60.4 : une ligne par champ (l'ancienne grille à 4 colonnes déportait libellés et champs)
     expect(await page.locator('#modal .modal-body').evaluate(e => getComputedStyle(e).overflowY)).toBe('hidden');
     expect((await page.locator('#modal').boundingBox()).width).toBeLessThan(1280);
     expectClean(ctx);

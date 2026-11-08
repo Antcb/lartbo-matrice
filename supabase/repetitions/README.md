@@ -23,3 +23,14 @@ ailleurs que sur le projet de test (contrôle de l'adresse des fonctions, absenc
   journal en lecture seule ; tâches détachées annotées ; archivage / restauration et leurs refus ; aucun rappel pour une date
   archivée ; gardes de generate_reminders, fiche_get et fiche_submit ; fiche publique « Dossier indisponible » ; notifications
   retirées ; restauration avec relances suspendues puis réactivation explicite ; alerte de facture sur une date archivée). Données fictives uniquement.
+
+## Cas d'essai isolé « ESSAI promo » (v1.60.4, à lancer par Anthony s'il le décide)
+
+- `2026-11-08_v1.60.4_essai_promo_coproduction.sql` : artiste inactif « ESSAI promo », coproducteur et structure fictifs, 3 dates
+  de coproduction passées (promotion : charge commune / L'ArtBo seule / coproducteur seul ; supportée ≠ payée), dépenses payées ;
+  identifiants fixes ; aucune facture, aucune relance, aucun dossier Drive demandé. Résultats attendus (calcul à la main) en tête du
+  fichier, vérifiés par `tests/e2e/essai-promo-v1604.spec.js`.
+- `2026-11-08_v1.60.4_essai_promo_nettoyage.sql` : retrait exact par identifiants fixes (refus si un identifiant porte autre chose,
+  ou si une donnée réelle s'y est accrochée) ; journal `finance_log` conservé.
+- Essayés sur une base PostgreSQL 16 locale jetable (base locale v1.60.3 + migration v1.60.3 + `on_show_confirmed` de la v1.51) :
+  création, refus d'une seconde création, clôture puis nettoyage, arrêt du nettoyage sur une tâche ajoutée, artiste réel témoin intact.

@@ -158,7 +158,7 @@ test('v1.60.3 fiche projet : une date confirmée s’ouvre directement dans Prod
   await expect(page.locator('tr[data-id="sh-2"] [data-act=openShowProd]')).toHaveCount(0);
   // filtre Artistes posé sur un autre artiste et année différente : la date est quand même affichée
   await page.evaluate(async () => { const { S, setProjects } = await import('./js/state.js'); setProjects(['art-b']); S.year = 2001; S.search.production = 'introuvable'; });
-  await page.locator('tr[data-id="sh-1"] [data-act=openShowProd]').click();
+  await page.locator('tr[data-id="sh-1"] td').first().click();   // v1.60.4 : toute la ligne d'une date confirmée ouvre Production
   await expect(page.locator('#modal[open]')).toHaveCount(0);
   await expect(page.locator('#prod-sh-1.open')).toBeVisible();
   await expect(page.locator('#prod-sh-1 .prod-body')).toBeVisible();

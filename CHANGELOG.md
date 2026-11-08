@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.60.4 — 08/11/2026
+- v1.60.4 : date confirmée ouverte directement dans Production depuis les fiches (bouton « Modifier » distinct), fenêtres de mail sur une ligne par champ (libellé à gauche, au-dessus sur téléphone), nom du compte « Payé par » lisible en entier, cas d'essai isolé « ESSAI promo » (scripts de création et de nettoyage, non appliqués)
+
+
 ## 1.60.3 — 07/11/2026
 - v1.60.3 : saisie et spectacles (sélection des champs numériques, cachets sur 3 lignes sans défilement horizontal à 1 280 px et plus, spectacle par défaut), coproduction et promotion locale, suivi administratif (boucle communication, confirmation avant de modifier une date de suivi), destinataires et copies en champ unique, message Apple Mail glissé dans un suivi, budgets (jauge, coûts à compléter, CNM, points d'équilibre), suppression et archivage contrôlés d'une date, question exacte avant le renommage Drive
 
