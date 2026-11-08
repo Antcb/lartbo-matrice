@@ -6,27 +6,21 @@
 //    lue par le relais via import_secret, recopiée par Anthony dans la propriété CLE_BOITE du script de prospection ;
 //  - elle n'est JAMAIS transmise dans une requête (contrairement au code secret des scripts, envoyé à chaque appel et partagé
 //    avec production@) : seule la signature part ;
-//  - la signature couvre l'adresse, l'action, le Message-ID, l'horodatage et le script destinataire (identifiant de déploiement) :
-//    pas de réutilisation pour un autre message, une autre action, un autre script ou plus tard (le script n'accepte qu'une fenêtre de 5 minutes et refuse une signature déjà vue).
+//  - la signature couvre l'adresse, l'action, le Message-ID et l'horodatage : pas de réutilisation pour un autre message, une autre
+//    action ou plus tard (le script n'accepte qu'une fenêtre de 5 minutes et refuse une signature déjà vue).
 // Même calcul dans apps-script/Prospection.gs (callerOk_), contrôlé par tests/static/acces-boite.mjs. Web Crypto (Deno et Node).
 
-/**
- * Identifiant de déploiement d'une adresse de script Google publiée (« …/s/<identifiant>/exec »), quelle que soit la forme :
- * compte personnel (/macros/s/…) ou Google Workspace (/a/macros/<domaine>/s/…). '' si l'adresse n'a pas cette forme.
- * Même lecture dans apps-script/Prospection.gs (deploymentId_), qui la compare à sa propre adresse : une signature captée en
- * redirigeant prospect_script_url vers un autre script ne vaut pas pour le vrai script (durcissement avant séance, 08/11).
- */
-export const deploymentId = (url: string) => (String(url || '').match(/^https:\/\/script\.google\.com\/(?:a\/macros\/[\w.-]+|macros)\/s\/([\w-]+)\/(?:exec|dev)(?:[?#].*)?$/) || [])[1] || '';
+/** Texte signé : version, adresse en minuscules, action, Message-ID, horodatage (ms) — séparés par « | ».
+ *  (L'adresse du script destinataire n'est PAS signée : ScriptApp.getService().getUrl() n'est pas fiable côté script depuis V8 ;
+ *  décision du 08/11 après relecture de 2a83703.) */
+export const signedText = (email: string, action: string, messageId: string, ts: number) =>
+  ['matrice-boite-v1', email.trim().toLowerCase(), action, messageId, String(ts)].join('|');
 
-/** Texte signé : version, adresse en minuscules, action, Message-ID, horodatage (ms), script destinataire — séparés par « | » */
-export const signedText = (email: string, action: string, messageId: string, ts: number, target: string) =>
-  ['matrice-boite-v2', email.trim().toLowerCase(), action, messageId, String(ts), target].join('|');
-
-/** HMAC-SHA256(clé dédiée, texte signé), en hexadécimal minuscule ; target = identifiant de déploiement du script destinataire */
-export async function callerSig(key: string, email: string, action: string, messageId: string, ts: number, target: string): Promise<string> {
+/** HMAC-SHA256(clé dédiée, texte signé), en hexadécimal minuscule */
+export async function callerSig(key: string, email: string, action: string, messageId: string, ts: number): Promise<string> {
   const enc = new TextEncoder();
   const k = await crypto.subtle.importKey('raw', enc.encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const sig = await crypto.subtle.sign('HMAC', k, enc.encode(signedText(email, action, messageId, ts, target)));
+  const sig = await crypto.subtle.sign('HMAC', k, enc.encode(signedText(email, action, messageId, ts)));
   return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
@@ -36,10 +30,9 @@ export async function callerSig(key: string, email: string, action: string, mess
  * script de prospection, sans effet sur les autres actions).
  */
 export async function outgoingBody(payload: Record<string, unknown>, action: string, secret: string, email: string,
-  signKey: string, scriptUrl: string, now: number = Date.now()): Promise<string> {
+  signKey: string, now: number = Date.now()): Promise<string> {
   const caller = email.trim().toLowerCase();
   const messageId = typeof payload.message_id === 'string' ? payload.message_id : '';
-  const target = deploymentId(scriptUrl);
-  const caller_sig = signKey && target ? await callerSig(signKey, caller, action, messageId, now, target) : '';
+  const caller_sig = signKey ? await callerSig(signKey, caller, action, messageId, now) : '';
   return JSON.stringify({ ...payload, action, secret, caller, caller_ts: now, caller_sig });
 }

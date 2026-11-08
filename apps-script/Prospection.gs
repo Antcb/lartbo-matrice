@@ -60,49 +60,46 @@ function blobs_(list) {
  * Le relais serveur script-google transmet l'adresse du compte connecté (session vérifiée par Supabase Auth) avec une signature
  * HMAC-SHA256 calculée avec une CLÉ DÉDIÉE, jamais transmise : propriété CLE_BOITE de ce script (copie de la clé
  * « mailbox_sign_key » de la base, supabase/functions/script-google/identite.ts). La signature couvre adresse, action,
- * Message-ID, horodatage et l'identifiant de déploiement de CE script ; accepté seulement si : clé présente, signature juste
- * et destinée à ce script, horodatage à moins de 5 minutes, signature jamais vue (usage unique, sous verrou), et adresse =
- * compte Google qui exécute ce script (titulaire de la boîte). Aucune adresse écrite ici.
+ * Message-ID et horodatage ; accepté seulement si : clé présente, signature juste, horodatage à moins de 5 minutes, signature
+ * jamais vue (usage unique, sous verrou), et adresse = compte Google qui exécute ce script (titulaire de la boîte). Chaque refus
+ * dit sa vraie cause. Aucune adresse écrite ici.
  */
 var CLE_BOITE_ = PropertiesService.getScriptProperties().getProperty('CLE_BOITE') || '';
 var CALLER_WINDOW_MS_ = 5 * 60 * 1000;
-/** Identifiant de déploiement d'une adresse de script publiée (/macros/s/<id>/exec ou /a/macros/<domaine>/s/<id>/exec), ou ''
- *  — même lecture que deploymentId (supabase/functions/script-google/identite.ts) */
-function deploymentId_(url) {
-  var m = String(url || '').match(/^https:\/\/script\.google\.com\/(?:a\/macros\/[\w.-]+|macros)\/s\/([\w-]+)\/(?:exec|dev)(?:[?#].*)?$/);
-  return m ? m[1] : '';
-}
-/** Identifiant de déploiement de CE script (adresse de son application Web) */
-function selfId_() {
-  try { return deploymentId_(ScriptApp.getService().getUrl()); } catch (e) { return ''; }
-}
-/** Adresse signée : '' (refus), 'busy' (verrou indisponible) ou l'adresse en minuscules */
+var REFUS_ = {
+  cle: 'Script de prospection : ajoute la propriété CLE_BOITE (Paramètres du projet › Propriétés du script) : rien n’a été consulté.',
+  signature: 'Demande non signée ou signature invalide (relais serveur ou clé CLE_BOITE pas à jour ?) : rien n’a été consulté.',
+  expiree: 'Demande expirée (horodatage à plus de 5 minutes) : réessaie. Rien n’a été consulté.',
+  rejeu: 'Demande déjà utilisée : réessaie. Rien n’a été consulté.',
+  occupe: 'Script de prospection occupé : réessaie dans un instant. Rien n’a été consulté.'
+};
+/** Identité signée : {who} si tout est juste, sinon {why} = motif réel du refus (REFUS_) */
 function callerOk_(b, action) {
+  if (!CLE_BOITE_) return { why: REFUS_.cle };
   var who = typeof b.caller === 'string' ? b.caller.trim().toLowerCase() : '';
   var ts = Number(b.caller_ts), sig = typeof b.caller_sig === 'string' ? b.caller_sig : '';
-  var msgid = typeof b.message_id === 'string' ? b.message_id : '', target = selfId_();
-  if (!CLE_BOITE_ || !who || !sig || !target || !isFinite(ts) || Math.abs(Date.now() - ts) > CALLER_WINDOW_MS_) return '';
-  // signature destinée à CE script : une signature captée par un autre script (adresse détournée) n'y vaut pas
-  var text = ['matrice-boite-v2', who, action, msgid, String(ts), target].join('|');
+  var msgid = typeof b.message_id === 'string' ? b.message_id : '';
+  if (!who || !sig || !isFinite(ts)) return { why: REFUS_.signature };
+  var text = ['matrice-boite-v1', who, action, msgid, String(ts)].join('|');
   var bytes = Utilities.computeHmacSha256Signature(text, CLE_BOITE_, Utilities.Charset.UTF_8);
   var hex = bytes.map(function (x) { return ('0' + (x & 255).toString(16)).slice(-2); }).join('');
-  if (hex !== sig) return '';
+  if (hex !== sig) return { why: REFUS_.signature };
+  if (Math.abs(Date.now() - ts) > CALLER_WINDOW_MS_) return { why: REFUS_.expiree };
   // usage unique, ATOMIQUE : lecture puis écriture dans le cache sous verrou du script (court) ; verrou indisponible → refus
   var lock = LockService.getScriptLock();
-  if (!lock.tryLock(3000)) return 'busy';
+  if (!lock.tryLock(3000)) return { why: REFUS_.occupe };
   try {
     var cache = CacheService.getScriptCache();
-    if (cache.get('sig:' + sig)) return '';
+    if (cache.get('sig:' + sig)) return { why: REFUS_.rejeu };
     cache.put('sig:' + sig, '1', 600);   // 10 minutes > fenêtre de 5 minutes
   } finally { lock.releaseLock(); }
-  return who;
+  return { who: who };
 }
 function ownerOnly_(b, action) {
+  var r = callerOk_(b, action);
+  if (r.why) return { ok: false, refused: true, error: r.why };
   var me = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase();
-  if (!CLE_BOITE_) return { ok: false, refused: true, error: 'Script de prospection : ajoute la propriété CLE_BOITE (Paramètres du projet › Propriétés du script) : rien n’a été consulté.' };
-  var who = callerOk_(b, action);
-  if (who === 'busy') return { ok: false, refused: true, error: 'Script de prospection occupé : réessaie dans un instant. Rien n’a été consulté.' };
-  if (me && who && who === me) return null;
+  if (me && r.who === me) return null;
   return { ok: false, refused: true, error: 'Recherche dans la boîte ' + (me || 'de ce script') + ' réservée à son titulaire : rien n’a été consulté.' };
 }
 
