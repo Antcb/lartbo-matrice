@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.60.5 — 08/11/2026
+- date confirmée ouverte directement dans Production depuis les fiches (bouton « Modifier » distinct), fenêtres de mail sur une ligne par champ (libellé à gauche, au-dessus sur téléphone), nom du compte « Payé par » lisible en entier, cas d'essai isolé « ESSAI promo » (scripts de création et de nettoyage, non appliqués)
+
+
 ## 1.60.4 — 08/11/2026
 - v1.60.4 : message glissé depuis Apple Mail dans un suivi — si seul le lien « message: » arrive, son Message-ID sert à retrouver CE message dans les boîtes Google (anthony@ puis production@, lecture seule, correspondance exacte), joint après confirmation ; même traitement pour un .eml transmis : original conservé, entrée de journal lisible (objet, date, De/À/Cc, texte), pièces jointes du mail extraites ; doublon refusé (clé msgid vérifiée en base) ; message clair si introuvable ; diagnostic de chaque dépôt sans contenu privé
 
