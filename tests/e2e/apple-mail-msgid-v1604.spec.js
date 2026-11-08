@@ -35,7 +35,9 @@ async function openSuivi(page, mailbox){
     };
     window.__removed = [];
     d.sb.storage.from = () => ({ upload: async (p, f) => { window.__up.push({ p, type: f.type, size: f.size }); return { data: { path: p }, error: null }; },
-      remove: async paths => { window.__removed.push(...paths); return { data: [], error: null }; } });
+      remove: async paths => { window.__removed.push(...paths); return { data: [], error: null }; },
+      // fichiers déjà stockés (mails joints avant la v1.60.4) : lecture seule, téléchargements relevés
+      download: async path => { (window.__downloads ||= []).push(path); const t = (window.__STORED || {})[path]; return t == null ? { data: null, error: { message: 'absent' } } : { data: new Blob([t]), error: null }; } });
     app.go('prospects'); S.suiviPage = 'pr-1'; app.render();
   }, mailbox);
   await expect(page.locator('.log-attach [data-drop]')).toBeVisible();
@@ -152,14 +154,88 @@ test('v1.60.4 lien message: : réponse d’un script qui ne correspond pas au li
   expectClean(ctx);
 });
 
-test('v1.60.4 lien message: : déjà joint à un autre suivi — rien ajouté, aucun appel aux scripts', async ({ page }) => {
+/** Second suivi fictif (pr-2, Festival Fictif), présent en base et à l'écran */
+const addSuivi2 = page => page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
+  const p = { id: 'pr-2', name: 'Suivi 2', project_id: 'art-a', structure_id: 'st-2', status: 'Interest' };
+  window.__DB.prospects.push({ ...p }); S.db.prospects.push({ ...p }); touch('prospects'); });
+
+test('v1.60.4 décision 2 : lien d’un message déjà joint à un autre suivi — rien ajouté, aucun appel, le suivi concerné est nommé et s’ouvre', async ({ page }) => {
   const ctx = await openSuivi(page, { prospect: FOUND(), main: FOUND() });
-  // pièce jointe déjà en base pour un autre suivi (lue sur le serveur, pas encore dans l'écran)
-  await page.evaluate(id => { window.__DB.prospect_files.push({ id: 'pf-autre', prospect_id: 'pr-autre', name: 'x.eml', path: 'pr-autre/x.eml', import_key: 'msgid:' + id }); }, ID);
+  await addSuivi2(page);
+  // pièce jointe déjà en base pour l'autre suivi (lue sur le serveur, pas encore dans l'écran)
+  await page.evaluate(id => { window.__DB.prospect_files.push({ id: 'pf-autre', prospect_id: 'pr-2', name: 'x.eml', path: 'pr-2/x.eml', import_key: 'msgid:' + id }); }, ID);
   await dropLink(page);
-  await expect(page.locator('.toast').last()).toContainText('déjà joint au suivi');
+  const t = page.locator('.toast').last();
+  await expect(t).toContainText('déjà joint au suivi « Festival Fictif');
+  let s = await state(page);
+  expect(s.google).toEqual([]); expect(s.up).toBe(0); expect(s.files).toEqual([]);
+  await t.getByRole('button', { name: 'Ouvrir le suivi' }).click();
+  await expect.poll(() => page.evaluate(async () => (await import('./js/state.js')).S.suiviPage)).toBe('pr-2');
+  expectClean(ctx);
+});
+
+test('v1.60.4 décision 2 : .eml d’un message déjà joint à un autre suivi — refusé, bilan avec accès au suivi concerné', async ({ page }) => {
+  const ctx = await openSuivi(page, { prospect: ABSENT, main: ABSENT });
+  await addSuivi2(page);
+  await page.evaluate(id => { window.__DB.prospect_files.push({ id: 'pf-autre', prospect_id: 'pr-2', name: 'x.eml', path: 'pr-2/x.eml', import_key: 'msgid:' + id }); }, ID);
+  await page.evaluate(raw => { const dt = new DataTransfer(); dt.items.add(new File([raw], 'Devis fictif.eml', { type: '' }));
+    document.querySelector('.log-attach [data-drop]').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })); }, MULTI());
+  const dlg = page.locator('dialog.ask');
+  await expect(dlg).toContainText('déjà joint au suivi « Festival Fictif');
+  await dlg.getByRole('button', { name: 'Ouvrir le suivi concerné' }).click();
+  await expect.poll(() => page.evaluate(async () => (await import('./js/state.js')).S.suiviPage)).toBe('pr-2');
   const s = await state(page);
+  expect(s.up).toBe(0); expect(s.files).toEqual([]); expect(s.logs).toEqual([]);
+  expectClean(ctx);
+});
+
+test('v1.60.4 décision 3 : mail joint AVANT la v1.60.4 (.eml stocké sans clé) — reconnu par son Message-ID, en lecture seule, ni perdu ni réimporté', async ({ page }) => {
+  const ctx = await openSuivi(page, { prospect: FOUND(MULTI()), main: ABSENT });
+  await addSuivi2(page);
+  // .eml joint en v1.60.3 dans pr-1 (sans import_key) ; journal d'alors sous une autre forme : seul le fichier stocké permet de le reconnaître
+  await page.evaluate(async raw => { const { S, touch } = await import('./js/state.js');
+    const f = { id: 'pf-ancien', prospect_id: 'pr-1', name: 'Devis fictif.eml', path: 'pr-1/1700000000000_Devis_fictif.eml', mime: 'message/rfc822', size: raw.length, created_at: '2026-11-04T15:00:00Z' };
+    window.__DB.prospect_files.push({ ...f }); S.db.prospect_files.push({ ...f }); touch('prospect_files');
+    window.__STORED = { [f.path]: raw }; }, MULTI());
+  const before = await page.evaluate(() => JSON.stringify(window.__DB.prospect_files));
+  const writes = () => page.evaluate(() => window.__calls.filter(c => ['prospect_files', 'prospect_logs'].includes(c.table) && c.op !== 'select').length);
+  const w0 = await writes();
+  // lien du même message déposé sur le même suivi : reconnu sans consulter Gmail, rien d'ajouté
+  await dropLink(page);
+  await expect(page.locator('.toast').last()).toContainText('déjà joint à ce suivi (avant la v1.60.4)');
+  let s = await state(page);
   expect(s.google).toEqual([]); expect(s.up).toBe(0);
+  // .eml du même message déposé sur un AUTRE suivi : reconnu, refusé, accès au suivi d'origine
+  await page.evaluate(async () => { const { S } = await import('./js/state.js'); const app = await import('./js/app.js'); S.suiviPage = 'pr-2'; app.render(); });
+  await page.evaluate(raw => { const dt = new DataTransfer(); dt.items.add(new File([raw], 'Devis fictif.eml', { type: '' }));
+    document.querySelector('.log-attach [data-drop]').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })); }, MULTI());
+  const dlg = page.locator('dialog.ask');
+  await expect(dlg).toContainText('déjà joint au suivi « Salle Exemple');
+  await dlg.getByRole('button', { name: 'Ouvrir le suivi concerné' }).click();
+  await expect.poll(() => page.evaluate(async () => (await import('./js/state.js')).S.suiviPage)).toBe('pr-1');
+  // lecture seule : aucune écriture, ligne historique inchangée (pas de clé ajoutée), fichier seulement téléchargé
+  expect(await writes()).toBe(w0);
+  expect(await page.evaluate(() => JSON.stringify(window.__DB.prospect_files))).toBe(before);
+  s = await state(page);
+  expect(s.up).toBe(0); expect(s.logs).toEqual([]);
+  expect(await page.evaluate(() => [...new Set(window.__downloads)])).toEqual(['pr-1/1700000000000_Devis_fictif.eml']);
+  expect(await page.evaluate(() => window.__removed)).toEqual([]);
+  expectClean(ctx);
+});
+
+test('v1.60.4 décision 1 : recherche dans anthony@ refusée par le script (compte non titulaire) — dit clairement, production@ consultée avec les droits d’équipe', async ({ page }) => {
+  const refused = { ok: false, refused: true, error: 'Recherche dans la boîte titulaire@exemple-fictif.fr réservée à son titulaire : rien n’a été consulté.' };
+  const ctx = await openSuivi(page, { prospect: refused, main: FOUND() });
+  await dropLink(page);
+  const dlg = page.locator('dialog.ask');
+  await expect(dlg).toContainText('Trouvé dans la boîte production@');
+  await dlg.getByRole('button', { name: 'Annuler' }).click();
+  await page.evaluate(() => { window.__MAILBOX.main = { ok: true, found: false }; });
+  await dropLink(page);
+  await expect(dlg).toContainText('anthony@ : Recherche dans la boîte titulaire@exemple-fictif.fr réservée à son titulaire : rien n’a été consulté.');
+  await expect(dlg).toContainText('production@ : message absent');
+  await dlg.getByRole('button', { name: 'Fermer' }).click();
+  expect((await state(page)).up).toBe(0);
   expectClean(ctx);
 });
 

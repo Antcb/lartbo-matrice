@@ -30,7 +30,7 @@ function doPost(e) {
     else if (a === 'mail') out = mail_(body);
     else if (a === 'reply') out = reply_(body);
     else if (a === 'status') out = status_(body.thread_id);
-    else if (a === 'mail_by_msgid') out = mailByMsgId_(body.message_id);   // v1.60.4 : lecture seule
+    else if (a === 'mail_by_msgid') out = ownerOnly_(body) || mailByMsgId_(body.message_id);   // v1.60.4 : lecture seule, titulaire de la boîte seulement
     else out = { ok: false, error: 'Action inconnue : ' + a };
   } catch (err) {
     out = { ok: false, error: String(err) };
@@ -49,6 +49,28 @@ function blobs_(list) {
     } catch (err) { Logger.log('Pièce jointe : ' + err); }
     return null;
   }).filter(Boolean);
+}
+
+// ─────────────── Boîte réservée à son titulaire (v1.60.4) ───────────────
+/**
+ * Décision d'Anthony du 08/11/2026 : la recherche par Message-ID dans CETTE boîte (anthony@) est réservée à son titulaire ;
+ * connaître l'identifiant d'un message n'autorise pas à consulter la boîte. Le relais serveur script-google transmet l'adresse du
+ * compte connecté (lue dans la session vérifiée par Supabase Auth) avec une signature HMAC-SHA256 calculée avec le code secret
+ * des scripts (supabase/functions/script-google/identite.ts) : le navigateur ne peut ni la fabriquer ni la remplacer.
+ * Accepté seulement si la signature est juste ET si l'adresse est celle du compte Google qui exécute ce script (titulaire de la
+ * boîte) : aucune adresse écrite dans le code. Ancien relais (sans identité) : refusé.
+ */
+function callerOk_(b) {
+  var who = String(b.caller || '').trim().toLowerCase();
+  if (!who || !SECRET || typeof b.caller_sig !== 'string' || !b.caller_sig) return '';
+  var bytes = Utilities.computeHmacSha256Signature('matrice-caller:' + who, SECRET, Utilities.Charset.UTF_8);
+  var hex = bytes.map(function (x) { return ('0' + (x & 255).toString(16)).slice(-2); }).join('');
+  return hex === b.caller_sig ? who : '';
+}
+function ownerOnly_(b) {
+  var me = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase(), who = callerOk_(b);
+  if (me && who && who === me) return null;
+  return { ok: false, refused: true, error: 'Recherche dans la boîte ' + (me || 'de ce script') + ' réservée à son titulaire : rien n’a été consulté.' };
 }
 
 // ─────────────── Message retrouvé par son Message-ID (v1.60.4) ───────────────

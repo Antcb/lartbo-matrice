@@ -7,7 +7,7 @@
  */
 import { ask, confirmAsk } from './ui/dialog.js';
 import { render } from './app.js';
-import { contentTypeOf, insert, mailAttachedTo, mailParts, mailPartsMissing, purgeStored, remove, save, sb, signedUrl, typedFile, uploadFiles } from './data.js';
+import { contentTypeOf, insert, legacyMailOwner, mailAttachedTo, mailParts, mailPartsMissing, purgeStored, remove, save, sb, signedUrl, typedFile, uploadFiles } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
 import { PROSPECT_TAGS, attOk, attSizeHTML, callGoogle, callScript, fill, todoOk, tplLabel, tplProjects } from './mail.js';
 import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, placeOfEvent, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName } from './selectors.js';
@@ -487,8 +487,15 @@ async function attachOneMailLink(p, id){
   PENDING_MSG.add(key);
   try {
     // déjà joint à un AUTRE suivi : refusé sans consulter les boîtes Google
+    // (décision d'Anthony du 08/11/2026 : un message reste rattaché à un seul suivi ; le suivi concerné est nommé et accessible)
+    const open = id => ({label: 'Ouvrir le suivi', act: 'openSuivi', id});
+    const name = id => prospectTitle(byId('prospects', id) || {name: 'autre suivi'});
     const where = await mailAttachedTo(key);
-    if (where && where !== p.id) return toast(`Ce message est déjà joint au suivi « ${prospectTitle(byId('prospects', where) || {name: 'autre suivi'})} » : rien n’a été ajouté.`, true);
+    if (where && where !== p.id) return toast(`Ce message est déjà joint au suivi « ${name(where)} » : rien n’a été ajouté.`, true, open(where));
+    // joint avant la v1.60.4 (sans clé) : reconnu par le Message-ID du .eml déjà stocké, en lecture seule, sans consulter Gmail
+    const old = where ? null : await legacyMailOwner(id);
+    if (old) return toast(old === p.id ? 'Ce message est déjà joint à ce suivi (avant la v1.60.4) : rien n’a été ajouté.'
+      : `Ce message est déjà joint au suivi « ${name(old)} » (avant la v1.60.4) : rien n’a été ajouté.`, true, old === p.id ? null : open(old));
     toast('Recherche du message dans les boîtes Google…');
     const {mail, tried} = await findMailByMsgId(id);
     if (!mail) return mailNotFound(p, tried);
@@ -499,7 +506,7 @@ async function attachOneMailLink(p, id){
     const file = new File([got], fileTitle(m.subject) + '.eml', {type: 'message/rfc822'});   // nom tiré du .eml lui-même
     // ce qui est déjà joint, clé par clé : complet → rien ; partiel → seules les parties manquantes seront ajoutées
     const plan = await mailParts(p.id, key, m);
-    if (plan.other) return toast(`Ce message est déjà joint en partie au suivi « ${prospectTitle(byId('prospects', plan.other) || {name: 'autre suivi'})} » : rien n’a été ajouté.`, true);
+    if (plan.other) return toast(`Ce message est déjà joint au suivi « ${name(plan.other)} » : rien n’a été ajouté.`, true, open(plan.other));
     if (plan.legacy) return toast('Ce mail est déjà au journal de ce suivi (ajouté autrement) : rien n’a été ajouté.', true);
     if (!mailPartsMissing(plan)) return toast('Ce message est déjà joint à ce suivi : rien n’a été ajouté.', true);
     const partial = where === p.id;

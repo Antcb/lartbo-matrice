@@ -101,10 +101,18 @@ export const matches = (hay, q) => { const words = norm(q).split(/\s+/).filter(B
 export function toast(msg, err, action){
   const t = document.createElement('div'); t.className = 'toast' + (err?' err':''); t.setAttribute('role','status');
   t.textContent = msg;
+  // action : {label, fn} ou (v1.60.4) {label, act, id} = une action existante de l'écran (data-act), ex. ouvrir un suivi
   if (action){ const b = document.createElement('button'); b.className = 'toast-btn'; b.textContent = action.label;
-    b.onclick = () => { t.remove(); action.fn(); }; t.appendChild(b); }
+    b.onclick = () => { t.remove(); if (action.fn) action.fn(); else runAct(action.act, action.id); }; t.appendChild(b); }
   document.querySelectorAll('.toast').forEach(x => x.remove());
   document.body.appendChild(t); setTimeout(()=>t.remove(), action ? 5200 : err ? 5000 : 1800);
+}
+
+/** Déclenche une action existante de l'écran (data-act → ACTIONS) comme un clic sur son bouton : même chemin, même nettoyage
+ *  (v1.60.4, ex. « Ouvrir le suivi » depuis un message) — aucune action recréée */
+export function runAct(act, id){
+  const b = document.createElement('button'); b.type = 'button'; b.hidden = true; b.dataset.act = act; if (id) b.dataset.id = id;
+  document.body.appendChild(b); b.click(); b.remove();
 }
 
 /** Téléchargement d'un fichier CSV (séparateur ; pour Excel en français) */

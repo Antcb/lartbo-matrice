@@ -21,6 +21,7 @@ de fusion vers `main` (`.github/workflows/tests.yml`). En cas d'échec, le rappo
 |---|---|
 | `static/check.mjs` | analyse du code par acorn : syntaxe de chaque module, imports nommés existants, carte d'import à la version de `js/config.js`, **nombre de fenêtres natives qui n'augmente pas**, aucun secret dans les fichiers suivis par Git (tests compris) |
 | `static/message-id.mjs` | (v1.60.4) lecture du Message-ID dans les liens « message: » d'Apple Mail, même règle dans `js/eml.js` et les deux scripts Google, action `mail_by_msgid` en lecture seule (scripts exécutés avec services Google simulés) |
+| `static/acces-boite.mjs` | (v1.60.4) recherche dans la boîte anthony@ réservée à son titulaire : identité signée par le relais `script-google` (`identite.ts`), vérifiée par `Prospection.gs` ; production@ inchangé |
 | `e2e/demarrage.spec.js` | démarrage, chaque onglet sur ordinateur et téléphone (sans erreur, sans « NaN » ni « undefined »), écran de connexion |
 | `e2e/modules.spec.js` | chargement de chaque module dans la page |
 | `e2e/parcours.spec.js` | terminer une tâche, confirmer une date, filtre par artiste |
