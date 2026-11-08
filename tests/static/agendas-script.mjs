@@ -41,7 +41,7 @@ function google(cals) {
   };
   // toute autre fonction (insert, update, patch, delete, move, quickAdd, import…) : interdite — le test échoue si elle est appelée
   for (const k of Object.keys(Calendar)) Calendar[k] = new Proxy(Calendar[k], { get: (o, p) => p in o ? o[p] : () => { throw new Error(`écriture interdite : Calendar.${k}.${String(p)}`); } });
-  const ctx = { Calendar, PropertiesService: { getScriptProperties: () => ({ getProperty: k => k === 'WEBHOOK_SECRET' ? 'code-essai' : null }) },
+  const ctx = { Calendar, PropertiesService: { getScriptProperties: () => ({ getProperty: k => k === 'SECRET_AGENDAS' ? 'code-essai' : null }) },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: t => ({ setMimeType: () => JSON.parse(t) }) }, Date, JSON, Math, String, Error };
   vm.createContext(ctx); vm.runInContext(code, ctx);
   const call = body => ctx.doPost({ postData: { contents: JSON.stringify({ secret: 'code-essai', ...body }) } });
@@ -112,9 +112,26 @@ t('panne passagère (quota, 500) : erreur remontée telle quelle, aucune bascule
   assert.equal(g.calls.filter(c => c[0] === 'Freebusy.query').length, 0);
 });
 t('partage réduit à « disponibilités » sans que la liste le dise (403 sur les détails) : périodes occupées', () => {
-  const g = google({ a: { role: 'reader', tz: 'Europe/Paris', eventsError: Object.assign(new Error('Forbidden'), { details: { code: 403 } }), busy: [{ start: '2027-05-01T10:00:00Z', end: '2027-05-01T12:00:00Z' }] } });
+  const g = google({ a: { role: 'reader', tz: 'Europe/Paris', eventsError: Object.assign(new Error('Forbidden'), { details: { code: 403, errors: [{ reason: 'forbidden', domain: 'global' }] } }), busy: [{ start: '2027-05-01T10:00:00Z', end: '2027-05-01T12:00:00Z' }] } });
   const r = g.call({ action: 'events', calendar_id: 'a', time_min: TMIN, time_max: TMAX });
   assert.equal(r.ok, true); assert.equal(r.mode, 'disponibilites'); assert.equal(r.events.length, 1); assert.equal(r.events[0].title, null);
+});
+
+t('relecture B1 : limite d’usage renvoyée en 403 (rateLimitExceeded, userRateLimitExceeded, quotaExceeded) = panne passagère, jamais « disponibilités »', () => {
+  for (const reason of ['rateLimitExceeded', 'userRateLimitExceeded', 'quotaExceeded']) {
+    const e = Object.assign(new Error('API call to calendar.events.list failed with error: Rate Limit Exceeded'), { details: { code: 403, errors: [{ reason, domain: 'usageLimits' }] } });
+    const g = google({ a: { role: 'reader', tz: 'Europe/Paris', eventsError: e, busy: [{ start: '2027-03-01T17:00:00Z', end: '2027-03-01T19:00:00Z' }] } });
+    const r = g.call({ action: 'events', calendar_id: 'a', time_min: TMIN, time_max: TMAX });
+    assert.equal(r.ok, false, reason); assert.equal(g.calls.filter(c => c[0] === 'Freebusy.query').length, 0, reason);
+  }
+  // 403 sans raison sur un agenda partagé en détails : passagère aussi
+  const g = google({ a: { role: 'reader', tz: 'Europe/Paris', eventsError: Object.assign(new Error('Forbidden'), { details: { code: 403 } }) } });
+  assert.equal(g.call({ action: 'events', calendar_id: 'a', time_min: TMIN, time_max: TMAX }).ok, false);
+});
+t('réponse des événements : numéro de version du script (le serveur refuse une réponse « disponibilités » sans version)', () => {
+  const g = google({ b: { role: 'freeBusyReader', tz: 'Europe/Paris', busy: [] }, a: { role: 'reader', tz: 'Europe/Paris', events: [] } });
+  assert.match(g.call({ action: 'events', calendar_id: 'b', time_min: TMIN, time_max: TMAX }).version, /^v\d/);
+  assert.match(g.call({ action: 'events', calendar_id: 'a', time_min: TMIN, time_max: TMAX }).version, /^v\d/);
 });
 
 let ok = 0;

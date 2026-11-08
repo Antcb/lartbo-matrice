@@ -1,6 +1,6 @@
 // Règles des agendas des artistes sur de FAUSSES données : aucun appel au service de lieux ni à Google.
 import assert from 'node:assert/strict';
-import { chooseCity, isShowTitle, planSync } from '../../supabase/functions/cal-sync/regles.ts';
+import { chooseCity, isShowTitle, planSync, replyProblem } from '../../supabase/functions/cal-sync/regles.ts';
 
 const F = (name, cc, lng, lat, postcode) => ({ properties: { name, countrycode: cc, postcode }, geometry: { coordinates: [lng, lat] } });
 const DB = {
@@ -128,6 +128,41 @@ t('« Show » : repère seulement pour une ville sûre, pays par défaut de l’
   assert.equal(appels, n);   // lieu et pays inchangés : rien n'est redemandé au service de lieux ; Showroom jamais localisé
   p = await planSync({ mode: 'details', events: ev }, { ...CAL, default_country: 'US' }, [...T.values()], TMIN, TMAX, compte, 'n');
   assert.equal(p.rows[0].lat, 33.66);   // pays par défaut changé : recalculé (Paris, Texas)
+});
+
+t('relecture B2 : deux passages sans changement dans Google = aucune écriture (fuseau écrit autrement en base compris)', async () => {
+  const T = new Map();
+  const rep = { mode: 'details', events: [G('a'), G('b', { title: 'SHOW Lyon', location: 'Le Transbordeur, 69100 Lyon' }),
+    { id: 'j', title: 'Vacances', start_date: '2027-03-10', end_date: '2027-03-13' }] };
+  const p1 = await passage(T, rep);
+  assert.equal(p1.rows.length, 3);
+  // la base relit les instants en UTC (« 2027-03-01T17:00:00+00:00 ») et les dates seules : rien ne doit paraître changé
+  for (const r of T.values()) { if (r.start_at) { r.start_at = new Date(r.start_at).toISOString().replace('Z', '+00:00'); r.end_at = new Date(r.end_at).toISOString().replace('Z', '+00:00'); } r.updated_at = 'avant'; }
+  const p2 = await passage(T, rep);
+  assert.equal(p2.rows.length, 0); assert.equal(p2.gone.length, 0);
+  const p3 = await passage(T, rep);
+  assert.equal(p3.rows.length, 0);
+  assert.ok([...T.values()].every(r => r.updated_at === 'avant'));
+  // un seul changement → une seule ligne écrite
+  const p4 = await passage(T, { ...rep, events: [G('a', { title: 'Répétition (salle 2)' }), ...rep.events.slice(1)] });
+  assert.deepEqual(p4.rows.map(r => r.gcal_event_id), ['a']);
+});
+
+t('localisation non tentée (service indisponible, délai, budget) : réessayée au passage suivant, jamais figée « à préciser »', async () => {
+  const T = new Map(); let panne = true;
+  const ville = async (l, c) => panne ? undefined : villes(l, c);
+  const rep = { mode: 'details', events: [G('s', { title: 'Show', location: 'Bataclan, Paris' })] };
+  let p = await planSync(rep, CAL, [], TMIN, TMAX, ville, 'n'); for (const r of p.rows) T.set(r.gcal_event_id, r);
+  assert.deepEqual([p.rows[0].geo_status, p.rows[0].geo_key, p.rows[0].lat], ['a_preciser', null, null]);
+  panne = false;
+  p = await planSync(rep, CAL, [...T.values()], TMIN, TMAX, ville, 'n');
+  assert.deepEqual([p.rows[0].geo_status, p.rows[0].city], ['ok', 'Paris']);
+});
+
+t('relecture B1 : réponse « disponibilités » d’un script sans numéro de version refusée (rien effacé)', () => {
+  assert.match(replyProblem({ mode: 'disponibilites', events: [] }), /pas à jour/);
+  assert.equal(replyProblem({ mode: 'disponibilites', version: 'v1.61.0' }), null);
+  assert.equal(replyProblem({ mode: 'details' }), null);
 });
 
 let ok = 0;

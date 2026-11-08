@@ -69,6 +69,8 @@ reset role;
 do $$ declare sec text := (select value from private.import_secrets where key = 'cal_sync_hook'); begin
   if sec is null or length(sec) <> 64 or sec !~ '^[0-9a-f]+$' then raise exception 'ESSAI 6a : secret dédié absent ou mal formé'; end if;
   if sec = coalesce((select value from private.import_secrets where key = 'drive_webhook_secret'), '') then raise exception 'ESSAI 6b : secret partagé'; end if;
+  if coalesce(length((select value from private.import_secrets where key = 'cal_script_secret')), 0) <> 64
+     or (select value from private.import_secrets where key = 'cal_script_secret') = sec then raise exception 'ESSAI 6b2 : secret dédié du script des agendas'; end if;
   perform public.cal_sync_tick();
   if (select count(*) from net._appels) <> 0 then raise exception 'ESSAI 6c : appel sans adresse'; end if;
   insert into private.sync_urls values ('cal-sync', 'https://pirate.example.com/functions/v1/cal-sync');

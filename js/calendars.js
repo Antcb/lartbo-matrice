@@ -156,7 +156,8 @@ export const CAL_ACTIONS = {
     const row = {project_id: pid, calendar_id: c.id, calendar_name: c.name, access: c.access, status: 'actif', last_error: null};
     if (cur){
       if (cur.calendar_id !== c.id && !(await confirmAsk('Changer d’agenda ?', 'Les événements de l’ancien agenda ne seront plus affichés (rien n’est modifié dans Google).', 'Changer'))) return;
-      await save('artist_calendars', cur.id, row, {rerender: false});
+      // ancien agenda masqué SEULEMENT si le changement est enregistré (sinon rien ne bouge)
+      if (!(await save('artist_calendars', cur.id, row, {rerender: false}))) return;
       if (cur.calendar_id !== c.id){ const {error} = await sb.from('artist_calendar_events').update({deleted_at: new Date().toISOString()}).eq('calendar_ref', cur.id).is('deleted_at', null); if (error) toast(error.message, true); }
     } else if (!(await insert('artist_calendars', row))) return;
     await reload(); render();
@@ -194,7 +195,7 @@ export const CAL_ACTIONS = {
 /** Heure locale de l'événement (son fuseau), avec le fuseau s'il n'est pas celui de Paris */
 const localTime = e => { const tz = e.time_zone || 'Europe/Paris'; let h;
   try { h = new Date(e.start_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit', timeZone: tz}); } catch { h = new Date(e.start_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris'}); }
-  return tz === 'Europe/Paris' ? h : `${h} (heure locale, ${tz.split('/').pop().replace(/_/g, ' ')})`; };
+  return tz === 'Europe/Paris' ? h : `${h} (heure locale, ${esc(tz.split('/').pop().replace(/_/g, ' '))})`; };   // fuseau lu dans Google : échappé
 
 /** Lignes d'indisponibilité pour la liste Booking (affichées à part, origine Google) */
 export function calBookingRows(projectIds, year){
@@ -206,7 +207,7 @@ export function calRowHTML({e, span: [a, b]}, showArtist){
   return `<div class="gig cal-unav" title="Indisponibilité lue dans l’agenda Google de l’artiste (lecture seule)">
     <div class="day"><b>${a.slice(8)}</b><span>${new Date(a + 'T12:00:00').toLocaleDateString('fr-FR', {weekday: 'short'})}</span></div>
     <div class="what"><b>${esc(evLabel(e))}</b><small>${e.is_show ? 'Date artiste — calendrier Google' : 'Agenda Google'}${showArtist ? ' · ' + esc(projName(e.project_id)) : ''}${b !== a ? ' · jusqu’au ' + fmtDate(b) : ''}${e.all_day ? '' : ' · ' + localTime(e)}${stale ? ' · <span class="warn-txt">disponibilités plus à jour</span>' : ''}</small></div>
-    <div class="right">${e.is_show ? `<button type="button" class="btn sm ghost" data-act="calAssociate" data-id="${e.id}">${calLinked(e) ? 'Dissocier' : 'Associer à une date'}</button>` : ''}<span class="badge cal-badge">📅 Google</span></div></div>`;
+    <div class="right">${e.is_show ? `<button type="button" class="btn sm ghost" data-act="calAssociate" data-id="${e.id}">${calLinked(e) ? 'Dissocier' : 'Associer à une date'}</button>` : ''}<span class="badge tiny">📅 Google</span></div></div>`;
 }
 
 /** Agendas reliés mais pas à jour (pause, erreur, accès perdu, synchronisation trop ancienne) des artistes affichés : jamais « libre » */

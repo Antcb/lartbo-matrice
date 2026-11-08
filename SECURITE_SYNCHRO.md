@@ -28,6 +28,16 @@ précises, liste des agendas, actualisation d'un seul artiste) exigent une sessi
 - L'adresse appelée est lue dans `private.sync_urls` (schéma privé) et doit être `https://<projet>.supabase.co/functions/v1/<nom>` :
   aucun compte ne peut détourner l'appel (et donc le secret) vers un autre serveur.
 
+## Secret du script Google des agendas (cal-sync → « Matrice Agendas »)
+- La fonction `cal-sync` appelle le script « Matrice Agendas » (production@, lecture seule) avec un secret **propre à ce script**,
+  `cal_script_secret` (`private.import_secrets`, tiré au hasard par la migration v1.62 des agendas, lu par `import_secret`, rôle serveur
+  seulement), recopié une fois par Anthony dans la propriété `SECRET_AGENDAS` du script (éditeur SQL du projet → propriétés du script ;
+  jamais dans l'application ni dans une conversation). Il est distinct de `drive_webhook_secret` (scripts principal et de prospection)
+  et de `cal_sync_hook` : le projet « Matrice Agendas » ne détient aucun moyen d'appeler un autre script.
+- Rotation : nouvelle valeur dans `private.import_secrets` puis dans la propriété du script (aucun redéploiement de la fonction).
+- Un script des agendas sans numéro de version (antérieur à la relecture de 976ea64) voit sa réponse « disponibilités » refusée
+  (il confondait une limite d'usage avec un partage réduit) : message « script pas à jour ».
+
 ## Vérifications avant déploiement (projet de test)
 1. Sans en-tête ni session → 403. 2. `x-hook-secret` faux → 403. 3. Session d'un compte hors équipe → 403.
 4. Session d'un membre de l'équipe → 200. 5. Secret dédié → 200 (synchronisation). 6. Liste des agendas avec le secret de la tâche → 403.

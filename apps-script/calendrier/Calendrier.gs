@@ -4,8 +4,8 @@
  * il ne peut ni créer, ni modifier, ni supprimer un événement. Les artistes partagent leur agenda avec production@.
  *
  * Installation (web, pas à pas, sur le compte production@) : nouveau projet Apps Script, coller ce fichier et appsscript.json,
- * Services › ajouter « Google Calendar API », Paramètres du projet › Propriétés du script : WEBHOOK_SECRET (même valeur que
- * Réglages › Google), Déployer › Application Web (exécuter en tant que Moi, accès Tout le monde) → adresse …/exec dans Réglages.
+ * Services › ajouter « Google Calendar API », Paramètres du projet › Propriétés du script : SECRET_AGENDAS = secret DÉDIÉ
+ * de ce script (private.import_secrets « cal_script_secret », tiré au hasard par la migration v1.62 ; distinct du code du script principal), Déployer › Application Web (exécuter en tant que Moi, accès Tout le monde) → adresse …/exec dans Réglages.
  *
  * Appelé uniquement par la fonction serveur « cal-sync » (code partagé, jamais par le navigateur) :
  *   { action: 'calendars' }                               → agendas visibles par production@ (nom, identifiant, niveau d'accès)
@@ -21,7 +21,7 @@ function doPost(e) {
   var out;
   try {
     var body = JSON.parse(e.postData.contents || '{}');
-    var secret = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET') || '';
+    var secret = PropertiesService.getScriptProperties().getProperty('SECRET_AGENDAS') || '';
     if (!secret || body.secret !== secret) return json_({ ok: false, error: 'Code secret du script des calendriers incorrect' });
     if (body.action === 'ping') out = { ok: true, version: SCRIPT_VERSION };
     else if (body.action === 'calendars') out = calendars_();
@@ -46,6 +46,27 @@ function calendars_() {
 
 /** Code d'erreur HTTP d'une erreur de l'API (403 / 404…) */
 function code_(err) { return String(err && err.details && err.details.code || (/\b(403|404)\b/.exec(String(err && err.message)) || [])[1] || ''); }
+/** Raison donnée par Google (forbidden, notFound, rateLimitExceeded…) */
+function reason_(err) { var e = err && err.details && err.details.errors; return String(e && e[0] && e[0].reason || ''); }
+/** Limite d'usage (Google répond 403 aussi pour ces cas) : panne passagère, JAMAIS un partage « disponibilités » */
+function usageLimit_(err) {
+  return /^(rateLimitExceeded|userRateLimitExceeded|quotaExceeded|dailyLimitExceeded|usageLimits)$/.test(reason_(err))
+    || String(err && err.details && err.details.errors && err.details.errors[0] && err.details.errors[0].domain || '') === 'usageLimits'
+    || /rate limit|quota|usage limit|limit exceeded/i.test(String(err && err.message || ''));
+}
+/**
+ * Refus d'accès aux DÉTAILS seulement (partage réduit à « disponibilités ») ? Oui si l'agenda est en freeBusyReader dans la liste, ou si
+ * Google refuse avec la raison forbidden / notFound / requiredAccessLevel (ou un 404 sans raison). Limite d'usage, 403 sans raison,
+ * toute autre erreur : NON — l'erreur remonte, rien n'est effacé, l'agenda passe en « disponibilités plus à jour ».
+ */
+function detailsRefused_(err, entry) {
+  if (usageLimit_(err)) return false;
+  if (entry && entry.accessRole === 'freeBusyReader') return true;
+  var c = code_(err), r = reason_(err);
+  if (c !== '403' && c !== '404') return false;
+  if (r) return /^(forbidden|notFound|requiredAccessLevel)$/.test(r);
+  return c === '404';
+}
 
 function events_(id, tmin, tmax) {
   if (!id) throw new Error('Agenda non précisé');
@@ -67,12 +88,11 @@ function events_(id, tmin, tmax) {
       });
       token = r.nextPageToken;
     } while (token);
-    return { ok: true, mode: 'details', events: out };
+    return { ok: true, mode: 'details', events: out, version: SCRIPT_VERSION };
   } catch (err) {
-    // SEUL un refus d'accès (403 / 404) bascule en périodes occupées (sans titre ni lieu) ; toute autre erreur (quota, panne passagère)
-    // remonte : l'agenda passe en « disponibilités plus à jour », rien n'est réécrit
-    var c = code_(err);
-    if (c !== '403' && c !== '404') throw err;
+    // SEUL un refus d'accès aux détails bascule en périodes occupées (sans titre ni lieu) ; toute autre erreur (limite d'usage en 403
+    // comprise, panne passagère) remonte : l'agenda passe en « disponibilités plus à jour », rien n'est réécrit ni effacé
+    if (!detailsRefused_(err, entry)) throw err;
     return busy_(id, tmin, tmax, entry && entry.timeZone || null);
   }
 }
@@ -96,5 +116,5 @@ function busy_(id, tmin, tmax, tz) {
   blocks.forEach(function (b) { var l = merged[merged.length - 1]; if (l && b.s <= l.e) l.e = Math.max(l.e, b.e); else merged.push({ s: b.s, e: b.e }); });
   var out = merged.map(function (b) { var s = new Date(b.s).toISOString(), e = new Date(b.e).toISOString();
     return { id: 'occupe-' + s + '-' + e, title: null, location: null, start: s, end: e, time_zone: tz, transparency: 'opaque', visibility: 'private', type: 'busy' }; });
-  return { ok: true, mode: 'disponibilites', events: out };
+  return { ok: true, mode: 'disponibilites', events: out, version: SCRIPT_VERSION };
 }
