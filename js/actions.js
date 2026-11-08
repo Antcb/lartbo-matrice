@@ -106,12 +106,17 @@ export const ACTIONS = {
   // Booking
   toggleCancelled: () => { S.showCancelled=!S.showCancelled; render(); },
   toggleArchived: () => { S.showArchived = !S.showArchived; render(); },
-  // date archivée (v1.60.3) : restaurée après confirmation — elle revient dans les listes de travail ; ses relances restent suspendues
+  // date archivée (v1.60.3) : restaurée après confirmation (et avertissement d'agenda Google, v1.62) — elle revient dans les listes de travail ; ses relances restent suspendues
   // (échéances d'origine intactes) jusqu'à une réactivation explicite, proposée ici (décision d'Anthony du 07/11)
   restoreShow: async t => { const s = byId('shows', t.dataset.id); if (!s?.archived_at) return;
     const choice = await ask({title: 'Restaurer la date ?', text: `La date « ${[s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · ')} » revient dans les listes de travail, la carte et les calendriers ; sa fiche publique se rouvre.\nSes relances restent suspendues : aucune ne repart automatiquement. Tu peux les réactiver maintenant en choisissant leurs prochaines échéances, ou plus tard depuis la date.`,
       actions: [{value: 'keep', label: 'Restaurer, relances suspendues', plain: true}, {value: 'reactivate', label: 'Restaurer et réactiver les relances…'}]});
-    if (!choice || !(await restoreShow(s.id))) return;
+    if (!choice) return;
+    // agenda Google de l'artiste (décision d'Anthony du 08/11) : la date revient dans les calendriers et les conflits → mêmes règles qu'à
+    // l'enregistrement (chevauchement réel ou même jour local, une seule alerte avec la raison, poursuite après confirmation) ;
+    // « Annuler » : rien n'est restauré. Aucune relance réactivée sans le choix explicite ci-dessus.
+    if (!(await calCheckBeforeSave({...s, archived_at: null}))) return;
+    if (!(await restoreShow(s.id))) return;
     toast('Date restaurée'); render();
     if (choice === 'reactivate') reactivateRemindersWindow(s.id); },
   reactivateReminders: t => reactivateRemindersWindow(t.dataset.id, Number(t.dataset.level) || 1),

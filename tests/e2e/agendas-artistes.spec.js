@@ -281,3 +281,37 @@ test('aucune incidence financière : chiffres de Booking identiques avec ou sans
   expect(await page.evaluate(() => window.__calls.filter(c => ['shows', 'show_payments', 'budget_lines', 'commission_transfers'].includes(c.table) && c.op !== 'select').length)).toBe(0);
   expectClean(ctx);
 });
+
+test('restauration d’une date archivée (décision du 08/11) : même avertissement d’agenda, Annuler ne restaure rien ; aucune relance réactivée sans choix', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page);
+  await page.evaluate(async Y => { const { S, touch } = await import('./js/state.js'); const ART = S.db.projects[0].id;
+    for (const db of [S.db, window.__DB]) db.shows.push(
+      { id: 'sh-rest', project_id: ART, venue: 'Salle Restaurée', city: 'Testville', date: `${Y}-03-11`, status: 'Option Salle', archived_at: '2026-11-07T10:00:00Z', archived_reason: 'Essai' },
+      { id: 'sh-libre', project_id: ART, venue: 'Salle Libre', city: 'Testville', date: `${Y}-09-15`, status: 'Option Salle', archived_at: '2026-11-07T10:00:00Z', archived_reason: 'Essai' });
+    touch('shows'); (await import('./js/app.js')).render(); }, Y);
+  const rpcs = () => page.evaluate(() => window.__calls.filter(c => c.rpc).map(c => c.rpc).filter(r => /restore|reactivate/.test(r)));
+  await page.locator('[data-act="toggleArchived"]').click();
+  const panel = page.locator('.panel', { hasText: 'Dates archivées' });
+  // jour indisponible dans Google : avertissement après le choix « relances suspendues » ; Annuler → rien n'est restauré
+  await panel.locator('p', { hasText: 'Salle Restaurée' }).locator('[data-act="restoreShow"]').click();
+  await page.locator('dialog[open] button', { hasText: 'Restaurer, relances suspendues' }).click();
+  const alerte = page.locator('dialog[open]', { hasText: 'Artiste indisponible ?' });
+  await expect(alerte).toContainText('Vacances');
+  await expect(alerte).toContainText('(événement artiste le même jour)');   // raison visible
+  await alerte.locator('button', { hasText: 'Annuler' }).click();
+  await page.waitForTimeout(200);
+  expect(await rpcs()).toEqual([]);
+  // poursuite après confirmation : restaurée, une seule alerte, aucune relance réactivée (choix « relances suspendues »)
+  await panel.locator('p', { hasText: 'Salle Restaurée' }).locator('[data-act="restoreShow"]').click();
+  await page.locator('dialog[open] button', { hasText: 'Restaurer, relances suspendues' }).click();
+  await page.locator('dialog[open]', { hasText: 'Artiste indisponible ?' }).locator('button', { hasText: 'Enregistrer quand même' }).click();
+  await expect.poll(rpcs).toEqual(['restore_show']);
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  // jour libre dans Google : aucune alerte d'agenda, restaurée directement
+  await panel.locator('p', { hasText: 'Salle Libre' }).locator('[data-act="restoreShow"]').click();
+  await page.locator('dialog[open] button', { hasText: 'Restaurer, relances suspendues' }).click();
+  await expect.poll(rpcs).toEqual(['restore_show', 'restore_show']);
+  await expect(page.locator('dialog[open]', { hasText: 'Artiste indisponible ?' })).toHaveCount(0);
+  expectClean(ctx);
+});
