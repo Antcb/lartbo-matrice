@@ -1,7 +1,9 @@
 -- ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 -- v1.60.4 — CAS D'ESSAI ISOLÉ « ESSAI promo » : promotion locale d'une coproduction (retour d'Anthony du 08/11/2026)
 -- Données 100 % FICTIVES, identifiants FIXES, retirées exactement par 2026-11-08_v1.60.4_essai_promo_nettoyage.sql.
--- NON APPLIQUÉ par l'agent : à lancer par Anthony (éditeur SQL Supabase), seulement s'il le décide, de préférence d'abord sur
+-- JAMAIS EN PRODUCTION (décision d'Anthony du 08/11/2026 : pas de données fictives dans les comptes opérationnels pour refaire un
+-- calcul déjà vérifié) : le script s'arrête s'il reconnaît le projet de production. Exécuté par l'agent sur une base PostgreSQL
+-- jetable locale construite depuis les migrations du dépôt (résultats : tests/outils/essai-promo.mjs) ; utilisable aussi sur
 -- « Lartbo-matrice-test ». Aucun partenaire, artiste, structure, contact ou compte réel n'est utilisé ni modifié.
 --
 -- Ce que le script crée (et rien d'autre) :
@@ -77,6 +79,14 @@ begin;
 
 do $$
 begin
+  -- cible déclarée explicitement (ligne « set essai.cible = 'jetable' | 'test'; » à placer avant ce script) : sans elle, rien
+  if coalesce(current_setting('essai.cible', true), '') not in ('jetable', 'test') then
+    raise exception 'ARRÊT : cible non déclarée. Ajoute avant le script : set essai.cible = ''jetable''; (ou ''test'' sur le projet de test). Jamais en production. Rien n''a été créé.';
+  end if;
+  -- jamais en production (identifiant du projet de production dans les réglages, même garde que les essais du 27/10/2026)
+  if exists (select 1 from public.settings where value::text like '%ypvvjoqhzddzbmerypdc%') then
+    raise exception 'ARRÊT : ceci est la PRODUCTION — l''essai « ESSAI promo » est réservé à une base jetable ou au projet de test. Rien n''a été créé.';
+  end if;
   -- jamais par-dessus des données existantes : rien ne doit déjà porter ces identifiants ou ces noms
   if exists (select 1 from public.projects where id = 'e55a1000-0000-4000-a000-000000000001' or name = 'ESSAI promo')
      or exists (select 1 from public.partners where id = 'e55a1000-0000-4000-a000-000000000002' or name = 'ESSAI promo — coproducteur fictif')

@@ -24,18 +24,22 @@ ailleurs que sur le projet de test (contrôle de l'adresse des fonctions, absenc
   archivée ; gardes de generate_reminders, fiche_get et fiche_submit ; fiche publique « Dossier indisponible » ; notifications
   retirées ; restauration avec relances suspendues puis réactivation explicite ; alerte de facture sur une date archivée). Données fictives uniquement.
 
-## Cas d'essai isolé « ESSAI promo » (v1.60.4, à lancer par Anthony s'il le décide)
+## Cas d'essai isolé « ESSAI promo » (v1.60.4) — hors production uniquement
 
-- `2026-11-08_v1.60.4_essai_promo_coproduction.sql` : artiste inactif « ESSAI promo », coproducteur et structure fictifs, 3 dates
-  de coproduction passées (promotion : charge commune / L'ArtBo seule / coproducteur seul ; supportée ≠ payée), dépenses payées ;
-  identifiants fixes ; aucune facture, aucune relance, aucun dossier Drive demandé. Résultats attendus (calcul à la main) en tête du
-  fichier, vérifiés par `tests/e2e/essai-promo-v1604.spec.js`.
-- `2026-11-08_v1.60.4_essai_promo_nettoyage.sql` : retrait exact par identifiants fixes. Arrêt sans rien toucher si un identifiant
-  porte autre chose, ou si UNE ligne de n'importe quelle table du schéma public (inventaire fait à l'exécution, toutes colonnes :
-  clés, colonnes sans clé, tableaux, texte, JSON) contient un identifiant d'essai hors du périmètre ; journaux `finance_log` et
-  `show_deletions` conservés. Rejoué après relecture (B1) sur une base jetable complète (toutes les migrations) : 21 cas
-  d'accrochage (modèles de mail, Pennylane, tâches, journal et membres d'artiste, événements, notifications, structure
-  administrative ou coproducteur par défaut d'un artiste réel, spectacle, contact, Factures, dépenses, suivi…) → arrêt, aucune
-  ligne modifiée ; cas propre et cas clôturé → seules les lignes d'essai supprimées.
-- Essayés sur une base PostgreSQL 16 locale jetable (base locale v1.60.3 + migration v1.60.3 + `on_show_confirmed` de la v1.51) :
-  création, refus d'une seconde création, clôture puis nettoyage, arrêt du nettoyage sur une tâche ajoutée, artiste réel témoin intact.
+Décision d'Anthony du 08/11/2026 : aucune donnée fictive dans les comptes opérationnels ; essai exécuté hors production.
+- `2026-11-08_v1.60.4_essai_promo_coproduction.sql` : artiste inactif « ESSAI promo », coproducteur et structure fictifs, 3 dates de
+  coproduction passées (promotion : charge commune / L'ArtBo seule / coproducteur seul ; supportée ≠ payée), dépenses payées ;
+  identifiants fixes. Refusé sans `set essai.cible = 'jetable';` (ou `'test'`) et refusé si le projet de production est reconnu.
+  Résultats attendus (calcul à la main) en tête du fichier.
+- `2026-11-08_v1.60.4_essai_promo_nettoyage.sql` : arrêt sans rien toucher si un identifiant porte autre chose ou si une ligne de
+  n'importe quelle table du schéma public (inventaire à l'exécution, toutes colonnes) contient un identifiant d'essai hors du
+  périmètre (DÉPENDANCE OPÉRATIONNELLE) ; sinon TRACE CONSERVÉE : copie complète de chaque date (lignes, historique de clôture,
+  artiste / coproducteur / structure d'essai) dans le journal `show_deletions`, puis retrait des seules lignes d'essai des tables
+  actives. Les journaux `finance_log` et `show_deletions` ne sont jamais modifiés ni vidés et ne bloquent pas le nettoyage.
+- `tests/outils/essai-promo.mjs extrait.json` : calcule, avec l'application elle-même, les trois scénarios sur les lignes réellement
+  enregistrées (après déclencheurs) et compare aux attendus.
+- Exécuté le 08/11/2026 sur une base PostgreSQL 16 jetable locale (port 55493, toutes les migrations du dépôt, sans pg_net / pg_cron
+  réels) : création refusée sans cible ; 3 scénarios sans écart ; `generate_reminders` : aucune relance d'essai ; aucun appel Drive ;
+  clôture du cas 2 puis nettoyage → tables actives identiques à l'état d'avant la création (hors journaux), 3 copies dans
+  `show_deletions` (dont l'historique de clôture), journal `finance_log` antérieur intact. Rejeu de 22 cas d'accrochage (modèles de mail, Pennylane, tâches, journal et membres d'artiste, événements, notifications, artiste réel lié, spectacle, contact, Factures, dépenses, suivi) : arrêt,
+  aucune ligne modifiée.
