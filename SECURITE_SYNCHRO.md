@@ -36,3 +36,11 @@ précises, liste des agendas, actualisation d'un seul artiste) exigent une sessi
 4. Session d'un membre de l'équipe → 200. 5. Secret dédié → 200 (synchronisation). 6. Liste des agendas avec le secret de la tâche → 403.
 7. Journaux de la fonction (Supabase › Edge Functions › Logs) : aucun secret visible. 8. `select * from private.import_secrets` impossible
 pour un compte connecté. — **Non vérifié tant que les fonctions ne sont pas déployées sur le projet de test.**
+
+## Adresse du script de la boîte (relecture de f95da56)
+Le serveur envoie à `prospect_script_url` des demandes signées au nom du titulaire : cette adresse n'est modifiable (insertion,
+remplacement, effacement) que par le titulaire de la boîte (`is_mailbox_owner('anthony')`, règle `setting_write_ok` et RLS de
+`settings`) ; registre vide → par SQL seulement. Anthony la change dans Réglages › Prospection, connecté avec son compte. La
+vérification du compte qui répond (`compteOk`) n'est qu'un contrôle de cohérence : elle se fie au script appelé et ne protège pas
+seule. La signature nomme la cible et la boîte : une demande captée sur l'adresse du script principal (`drive_webhook_url`,
+modifiable par l'équipe) est refusée par le script de la boîte.

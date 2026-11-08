@@ -148,7 +148,8 @@ function run(file, msgs, call){
   return { out: typeof out === 'string' ? JSON.parse(out) : JSON.parse(JSON.stringify(out)), ...log };
 }
 // identité du titulaire de la boîte (compte qui exécute le script), signée comme par le relais script-google (v1.60.4)
-// (relecture B1 : clé dédiée CLE_BOITE, signature sur adresse, action, Message-ID et horodatage)
+// (relecture B1 : clé dédiée CLE_BOITE, signature sur adresse, action, Message-ID et horodatage ; messagerie, relecture de f95da56 :
+// texte v2 qui nomme aussi la cible « prospect » et la boîte « anthony » du script de prospection — Code.gs ne vérifie aucune signature)
 const owner = body => { const ts = Date.now(), mid = typeof body.message_id === 'string' ? body.message_id : '';
   return { caller: 'boite@example.com', caller_ts: ts, caller_sig: createHmac('sha256', 'cle-boite-de-test').update(['matrice-boite-v2', 'prospect', 'anthony', 'boite@example.com', body.action, mid, String(ts)].join('|')).digest('hex') }; };
 const post = body => ctx => ctx.doPost({ postData: { contents: JSON.stringify({ ...owner(body), ...body }) } });

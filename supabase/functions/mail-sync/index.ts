@@ -33,7 +33,7 @@ const shown = (e: unknown) => e instanceof Explique ? e.message.slice(0, 500) : 
 async function script(url: string, secret: string, key: string, owner: string, action: string, payload: Record<string, unknown>) {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), LIMIT_MS);
   try {
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: await outgoingBody(payload, action, secret, owner, key), signal: ctl.signal });
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: await outgoingBody(payload, action, secret, owner, key, Date.now(), 'prospect'), signal: ctl.signal });
     const txt = await r.text();
     let j: any; try { j = JSON.parse(txt); } catch { throw new Explique('Réponse illisible du script de prospection'); }
     if (!j?.ok) throw new Explique(String(j?.error || '').slice(0, 300) || 'Le script de prospection a refusé la demande');

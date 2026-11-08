@@ -347,6 +347,39 @@ do $$ declare t uuid := (select id from mail_threads where gmail_thread_id = 't0
   perform set_config('request.jwt.claims', '', true);
 end $$;
 
+-- ── Adresse du script de la boîte : modifiable par son titulaire seulement (relecture de f95da56) ─────────────────────────
+set local role authenticated;
+select set_config('request.jwt.claims', '{"email":"collegue@example.com"}', true) \gset ignore_
+do $$ declare n int; begin
+  perform pg_temp.ok((select value #>> '{}' from settings where key = 'prospect_script_url') like 'https://script.google.com/%', 'autre membre de l''équipe : adresse lisible (la prospection continue)');
+  begin update settings set value = '"https://script.google.com/macros/s/AKfy_pirate/exec"' where key = 'prospect_script_url'; get diagnostics n = row_count;
+    perform pg_temp.ok(n = 0, 'autre membre de l''équipe : modification de prospect_script_url sans effet');
+  exception when others then perform pg_temp.ok(true, 'autre membre de l''équipe : modification de prospect_script_url refusée'); end;
+  begin delete from settings where key = 'prospect_script_url'; get diagnostics n = row_count;
+    perform pg_temp.ok(n = 0, 'autre membre de l''équipe : effacement de prospect_script_url sans effet');
+  exception when others then perform pg_temp.ok(true, 'autre membre : effacement refusé'); end;
+  begin insert into settings values ('prospect_script_url', '"https://script.google.com/macros/s/AKfy_pirate/exec"') on conflict (key) do update set value = excluded.value;
+    perform pg_temp.ok(false, 'insertion par un autre membre');
+  exception when others then perform pg_temp.ok(sqlerrm like '%row-level security%', 'autre membre de l''équipe : insertion / remplacement refusés (RLS)'); end;
+  update settings set value = '"https://script.google.com/macros/s/AKfy_principal/exec"' where key = 'drive_webhook_url'; get diagnostics n = row_count;
+  perform pg_temp.ok(n = 1, 'drive_webhook_url : règles v1.47 inchangées (équipe)');
+end $$;
+select set_config('request.jwt.claims', '{"email":"equipe@example.com"}', true) \gset ignore_
+do $$ declare n int; begin
+  update settings set value = '"https://script.google.com/macros/s/AKfy_nouveau/exec"' where key = 'prospect_script_url'; get diagnostics n = row_count;
+  perform pg_temp.ok(n = 1 and (select value #>> '{}' from settings where key = 'prospect_script_url') like '%AKfy_nouveau%', 'titulaire : modification acceptée');
+  begin update settings set value = '"https://exemple.net/x"' where key = 'prospect_script_url'; perform pg_temp.ok(false, 'adresse non script');
+  exception when others then perform pg_temp.ok(true, 'titulaire : adresse qui n''est pas un script publié refusée (v1.47)'); end;
+end $$;
+reset role;
+do $$ begin
+  delete from private.mailbox_owners;
+  perform set_config('request.jwt.claims', '{"email":"equipe@example.com"}', true);
+  perform pg_temp.ok(not public.setting_write_ok('prospect_script_url', '"https://script.google.com/macros/s/AKfy_x/exec"'), 'registre vide : personne ne modifie l''adresse depuis l''application');
+  insert into private.mailbox_owners values ('anthony', 'equipe@example.com');
+  perform set_config('request.jwt.claims', '', true);
+end $$;
+
 -- ── Tâche planifiée : rien sans adresse inscrite, jamais vers un autre serveur, secret dans l'en-tête seulement ─────────────
 do $$ begin
   perform public.mail_sync_tick();

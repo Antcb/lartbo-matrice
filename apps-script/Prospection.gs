@@ -73,8 +73,9 @@ function blobs_(list) {
  * connaître l'identifiant d'un message (ou le code secret des scripts) n'autorise pas à consulter la boîte.
  * Le relais serveur script-google transmet l'adresse du compte connecté (session vérifiée par Supabase Auth) avec une signature
  * HMAC-SHA256 calculée avec une CLÉ DÉDIÉE, jamais transmise : propriété CLE_BOITE de ce script (copie de la clé
- * « mailbox_sign_key » de la base, supabase/functions/script-google/identite.ts). La signature couvre adresse, action,
- * Message-ID et horodatage ; accepté seulement si : clé présente, signature juste, horodatage à moins de 5 minutes, signature
+ * « mailbox_sign_key » de la base, supabase/functions/script-google/identite.ts). La signature couvre la cible (« prospect »)
+ * et la boîte (« anthony ») de CE script (CIBLE_, BOITE_NOM_), l'adresse, l'action, l'identifiant (Message-ID, ou empreinte de la
+ * demande entière pour les actions de messagerie) et l'horodatage ; accepté seulement si : clé présente, signature juste, horodatage à moins de 5 minutes, signature
  * jamais vue (usage unique, sous verrou), et adresse = compte Google qui exécute ce script (titulaire de la boîte). Chaque refus
  * dit sa vraie cause. Aucune adresse écrite ici.
  */
@@ -96,6 +97,8 @@ function identOf_(b, action) {
   var d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, canon_(rest), Utilities.Charset.UTF_8);
   return 'sha256:' + d.map(function (x) { return ('0' + (x & 255).toString(16)).slice(-2); }).join('');
 }
+/** (relecture de f95da56) constantes propres à CE script : la signature doit les nommer (cible et boîte) */
+var CIBLE_ = 'prospect', BOITE_NOM_ = 'anthony';
 var CLE_BOITE_ = PropertiesService.getScriptProperties().getProperty('CLE_BOITE') || '';
 var CALLER_WINDOW_MS_ = 5 * 60 * 1000;
 var REFUS_ = {
@@ -111,7 +114,7 @@ function callerOk_(b, action) {
   var who = typeof b.caller === 'string' ? b.caller.trim().toLowerCase() : '';
   var ts = Number(b.caller_ts), sig = typeof b.caller_sig === 'string' ? b.caller_sig : '';
   if (!who || !sig || !isFinite(ts)) return { why: REFUS_.signature };
-  var text = ['matrice-boite-v1', who, action, identOf_(b, action), String(ts)].join('|');
+  var text = ['matrice-boite-v2', CIBLE_, BOITE_NOM_, who, action, identOf_(b, action), String(ts)].join('|');
   var bytes = Utilities.computeHmacSha256Signature(text, CLE_BOITE_, Utilities.Charset.UTF_8);
   var hex = bytes.map(function (x) { return ('0' + (x & 255).toString(16)).slice(-2); }).join('');
   if (hex !== sig) return { why: REFUS_.signature };

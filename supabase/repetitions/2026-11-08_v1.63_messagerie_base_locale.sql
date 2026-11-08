@@ -1,5 +1,6 @@
 -- v1.63 — BASE LOCALE JETABLE (PostgreSQL 16 nu, jamais Supabase, jamais la production) pour essayer la migration de la messagerie.
--- Usage : createdb essai ; psql -d essai -f ce_fichier ; psql -d essai -f supabase/migrations/2026-11-08_v1.60.4_cle_boite.sql ;
+-- Usage : createdb essai ; psql -d essai -f ce_fichier ; psql -d essai -f supabase/migrations/2026-10-27_v1.47_secrets.sql ;
+--         psql -d essai -f supabase/migrations/2026-11-08_v1.60.4_cle_boite.sql ;
 --         psql -d essai -f supabase/migrations/2026-11-06_v1.61_messagerie.sql   (DEUX fois : rejouable)
 --         psql -d essai -f supabase/repetitions/2026-11-08_v1.63_messagerie_essai.sql
 -- Tables réduites aux colonnes utilisées par la migration (relevées dans supabase/schema.sql et les migrations v1.7, v1.18, v1.20, v1.22).
@@ -39,6 +40,11 @@ create or replace function public.import_secret(k text) returns text language sq
   select value from private.import_secrets where key = k $$;
 revoke execute on function public.import_secret(text) from public, anon, authenticated;
 grant execute on function public.import_secret(text) to service_role;
+-- réglages (schema.sql) : la migration v1.47 y pose ses règles d'accès, puis la messagerie celle de prospect_script_url
+create table public.settings (key text primary key, value jsonb);
+alter table public.settings enable row level security;
+create or replace function public.setting_text(k text) returns text language sql stable as $$ select value #>> '{}' from settings where key = k $$;
+insert into public.settings values ('prospect_script_url', '"https://script.google.com/macros/s/AKfy_titulaire/exec"'), ('drive_webhook_url', '""');
 -- pg_net simulé : les appels sont notés (adresse et en-têtes), rien ne part
 create schema if not exists net;
 create table net.appels (url text, headers jsonb, body jsonb);

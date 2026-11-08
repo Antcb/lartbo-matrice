@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { createHash, createHmac } from 'node:crypto';
 import { acces, compteOk, messageRows, same, scriptUrlOk, threadIds, threadRow } from '../../supabase/functions/mail-sync/regles.ts';
-import { canon, identOf, outgoingBody } from '../../supabase/functions/script-google/identite.ts';
+import { callerSig, canon, identOf, outgoingBody, signedText } from '../../supabase/functions/script-google/identite.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -348,12 +348,28 @@ t('signature captée : inutilisable pour une AUTRE demande (autre conversation, 
   const { ctx: c2 } = bac({ threads: { th1: FIL }, cle: '' });
   assert.match(appel(c2, await outgoingBody({ thread_id: 'th1' }, 'thread', 'secret-essai', TITULAIRE, CLE)).error, /ajoute la propriété CLE_BOITE/);
 });
+t('cible et boîte signées : demande signée pour « main » (production@) refusée par le script de prospection, pour chaque action de boîte', async () => {
+  for (const [a, p] of ACTIONS_BOITE) {
+    const { ctx, log } = bac({ threads: { th1: FIL } });
+    const r = appel(ctx, await outgoingBody(p, a, 'secret-essai', TITULAIRE, CLE, Date.now(), 'main'));
+    assert.equal(r.refused, true, a); assert.match(r.error, /signature invalide/, a);
+    assert.equal(log.created.length + log.modified.length, 0);
+  }
+  assert.match(signedText('prospect', 'anthony', 'A@B.fr', 'thread', 'x', 1), /^matrice-boite-v2\|prospect\|anthony\|a@b\.fr\|thread\|x\|1$/);
+});
+t('et inversement : une signature faite pour « prospect » ne vaut pas pour « main » ; le script principal ne réserve aucune action à une signature', async () => {
+  const ts = Date.now();
+  assert.notEqual(await callerSig(CLE, 'prospect', 'anthony', TITULAIRE, 'mail_by_msgid', '<a@b.fr>', ts), await callerSig(CLE, 'main', 'production', TITULAIRE, 'mail_by_msgid', '<a@b.fr>', ts));
+  const code = readFileSync(new URL('../../apps-script/Code.gs', import.meta.url), 'utf8');
+  assert.ok(!/caller_sig|CLE_BOITE|ownerOnly_/.test(code), 'Code.gs (production@) : droits de l’équipe, aucune action accordée sur signature');
+  assert.equal(JSON.parse(await outgoingBody({ message_id: '<a@b.fr>' }, 'mail_by_msgid', 's', TITULAIRE, CLE, ts, 'inconnue')).caller_sig, '', 'cible inconnue : aucune signature');
+});
 t('synchronisation planifiée : signée au nom du titulaire inscrit, côté serveur ; réponse d’un autre compte refusée', () => {
   const src = readFileSync(new URL('../../supabase/functions/mail-sync/index.ts', import.meta.url), 'utf8');
   assert.match(src, /import \{ outgoingBody \} from '\.\.\/script-google\/identite\.ts'/);
   assert.match(src, /rpc\('mailbox_owner_email', \{ p_mailbox: MAILBOX \}\)/);
   assert.match(src, /rpc\('import_secret', \{ k: 'mailbox_sign_key' \}\)/);
-  assert.match(src, /body: await outgoingBody\(payload, action, secret, owner, key\)/);
+  assert.match(src, /body: await outgoingBody\(payload, action, secret, owner, key, Date\.now\(\), 'prospect'\)/);
   assert.match(src, /if \(!compteOk\(j\.account, owner\)\) throw/);
   assert.ok(!/JSON\.stringify\(\{ \.\.\.payload, action, secret \}\)/.test(src), 'plus aucun appel non signé');
   assert.equal(compteOk('Titulaire@Example.org', 'titulaire@example.org'), true);

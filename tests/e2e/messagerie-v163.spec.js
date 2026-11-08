@@ -400,3 +400,20 @@ test('08/11 : absence automatique signalée dans la conversation (relances maint
   await expect(page.locator('#modal')).toContainText('Un brouillon commencé dans Gmail ou Apple Mail se termine là-bas');
   expectClean(ctx);
 });
+
+test('relecture f95da56 : adresse du script de la boîte modifiable par son titulaire seulement (autre membre : explication, rien changé)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.evaluate(async () => { window.__MAILBOX_OWNER = false; (await import('./js/app.js')).go('settings'); });
+  await expect(page.locator('#set-pscript')).toBeVisible();
+  await expect(page.locator('main')).toContainText('Modifiable seulement par le titulaire de la boîte anthony@');
+  await page.locator('#set-pscript').fill('https://script.google.com/macros/s/AKfy-pirate_1/exec');
+  await page.locator('#set-pscript').dispatchEvent('change');
+  await expect(page.locator('.toast').last()).toContainText('modifiable seulement par le titulaire de la boîte');
+  expect(await page.evaluate(() => window.__DB.settings.find(s => s.key === 'prospect_script_url')?.value ?? null)).toBeNull();
+  await expect(page.locator('#set-pscript')).toHaveValue('');
+  await page.evaluate(() => { window.__MAILBOX_OWNER = true; });
+  await page.locator('#set-pscript').fill('https://script.google.com/macros/s/AKfy-titulaire_1/exec');
+  await page.locator('#set-pscript').dispatchEvent('change');
+  await expect.poll(() => page.evaluate(() => window.__DB.settings.find(s => s.key === 'prospect_script_url')?.value ?? null)).toBe('https://script.google.com/macros/s/AKfy-titulaire_1/exec');
+  expectClean(ctx);
+});

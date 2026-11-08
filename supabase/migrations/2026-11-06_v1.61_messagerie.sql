@@ -28,6 +28,8 @@ begin
     manque := manque || 'clé de la boîte mailbox_sign_key (migration 2026-11-08_v1.60.4_cle_boite.sql)'::text; end if;
   if to_regprocedure('public.is_team()') is null then manque := manque || 'fonction is_team()'::text; end if;
   if to_regprocedure('public.touch_updated_at()') is null then manque := manque || 'fonction touch_updated_at()'::text; end if;
+  if to_regclass('public.settings') is null or to_regprocedure('public.setting_write_ok(text,jsonb)') is null or to_regprocedure('public.is_secret_setting(text)') is null
+    then manque := manque || 'table settings et règles d''écriture v1.47 (setting_write_ok, is_secret_setting)'::text; end if;
   if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'prospects' and column_name = 'mail_thread_id')
     then manque := manque || 'prospects.mail_thread_id (migration v1.18)'::text; end if;
   if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'prospect_logs' and column_name = 'import_key')
@@ -136,6 +138,32 @@ language sql stable security definer set search_path = public, private as $$
 $$;
 revoke all on function public.is_mailbox_owner(text) from public, anon;
 grant execute on function public.is_mailbox_owner(text) to authenticated, service_role;
+
+-- ── Adresse du script de la boîte (prospect_script_url) : modifiable par son TITULAIRE seulement (relecture de f95da56) ─────────
+-- Le serveur envoie à cette adresse les demandes signées au nom du titulaire (relais, synchronisation) : un autre compte qui la
+-- remplacerait par son propre script les capterait. Lecture inchangée (toute l'équipe : la prospection continue de l'utiliser) ;
+-- écriture, remplacement et effacement réservés à is_mailbox_owner('anthony'). Registre des titulaires vide → personne depuis
+-- l'application (changement par SQL seulement). drive_webhook_url et les autres réglages : règles v1.47 inchangées.
+-- Fonction réécrite en entier (v1.47 + cette ligne) ; « stable » au lieu d'« immutable » car elle lit maintenant le registre.
+create or replace function public.setting_write_ok(k text, v jsonb) returns boolean
+language sql stable set search_path = public as $$
+  select case
+    when public.is_secret_setting(k) or k = 'functions_base_url' then false
+    when k = 'prospect_script_url' and not public.is_mailbox_owner('anthony') then false
+    when k in ('drive_webhook_url', 'prospect_script_url') then
+      coalesce(btrim(v #>> '{}'), '') = '' or (v #>> '{}') ~ '^https://script\.google\.com/(a/macros/[A-Za-z0-9_.-]+|macros)/s/[A-Za-z0-9_-]+/exec$'
+    else true end
+$$;
+revoke all on function public.setting_write_ok(text, jsonb) from public, anon;
+grant execute on function public.setting_write_ok(text, jsonb) to authenticated, service_role;
+-- modification et effacement : la ligne existante elle-même (USING), pas seulement la nouvelle valeur (WITH CHECK)
+drop policy if exists settings_team_update on public.settings;
+drop policy if exists settings_team_delete on public.settings;
+create policy settings_team_update on public.settings for update to authenticated
+  using (public.is_team() and not public.is_secret_setting(key) and key <> 'functions_base_url' and (key <> 'prospect_script_url' or public.is_mailbox_owner('anthony')))
+  with check (public.is_team() and public.setting_write_ok(key, value));
+create policy settings_team_delete on public.settings for delete to authenticated
+  using (public.is_team() and not public.is_secret_setting(key) and key <> 'functions_base_url' and (key <> 'prospect_script_url' or public.is_mailbox_owner('anthony')));
 
 do $$ declare t text; begin
   foreach t in array array['mail_threads', 'mail_messages', 'mail_sync_state'] loop

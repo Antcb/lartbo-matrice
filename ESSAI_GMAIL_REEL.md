@@ -33,7 +33,9 @@ Anthony autorise en une fois, **sur le projet Supabase de TEST uniquement** :
 1. **Migration** messagerie (avant la fusion : l'interface écrit `prospect_logs.gmail_message_id` ; si la colonne manquait, la ligne serait
    écrite sans l'identifiant — jamais perdue — mais reconnue seulement par le jour et le texte) ;
 2. **interface** (fusion de la branche, après la v1.60.4 Apple Mail) ;
-3. **fonction `mail-sync`** (et `script-google` à jour) ;
+3. **fonctions `script-google` et `mail-sync`, puis aussitôt le script `Prospection.gs`** : le texte signé passe en v2 (cible et
+   boîte en plus) des deux côtés ; entre les deux déploiements, la recherche par Message-ID (Apple Mail) sur anthony@ est refusée
+   (« signature invalide », rien consulté) — à faire dans la même minute ;
 4. **script `Prospection.gs`** redéployé (« ping » doit renvoyer `v1.61.0` ; propriété `CLE_BOITE` déjà en place depuis la v1.60.4) ;
    inscription du titulaire (`private.mailbox_owners`, adresse de connexion d'Anthony = compte qui exécute le script) ;
 5. en dernier, **`private.sync_urls`** (active la synchronisation planifiée).
@@ -71,7 +73,8 @@ En production : même ordre, sur autorisation séparée après l'essai.
 | 12 | Conversation corrigée de A vers B | relances de B suspendues ; A non réactivée ; notification « Relances à vérifier » → « Rétablir les relances » demande une échéance future si la leur est passée |
 | 13 | T2 envoie une image hébergée | non chargée avant « Afficher les images » |
 | 14 | Adresse du script faussée | erreur affichée avec l'heure ; « dernière synchronisation réussie » inchangée |
-| 15 | Un autre compte de l'équipe de test (celui d'Anthony) ouvre « Mails » | « réservée au compte d'Anthony » ; le script refuse ses actions de boîte (« réservée à son titulaire ») ; `mail-sync` répond 403 ; journal des suivis toujours visible |
+| 15 | Anthony se connecte à l'application de test avec **son propre compte** (membre de l'équipe, mais pas titulaire de la boîte d'essai, qui est T1) et ouvre « Mails » | message « réservée au titulaire » ; une action de boîte forcée est refusée par le script (« réservée à son titulaire ») ; `mail-sync` répond 403 ; journal des suivis toujours visible |
+| 17 | Même compte (non titulaire) : Réglages › Prospection › modifier l'adresse du script | « modifiable seulement par le titulaire », rien changé ; avec T1 (titulaire) : enregistrée |
 | 16 | Propriété `CLE_BOITE` retirée du script, puis remise | « ajoute la propriété CLE_BOITE », rien lu ni envoyé ; la synchronisation affiche l'erreur et reprend ensuite |
 
 Contrôles en base de test après chaque bloc : `mail_messages` (identifiant Gmail unique), `prospect_logs` (`author = 'Messagerie'`),
@@ -79,5 +82,12 @@ Contrôles en base de test après chaque bloc : `mail_messages` (identifiant Gma
 
 ## 6. Déjà vérifié sans Google (simulé, réseau bloqué)
 Script de prospection exécuté avec des services Google simulés (`tests/static/messagerie-regles.mjs`), base PostgreSQL locale jetable
-(`supabase/repetitions/2026-11-08_v1.63_messagerie_essai.sql`, 75 essais), navigateur sur fausse base (`e2e/messagerie-*.spec.js`).
+(`supabase/repetitions/2026-11-08_v1.63_messagerie_essai.sql`, 83 essais), navigateur sur fausse base (`e2e/messagerie-*.spec.js`).
 Non couvert : production@ (plus tard).
+
+## 7. Risque connu, non corrigé dans ce lot (signalé)
+L'action **`mail`** (premier mail de prospection, droits de l'équipe) joint des pièces par `blobs_` : un identifiant Drive ou une
+adresse fournis par la demande sont lus avec les droits du compte anthony@ (sans le contrôle d'adresse signée de `strictBlobs_`).
+Un membre de l'équipe pourrait ainsi faire joindre à un mail qu'il envoie un fichier du Drive d'anthony@ dont il connaît l'identifiant.
+À décider : appliquer à `mail` / `reply` la même restriction que la messagerie (liens signés du stockage, identifiants proposés par
+l'application), ou réserver ces pièces au titulaire.
