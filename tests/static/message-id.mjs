@@ -138,6 +138,8 @@ function run(file, msgs, call){
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k], getProperties: () => props }) },
     ContentService: { createTextOutput: s => ({ setMimeType: () => s }), MimeType: { JSON: 'json' } },
     CacheService: { getScriptCache: () => ({ get: k => cache[k] ?? null, put: (k, v) => { cache[k] = v; } }) },
+    LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
+    ScriptApp: { getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/DEPLOIEMENT_FICTIF/exec' }) },
     Utilities: { formatDate: () => '', Charset: { UTF_8: 'utf8' }, computeHmacSha256Signature: (v, k) => [...createHmac('sha256', k).update(v).digest()].map(b => (b > 127 ? b - 256 : b)) } };
   vm.createContext(ctx); vm.runInContext(file, ctx);
   const out = call(ctx);
@@ -146,7 +148,7 @@ function run(file, msgs, call){
 // identité du titulaire de la boîte (compte qui exécute le script), signée comme par le relais script-google (v1.60.4)
 // (relecture B1 : clé dédiée CLE_BOITE, signature sur adresse, action, Message-ID et horodatage)
 const owner = body => { const ts = Date.now(), mid = typeof body.message_id === 'string' ? body.message_id : '';
-  return { caller: 'boite@example.com', caller_ts: ts, caller_sig: createHmac('sha256', 'cle-boite-de-test').update(['matrice-boite-v1', 'boite@example.com', body.action, mid, String(ts)].join('|')).digest('hex') }; };
+  return { caller: 'boite@example.com', caller_ts: ts, caller_sig: createHmac('sha256', 'cle-boite-de-test').update(['matrice-boite-v2', 'boite@example.com', body.action, mid, String(ts), 'DEPLOIEMENT_FICTIF'].join('|')).digest('hex') }; };
 const post = body => ctx => ctx.doPost({ postData: { contents: JSON.stringify({ ...owner(body), ...body }) } });
 for (const [name, file] of [['Code.gs', gsCode], ['Prospection.gs', gsProsp]]){
   const cat = `lecture seule ${name}`;

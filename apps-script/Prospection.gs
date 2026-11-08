@@ -60,30 +60,48 @@ function blobs_(list) {
  * Le relais serveur script-google transmet l'adresse du compte connecté (session vérifiée par Supabase Auth) avec une signature
  * HMAC-SHA256 calculée avec une CLÉ DÉDIÉE, jamais transmise : propriété CLE_BOITE de ce script (copie de la clé
  * « mailbox_sign_key » de la base, supabase/functions/script-google/identite.ts). La signature couvre adresse, action,
- * Message-ID et horodatage ; accepté seulement si : clé présente, signature juste, horodatage à moins de 5 minutes, signature
- * jamais vue (pas de rejeu), et adresse = compte Google qui exécute ce script (titulaire de la boîte). Aucune adresse écrite ici.
+ * Message-ID, horodatage et l'identifiant de déploiement de CE script ; accepté seulement si : clé présente, signature juste
+ * et destinée à ce script, horodatage à moins de 5 minutes, signature jamais vue (usage unique, sous verrou), et adresse =
+ * compte Google qui exécute ce script (titulaire de la boîte). Aucune adresse écrite ici.
  */
 var CLE_BOITE_ = PropertiesService.getScriptProperties().getProperty('CLE_BOITE') || '';
 var CALLER_WINDOW_MS_ = 5 * 60 * 1000;
+/** Identifiant de déploiement d'une adresse de script publiée (/macros/s/<id>/exec ou /a/macros/<domaine>/s/<id>/exec), ou ''
+ *  — même lecture que deploymentId (supabase/functions/script-google/identite.ts) */
+function deploymentId_(url) {
+  var m = String(url || '').match(/^https:\/\/script\.google\.com\/(?:a\/macros\/[\w.-]+|macros)\/s\/([\w-]+)\/(?:exec|dev)(?:[?#].*)?$/);
+  return m ? m[1] : '';
+}
+/** Identifiant de déploiement de CE script (adresse de son application Web) */
+function selfId_() {
+  try { return deploymentId_(ScriptApp.getService().getUrl()); } catch (e) { return ''; }
+}
+/** Adresse signée : '' (refus), 'busy' (verrou indisponible) ou l'adresse en minuscules */
 function callerOk_(b, action) {
   var who = typeof b.caller === 'string' ? b.caller.trim().toLowerCase() : '';
   var ts = Number(b.caller_ts), sig = typeof b.caller_sig === 'string' ? b.caller_sig : '';
-  var msgid = typeof b.message_id === 'string' ? b.message_id : '';
-  if (!CLE_BOITE_ || !who || !sig || !isFinite(ts) || Math.abs(Date.now() - ts) > CALLER_WINDOW_MS_) return '';
-  var text = ['matrice-boite-v1', who, action, msgid, String(ts)].join('|');
+  var msgid = typeof b.message_id === 'string' ? b.message_id : '', target = selfId_();
+  if (!CLE_BOITE_ || !who || !sig || !target || !isFinite(ts) || Math.abs(Date.now() - ts) > CALLER_WINDOW_MS_) return '';
+  // signature destinée à CE script : une signature captée par un autre script (adresse détournée) n'y vaut pas
+  var text = ['matrice-boite-v2', who, action, msgid, String(ts), target].join('|');
   var bytes = Utilities.computeHmacSha256Signature(text, CLE_BOITE_, Utilities.Charset.UTF_8);
   var hex = bytes.map(function (x) { return ('0' + (x & 255).toString(16)).slice(-2); }).join('');
   if (hex !== sig) return '';
-  // une signature ne sert qu'une fois (cache du script, 10 minutes > fenêtre de 5 minutes)
-  var cache = CacheService.getScriptCache();
-  if (cache.get('sig:' + sig)) return '';
-  cache.put('sig:' + sig, '1', 600);
+  // usage unique, ATOMIQUE : lecture puis écriture dans le cache sous verrou du script (court) ; verrou indisponible → refus
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(3000)) return 'busy';
+  try {
+    var cache = CacheService.getScriptCache();
+    if (cache.get('sig:' + sig)) return '';
+    cache.put('sig:' + sig, '1', 600);   // 10 minutes > fenêtre de 5 minutes
+  } finally { lock.releaseLock(); }
   return who;
 }
 function ownerOnly_(b, action) {
   var me = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase();
   if (!CLE_BOITE_) return { ok: false, refused: true, error: 'Script de prospection : ajoute la propriété CLE_BOITE (Paramètres du projet › Propriétés du script) : rien n’a été consulté.' };
   var who = callerOk_(b, action);
+  if (who === 'busy') return { ok: false, refused: true, error: 'Script de prospection occupé : réessaie dans un instant. Rien n’a été consulté.' };
   if (me && who && who === me) return null;
   return { ok: false, refused: true, error: 'Recherche dans la boîte ' + (me || 'de ce script') + ' réservée à son titulaire : rien n’a été consulté.' };
 }
