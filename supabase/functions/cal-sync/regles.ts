@@ -54,7 +54,20 @@ export type Ev = { id: string; time_zone?: string | null; recurring_id?: string 
   end?: string | null; start_date?: string | null; end_date?: string | null; transparency?: string; visibility?: string; type?: string };
 /** Ligne déjà enregistrée (artist_calendar_events) utile au calcul */
 export type Old = { gcal_event_id: string; city?: string | null; lat?: number | null; lng?: number | null; geo_status?: string | null; geo_key?: string | null;
-  start_at?: string | null; end_at?: string | null; start_date?: string | null; end_date?: string | null; deleted_at?: string | null };
+  start_at?: string | null; end_at?: string | null; start_date?: string | null; end_date?: string | null; deleted_at?: string | null; [k: string]: unknown };
+/** Colonnes écrites par la synchronisation : une ligne n'est réécrite que si l'une d'elles change (relecture de 976ea64, B2) */
+export const SYNC_COLS = ['project_id', 'recurring_id', 'all_day', 'start_at', 'end_at', 'start_date', 'end_date', 'time_zone', 'busy', 'private',
+  'title', 'location', 'is_show', 'city', 'lat', 'lng', 'geo_status', 'geo_key', 'deleted_at'] as const;
+const INSTANTS = new Set(['start_at', 'end_at', 'deleted_at']);
+/** Même valeur ? (instants comparés en temps réel : « +01:00 » de Google = « +00:00 » relu en base ; dates : AAAA-MM-JJ) */
+const sameVal = (k: string, a: unknown, b: unknown) => {
+  if ((a ?? null) === null || (b ?? null) === null) return (a ?? null) === (b ?? null);
+  if (INSTANTS.has(k)) return Date.parse(String(a)) === Date.parse(String(b));
+  if (k === 'start_date' || k === 'end_date') return String(a).slice(0, 10) === String(b).slice(0, 10);
+  if (k === 'lat' || k === 'lng') return Number(a) === Number(b);
+  return a === b;
+};
+export const changed = (row: Record<string, unknown>, old: Old | undefined) => !old || SYNC_COLS.some((k) => !sameVal(k, row[k], old[k]));
 
 /**
  * Passage de synchronisation, SANS réseau ni base (testé par tests/static/agendas-regles.mjs) — décisions d'Anthony du 06/11/2026 :
@@ -64,11 +77,15 @@ export type Old = { gcal_event_id: string; city?: string | null; lat?: number | 
  *  - « Disponible » dans Google (transparent) : busy = false (jamais bloquant) ;
  *  - journée entière : dates calendaires telles quelles (fin exclue, règle Google), sans fuseau ni heure ;
  *  - « Show » (mot entier) + lieu : ville reconnue (chooseCity) ou « à préciser » ; repris tel quel si lieu ET pays inchangés ;
+ *  - SEULES les lignes nouvelles ou réellement modifiées sont renvoyées (updated_at posé sur elles seules) : deux passages sans
+ *    changement dans Google = aucune écriture, donc aucun message temps réel (relecture de 976ea64, B2) ;
+ *  - localisation non tentée (service de lieux indisponible, délai ou budget du passage dépassé : city() renvoie undefined) : pas de
+ *    clé de localisation gardée → réessayée au passage suivant ; null = ville vraiment ambiguë ou inconnue → « à préciser » gardé ;
  *  - disparues : occurrences enregistrées non supprimées, absentes de la réponse, qui CHEVAUCHENT la fenêtre lue (fin après time_min,
  *    début avant time_max) → marquées supprimées (jamais effacées) ; une occurrence passée hors fenêtre reste telle quelle.
  */
 export async function planSync(j: { mode?: string; events?: Ev[] }, cal: { id: string; project_id: string; default_country?: string | null },
-  old: Old[], tmin: string, tmax: string, city: (loc: string, cc: string | null) => Promise<Place | null>, nowIso: string) {
+  old: Old[], tmin: string, tmax: string, city: (loc: string, cc: string | null) => Promise<Place | null | undefined>, nowIso: string) {
   const fb = j.mode === 'disponibilites';
   const country = String(cal.default_country || 'FR').toUpperCase();
   const prev = new Map(old.map((o) => [o.gcal_event_id, o]));
@@ -82,8 +99,13 @@ export async function planSync(j: { mode?: string; events?: Ev[] }, cal: { id: s
     if (isShow && location) {
       const p = prev.get(e.id);
       if (p && p.geo_key === country + '|' + location && p.geo_status && p.geo_status !== 'sans_lieu') geo = { city: p.city ?? null, lat: p.lat ?? null, lng: p.lng ?? null, geo_status: p.geo_status };
-      else { const c = await city(location, country); if (c) geo = { city: c.city, lat: c.lat, lng: c.lng, geo_status: 'ok' }; }
-      geo.geo_key = country + '|' + location;
+      else {
+        const c = await city(location, country);
+        if (c) geo = { city: c.city, lat: c.lat, lng: c.lng, geo_status: 'ok' };
+        if (c === undefined) { geo.geo_key = null; }   // non tentée : réessayée au prochain passage
+        else geo.geo_key = country + '|' + location;
+      }
+      if (geo.geo_key === undefined) geo.geo_key = country + '|' + location;
     }
     const allDay = !!e.start_date;
     byId.set(e.id, { calendar_ref: cal.id, project_id: cal.project_id, gcal_event_id: e.id, recurring_id: e.recurring_id || null,
@@ -92,7 +114,7 @@ export async function planSync(j: { mode?: string; events?: Ev[] }, cal: { id: s
       time_zone: allDay ? null : (e.time_zone || null),   // jour local de l'événement (affichage) ; conflits comparés sur les instants
       busy: e.transparency !== 'transparent', private: priv, title, location, is_show: isShow, ...geo, deleted_at: null, updated_at: nowIso });
   }
-  const rows = [...byId.values()];
+  const rows = [...byId.values()].filter((r) => changed(r, prev.get(String(r.gcal_event_id))));
   const seen = new Set(byId.keys());
   const t0 = Date.parse(tmin), t1 = Date.parse(tmax), d0 = tmin.slice(0, 10), d1 = tmax.slice(0, 10);
   const inWindow = (o: Old) => o.start_date
@@ -101,3 +123,8 @@ export async function planSync(j: { mode?: string; events?: Ev[] }, cal: { id: s
   const gone = old.filter((o) => !o.deleted_at && !seen.has(o.gcal_event_id) && inWindow(o)).map((o) => o.gcal_event_id);
   return { rows, gone, mode: fb ? 'disponibilites' : 'details', scrub: fb };
 }
+
+/** Réponse du script inacceptable ? Un script sans numéro de version (antérieur à la relecture de 976ea64, B1) prenait une limite d'usage
+ *  (403 rateLimitExceeded…) pour un partage « disponibilités » : sa réponse « disponibilités » ferait effacer les détails → refusée. */
+export const replyProblem = (j: { mode?: string; version?: string | null }) =>
+  j.mode === 'disponibilites' && !j.version ? 'Le script des agendas n’est pas à jour : Réglages › Agendas des artistes › copier le code, coller, nouvelle version de déploiement.' : null;

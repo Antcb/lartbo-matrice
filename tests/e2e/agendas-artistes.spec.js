@@ -34,6 +34,16 @@ test('agendas : indisponibilités dans Booking (origine Google), privé = « Ind
   await expect(rows.filter({ hasText: 'Libre' })).toHaveCount(0);
   await expect(rows.filter({ hasText: 'Annulé dans Google' })).toHaveCount(0);
   await expect(rows.first()).toContainText('Google');
+  // en-têtes de mois : indisponibilités comptées à part, jamais « 0 date » (relecture F9)
+  await expect(page.locator('h2.month small', { hasText: /indisponibilités? Google/ }).first()).toBeVisible();
+  await expect(page.locator('h2.month small', { hasText: /^0 date/ })).toHaveCount(0);
+  // fuseau lu dans Google échappé (relecture F1)
+  await page.evaluate(async Y => { const { S, touch } = await import('./js/state.js');
+    S.db.artist_calendar_events.push({ id: 'e-tz', calendar_ref: 'cal-1', project_id: S.db.projects[0].id, gcal_event_id: 'e-tz', busy: true, all_day: false, deleted_at: null,
+      start_at: `${Y}-05-20T18:00:00Z`, end_at: `${Y}-05-20T19:00:00Z`, time_zone: 'Mars/<img src=x id=piege>', title: 'Fuseau piégé' });
+    touch('artist_calendar_events'); (await import('./js/app.js')).render(); }, Y);
+  await expect(page.locator('.gig.cal-unav', { hasText: 'Fuseau piégé' })).toContainText('<img src=x id=piege>');
+  await expect(page.locator('#piege')).toHaveCount(0);
   // les indisponibilités ne comptent jamais dans les chiffres de Booking
   const nDates = await page.evaluate(async Y => { const { S } = await import('./js/state.js'); return S.db.shows.filter(s => (s.date || '').startsWith(String(Y))).length; }, Y);
   await expect(page.locator('.gig:not(.cal-unav)')).toHaveCount(nDates);   // ce ne sont pas des dates : rien n'est compté en plus

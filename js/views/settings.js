@@ -88,7 +88,7 @@ export function viewSettings(){
         <li><button class="btn sm" data-act="copyCalendarScript">Copier le code du script</button> et <button class="btn sm" data-act="copyCalendarManifest">Copier le fichier appsscript.json</button></li>
         <li>Sur <a href="https://script.google.com/home/projects/create" target="_blank" rel="noopener">script.google.com</a> connecté avec production@ : nouveau projet « Matrice Agendas », colle le code dans Code.gs.</li>
         <li>Paramètres du projet › coche « Afficher le fichier manifeste appsscript.json », puis remplace son contenu par le fichier copié (accès en lecture seule).</li>
-        <li>Paramètres du projet › Propriétés du script › <b>WEBHOOK_SECRET</b> : la même valeur que pour le script principal.</li>
+        <li>Paramètres du projet › Propriétés du script › <b>SECRET_AGENDAS</b> : le secret propre à ce script (Supabase › SQL Editor : <code>select value from private.import_secrets where key = 'cal_script_secret'</code>, à copier toi-même, jamais dans une conversation).</li>
         <li>Déployer › Nouveau déploiement › <b>Application Web</b> · Exécuter en tant que : <b>moi</b> · Accès : <b>Tout le monde</b> › Déployer, autorise l’accès, puis colle l’adresse (…/exec) ici :</li>
       </ol>
       <div class="steps"><label for="set-cscript">Adresse du script des agendas</label><input id="set-cscript" data-setting-text="calendar_script_url" value="${esc(setting('calendar_script_url')||'')}" placeholder="https://script.google.com/macros/s/…/exec"></div>

@@ -5,6 +5,8 @@
 --   - artist_calendar_events : occurrences lues dans Google (récurrences développées), une ligne par occurrence (aucun doublon) ;
 --     un événement supprimé dans Google est marqué « supprimé » (jamais effacé en silence) ; « Show » + ville → repère de carte ;
 --     association EXPLICITE possible avec une date « Option / Confirmée artiste » existante (jamais de conversion).
+--   - temps réel : les deux tables sont publiées (les autres postes voient les changements) ; la synchronisation n'écrit que les lignes
+--     réellement modifiées (cal-sync/regles.ts planSync) et l'agenda une fois par passage : aucun message quand rien ne change ;
 --   - cal_sync_tick : appelée par la tâche planifiée « cal-sync » ; ne fait RIEN tant que l'adresse de la fonction n'est pas inscrite dans
 --     private.sync_urls (schéma privé : aucun compte connecté ne peut l'écrire, le code des scripts Google ne part jamais ailleurs).
 -- Retour arrière : désactiver la tâche planifiée (ou retirer la ligne de private.sync_urls) ; tables vides = aucun effet.
@@ -116,6 +118,12 @@ revoke all on private.sync_urls from public, anon, authenticated;
 -- Personne ne le saisit ni ne le voit ; il n'est jamais envoyé au navigateur, placé dans une adresse ou écrit dans un journal.
 insert into private.import_secrets (key, value)
   values ('cal_sync_hook', replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''))
+  on conflict (key) do nothing;
+-- secret DÉDIÉ du script Google des agendas (« cal_script_secret », relecture de 976ea64, F5) : la fonction cal-sync l'envoie au seul
+-- projet « Matrice Agendas » (propriété SECRET_AGENDAS, recopiée une fois par Anthony depuis l'éditeur SQL du projet) ; distinct du
+-- code des autres scripts Google (drive_webhook_secret) et du secret de la tâche planifiée. Jamais régénéré par un nouveau passage.
+insert into private.import_secrets (key, value)
+  values ('cal_script_secret', replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''))
   on conflict (key) do nothing;
 
 create or replace function public.cal_sync_tick() returns void

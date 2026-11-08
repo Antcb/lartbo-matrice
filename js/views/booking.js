@@ -34,7 +34,10 @@ export function viewBooking(){
   for (const it of items){
     const m = monthOf(it.d);
     if (m!==lastMonth){ const cnt = shows.filter(x => monthOf(x.date) === m).length;
-      list += `<h2 class="month">${m} <small>${cnt} date${cnt>1?'s':''}</small></h2>`; lastMonth=m; }
+      // indisponibilités Google comptées à part (ce ne sont pas des dates) ; mois sans date : « aucune date »
+      const nu = unav.filter(u => monthOf(u.span[0] < S.year + '-01-01' ? S.year + '-01-01' : u.span[0]) === m).length;
+      const parts = [cnt ? `${cnt} date${cnt>1?'s':''}` : 'aucune date', nu ? `${nu} indisponibilité${nu>1?'s':''} Google` : ''].filter(Boolean).join(' · ');
+      list += `<h2 class="month">${m} <small>${parts}</small></h2>`; lastMonth=m; }
     list += it.s ? gigRow(it.s) : calRowHTML(it.u, !S.project);
   }
   setBookingMap(shows);

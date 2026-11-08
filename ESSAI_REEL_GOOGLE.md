@@ -18,8 +18,9 @@ La messagerie a son propre essai (ESSAI_GMAIL_REEL.md) : **ce lot se teste et se
    A = « **Afficher tous les détails des événements** » ; B = « **Afficher uniquement les disponibilités (masquer les détails)** ».
 3. **Installer le script sur production@** — dans l'application (projet de test) : Réglages › « Agendas des artistes » : « Copier le code du
    script » et « Copier le fichier appsscript.json », puis sur script.google.com **connecté avec production@** : nouveau projet
-   « Matrice Agendas », coller le code, afficher et remplacer le manifeste ; Propriétés du script › `WEBHOOK_SECRET` = le code des scripts
-   Google **du projet de test** (Supabase › Table Editor › `settings` › `drive_webhook_secret` — jamais dans la conversation).
+   « Matrice Agendas », coller le code, afficher et remplacer le manifeste ; Propriétés du script › `SECRET_AGENDAS` = le secret **propre à ce script**
+   du projet de test (Supabase › SQL Editor : `select value from private.import_secrets where key = 'cal_script_secret'` — copié par
+   Anthony, jamais dans la conversation ; distinct du code du script principal).
 4. **Déployer et autoriser** — Déployer › Nouveau déploiement › Application Web · Exécuter en tant que : moi · Accès : tout le monde ›
    autoriser (un seul accès demandé : **voir** les agendas) › coller l'adresse …/exec dans Réglages › « Tester » (attendu : « 2 agendas… (script v1.6x) »).
 5. **Relier** — fiche d'un artiste fictif du projet de test › « Relier son agenda Google » › « Essai artiste A ».
@@ -41,6 +42,7 @@ La messagerie a son propre essai (ESSAI_GMAIL_REEL.md) : **ce lot se teste et se
 | A11 | (après remise du partage) Intérêt puis Option sur un jour occupé | une seule alerte avec la raison ; Annuler n'enregistre rien ; « Enregistrer quand même » enregistre |
 | A12 | une date « Confirmée Artiste » le jour d'un « Show » | « Associer à une date » : date inchangée, plus de double affichage |
 | A13 | (Claude) appels de la fonction sans justificatif / faux secret / compte hors équipe | refusés (403) — SECURITE_SYNCHRO.md |
+| A14 | « Actualiser » deux fois sans rien changer dans Google | aucune ligne d'événement réécrite (Supabase › journaux : aucune écriture) |
 
 Après la séance : retirer les partages, supprimer les deux agendas d'essai (ou les garder pour un prochain essai), déconnecter dans la fiche.
 
