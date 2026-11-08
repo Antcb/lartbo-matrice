@@ -9,6 +9,43 @@
 --     private.sync_urls (schéma privé : aucun compte connecté ne peut l'écrire, le code des scripts Google ne part jamais ailleurs).
 -- Retour arrière : désactiver la tâche planifiée (ou retirer la ligne de private.sync_urls) ; tables vides = aucun effet.
 -- =====================================================================================================
+-- ── 0. Gardes (rejouable ; rien n'est appliqué si une garde échoue) ──
+-- Dépendances : is_team() (RLS), touch_updated_at() (schema.sql), projects, shows, schéma privé + import_secrets / import_secret (v1.22).
+-- Empreintes : si les tables, la table des adresses ou la fonction de la tâche existent déjà, elles doivent être CELLES de cette
+-- migration (colonnes : nom, type, nullabilité) ; sinon arrêt — jamais de « create if not exists » silencieux sur une autre structure.
+-- Empreintes relevées sur une base locale jetable (supabase/repetitions/2026-11-08_v1.62_agendas_*.sql).
+do $m$
+declare fp text; b text;
+begin
+  if to_regprocedure('public.is_team()') is null or to_regprocedure('public.touch_updated_at()') is null
+     or to_regclass('public.projects') is null or to_regclass('public.shows') is null
+     or to_regclass('private.import_secrets') is null or to_regprocedure('public.import_secret(text)') is null then
+    raise exception 'v1.62 agendas : dépendance absente (is_team, touch_updated_at, projects, shows, private.import_secrets ou import_secret) : migration arrêtée, rien n''est appliqué';
+  end if;
+  select md5(string_agg(column_name || ':' || data_type || ':' || is_nullable, ',' order by column_name)) into fp
+    from information_schema.columns where table_schema = 'public' and table_name = 'artist_calendars';
+  if fp is not null and fp <> 'b0f1f2d53e56ab8a172fe001ab93ec24' then
+    raise exception 'v1.62 agendas : artist_calendars existe avec une autre structure (empreinte %) : migration arrêtée, rien n''est appliqué', fp;
+  end if;
+  select md5(string_agg(column_name || ':' || data_type || ':' || is_nullable, ',' order by column_name)) into fp
+    from information_schema.columns where table_schema = 'public' and table_name = 'artist_calendar_events';
+  if fp is not null and fp <> 'bd0046c9affa7c4dbe438ef4d06cd7ef' then
+    raise exception 'v1.62 agendas : artist_calendar_events existe avec une autre structure (empreinte %) : migration arrêtée, rien n''est appliqué', fp;
+  end if;
+  -- table des adresses des synchronisations, partagée avec la messagerie (mail-sync) : même structure exigée
+  select md5(string_agg(column_name || ':' || data_type || ':' || is_nullable, ',' order by column_name)) into fp
+    from information_schema.columns where table_schema = 'private' and table_name = 'sync_urls';
+  if fp is not null and fp <> '5c2ff2b3259fdbaa9f00f41bed5f966e' then
+    raise exception 'v1.62 agendas : private.sync_urls existe avec une autre structure (empreinte %) : migration arrêtée, rien n''est appliqué', fp;
+  end if;
+  if to_regprocedure('public.cal_sync_tick()') is not null then
+    b := pg_get_functiondef('public.cal_sync_tick()'::regprocedure);
+    if position('v1.62 cal_sync_tick' in b) = 0 then
+      raise exception 'v1.62 agendas : cal_sync_tick existe déjà sous une autre version (empreinte %) : migration arrêtée, rien n''est appliqué', md5(b);
+    end if;
+  end if;
+end $m$;
+
 create table if not exists public.artist_calendars (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null unique references public.projects(id) on delete cascade,   -- un agenda par artiste
@@ -52,6 +89,8 @@ create table if not exists public.artist_calendar_events (
   unique (calendar_ref, gcal_event_id)
 );
 comment on table public.artist_calendar_events is 'Occurrences des agendas des artistes (copie en lecture ; Google fait référence)';
+-- un agenda Google n'est relié qu'à un seul artiste à la fois (même contrôle dans l'application, calConnect)
+create unique index if not exists artist_calendars_un_artiste on public.artist_calendars (calendar_id) where status <> 'deconnecte';
 create index if not exists ace_project_idx on public.artist_calendar_events (project_id, start_at, start_date) where deleted_at is null;
 
 do $$ declare t text; begin
@@ -81,6 +120,7 @@ insert into private.import_secrets (key, value)
 
 create or replace function public.cal_sync_tick() returns void
 language plpgsql security definer set search_path = public as $$
+-- v1.62 cal_sync_tick (marqueur lu par la garde §0)
 declare u text := (select url from private.sync_urls where key = 'cal-sync'); sec text := (select value from private.import_secrets where key = 'cal_sync_hook');
 begin
   if u is null or u !~ '^https://[a-z0-9]+\.supabase\.co/functions/v1/cal-sync$' or coalesce(sec, '') = '' then return; end if;
@@ -90,8 +130,10 @@ begin
 end $$;
 revoke all on function public.cal_sync_tick() from public, anon, authenticated;
 
-do $$ begin
-  if exists (select 1 from pg_extension where extname = 'pg_cron') and not exists (select 1 from cron.job where jobname = 'cal-sync') then
-    perform cron.schedule('cal-sync', '*/5 * * * *', 'select public.cal_sync_tick()');
+-- tâche planifiée : seulement si pg_cron est installé (cron.job n'existe pas sinon : requête dynamique, jamais analysée sans l'extension)
+do $$ declare n int; begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    execute 'select count(*) from cron.job where jobname = $1' into n using 'cal-sync';
+    if n = 0 then execute 'select cron.schedule($1, $2, $3)' using 'cal-sync', '*/5 * * * *', 'select public.cal_sync_tick()'; end if;
   end if;
 end $$;
