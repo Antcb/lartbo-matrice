@@ -233,6 +233,14 @@ export const isInactive = st => !!st?.inactive_at;
  * active reste prospectable ; un contact sans structure n'est pas concerné. Réactiver la structure rétablit tout (rien n'est enregistré).
  */
 export const onlyInactive = c => { const l = c?.id ? linksOfContact(c.id) : []; return l.length > 0 && l.every(isInactive); };
+/**
+ * Hors prospection (et hors Brevo) : lié uniquement à des structures inactives (v1.60.2), OU sans structure et marqué
+ * contacts.hors_prospection_at — décision d'Anthony du 08/11/2026 (option B) : un contact qui a perdu un rattachement alors qu'il
+ * n'était lié qu'à des structures inactives ne revient pas en prospection en devenant « sans structure » ; un contact créé sans
+ * structure n'est pas marqué. Le marqueur est posé et effacé par la base seulement (rattachement à une structure active,
+ * réactivation). Même règle : supabase/functions/brevo-sync/regles.ts (horsProspection). Relances (relancesSuspended) : inchangées.
+ */
+export const horsProspection = c => onlyInactive(c) || (!!c?.hors_prospection_at && !(c?.id && linksOfContact(c.id).length));
 /** Adresses d'un champ « À » (nom <adresse>, virgules, points-virgules) */
 const addrsIn = v => (String(v || '').match(/[^\s<>,;"]+@[^\s<>,;"]+/g) || []).map(m => m.toLowerCase());
 /**

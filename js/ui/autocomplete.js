@@ -8,10 +8,11 @@
  *   - attrs : attributs posés sur l'input caché qui porte l'identifiant (name="…" ou data-t/data-id/data-f)
  *   - fill  : pour les adresses, préfixe des champs du formulaire à remplir automatiquement
  *   - activeOnly : structures — les inactives (v1.54) ne sont pas proposées ; une ligne « Afficher aussi … » les montre sur demande ;
- *                  destinataires (rcpt) d'une prospection — contacts liés uniquement à des structures inactives, même principe (v1.60.2)
+ *                  destinataires (rcpt) d'une prospection — contacts hors prospection (horsProspection : structures inactives
+ *                  uniquement, v1.60.2 ; sans structure après le retrait de la dernière structure inactive, option B du 08/11/2026)
  * Au choix, l'input caché reçoit l'identifiant et déclenche « change » (enregistrement direct ou formulaire).
  */
-import { byId, contactMails, isInactive, linksOfContact, linksOfStructure, onlyInactive, placeOfEvent, placeOfStructure, showLabel, structName } from '../selectors.js';
+import { byId, contactMails, horsProspection, isInactive, linksOfContact, linksOfStructure, onlyInactive, placeOfEvent, placeOfStructure, showLabel, structName } from '../selectors.js';
 import { S } from '../state.js';
 import { esc, fmtDate, hayOf, mailAddr, mailOk, mailParts, norm } from '../utils.js';
 import { searchPlaces } from '../geo.js';
@@ -43,10 +44,12 @@ function rcptRows(contacts, q, box){
   return contacts.flatMap(c => {
     const mails = mailsOf(c), sts = linksOfContact(c.id), here = !!sid && sts.some(st => st.id === sid);
     const where = sts.length ? sts.slice(0, 3).map(st => st.name + (isInactive(st) ? ' (inactive)' : '')).join(', ') + (sts.length > 3 ? ` +${sts.length - 3}` : '') : 'sans structure';
-    if (!mails.length) return [{id:'sans-adresse:' + c.id, label:c.display_name, inactive:onlyInactive(c), here, hint:['pas d’adresse mail', where].join(' · ')}];
+    // hors prospection (v1.60.2 ; option B du 08/11/2026 : sans structure après le retrait de sa dernière structure inactive)
+    const hors = horsProspection(c), why = onlyInactive(c) ? 'structures inactives uniquement' : hors ? 'hors prospection (structure inactive retirée)' : '';
+    if (!mails.length) return [{id:'sans-adresse:' + c.id, label:c.display_name, inactive:hors, here, hint:['pas d’adresse mail', where].join(' · ')}];
     return [...mails].sort((a, b) => hit(a) - hit(b)).filter(m => !chosen.has(m.toLowerCase()))
-      .map(m => ({id:m, label:c.display_name, inactive:onlyInactive(c), here,
-        hint:[m, where, mails.length > 1 ? `adresse ${mails.indexOf(m) + 1} sur ${mails.length}` : '', onlyInactive(c) ? 'structures inactives uniquement' : ''].filter(Boolean).join(' · ')}));
+      .map(m => ({id:m, label:c.display_name, inactive:hors, here,
+        hint:[m, where, mails.length > 1 ? `adresse ${mails.indexOf(m) + 1} sur ${mails.length}` : '', why].filter(Boolean).join(' · ')}));
   }).sort((a, b) => a.inactive - b.inactive || b.here - a.here);
 }
 
@@ -195,8 +198,8 @@ async function update(input){
     const n = items.filter(it => it.inactive).length;
     items = items.filter(it => !it.inactive);
     if (n) items.push(kind === 'rcpt'
-      // prospection (v1.60.2) : contacts liés uniquement à des structures inactives, montrés seulement sur demande
-      ? {more:true, label:`Afficher aussi ${n} adresse${n>1?'s':''} de contacts liés uniquement à des structures inactives`, hint:'hors prospection par défaut'}
+      // prospection (v1.60.2 ; option B du 08/11/2026) : contacts hors prospection (horsProspection), montrés seulement sur demande
+      ? {more:true, label:`Afficher aussi ${n} adresse${n>1?'s':''} de contacts hors prospection (structures inactives)`, hint:'hors prospection par défaut'}
       : {more:true, label:`Afficher aussi ${n} structure${n>1?'s':''} inactive${n>1?'s':''}`, hint:'fermée(s), gardée(s) avec leur historique'});
   }
   if (box.dataset.create) items = items.concat([{create:true, label:`+ Créer « ${q} »`, q}]);

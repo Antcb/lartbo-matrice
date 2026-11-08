@@ -191,15 +191,15 @@ export const ACTIONS = {
     toast('Signature enregistrée'); },
   brevoSyncAll: async () => {
     const n = S.db.contacts.reduce((n, c) => n + new Set([c.email, c.email_2].filter(e => /@/.test(e || '')).map(e => e.trim().toLowerCase())).size, 0);
-    if (!(await confirmAsk('Envoyer les contacts dans Brevo ?', `Contacts de la Matrice avec un mail : ${n}. Seuls ceux qui ne sont pas encore dans Brevo sont ajoutés : les autres (et les désabonnés) ne sont pas touchés. Les contacts liés uniquement à des structures inactives ne sont pas ajoutés.`, 'Envoyer à Brevo'))) return;
+    if (!(await confirmAsk('Envoyer les contacts dans Brevo ?', `Contacts de la Matrice avec un mail : ${n}. Seuls ceux qui ne sont pas encore dans Brevo sont ajoutés : les autres (et les désabonnés) ne sont pas touchés. Les contacts hors prospection (liés uniquement à des structures inactives, ou qui ont perdu leur dernière structure inactive) ne sont pas ajoutés.`, 'Envoyer à Brevo'))) return;
     toast('Envoi à Brevo…');
     try {
       // session de l'utilisateur (compte de l'équipe) au lieu du code secret du déclencheur (v1.47)
       const {data, error} = await sb.functions.invoke('brevo-sync', {body: {all: true}});
       const out = data || await error?.context?.json?.().catch(() => null) || {ok: false, error: 'Brevo injoignable pour le moment : réessaie dans un instant.'};
       if (!out.ok) throw new Error(out.error || 'Erreur Brevo');
-      // contacts liés uniquement à des structures inactives : pas ajoutés (v1.60.2), annoncés
-      const held = out.skipped_inactive ? ` · ${out.skipped_inactive} adresse${out.skipped_inactive > 1 ? 's' : ''} non ajoutée${out.skipped_inactive > 1 ? 's' : ''} (contacts liés uniquement à des structures inactives)` : '';
+      // contacts hors prospection (v1.60.2 ; option B du 08/11/2026) : pas ajoutés, annoncés
+      const held = out.skipped_inactive ? ` · ${out.skipped_inactive} adresse${out.skipped_inactive > 1 ? 's' : ''} non ajoutée${out.skipped_inactive > 1 ? 's' : ''} (contacts hors prospection : structures inactives)` : '';
       toast((out.count ? `${out.count} nouveaux contacts envoyés : Brevo les importe (quelques minutes)` : 'Aucun nouveau contact à ajouter dans Brevo') + held);
     } catch (err) { toast(err.message, true); }
   },

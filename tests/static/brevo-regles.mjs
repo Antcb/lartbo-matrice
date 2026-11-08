@@ -1,9 +1,9 @@
 // Règles de la synchronisation Brevo (v1.60.2, structures inactives ; 08/11/2026, ajout et retrait des rattachements, fonctions par
-// structure) sur de FAUSSES données : aucun appel à Brevo ni à la base (faux client Brevo en mémoire).
+// structure ; contacts « hors prospection », option B) sur de FAUSSES données : aucun appel à Brevo ni à la base (faux client Brevo en mémoire).
 // Lancé par « npm test » (node --experimental-strip-types). Module testé : supabase/functions/brevo-sync/regles.ts
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { aAjouter, attributes, fonctionsParStructure, names, onlyInactive, syncContact } from '../../supabase/functions/brevo-sync/regles.ts';
+import { aAjouter, attributes, fonctionsParStructure, fonctionsTexte, horsProspection, names, onlyInactive, syncContact } from '../../supabase/functions/brevo-sync/regles.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -121,12 +121,35 @@ t('contact multi-structures : toutes les structures, ordre stable, et une foncti
   assert.deepEqual(fonctionsParStructure([...links].reverse()), f);
   assert.deepEqual(fonctionsParStructure([LR('Salle', false, ''), LR('', false, 'X')]), []);
 });
-t('fonctions par structure : PAS encore transmises à Brevo (représentation à décider par Anthony)', async () => {
+t('FONCTIONS (décision du 08/11) : champ texte lisible, structure par structure, ordre stable, sans doublon', async () => {
+  const links = [LR('Théâtre Z', false, 'Directrice'), LR('Festival B', true, 'Programmatrice'), LR('Théâtre Z', false, 'Directrice'), LR('Salle Y', false, null)];
+  assert.equal(fonctionsTexte(links), 'Festival B : Programmatrice ; Théâtre Z : Directrice');
+  assert.equal(fonctionsTexte([...links].reverse()), 'Festival B : Programmatrice ; Théâtre Z : Directrice');
+  assert.equal(fonctionsTexte([LR('Salle Y', false, '  ')]), '');
+  const CF = { ...CH, fonctions: 'FONCTIONS' };
+  // création (mail ajouté par la Matrice) : envoyé s'il n'est pas vide
+  const b = fauxBrevo();
+  await syncContact({ client: b.client, c: C(), links, champs: CF, listIds: [7], ours: new Set() });
+  assert.equal(b.base.get('lea@x.invalid').attributes.FONCTIONS, 'Festival B : Programmatrice ; Théâtre Z : Directrice');
+  assert.equal('FONCTIONS' in attributes(C(), [LR('Salle Y', false)], CF), false);
+  // changement de fonction puis retrait de la dernière fonction : mis à jour, puis vidé ; listes, désabonnement, préférences intacts
+  const b2 = fauxBrevo({ 'lea@x.invalid': { attributes: { FONCTIONS: 'Salle Y : Régie', OPT_IN: true }, listIds: [3], emailBlacklisted: true } });
+  await syncContact({ client: b2.client, c: C(), links: [LR('Salle Y', false, 'Direction')], champs: CF, listIds: [7], ours: new Set(['lea@x.invalid']) });
+  assert.equal(b2.base.get('lea@x.invalid').attributes.FONCTIONS, 'Salle Y : Direction');
+  await syncContact({ client: b2.client, c: C(), links: [LR('Salle Y', false, null)], champs: CF, listIds: [7], ours: new Set(['lea@x.invalid']) });
+  assert.deepEqual(b2.base.get('lea@x.invalid'), { attributes: { FONCTIONS: '', OPT_IN: true, STRUCTURE: 'Salle Y', PRENOM: 'Léa', NOM: 'Martin' }, listIds: [3], emailBlacklisted: true });
+  // mail non créé par la Matrice : jamais touché
+  const b3 = fauxBrevo({ 'lea@x.invalid': { attributes: { FONCTIONS: 'Ancienne' } } });
+  await syncContact({ client: b3.client, c: C(), links, champs: CF, listIds: [7], ours: new Set() });
+  assert.equal(b3.base.get('lea@x.invalid').attributes.FONCTIONS, 'Ancienne');
+});
+t('FONCTIONS absent du compte Brevo : rien d’envoyé (jamais créé par la Matrice) ; fonctions générales jamais envoyées', async () => {
   const b = fauxBrevo({ 'lea@x.invalid': {} });
-  await sync(b, C(), [LR('Salle A', false, 'Programmatrice'), LR('Salle B', false, 'Régisseuse')], ['lea@x.invalid']);
-  const b2 = fauxBrevo(); await sync(b2, C(), [LR('Salle A', false, 'Programmatrice')]);
-  const txt = JSON.stringify([...b.appels, ...b2.appels]);
-  assert.doesNotMatch(txt, /Programmatrice|Régisseuse|FONCTION/i);
+  await sync(b, C({ roles: ['Booker'] }), [LR('Salle A', false, 'Programmatrice')], ['lea@x.invalid']);
+  assert.doesNotMatch(JSON.stringify(b.appels), /Programmatrice|Booker|FONCTIONS/);
+  const src = readFileSync(new URL('../../supabase/functions/brevo-sync/index.ts', import.meta.url), 'utf8');
+  assert.match(src, /fonctions: pick\(\["FONCTIONS"\]\)/);
+  assert.doesNotMatch(src, /attributes\/normal\/FONCTIONS/);
 });
 t('contact lié uniquement à des structures inactives : pas créé ; déjà présent : gardé, rien supprimé ni désabonné', async () => {
   const b = fauxBrevo();
@@ -177,26 +200,43 @@ t('déclencheur SQL : ajout, retrait et déplacement relancent la synchronisatio
   assert.match(code, /create or replace trigger brevo_contact_structures after insert on public\.contact_structures\s+referencing new table as brevo_nouv for each statement/);
   assert.match(code, /create or replace trigger brevo_contact_structures_retrait after delete on public\.contact_structures\s+referencing old table as brevo_anc for each statement/);
   assert.match(code, /create or replace trigger brevo_contact_structures_modif after update on public\.contact_structures\s+referencing old table as brevo_anc new table as brevo_nouv for each statement/);
-  assert.doesNotMatch(code, /for each row/);
+  assert.doesNotMatch(code, /on public\.contact_structures\s+for each row/);
   // une seule relance par contact ; en modification, seuls les couples (contact, structure) apparus ou disparus comptent
   assert.equal((code.match(/select distinct/g) || []).length, 3);
-  assert.match(code, /select n\.contact_id, n\.structure_id from brevo_nouv n except select o\.contact_id, o\.structure_id from brevo_anc o/);
-  assert.doesNotMatch(code, /\bdrop\b|\bdelete from\b|\btruncate\b|update contacts|brevo_contact_trg\(\) returns/i);
+  // fonction comprise (décision du 08/11) : un changement de fonction relance, une réécriture à l'identique non
+  assert.match(code, /select n\.contact_id, n\.structure_id, n\.role from brevo_nouv n except select o\.contact_id, o\.structure_id, o\.role from brevo_anc o/);
+  assert.doesNotMatch(code, /\bdrop\b|\bdelete from\b|\btruncate\b|brevo_contact_trg\(\) returns/i);
+  // seules écritures : le marqueur hors_prospection_at (posé / effacé), jamais une autre colonne de contacts
+  assert.deepEqual([...new Set(code.match(/update contacts k set \w+/g))], ['update contacts k set hors_prospection_at']);
+  assert.match(code, /create or replace trigger brevo_structure_deleted before delete on public\.structures/);
   // essai en base jetable : tests/outils/brevo-declencheurs-pg.sh (50 rattachements, structure de 40 contacts, réécriture à l'identique)
-  assert.match(readFileSync(new URL('../outils/brevo-declencheurs-pg.sh', import.meta.url), 'utf8'), /structure réécrite à l’identique : aucun appel/);
+  assert.match(readFileSync(new URL('../outils/brevo-declencheurs-pg.sh', import.meta.url), 'utf8'), /fonction et structure réécrites à l’identique : aucun appel[\s\S]*suppression d’une structure inactive : ses contacts uniquement inactifs marqués[\s\S]*contact créé sans structure : pas marqué/);
 });
-t('COMPORTEMENT ACTUEL, SOUMIS À DÉCISION D’ANTHONY : retirer le dernier rattachement (structure inactive) rend le contact « sans structure », donc ajouté à Brevo et à la liste', async () => {
-  // Contact lié uniquement à une structure inactive : hors Brevo (v1.60.2).
+t('option B (08/11) : contact devenu sans structure après sa dernière structure inactive = toujours hors Brevo ; créé sans structure = ajouté', async () => {
+  const M = '2026-11-08T10:00:00Z';
+  assert.equal(horsProspection([], M), true);
+  assert.equal(horsProspection([], null), false);
+  assert.equal(horsProspection([LR('Ouverte', false)], M), false);        // rattaché à une structure active : prospectable
+  assert.equal(horsProspection([LR('Fermée', true)], null), true);        // règle v1.60.2 inchangée
+  // marqué, sans structure : ni création, ni liste
   const b = fauxBrevo();
-  await sync(b, C(), [LR('Salle fermée', true)]);
-  assert.equal(b.base.size, 0);
-  // Son dernier rattachement est retiré (ou la structure inactive supprimée) : il n'a plus de structure, la règle v1.60.2 ne le
-  // retient plus, il est créé dans Brevo avec la liste des Réglages, donc revient en prospection — immédiatement depuis ce lot.
-  // Si Anthony décide autrement, ce test doit être changé EN MÊME TEMPS que la règle (regles.ts, CONVENTIONS §6.15, Réglages).
-  const r = await sync(b, C(), []);
-  assert.deepEqual(r.created, ['lea@x.invalid']);
-  assert.deepEqual(b.base.get('lea@x.invalid').listIds, [7]);
-  assert.equal('STRUCTURE' in b.base.get('lea@x.invalid').attributes, false);
+  const r = await sync(b, C({ hors_prospection_at: M }), []);
+  assert.equal(b.base.size, 0); assert.deepEqual(r.skipped, ['lea@x.invalid']);
+  // déjà dans Brevo (créé par la Matrice) : gardé, champs à jour, listes et désabonnement intacts (aucune liste ajoutée)
+  const b2 = fauxBrevo({ 'lea@x.invalid': { attributes: { STRUCTURE: 'Fermée' }, listIds: [], emailBlacklisted: true } });
+  await sync(b2, C({ hors_prospection_at: M }), [], ['lea@x.invalid']);
+  assert.deepEqual(b2.base.get('lea@x.invalid'), { attributes: { STRUCTURE: '', PRENOM: 'Léa', NOM: 'Martin' }, listIds: [], emailBlacklisted: true });
+  // créé sans structure (jamais marqué) : ajouté comme avant
+  const b3 = fauxBrevo();
+  await sync(b3, C(), []);
+  assert.deepEqual(b3.base.get('lea@x.invalid').listIds, [7]);
+  // « tout envoyer » : même règle
+  const links = new Map([['k1', []], ['k2', []]]);
+  const { list, skipped_inactive } = aAjouter([{ c: { id: 'k1', hors_prospection_at: M }, email: 'a@x.invalid' }, { c: { id: 'k2', hors_prospection_at: null }, email: 'b@x.invalid' }], links);
+  assert.deepEqual(list.map(x => x.email), ['b@x.invalid']); assert.equal(skipped_inactive, 1);
+  // même règle côté application (js/selectors.js)
+  const sel = readFileSync(new URL('../../js/selectors.js', import.meta.url), 'utf8');
+  assert.match(sel, /export const horsProspection = c => onlyInactive\(c\) \|\| \(!!c\?\.hors_prospection_at && !\(c\?\.id && linksOfContact\(c\.id\)\.length\)\);/);
 });
 
 let ko = 0;

@@ -3,26 +3,35 @@
  *
  * Contact rattaché UNIQUEMENT à des structures inactives (au moins une, aucune active) — demande d'Anthony (v1.60.2) : tenu hors de
  * la prospection, donc PAS AJOUTÉ à Brevo. Rien n'est supprimé ni désabonné dans Brevo ; un mail déjà présent n'est jamais touché.
- * Un contact lié à au moins une structure active, ou sans structure, est ajouté comme avant. Même règle que js/selectors.js
+ * Un contact lié à au moins une structure active, ou sans structure (non marqué, voir plus bas), est ajouté comme avant. Même règle que js/selectors.js
  * (onlyInactive). Réactiver la structure fait ajouter ses contacts (déclencheur brevo_structure_reactivated, migration v1.60.2).
  *
  * Rattachements (décision d'Anthony du 08/11/2026) : l'ajout ET le retrait d'un rattachement (contact_structures) relancent la
  * synchronisation du contact, une fois par contact et par requête (déclencheurs par requête brevo_contact_structures, _retrait,
  * _modif, fonction SQL brevo_links_trg, migration 2026-11-08_brevo_rattachements.sql — même règle côté SQL : tout couple
- * (contact, structure) apparu ou disparu d'un contact qui a un mail part dans brevo_queue). Le champ « structure » de Brevo reprend
+ * (contact, structure) apparu ou disparu, ou fonction changée, d'un contact qui a un mail part dans brevo_queue). Le champ « structure » de Brevo reprend
  * alors la liste À JOUR des structures ; un retrait ne supprime jamais le contact, ne le retire d'aucune liste et ne touche ni à son
  * désabonnement ni à ses autres champs (préférences). Seuls les mails créés par la Matrice sont mis à jour (règle inchangée).
- * COMPORTEMENT ACTUEL SOUMIS À DÉCISION D'ANTHONY : retirer le dernier rattachement d'un contact lié uniquement à une structure
- * inactive le rend « sans structure » : onlyInactive([]) = false, il est donc créé dans Brevo avec la liste (retour en prospection),
- * immédiatement. Non modifié ici (CONVENTIONS §6.15 ; test « COMPORTEMENT ACTUEL » de tests/static/brevo-regles.mjs).
  *
- * Fonction propre à chaque structure (contact_structures.role) : LUE et conservée structure par structure (fonctionsParStructure),
- * mais PAS ENCORE TRANSMISE à Brevo : la représentation (un champ par structure, un champ combiné, des listes…) n'est pas décidée.
+ * Contact devenu « sans structure » (décision d'Anthony du 08/11/2026, option B) : un contact qui a perdu un rattachement alors qu'il
+ * n'était lié qu'à des structures inactives porte le marqueur contacts.hors_prospection_at (posé et effacé par les déclencheurs SQL,
+ * migration 2026-11-08_brevo_rattachements.sql). Sans structure et marqué, il reste hors prospection et hors Brevo (ni ajout, ni
+ * liste) jusqu'à un rattachement à une structure active ou une réactivation ; un contact CRÉÉ sans structure n'est pas marqué et
+ * est ajouté comme avant. Même règle : js/selectors.js (horsProspection). Rien n'est supprimé ni désabonné.
+ *
+ * Fonction propre à chaque structure (contact_structures.role) — décision d'Anthony du 08/11/2026 : champ texte Brevo « FONCTIONS »,
+ * lisible, « Festival B : Programmatrice ; Théâtre Z : Directrice » (structures triées, sans doublon), information seulement
+ * (aucune liste, aucun ciblage). Envoyé seulement si le champ existe dans le compte Brevo (créé à la main par Anthony) et seulement
+ * pour les mails créés par la Matrice, comme « structure ». Les fonctions générales du contact (contacts.roles) ne sont pas envoyées.
  * Aucune fonction n'en remplace une autre (jamais « la dernière écrite »).
  */
 export type Link = { name: string; inactive: boolean; role?: string | null };
 
 export const onlyInactive = (links: Link[] = []): boolean => links.length > 0 && links.every((l) => l.inactive);
+
+/** Hors prospection et hors Brevo : lié uniquement à des structures inactives (v1.60.2), ou sans structure et marqué (option B,
+ * contacts.hors_prospection_at). Même règle que js/selectors.js (horsProspection). */
+export const horsProspection = (links: Link[] = [], marque?: string | null): boolean => onlyInactive(links) || (links.length === 0 && !!marque);
 
 const fr = (a: string, b: string) => a.localeCompare(b, "fr", { sensitivity: "base" }) || (a < b ? -1 : a > b ? 1 : 0);
 
@@ -30,7 +39,7 @@ const fr = (a: string, b: string) => a.localeCompare(b, "fr", { sensitivity: "ba
  * rattachements donne toujours le même texte, quel que soit l'ordre de lecture (synchronisation rejouable) */
 export const names = (links: Link[] = []): string[] => [...new Set(links.map((l) => (l.name || "").trim()).filter(Boolean))].sort(fr);
 
-/** Fonction propre à chaque structure, structure par structure (préparation : rien n'est envoyé à Brevo).
+/** Fonction propre à chaque structure, structure par structure (champ FONCTIONS).
  * Toutes les fonctions sont gardées, chacune avec SA structure : deux structures, deux fonctions différentes → deux lignes. */
 export function fonctionsParStructure(links: Link[] = []): { structure: string; fonction: string }[] {
   const out = new Map<string, { structure: string; fonction: string }>();
@@ -42,24 +51,28 @@ export function fonctionsParStructure(links: Link[] = []): { structure: string; 
   return [...out.values()].sort((a, b) => fr(a.structure, b.structure) || fr(a.fonction, b.fonction));
 }
 
-/** Adresses à ajouter à Brevo : celles des contacts qui ne sont pas liés uniquement à des structures inactives */
-export function aAjouter<T extends { c: { id: string } }>(cand: T[], links: Map<string, Link[]>): { list: T[]; skipped_inactive: number } {
-  const list = cand.filter((x) => !onlyInactive(links.get(x.c.id)));
+/** Texte du champ FONCTIONS : « Structure : fonction » séparés par « ; » (vide si aucune fonction propre) */
+export const fonctionsTexte = (links: Link[] = []): string => fonctionsParStructure(links).map((f) => `${f.structure} : ${f.fonction}`).join(" ; ");
+
+/** Adresses à ajouter à Brevo : celles des contacts qui ne sont pas hors prospection (horsProspection) */
+export function aAjouter<T extends { c: { id: string; hors_prospection_at?: string | null } }>(cand: T[], links: Map<string, Link[]>): { list: T[]; skipped_inactive: number } {
+  const list = cand.filter((x) => !horsProspection(links.get(x.c.id), x.c.hors_prospection_at));
   return { list, skipped_inactive: cand.length - list.length };
 }
 
-export type Contact = { id: string; email: string | null; email_2?: string | null; first_name: string | null; last_name: string | null; display_name: string | null };
-export type Champs = { first?: string; last?: string; struct?: string };
+export type Contact = { id: string; email: string | null; email_2?: string | null; first_name: string | null; last_name: string | null; display_name: string | null; hors_prospection_at?: string | null };
+export type Champs = { first?: string; last?: string; struct?: string; fonctions?: string };
 
 /** Mails valides d'un contact (mail 1 puis mail 2), en minuscules et sans doublon */
 export const mailsOf = (c: Contact): string[] =>
   [...new Set([c.email, c.email_2].map((e) => String(e || "").trim().toLowerCase()).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
 
 /**
- * Champs envoyés à Brevo : prénom, nom, structure(s). JAMAIS d'autre champ (désabonnement, listes, préférences du contact…).
- * - création : « structure » seulement si le contact a au moins une structure (comme avant) ;
- * - mise à jour (mail créé par la Matrice) : « structure » toujours envoyée, vide quand le dernier rattachement a été retiré, pour
- *   que Brevo ne garde pas une structure quittée.
+ * Champs envoyés à Brevo : prénom, nom, structure(s), fonctions par structure (si le champ FONCTIONS existe). JAMAIS d'autre
+ * champ (désabonnement, listes, préférences du contact…).
+ * - création : « structure » / « FONCTIONS » seulement s'ils ne sont pas vides (comme avant) ;
+ * - mise à jour (mail créé par la Matrice) : toujours envoyés, vides quand le dernier rattachement (ou la dernière fonction) a été
+ *   retiré, pour que Brevo ne garde pas une structure ou une fonction quittée.
  */
 export function attributes(c: Contact, links: Link[] | undefined, a: Champs, miseAJour = false): Record<string, string> {
   const at: Record<string, string> = {};
@@ -69,6 +82,8 @@ export function attributes(c: Contact, links: Link[] | undefined, a: Champs, mis
   if (a.first && first) at[a.first] = first;
   if (a.last && last) at[a.last] = last;
   if (a.struct && (structs.length || miseAJour)) at[a.struct] = structs.join(", ");
+  const fonctions = fonctionsTexte(links);
+  if (a.fonctions && (fonctions || miseAJour)) at[a.fonctions] = fonctions;
   return at;
 }
 
@@ -83,14 +98,14 @@ export type ClientBrevo = {
 
 /**
  * Synchronisation d'UN contact (déclencheur : création, modification, ajout ou retrait d'un rattachement, réactivation).
- * - mail absent de Brevo : créé (avec la ou les listes des Réglages), sauf contact lié uniquement à des structures inactives ;
+ * - mail absent de Brevo : créé (avec la ou les listes des Réglages), sauf contact hors prospection (horsProspection) ;
  * - mail déjà dans Brevo et créé par la Matrice (ours) : prénom, nom et structure(s) mis à jour, rien d'autre ;
  * - mail déjà dans Brevo et non créé par la Matrice : jamais touché ;
  * - rejouable : relancer donne le même résultat, sans doublon (lecture avant création, « duplicate » = déjà là).
  */
 export async function syncContact(p: { client: ClientBrevo; c: Contact; links: Link[] | undefined; champs: Champs; listIds: number[]; ours: Set<string> }) {
   const { client, c, links, champs, listIds, ours } = p;
-  const held = onlyInactive(links);   // lié uniquement à des structures inactives : pas de nouveau contact Brevo (v1.60.2)
+  const held = horsProspection(links, c.hors_prospection_at);   // hors prospection : pas de nouveau contact Brevo (v1.60.2, option B)
   const aCreer = attributes(c, links, champs, false);
   const aJour = attributes(c, links, champs, true);
   const errors: string[] = [], done: string[] = [], created: string[] = [], skipped: string[] = [], updated: string[] = [];

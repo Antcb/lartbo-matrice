@@ -1,12 +1,13 @@
 /**
  * Brevo : ajoute dans Brevo les contacts de la Matrice qui n'y sont pas encore (mail, prénom, nom, structure).
  * Un mail déjà présent dans Brevo n'est JAMAIS modifié : ni ses champs, ni ses listes, ni son désabonnement.
- * Contact lié uniquement à des structures inactives (v1.60.2) : pas ajouté (hors prospection) ; rien n'est supprimé ni désabonné.
+ * Contact lié uniquement à des structures inactives (v1.60.2), ou sans structure et marqué hors prospection (option B, 08/11/2026) :
+ * pas ajouté (hors prospection) ; rien n'est supprimé ni désabonné.
  * Exception (depuis la v1.16) : un mail CRÉÉ par la Matrice (contacts.brevo_emails) garde prénom, nom et structure(s) à jour ;
  * ajout ET retrait d'un rattachement à une structure (08/11/2026) : champ « structure » mis à jour, jamais de suppression, de
- * désabonnement ni de retrait de liste. Fonction propre à chaque structure : lue, pas encore transmise (regles.ts).
- * Appelée par un déclencheur de la base à chaque création ou modification d'un contact, à l'ajout ou au retrait d'un
- * rattachement à une structure, à la réactivation d'une structure, ou par Réglages › Brevo pour tout envoyer d'un coup.
+ * désabonnement ni de liste ajoutée ou retirée. Fonction propre à chaque structure : champ FONCTIONS (s'il existe dans Brevo).
+ * Appelée par un déclencheur de la base à chaque création ou modification d'un contact, à l'ajout, au retrait d'un
+ * rattachement à une structure ou au changement de sa fonction, à la réactivation d'une structure, ou par Réglages › Brevo pour tout envoyer d'un coup.
  * Réglages lus dans la table settings : brevo_api_key, brevo_list_id (une ou plusieurs listes, séparées par des virgules),
  * brevo_hook_secret (code partagé avec le déclencheur). Ces réglages ne sont lisibles que côté serveur (v1.47).
  * Accès : le déclencheur de la base (code x-hook-secret) ; « tout envoyer » (Réglages) : un compte de l'équipe connecté (v1.47 —
@@ -45,7 +46,9 @@ async function isTeam(auth: string) {
 }
 
 let ATTRS: Champs | null = null;
-/** Noms des champs Brevo du compte (PRENOM / FIRSTNAME…) ; crée « STRUCTURE » s'il n'existe aucun champ pour la structure */
+/** Noms des champs Brevo du compte (PRENOM / FIRSTNAME…) ; crée « STRUCTURE » s'il n'existe aucun champ pour la structure.
+ * « FONCTIONS » (fonctions par structure, 08/11/2026) : utilisé seulement s'il existe déjà dans le compte (créé à la main par
+ * Anthony), jamais créé par la Matrice. */
 async function attrNames(key: string) {
   if (ATTRS) return ATTRS;
   const r = await bfetch(`${API}/contacts/attributes`, { headers: { "api-key": key, accept: "application/json" } });
@@ -57,7 +60,7 @@ async function attrNames(key: string) {
     const c = await bfetch(`${API}/contacts/attributes/normal/STRUCTURE`, { method: "POST", headers: { "api-key": key, "content-type": "application/json" }, body: JSON.stringify({ type: "text" }) });
     if (c.ok || c.status === 400) struct = "STRUCTURE";
   }
-  ATTRS = { first: pick(["PRENOM", "FIRSTNAME", "FNAME"]), last: pick(["NOM", "LASTNAME", "LNAME"]), struct };
+  ATTRS = { first: pick(["PRENOM", "FIRSTNAME", "FNAME"]), last: pick(["NOM", "LASTNAME", "LNAME"]), struct, fonctions: pick(["FONCTIONS"]) };
   return ATTRS;
 }
 
@@ -86,6 +89,14 @@ async function structuresOf(ids: string[]) {
   return out;
 }
 
+/** Contacts lus avec le marqueur « hors prospection » (migration 2026-11-08) ; base sans cette colonne (migration pas encore
+ * appliquée) : relu sans elle, la règle v1.60.2 seule s'applique (jamais d'arrêt de la synchronisation) */
+async function lireContacts<T>(cols: string, q: (sel: string) => PromiseLike<{ data: T | null; error: { message: string } | null }>): Promise<T | null> {
+  const r = await q(`${cols},hors_prospection_at`);
+  if (r.error && /hors_prospection_at/.test(r.error.message)) return (await q(cols)).data;
+  return r.data;
+}
+
 /** Appels réels à Brevo pour un contact (lecture, mise à jour des champs, création) : voir syncContact (regles.ts) */
 const client = (key: string): ClientBrevo => ({
   lire: (email) => bfetch(`${API}/contacts/${encodeURIComponent(email)}`, { headers: { "api-key": key, accept: "application/json" } }),
@@ -111,7 +122,8 @@ Deno.serve(async (req) => {
     if (body.all) {
       const all: Contact[] = [];
       for (let from = 0; ; from += 1000) {
-        const { data } = await sb.from("contacts").select("id,email,email_2,first_name,last_name,display_name").or("email.not.is.null,email_2.not.is.null").range(from, from + 999);
+        const data = await lireContacts<Contact[]>("id,email,email_2,first_name,last_name,display_name",
+          (sel) => sb.from("contacts").select(sel).or("email.not.is.null,email_2.not.is.null").range(from, from + 999));
         all.push(...((data || []) as Contact[]));
         if (!data || data.length < 1000) break;
       }
@@ -123,7 +135,7 @@ Deno.serve(async (req) => {
       for (const c of all) for (const e of mailsOf(c)) { if (known.has(e) || seen.has(e)) continue; seen.add(e); cand.push({ c, email: e }); }
       if (!cand.length) return json({ ok: true, count: 0, skipped_inactive: 0 });
       const st = await structuresOf([...new Set(cand.map((x) => x.c.id))]);
-      // contacts liés uniquement à des structures inactives : pas ajoutés (v1.60.2, regles.ts)
+      // contacts hors prospection (liés uniquement à des structures inactives, ou sans structure et marqués) : pas ajoutés (regles.ts)
       const { list, skipped_inactive } = aAjouter(cand, st);
       if (!list.length) return json({ ok: true, count: 0, skipped_inactive });
       const r = await bfetch(`${API}/contacts/import`, { method: "POST", headers: { "api-key": key, "content-type": "application/json" },
@@ -135,7 +147,9 @@ Deno.serve(async (req) => {
 
     // Un contact : petite attente pour que les structures rattachées juste après la création soient là
     await new Promise((ok) => setTimeout(ok, 3000));
-    const { data: c } = await sb.from("contacts").select("id,email,email_2,first_name,last_name,display_name,brevo_created,brevo_emails").eq("id", body.contact_id).single();
+    // deno-lint-ignore no-explicit-any
+    const c = await lireContacts<any>("id,email,email_2,first_name,last_name,display_name,brevo_created,brevo_emails",
+      (sel) => sb.from("contacts").select(sel).eq("id", body.contact_id).single());
     const mails = c ? mailsOf(c as Contact) : [];
     if (!c || !mails.length) return json({ ok: true, skipped: "pas de mail" });
     const st = await structuresOf([c.id]);

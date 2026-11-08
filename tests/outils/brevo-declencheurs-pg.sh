@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Essai des déclencheurs Brevo des rattachements (migration 2026-11-08_brevo_rattachements.sql) sur une base PostgreSQL JETABLE :
+# Essai des déclencheurs Brevo des rattachements, des fonctions et du marqueur « hors prospection » (migration 2026-11-08_brevo_rattachements.sql) sur une base PostgreSQL JETABLE :
 # créée dans un dossier temporaire, sur un port propre (BREVO_PG_PORT, 55741 par défaut), arrêtée et effacée à la fin.
 # Aucune connexion à Supabase ni à Brevo : brevo_queue est remplacée par une fonction qui note les appels dans une table.
 # Hors de « npm test » (il faut les programmes PostgreSQL 14 ou plus : initdb, pg_ctl, psql). Lancement : bash tests/outils/brevo-declencheurs-pg.sh
@@ -41,6 +41,19 @@ begin
 end $$;
 create trigger brevo_contacts after insert or update of email, email_2, first_name, last_name on contacts for each row execute function brevo_contact_trg();
 create trigger brevo_contact_structures after insert on contact_structures for each row execute function brevo_contact_trg();
+-- v1.60.2 : réactivation d'une structure
+create or replace function public.brevo_structure_trg() returns trigger language plpgsql security definer set search_path = public as $$
+declare c uuid;
+begin
+  if old.inactive_at is not null and new.inactive_at is null then
+    for c in select l.contact_id from contact_structures l join contacts k on k.id = l.contact_id
+             where l.structure_id = new.id and (k.email is not null or k.email_2 is not null) loop
+      perform brevo_queue(c);
+    end loop;
+  end if;
+  return new;
+end $$;
+create trigger brevo_structure_reactivated after update of inactive_at on structures for each row execute function brevo_structure_trg();
 SQL
 "${P[@]}" < "$MIG"
 "${P[@]}" < "$MIG"   # rejouable
@@ -67,9 +80,9 @@ select verifie('ajout de 50 rattachements d’un contact en une requête : 1 app
 insert into contact_structures(contact_id, structure_id) select u(i), u(101) from generate_series(2, 41) i;
 select verifie('rattachement de 40 contacts (dont 1 sans mail) : 1 appel par contact avec mail', (select string_agg(right(u(i)::text, 4) || '×1', ',' order by right(u(i)::text, 4)) from generate_series(2, 40) i));
 update contact_structures set role = 'Programmatrice' where contact_id = u(1);
-select verifie('fonction modifiée sur 50 rattachements : aucun appel', '');
-update contact_structures set structure_id = structure_id where contact_id = u(1);
-select verifie('structure réécrite à l’identique : aucun appel', '');
+select verifie('fonction modifiée sur 50 rattachements : 1 appel (FONCTIONS, décision du 08/11)', '0001×1');
+update contact_structures set role = role, structure_id = structure_id where contact_id = u(1);
+select verifie('fonction et structure réécrites à l’identique : aucun appel', '');
 update contact_structures set structure_id = u(150) where contact_id = u(2) and structure_id = u(101);
 select verifie('rattachement déplacé vers une autre structure : 1 appel', '0002×1');
 update contact_structures set contact_id = u(3) where contact_id = u(2) and structure_id = u(150);
@@ -82,8 +95,53 @@ insert into contact_structures(contact_id, structure_id) values (u(5), u(102)), 
 truncate appels;
 delete from contacts where id = u(5);
 select verifie('contact supprimé (rattachements en cascade) : aucun appel', '');
+-- ───── Option B (08/11) : marqueur hors_prospection_at ─────
+-- structures 201 (inactive), 202 (inactive), 203 (active), 204 (inactive) ; contacts 61 à 66 avec mail
+insert into structures(id, name, inactive_at) values (u(201), 'Fermée A', now()), (u(202), 'Fermée B', now()), (u(203), 'Ouverte', null), (u(204), 'Fermée C', now());
+insert into contacts(id, email) select u(i), 'm' || i || '@x.invalid' from generate_series(61, 67) i;
+insert into contact_structures(contact_id, structure_id) values
+  (u(61), u(201)),                      -- seulement une structure inactive : retrait → marqué
+  (u(62), u(201)), (u(62), u(203)),     -- inactive + active : retrait de l'active → pas marqué (v1.60.2 le tient déjà) ; puis de l'inactive → marqué
+  (u(63), u(202)),                      -- structure inactive supprimée → marqué
+  (u(64), u(203)),                      -- structure active : retrait → pas marqué
+  (u(65), u(201)), (u(65), u(202)),     -- deux inactives retirées en une requête → marqué
+  (u(66), u(204));                      -- structure inactive réactivée : relancé, jamais marqué
+truncate appels;
+create function marques() returns text language sql as $$
+  select coalesce(string_agg(right(id::text, 4), ',' order by id), '') from contacts where hors_prospection_at is not null $$;
+create function verifie_marques(cas text, attendu text) returns void language plpgsql as $$
+begin
+  if marques() is distinct from attendu then raise exception 'ÉCHEC « % » : marqués attendus [%], obtenus [%]', cas, attendu, marques(); end if;
+  raise notice 'ok : %', cas;
+end $$;
+select verifie_marques('aucun contact marqué au départ (rien n’est rempli pour l’historique)', '');
+delete from contact_structures where contact_id = u(61);
+select verifie_marques('retrait de la seule structure inactive : marqué', '0061');
+select verifie('… et relancé une fois', '0061×1');
+delete from contact_structures where contact_id = u(62) and structure_id = u(203);
+select verifie_marques('retrait de la structure active (reste une inactive) : pas marqué', '0061');
+delete from contact_structures where contact_id = u(62);
+select verifie_marques('puis retrait de la dernière, inactive : marqué', '0061,0062');
+delete from structures where id = u(202);
+select verifie_marques('suppression d’une structure inactive : ses contacts uniquement inactifs marqués', '0061,0062,0063,0065');
+truncate appels;
+delete from contact_structures where contact_id = u(64);
+select verifie_marques('retrait d’une structure active : pas marqué', '0061,0062,0063,0065');
+insert into contacts(id, email) values (u(68), 'n68@x.invalid');
+select verifie_marques('contact créé sans structure : pas marqué', '0061,0062,0063,0065');
+insert into contact_structures(contact_id, structure_id) values (u(61), u(204));
+select verifie_marques('rattaché à une structure INACTIVE : reste marqué', '0061,0062,0063,0065');
+insert into contact_structures(contact_id, structure_id) values (u(62), u(203));
+select verifie_marques('rattaché à une structure active : marqueur effacé', '0061,0063,0065');
+truncate appels;
+update structures set inactive_at = null where id = u(204);
+select verifie_marques('réactivation d’une structure : marqueur de ses contacts effacé (61, rattaché à elle)', '0063,0065');
+select verifie('… et ses contacts relancés (61, 66)', '0061×1,0066×1');
+update contact_structures set role = 'Régie' where contact_id = u(65);
+select verifie_marques('fonction changée : marqueur inchangé', '0063,0065');
+truncate appels;
 do $$ begin
-  if (select count(*) from contacts) <> 40 then raise exception 'ÉCHEC : un contact a disparu'; end if;
+  if (select count(*) from contacts) <> 48 then raise exception 'ÉCHEC : un contact a disparu'; end if;
   if exists (select 1 from pg_trigger where tgname = 'brevo_contact_structures' and tgtype & 1 = 1) then
     raise exception 'ÉCHEC : brevo_contact_structures est encore ligne par ligne'; end if;
   raise notice 'ok : aucun autre contact supprimé ; déclencheurs par requête';
