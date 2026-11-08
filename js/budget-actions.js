@@ -182,7 +182,6 @@ export const BUDGET_ACTIONS = {
     toast(on ? 'Date en booking uniquement : seulement la facture de commission' : 'Date en production : budget et compte dédié');
   },
   toggleProjBudget: t => { S.openBudget ||= new Set(); const id = t.dataset.id; S.openBudget.has(id) ? S.openBudget.delete(id) : S.openBudget.add(id); render(); },
-  openProdShow: t => { S.openProd.add(t.dataset.id); render(); document.getElementById('prod-' + t.dataset.id)?.scrollIntoView({block:'start', behavior:'smooth'}); },
   addBudgetLine: async t => {
     const s = t.dataset.show ? byId('shows', t.dataset.show) : null;
     const project_id = s ? s.project_id : t.dataset.project;

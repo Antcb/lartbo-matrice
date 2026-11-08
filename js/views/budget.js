@@ -9,7 +9,7 @@ import { commissionState, payAmount, paymentsOf } from '../calc.js';
 import { byId } from '../selectors.js';
 import { S } from '../state.js';
 import { archivedTag } from '../ui/bits.js';
-import { cChk, cIn, cSel } from '../ui/cells.js';
+import { cChk, cIn, cSel, cSelText } from '../ui/cells.js';
 import { dateInput } from '../ui/datefield.js';   // dates du budget de production : largeur d'une date (.steps .dt), saisie jj/mm/aaaa (v1.60.3)
 import { HOLDERS, breakFromText, cnmBearer, cnmOf, coreaCalc, holderLabel, isCnmLine, isCorea } from '../corea.js';
 import { esc, eur2, fmtDate, today, r2, pct as fmtPct } from '../utils.js';
@@ -35,7 +35,7 @@ function lineRow(l, project, {qtyAll = false} = {}){
     <td>${cSel('budget_lines', l.id, 'category', l.category, BUDGET_CATS)}</td>
     <td class="bl-label">${cIn('budget_lines', l.id, 'label', l.label, 'text', 'placeholder="Libellé"')}${calc?`<div class="muted calc-note">calcul : ${calc}</div>`:''}</td>
     <td class="bl-sup">${cIn('budget_lines', l.id, 'supplier', l.supplier, 'text', `placeholder="${staff?'Salarié':'Fournisseur'}"`)}</td>
-    <td>${cSel('budget_lines', l.id, 'payer', l.payer || 'compte', payers, false)}</td>
+    <td>${cSelText('budget_lines', l.id, 'payer', l.payer || 'compte', payers, {name: 'Payé par'})}</td>
     <td class="num">${prev}</td>
     <td class="num"><input type="number" step="any" data-t="budget_lines" data-id="${l.id}" data-f="amount" value="${l.amount??''}" placeholder="—" title="${staff?'Coût total (bulletin)':'Montant réel HT (pièce)'}"></td>
     <td class="nowrap">${l.file_path ? `<button class="btn icon sm" data-act="openBudgetFile" data-id="${l.id}" title="${esc(l.file_name||'Pièce')}" aria-label="Ouvrir la pièce">📎</button>` : ''}${l.drive_file_id ? `<a class="btn icon sm" href="https://drive.google.com/file/d/${esc(l.drive_file_id)}/view" target="_blank" rel="noopener" title="Rangée dans le Drive de la date" aria-label="Ouvrir dans le Drive">▲</a>` : ''}${cIn('budget_lines', l.id, 'doc_number', l.doc_number, 'text', 'placeholder="N° pièce" class="doc-no"')}</td>
@@ -147,7 +147,7 @@ function artistBlock(s, b, p){
       <td>${cIn('budget_lines', l.id, 'supplier', l.supplier, 'text', `placeholder="${esc(p?.artist_payee || 'Bénéficiaire')}"`)}</td>
       <td class="num"><input type="number" step="any" data-t="budget_lines" data-id="${l.id}" data-f="amount" value="${l.amount ?? ''}" placeholder="${esc(String(r.reste))}" title="Montant réellement versé (HT)"></td>
       <td class="${l.paid_at ? 'done-cell' : ''}">${cIn('budget_lines', l.id, 'paid_at', l.paid_at, 'date')}</td>
-      <td>${cSel('budget_lines', l.id, 'payer', l.payer || 'compte', payers, false)}${(l.payer || 'compte') !== 'compte' && l.paid_at ? `<div class="reimb ${l.reimbursed_at ? 'done-cell' : ''}"><span class="muted">Déduit du compte le</span>${cIn('budget_lines', l.id, 'reimbursed_at', l.reimbursed_at, 'date')}</div>` : ''}</td>
+      <td>${cSelText('budget_lines', l.id, 'payer', l.payer || 'compte', payers, {name: 'Payé par'})}${(l.payer || 'compte') !== 'compte' && l.paid_at ? `<div class="reimb ${l.reimbursed_at ? 'done-cell' : ''}"><span class="muted">Déduit du compte le</span>${cIn('budget_lines', l.id, 'reimbursed_at', l.reimbursed_at, 'date')}</div>` : ''}</td>
       <td class="nowrap">${l.file_path ? `<button class="btn icon sm" data-act="openBudgetFile" data-id="${l.id}" title="${esc(l.file_name||'Pièce')}" aria-label="Ouvrir la pièce">📎</button>` : ''}${l.drive_file_id ? `<a class="btn icon sm" href="https://drive.google.com/file/d/${esc(l.drive_file_id)}/view" target="_blank" rel="noopener" title="Rangée dans le Drive de la date" aria-label="Ouvrir dans le Drive">▲</a>` : ''}${cIn('budget_lines', l.id, 'doc_number', l.doc_number, 'text', 'placeholder="N° facture" style="min-width:80px"')}</td>
       <td><button class="btn icon sm ghost danger" data-act="delBudgetLine" data-id="${l.id}" aria-label="Supprimer ce versement">✕</button></td></tr>`).join('');
   return `<div class="artist-result">
@@ -201,7 +201,7 @@ function ownProdRow(s, b, missing){
   const paidExp = r2(b.lines.filter(l => !isSolde(l) && (l.paid_at || l.reimbursed_at)).reduce((t, l) => t + lineValue(l), 0));
   const ar = artistResult(s, b), kind = s.contract_type === 'Co-Production' ? 'Coproduction' : 'Production';
   const dash = t => `<td class="num muted" title="${t}">—</td>`;
-  return `<tr class="own-prod-row"><td class="nowrap"><a href="#" data-act="${s.archived_at ? 'editShow' : 'openProdShow'}" data-id="${s.id}">${fmtDate(s.date)}</a></td><td>${esc(s.venue||'')}${archivedTag(s)}${s.city?` <span class="muted">(${esc(s.city)})</span>`:''} <span class="badge" title="Budget de production à part (onglet Budget de la date) : prévisionnel, répartition selon l’accord">${kind}</span></td>
+  return `<tr class="own-prod-row"><td class="nowrap"><a href="#" data-act="${s.archived_at ? 'editShow' : 'openShowProd'}" data-id="${s.id}">${fmtDate(s.date)}</a></td><td>${esc(s.venue||'')}${archivedTag(s)}${s.city?` <span class="muted">(${esc(s.city)})</span>`:''} <span class="badge" title="Budget de production à part (onglet Budget de la date) : prévisionnel, répartition selon l’accord">${kind}</span></td>
       ${dash('Pas de cession facturée par L’ArtBo à l’organisateur sur cette date')}${dash('Pas de commission calculée : répartition selon l’accord')}
       <td class="num nowrap" title="Dépenses réellement payées ; le prévisionnel est dans le budget de la date">${eur2(paidExp)} <span class="muted tiny">payées</span></td>
       ${dash('Pas de reste calculé : la part de l’artiste suit l’accord de production')}<td class="num">${ar.hasVerse ? eur2(ar.verse) : '<span class="muted">—</span>'}</td>
@@ -220,7 +220,7 @@ export function projectBudgetHTML(projectId){
   const rows = shows.map(s => { const b = showBudget(s); const now = today();
     const missing = s.date && s.date < now && b.docsIn < b.docsAll;
     if (isProductionShow(s)) return ownProdRow(s, b, missing);
-    return `<tr><td class="nowrap"><a href="#" data-act="${s.archived_at ? 'editShow' : 'openProdShow'}" data-id="${s.id}">${fmtDate(s.date)}</a></td><td>${esc(s.venue||'')}${archivedTag(s)}${s.city?` <span class="muted">(${esc(s.city)})</span>`:''}</td>
+    return `<tr><td class="nowrap"><a href="#" data-act="${s.archived_at ? 'editShow' : 'openShowProd'}" data-id="${s.id}">${fmtDate(s.date)}</a></td><td>${esc(s.venue||'')}${archivedTag(s)}${s.city?` <span class="muted">(${esc(s.city)})</span>`:''}</td>
       <td class="num"${b.share ? ` title="MG ${eur2(b.fee)} + part du résultat ${eur2(b.share)}"` : ''}>${eur2(b.gross)}</td><td class="num">${eur2(b.com)}</td><td class="num">${eur2(b.expenses)}</td><td class="num"><b>${eur2(b.available)}</b>${missingCostLines(s.id).length ? `<div class="warn-txt tiny" title="${esc(INCOMPLETE)}">budget incomplet</div>` : ''}</td><td class="num">${(r => r.hasVerse ? eur2(r.verse) : '<span class="muted">—</span>')(artistResult(s, b))}</td>
       ${b.lines.length ? `<td class="num nowrap">${ecartHTML(artistResult(s, b).ecart)}</td>
       <td class="${missing?'late-cell':''}">${b.docsIn}/${b.docsAll}${missing?' ⚠︎':''}</td>` : '<td class="num muted">—</td><td><span class="warn-badge">Budget à faire</span></td>'}</tr>`; }).join('');

@@ -2,7 +2,7 @@
  * Petits éléments d'interface réutilisés partout : pastilles de statut, de pôle, d'urgence,
  * barre d'onglets d'une page, filtres Année / Projet, zone de dépôt de fichiers.
  */
-import { PROSPECT_LABEL, STATUSES, stClass, stColor } from '../constants.js';
+import { CONFIRMED_PROD, PROSPECT_LABEL, STATUSES, stClass, stColor } from '../constants.js';
 import { deptColor, projName, projectOptions } from '../selectors.js';
 import { S } from '../state.js';
 import { esc, fmtDate } from '../utils.js';
@@ -12,6 +12,15 @@ export const stBadge = s => `<span class="badge st-badge st-${stClass(s)}" style
 
 /** Statut d'une date modifiable d'un clic (liste déroulante en forme de pastille) */
 export const stSelect = s => `<select class="st-sel" data-t="shows" data-id="${s.id}" data-f="status" style="--c:${stColor(s.status)}" aria-label="Statut de la date">${(STATUSES.includes(s.status) ? STATUSES : [s.status, ...STATUSES]).map(x=>`<option ${x===s.status?'selected':''}>${esc(x)}</option>`).join('')}</select>`;
+
+/** Date listée sur une fiche artiste ou structure (retour d'Anthony du 08/11/2026, v1.60.4) : une date confirmée salle / festival
+ *  non archivée s'ouvre DIRECTEMENT dans Production au clic sur sa ligne (action openShowProd : année, filtre, date dépliée et visible) ;
+ *  le bouton « Modifier » (showEditBtn) ouvre sa fenêtre. Les autres dates (options, annulées, archivées) : la fenêtre, comme avant. */
+export const showRowAct = s => CONFIRMED_PROD.includes(s.status) && !s.archived_at ? 'openShowProd' : 'editShow';
+export const showRowAttrs = s => showRowAct(s) === 'openShowProd'
+  ? `data-act="openShowProd" data-id="${esc(s.id)}" title="Ouvrir cette date dans Production"` : `data-act="editShow" data-id="${esc(s.id)}"`;
+export const showEditBtn = s => showRowAct(s) === 'openShowProd'
+  ? `<button type="button" class="btn sm" data-act="editShow" data-id="${esc(s.id)}" title="Ouvrir la fenêtre de la date">Modifier</button>` : '';
 
 export const pstBadge = s => s ? `<span class="badge pst pst-${esc(s)}">${esc(PROSPECT_LABEL[s]||s)}</span>` : '';
 

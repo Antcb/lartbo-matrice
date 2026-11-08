@@ -21,6 +21,16 @@ export function cIn(t, id, f, v, type='text', extra=''){
 
 export const cSel = (t,id,f,v,opts,blank=true) => `<select ${dataAttrs(t,id,f)}>${blank?'<option value="">—</option>':''}${opts.map(o=>{ const [val,lab]=Array.isArray(o)?o:[o,o]; return `<option value="${esc(val)}" ${String(val)===String(v??'')?'selected':''}>${esc(lab)}</option>`;}).join('')}</select>`;
 
+/** Choix dans une cellule dont le libellé choisi peut être long (« Payé par » : nom du compte dédié de l'artiste, v1.60.4) : le libellé
+ *  choisi s'affiche en entier, sur deux lignes au plus, dans la largeur de la colonne ; la liste native (cSel) est posée par-dessus,
+ *  transparente : même saisie, même enregistrement (data-t / data-id / data-f), même clavier. Nom complet aussi en info-bulle et
+ *  dans le nom accessible du champ. */
+export function cSelText(t, id, f, v, opts, {name = ''} = {}){
+  const cur = opts.map(o => Array.isArray(o) ? o : [o, o]).find(([val]) => String(val) === String(v ?? ''));
+  const lab = cur ? cur[1] : (v ?? '—');
+  return `<span class="sel-text" title="${esc(name ? `${name} : ${lab}` : lab)}"><span class="sel-text-lab" aria-hidden="true">${esc(lab)}</span>${cSel(t, id, f, v, opts, false).replace('<select ', `<select aria-label="${esc(name ? `${name} : ${lab}` : lab)}" `)}</span>`;
+}
+
 export const cChk = (t,id,f,v,label='') => `<label class="chk"><input type="checkbox" ${dataAttrs(t,id,f)} ${v?'checked':''}>${label?`<span>${esc(label)}</span>`:''}</label>`;
 
 export const cAc = (kind, t, id, f, v, opts={}) => acInput(kind, {value:v, attrs:dataAttrs(t,id,f), ...opts});
