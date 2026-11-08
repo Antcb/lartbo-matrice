@@ -170,12 +170,33 @@ t('mise à jour refusée par Brevo : erreur signalée (plus jamais perdue en sil
   const r = await sync(b, C(), [], ['lea@x.invalid']);
   assert.equal(r.errors.length, 1); assert.match(r.errors[0], /Brevo 400/); assert.deepEqual(r.done, []);
 });
-t('déclencheur SQL : ajout, retrait et déplacement d’un rattachement relancent la synchronisation (même règle que la fonction)', () => {
+t('déclencheur SQL : ajout, retrait et déplacement relancent la synchronisation, une fois par contact et par requête', () => {
   const sql = readFileSync(new URL('../../supabase/migrations/2026-11-08_brevo_rattachements.sql', import.meta.url), 'utf8');
-  assert.match(sql, /create or replace trigger brevo_contact_structures after insert or delete or update of contact_id, structure_id on public\.contact_structures/);
-  assert.match(sql, /tg_op = 'DELETE' or \(tg_op = 'UPDATE' and old\.contact_id is distinct from new\.contact_id\)/);
-  assert.doesNotMatch(sql.replace(/^--.*$/gm, ''), /\bdrop\b|\bdelete from\b|\btruncate\b|update contacts/i);
-  assert.doesNotMatch(sql, /update of [^;]*\brole\b/);   // fonction non transmise : la modifier ne relance rien
+  const code = sql.replace(/^\s*--.*$/gm, '');
+  // par requête (tables de transition), plus jamais ligne par ligne ; un trigger par événement
+  assert.match(code, /create or replace trigger brevo_contact_structures after insert on public\.contact_structures\s+referencing new table as brevo_nouv for each statement/);
+  assert.match(code, /create or replace trigger brevo_contact_structures_retrait after delete on public\.contact_structures\s+referencing old table as brevo_anc for each statement/);
+  assert.match(code, /create or replace trigger brevo_contact_structures_modif after update on public\.contact_structures\s+referencing old table as brevo_anc new table as brevo_nouv for each statement/);
+  assert.doesNotMatch(code, /for each row/);
+  // une seule relance par contact ; en modification, seuls les couples (contact, structure) apparus ou disparus comptent
+  assert.equal((code.match(/select distinct/g) || []).length, 3);
+  assert.match(code, /select n\.contact_id, n\.structure_id from brevo_nouv n except select o\.contact_id, o\.structure_id from brevo_anc o/);
+  assert.doesNotMatch(code, /\bdrop\b|\bdelete from\b|\btruncate\b|update contacts|brevo_contact_trg\(\) returns/i);
+  // essai en base jetable : tests/outils/brevo-declencheurs-pg.sh (50 rattachements, structure de 40 contacts, réécriture à l'identique)
+  assert.match(readFileSync(new URL('../outils/brevo-declencheurs-pg.sh', import.meta.url), 'utf8'), /structure réécrite à l’identique : aucun appel/);
+});
+t('COMPORTEMENT ACTUEL, SOUMIS À DÉCISION D’ANTHONY : retirer le dernier rattachement (structure inactive) rend le contact « sans structure », donc ajouté à Brevo et à la liste', async () => {
+  // Contact lié uniquement à une structure inactive : hors Brevo (v1.60.2).
+  const b = fauxBrevo();
+  await sync(b, C(), [LR('Salle fermée', true)]);
+  assert.equal(b.base.size, 0);
+  // Son dernier rattachement est retiré (ou la structure inactive supprimée) : il n'a plus de structure, la règle v1.60.2 ne le
+  // retient plus, il est créé dans Brevo avec la liste des Réglages, donc revient en prospection — immédiatement depuis ce lot.
+  // Si Anthony décide autrement, ce test doit être changé EN MÊME TEMPS que la règle (regles.ts, CONVENTIONS §6.15, Réglages).
+  const r = await sync(b, C(), []);
+  assert.deepEqual(r.created, ['lea@x.invalid']);
+  assert.deepEqual(b.base.get('lea@x.invalid').listIds, [7]);
+  assert.equal('STRUCTURE' in b.base.get('lea@x.invalid').attributes, false);
 });
 
 let ko = 0;

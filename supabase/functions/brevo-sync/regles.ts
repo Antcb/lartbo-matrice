@@ -7,10 +7,14 @@
  * (onlyInactive). Réactiver la structure fait ajouter ses contacts (déclencheur brevo_structure_reactivated, migration v1.60.2).
  *
  * Rattachements (décision d'Anthony du 08/11/2026) : l'ajout ET le retrait d'un rattachement (contact_structures) relancent la
- * synchronisation du contact (déclencheur brevo_contact_structures, migration 2026-11-08_brevo_rattachements.sql — même règle côté
- * SQL : tout changement de rattachement d'un contact qui a un mail part dans brevo_queue). Le champ « structure » de Brevo reprend
+ * synchronisation du contact, une fois par contact et par requête (déclencheurs par requête brevo_contact_structures, _retrait,
+ * _modif, fonction SQL brevo_links_trg, migration 2026-11-08_brevo_rattachements.sql — même règle côté SQL : tout couple
+ * (contact, structure) apparu ou disparu d'un contact qui a un mail part dans brevo_queue). Le champ « structure » de Brevo reprend
  * alors la liste À JOUR des structures ; un retrait ne supprime jamais le contact, ne le retire d'aucune liste et ne touche ni à son
  * désabonnement ni à ses autres champs (préférences). Seuls les mails créés par la Matrice sont mis à jour (règle inchangée).
+ * COMPORTEMENT ACTUEL SOUMIS À DÉCISION D'ANTHONY : retirer le dernier rattachement d'un contact lié uniquement à une structure
+ * inactive le rend « sans structure » : onlyInactive([]) = false, il est donc créé dans Brevo avec la liste (retour en prospection),
+ * immédiatement. Non modifié ici (CONVENTIONS §6.15 ; test « COMPORTEMENT ACTUEL » de tests/static/brevo-regles.mjs).
  *
  * Fonction propre à chaque structure (contact_structures.role) : LUE et conservée structure par structure (fonctionsParStructure),
  * mais PAS ENCORE TRANSMISE à Brevo : la représentation (un champ par structure, un champ combiné, des listes…) n'est pas décidée.
