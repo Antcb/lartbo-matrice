@@ -4,13 +4,33 @@ Préparé le 06/11/2026, mis à jour le 08/11/2026 (décisions d'Anthony). **Auc
 donnée de production.** Rien n'est lancé avant son message « je suis devant l'écran ». Étapes **web uniquement** pour Anthony
 (aucune installation, aucun terminal), une à la fois. Durée visée : 40 min. Ne bloque ni Apple Mail ni la v1.60.5.
 
-## 1. Deux comptes de test à désigner (indispensables, et suffisants)
+## 1. Deux comptes Gmail gratuits à désigner (indispensables, et suffisants)
 | Compte | Rôle | Pourquoi un seul compte ne suffit pas |
 |---|---|---|
 | **T1** | joue la boîte **anthony@** (script de prospection) **et** le compte d'Anthony dans l'application de test : le script n'accepte une action de boîte que si l'identité signée par le serveur = le compte qui l'exécute (règle de la v1.60.4) | — |
 | **T2** | joue les **correspondants** (organisateurs) ; alias `T2+salle@…`, `T2+copie@…` pour les copies | un message de T1 vers un alias de T1 reste un message **envoyé par T1** : il ne peut tester ni une réponse reçue (rattachement, relance suspendue, absence automatique), ni une réponse écrite dans un autre logiciel |
 
-Comptes Gmail gratuits possibles. Anthony les crée ou les désigne ; je n'en crée aucun ; aucun mot de passe dans la conversation.
+**Deux comptes Gmail gratuits suffisent (aucun compte Google Workspace n'est nécessaire).** Anthony les crée ou les désigne ; je
+n'en crée aucun ; aucun mot de passe dans la conversation.
+
+| Fonction utilisée par l'essai | Gmail gratuit | Remarque |
+|---|---|---|
+| Projet Apps Script, propriétés du script, déploiement en **application Web** (exécuter en tant que : moi · accès : tout le monde) | oui | adresse `…/macros/s/…/exec`, acceptée par l'application comme celle d'un compte Workspace (`…/a/macros/<domaine>/…`) |
+| Service avancé **Gmail API** (conversations, historique, libellés, brouillons, envoi), `GmailApp`, `DriveApp`, `UrlFetchApp`, `LockService`, `CacheService` | oui | — |
+| Libellés, archive, corbeille, lu / non lu, réponse automatique d'absence (T2) | oui | réglages Gmail ordinaires |
+| Quotas Apps Script (compte gratuit) | largement suffisants | lectures Gmail 20 000 / jour, appels URL Fetch 20 000 / jour, propriétés 50 000 / jour, 6 min par exécution ([quotas Apps Script](https://developers.google.com/apps-script/guides/services/quotas)) ; l'essai : une synchronisation toutes les 5 min (≈ 290 appels / jour, ≤ 30 conversations lues chacun) et quelques dizaines de mails ; aucun déclencheur Apps Script (quota de 90 min / jour sans objet) |
+
+**Seuls accès réellement nécessaires.** T1 : créer un projet Apps Script, y ajouter le service Gmail API, deux propriétés
+(`WEBHOOK_SECRET`, `CLE_BOITE`), déployer en application Web et accepter l'autorisation demandée par Google (lire, modifier,
+rédiger et envoyer des mails ; lire les fichiers Drive ; se connecter à un service externe) — l'avertissement « application non
+validée » est normal pour un script personnel. T2 : sa boîte Gmail, son Drive (deux PDF, un partagé avec T1), une réponse
+d'absence pour le scénario 11. Aucune console d'administration, aucun projet Google Cloud ni facturation, aucune vérification
+d'application par Google.
+
+**Ce qu'un compte gratuit ne peut pas montrer** (sans incidence sur le code) : les **règles d'administration du domaine**
+lartboristerie.com (Google Workspace d'anthony@) — par exemple un administrateur qui interdirait l'accès « tout le monde » aux
+applications Web ou les scripts non validés. Elles ne peuvent se vérifier que sur anthony@ lui-même, à l'activation en production
+(« Tester le script » dans Réglages › Prospection, puis une synchronisation), sans compte de test supplémentaire.
 
 ## 2. Une seule demande d'autorisation (tout ce que la séance nécessite)
 Anthony autorise en une fois, **sur le projet Supabase de TEST uniquement** :
