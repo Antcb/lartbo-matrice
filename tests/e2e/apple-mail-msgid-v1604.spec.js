@@ -418,3 +418,47 @@ test('v1.60.4 relecture 4 : import partiel (journal refusé, pièce manquante) �
   expect(s.files.map(f => f.key).sort()).toEqual(['msgid:' + ID, 'msgid:' + ID + ':pj:1']); expect(s.logs).toHaveLength(1); expect(s.up).toBe(3);
   expectClean(ctx);
 });
+
+test('v1.60.4 relecture B2 : ancien .eml illisible — vérification incomplète annoncée avant tout rattachement ; échec relu ensuite (non mémorisé)', async ({ page }) => {
+  const ctx = await openSuivi(page, { prospect: FOUND(MULTI()), main: ABSENT });
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
+    const f = { id: 'pf-ancien', prospect_id: 'pr-1', name: 'Devis fictif.eml', path: 'pr-1/1700000000000_Devis_fictif.eml', mime: 'message/rfc822', size: 10, created_at: '2026-11-04T15:00:00Z' };
+    window.__DB.prospect_files.push({ ...f }); S.db.prospect_files.push({ ...f }); touch('prospect_files'); window.__STORED = {}; });   // téléchargement en échec
+  await dropLink(page);
+  const dlg = page.locator('dialog.ask');
+  await dlg.getByRole('button', { name: 'Joindre au suivi' }).click();
+  await expect(dlg).toContainText('Vérification incomplète');
+  await expect(dlg).toContainText('1 fichier .eml joint avant la v1.60.4 illisible pour le moment');
+  await dlg.getByRole('button', { name: 'Annuler' }).click();
+  let s = await state(page);
+  expect(s.up).toBe(0); expect(s.files).toEqual([]);
+  // le fichier redevient lisible : l'échec n'a pas été mémorisé, le mail est reconnu comme déjà joint, rien n'est ajouté
+  await page.evaluate(raw => { window.__STORED = { 'pr-1/1700000000000_Devis_fictif.eml': raw }; }, MULTI());
+  await dropLink(page);
+  await expect(page.locator('.toast').last()).toContainText('déjà joint à ce suivi (avant la v1.60.4)');
+  s = await state(page);
+  expect(s.up).toBe(0);
+  // relu à chaque vérification tant qu'il était illisible (jamais mémorisé en échec)
+  expect(await page.evaluate(() => window.__downloads.filter(p => p === 'pr-1/1700000000000_Devis_fictif.eml').length)).toBeGreaterThanOrEqual(2);
+  expectClean(ctx);
+});
+
+test('v1.60.4 relecture B2 : plus de 300 anciens .eml — vérification incomplète annoncée (.eml déposé), jamais joint sans accord', async ({ page }) => {
+  const ctx = await openSuivi(page, { prospect: ABSENT, main: ABSENT });
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js'); window.__STORED = {};
+    for (let i = 0; i < 301; i++){ const f = { id: 'pf-a' + i, prospect_id: 'pr-1', name: `ancien-${i}.eml`, path: `pr-1/ancien-${i}.eml`, mime: 'message/rfc822', size: 10,
+      created_at: new Date(Date.UTC(2026, 0, 1) + i * 60000).toISOString() };
+      window.__DB.prospect_files.push({ ...f }); S.db.prospect_files.push({ ...f }); window.__STORED[f.path] = `Message-ID: <ancien-${i}@exemple-fictif.fr>\r\n\r\nx`; }
+    touch('prospect_files'); });
+  await page.evaluate(raw => { const dt = new DataTransfer(); dt.items.add(new File([raw], 'Devis fictif.eml', { type: '' }));
+    document.querySelector('.log-attach [data-drop]').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })); }, MULTI());
+  const dlg = page.locator('dialog.ask');
+  await expect(dlg).toContainText('Vérification incomplète');
+  await expect(dlg).toContainText('1 fichier .eml ancien non vérifié (plus de 300)');
+  await dlg.getByRole('button', { name: 'Annuler' }).click();
+  await expect(dlg).toContainText('non joint : vérification incomplète');
+  await dlg.getByRole('button', { name: 'Fermer' }).click();
+  const s = await state(page);
+  expect(s.up).toBe(0); expect(s.files).toEqual([]);
+  expectClean(ctx);
+});

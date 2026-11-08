@@ -2,7 +2,7 @@
 // Le navigateur n'a plus le code secret des scripts : il appelle cette fonction avec la session de l'utilisateur ; la fonction vérifie
 // que c'est un compte de l'équipe (is_team), lit l'adresse du script et le code secret côté serveur, et transmet la demande.
 //   POST { target: 'main' | 'prospect', action, payload } → réponse du script ({ ok, … }) ou { ok: false, error: 'message français' }
-// (v1.60.4) Le relais transmet aussi l'adresse du compte connecté, signée (identite.ts). Les appels de la base (dossier Drive d'une date…)
+// (v1.60.4) Le relais transmet aussi l'adresse du compte connecté, signée avec une clé dédiée jamais transmise (identite.ts). Les appels de la base (dossier Drive d'une date…)
 // et de la fonction pennylane passent toujours directement, côté serveur.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 import { outgoingBody } from './identite.ts';
@@ -45,7 +45,9 @@ Deno.serve(async (req) => {
     if (!scriptUrlOk(url)) return json({ ok: false, error: 'L’adresse du script Google enregistrée dans les Réglages n’est pas une adresse de script publiée (…/exec).' });
     // le code secret, l'action et l'identité signée passent en dernier : rien dans « payload » ne peut les remplacer
     const payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload) ? body.payload : {};
-    const outgoing = await outgoingBody(payload, body.action, secret, email);
+    // clé DÉDIÉE de signature de l'identité (schéma privé, migration v1.60.4 cle_boite) : jamais transmise, seule la signature part
+    const { data: signKey } = await admin.rpc('import_secret', { k: 'mailbox_sign_key' });
+    const outgoing = await outgoingBody(payload, body.action, secret, email, String(signKey || ''));
     const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), LIMIT_MS);
     let r: Response;
     try {
