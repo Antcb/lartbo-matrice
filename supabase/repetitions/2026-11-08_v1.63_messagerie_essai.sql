@@ -10,10 +10,18 @@ begin if not coalesce(cond, false) then raise exception 'ÉCHEC : %', essai; end
 
 -- ── Données fictives ───────────────────────────────────────────────────────────────────────────────────────────────
 insert into app_users values ('equipe@example.com'), ('collegue@example.com');
--- registre vide après la migration (aucune adresse écrite) : boîte fermée à tous
+-- état de la production reproduit (titulaire inscrit, RLS du registre active sans règle) : la migration messagerie n'y a rien changé
+do $$ begin
+  perform pg_temp.ok((select count(*) from private.mailbox_owners) = 1 and (select email from private.mailbox_owners where mailbox = 'anthony') = 'anthony@lartboristerie.com',
+    'registre des titulaires conservé tel quel (une ligne, non écrasée)');
+  perform pg_temp.ok((select relrowsecurity from pg_class where oid = 'private.mailbox_owners'::regclass) and not exists (select 1 from pg_policies where schemaname = 'private' and tablename = 'mailbox_owners'),
+    'registre : RLS toujours active, aucune règle ajoutée');
+end $$;
+-- registre vidé DANS la transaction annulée : boîte fermée à tous
+delete from private.mailbox_owners;
 do $$ begin
   perform set_config('request.jwt.claims', '{"email":"equipe@example.com"}', true);
-  perform pg_temp.ok((select count(*) from private.mailbox_owners) = 0 and not public.is_mailbox_owner('anthony'), 'titulaire non inscrit : aucune adresse écrite par la migration, boîte fermée à tous');
+  perform pg_temp.ok(not public.is_mailbox_owner('anthony'), 'titulaire non inscrit : boîte fermée à tous');
   perform set_config('request.jwt.claims', '', true);
 end $$;
 -- titulaire fictif inscrit comme dans la séance (une ligne, sur autorisation) ; transaction annulée à la fin

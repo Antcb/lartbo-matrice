@@ -49,7 +49,9 @@ Anthony autorise en une fois, **sur le projet Supabase de TEST uniquement** :
 8. retour arrière après l'essai : ligne `private.sync_urls` retirée (tables laissées, vides d'effet).
 
 ## 3. Ordre de publication OBLIGATOIRE (essai puis production)
-0. **Clé de la boîte** `2026-11-08_v1.60.4_cle_boite.sql` (publiée avec Apple Mail v1.60.4 ; prérequis vérifié par la migration) ;
+0. **Déjà en production (v1.60.4, 08/11)** : clé de la boîte `2026-11-08_v1.60.4_cle_boite.sql`, registre et protection de l'adresse
+   `2026-11-08_v1.60.4_titulaire.sql` + `_titulaire_rls.sql` (RLS du registre, appliquée à la main), titulaire inscrit
+   (`anthony` → anthony@lartboristerie.com) ; la migration messagerie les exige et n'y touche pas ;
 1. **Migration** messagerie (avant la fusion : l'interface écrit `prospect_logs.gmail_message_id` ; si la colonne manquait, la ligne serait
    écrite sans l'identifiant — jamais perdue — mais reconnue seulement par le jour et le texte) ;
 2. **interface** (fusion de la branche, après la v1.60.4 Apple Mail) ;
@@ -57,7 +59,7 @@ Anthony autorise en une fois, **sur le projet Supabase de TEST uniquement** :
    boîte en plus) des deux côtés ; entre les deux déploiements, la recherche par Message-ID (Apple Mail) sur anthony@ est refusée
    (« signature invalide », rien consulté) — à faire dans la même minute ;
 4. **script `Prospection.gs`** redéployé (« ping » doit renvoyer `v1.61.0` ; propriété `CLE_BOITE` déjà en place depuis la v1.60.4) ;
-   inscription du titulaire (`private.mailbox_owners`, adresse de connexion d'Anthony = compte qui exécute le script) ;
+   (titulaire déjà inscrit en production) ;
 5. en dernier, **`private.sync_urls`** (active la synchronisation planifiée).
 En production : même ordre, sur autorisation séparée après l'essai.
 

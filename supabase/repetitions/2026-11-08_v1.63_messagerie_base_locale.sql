@@ -1,6 +1,8 @@
 -- v1.63 — BASE LOCALE JETABLE (PostgreSQL 16 nu, jamais Supabase, jamais la production) pour essayer la migration de la messagerie.
 -- Usage : createdb essai ; psql -d essai -f ce_fichier ; psql -d essai -f supabase/migrations/2026-10-27_v1.47_secrets.sql ;
---         psql -d essai -f supabase/migrations/2026-11-08_v1.60.4_cle_boite.sql ;
+--         psql -d essai -f supabase/migrations/2026-11-08_v1.60.4_cle_boite.sql ; psql -d essai -f supabase/migrations/2026-11-08_v1.60.4_titulaire.sql ;
+--         psql -d essai -f supabase/migrations/2026-11-08_v1.60.4_titulaire_rls.sql ;
+--         psql -d essai -c "insert into private.mailbox_owners values ('anthony', 'anthony@lartboristerie.com')"   (état de la production) ;
 --         psql -d essai -f supabase/migrations/2026-11-06_v1.61_messagerie.sql   (DEUX fois : rejouable)
 --         psql -d essai -f supabase/repetitions/2026-11-08_v1.63_messagerie_essai.sql
 -- Tables réduites aux colonnes utilisées par la migration (relevées dans supabase/schema.sql et les migrations v1.7, v1.18, v1.20, v1.22).
