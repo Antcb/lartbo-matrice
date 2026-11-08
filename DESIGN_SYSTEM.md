@@ -115,7 +115,7 @@ Graisses autorisées : 400, 500, 600, 700 (800 réservé aux gros chiffres `.sta
 | Pages publiques (`.fiche-main`) | max 820 px |
 | Fenêtre standard (`dialog`) | min(760 px, 94vw) |
 | Fenêtre large (`dialog.wide`) | min(1000 px, 96vw) |
-| Fenêtre mail (`dialog.mail`) | min(1100 px, 96vw), hauteur min(94vh, 980 px) |
+| Fenêtre mail (`dialog.mail`) | min(1100 px, 96vw), hauteur min(94vh, 980 px) ; champs en `.mail-grid` (v1.60.4) : une ligne par champ, libellé à gauche (colonne de 120 px) et champ à droite sur ordinateur, libellé au-dessus sur téléphone (≤ 760) ; menus, saisies, date et destinataires à la hauteur `--h` (`--h-touch` au doigt et sur téléphone) |
 | Formulaires « clé / valeur » (`.kv-grid`, `.bt-form`) | max 520 px |
 | Résumé de budget (`.budget-sum`) | max 720 px — [CORRECTION] cadre `.tbl-wrap` à 760 px : aligner à 720 |
 Règle [NOUVELLE] : aucune largeur maximale en style inline (`style="max-width:…"`) ; créer ou réutiliser une classe.
@@ -208,7 +208,7 @@ Ordre des classes : `btn [sm] [variante]` (ex. `btn sm primary`). Interdit : red
 | Section repliable | `fold(key, title, inner, {open, count})` | `js/ui/bits.js` |
 | Filtres année / artistes | `filterBar()`, `projPicker()`, `inactiveToggle()` | `js/ui/bits.js`, `js/ui/projpicker.js` |
 | Pastilles de statut / pôle / tag | `stBadge`, `stSelect`, `pstBadge`, `deptBadge`, `tag`, `projTag` | `js/ui/bits.js` |
-| Champ modifiable dans un tableau | `cIn`, `cSel`, `cChk`, `cAc`, `cUrl`, `projChips` | `js/ui/cells.js` |
+| Champ modifiable dans un tableau | `cIn`, `cSel`, `cChk`, `cAc`, `cUrl`, `projChips` ; `cSelText` (v1.60.4) : choix dont le libellé choisi reste lisible en entier sur deux lignes au plus (liste native transparente posée dessus, nom complet en info-bulle et nom accessible) — « Payé par » du budget | `js/ui/cells.js` |
 | Fenêtre de formulaire | `openModal({title, fields, values, onSave, onDelete, deleteAsk, …})`, `field()` | `js/ui/modal.js` |
 | Fenêtre de dialogue (§9.1, Q20) — partout depuis la v1.48 | `ask({title, text, actions, cancel})` → valeur ou `null` ; `confirmAsk(titre, texte, action, {danger})` → booléen ; `askText({title, label, type, check…})` → texte ou `null` (mot de passe masqué) ; `inform({title, text, value})` ; `copyText(texte, message, titre)` | `js/ui/dialog.js` |
 | Erreur sous un champ (§9.1, Q23) — en place v1.48 dans la fenêtre de saisie | `<p class="help err">` sous le champ + classe `bad` sur le champ (texte et bordure `--danger`) | `css/styles.css` |
