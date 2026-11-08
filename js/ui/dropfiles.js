@@ -3,6 +3,8 @@
  * (dans le même bloc, champ, fenêtre…) est envoyé à ce bouton, comme si on l'avait choisi.
  * Les zones qui ont déjà leur propre glisser-déposer (pièces jointes des suivis, photo, import) ne sont pas touchées.
  */
+import { mailLinkIds, msgIdDomain } from '../eml.js';
+
 const OWN = '[data-budget-drop],[data-budget-line],[data-drop],[data-drop-form],[data-members-drop],[data-photo-drop]';
 // on remonte jusqu'au premier de ces blocs au plus : le fichier va au bouton le plus proche
 const STOP = 'dialog, .panel, section, form, .suivi-block';
@@ -28,12 +30,21 @@ const ext = n => (String(n || '').match(/\.([a-z0-9]{1,8})$/i) || [])[1]?.toLowe
  * Relevé d'un dépôt, lu PENDANT l'événement (les données du glisser ne sont plus lisibles après) et sans donnée personnelle :
  * types annoncés, nombre de fichiers, extension, taille et type de chacun, et seulement le SCHÉMA des liens (message:, file:, https:…).
  */
-export function dropInfo(e, files = droppedFiles(e)){
+export function dropInfo(e, files = droppedFiles(e), ids = dropMailIds(e)){
   const dt = e.dataTransfer; let uri = '';
   try { uri = dt?.getData?.('text/uri-list') || ''; } catch {}
   return {types: [...(dt?.types || [])], files: dt?.files?.length || 0, items: [...(dt?.items || [])].map(i => `${i.kind}:${i.type || '?'}`),
     liens: [...new Set(uri.split(/\r?\n/).filter(l => l && !l.startsWith('#')).map(l => (l.match(/^([a-z][\w+.-]*):/i) || [])[1]?.toLowerCase() || '?'))],
+    // (v1.60.4) lien « message: » d'Apple Mail : seulement « Message-ID présent : oui/non » et le DOMAINE de l'identifiant, jamais l'identifiant
+    'Message-ID présent': ids.length ? 'oui' : 'non', domaines: [...new Set(ids.map(msgIdDomain))],
     lus: files.map(f => ({ext: ext(f.name), taille: f.size, type: f.type || ''}))};
+}
+/** Identifiants de message (Message-ID valides) des liens « message: » du glisser : liste d'adresses et texte, lus pendant l'événement */
+export function dropMailIds(e){
+  const dt = e.dataTransfer; let uri = '', txt = '';
+  try { uri = dt?.getData?.('text/uri-list') || ''; } catch {}
+  try { txt = dt?.getData?.('text/plain') || ''; } catch {}
+  return mailLinkIds(uri, txt);
 }
 const why = err => err?.name === 'NotFoundError' ? 'le fichier fourni par l’application d’origine n’existe plus (fichier temporaire effacé avant la lecture)'
   : err?.name === 'NotReadableError' ? 'le fichier fourni par l’application d’origine a été modifié ou n’est pas lisible par le navigateur'
@@ -55,25 +66,29 @@ export function noteDrop(info, problem = ''){
 }
 /**
  * Dépôt complet : fichiers lus et copiés en mémoire, relevé de diagnostic, message clair si rien n'est joignable
- * ou si un fichier n'a pas pu être lu. Doit être appelé de façon synchrone dans le gestionnaire « drop ».
+ * ou si un fichier n'a pas pu être lu. mailLinks (v1.60.4, pièces jointes d'un suivi) : un lien « message: » seul rend ses
+ * Message-ID (msgIds) au lieu du message « Rien à joindre », et chaque dépôt est noté pour diagnostic. Doit être appelé de façon synchrone dans le gestionnaire « drop ».
  * Aucune adresse transmise par le glisser (message:, file:…) n'est jamais récupérée par le réseau.
  */
-export function takeDropped(e){
-  const raw = droppedFiles(e), info = dropInfo(e, raw);
+export function takeDropped(e, {mailLinks = false} = {}){
+  const raw = droppedFiles(e), ids = dropMailIds(e), info = dropInfo(e, raw, ids);
   if (!raw.length){
     noteDrop(info, 'aucun fichier');
+    // (v1.60.4) zone qui sait retrouver le message dans les boîtes Google (pièces jointes d'un suivi) : identifiants rendus, sans message ici
+    if (mailLinks && ids.length) return Promise.resolve({files: [], unreadable: [], msgIds: ids});
     import('../utils.js').then(u => u.toast(info.liens.includes('message') ? ONLY_MAIL_LINK : NOTHING_DROPPED, true));
-    return Promise.resolve({files: [], unreadable: []});
+    return Promise.resolve({files: [], unreadable: [], msgIds: []});
   }
   return keepDropped(raw).then(async r => {
     info.copies = r.files.length; info.illisibles = r.unreadable.map(u => u[2]);
-    noteDrop(info, r.unreadable.length ? 'fichier illisible' : '');
+    // (v1.60.4) pièces jointes d'un suivi : chaque dépôt est noté (types reçus, nombre de fichiers, Message-ID oui/non + domaine), sans contenu
+    noteDrop(info, r.unreadable.length ? 'fichier illisible' : mailLinks ? 'reçu' : '');
     if (r.unreadable.length){
       const {inform} = await import('./dialog.js');
       await inform({title: r.files.length ? `${r.unreadable.length} fichier${r.unreadable.length > 1 ? 's' : ''} non lu${r.unreadable.length > 1 ? 's' : ''}` : 'Rien n’a été joint',
         text: r.unreadable.map(([n, m]) => `✗ ${n} — ${m}`).join('\n') + '\n\nLe détail du dépôt est noté dans la console du navigateur et transmis pour diagnostic.'});
     }
-    return r;
+    return {...r, msgIds: []};
   });
 }
 

@@ -98,15 +98,20 @@ test('v1.60.3 parcours Apple Mail : message glissé (fichier .eml temporaire + l
   expectClean(ctx);
 });
 
+// v1.60.4 : sur un suivi, un lien message: VALIDE n'est plus seulement signalé : le message est cherché dans les boîtes Google
+// (tests/e2e/apple-mail-msgid-v1604.spec.js). Ici les scripts Google ne sont pas installés (données fictives) : recherche impossible,
+// dite clairement ; rien n'est envoyé ni ouvert ; diagnostic « Message-ID présent : oui » avec le domaine seulement.
 test('v1.60.3 parcours Apple Mail : seul le lien message: transmis — message clair, rien envoyé, aucun fetch, diagnostic noté', async ({ page }) => {
   const ctx = await openSuivi(page);
   await dropFromMail(page, { withFile: false });
-  await expect(page.locator('.toast').last()).toContainText('qu’un lien vers le message');
-  await expect(page.locator('.toast').last()).not.toContainText('Bureau');
+  const dlg = page.locator('dialog.ask');
+  await expect(dlg).toContainText('Le message n’a pas pu être cherché dans les boîtes Google. Rien n’a été joint.');
+  await expect(dlg).not.toContainText('Bureau');
+  await dlg.getByRole('button', { name: 'Fermer' }).click();
   expect(await page.evaluate(() => window.__up.length)).toBe(0);
   expect(ctx.urls.filter(u => /^(message|file):/i.test(u))).toEqual([]);
   const row = await page.evaluate(() => window.__DB.client_errors.find(r => r.message === 'dépôt : aucun fichier'));
-  expect(JSON.parse(row.stack)).toMatchObject({ files: 0, liens: ['message'], lus: [] });
+  expect(JSON.parse(row.stack)).toMatchObject({ files: 0, liens: ['message'], 'Message-ID présent': 'oui', domaines: ['example.com'], lus: [] });
   expect(row.stack).not.toContain('id-fictif');
   expectClean(ctx);
 });

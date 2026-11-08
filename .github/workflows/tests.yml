@@ -32,6 +32,8 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Contrôles statiques (syntaxe, imports, versions, fenêtres natives, secrets)
         run: node static/check.mjs
+      - name: Message glissé depuis Apple Mail (lecture du Message-ID, action en lecture seule des scripts Google)
+        run: node static/message-id.mjs
       - name: Syntaxe des fonctions serveur (une fonction qui ne démarrerait pas une fois déployée)
         run: node --no-warnings static/fonctions-syntaxe.mjs
       - name: Règles de la synchronisation Pennylane (fausses données, aucun appel)

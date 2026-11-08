@@ -5,15 +5,16 @@
  * tâche Booking de relance à J+10.
  * « Relance » : réponse dans le même fil Gmail (l'historique reste), journal, nouvelle tâche de relance.
  */
-import { confirmAsk } from './ui/dialog.js';
+import { ask, confirmAsk } from './ui/dialog.js';
 import { render } from './app.js';
-import { contentTypeOf, insert, purgeStored, remove, save, sb, signedUrl, typedFile } from './data.js';
+import { contentTypeOf, emlEntry, insert, mailAttachedTo, purgeStored, remove, save, sb, signedUrl, typedFile, uploadFiles } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
 import { PROSPECT_TAGS, attOk, attSizeHTML, callGoogle, callScript, fill, todoOk, tplLabel, tplProjects } from './mail.js';
 import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, placeOfEvent, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName } from './selectors.js';
 import { S, touch } from './state.js';
 import { geocode } from './geo.js';
 import { CONFIRMED_PROD } from './constants.js';
+import { MSG_RAW_MAX, msgIdOk, readEml } from './eml.js';
 import { recipientsField, syncChips } from './ui/recipients.js';
 import { dateInput } from './ui/datefield.js';
 import { openModal } from './ui/modal.js';
@@ -426,4 +427,90 @@ export async function setSuiviPlace(pid, pl){
     if (g){ patch.lat = g.lat; patch.lng = g.lng; patch.department = patch.department || g.department_code || null; }
   }
   if (await save('prospects', pid, patch)) toast(pl ? 'Lieu du suivi enregistré' : 'Lieu du suivi retiré');
+}
+
+/*
+ * ─── Message glissé depuis Apple Mail sans fichier (v1.60.4) ───
+ * Mail (Mac) ne transmet parfois qu'un lien « message:%3C<Message-ID>%3E ». L'identifiant (validé : eml.js msgIdOk) sert à retrouver
+ * CE message dans les boîtes Google, par le circuit serveur existant (relais script-google : compte de l'équipe vérifié, code secret
+ * ajouté côté serveur) : action en LECTURE SEULE « mail_by_msgid » du script de prospection (anthony@) puis du script principal
+ * (production@). Le script exige une correspondance exacte de l'en-tête Message-ID et ne renvoie que ce message.
+ * Rattachement EXPLICITE au suivi cible après confirmation, par le chemin habituel (uploadFiles : pièce jointe + entrée « Mail » au
+ * journal), clé anti-doublon « msgid:<Message-ID> » sur la pièce jointe et sur l'entrée du journal.
+ */
+const MAILBOXES = [
+  {label: 'anthony@', call: id => callProspect('mail_by_msgid', {message_id: id}),
+    outdated: 'script de prospection pas à jour (Réglages › Prospection : « Copier le code à jour », coller dans le script d’anthony@, puis nouvelle version)'},
+  {label: 'production@', call: id => callScript('mail_by_msgid', {message_id: id}),
+    outdated: 'script Google pas à jour (Réglages › Google : « Copier le code à jour », coller dans Code.gs de production@, puis nouvelle version)'},
+];
+const PENDING_MSG = new Set();   // un même message en cours de rattachement n'est pas traité deux fois (double dépôt)
+
+/** Cherche le message dans anthony@ puis production@ : {mail} si trouvé, sinon {tried: [[boîte, résultat]]} */
+export async function findMailByMsgId(id){
+  const tried = [];
+  for (const box of MAILBOXES){
+    let r;
+    try { r = await box.call(id); }
+    catch (err){ tried.push([box.label, /Action inconnue|pas à jour/i.test(err.message || '') ? box.outdated : err.message || 'recherche impossible']); continue; }
+    const m = r?.message;
+    if (r?.found === true && m && m.message_id === id && typeof m.raw === 'string' && m.raw.length > 0 && m.raw.length <= MSG_RAW_MAX)
+      return {mail: {...m, box: box.label}, tried};
+    tried.push([box.label, r?.found === false ? 'absent' : 'réponse du script illisible']);
+  }
+  return {tried};
+}
+
+const fileTitle = s => String(s || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100) || 'message';
+
+/** Message introuvable (ou boîtes inaccessibles) : message clair, rien de joint ; parcours le plus court sans Bureau = noter au journal */
+async function mailNotFound(p, tried){
+  const searched = tried.filter(([, r]) => r === 'absent');
+  const lines = tried.map(([b, r]) => `${b} : ${r === 'absent' ? 'message absent' : r}`);
+  const head = searched.length === tried.length ? 'Message introuvable dans les boîtes Google (compte de Mail non relié) : ce message n’est ni dans anthony@ ni dans production@. Rien n’a été joint.'
+    : searched.length ? 'Message introuvable dans les boîtes Google consultées (compte de Mail non relié ?). Rien n’a été joint.'
+    : 'Le message n’a pas pu être cherché dans les boîtes Google. Rien n’a été joint.';
+  const choice = await ask({title: searched.length ? 'Message introuvable' : 'Recherche impossible',
+    text: [head, ...lines, 'Pour garder une trace tout de suite, sans enregistrer de fichier : note l’échange dans le journal de ce suivi (type « Mail »).'].join('\n'),
+    actions: [{value: 'journal', label: 'Noter dans le journal'}], cancel: 'Fermer'});
+  if (choice !== 'journal') return;
+  const form = document.querySelector(`form[data-logform="${CSS.escape(p.id)}"]`); if (!form) return;
+  form.elements.kind.value = 'Mail'; form.elements.kind.dispatchEvent(new Event('change', {bubbles: true}));
+  form.elements.body.focus();
+}
+
+/** Un message (Message-ID validé) : contrôle de doublon, recherche, confirmation explicite, rattachement */
+async function attachOneMailLink(p, id){
+  if (!msgIdOk(id)) return toast('Lien de Mail refusé : l’identifiant du message n’a pas la forme attendue. Rien n’a été joint.', true);
+  const key = 'msgid:' + id;
+  if (PENDING_MSG.has(key)) return;
+  PENDING_MSG.add(key);
+  try {
+    const known = async () => { const where = await mailAttachedTo(key); if (!where) return false;
+      toast(where === p.id ? 'Ce message est déjà joint à ce suivi : rien n’a été ajouté.'
+        : `Ce message est déjà joint au suivi « ${prospectTitle(byId('prospects', where) || {name: 'autre suivi'})} » : rien n’a été ajouté.`, true);
+      return true; };
+    if (await known()) return;
+    toast('Recherche du message dans les boîtes Google…');
+    const {mail, tried} = await findMailByMsgId(id);
+    if (!mail) return mailNotFound(p, tried);
+    const file = new File([mail.raw], fileTitle(mail.subject) + '.eml', {type: 'message/rfc822'});
+    let m; try { m = await readEml(file); } catch { m = null; }
+    // double contrôle : le contenu reçu porte bien CE Message-ID
+    if (!m || m.messageId !== id) return toast('Le message renvoyé par le script Google ne correspond pas au lien de Mail : rien n’a été joint.', true);
+    if (emlEntry(p.id, m)?.exists) return toast('Ce mail est déjà au journal de ce suivi (ajouté autrement) : rien n’a été ajouté.', true);
+    const att = m.attachments.length ? `\n${m.attachments.length} pièce${m.attachments.length > 1 ? 's' : ''} jointe${m.attachments.length > 1 ? 's' : ''} du mail : ${m.attachments.map(a => a.name).join(', ')}` : '';
+    const ok = await confirmAsk('Joindre ce message', `Joindre ce message au suivi « ${prospectTitle(p)} » ?\n${mail.subject || '(sans objet)'} · ${mail.from || 'expéditeur inconnu'} · ${fmtDate(mail.date) || 'date inconnue'}${att}\nTrouvé dans la boîte ${mail.box}. Le mail original (.eml) et ses pièces jointes seront ajoutés au suivi, avec une entrée au journal.`, 'Joindre au suivi');
+    if (!ok) return toast('Rien n’a été joint.');
+    // même chemin qu'un .eml déposé : la clé est revérifiée en base juste avant l'envoi (joint entre-temps depuis un autre poste)
+    await uploadFiles({prospect_id: p.id, import_key: key}, [file]);
+    render();
+  } finally { PENDING_MSG.delete(key); }
+}
+
+/** Dépôt d'un ou plusieurs liens « message: » sur les pièces jointes d'un suivi (events.js) : un message après l'autre, 5 au plus */
+export async function attachMailLinks(pid, ids){
+  const p = byId('prospects', pid); if (!p) return;
+  if (ids.length > 5) toast(`${ids.length} messages glissés : seuls les 5 premiers sont traités.`, true);
+  for (const id of ids.slice(0, 5)) await attachOneMailLink(p, id);
 }
