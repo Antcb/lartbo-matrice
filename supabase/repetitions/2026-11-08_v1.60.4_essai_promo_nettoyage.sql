@@ -1,17 +1,27 @@
 -- ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 -- v1.60.4 — NETTOYAGE EXACT du cas d'essai « ESSAI promo » (créé par 2026-11-08_v1.60.4_essai_promo_coproduction.sql).
 -- NON APPLIQUÉ par l'agent : à lancer par Anthony (éditeur SQL Supabase), sur la même base que le script de création.
--- Ne touche QUE les identifiants fixes e55a1000-0000-4000-a000-0000000000xx, après avoir vérifié qu'ils portent bien les données
--- d'essai (noms « ESSAI promo… ») : sinon arrêt, rien n'est supprimé. Une seule transaction : tout ou rien.
+-- Une seule transaction : TOUT ou RIEN. Corrigé après relecture indépendante (B1, 08/11/2026).
 --
--- Retiré : dépenses, lignes de Factures, notifications, clôture et son historique (result_closures) des 3 dates fictives, les 3 dates,
--- la structure fictive, le coproducteur fictif, l'artiste « ESSAI promo ».
--- Arrêt avec message (rien n'est supprimé) si, pendant l'essai, quelque chose de RÉEL s'est accroché aux données fictives :
---   tâche, suivi, contact, pièce jointe, spectacle, journal d'artiste, modèle de mail, autre date ou dépense d'un autre artiste
---   (à retirer d'abord dans l'application, ou à signaler) ; ligne de Factures émise (numéro, envoi, paiement, Pennylane) ou
---   versement de commission (protégés par la base : à examiner avant tout).
--- Gardé (journaux, aucun mécanisme d'exclusion) : finance_log (création / modifications / suppression de ces dates, identifiables
--- par leurs show_id fixes) et, si une date d'essai a été supprimée depuis l'application, son entrée dans show_deletions.
+-- PÉRIMÈTRE DE L'ESSAI (seuls objets supprimés) — identifiants fixes e55a1000-0000-4000-a000-0000000000xx :
+--   artiste …001 « ESSAI promo » · coproducteur …002 « ESSAI promo — coproducteur fictif » · structure …003 « ESSAI promo — salle
+--   fictive » · dates …011, …012, …013 (lieu « ESSAI promo — … », artiste …001) · dépenses …021 à …026 (sur ces dates, artiste …001)
+--   · historique de clôture result_closures de ces 3 dates (une clôture faite pendant l'essai est d'abord retirée).
+--
+-- VÉRIFICATIONS, dans l'ordre ; à la première qui échoue : ARRÊT, RIEN n'est supprimé ni modifié (message en clair) :
+--   1. identité : chaque identifiant fixe encore présent porte bien l'objet d'essai (nom / lieu / artiste ci-dessus) ; les dépenses
+--      …021 à …026 sont toujours sur une date d'essai et l'artiste d'essai ;
+--   2. AUCUNE AUTRE LIGNE de la base (schéma public, TOUTES les tables, inventaire fait à l'exécution — catalogue de la base, pas une
+--      liste écrite à la main) ne contient l'un de ces identifiants, dans quelque colonne que ce soit : clé étrangère (cascade,
+--      set null, restrict…) ou colonne sans clé (project_id, project_ids, show_id, structure_id, admin_structure_id,
+--      default_partner_id, spectacle_id…), tableau, texte ou JSON. Exemples arrêtés : modèle de mail de l'artiste d'essai
+--      (project_id ou project_ids), facture Pennylane à rattacher ou rattachement, tâche (show_id, project_id, project_ids,
+--      structure_id), journal ou membre d'artiste, événement ou contact de la structure, notification, spectacle, suivi, pièce
+--      jointe, ligne de Factures, versement, autre date ou dépense, artiste RÉEL dont la structure administrative ou le
+--      coproducteur par défaut serait un objet d'essai. Seules exceptions : les lignes du périmètre ci-dessus, et les JOURNAUX
+--      finance_log et show_deletions (jamais modifiés : ils gardent la trace de l'essai, identifiable par ses identifiants fixes).
+--   Puis suppression du périmètre, et contrôle final : plus aucune ligne hors journaux ne contient un identifiant d'essai.
+-- Hors du schéma public (stockage de fichiers, tâches planifiées) : rien n'est créé par l'essai ; rien n'y est vérifié ni touché.
 -- ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 begin;
 
@@ -21,65 +31,60 @@ declare
   part constant uuid := 'e55a1000-0000-4000-a000-000000000002';
   stru constant uuid := 'e55a1000-0000-4000-a000-000000000003';
   ids constant uuid[] := array['e55a1000-0000-4000-a000-000000000011', 'e55a1000-0000-4000-a000-000000000012', 'e55a1000-0000-4000-a000-000000000013']::uuid[];
-  n int; msg text := '';
+  lines constant uuid[] := array['e55a1000-0000-4000-a000-000000000021', 'e55a1000-0000-4000-a000-000000000022', 'e55a1000-0000-4000-a000-000000000023',
+                                 'e55a1000-0000-4000-a000-000000000024', 'e55a1000-0000-4000-a000-000000000025', 'e55a1000-0000-4000-a000-000000000026']::uuid[];
+  pattern constant text := '%e55a1000-0000-4000-a000-0000000000%';
+  t text; allowed text; n bigint; msg text := '';
 begin
-  -- 1. identité : chaque objet à identifiant fixe encore présent est bien un objet d'essai
+  -- 1. identité
   if exists (select 1 from projects where id = proj and name <> 'ESSAI promo')
      or exists (select 1 from partners where id = part and name <> 'ESSAI promo — coproducteur fictif')
      or exists (select 1 from structures where id = stru and name <> 'ESSAI promo — salle fictive')
-     or exists (select 1 from shows where id = any(ids) and (project_id is distinct from proj or venue not like 'ESSAI promo — %')) then
+     or exists (select 1 from shows where id = any(ids) and (project_id is distinct from proj or venue not like 'ESSAI promo — %'))
+     or exists (select 1 from budget_lines where id = any(lines) and (not (show_id = any(ids)) or show_id is null or project_id is distinct from proj)) then
     raise exception 'Nettoyage refusé : un identifiant d''essai porte d''autres données que l''essai. Rien n''est supprimé.';
   end if;
 
-  -- 2. rien de réel accroché aux données fictives (sinon arrêt, liste en clair)
-  select count(*) into n from shows where (project_id = proj or structure_id = stru or partner_id = part) and not (id = any(ids));
-  if n > 0 then msg := msg || format(' %s autre(s) date(s) liée(s) à l''artiste, la structure ou le coproducteur d''essai ;', n); end if;
-  select count(*) into n from budget_lines where (show_id = any(ids) or project_id = proj) and id::text not like 'e55a1000-0000-4000-a000-00000000002_';
-  if n > 0 then msg := msg || format(' %s dépense(s) ajoutée(s) pendant l''essai (supprime-les dans l''application ou confirme-les) ;', n); end if;
-  select count(*) into n from tasks where show_id = any(ids) or project_id = proj or proj = any(coalesce(project_ids, '{}'));
-  if n > 0 then msg := msg || format(' %s tâche(s) ;', n); end if;
-  select count(*) into n from prospects where structure_id = stru or project_id = proj or proj = any(coalesce(project_ids, '{}'));
-  if n > 0 then msg := msg || format(' %s suivi(s) ;', n); end if;
-  select count(*) into n from contact_structures where structure_id = stru;
-  if n > 0 then msg := msg || format(' %s contact(s) rattaché(s) à la structure d''essai ;', n); end if;
-  select count(*) into n from attachments where project_id = proj;
-  if n > 0 then msg := msg || format(' %s pièce(s) jointe(s) ;', n); end if;
-  if to_regclass('public.spectacles') is not null then
-    execute 'select count(*) from spectacles where project_id = $1' into n using proj;
-    if n > 0 then msg := msg || format(' %s spectacle(s) ;', n); end if;
-  end if;
-  select count(*) into n from projects where default_partner_id = part and id <> proj;
-  if n > 0 then msg := msg || format(' %s artiste(s) réel(s) avec le coproducteur d''essai par défaut ;', n); end if;
-  select count(*) into n from show_payments where show_id = any(ids)
-    and (sent_at is not null or paid_at is not null or nullif(btrim(invoice_number), '') is not null or nullif(btrim(pennylane_id), '') is not null);
-  if n > 0 then msg := msg || format(' %s ligne(s) de Factures émise(s) ou payée(s) (protégées par la base : à examiner) ;', n); end if;
+  -- 2. inventaire complet, à l'exécution : toute ligne de toute table du schéma public qui contient un identifiant d'essai
+  for t in select c.relname from pg_class c join pg_namespace s on s.oid = c.relnamespace
+           where s.nspname = 'public' and c.relkind in ('r', 'p') order by 1 loop
+    allowed := case t
+      when 'projects' then format('x.id = %L::uuid', proj)
+      when 'partners' then format('x.id = %L::uuid', part)
+      when 'structures' then format('x.id = %L::uuid', stru)
+      when 'shows' then format('x.id = any(%L::uuid[])', ids)
+      when 'budget_lines' then format('x.id = any(%L::uuid[])', lines)
+      when 'result_closures' then format('x.show_id = any(%L::uuid[])', ids)
+      when 'finance_log' then 'true'      -- journal : conservé tel quel
+      when 'show_deletions' then 'true'   -- journal : conservé tel quel
+      else 'false' end;
+    execute format('select count(*) from public.%I x where to_jsonb(x)::text like %L and not (%s)', t, pattern, allowed) into n;
+    if n > 0 then msg := msg || format(' %s : %s ligne(s) ;', t, n); end if;
+  end loop;
   if msg <> '' then
-    raise exception 'Nettoyage arrêté, rien n''est supprimé :%', msg;
+    raise exception 'Nettoyage arrêté, rien n''est supprimé ni modifié — des données hors de l''essai sont liées aux objets d''essai :% (à retirer d''abord dans l''application, ou à signaler)', msg;
   end if;
 
-  -- 3. résultat clôturé pendant l'essai : retiré (seul chemin autorisé : drapeau des fonctions close_result / reopen_result),
-  --    puis son historique — uniquement pour ces 3 dates fictives
+  -- 3. résultat clôturé pendant l'essai : retiré par le seul chemin autorisé (drapeau des fonctions close_result / reopen_result),
+  --    puis son historique — uniquement pour ces 3 dates
   perform set_config('matrice.result_rpc', 'on', true);
   update shows set result_closed_at = null, result_closed_by = null, result_closed = null where id = any(ids) and result_closed_at is not null;
   delete from result_closures where show_id = any(ids);
 
-  -- 4. lignes liées aux dates, puis dates, puis structure, coproducteur, artiste
-  delete from budget_lines where show_id = any(ids) or project_id = proj;
-  delete from show_payments where show_id = any(ids);
-  delete from notifications where show_id = any(ids);
+  -- 4. suppression du périmètre, rien d'autre (aucune cascade possible : l'inventaire n'a trouvé aucune ligne dépendante)
+  delete from budget_lines where id = any(lines);
   delete from shows where id = any(ids);
   delete from structures where id = stru;
   delete from partners where id = part;
   delete from projects where id = proj;
 
-  -- 5. bilan : plus aucune trace hors journaux
-  select (select count(*) from projects where id = proj) + (select count(*) from partners where id = part)
-       + (select count(*) from structures where id = stru) + (select count(*) from shows where id = any(ids))
-       + (select count(*) from budget_lines where show_id = any(ids) or project_id = proj)
-       + (select count(*) from show_payments where show_id = any(ids)) + (select count(*) from result_closures where show_id = any(ids))
-    into n;
-  if n <> 0 then raise exception 'Nettoyage incomplet (% ligne(s) restante(s)) : tout est annulé', n; end if;
-  raise notice 'ESSAI promo retiré (journal finance_log conservé).';
+  -- 5. contrôle final : plus aucune ligne hors journaux ne contient un identifiant d'essai
+  for t in select c.relname from pg_class c join pg_namespace s on s.oid = c.relnamespace
+           where s.nspname = 'public' and c.relkind in ('r', 'p') and c.relname not in ('finance_log', 'show_deletions') order by 1 loop
+    execute format('select count(*) from public.%I x where to_jsonb(x)::text like %L', t, pattern) into n;
+    if n > 0 then raise exception 'Nettoyage incomplet (% : % ligne(s)) : tout est annulé', t, n; end if;
+  end loop;
+  raise notice 'ESSAI promo retiré (journaux finance_log et show_deletions conservés).';
 end $$;
 
 commit;

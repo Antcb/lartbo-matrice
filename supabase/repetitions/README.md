@@ -30,7 +30,12 @@ ailleurs que sur le projet de test (contrôle de l'adresse des fonctions, absenc
   de coproduction passées (promotion : charge commune / L'ArtBo seule / coproducteur seul ; supportée ≠ payée), dépenses payées ;
   identifiants fixes ; aucune facture, aucune relance, aucun dossier Drive demandé. Résultats attendus (calcul à la main) en tête du
   fichier, vérifiés par `tests/e2e/essai-promo-v1604.spec.js`.
-- `2026-11-08_v1.60.4_essai_promo_nettoyage.sql` : retrait exact par identifiants fixes (refus si un identifiant porte autre chose,
-  ou si une donnée réelle s'y est accrochée) ; journal `finance_log` conservé.
+- `2026-11-08_v1.60.4_essai_promo_nettoyage.sql` : retrait exact par identifiants fixes. Arrêt sans rien toucher si un identifiant
+  porte autre chose, ou si UNE ligne de n'importe quelle table du schéma public (inventaire fait à l'exécution, toutes colonnes :
+  clés, colonnes sans clé, tableaux, texte, JSON) contient un identifiant d'essai hors du périmètre ; journaux `finance_log` et
+  `show_deletions` conservés. Rejoué après relecture (B1) sur une base jetable complète (toutes les migrations) : 21 cas
+  d'accrochage (modèles de mail, Pennylane, tâches, journal et membres d'artiste, événements, notifications, structure
+  administrative ou coproducteur par défaut d'un artiste réel, spectacle, contact, Factures, dépenses, suivi…) → arrêt, aucune
+  ligne modifiée ; cas propre et cas clôturé → seules les lignes d'essai supprimées.
 - Essayés sur une base PostgreSQL 16 locale jetable (base locale v1.60.3 + migration v1.60.3 + `on_show_confirmed` de la v1.51) :
   création, refus d'une seconde création, clôture puis nettoyage, arrêt du nettoyage sur une tâche ajoutée, artiste réel témoin intact.
