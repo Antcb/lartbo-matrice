@@ -7,7 +7,7 @@
  */
 import { ask, confirmAsk } from './ui/dialog.js';
 import { render } from './app.js';
-import { contentTypeOf, emlEntry, insert, mailAttachedTo, purgeStored, remove, save, sb, signedUrl, typedFile, uploadFiles } from './data.js';
+import { contentTypeOf, insert, mailAttachedTo, mailParts, mailPartsMissing, purgeStored, remove, save, sb, signedUrl, typedFile, uploadFiles } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
 import { PROSPECT_TAGS, attOk, attSizeHTML, callGoogle, callScript, fill, todoOk, tplLabel, tplProjects } from './mail.js';
 import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, placeOfEvent, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName } from './selectors.js';
@@ -486,21 +486,31 @@ async function attachOneMailLink(p, id){
   if (PENDING_MSG.has(key)) return;
   PENDING_MSG.add(key);
   try {
-    const known = async () => { const where = await mailAttachedTo(key); if (!where) return false;
-      toast(where === p.id ? 'Ce message est déjà joint à ce suivi : rien n’a été ajouté.'
-        : `Ce message est déjà joint au suivi « ${prospectTitle(byId('prospects', where) || {name: 'autre suivi'})} » : rien n’a été ajouté.`, true);
-      return true; };
-    if (await known()) return;
+    // déjà joint à un AUTRE suivi : refusé sans consulter les boîtes Google
+    const where = await mailAttachedTo(key);
+    if (where && where !== p.id) return toast(`Ce message est déjà joint au suivi « ${prospectTitle(byId('prospects', where) || {name: 'autre suivi'})} » : rien n’a été ajouté.`, true);
     toast('Recherche du message dans les boîtes Google…');
     const {mail, tried} = await findMailByMsgId(id);
     if (!mail) return mailNotFound(p, tried);
-    const file = new File([mail.raw], fileTitle(mail.subject) + '.eml', {type: 'message/rfc822'});
-    let m; try { m = await readEml(file); } catch { m = null; }
+    const got = new File([mail.raw], 'message.eml', {type: 'message/rfc822'});
+    let m; try { m = await readEml(got); } catch { m = null; }
     // double contrôle : le contenu reçu porte bien CE Message-ID
     if (!m || m.messageId !== id) return toast('Le message renvoyé par le script Google ne correspond pas au lien de Mail : rien n’a été joint.', true);
-    if (emlEntry(p.id, m)?.exists) return toast('Ce mail est déjà au journal de ce suivi (ajouté autrement) : rien n’a été ajouté.', true);
-    const att = m.attachments.length ? `\n${m.attachments.length} pièce${m.attachments.length > 1 ? 's' : ''} jointe${m.attachments.length > 1 ? 's' : ''} du mail : ${m.attachments.map(a => a.name).join(', ')}` : '';
-    const ok = await confirmAsk('Joindre ce message', `Joindre ce message au suivi « ${prospectTitle(p)} » ?\n${mail.subject || '(sans objet)'} · ${mail.from || 'expéditeur inconnu'} · ${fmtDate(mail.date) || 'date inconnue'}${att}\nTrouvé dans la boîte ${mail.box}. Le mail original (.eml) et ses pièces jointes seront ajoutés au suivi, avec une entrée au journal.`, 'Joindre au suivi');
+    const file = new File([got], fileTitle(m.subject) + '.eml', {type: 'message/rfc822'});   // nom tiré du .eml lui-même
+    // ce qui est déjà joint, clé par clé : complet → rien ; partiel → seules les parties manquantes seront ajoutées
+    const plan = await mailParts(p.id, key, m);
+    if (plan.other) return toast(`Ce message est déjà joint en partie au suivi « ${prospectTitle(byId('prospects', plan.other) || {name: 'autre suivi'})} » : rien n’a été ajouté.`, true);
+    if (plan.legacy) return toast('Ce mail est déjà au journal de ce suivi (ajouté autrement) : rien n’a été ajouté.', true);
+    if (!mailPartsMissing(plan)) return toast('Ce message est déjà joint à ce suivi : rien n’a été ajouté.', true);
+    const partial = where === p.id;
+    const n = m.attachments.length, sk = m.attachmentsSkipped;
+    const att = (n ? `\n${n} pièce${n > 1 ? 's' : ''} jointe${n > 1 ? 's' : ''} du mail : ${m.attachments.map(a => a.name).join(', ')}` : '')
+      + (sk ? `\n${sk} pièce${sk > 1 ? 's' : ''} non extraite${sk > 1 ? 's' : ''} (plus de 20, ou trop imbriquée${sk > 1 ? 's' : ''}) : l’original .eml les contient.` : '');
+    const missing = [plan.original && 'le mail original (.eml)', plan.log && 'l’entrée du journal', plan.pj.length && `${plan.pj.length} pièce${plan.pj.length > 1 ? 's' : ''} du mail`].filter(Boolean).join(', ');
+    // objet, expéditeur et date relus dans le .eml lui-même (pas dans la réponse du script)
+    const ok = await confirmAsk(partial ? 'Compléter ce message' : 'Joindre ce message',
+      `${partial ? 'Ce message est déjà joint en partie à ce suivi. Compléter' : 'Joindre ce message au'} suivi « ${prospectTitle(p)} » ?\n${m.subject || '(sans objet)'} · ${m.fromLine || 'expéditeur inconnu'} · ${m.date ? fmtDate(m.date) : 'date inconnue'}${att}\nTrouvé dans la boîte ${mail.box}. ${partial ? `Seul ce qui manque sera ajouté : ${missing}.` : 'Le mail original (.eml) et ses pièces jointes seront ajoutés au suivi, avec une entrée au journal.'}`,
+      partial ? 'Compléter le suivi' : 'Joindre au suivi');
     if (!ok) return toast('Rien n’a été joint.');
     // même chemin qu'un .eml déposé : la clé est revérifiée en base juste avant l'envoi (joint entre-temps depuis un autre poste)
     await uploadFiles({prospect_id: p.id, import_key: key}, [file]);

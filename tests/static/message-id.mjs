@@ -70,6 +70,28 @@ eq('diagnostic', 'domaine seulement', [msgIdDomain(ID1), msgIdDomain(ID2)], ['ex
   eq('lecture du .eml', 'contenu de la pièce décodé', new TextDecoder().decode(m.attachments[0].bytes), '%PDF-1.4\n');
 }
 
+// 1c. Relecture v1.60.4 : lecture des liens en temps linéaire, même sur 500 Ko piégés (lue à chaque dépôt, dans toutes les zones)
+for (const [label, t] of [['« message:< » répété', 'message:<'.repeat(57000)], ['« message:%3C » répété', 'message:%3C'.repeat(46000)],
+  ['« message:%3Ca » répété', 'message:%3Ca'.repeat(42000)], ['identifiants trop longs sans fin', ('message:%3C' + 'a'.repeat(800)).repeat(600)]]){
+  const t0 = performance.now(); const r = mailLinkIds(t, t); const ms = performance.now() - t0;
+  if (ms >= 100) fail('lecture du lien', `${label} (${Math.round(t.length / 1024)} Ko) : ${Math.round(ms)} ms (100 ms au plus)`);
+  if (r.length) fail('lecture du lien', `${label} : aucun identifiant attendu`);
+}
+
+// 1d. Pièces non extraites comptées (au-delà de 20, ou imbriquées trop profondément) : jamais perdues en silence
+{
+  const { parseEml } = await import(join(ROOT, 'js/eml.js'));
+  const part = i => ['--B', `Content-Type: application/pdf; name="p${i}.pdf"`, 'Content-Disposition: attachment', 'Content-Transfer-Encoding: base64', '', 'JVBERg=='];
+  const many = ['Subject: x', 'Content-Type: multipart/mixed; boundary="B"', '', '--B', 'Content-Type: text/plain', '', 'Texte',
+    ...Array.from({ length: 22 }, (_, i) => part(i + 1)).flat(), '--B--', ''].join('\r\n');
+  const m = parseEml(many);
+  eq('lecture du .eml', '22 pièces : 20 extraites, 2 annoncées', [m.attachments.length, m.attachmentsSkipped, m.attachments[19].name], [20, 2, 'p20.pdf']);
+  let deep = ['Content-Type: application/pdf; name="profond.pdf"', 'Content-Disposition: attachment', '', 'x'].join('\r\n');
+  for (let d = 8; d >= 1; d--) deep = [`Content-Type: multipart/mixed; boundary="N${d}"`, '', `--N${d}`, deep, `--N${d}--`, ''].join('\r\n');
+  const md = parseEml('Subject: y\r\n' + deep);
+  eq('lecture du .eml', 'pièce trop imbriquée annoncée', [md.attachments.length, md.attachmentsSkipped], [0, 1]);
+}
+
 // 2. Même règle des deux côtés (CONVENTIONS.md §8.4)
 const gsCode = readFileSync(join(ROOT, 'apps-script/Code.gs'), 'utf8');
 const gsProsp = readFileSync(join(ROOT, 'apps-script/Prospection.gs'), 'utf8');

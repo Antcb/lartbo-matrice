@@ -93,31 +93,34 @@ export const MAIL_ATT_MAX = 20;
 /**
  * Pièces jointes d'un mail brut (v1.60.4) : parties « attachment », parties nommées autres que le texte du mail, mails joints
  * (message/rfc822) ; les images intégrées au texte (inline + Content-ID, ex. logos de signature) ne sont pas reprises.
- * Résultat : [{name, type, bytes (Uint8Array)}], MAIL_ATT_MAX au plus.
+ * st.out : [{name, type, bytes (Uint8Array)}], MAIL_ATT_MAX au plus ; st.skipped : pièces NON extraites (au-delà de MAIL_ATT_MAX,
+ * ou parties imbriquées trop profondément) — annoncées à l'utilisateur, l'original .eml les contient toujours.
  */
-function attachmentsOf(raw, out = [], depth = 0){
-  if (depth > 6 || out.length >= MAIL_ATT_MAX) return out;
+const MAIL_DEPTH_MAX = 6;
+function attachmentsOf(raw, st = {out: [], skipped: 0}, depth = 0){
+  if (depth > MAIL_DEPTH_MAX){ if (String(raw).trim()) st.skipped++; return st; }   // partie vide (fin de liste) : rien à annoncer
   const {h, body} = splitHead(raw);
   const ct = h['content-type'] || 'text/plain', type = ct.split(';')[0].trim().toLowerCase();
   if (type.startsWith('multipart/')){
-    const bnd = param(ct, 'boundary'); if (!bnd) return out;
-    body.split(new RegExp(`--${bnd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:--)?\\s*\\r?\\n?`)).slice(1).forEach(p => attachmentsOf(p, out, depth + 1));
-    return out;
+    const bnd = param(ct, 'boundary'); if (!bnd) return st;
+    body.split(new RegExp(`--${bnd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:--)?\\s*\\r?\\n?`)).slice(1).forEach(p => attachmentsOf(p, st, depth + 1));
+    return st;
   }
   const disp = h['content-disposition'] || '', name = cleanName(fileParam(disp, 'filename') || fileParam(ct, 'name'));
   const inlineImage = /^\s*inline/i.test(disp) && h['content-id'] && type.startsWith('image/');
   const isAtt = !inlineImage && (/^\s*attachment/i.test(disp) || (name && !/^text\/(plain|html)$/.test(type)) || type === 'message/rfc822');
-  if (!isAtt) return out;
+  if (!isAtt) return st;
+  if (st.out.length >= MAIL_ATT_MAX){ st.skipped++; return st; }
   const enc = (h['content-transfer-encoding'] || '').toLowerCase();
   const bin = enc === 'base64' ? b64(body) : enc === 'quoted-printable' ? qp(body) : body;
-  out.push({name: name || (type === 'message/rfc822' ? 'mail joint.eml' : 'piece-jointe'), type: type || 'application/octet-stream',
+  st.out.push({name: name || (type === 'message/rfc822' ? 'mail joint.eml' : 'piece-jointe'), type: type || 'application/octet-stream',
     bytes: Uint8Array.from(bin, c => c.charCodeAt(0) & 255)});
-  return out;
+  return st;
 }
 
 /**
  * Lit un fichier .eml : {from, fromName, to, toName, subject, date (AAAA-MM-JJ), text, messageId (« <…@…> » ou ''),
- * fromLine, toLine, ccLine (participants lisibles), attachments ([{name, type, bytes}])}
+ * fromLine, toLine, ccLine (participants lisibles), attachments ([{name, type, bytes}]), attachmentsSkipped (pièces non extraites)}
  */
 export async function readEml(file){
   const raw = await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = ko; r.readAsBinaryString(file); });
@@ -127,10 +130,10 @@ export async function readEml(file){
 export function parseEml(raw){
   const {h} = splitHead(raw);
   const t = textOf(raw);
-  let attachments = []; try { attachments = attachmentsOf(raw); } catch { attachments = []; }
+  let att = {out: [], skipped: 0}; try { att = attachmentsOf(raw); } catch { att = {out: [], skipped: 1}; }   // lecture impossible : annoncée
   return {from: addr(h.from), fromName: nameOf(h.from || ''), to: addr(h.to), toName: nameOf(h.to || ''),
     subject: decodeWords(h.subject || '').trim(), date: isoDate(h.date), text: cleanBody(t.plain || (t.html ? htmlToText(t.html) : '')),
-    messageId: String(h['message-id'] || '').trim(), fromLine: people(h.from), toLine: people(h.to), ccLine: people(h.cc), attachments};
+    messageId: String(h['message-id'] || '').trim(), fromLine: people(h.from), toLine: people(h.to), ccLine: people(h.cc), attachments: att.out, attachmentsSkipped: att.skipped};
 }
 
 /**
@@ -152,10 +155,13 @@ export const msgIdDomain = id => (String(id).match(/@([^@>]*)>$/) || [])[1]?.toL
  * « message:%3C<Message-ID>%3E », « message://%3C…%3E », chevrons en clair, plusieurs liens (liste d'adresses ou texte).
  * Seuls les identifiants VALIDES (msgIdOk) sont rendus, sans doublon ; rien n'est jamais ouvert ni récupéré par le réseau.
  */
+const LINK_TEXT_MAX = 65536;   // texte du glisser lu au plus (une liste de liens tient en quelques centaines d'octets)
 export function mailLinkIds(...texts){
   const out = [];
   for (const t of texts){
-    for (const m of String(t || '').matchAll(/message:(?:\/\/)?(%3C|<)([^\s]*?)(%3E|>)/gi)){
+    // motif borné (identifiant encodé : 3 × 250 caractères au plus, sans espace ni chevron) et texte tronqué :
+    // temps de lecture linéaire, même sur un texte piégé (relecture v1.60.4)
+    for (const m of String(t || '').slice(0, LINK_TEXT_MAX).matchAll(/message:(?:\/\/)?(%3C|<)([^\s<>]{1,760}?)(%3E|>)/gi)){
       let inner;
       try { inner = decodeURIComponent(m[2]); } catch { continue; }   // encodage incomplet : lien refusé
       const id = `<${inner}>`;
