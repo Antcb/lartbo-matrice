@@ -302,6 +302,14 @@ test('restauration d’une date archivée (décision du 08/11) : même avertisse
   await alerte.locator('button', { hasText: 'Annuler' }).click();
   await page.waitForTimeout(200);
   expect(await rpcs()).toEqual([]);
+  // « Restaurer et réactiver les relances… » puis Annuler à l'alerte d'agenda : ni restaurée, ni relance réactivée, aucune fenêtre ouverte
+  await panel.locator('p', { hasText: 'Salle Restaurée' }).locator('[data-act="restoreShow"]').click();
+  await page.locator('dialog[open] button', { hasText: 'Restaurer et réactiver les relances' }).click();
+  await page.locator('dialog[open]', { hasText: 'Artiste indisponible ?' }).locator('button', { hasText: 'Annuler' }).click();
+  await page.waitForTimeout(200);
+  expect(await rpcs()).toEqual([]);
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  expect(await page.evaluate(() => window.__DB.shows.find(s => s.id === 'sh-rest').archived_at)).toBeTruthy();
   // poursuite après confirmation : restaurée, une seule alerte, aucune relance réactivée (choix « relances suspendues »)
   await panel.locator('p', { hasText: 'Salle Restaurée' }).locator('[data-act="restoreShow"]').click();
   await page.locator('dialog[open] button', { hasText: 'Restaurer, relances suspendues' }).click();

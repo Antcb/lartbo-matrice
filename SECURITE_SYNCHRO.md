@@ -31,7 +31,7 @@ agendas, actualisation d'un seul artiste) exigent une session de l'équipe.
 ## Secret du script Google des agendas (cal-sync → « Matrice Agendas »)
 - La fonction `cal-sync` appelle le script « Matrice Agendas » (production@, lecture seule) avec un secret **propre à ce script**,
   `cal_script_secret` (`private.import_secrets`, tiré au hasard par la migration v1.62 des agendas, lu par `import_secret`, rôle serveur
-  seulement), recopié une fois par Anthony dans la propriété `SECRET_AGENDAS` du script (éditeur SQL du projet → propriétés du script ;
+  seulement), recopié une fois par Anthony dans la propriété `SECRET_AGENDAS` du script (Table Editor › schéma private › import_secrets → propriétés du script ;
   jamais dans l'application ni dans une conversation). Il est distinct de `drive_webhook_secret` (scripts principal et de prospection)
   et de `cal_sync_hook` : le projet « Matrice Agendas » ne détient aucun moyen d'appeler un autre script.
 - Rotation : nouvelle valeur dans `private.import_secrets` puis dans la propriété du script (aucun redéploiement de la fonction).

@@ -120,7 +120,7 @@ insert into private.import_secrets (key, value)
   values ('cal_sync_hook', replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''))
   on conflict (key) do nothing;
 -- secret DÉDIÉ du script Google des agendas (« cal_script_secret », relecture de 976ea64, F5) : la fonction cal-sync l'envoie au seul
--- projet « Matrice Agendas » (propriété SECRET_AGENDAS, recopiée une fois par Anthony depuis l'éditeur SQL du projet) ; distinct du
+-- projet « Matrice Agendas » (propriété SECRET_AGENDAS, recopiée une fois par Anthony depuis le Table Editor du projet) ; distinct du
 -- code des autres scripts Google (drive_webhook_secret) et du secret de la tâche planifiée. Jamais régénéré par un nouveau passage.
 insert into private.import_secrets (key, value)
   values ('cal_script_secret', replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''))
