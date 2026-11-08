@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.61.0 — 08/11/2026
+- v1.62.0 : calendriers Google des artistes en lecture seule (production@) — choix de l'agenda depuis la fiche artiste (état, dernière synchronisation, erreurs, actualiser, suspendre, déconnecter), indisponibilités et avertissement unique avec sa raison dans Booking, « Show » sur la carte (« Date artiste — calendrier Google »), privé et « disponibilités seulement » sans détail, perte d'accès jamais présentée comme libre, dates archivées hors calendriers et conflits ; aucune incidence financière
+
+
 ## 1.60.3 — 07/11/2026
 - v1.60.3 : saisie et spectacles (sélection des champs numériques, cachets sur 3 lignes sans défilement horizontal à 1 280 px et plus, spectacle par défaut), coproduction et promotion locale, suivi administratif (boucle communication, confirmation avant de modifier une date de suivi), destinataires et copies en champ unique, message Apple Mail glissé dans un suivi, budgets (jauge, coûts à compléter, CNM, points d'équilibre), suppression et archivage contrôlés d'une date, question exacte avant le renommage Drive
 

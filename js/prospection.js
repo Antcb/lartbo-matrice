@@ -5,6 +5,7 @@
  * tâche Booking de relance à J+10.
  * « Relance » : réponse dans le même fil Gmail (l'historique reste), journal, nouvelle tâche de relance.
  */
+import { calCheckBeforeSave } from './calendars.js';
 import { confirmAsk } from './ui/dialog.js';
 import { render } from './app.js';
 import { contentTypeOf, insert, purgeStored, remove, save, sb, signedUrl, typedFile } from './data.js';
@@ -137,6 +138,9 @@ export async function openProspection(structureId, {prospectId=null}={}){
       // délivrabilité (v1.52) : zones « à compléter » restées, pièces jointes lourdes
       if (!(await todoOk(m))) return false;
       if (!(await attOk(files))) return false;
+      // date proposée → dates « Intérêt » : agenda Google de chaque artiste vérifié avant l'envoi (même règle que la fenêtre de date)
+      const day = !relance && $('#pr-date')?.value;
+      if (day) for (const pid of pids) if (!(await calCheckBeforeSave({project_id: pid, date: day, status: 'Intérêt Salle'}))) return false;
       if (send && !(await confirmAsk('Envoyer le mail ?', `Le mail part maintenant à ${m.to}${m.cc ? ` (copie : ${m.cc})` : ''}, depuis ${fromAddr()}.`, 'Envoyer le mail'))) return false;
       try {
         const attachments = await Promise.all(files.filter(f => f.on).map(async f => f.id ? {id: f.id} : {url: await signedUrl(f.path), name: f.name}));
