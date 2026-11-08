@@ -179,6 +179,22 @@ Contrôles : V n · É n · NA n · NV n
 | P5 | Drive : nomenclature du `README.md` ; aucun fichier existant supprimé ; doublons détectés avant création. |
 | P6 | Opération longue (copie de dossier, rangement en lot) : reprise possible si Google coupe à 6 min, rien de copié deux fois. |
 
+## K. Agendas Google des artistes (C §6.21, v1.62)
+| ID | Contrôle |
+|---|---|
+| K1 | **Lecture seule** : manifeste du script `calendar.readonly` seul, aucun appel d'écriture de l'API Agenda (`tests/static/agendas-script.mjs`) ; rien n'est écrit dans un agenda pendant l'essai réel. |
+| K2 | Fiche artiste : choix parmi les agendas partagés avec production@ (principal exclu, « disponibilités seulement » signalé, un agenda pour un seul artiste) ; état, dernière synchronisation, erreur ; Actualiser, Suspendre / Reprendre, Changer, Déconnecter (confirmation) ; pays par défaut France visible et modifiable. |
+| K3 | Booking : indisponibilités à part (origine Google), jamais comptées ni prises pour des dates ; « Disponible » jamais bloquant ; en-tête de mois « aucune date · N indisponibilités Google ». |
+| K4 | Avertissement sur **tous** les chemins (fenêtre de date, statut dans la liste, prospection) : une seule fenêtre, raison par événement (« chevauchement horaire » prioritaire, sinon « événement artiste le même jour ») ; Annuler n'enregistre rien. |
+| K5 | Fuseaux : jour local de l'événement affiché ; conflits sur les instants réels ; journée entière sans décalage (fin exclue chez Google). |
+| K6 | Privé / confidentiel et partage « disponibilités » : ni titre ni lieu en base ; passage au partage « disponibilités » : anciens détails effacés ; limite d'usage (403 rateLimitExceeded…) jamais prise pour ce partage. |
+| K7 | Perte d'accès, pause, erreur, synchronisation de plus de 30 min : « disponibilités plus à jour » (fiche, ligne, avis en tête de Booking, avertissement à l'enregistrement) — jamais « libre ». |
+| K8 | Synchronisation : une ligne par occurrence (récurrences, exceptions), disparues marquées supprimées (jamais effacées), **deux passages sans changement = aucune écriture** ; agendas lus du plus ancien au plus récent, last_run_at écrit au début, durée bornée à 120 s, localisations bornées (nombre et temps restant). |
+| K9 | Carte : « Show » en mot entier (jamais Showroom, Slideshow, Showcase), ville sûre seulement (sinon « localisation à préciser »), repère distinct « Date artiste — calendrier Google ». |
+| K10 | Dates artiste existantes jamais modifiées : association explicite seulement ; date archivée jamais proposée, hors conflits, son événement associé redevient visible. |
+| K11 | Aucune incidence financière : aucune écriture sur dates, factures, budgets, commissions ; chiffres de Booking identiques avec ou sans agenda. |
+| K12 | Sécurité : `cal-sync` refuse (403) un appel sans justificatif, avec un faux secret ou d'un compte hors équipe ; secrets `cal_sync_hook` et `cal_script_secret` distincts, jamais affichés (SECURITE_SYNCHRO.md). Essai réel : ESSAI_REEL_GOOGLE.md (sinon NV). |
+
 ## T. Tests (C §9)
 | ID | Contrôle |
 |---|---|

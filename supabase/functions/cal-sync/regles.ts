@@ -128,3 +128,39 @@ export async function planSync(j: { mode?: string; events?: Ev[] }, cal: { id: s
  *  (403 rateLimitExceeded…) pour un partage « disponibilités » : sa réponse « disponibilités » ferait effacer les détails → refusée. */
 export const replyProblem = (j: { mode?: string; version?: string | null }) =>
   j.mode === 'disponibilites' && !j.version ? 'Le script des agendas n’est pas à jour : Réglages › Agendas des artistes › copier le code, coller, nouvelle version de déploiement.' : null;
+
+/**
+ * Localisations d'un passage (relecture de 023edf4, F4) : au plus `perPass` tentatives, et aucune après l'échéance du passage (budget de
+ * 120 s, moins une marge d'un appel) ; chaque appel est lui-même borné par le délai du service de lieux. Au-delà → undefined : réessayé
+ * au passage suivant (planSync), jamais placé au hasard. Erreur ou délai du service → undefined aussi.
+ */
+export function cityFinder(choose: (loc: string, cc: string | null) => Promise<Place | null>,
+  { perPass = 20, deadline = Infinity, callMs = 8_000, clock = () => Date.now() }: { perPass?: number; deadline?: number; callMs?: number; clock?: () => number } = {}) {
+  let left = perPass;
+  return async (location: string, country: string | null): Promise<Place | null | undefined> => {
+    if (left <= 0 || clock() + callMs > deadline) return undefined;
+    left--;
+    try { return await choose(location, country); } catch { return undefined; }
+  };
+}
+
+/**
+ * Passage complet sur plusieurs agendas (relecture de 023edf4, F4) : agendas lus du moins récemment commencé au plus récent ;
+ * last_run_at écrit AU DÉBUT de la lecture de chacun (markStart), si bien qu'un agenda interrompu (délai, arrêt de la fonction) passe en
+ * fin de file au passage suivant au lieu de bloquer les autres ; durée totale bornée (budgetMs) : un agenda n'est commencé que s'il
+ * reste au moins `minLeft` ; les autres sont reportés (skipped).
+ */
+export async function runPass<C extends { last_run_at?: string | null }, R>(cals: C[],
+  { budgetMs = 120_000, minLeft = 15_000, clock = () => Date.now(), markStart, syncOne }:
+  { budgetMs?: number; minLeft?: number; clock?: () => number; markStart: (c: C, at: string) => Promise<void>; syncOne: (c: C, wait: number, deadline: number) => Promise<R> }) {
+  const started = clock(), deadline = started + budgetMs;
+  const order = [...cals].sort((a, b) => (a.last_run_at ? Date.parse(a.last_run_at) : -Infinity) - (b.last_run_at ? Date.parse(b.last_run_at) : -Infinity));
+  const results: R[] = []; let skipped = 0;
+  for (const c of order) {
+    const left = deadline - clock();
+    if (left < minLeft) { skipped++; continue; }
+    await markStart(c, new Date(clock()).toISOString());
+    results.push(await syncOne(c, Math.min(110_000, left - 5_000), deadline));
+  }
+  return { results, skipped };
+}

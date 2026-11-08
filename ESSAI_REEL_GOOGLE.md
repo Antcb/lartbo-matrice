@@ -2,7 +2,7 @@
 
 Préparé le 08/11/2026. Rien n'est lancé sans Anthony. Côté base : projet Supabase **de test** uniquement. Côté Google : lecture seule
 (le script ne demande que « Voir vos agendas » ; il ne peut rien créer, modifier ni supprimer).
-La messagerie a son propre essai (ESSAI_GMAIL_REEL.md) : **ce lot se teste et se livre sans elle**.
+La messagerie est un autre lot, avec son propre essai livré avec elle : **ce lot se teste et se livre sans elle**.
 
 ## Faut-il un compte Google de test ?
 | Besoin | Compte de test ? | Pourquoi |
