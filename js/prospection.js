@@ -7,7 +7,7 @@
  */
 import { ask, confirmAsk } from './ui/dialog.js';
 import { render } from './app.js';
-import { contentTypeOf, insert, legacyMailOwner, mailAttachedTo, mailParts, mailPartsMissing, purgeStored, remove, save, sb, signedUrl, typedFile, uploadFiles } from './data.js';
+import { contentTypeOf, insert, legacyMailOwner, legacyUnverifiedOk, mailAttachedTo, mailParts, mailPartsMissing, purgeStored, remove, save, sb, signedUrl, typedFile, uploadFiles } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
 import { PROSPECT_TAGS, attOk, attSizeHTML, callGoogle, callScript, fill, todoOk, tplLabel, tplProjects } from './mail.js';
 import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, placeOfEvent, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName } from './selectors.js';
@@ -487,16 +487,16 @@ async function attachOneMailLink(p, id){
   PENDING_MSG.add(key);
   try {
     // déjà joint à un AUTRE suivi : refusé sans consulter les boîtes Google
+    toast('Recherche du message (suivis, puis boîtes Google)…');
     // (décision d'Anthony du 08/11/2026 : un message reste rattaché à un seul suivi ; le suivi concerné est nommé et accessible)
     const open = id => ({label: 'Ouvrir le suivi', act: 'openSuivi', id});
     const name = id => prospectTitle(byId('prospects', id) || {name: 'autre suivi'});
     const where = await mailAttachedTo(key);
     if (where && where !== p.id) return toast(`Ce message est déjà joint au suivi « ${name(where)} » : rien n’a été ajouté.`, true, open(where));
     // joint avant la v1.60.4 (sans clé) : reconnu par le Message-ID du .eml déjà stocké, en lecture seule, sans consulter Gmail
-    const old = where ? null : await legacyMailOwner(id);
+    const legacyCheck = where ? {owner: null, incomplete: ''} : await legacyMailOwner(id), old = legacyCheck.owner;
     if (old) return toast(old === p.id ? 'Ce message est déjà joint à ce suivi (avant la v1.60.4) : rien n’a été ajouté.'
       : `Ce message est déjà joint au suivi « ${name(old)} » (avant la v1.60.4) : rien n’a été ajouté.`, true, old === p.id ? null : open(old));
-    toast('Recherche du message dans les boîtes Google…');
     const {mail, tried} = await findMailByMsgId(id);
     if (!mail) return mailNotFound(p, tried);
     const got = new File([mail.raw], 'message.eml', {type: 'message/rfc822'});
@@ -507,6 +507,7 @@ async function attachOneMailLink(p, id){
     // ce qui est déjà joint, clé par clé : complet → rien ; partiel → seules les parties manquantes seront ajoutées
     const plan = await mailParts(p.id, key, m);
     if (plan.other) return toast(`Ce message est déjà joint au suivi « ${name(plan.other)} » : rien n’a été ajouté.`, true, open(plan.other));
+    const unverified = plan.unverified || legacyCheck.incomplete;
     if (plan.legacy) return toast('Ce mail est déjà au journal de ce suivi (ajouté autrement) : rien n’a été ajouté.', true);
     if (!mailPartsMissing(plan)) return toast('Ce message est déjà joint à ce suivi : rien n’a été ajouté.', true);
     const partial = where === p.id;
@@ -519,8 +520,10 @@ async function attachOneMailLink(p, id){
       `${partial ? 'Ce message est déjà joint en partie à ce suivi. Compléter' : 'Joindre ce message au'} suivi « ${prospectTitle(p)} » ?\n${m.subject || '(sans objet)'} · ${m.fromLine || 'expéditeur inconnu'} · ${m.date ? fmtDate(m.date) : 'date inconnue'}${att}\nTrouvé dans la boîte ${mail.box}. ${partial ? `Seul ce qui manque sera ajouté : ${missing}.` : 'Le mail original (.eml) et ses pièces jointes seront ajoutés au suivi, avec une entrée au journal.'}`,
       partial ? 'Compléter le suivi' : 'Joindre au suivi');
     if (!ok) return toast('Rien n’a été joint.');
+    // anciens .eml pas tous vérifiables : avertissement explicite avant tout rattachement (relecture B2)
+    if (unverified && !(await legacyUnverifiedOk(unverified, m.subject || 'ce message'))) return toast('Rien n’a été joint.');
     // même chemin qu'un .eml déposé : la clé est revérifiée en base juste avant l'envoi (joint entre-temps depuis un autre poste)
-    await uploadFiles({prospect_id: p.id, import_key: key}, [file]);
+    await uploadFiles({prospect_id: p.id, import_key: key, legacy_ok: true}, [file]);
     render();
   } finally { PENDING_MSG.delete(key); }
 }

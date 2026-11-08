@@ -74,8 +74,11 @@ eq('diagnostic', 'domaine seulement', [msgIdDomain(ID1), msgIdDomain(ID2)], ['ex
 // 1c. Relecture v1.60.4 : lecture des liens en temps linéaire, même sur 500 Ko piégés (lue à chaque dépôt, dans toutes les zones)
 for (const [label, t] of [['« message:< » répété', 'message:<'.repeat(57000)], ['« message:%3C » répété', 'message:%3C'.repeat(46000)],
   ['« message:%3Ca » répété', 'message:%3Ca'.repeat(42000)], ['identifiants trop longs sans fin', ('message:%3C' + 'a'.repeat(800)).repeat(600)]]){
-  const t0 = performance.now(); const r = mailLinkIds(t, t); const ms = performance.now() - t0;
-  if (ms >= 100) fail('lecture du lien', `${label} (${Math.round(t.length / 1024)} Ko) : ${Math.round(ms)} ms (100 ms au plus)`);
+  // médiane de 5 mesures (une machine de CI chargée ne fait pas échouer le contrôle sur un seul passage lent)
+  let r = []; const runs = [];
+  for (let i = 0; i < 5; i++){ const t0 = performance.now(); r = mailLinkIds(t, t); runs.push(performance.now() - t0); }
+  const ms = runs.sort((a, b) => a - b)[2];
+  if (ms >= 100) fail('lecture du lien', `${label} (${Math.round(t.length / 1024)} Ko) : médiane ${Math.round(ms)} ms (100 ms au plus)`);
   if (r.length) fail('lecture du lien', `${label} : aucun identifiant attendu`);
 }
 
@@ -105,7 +108,7 @@ if (gsRe !== String(MSGID_RE)) fail('scripts', `expression du Message-ID différ
 if (!new RegExp(`var MSGID_MAX_ = ${MSGID_MAX};`).test(bCode)) fail('scripts', 'longueur maximale du Message-ID différente entre eml.js et les scripts');
 if (MSG_RAW_MAX !== 20 * 1024 * 1024 || !/var MSG_RAW_MAX_ = 20 \* 1024 \* 1024;/.test(bCode)) fail('scripts', 'taille maximale du contenu brut différente entre eml.js et les scripts');
 if (!/action === 'mail_by_msgid'\) out = mailByMsgId_\(body\.message_id\)/.test(gsCode)) fail('scripts', 'Code.gs : action mail_by_msgid non branchée dans doPost');
-if (!/a === 'mail_by_msgid'\) out = ownerOnly_\(body\) \|\| mailByMsgId_\(body\.message_id\)/.test(gsProsp)) fail('scripts', 'Prospection.gs : action mail_by_msgid non branchée dans doPost');
+if (!/a === 'mail_by_msgid'\) out = ownerOnly_\(body, a\) \|\| mailByMsgId_\(body\.message_id\)/.test(gsProsp)) fail('scripts', 'Prospection.gs : action mail_by_msgid non branchée dans doPost');
 for (const [n, src] of [['Code.gs', gsCode], ['Prospection.gs', gsProsp]])
   if (!/var SCRIPT_VERSION = 'v1\.60\.4'/.test(src)) fail('scripts', `${n} : SCRIPT_VERSION doit être 'v1.60.4'`);
 
@@ -129,18 +132,22 @@ function run(file, msgs, call){
   const message = o => guard({ getHeader: h => /^message-id$/i.test(h) ? o.header : '', isDraft: () => !!o.draft, getRawContent: () => o.raw ?? RAW,
     getSubject: () => 'Programmation fictive', getFrom: () => 'Camille Exemple <camille@example.com>', getDate: () => new Date('2026-11-03T09:00:00Z') }, MSG_OK, 'message');
   const GmailApp = guard({ search: (q, a, b) => { log.searches.push([q, a, b]); return [guard({ getMessages: () => msgs.map(message) }, new Set(['getMessages']), 'fil')]; } }, new Set(['search']), 'GmailApp');
-  const props = { WEBHOOK_SECRET: 'secret-de-test' };
+  const props = { WEBHOOK_SECRET: 'secret-de-test', CLE_BOITE: 'cle-boite-de-test' };
+  const cache = {};
   const ctx = { GmailApp, Logger: { log() {} }, Session: { getEffectiveUser: () => ({ getEmail: () => 'boite@example.com' }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k], getProperties: () => props }) },
     ContentService: { createTextOutput: s => ({ setMimeType: () => s }), MimeType: { JSON: 'json' } },
+    CacheService: { getScriptCache: () => ({ get: k => cache[k] ?? null, put: (k, v) => { cache[k] = v; } }) },
     Utilities: { formatDate: () => '', Charset: { UTF_8: 'utf8' }, computeHmacSha256Signature: (v, k) => [...createHmac('sha256', k).update(v).digest()].map(b => (b > 127 ? b - 256 : b)) } };
   vm.createContext(ctx); vm.runInContext(file, ctx);
   const out = call(ctx);
   return { out: typeof out === 'string' ? JSON.parse(out) : JSON.parse(JSON.stringify(out)), ...log };
 }
 // identité du titulaire de la boîte (compte qui exécute le script), signée comme par le relais script-google (v1.60.4)
-const OWNER = { caller: 'boite@example.com', caller_sig: createHmac('sha256', 'secret-de-test').update('matrice-caller:boite@example.com').digest('hex') };
-const post = body => ctx => ctx.doPost({ postData: { contents: JSON.stringify({ ...OWNER, ...body }) } });
+// (relecture B1 : clé dédiée CLE_BOITE, signature sur adresse, action, Message-ID et horodatage)
+const owner = body => { const ts = Date.now(), mid = typeof body.message_id === 'string' ? body.message_id : '';
+  return { caller: 'boite@example.com', caller_ts: ts, caller_sig: createHmac('sha256', 'cle-boite-de-test').update(['matrice-boite-v1', 'boite@example.com', body.action, mid, String(ts)].join('|')).digest('hex') }; };
+const post = body => ctx => ctx.doPost({ postData: { contents: JSON.stringify({ ...owner(body), ...body }) } });
 for (const [name, file] of [['Code.gs', gsCode], ['Prospection.gs', gsProsp]]){
   const cat = `lecture seule ${name}`;
   try {

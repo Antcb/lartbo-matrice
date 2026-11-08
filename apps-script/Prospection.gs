@@ -11,6 +11,8 @@
  *  4. Coller l'adresse du déploiement (…/exec) dans Réglages › Prospection.
  *  5. Paramètres du projet (roue dentée) › Propriétés du script › ajouter WEBHOOK_SECRET = le code secret des scripts
  *     (même valeur que le script principal ; il n'est plus affiché dans la Matrice : Supabase › table settings › drive_webhook_secret).
+ *  6. (v1.60.4) Même endroit : ajouter CLE_BOITE = la clé de la boîte (Supabase › Table Editor › schéma private ›
+ *     import_secrets › ligne mailbox_sign_key › valeur). Sans elle, la recherche d'un message par son identifiant est refusée.
  *
  * Le code secret n'est jamais écrit dans ce code (v1.47) : il est lu dans les propriétés du script. Un script déjà installé
  * avec le code écrit en dur continue de fonctionner tel quel (la Matrice envoie toujours le même code, depuis son serveur).
@@ -30,7 +32,7 @@ function doPost(e) {
     else if (a === 'mail') out = mail_(body);
     else if (a === 'reply') out = reply_(body);
     else if (a === 'status') out = status_(body.thread_id);
-    else if (a === 'mail_by_msgid') out = ownerOnly_(body) || mailByMsgId_(body.message_id);   // v1.60.4 : lecture seule, titulaire de la boîte seulement
+    else if (a === 'mail_by_msgid') out = ownerOnly_(body, a) || mailByMsgId_(body.message_id);   // v1.60.4 : lecture seule, titulaire de la boîte seulement
     else out = { ok: false, error: 'Action inconnue : ' + a };
   } catch (err) {
     out = { ok: false, error: String(err) };
@@ -54,21 +56,34 @@ function blobs_(list) {
 // ─────────────── Boîte réservée à son titulaire (v1.60.4) ───────────────
 /**
  * Décision d'Anthony du 08/11/2026 : la recherche par Message-ID dans CETTE boîte (anthony@) est réservée à son titulaire ;
- * connaître l'identifiant d'un message n'autorise pas à consulter la boîte. Le relais serveur script-google transmet l'adresse du
- * compte connecté (lue dans la session vérifiée par Supabase Auth) avec une signature HMAC-SHA256 calculée avec le code secret
- * des scripts (supabase/functions/script-google/identite.ts) : le navigateur ne peut ni la fabriquer ni la remplacer.
- * Accepté seulement si la signature est juste ET si l'adresse est celle du compte Google qui exécute ce script (titulaire de la
- * boîte) : aucune adresse écrite dans le code. Ancien relais (sans identité) : refusé.
+ * connaître l'identifiant d'un message (ou le code secret des scripts) n'autorise pas à consulter la boîte.
+ * Le relais serveur script-google transmet l'adresse du compte connecté (session vérifiée par Supabase Auth) avec une signature
+ * HMAC-SHA256 calculée avec une CLÉ DÉDIÉE, jamais transmise : propriété CLE_BOITE de ce script (copie de la clé
+ * « mailbox_sign_key » de la base, supabase/functions/script-google/identite.ts). La signature couvre adresse, action,
+ * Message-ID et horodatage ; accepté seulement si : clé présente, signature juste, horodatage à moins de 5 minutes, signature
+ * jamais vue (pas de rejeu), et adresse = compte Google qui exécute ce script (titulaire de la boîte). Aucune adresse écrite ici.
  */
-function callerOk_(b) {
-  var who = String(b.caller || '').trim().toLowerCase();
-  if (!who || !SECRET || typeof b.caller_sig !== 'string' || !b.caller_sig) return '';
-  var bytes = Utilities.computeHmacSha256Signature('matrice-caller:' + who, SECRET, Utilities.Charset.UTF_8);
+var CLE_BOITE_ = PropertiesService.getScriptProperties().getProperty('CLE_BOITE') || '';
+var CALLER_WINDOW_MS_ = 5 * 60 * 1000;
+function callerOk_(b, action) {
+  var who = typeof b.caller === 'string' ? b.caller.trim().toLowerCase() : '';
+  var ts = Number(b.caller_ts), sig = typeof b.caller_sig === 'string' ? b.caller_sig : '';
+  var msgid = typeof b.message_id === 'string' ? b.message_id : '';
+  if (!CLE_BOITE_ || !who || !sig || !isFinite(ts) || Math.abs(Date.now() - ts) > CALLER_WINDOW_MS_) return '';
+  var text = ['matrice-boite-v1', who, action, msgid, String(ts)].join('|');
+  var bytes = Utilities.computeHmacSha256Signature(text, CLE_BOITE_, Utilities.Charset.UTF_8);
   var hex = bytes.map(function (x) { return ('0' + (x & 255).toString(16)).slice(-2); }).join('');
-  return hex === b.caller_sig ? who : '';
+  if (hex !== sig) return '';
+  // une signature ne sert qu'une fois (cache du script, 10 minutes > fenêtre de 5 minutes)
+  var cache = CacheService.getScriptCache();
+  if (cache.get('sig:' + sig)) return '';
+  cache.put('sig:' + sig, '1', 600);
+  return who;
 }
-function ownerOnly_(b) {
-  var me = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase(), who = callerOk_(b);
+function ownerOnly_(b, action) {
+  var me = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase();
+  if (!CLE_BOITE_) return { ok: false, refused: true, error: 'Script de prospection : ajoute la propriété CLE_BOITE (Paramètres du projet › Propriétés du script) : rien n’a été consulté.' };
+  var who = callerOk_(b, action);
   if (me && who && who === me) return null;
   return { ok: false, refused: true, error: 'Recherche dans la boîte ' + (me || 'de ce script') + ' réservée à son titulaire : rien n’a été consulté.' };
 }

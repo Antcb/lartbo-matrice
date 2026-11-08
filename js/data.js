@@ -350,26 +350,37 @@ export async function mailAttachedTo(key){
 
 /**
  * Mails joints AVANT la v1.60.4 (fichier .eml dans un suivi, sans clé import_key) : reconnus par le Message-ID lu dans le fichier
- * déjà stocké — LECTURE SEULE (téléchargement du début du fichier, rien n'est modifié en base ni dans le stockage, aucune clé
- * ajoutée aux lignes historiques). Résultat gardé pour la session (chemin → Message-ID). LEGACY_SCAN_MAX fichiers au plus,
- * les plus récents d'abord ; un fichier illisible est simplement ignoré.
+ * déjà stocké — LECTURE SEULE (téléchargement du début du fichier ; rien n'est modifié en base ni dans le stockage, aucune clé
+ * ajoutée aux lignes historiques). Seule une lecture RÉUSSIE est gardée pour la session ; un échec est relu à la vérification
+ * suivante (relecture de 3ca7f59, B2). {owner : suivi qui le porte | null, incomplete : '' ou motif (fichiers illisibles, plus de
+ * LEGACY_SCAN_MAX fichiers) — vérification incomplète, à annoncer avant tout rattachement}.
  */
 const LEGACY_IDS = new Map();
 export const LEGACY_SCAN_MAX = 300;
 const legacyEml = f => !f.import_key && (f.mime === 'message/rfc822' || /\.eml$/i.test(f.name || ''));
 export async function legacyMailOwner(msgId){
   const {messageIdOf} = await import('./eml.js');
-  const files = S.db.prospect_files.filter(legacyEml).sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))).slice(0, LEGACY_SCAN_MAX);
-  for (const f of files){
+  const all = S.db.prospect_files.filter(legacyEml).sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  let unread = 0;
+  for (const f of all.slice(0, LEGACY_SCAN_MAX)){
     if (!LEGACY_IDS.has(f.path)){
-      let id = '';
-      try { const {data} = await sb.storage.from('suivi').download(f.path); if (data) id = messageIdOf(await data.slice(0, 65536).text()); } catch { id = ''; }
+      let ok = false, id = '';
+      try { const {data, error} = await sb.storage.from('suivi').download(f.path); if (data && !error){ id = messageIdOf(await data.slice(0, 65536).text()); ok = true; } } catch { ok = false; }
+      if (!ok){ unread++; continue; }       // échec : rien n'est mémorisé, relu la prochaine fois
       LEGACY_IDS.set(f.path, id);
     }
-    if (LEGACY_IDS.get(f.path) === msgId) return f.prospect_id;
+    if (LEGACY_IDS.get(f.path) === msgId) return {owner: f.prospect_id, incomplete: ''};
   }
-  return null;
+  const why = [unread && `${unread} fichier${unread > 1 ? 's' : ''} .eml joint${unread > 1 ? 's' : ''} avant la v1.60.4 illisible${unread > 1 ? 's' : ''} pour le moment`,
+    all.length > LEGACY_SCAN_MAX && `${all.length - LEGACY_SCAN_MAX} fichier${all.length - LEGACY_SCAN_MAX > 1 ? 's' : ''} .eml ancien${all.length - LEGACY_SCAN_MAX > 1 ? 's' : ''} non vérifié${all.length - LEGACY_SCAN_MAX > 1 ? 's' : ''} (plus de ${LEGACY_SCAN_MAX})`].filter(Boolean).join(', ');
+  return {owner: null, incomplete: why};
 }
+/** Avertissement d'une vérification incomplète des anciens .eml : vrai seulement si l'utilisateur choisit de joindre quand même */
+export async function legacyUnverifiedOk(why, name){
+  const {confirmAsk} = await import('./ui/dialog.js');
+  return confirmAsk('Vérification incomplète', `Impossible de vérifier entièrement si « ${name} » est déjà joint à un suivi : ${why}.\nSi tu joins quand même, ce mail pourrait se retrouver en double. Tu peux aussi annuler et réessayer plus tard.`, 'Joindre quand même');
+}
+
 /**
  * Ce qui est déjà joint d'un mail dans un suivi (v1.60.4, relecture) — clé par clé : original (msgid:<id>), journal (même clé, ou
  * même entrée d'avant la v1.60.4), pièces extraites (msgid:<id>:pj:<n>). {other: suivi qui en porte déjà une partie | null,
@@ -383,12 +394,13 @@ export async function mailParts(pid, key, m){
   const inLog = !!emlEntry(pid, m)?.exists;
   // joint avant la v1.60.4 (aucune clé) : reconnu par la même entrée au journal de ce suivi, ou par le Message-ID du .eml déjà
   // stocké (dans ce suivi ou un autre, lecture seule) — refusé comme doublon, rien n'est rajouté ni modifié
-  let legacy = false;
+  let legacy = false, unverified = '';
   if (!orig && !log && !pjOwners.some(Boolean)){
-    const old = inLog ? pid : await legacyMailOwner(key.replace(/^msgid:/, ''));
-    if (old && old !== pid) other = old; else if (old) legacy = true;
+    const r = inLog ? {owner: pid, incomplete: ''} : await legacyMailOwner(key.replace(/^msgid:/, ''));
+    if (r.owner && r.owner !== pid) other = r.owner; else if (r.owner) legacy = true;
+    unverified = r.owner ? '' : r.incomplete;
   }
-  return {other, legacy, original: !orig, log: !log && !inLog, pj: pjOwners.map((o, i) => o ? 0 : i + 1).filter(Boolean)};
+  return {other, legacy, unverified, original: !orig, log: !log && !inLog, pj: pjOwners.map((o, i) => o ? 0 : i + 1).filter(Boolean)};
 }
 export const mailPartsMissing = st => st.original || st.log || st.pj.length > 0;
 const otherText = where => `déjà joint au suivi « ${prospectTitle(byId('prospects', where) || {name: 'autre suivi'})} » (même Message-ID) : rien n’a été ajouté`;
@@ -428,7 +440,8 @@ async function storeOne(table, folder, owner, file, extra = {}){
  */
 export async function uploadFiles(owner, files){
   if (typeof owner === 'string') owner = {prospect_id: owner};
-  const {import_key: givenKey = null, ...base} = owner;
+  // legacy_ok : avertissement « vérification incomplète » déjà accepté (parcours du lien message:), pas de seconde question
+  const {import_key: givenKey = null, legacy_ok: legacyOk = false, ...base} = owner;
   const pid = base.prospect_id;
   const table = pid ? 'prospect_files' : 'attachments';
   const folder = pid || (base.task_id ? 'task/' + base.task_id : 'project/' + base.project_id);
@@ -444,6 +457,8 @@ export async function uploadFiles(owner, files){
       plan = await mailParts(pid, key, mail);
       if (plan.other){ failed.push([file.name, otherText(plan.other)]); elsewhere = elsewhere || plan.other; continue; }
       if (plan.legacy){ failed.push([file.name, 'déjà au journal de ce suivi (joint avant la v1.60.4) : rien n’a été ajouté']); continue; }
+      // anciens .eml pas tous vérifiables : jamais de rattachement sans avertissement explicite
+      if (plan.unverified && !legacyOk && !(await legacyUnverifiedOk(plan.unverified, file.name))){ failed.push([file.name, `non joint : vérification incomplète (${plan.unverified})`]); continue; }
       if (!mailPartsMissing(plan)){ failed.push([file.name, 'déjà joint à ce suivi en entier (même Message-ID) : rien n’a été ajouté']); continue; }
     } else if (key){ const where = await mailAttachedTo(key); if (where){ failed.push([file.name, where === pid ? 'déjà joint à ce suivi (même Message-ID) : rien n’a été ajouté' : otherText(where)]); if (where !== pid) elsewhere = elsewhere || where; continue; } }
     if (plan.original){
