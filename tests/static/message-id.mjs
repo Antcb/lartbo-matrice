@@ -113,7 +113,7 @@ if (!/a === 'mail_by_msgid'\) out = mailByMsgId_\(body\.message_id\)/.test(gsPro
   || !/var BOITE_ = \{[^}]*mail_by_msgid: 1/.test(gsProsp)) fail('scripts', 'Prospection.gs : action mail_by_msgid non branchée dans doPost ou non réservée au titulaire');
 // version du code renvoyée par « ping » : celle de la dernière modification de CHAQUE script (Prospection.gs : messagerie v1.61.0)
 for (const [n, src, v] of [['Code.gs', gsCode, '1.60.4'], ['Prospection.gs', gsProsp, '1.61.0']])
-  if (!new RegExp(`var SCRIPT_VERSION = 'v${v.replace(/\./g, '\\.')}'`).test(src)) fail('scripts', `${n} : SCRIPT_VERSION doit être 'v${v}'`);
+  if (!new RegExp(`var SCRIPT_VERSION = 'v${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`).test(src)) fail('scripts', `${n} : SCRIPT_VERSION doit être 'v${v}'`);
 
 // 3a. Lecture du code : seulement des méthodes de lecture (Gmail) et des opérations sur du texte
 const READ_ONLY = new Set(['search', 'forEach', 'getMessages', 'getHeader', 'trim', 'isDraft', 'push', 'test', 'slice', 'getRawContent', 'round', 'getSubject', 'getFrom', 'getDate', 'toISOString']);
