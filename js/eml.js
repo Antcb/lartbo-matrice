@@ -69,13 +69,100 @@ const addr = v => (decodeWords(v).match(/[^\s<>,"]+@[^\s<>,"]+/) || [])[0]?.toLo
 const nameOf = v => { const d = decodeWords(v).trim(); const m = d.match(/^"?([^"<]+?)"?\s*</); return (m ? m[1] : d).trim(); };
 const isoDate = v => { const d = new Date(v); return isNaN(d) ? null : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
-/** Lit un fichier .eml : {from, fromName, to, toName, subject, date (AAAA-MM-JJ), text} */
+/** Participants d'un en-tête (De, À, Cc) en texte lisible, borné */
+const people = v => decodeWords(v || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+
+/** Paramètre de nom de fichier : filename*=UTF-8''…, suites filename*0*=…, filename="=?UTF-8?…?=", ou name=… */
+function fileParam(v, k){
+  v = String(v || '');
+  const parts = [...v.matchAll(new RegExp(`${k}\\*(\\d+)?(\\*)?\\s*=\\s*("([^"]*)"|[^;\\s]+)`, 'gi'))]
+    .map(m => ({n: Number(m[1] || 0), enc: !!m[2] || !m[1], val: m[4] ?? m[3]})).sort((a, b) => a.n - b.n);
+  if (parts.length){
+    let cs = 'utf-8';
+    const bin = parts.map((p, i) => { let x = p.val;
+      if (i === 0 && p.enc){ const m = x.match(/^([^']*)'[^']*'(.*)$/); if (m){ cs = m[1] || cs; x = m[2]; } }
+      return p.enc ? x.replace(/%([0-9A-F]{2})/gi, (_, hx) => String.fromCharCode(parseInt(hx, 16))) : x; }).join('');
+    return decodeBytes(bin, cs);
+  }
+  return decodeWords(param(v, k));
+}
+const cleanName = n => String(n || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 150);
+/** Nombre maximal de pièces jointes extraites d'un mail */
+export const MAIL_ATT_MAX = 20;
+
+/**
+ * Pièces jointes d'un mail brut (v1.60.4) : parties « attachment », parties nommées autres que le texte du mail, mails joints
+ * (message/rfc822) ; les images intégrées au texte (inline + Content-ID, ex. logos de signature) ne sont pas reprises.
+ * Résultat : [{name, type, bytes (Uint8Array)}], MAIL_ATT_MAX au plus.
+ */
+function attachmentsOf(raw, out = [], depth = 0){
+  if (depth > 6 || out.length >= MAIL_ATT_MAX) return out;
+  const {h, body} = splitHead(raw);
+  const ct = h['content-type'] || 'text/plain', type = ct.split(';')[0].trim().toLowerCase();
+  if (type.startsWith('multipart/')){
+    const bnd = param(ct, 'boundary'); if (!bnd) return out;
+    body.split(new RegExp(`--${bnd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:--)?\\s*\\r?\\n?`)).slice(1).forEach(p => attachmentsOf(p, out, depth + 1));
+    return out;
+  }
+  const disp = h['content-disposition'] || '', name = cleanName(fileParam(disp, 'filename') || fileParam(ct, 'name'));
+  const inlineImage = /^\s*inline/i.test(disp) && h['content-id'] && type.startsWith('image/');
+  const isAtt = !inlineImage && (/^\s*attachment/i.test(disp) || (name && !/^text\/(plain|html)$/.test(type)) || type === 'message/rfc822');
+  if (!isAtt) return out;
+  const enc = (h['content-transfer-encoding'] || '').toLowerCase();
+  const bin = enc === 'base64' ? b64(body) : enc === 'quoted-printable' ? qp(body) : body;
+  out.push({name: name || (type === 'message/rfc822' ? 'mail joint.eml' : 'piece-jointe'), type: type || 'application/octet-stream',
+    bytes: Uint8Array.from(bin, c => c.charCodeAt(0) & 255)});
+  return out;
+}
+
+/**
+ * Lit un fichier .eml : {from, fromName, to, toName, subject, date (AAAA-MM-JJ), text, messageId (« <…@…> » ou ''),
+ * fromLine, toLine, ccLine (participants lisibles), attachments ([{name, type, bytes}])}
+ */
 export async function readEml(file){
   const raw = await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = ko; r.readAsBinaryString(file); });
+  return parseEml(raw);
+}
+/** Même lecture à partir du contenu brut (chaîne « binaire » : un caractère par octet) */
+export function parseEml(raw){
   const {h} = splitHead(raw);
   const t = textOf(raw);
+  let attachments = []; try { attachments = attachmentsOf(raw); } catch { attachments = []; }
   return {from: addr(h.from), fromName: nameOf(h.from || ''), to: addr(h.to), toName: nameOf(h.to || ''),
-    subject: decodeWords(h.subject || '').trim(), date: isoDate(h.date), text: cleanBody(t.plain || (t.html ? htmlToText(t.html) : ''))};
+    subject: decodeWords(h.subject || '').trim(), date: isoDate(h.date), text: cleanBody(t.plain || (t.html ? htmlToText(t.html) : '')),
+    messageId: String(h['message-id'] || '').trim(), fromLine: people(h.from), toLine: people(h.to), ccLine: people(h.cc), attachments};
+}
+
+/**
+ * Message-ID d'un mail (RFC 5322), v1.60.4 — forme stricte « <partie-locale@domaine> », sans espace ni caractère de contrôle,
+ * ni guillemet, parenthèse, accolade, barre verticale ou virgule (rien qui puisse changer le sens d'une recherche Gmail),
+ * 250 caractères au plus (chevrons compris). MÊME expression dans apps-script/Code.gs et apps-script/Prospection.gs (MSGID_RE_),
+ * contrôlé par tests/static/message-id.mjs.
+ */
+export const MSGID_RE = /^<[\w!#$%&'*+\/=?^`~.-]{1,200}@[\w.-]{1,200}>$/;
+export const MSGID_MAX = 250;
+/** Taille maximale du contenu brut (.eml) renvoyé par un script Google : 20 Mo (même valeur que MSG_RAW_MAX_ des scripts) */
+export const MSG_RAW_MAX = 20 * 1024 * 1024;
+export const msgIdOk = id => typeof id === 'string' && id.length <= MSGID_MAX && MSGID_RE.test(id);
+/** Domaine d'un Message-ID (seule partie notée dans le diagnostic, jamais l'identifiant complet) */
+export const msgIdDomain = id => (String(id).match(/@([^@>]*)>$/) || [])[1]?.toLowerCase() || '';
+
+/**
+ * Identifiants de message lus dans les liens « message: » qu'Apple Mail transmet quand on glisse un mail (v1.60.4) :
+ * « message:%3C<Message-ID>%3E », « message://%3C…%3E », chevrons en clair, plusieurs liens (liste d'adresses ou texte).
+ * Seuls les identifiants VALIDES (msgIdOk) sont rendus, sans doublon ; rien n'est jamais ouvert ni récupéré par le réseau.
+ */
+export function mailLinkIds(...texts){
+  const out = [];
+  for (const t of texts){
+    for (const m of String(t || '').matchAll(/message:(?:\/\/)?(%3C|<)([^\s]*?)(%3E|>)/gi)){
+      let inner;
+      try { inner = decodeURIComponent(m[2]); } catch { continue; }   // encodage incomplet : lien refusé
+      const id = `<${inner}>`;
+      if (msgIdOk(id) && !out.includes(id)) out.push(id);
+    }
+  }
+  return out;
 }
 
 export { isEml };

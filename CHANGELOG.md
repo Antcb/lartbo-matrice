@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.60.4 — 08/11/2026
+- v1.60.4 : message glissé depuis Apple Mail dans un suivi — si seul le lien « message: » arrive, son Message-ID sert à retrouver CE message dans les boîtes Google (anthony@ puis production@, lecture seule, correspondance exacte), joint après confirmation ; même traitement pour un .eml transmis : original conservé, entrée de journal lisible (objet, date, De/À/Cc, texte), pièces jointes du mail extraites ; doublon refusé (clé msgid vérifiée en base) ; message clair si introuvable ; diagnostic de chaque dépôt sans contenu privé
+
+
 ## 1.60.3 — 07/11/2026
 - v1.60.3 : saisie et spectacles (sélection des champs numériques, cachets sur 3 lignes sans défilement horizontal à 1 280 px et plus, spectacle par défaut), coproduction et promotion locale, suivi administratif (boucle communication, confirmation avant de modifier une date de suivi), destinataires et copies en champ unique, message Apple Mail glissé dans un suivi, budgets (jauge, coûts à compléter, CNM, points d'équilibre), suppression et archivage contrôlés d'une date, question exacte avant le renommage Drive
 

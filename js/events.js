@@ -6,7 +6,7 @@ import { importMovinmotion } from './views/employees.js';
 import { render } from './app.js';
 import { insert, save, sb, syncLinks, uploadFiles } from './data.js';
 import { geocode } from './geo.js';
-import { setSuiviPlace } from './prospection.js';
+import { attachMailLinks, setSuiviPlace } from './prospection.js';
 import { byId, linksOfContact, projIds } from './selectors.js';
 import { S, localSet, setProjects, touch } from './state.js';
 import { MAIL_MSG, fieldError, mailOk, parseCSV, toast, today } from './utils.js';
@@ -94,7 +94,11 @@ document.addEventListener('drop', async e => {
   e.preventDefault(); z.classList.remove('over');
   // (v1.60.3) lecture et copie en mémoire DANS l'événement : un message glissé depuis Apple Mail est un .eml temporaire
   // que Mail efface ou réécrit ensuite (l'envoi répondait alors « Failed to fetch ») ; message clair si rien n'est lisible
-  const {files} = await takeDropped(e); if (!files.length) return;
+  // (v1.60.4) pièces jointes d'un suivi : un message d'Apple Mail arrivé sans fichier (seul le lien « message:%3C<Message-ID>%3E »)
+  // est cherché dans les boîtes Google puis joint à CE suivi après confirmation (prospection.js attachMailLinks)
+  let owner = null; try { owner = z.dataset.drop ? JSON.parse(z.dataset.drop) : null; } catch { owner = null; }
+  const {files, msgIds} = await takeDropped(e, {mailLinks: !!owner?.prospect_id});
+  if (!files.length){ if (msgIds?.length && owner?.prospect_id) await attachMailLinks(owner.prospect_id, msgIds); return; }
   if (z.dataset.dropForm){
     // dans un formulaire : on ajoute les fichiers au champ, envoyés à l'enregistrement
     const input = z.querySelector('input[type=file]'); const dt = new DataTransfer();

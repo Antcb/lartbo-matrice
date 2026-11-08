@@ -6,7 +6,7 @@ import { render } from './app.js';
 import { CFG, ENV } from './config.js';
 import { TEAM_NAMES } from './constants.js';
 import { LINGER_MS } from './constants.js';
-import { byId, linksOfStructure } from './selectors.js';
+import { byId, linksOfStructure, prospectTitle } from './selectors.js';
 import { S, TABLES, localGet, localSet, touch } from './state.js';
 import { toast, today } from './utils.js';
 
@@ -331,28 +331,68 @@ export async function uploadFailure(file, err){
 const safeName = n => n.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w.\-]+/g,'_') || 'fichier';
 
 /**
+ * Suivi auquel un mail est déjà joint (clé import_key « msgid:<Message-ID> », pièce jointe ou entrée du journal), ou null (v1.60.4).
+ * Vérifié EN BASE (pas seulement à l'écran) : un second dépôt, même après rechargement ou depuis un autre poste, est reconnu.
+ */
+export async function mailAttachedTo(key){
+  const local = [...S.db.prospect_files, ...S.db.prospect_logs].find(r => r.import_key === key);
+  if (local) return local.prospect_id;
+  for (const t of ['prospect_files', 'prospect_logs']){
+    const {data} = await sb.from(t).select('prospect_id').eq('import_key', key);
+    if (data?.[0]?.prospect_id) return data[0].prospect_id;
+  }
+  return null;
+}
+const attachedText = (where, pid) => where === pid ? 'déjà joint à ce suivi (même Message-ID) : rien n’a été ajouté'
+  : `déjà joint au suivi « ${prospectTitle(byId('prospects', where) || {name: 'autre suivi'})} » (même Message-ID) : rien n’a été ajouté`;
+
+/** Envoi d'UN fichier au stockage puis sa ligne (prospect_files / attachments) : [true] ou [false, motif] */
+async function storeOne(table, folder, owner, file, extra = {}){
+  const path = `${folder}/${Date.now()}_${safeName(file.name)}`;
+  if (!file.size) return [false, 'fichier vide ou illisible (un élément glissé depuis une messagerie n’est pas toujours un vrai fichier)'];
+  const type = contentTypeOf(file);
+  // (v1.60.3) une erreur réseau (« Failed to fetch ») n'est plus une exception non traitée qui arrête tout l'envoi :
+  // elle est expliquée dans le bilan, fichier par fichier
+  let error;
+  try { ({error} = await sb.storage.from('suivi').upload(path, typedFile(file), {contentType: type, upsert:false})); }
+  catch (err){ return [false, await uploadFailure(file, err)]; }
+  if (error) return [false, error.message];
+  if (await insert(table, {...owner, ...extra, name:file.name, path, size:file.size, mime: type === 'application/octet-stream' ? (file.type || null) : type})) return [true];
+  return [false, 'enregistrement refusé (voir le message affiché)'];
+}
+
+/**
  * Envoi de fichiers dans le stockage privé « suivi ».
  * owner : {prospect_id} pour un suivi, {task_id} ou {project_id[, project_log_id]} pour les autres pièces jointes.
+ * Mail (.eml) dans un suivi (v1.60.4, même chemin pour un .eml déposé et pour un message retrouvé par son lien « message: ») :
+ *  - clé anti-doublon « msgid:<Message-ID> » (en-tête du mail, ou owner.import_key) vérifiée en base AVANT l'envoi : déjà joint → rien ;
+ *  - original .eml conservé en pièce jointe (clé posée), entrée « Mail » au journal (objet, date, De / À / Cc, texte ; même clé),
+ *    pièces jointes du mail extraites en pièces du suivi (clé « msgid:<Message-ID>:pj:<n> »).
  */
 export async function uploadFiles(owner, files){
   if (typeof owner === 'string') owner = {prospect_id: owner};
-  const table = owner.prospect_id ? 'prospect_files' : 'attachments';
-  const folder = owner.prospect_id || (owner.task_id ? 'task/' + owner.task_id : 'project/' + owner.project_id);
+  const {import_key: givenKey = null, ...base} = owner;
+  const pid = base.prospect_id;
+  const table = pid ? 'prospect_files' : 'attachments';
+  const folder = pid || (base.task_id ? 'task/' + base.task_id : 'project/' + base.project_id);
   toast(`Envoi de ${files.length} fichier(s)…`);
   let ok = 0; const done = [], failed = [];
+  const eml = pid ? await import('./eml.js') : null;
   for (const file of files){
-    const path = `${folder}/${Date.now()}_${safeName(file.name)}`;
-    if (!file.size){ failed.push([file.name, 'fichier vide ou illisible (un élément glissé depuis une messagerie n’est pas toujours un vrai fichier)']); continue; }
-    const type = contentTypeOf(file);
-    // (v1.60.3) une erreur réseau (« Failed to fetch ») n'est plus une exception non traitée qui arrête tout l'envoi :
-    // elle est expliquée dans le bilan, fichier par fichier
-    let error;
-    try { ({error} = await sb.storage.from('suivi').upload(path, typedFile(file), {contentType: type, upsert:false})); }
-    catch (err){ failed.push([file.name, await uploadFailure(file, err)]); continue; }
-    if (error){ failed.push([file.name, error.message]); continue; }
-    if (await insert(table, {...owner, name:file.name, path, size:file.size, mime: type === 'application/octet-stream' ? (file.type || null) : type})){ ok++; done.push(file.name); }
-    else failed.push([file.name, 'enregistrement refusé (voir le message affiché)']);
-    if (owner.prospect_id) await emlToJournal(owner.prospect_id, file);
+    let mail = null;
+    if (eml?.isEml(file)){ try { mail = await eml.readEml(file); } catch { toast(`${file.name} : mail illisible, gardé en pièce jointe`, true); } }
+    const key = givenKey || (mail && eml.msgIdOk(mail.messageId) ? 'msgid:' + mail.messageId : null);
+    if (key){ const where = await mailAttachedTo(key); if (where){ failed.push([file.name, attachedText(where, pid)]); continue; } }
+    const [stored, why] = await storeOne(table, folder, base, file, key ? {import_key: key} : {});
+    if (!stored){ failed.push([file.name, why]); continue; }
+    ok++; done.push(file.name);
+    if (!mail) continue;
+    await mailToJournal(pid, mail, key);
+    for (const [i, a] of mail.attachments.entries()){
+      const f = new File([a.bytes], a.name, {type: a.type});
+      const [aok, awhy] = await storeOne(table, folder, base, f, key ? {import_key: `${key}:pj:${i + 1}`} : {});
+      if (aok){ ok++; done.push(`${a.name} (pièce du mail)`); } else failed.push([`${a.name} (pièce du mail)`, awhy]);
+    }
   }
   // bilan qui reste affiché tant qu'on ne le ferme pas : fichiers ajoutés et refusés, avec le motif (v1.53, aucune perte silencieuse)
   if (failed.length){
@@ -364,25 +404,32 @@ export async function uploadFiles(owner, files){
 }
 
 /**
- * Mail glissé dans un suivi (.eml) : en plus de la pièce jointe, une entrée « Mail » au journal
- * (date du mail, interlocuteur, objet et texte, sans l'historique cité). Un mail déjà au journal n'est pas ajouté deux fois.
+ * Entrée « Mail » du journal d'un suivi pour un mail lu (readEml) : date du mail, interlocuteur, objet, participants (De / À / Cc)
+ * et texte (sans l'historique cité). exists : la même entrée est déjà au journal du suivi (même date et même texte, y compris
+ * sous la forme d'avant la v1.60.4, sans les participants). Sert au dépôt d'un .eml et au message retrouvé par son lien.
  */
-async function emlToJournal(pid, file){
-  const {isEml, readEml} = await import('./eml.js');
-  if (!isEml(file)) return;
-  let m; try { m = await readEml(file); } catch { return toast(`${file.name} : mail illisible, gardé en pièce jointe`, true); }
-  const p = byId('prospects', pid); if (!p) return;
+export function emlEntry(pid, m){
+  const p = byId('prospects', pid); if (!p) return null;
   const dom = e => e.split('@')[1] || '';
   const ours = e => !!e && (CFG.TEAM.includes(e) || dom(e) === dom(S.user?.email || ''));
   const sent = ours(m.from);
   const mail = sent ? m.to : m.from, name = sent ? m.toName : m.fromName;
   const contacts = linksOfStructure(p.structure_id);
   const c = contacts.find(x => [x.email, x.email_2].some(e => e && e.toLowerCase() === mail));
-  const body = `${sent ? 'Envoyé' : 'Reçu'}${m.subject ? ` — **${m.subject}**` : ''}\n\n${m.text || '(mail sans texte)'}`;
+  const head = `${sent ? 'Envoyé' : 'Reçu'}${m.subject ? ` — **${m.subject}**` : ''}`, text = m.text || '(mail sans texte)';
+  const who = [['De', m.fromLine], ['À', m.toLine], ['Cc', m.ccLine]].filter(([, v]) => v).map(([k, v]) => `**${k} :** ${v}`).join(' · ');
+  const body = `${head}${who ? `\n${who}` : ''}\n\n${text}`, legacy = `${head}\n\n${text}`;
   const date = m.date || today();   // jour de Paris (§1.2)
-  if (S.db.prospect_logs.some(l => l.prospect_id === pid && l.date === date && l.body === body)) return;
-  const row = await insert('prospect_logs', {prospect_id: pid, date, kind: 'Mail', contact_name: c?.display_name || name || mail || null,
-    contact_id: c?.id || null, body, author: S.user?.email});
+  return {row: {prospect_id: pid, date, kind: 'Mail', contact_name: c?.display_name || name || mail || null, contact_id: c?.id || null, body},
+    exists: S.db.prospect_logs.some(l => l.prospect_id === pid && l.date === date && (l.body === body || l.body === legacy))};
+}
+
+/** Entrée « Mail » au journal pour un mail joint au suivi ; importKey : clé anti-doublon « msgid:<Message-ID> » (v1.60.4) */
+async function mailToJournal(pid, m, importKey = null){
+  const p = byId('prospects', pid); if (!p) return;
+  const e = emlEntry(pid, m); if (!e || e.exists) return;
+  const {date} = e.row;
+  const row = await insert('prospect_logs', {...e.row, author: S.user?.email, ...(importKey ? {import_key: importKey} : {})});
   if (row){
     toast('Mail ajouté au journal');
     if (!p.last_contact || date > p.last_contact) await save('prospects', pid, {last_contact: date}, {rerender: false});

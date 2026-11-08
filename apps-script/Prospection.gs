@@ -15,6 +15,8 @@
  * Le code secret n'est jamais écrit dans ce code (v1.47) : il est lu dans les propriétés du script. Un script déjà installé
  * avec le code écrit en dur continue de fonctionner tel quel (la Matrice envoie toujours le même code, depuis son serveur).
  */
+/** Version du code (renvoyée par « ping », pour vérifier le redéploiement) */
+var SCRIPT_VERSION = 'v1.60.4';
 var SECRET = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET') || '';
 
 function doPost(e) {
@@ -24,10 +26,11 @@ function doPost(e) {
     if (!SECRET) return json_({ ok: false, error: 'Script de prospection : ajoute la propriété WEBHOOK_SECRET (Paramètres du projet › Propriétés du script)' });
     if (!body.secret || body.secret !== SECRET) return json_({ ok: false, error: 'Code secret du script de prospection incorrect' });
     var a = body.action;
-    if (a === 'ping') out = { ok: true, account: Session.getEffectiveUser().getEmail() };
+    if (a === 'ping') out = { ok: true, account: Session.getEffectiveUser().getEmail(), version: SCRIPT_VERSION };
     else if (a === 'mail') out = mail_(body);
     else if (a === 'reply') out = reply_(body);
     else if (a === 'status') out = status_(body.thread_id);
+    else if (a === 'mail_by_msgid') out = mailByMsgId_(body.message_id);   // v1.60.4 : lecture seule
     else out = { ok: false, error: 'Action inconnue : ' + a };
   } catch (err) {
     out = { ok: false, error: String(err) };
@@ -47,6 +50,36 @@ function blobs_(list) {
     return null;
   }).filter(Boolean);
 }
+
+// ─────────────── Message retrouvé par son Message-ID (v1.60.4) ───────────────
+/**
+ * Message glissé depuis Apple Mail (lien « message:%3C<Message-ID>%3E ») : retrouve CE message dans cette boîte, en LECTURE SEULE.
+ * Identifiant refusé s'il n'a pas la forme stricte « <local@domaine> » (même expression que js/eml.js MSGID_RE) ; une seule
+ * recherche, « rfc822msgid: » suivi de l'identifiant validé (jamais de recherche libre) ; exactement UN message dont l'en-tête
+ * Message-ID est identique, brouillons exclus ; renvoie seulement son objet, son expéditeur, sa date et son contenu brut (.eml,
+ * 20 Mo au plus). Aucune modification : ni « lu », ni libellé, ni déplacement (méthodes de lecture seulement, contrôlé par
+ * tests/static/message-id.mjs). Même fonction, au caractère près, dans apps-script/Code.gs et apps-script/Prospection.gs.
+ */
+var MSGID_RE_ = /^<[\w!#$%&'*+\/=?^`~.-]{1,200}@[\w.-]{1,200}>$/;
+var MSGID_MAX_ = 250;
+var MSG_RAW_MAX_ = 20 * 1024 * 1024;
+function mailByMsgId_(id) {
+  id = typeof id === 'string' ? id : '';
+  if (!id || id.length > MSGID_MAX_ || !MSGID_RE_.test(id)) return { ok: false, error: 'Identifiant de message refusé : forme attendue <identifiant@domaine>.' };
+  var found = [];
+  GmailApp.search('rfc822msgid:' + id.slice(1, -1), 0, 10).forEach(function (t) {
+    t.getMessages().forEach(function (m) {
+      var h = String(m.getHeader('Message-ID') || m.getHeader('Message-Id') || '').trim();
+      if (!m.isDraft() && h === id) found.push(m);
+    });
+  });
+  if (!found.length) return { ok: true, found: false };
+  if (found.length > 1) return { ok: false, error: 'Plusieurs messages de cette boîte portent cet identifiant : rattachement impossible par ce chemin.' };
+  var m = found[0], raw = String(m.getRawContent() || '');
+  if (raw.length > MSG_RAW_MAX_) return { ok: false, error: 'Message trop lourd pour être joint (' + Math.round(raw.length / 104857.6) / 10 + ' Mo, 20 Mo au plus).' };
+  return { ok: true, found: true, message: { message_id: id, subject: m.getSubject(), from: m.getFrom(), date: m.getDate().toISOString(), size: raw.length, raw: raw } };
+}
+// ─────────────── fin : Message-ID ───────────────
 
 /** Version texte du mail (délivrabilité, lot V1.52) : mêmes liens que le HTML (« texte (adresse) »), listes, paragraphes, entités */
 function plain_(html) {
