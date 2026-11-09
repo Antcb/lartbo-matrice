@@ -42,6 +42,8 @@ jobs:
         run: node --experimental-strip-types --no-warnings static/pennylane-regles.mjs
       - name: Règles de la synchronisation Brevo (fausses données, aucun appel)
         run: node --experimental-strip-types --no-warnings static/brevo-regles.mjs
+      - name: Sauvegardes, démarrage réel (secret, demandes, classement du schéma privé ; aucune base, aucun appel)
+        run: node --experimental-strip-types --no-warnings static/sauvegarde-declenchement.mjs
       - name: Navigateur de test
         run: npx playwright install --with-deps chromium
       - name: Tests dans le navigateur (fausse base, réseau extérieur bloqué)
