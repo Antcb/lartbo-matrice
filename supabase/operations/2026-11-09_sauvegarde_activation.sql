@@ -1,8 +1,8 @@
--- ACTIVATION du déclenchement au démarrage réel (après la migration 2026-11-09_sauvegarde_declenchement.sql, la fonction serveur
+-- ACTIVATION du déclenchement au démarrage réel (après la migration 2026-11-09_v1.60.7_sauvegarde_declenchement.sql, la fonction serveur
 -- « sauvegarde-fenetre » déployée, le secret GitHub créé, les workflows fusionnés ET une première nuit réussie dans le nouveau mode :
 -- private.sauvegarde_executions contient une copie complète « succes »).
 -- Production, sur autorisation d'Anthony. Effet : la fenêtre FIXE 01:30–04:30 UTC disparaît ; la connexion du rôle « sauvegarde »
--- n'est plus ouverte que par le démarrage réel d'une copie complète (45 min, 1 h au plus), refermée à sa fin ou au plus tard par
+-- n'est plus ouverte que par le démarrage réel d'une copie complète (45 min au plus ; 1 h au plus avec la fermeture de secours), refermée à sa fin ou au plus tard par
 -- la tâche « sauvegarde-interruption » (toutes les 15 min, inchangée).
 do $$ begin
   if not exists (select 1 from private.sauvegarde_executions where type = 'complete' and statut = 'succes') then

@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.60.7 — 09/11/2026
+- Sauvegardes : démarrage réel des sauvegardes (verrou, connexion du rôle de sauvegarde ouverte 45 min au plus et refermée à la fin, fermeture de secours, contrôle d'absence à 13:07 UTC avec notification), lecture de private.mailbox_owners par la sauvegarde complète, présence des secrets (nom + empreinte) — migration 2026-11-09_v1.60.7_sauvegarde_declenchement.sql et fonction serveur sauvegarde-fenetre, à installer (supabase/operations/2026-11-09_sauvegarde_installation.md)
+
+
 ## 1.60.6 — 09/11/2026
 - Facture de solde : le rappel « Facture à envoyer » d'un solde ne tombe plus avant le jour ouvré de J-7 (il tombait 3 jours après la facture faite, quelle que soit la date du concert) — même règle côté serveur (migration préparée, non appliquée)
 

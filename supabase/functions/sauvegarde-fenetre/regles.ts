@@ -26,8 +26,9 @@ export function lireDemande(b: any): Demande | string {
       const tentative = entier(b.tentative, 1, 100);
       if (tentative === null) return 'tentative invalide';
       if (!['schedule', 'workflow_dispatch'].includes(b.origine)) return 'origine inconnue';
-      const duree = b.duree_minutes === undefined ? 45 : entier(b.duree_minutes, 5, 60);
-      if (duree === null) return 'durée invalide (5 à 60 min)';
+      // 45 min au plus : la fermeture de secours de la base passe dans les 15 min suivantes ⇒ connexion ouverte 1 h au plus
+      const duree = b.duree_minutes === undefined ? 45 : entier(b.duree_minutes, 5, 45);
+      if (duree === null) return 'durée invalide (5 à 45 min)';
       return { action: 'demarrer', p: { type: b.type, run_id: b.run_id, tentative, origine: b.origine, forcer: b.forcer === true, duree_minutes: duree } };
     }
     case 'fermer':
