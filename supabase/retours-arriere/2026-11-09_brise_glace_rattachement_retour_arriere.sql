@@ -11,8 +11,9 @@
 --   3. solde relié à la facture, montant 228,99 (ligne non émise à cet instant ; unicité respectée : l'acompte n'a plus la facture).
 -- Historique : une ligne de plus dans pennylane_rattachements (motif « retour arrière ») ; la facture reste exclue du rapprochement
 -- automatique (choix manuel). Journal financier : écrit par les déclencheurs habituels.
--- Arrêt sans rien modifier si : l'opération n'a pas été appliquée, une ligne a changé depuis (paiement, envoi, nouvelle facture de
--- solde…), ou l'historique de l'opération est introuvable. Rejouable : une deuxième exécution reconnaît l'état d'origine.
+-- Arrêt sans rien modifier si : l'opération n'a pas été appliquée, une des deux lignes diffère de l'état laissé par l'opération sur
+-- une seule colonne suivie (paiement, envoi, relance, rangement Drive, lien, nouvelle facture de solde…), la date a changé depuis
+-- (cession, %, TVA, mode, jour : journal financier), ou l'historique de l'opération est introuvable. Rejouable : une deuxième exécution reconnaît l'état d'origine.
 --
 -- Exécution : set operation.confirmation = 'retour-brise-glace'; set operation.operateur = '<adresse de l''équipe>'; puis ce bloc.
 do $rb$
@@ -21,7 +22,7 @@ declare
   num constant text := 'F-AB-2026-11-107';
   conf text := coalesce(current_setting('operation.confirmation', true), '');
   qui text := lower(btrim(coalesce(current_setting('operation.operateur', true), '')));
-  s record; a record; so record; h record; av_a jsonb; av_so jsonb; before_j jsonb; n int;
+  s record; a record; so record; h record; av_a jsonb; av_so jsonb; before_j jsonb; n int; ecarts text;
 begin
   if conf <> 'retour-brise-glace' then raise exception 'Retour Brise Glace : confirmation absente : rien n''est modifié'; end if;
   if qui = '' or not exists (select 1 from public.app_users where lower(email) = qui) then
@@ -51,6 +52,20 @@ begin
   end if;
   if not (so.pennylane_id is null and so.invoice_number is null and so.sent_at is null and so.paid_at is null and so.amount is null) then
     raise exception 'Retour Brise Glace : solde modifié depuis l''opération (facturé, envoyé ou payé ?) (%) : rien n''est modifié', to_jsonb(so);
+  end if;
+  -- relecture de 3dd83dd (B2) : les deux lignes doivent être EXACTEMENT celles laissées par l'opération (h.after), sur toutes les
+  -- colonnes suivies — sinon une relance, un rangement Drive, un nouveau lien… posés depuis seraient écrasés en silence
+  select string_agg(l.quoi || '.' || c, ', ') into ecarts
+    from (values ('acompte', to_jsonb(a), h.after -> 'cible'), ('solde', to_jsonb(so), h.after -> 'source')) l(quoi, maintenant, apres),
+         unnest(array['invoice_number','invoiced_on','sent_at','paid_at','pennylane_id','pennylane_url','reminded_at','drive_file_id',
+                      'amount','pct','vat_rate','kind','show_id','hors_calcul','payee','reminders_paused']) c
+   where l.maintenant -> c is distinct from l.apres -> c;
+  if h.after is null or h.after -> 'cible' is null or h.after -> 'source' is null or ecarts is not null then
+    raise exception 'Retour Brise Glace : lignes modifiées depuis l''opération (%) : rien n''est modifié', coalesce(ecarts, 'historique incomplet');
+  end if;
+  -- date (cession, %, TVA, mode, jour) modifiée depuis l'opération (journal financier) : le montant calculé du solde a pu changer → arrêt
+  if s.date <> date '2026-12-02' or exists (select 1 from public.finance_log f where f.at > h.at and (f.show_id = s.id or f.row_id in (a.id, so.id))) then
+    raise exception 'Retour Brise Glace : la date ou ses lignes ont changé depuis l''opération (journal financier) : rien n''est modifié';
   end if;
   before_j := jsonb_build_object('source', to_jsonb(a), 'cible', to_jsonb(so));
 

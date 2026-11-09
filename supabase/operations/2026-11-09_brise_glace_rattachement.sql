@@ -10,7 +10,8 @@
 -- Ce que fait l'opération (une transaction, tout ou rien) :
 --  1. INVENTAIRE en lecture seule (section 1, à lancer d'abord, seule) ;
 --  2. vérifie l'état exact attendu (identifiants, numéros, montants, dates, absence d'envoi / de paiement du solde, journal, aucun
---     rattachement ni signalement existant, migrations v1.56.9 et v1.60.6 en place) ; au moindre écart : arrêt, RIEN n'est modifié ;
+--     rattachement ni signalement existant, n° F-AB-2026-11-33 inconnu ailleurs, aucune autre facture Pennylane connue pour la date,
+--     migrations v1.56.9 et v1.60.6 en place) ; au moindre écart : arrêt, RIEN n'est modifié ;
 --  3. appelle la fonction existante public.pennylane_rattacher (v1.56.9 — même chemin que l'action « Corriger » de l'application) :
 --     - ACOMPTE : reçoit le lien Pennylane (id, page) ; garde son n° F-AB-2026-11-107, sa date d'envoi (05/11), sa date de facture
 --       (05/11) et son montant figé 228,99 € (ligne émise : montant inchangé, v1.42) ;
@@ -45,6 +46,12 @@ select f.at, f.actor, f.source, f.row_id, f.field, f.old_value, f.new_value
   from public.finance_log f where f.show_id::text like 'b021e7d4-%' order by f.at, f.id;
 select 'rattachements' t, count(*) from public.pennylane_rattachements where pennylane_id = '34170228875264'
 union all select 'à rattacher', count(*) from public.pennylane_a_rattacher where pennylane_id = '34170228875264'
+union all select 'n° 107 ou 33 à rattacher / déjà rattaché (toutes dates)', (select count(*) from public.pennylane_a_rattacher
+    where upper(regexp_replace(coalesce(invoice_number, ''), '[^A-Za-z0-9]', '', 'g')) in ('FAB202611107', 'FAB20261133'))
+  + (select count(*) from public.pennylane_rattachements where upper(regexp_replace(coalesce(invoice_number, ''), '[^A-Za-z0-9]', '', 'g')) in ('FAB202611107', 'FAB20261133'))
+union all select 'autres factures Pennylane connues de la date', (select count(*) from public.pennylane_a_rattacher where show_id::text like 'b021e7d4-%')
+  + (select count(*) from public.pennylane_rattachements where show_id::text like 'b021e7d4-%')
+  + (select count(*) from public.show_payments where show_id::text like 'b021e7d4-%' and pennylane_id is not null and pennylane_id <> '34170228875264')
 union all select 'autres lignes avec cette facture', count(*) from public.show_payments
   where show_id::text not like 'b021e7d4-%' and (pennylane_id = '34170228875264'
         or upper(regexp_replace(coalesce(invoice_number, ''), '[^A-Za-z0-9]', '', 'g')) in ('FAB202611107', 'FAB20261133'));
@@ -106,7 +113,7 @@ begin
 
   -- état exact attendu (faits relevés le 09/11/2026)
   if not (a.pct = 50 and a.amount = 228.99 and a.sent_at = date '2026-11-05' and a.invoiced_on = date '2026-11-05' and a.paid_at is null
-          and a.pennylane_id is null and a.invoice_number = num and a.hors_calcul is null) then
+          and a.pennylane_id is null and a.pennylane_url is null and a.invoice_number = num and a.hors_calcul is null) then
     raise exception 'Brise Glace : acompte différent de l''état attendu (%) : rien n''est modifié', to_jsonb(a) - 'file_path' - 'file_name';
   end if;
   if not (so.pct = 50 and so.amount = 228.99 and so.sent_at is null and so.paid_at is null and so.invoiced_on = date '2026-11-05'
@@ -116,6 +123,21 @@ begin
   select count(*) into n from public.show_payments where id not in (a.id, so.id)
      and (pennylane_id = pid or upper(regexp_replace(coalesce(invoice_number, ''), '[^A-Za-z0-9]', '', 'g')) = 'FAB202611107');
   if n > 0 then raise exception 'Brise Glace : la facture 107 figure sur % autre(s) ligne(s) : rien n''est modifié', n; end if;
+  -- n° 33 (premier n° noté sur l'acompte) : s'il est connu ailleurs (autre ligne, signalement, historique), 33 est peut-être le vrai
+  -- document d'acompte et 107 le solde → arrêt (relecture de 3dd83dd, B1). Même contrôle pour 107 hors de ces deux lignes.
+  select count(*) into n from public.show_payments where id not in (a.id, so.id)
+     and upper(regexp_replace(coalesce(invoice_number, ''), '[^A-Za-z0-9]', '', 'g')) = 'FAB20261133';
+  if n > 0 then raise exception 'Brise Glace : le n° F-AB-2026-11-33 figure sur % autre(s) ligne(s) : vérifier quel document est l''acompte, rien n''est modifié', n; end if;
+  if exists (select 1 from public.pennylane_a_rattacher where upper(regexp_replace(coalesce(invoice_number, ''), '[^A-Za-z0-9]', '', 'g')) in ('FAB20261133', 'FAB202611107'))
+     or exists (select 1 from public.pennylane_rattachements where upper(regexp_replace(coalesce(invoice_number, ''), '[^A-Za-z0-9]', '', 'g')) in ('FAB20261133', 'FAB202611107')) then
+    raise exception 'Brise Glace : une facture F-AB-2026-11-33 ou -107 est déjà signalée ou rattachée : vérifier quel document est l''acompte, rien n''est modifié';
+  end if;
+  -- toute AUTRE facture Pennylane connue pour cette date (signalée, rattachée ou reliée à une autre ligne) : arrêt
+  if exists (select 1 from public.pennylane_a_rattacher where show_id = s.id and pennylane_id <> pid)
+     or exists (select 1 from public.pennylane_rattachements where show_id = s.id and pennylane_id <> pid)
+     or exists (select 1 from public.show_payments where show_id = s.id and nullif(btrim(pennylane_id), '') is not null and pennylane_id <> pid) then
+    raise exception 'Brise Glace : une autre facture Pennylane est connue pour cette date : situation différente de celle analysée, rien n''est modifié';
+  end if;
   if exists (select 1 from public.pennylane_rattachements where pennylane_id = pid) then
     raise exception 'Brise Glace : un rattachement manuel de la facture 107 existe déjà : rien n''est modifié';
   end if;
@@ -134,7 +156,7 @@ begin
   -- correction : chemin officiel (fonction v1.56.9), en tant que l'opérateur de l'équipe, pour cette transaction seulement
   perform set_config('request.jwt.claims', jsonb_build_object('email', qui, 'role', 'authenticated')::text, true);
   perform public.pennylane_rattacher(pid, a.id, motif);
-  perform set_config('request.jwt.claims', '', true);
+  perform set_config('request.jwt.claims', '', true);   -- local à la transaction (true) : rien ne reste dans la séance
 
   -- contrôles après correction (sinon tout est annulé)
   select * into a2 from public.show_payments where id = a.id;
@@ -164,7 +186,7 @@ begin
     raise exception 'Brise Glace : une notification « Facture à envoyer » du solde est active : tout est annulé';
   end if;
   raise notice 'Brise Glace : facture % reliée à l''acompte %, solde % libéré (montant calculé % €) ; rappel solde au 25/11/2026 ; Drive de la ligne quittée : %',
-    num, a.id, so.id, reste, coalesce(so.drive_file_id, 'aucun PDF rangé');
+    num, a.id, so.id, to_char(reste, 'FM999999990.00'), coalesce(so.drive_file_id, 'aucun PDF rangé');
 end $op$;
 
 -- ─────────────── 3. Vérification (lecture seule, après la section 2) ───────────────

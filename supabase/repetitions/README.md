@@ -65,14 +65,15 @@ Décision d'Anthony du 08/11/2026 : aucune donnée fictive dans les comptes opé
 ## Brise Glace — facture 107 reliée au solde (base locale jetable, 09/11/2026)
 
 - `2026-11-09_base_locale_complete.sh` (+ `2026-11-09_base_locale_socle.sql`) : base modèle jetable construite depuis
-  `supabase/schema.sql` et toutes les migrations du dépôt (socle Supabase simulé ; la garde d'empreinte de production de la migration
+  `supabase/schema.sql` et toutes les migrations du dépôt (socle Supabase simulé ; refusé hors serveur local ou sur une base de type Supabase ; la garde d'empreinte de production de la migration
   v1.60 est neutralisée sur cette base seulement, et signalée). Empreintes obtenues identiques à la production pour
   `generate_reminders` (584374b0…) et `show_payments_emitted_guard` (08302c0c…).
 - `2026-11-09_brise_glace_rattachement_essai.sh` : opération `supabase/operations/2026-11-09_brise_glace_rattachement.sql` et retour
   arrière `supabase/retours-arriere/2026-11-09_brise_glace_rattachement_retour_arriere.sql` sur l'état relevé reconstitué par les
-  déclencheurs (données fictives) : 22 contrôles — sans confirmation, opérateur hors équipe, nominal (lignes, journal, historique,
+  déclencheurs (données fictives) : 43 contrôles — sans confirmation, opérateur hors équipe, nominal (lignes, journal, historique,
   rappels v1.60.6, generate_reminders), rejeu, retour arrière exact et son rejeu, jour ouvré de J-7 (« Facture de solde à faire »
   seulement), états différents (solde envoyé, solde payé, acompte au n° 33, facture signalée, autre jour, deuxième acompte, acompte
-  payé), retour arrière refusé après une vraie facture de solde ou sans opération.
+  payé), n° 33 ou autre facture Pennylane connus (autre ligne, signalement, historique ; B1 de la relecture), retour arrière refusé
+  après une vraie facture de solde, sans opération, ou dès qu'une colonne suivie ou la date a changé depuis l'opération (B2).
 - `tests/outils/rejeu-sync-pennylane/` : rejeu de la synchronisation (fonction edge réelle, faux Pennylane, faux Supabase) sur ce cas,
   avec le code du 06/11 (v1.51.0, 2cbd65e) et le code actuel.

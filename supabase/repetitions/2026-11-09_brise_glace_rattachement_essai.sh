@@ -107,6 +107,40 @@ base "update shows set fee_ht = 457.98, date = '2026-12-03' where id = '$SH'"; c
 base "insert into show_payments(show_id, kind, label, pct, sort) values ('$SH', 'acompte', 'Acompte 2', 10, 3)"; cas "un deuxième acompte" arret "$OK_SET" "$OP"
 base "select set_config('request.jwt.claims','{\"email\":\"production@lartboristerie.com\"}',false); update show_payments set paid_at = '2026-11-08' where id = '$AC'"
 cas "acompte payé entre-temps" arret "$OK_SET" "$OP"
+# 6 bis (relecture de 3dd83dd, B1) : n° 33 ou autre facture Pennylane connue → arrêt
+OTH=c0000000-0000-4000-a000-000000000009
+AUTRE="insert into shows(id, project_id, venue, city, date, status, prod_mode, fee_ht) values ('$OTH', 'e0000000-0000-4000-a000-000000000001', 'Autre', 'X', '2026-12-20', 'Confirmée Salle', 'production', 1000);"
+base "$AUTRE update show_payments set invoice_number = 'F-AB-2026-11-33' where show_id = '$OTH' and kind = 'acompte';"; cas "n° 33 sur une ligne d'une autre date" arret "$OK_SET" "$OP"
+base "$AUTRE update show_payments set invoice_number = 'f ab 2026 11 33' where show_id = '$OTH' and kind = 'acompte';"; cas "n° 33 ailleurs (espaces, casse)" arret "$OK_SET" "$OP"
+base "insert into pennylane_a_rattacher(pennylane_id, show_id, invoice_number, amount_ht, reason) values ('99990033', '$SH', 'F-AB-2026-11-33', 228.99, 'essai')"; cas "facture 33 signalée « à rattacher »" arret "$OK_SET" "$OP"
+base "insert into pennylane_rattachements(pennylane_id, show_id, invoice_number) values ('99990033', null, 'F-AB-2026-11-33')"; cas "facture 33 dans l'historique des rattachements" arret "$OK_SET" "$OP"
+base "insert into pennylane_a_rattacher(pennylane_id, show_id, invoice_number, amount_ht, reason) values ('99990107', null, 'F-AB-2026-11-107', 228.99, 'essai')"; cas "autre facture n° 107 signalée" arret "$OK_SET" "$OP"
+base "insert into pennylane_a_rattacher(pennylane_id, show_id, invoice_number, amount_ht, reason) values ('99990250', '$SH', 'F-AB-2026-11-250', 228.99, 'essai')"; cas "autre facture Pennylane de la date signalée" arret "$OK_SET" "$OP"
+base "insert into show_payments(show_id, kind, label, amount, pennylane_id, invoice_number, sort) values ('$SH', 'autre', 'Frais', 50, '99990051', 'F-AB-2026-11-51', 5)"; cas "autre facture Pennylane reliée sur la date" arret "$OK_SET" "$OP"
+base "$AUTRE update show_payments set invoice_number = 'f ab 2026 11 107' where show_id = '$OTH' and kind = 'acompte';"; cas "n° 107 ailleurs (normalisé)" arret "$OK_SET" "$OP"
+base "update show_payments set pennylane_url = 'https://autre' where id = '$AC'"; cas "acompte avec un lien Pennylane" arret "$OK_SET" "$OP"
+base "insert into finance_log(table_name,row_id,show_id,op,field,old_value,new_value,actor,source) values ('show_payments','$SO','$SH','UPDATE','amount','228.99','228.99','production@lartboristerie.com','application / fonction serveur')"
+cas "montant du solde retouché par l'équipe (journal)" arret "$OK_SET" "$OP"
+base; cas "opérateur en majuscules et espaces" ok "set operation.confirmation = '107-est-l-acompte'; set operation.operateur = '  Anthony@LartBoristerie.com ';" "$OP" "select (select actor from pennylane_rattachements limit 1) = 'anthony@lartboristerie.com'"
+base; cas "confirmation presque juste" arret "set operation.confirmation = '107-est-l-acompte '; set operation.operateur = 'anthony@lartboristerie.com';" "$OP"
+# 6 ter (relecture de 3dd83dd, B2) : retour arrière refusé dès qu'une colonne suivie a changé depuis l'opération
+for m in "update show_payments set reminded_at = '2026-11-16' where id = '$AC'" \
+         "update show_payments set drive_file_id = 'DRIVE-ACOMPTE-107' where id = '$AC'" \
+         "select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false); update show_payments set pennylane_url = 'https://nouveau' where id = '$AC'" \
+         "update show_payments set vat_rate = 5.5 where id = '$SO'" \
+         "update show_payments set reminded_at = '2026-11-20' where id = '$SO'" \
+         "update shows set fee_ht = 600 where id = '$SH'"; do
+  base; lancer "$OK_SET" "$OP" >/dev/null; $Q -c "$m" >/dev/null
+  cas "retour arrière refusé après : ${m:0:70}" arret "$RB_SET" "$RB"
+done
+# PDF Drive et relance rangés sur le solde avant l'opération : suivent la facture, retour exact
+base "update show_payments set drive_file_id = 'DRIVE-SOLDE', reminded_at = '2026-11-07' where id = '$SO'"; AV12=$(lignes)
+cas "PDF Drive rangé sur le solde : suit la facture" ok "$OK_SET" "$OP" "select drive_file_id = 'DRIVE-SOLDE' and reminded_at = '2026-11-07' from show_payments where id = '$AC'"
+cas "retour arrière avec Drive et relance" ok "$RB_SET" "$RB"
+[ "$(lignes)" = "$AV12" ] && echo "OK     retour exact avec Drive et relance" || { echo "ÉCHEC  retour exact avec Drive et relance : $(lignes)"; ECHECS=$((ECHECS+1)); }
+# réglages de la transaction non conservés dans la séance (set_config local)
+base; S15=$( (echo "$OK_SET"; cat "$OP"; echo "select 'claims=' || coalesce(current_setting('request.jwt.claims', true), '') || ';reg=' || coalesce(current_setting('matrice.regularisation', true), '');") | psql -X -q -At -d $DB 2>/dev/null | grep '^claims=')
+[ "$S15" = "claims=;reg=" ] && echo "OK     aucun réglage de transaction laissé dans la séance" || { echo "ÉCHEC  réglages laissés : $S15"; ECHECS=$((ECHECS+1)); }
 # 7. retour arrière refusé si le solde a été facturé après l'opération
 base; lancer "$OK_SET" "$OP" >/dev/null
 $Q -c "update show_payments set invoice_number = 'F-AB-2026-11-250' where id = '$SO'" >/dev/null
