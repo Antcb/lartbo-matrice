@@ -25,6 +25,10 @@
 --    (par « automatique ») ou manuelle (auteur = finance_actor(), l'adresse du compte connecté). Garde contacts_prospection_guard :
 --    une écriture directe de l'équipe par l'API (rôles anon / authenticated) sur ces trois colonnes est refusée.
 --
+-- 4. Mode essai Brevo (réglage brevo_essai_emails, marche supabase/operations/2026-11-09_essai_brevo_contact_test.md) : garde
+--    brevo_essai_guard : tant qu'une clé Brevo est enregistrée, l'équipe (API, rôles anon / authenticated) ne peut ni modifier ni
+--    effacer ce réglage (on vide d'abord la clé, puis la liste blanche). Sans le réglage (cas normal), aucun effet.
+--
 -- brevo_contact_trg (déclencheur brevo_contacts sur contacts) n'est pas modifiée : sa branche « contact_structures » n'est plus
 -- appelée (le déclencheur brevo_contact_structures est remplacé ci-dessous par la version « par requête »).
 -- Aucune donnée existante n'est modifiée (colonne ajoutée vide). Rejouable. Sans clé Brevo ou sans adresse des fonctions serveur,
@@ -41,6 +45,7 @@
 --   drop function public.brevo_links_trg(); drop function public.brevo_link_queue(uuid); drop function public.brevo_structure_del_trg();
 --   drop function public.set_prospection(uuid, boolean, text); drop function public.contacts_prospection_guard();
 --   drop function public.prospection_entree(text, text, text, text);
+--   drop trigger brevo_essai_guard on public.settings; drop function public.brevo_essai_guard();
 --   brevo_structure_trg : version de supabase/migrations/2026-11-07_v1.60.2_brevo_reactivation.sql ;
 --   les colonnes contacts.hors_prospection_at, prospection_exclue_at, prospection_history peuvent rester (inutilisées) ; les retirer
 --   = suppression de colonnes et de l'historique (accord d'Anthony).
@@ -220,3 +225,20 @@ begin
   return new;
 end $$;
 revoke all on function public.brevo_structure_trg() from public, anon, authenticated;
+
+-- Mode essai : la liste blanche ne se modifie ni ne s'efface par l'API de l'équipe tant qu'une clé Brevo est enregistrée (relecture
+-- B2 du 09/11). La présence de la clé est lue par brevo_key_status (v1.47, SECURITY DEFINER : la clé reste illisible) ; réponse
+-- inconnue = clé supposée présente. Pas SECURITY DEFINER : current_user est le rôle de l'appel.
+create or replace function public.brevo_essai_guard() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if old.key = 'brevo_essai_emails' and current_user::text in ('anon', 'authenticated')
+     and (tg_op = 'DELETE' or new.key is distinct from old.key or new.value is distinct from old.value)
+     and coalesce(public.brevo_key_status(), true) then
+    raise exception 'Mode essai Brevo : vide d’abord la clé Brevo (Réglages › Brevo), puis la liste blanche peut être retirée.';
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  return new;
+end $$;
+create or replace trigger brevo_essai_guard before update or delete on public.settings
+  for each row execute function public.brevo_essai_guard();

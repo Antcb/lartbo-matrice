@@ -41,6 +41,17 @@ export const structName = id => byId('structures', id)?.name || '';
 export const teamName = email => TEAM_NAMES[email] || (email ? email.split('@')[0] : '');
 
 export function setting(k){ const s = S.db.settings.find(x=>x.key===k); return s ? s.value : null; }
+/**
+ * Mode essai Brevo (réglage brevo_essai_emails ; marche supabase/operations/2026-11-09_essai_brevo_contact_test.md) : null = inactif
+ * (réglage absent ou vide) ; sinon les adresses VALIDES retenues — liste vide = rempli sans adresse valide = TOUT est bloqué
+ * (relecture B2 du 09/11). Même règle : supabase/functions/brevo-sync/regles.ts (listeEssai).
+ */
+export function listeEssaiBrevo(v = setting('brevo_essai_emails')){
+  if (v == null || (typeof v === 'string' && !v.trim())) return null;
+  const brut = Array.isArray(v) ? v.join(',') : typeof v === 'string' ? v : JSON.stringify(v);
+  return [...new Set(brut.split(/[,;\s]+/).map(e => e.replace(/^[<"'(]+|[>"'),.]+$/g, '').trim().toLowerCase())
+    .filter(e => /^[^\s@<>"',;()]+@[^\s@<>"',;()]+\.[a-z]{2,}$/.test(e)))];
+}
 
 /** Lien d'une page publique (fiche, artiste, salarié). En test, « &test » est ajouté : le lien ouvre la base de test (jamais
  *  la vraie fiche) et se reconnaît. Même règle pour le lien {{lien_fiche}} des mails (fonction SQL mail_vars, complété

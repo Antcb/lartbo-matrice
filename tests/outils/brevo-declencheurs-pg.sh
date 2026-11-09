@@ -27,6 +27,10 @@ create table contact_structures(contact_id uuid references contacts(id) on delet
 create table appels(n serial, contact uuid);
 -- fonctions existantes en production (is_team : RLS ; finance_actor : v1.42, auteur d'après la session)
 create function is_team() returns boolean language sql as $$ select true $$;
+create table settings(key text primary key, value jsonb);
+create function setting_text(k text) returns text language sql stable as $$ select value #>> '{}' from settings where key = k $$;
+create or replace function public.brevo_key_status() returns boolean language sql stable security definer set search_path = public as $$
+  select case when not public.is_team() then null else coalesce(btrim(public.setting_text('brevo_api_key')), '') <> '' end $$;
 create or replace function public.finance_actor() returns text language sql stable set search_path = public as $$
   select coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'email',
                   nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role', session_user::text) $$;
@@ -203,6 +207,26 @@ reset role; truncate appels; set role authenticated;   -- le prénom modifié a 
 select set_prospection(u(64), false, 'Erreur de saisie');
 select set_prospection(u(65), false, 'Contact repris en direct');   -- 65 : exclusion automatique seulement
 reset role;
+-- ───── Mode essai (relecture B2) : liste blanche intouchable par l'équipe tant qu'une clé Brevo est enregistrée ─────
+grant select, insert, update, delete on settings to authenticated;
+insert into settings values ('brevo_api_key', to_jsonb('xkeysib-essai-fictive'::text)), ('brevo_essai_emails', to_jsonb('lea+essai@x.invalid'::text)), ('autre', to_jsonb('1'::text));
+set role authenticated;
+do $$ begin
+  begin update settings set value = to_jsonb(''::text) where key = 'brevo_essai_emails'; raise exception 'ÉCHEC : liste blanche vidée avec une clé présente';
+  exception when raise_exception then if sqlerrm like 'ÉCHEC%' then raise; end if; end;
+  begin delete from settings where key = 'brevo_essai_emails'; raise exception 'ÉCHEC : liste blanche supprimée avec une clé présente';
+  exception when raise_exception then if sqlerrm like 'ÉCHEC%' then raise; end if; end;
+  begin update settings set value = to_jsonb('vrai.contact@x.invalid'::text) where key = 'brevo_essai_emails'; raise exception 'ÉCHEC : liste blanche élargie avec une clé présente';
+  exception when raise_exception then if sqlerrm like 'ÉCHEC%' then raise; end if; end;
+  update settings set value = to_jsonb('2'::text) where key = 'autre';   -- les autres réglages restent libres
+  raise notice 'ok : liste blanche ni vidée, ni supprimée, ni élargie par l’équipe tant que la clé est là ; autres réglages libres';
+end $$;
+reset role;
+update settings set value = to_jsonb(''::text) where key = 'brevo_api_key';   -- clé vidée (set_brevo_key(''))
+set role authenticated;
+update settings set value = to_jsonb(''::text) where key = 'brevo_essai_emails';
+reset role;
+select attendu('clé vidée : la liste blanche peut être retirée', (select value #>> '{}' from settings where key = 'brevo_essai_emails'), '');
 select attendu('remise en prospection : exclusion manuelle levée (63 reste exclu, non remis)', exclus(), '0063');
 select attendu('… exclusion automatique levée aussi (action explicite)', (select (hors_prospection_at is null)::text from contacts where id = u(65)), 'true');
 select attendu('… tracée', hist(64), 'exclusion/manuelle/equipe@exemple.invalid,remise/manuelle/equipe@exemple.invalid');

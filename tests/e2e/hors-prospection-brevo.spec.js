@@ -105,5 +105,19 @@ test('Réglages › Brevo : mode essai signalé avec ses adresses ; absent sans 
     S.db.settings.push({ key: 'brevo_essai_emails', value: 'prenom+essai@exemple.invalid' }); touch('settings'); (await import('./js/app.js')).render(); });
   await expect(page.locator('#main')).toContainText('Mode essai Brevo actif');
   await expect(page.locator('#main')).toContainText('seules ces adresses sont synchronisées : prenom+essai@exemple.invalid');
+  // relecture B2 : rempli sans adresse valide → tout est bloqué, annoncé ; adresses retenues nettoyées (nom, chevrons)
+  const poser = v => page.evaluate(async v => { const { S, touch } = await import('./js/state.js');
+    S.db.settings.find(x => x.key === 'brevo_essai_emails').value = v; touch('settings'); (await import('./js/app.js')).render(); }, v);
+  for (const v of ['ADRESSE+essai@DOMAINE', 'prenom+essai@gmail,com', { a: 1 }]) {
+    await poser(v);
+    await expect(page.locator('#main')).toContainText('Mode essai Brevo actif');
+    await expect(page.locator('#main')).toContainText('aucune adresse valide : tout est bloqué, aucun contact n’est synchronisé');
+  }
+  await poser('Prénom <Prenom+Essai@Exemple.fr>');
+  await expect(page.locator('#main')).toContainText('seules ces adresses sont synchronisées : prenom+essai@exemple.fr.');
+  // même règle que brevo-sync (regles.ts) : listeEssaiBrevo
+  expect(await page.evaluate(async () => { const { listeEssaiBrevo } = await import('./js/selectors.js');
+    return [listeEssaiBrevo(''), listeEssaiBrevo(null), listeEssaiBrevo('ADRESSE+essai@DOMAINE'), listeEssaiBrevo(' A+essai@X.fr ; b@y.org')]; }))
+    .toEqual([null, null, [], ['a+essai@x.fr', 'b@y.org']]);
   expectClean(ctx);
 });

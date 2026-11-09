@@ -221,6 +221,9 @@ t('déclencheur SQL : ajout, retrait et déplacement relancent la synchronisatio
   assert.match(code, /grant execute on function public\.set_prospection\(uuid, boolean, text\) to authenticated/);
   assert.doesNotMatch(code.slice(code.indexOf('function public.set_prospection'), code.indexOf('revoke all on function public.set_prospection')), /emailBlacklisted|unsubscri|blacklist/i);
   assert.match(code, /create or replace trigger brevo_structure_deleted before delete on public\.structures/);
+  // mode essai (relecture B2) : liste blanche ni modifiée ni effacée par l'API de l'équipe tant qu'une clé est enregistrée
+  assert.match(code, /create or replace trigger brevo_essai_guard before update or delete on public\.settings/);
+  assert.match(code, /coalesce\(public\.brevo_key_status\(\), true\)/);
   // essai en base jetable : tests/outils/brevo-declencheurs-pg.sh (50 rattachements, structure de 40 contacts, réécriture à l'identique)
   assert.match(readFileSync(new URL('../outils/brevo-declencheurs-pg.sh', import.meta.url), 'utf8'), /fonction et structure réécrites à l’identique : aucun appel[\s\S]*suppression d’une structure inactive : ses contacts uniquement inactifs marqués[\s\S]*contact créé sans structure : pas marqué/);
 });
@@ -262,7 +265,24 @@ t('option B (08/11) et exclusion manuelle (09/11) : contact devenu sans structur
 });
 
 t('MODE ESSAI (marche du 09/11) : seule l’adresse de la liste blanche est synchronisée, aucun appel pour les autres', async () => {
-  assert.equal(listeEssai(''), null); assert.equal(listeEssai(null), null); assert.equal(listeEssai('pas une adresse'), null);
+  assert.equal(listeEssai(''), null); assert.equal(listeEssai('   '), null); assert.equal(listeEssai(null), null); assert.equal(listeEssai(undefined), null);
+  // relecture B2 : réglage rempli SANS adresse valide = tout bloqué (liste vide), jamais le mode normal
+  for (const v of ['pas une adresse', 'ADRESSE+essai@DOMAINE', 'prenom+essai-matrice@gmail', 'prenom+essai@gmail,com', '<<ADRESSE D’ESSAI À REMPLACER>>', { a: 1 }, 5, [], ['x']])
+    assert.deepEqual(listeEssai(v), new Set(), JSON.stringify(v));
+  assert.deepEqual([...listeEssai('Prénom <Prenom+Essai@Gmail.com>')], ['prenom+essai@gmail.com']);
+  assert.deepEqual([...listeEssai('"lea+essai@x.invalid"')], ['lea+essai@x.invalid']);
+  assert.deepEqual([...listeEssai(['lea+essai@x.invalid'])], ['lea+essai@x.invalid']);
+  const bloque = listeEssai('ADRESSE+essai@DOMAINE');
+  assert.deepEqual(mailsAutorises(C({ email_2: 'lea+essai@x.invalid' }), bloque), []);
+  const b0 = fauxBrevo({ 'lea@x.invalid': {} });
+  await syncContact({ client: b0.client, c: C(), links: [], champs: CH, listIds: [7], ours: new Set(['lea@x.invalid']), essai: bloque });
+  assert.deepEqual(b0.appels, []);
+  // même règle côté application (js/selectors.js, listeEssaiBrevo) : même motif d'adresse et même cas « vide »
+  const sel = readFileSync(new URL('../../js/selectors.js', import.meta.url), 'utf8');
+  const reg = readFileSync(new URL('../../supabase/functions/brevo-sync/regles.ts', import.meta.url), 'utf8');
+  const motif = t => (t.match(/\.filter\(\(?e\)? => (\/\^\[\^\\s@<>[^\n]*?\$\/)\.test\(e\)\)/) || [])[1];
+  assert.ok(motif(reg)); assert.equal(motif(sel), motif(reg));
+  assert.match(sel, /if \(v == null \|\| \(typeof v === 'string' && !v\.trim\(\)\)\) return null;/);
   assert.deepEqual([...listeEssai(' Prenom+Essai@X.invalid ; autre@x.invalid,')], ['prenom+essai@x.invalid', 'autre@x.invalid']);
   const essai = listeEssai('lea+essai@x.invalid');
   assert.deepEqual(mailsAutorises(C({ email_2: 'LEA+essai@x.invalid' }), essai), ['lea+essai@x.invalid']);
@@ -285,6 +305,7 @@ t('MODE ESSAI (marche du 09/11) : seule l’adresse de la liste blanche est sync
   assert.ok(un.indexOf('await attrNames(key)') < un.indexOf('syncContact('));
   assert.match(un, /champs: a, listIds, ours, essai \}\)/);
   const tout = src.slice(src.indexOf('if (body.all) {'), src.indexOf('// Un contact'));
+  assert.match(src, /const essai = listeEssai\(ESSAI_BRUT\);/);   // valeur brute (objet, nombre… = bloqué)
   assert.ok(tout.indexOf('if (essai) return json({ ok: false') >= 0 && tout.indexOf('if (essai) return json({ ok: false') < tout.indexOf('await attrNames(key)'));
   assert.equal((src.match(/await attrNames\(key\)/g) || []).length, 2);
 });

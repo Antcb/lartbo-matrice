@@ -4,7 +4,7 @@
 import { confirmAsk } from '../ui/dialog.js';
 import { APP_VERSION } from '../config.js';
 import { sb } from '../data.js';
-import { departments, setting, settingAcompte } from '../selectors.js';
+import { departments, listeEssaiBrevo, setting, settingAcompte } from '../selectors.js';
 import { fetchAll } from '../data.js';
 import { S, touch } from '../state.js';
 import { isCoproduction, isInvoiced, paymentsOf } from '../calc.js';
@@ -16,6 +16,13 @@ import { templatesList } from '../mail.js';
 import { templateForm } from '../budget-template.js';
 import { FONTS, SIZES, mailFont, rtStyle, rtToolbar } from '../ui/richtext.js';
 
+/** Réglages › Brevo : mode essai (listeEssaiBrevo, même règle que brevo-sync) — adresses réellement retenues, ou tout bloqué */
+function essaiBrevoNote(){
+  const l = listeEssaiBrevo(); if (!l) return '';
+  return `<p class="help mb"><strong>Mode essai Brevo actif</strong> (réglage posé par Claude pour un essai) : ${l.length
+    ? `seules ces adresses sont synchronisées : ${esc(l.join(', '))}. Tous les autres contacts sont ignorés`
+    : 'aucune adresse valide : tout est bloqué, aucun contact n’est synchronisé'} et « Envoyer tous les contacts existants à Brevo » est désactivé.</p>`;
+}
 export function viewSettings(){
   const acRaw = setting('default_acompte_pct'), ac = settingAcompte(), acShown = acRaw == null || String(acRaw).trim() === '' ? '' : ac;   // vide : affiché vide (50 % appliqué), jamais 0 (§6.4)
   return viewHead('Réglages') + `
@@ -102,7 +109,7 @@ export function viewSettings(){
       <div class="vh-actions mt-sm"><button class="btn sm" data-act="saveSignature" data-key="prospect_signature_production" data-el="set-sig-prod">Enregistrer la signature</button></div></div>
     <div class="panel pad"><h3 class="panel-title">Brevo</h3>
       <p class="help mb">Chaque nouveau contact de la Matrice qui a un mail est ajouté automatiquement dans Brevo (mail, prénom, nom, structure). Un mail déjà présent dans Brevo n’est jamais modifié : ni ses infos, ni ses listes, et un désabonné reste désabonné. Seule exception : pour les mails que la Matrice a elle-même ajoutés, le prénom, le nom, la ou les structures et la fonction dans chaque structure restent à jour (y compris quand on ajoute ou retire un rattachement ou qu’on change une fonction), sans jamais toucher aux listes ni au désabonnement. La fonction dans chaque structure va dans le champ Brevo « FONCTIONS » (ex. « Festival B : Programmatrice ; Théâtre Z : Directrice »), seulement si ce champ a été créé dans Brevo : ton nom en haut à droite › Paramètres › Contacts › Attributs de contact, onglet « Attributs normaux » › « Ajouter un nouvel attribut », nom FONCTIONS, type Texte, puis « Créer l’attribut ». Un contact lié uniquement à des structures inactives n’est pas ajouté (il l’est si l’une de ses structures est réactivée). Si on lui retire son dernier rattachement (ou si sa structure inactive est supprimée), il reste hors prospection et hors Brevo, même sans structure, jusqu’à ce qu’on le rattache à une structure active ou que l’une de ses structures soit réactivée ; un contact créé sans structure, lui, est ajouté normalement. L’équipe peut aussi exclure un contact à la main depuis sa fiche (« Exclure de la prospection », avec un motif, nom et date gardés) : il n’est alors plus ajouté à Brevo, même rattaché à une structure active, jusqu’à « Remettre en prospection ». Rien n’est jamais retiré de Brevo et un désabonné reste désabonné. Dans Brevo : ton nom en haut à droite › « SMTP et API » › onglet « Clés API » › « Générer une nouvelle clé API », puis colle-la ici. La liste est facultative : son numéro est dans Contacts › Listes (colonne ID).</p>
-      ${String(setting('brevo_essai_emails') || '').trim() ? `<p class="help mb"><strong>Mode essai Brevo actif</strong> (réglage posé par Claude pour un essai) : seules ces adresses sont synchronisées : ${esc(String(setting('brevo_essai_emails')))}. Tous les autres contacts sont ignorés et « Envoyer tous les contacts existants à Brevo » est désactivé.</p>` : ''}
+      ${essaiBrevoNote()}
       <div class="steps">
         <label for="set-brevo">Clé API Brevo</label><span class="secret-line"><input id="set-brevo" type="password" autocomplete="off" data-1p-ignore data-brevo-key="1" placeholder="xkeysib-…"> <span class="muted" id="brevo-state">…</span></span>
         <label for="set-brevo-list">Liste Brevo (n°, ou plusieurs séparés par des virgules)</label><input id="set-brevo-list" data-setting-text="brevo_list_id" value="${esc(setting('brevo_list_id')||'')}" placeholder="ex. 3">

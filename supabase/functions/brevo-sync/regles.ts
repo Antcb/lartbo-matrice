@@ -94,13 +94,19 @@ export function attributes(c: Contact, links: Link[] | undefined, a: Champs, mis
 
 /**
  * MODE ESSAI (marche supabase/operations/2026-11-09_essai_brevo_contact_test.md) : réglage brevo_essai_emails = une ou plusieurs
- * adresses (virgules). Tant qu'il est rempli, la synchronisation ne touche QUE ces adresses : toute autre adresse est ignorée AVANT
- * le moindre appel à Brevo, et « tout envoyer » est refusé. Vide : fonctionnement normal. Sert à brancher la vraie clé Brevo sur
- * l'espace de test sans risque pour ses autres contacts. null = mode essai inactif.
+ * adresses (virgules). Tant qu'il est rempli, la synchronisation ne touche QUE les adresses valides qu'il contient : toute autre
+ * adresse est ignorée AVANT le moindre appel à Brevo, et « tout envoyer » est refusé. Sert à brancher la vraie clé Brevo sur l'espace
+ * de test sans risque pour ses autres contacts.
+ * - réglage absent, null ou texte vide : null = fonctionnement normal ;
+ * - réglage rempli SANS aucune adresse valide (exemple laissé tel quel, faute de frappe, valeur non texte) : liste VIDE = TOUT est
+ *   bloqué (relecture B2 du 09/11) ; jamais de retour silencieux au fonctionnement normal.
+ * Même règle : js/selectors.js (listeEssaiBrevo), affichée dans Réglages › Brevo.
  */
 export function listeEssai(v: unknown): Set<string> | null {
-  const l = String(v ?? "").split(/[,;\s]+/).map((e) => e.trim().toLowerCase()).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
-  return l.length ? new Set(l) : null;
+  if (v == null || (typeof v === "string" && !v.trim())) return null;
+  const brut = Array.isArray(v) ? v.join(",") : typeof v === "string" ? v : JSON.stringify(v);
+  return new Set(brut.split(/[,;\s]+/).map((e) => e.replace(/^[<"'(]+|[>"'),.]+$/g, "").trim().toLowerCase())
+    .filter((e) => /^[^\s@<>"',;()]+@[^\s@<>"',;()]+\.[a-z]{2,}$/.test(e)));
 }
 /** Adresses du contact que la synchronisation peut toucher (toutes hors mode essai ; sinon seulement celles de la liste) */
 export const mailsAutorises = (c: Contact, essai: Set<string> | null): string[] => mailsOf(c).filter((e) => !essai || essai.has(e));

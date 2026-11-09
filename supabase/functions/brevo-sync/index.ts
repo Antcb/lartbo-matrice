@@ -30,10 +30,13 @@ async function bfetch(url: string, init: RequestInit = {}): Promise<Response> {
 }
 const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
+/** Valeur BRUTE du réglage brevo_essai_emails (mode essai : un réglage rempli sans adresse valide bloque tout, regles.ts) */
+let ESSAI_BRUT: unknown = null;
 async function settings() {
   const { data } = await sb.from("settings").select("key,value").in("key", ["brevo_api_key", "brevo_list_id", "brevo_hook_secret", "brevo_essai_emails"]);
   const m: Record<string, string> = {};
-  for (const r of data || []) m[r.key] = typeof r.value === "string" ? r.value : (r.value == null ? "" : String(r.value));
+  ESSAI_BRUT = null;
+  for (const r of data || []) { if (r.key === "brevo_essai_emails") ESSAI_BRUT = r.value; m[r.key] = typeof r.value === "string" ? r.value : (r.value == null ? "" : String(r.value)); }
   return m;
 }
 
@@ -117,7 +120,8 @@ Deno.serve(async (req) => {
     const key = s.brevo_api_key.trim();
     const listIds = String(s.brevo_list_id || "").split(/[,;\s]+/).map(Number).filter((n) => n > 0);
     // mode essai (réglage brevo_essai_emails, regles.ts) : seules ces adresses sont synchronisées, rien d'autre n'appelle Brevo
-    const essai = listeEssai(s.brevo_essai_emails);
+    // valeur brute : un réglage rempli sans adresse valide bloque tout (liste vide), jamais de retour au mode normal
+    const essai = listeEssai(ESSAI_BRUT);
 
     // Tout envoyer d'un coup (import Brevo)
     if (body.all) {

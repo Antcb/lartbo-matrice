@@ -12,6 +12,8 @@ Solution retenue, la plus simple et la plus sûre : une **liste blanche**, le r�
 - Tant qu'il contient l'adresse du contact d'essai, `brevo-sync` ignore tous les autres contacts **avant le moindre appel à Brevo**.
 - « Envoyer tous les contacts existants à Brevo » est refusé.
 - Le réglage est posé **avant** que la clé soit collée et retiré **après** que la clé est vidée.
+- Rempli sans adresse valide (faute de frappe…), il **bloque tout** : aucun contact n'est synchronisé.
+- Tant qu'une clé est enregistrée, l'équipe ne peut ni le modifier ni l'effacer : la base refuse. Le bloc SQL de retrait refuse aussi.
 - S'il était oublié, il ne pourrait que bloquer la synchronisation, jamais l'étendre.
 - Réglages › Brevo affiche « Mode essai Brevo actif » avec l'adresse, tant qu'il est posé.
 
@@ -26,7 +28,7 @@ Requêtes : `supabase/operations/2026-11-09_essai_brevo_liste_blanche.sql`.
    - S'il y a une clé, Claude s'arrête et prévient Anthony.
 2. Migration `2026-11-08_brevo_rattachements.sql` appliquée sur le **projet de test** seulement.
 3. Fonction `brevo-sync` (index.ts et regles.ts) déployée sur le **projet de test**, puis comparée au dépôt. Elle doit contenir `brevo_essai_emails`, sinon on arrête.
-4. Anthony donne l'adresse du contact d'essai (avec `+essai`). Claude pose la liste blanche avec cette seule adresse et vérifie qu'elle est la seule.
+4. Anthony donne l'adresse du contact d'essai (une de ses adresses avec `+essai` juste avant le @). Claude pose la liste blanche avec cette seule adresse. Le bloc SQL refuse une adresse invalide ou sans `+essai`, et la valeur d'exemple laissée telle quelle. Claude vérifie ensuite qu'elle est la seule.
 5. Dans l'espace de test, Réglages › Brevo : « Liste Brevo » **vide**, pour que le contact d'essai n'entre dans aucune liste.
 6. **Aucun autre essai** (autre agent, autre session) ne tourne sur le projet de test pendant la séance.
 
@@ -41,7 +43,7 @@ Requêtes : `supabase/operations/2026-11-09_essai_brevo_liste_blanche.sql`.
 
 2. **Clé Brevo de l'espace de test**, seulement quand Claude confirme que la liste blanche est en place
    - Espace de test de la Matrice › Réglages › Brevo.
-   - Vérifie la mention « Mode essai Brevo actif » avec ton adresse `+essai`. Sinon, arrête-toi.
+   - Vérifie la mention « Mode essai Brevo actif » suivie de **ton** adresse `+essai`. Si elle indique « aucune adresse valide : tout est bloqué », ou s'il n'y a pas de mention, arrête-toi.
    - « Clé API Brevo » : colle la clé. Laisse « Liste Brevo » vide.
 
 3. **Deux structures d'essai** (espace de test › Structures › Nouvelle structure)
@@ -49,7 +51,7 @@ Requêtes : `supabase/operations/2026-11-09_essai_brevo_liste_blanche.sql`.
 
 4. **Le contact d'essai** (espace de test › Contacts › Nouveau contact)
    - Prénom « Essai », nom « Matrice ».
-   - Mail : une adresse à toi, avec `+essai` avant le @ (exemple : `prenom+essai-matrice@tondomaine`).
+   - Mail : **exactement** l'adresse donnée à Claude à l'étape préalable 4 : une de tes adresses, à laquelle tu ajoutes `+essai` juste avant le @.
    - Structures : ESSAI Structure A et ESSAI Structure B. Enregistre.
    - Sur chaque fiche structure, « Fonction ici » : « Programmatrice » pour A, « Directrice » pour B.
 
@@ -80,7 +82,7 @@ Requêtes : `supabase/operations/2026-11-09_essai_brevo_liste_blanche.sql`.
 10. **Vider la clé** (tout de suite après l'étape 9)
     - Espace de test › Réglages › Brevo › « Clé API Brevo » : efface le champ (laisse-le vide) et valide.
     - Le message « Clé Brevo retirée » apparaît, puis l'état affiche « pas encore de clé ».
-    - Claude vérifie en lecture que la clé est vide, puis retire la liste blanche. Jamais dans l'autre ordre.
+    - Claude vérifie en lecture que la clé est vide, puis retire la liste blanche. Jamais dans l'autre ordre : la base et le bloc SQL le refusent.
 
 11. **Rangement**
     - Dans l'espace de test : supprime le contact et les deux structures d'essai.
