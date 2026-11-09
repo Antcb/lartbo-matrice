@@ -54,7 +54,11 @@ function doPost(e) {
     if (ESSAI_ && out && out.ok && !refus) {
       out.essai = { libelle: ESSAI_.libelle, id: essaiLabel_() };
       // conversation créée ou continuée en essai (prospection, nouveau mail, réponse) : marquée TEST pour rester dans le périmètre
-      if ((a === 'mail' || a === 'reply' || a === 'compose') && out.thread_id) Gmail.Users.Threads.modify({ addLabelIds: [essaiLabel_()] }, 'me', String(out.thread_id));
+      // (relecture de 1c79901, point 3) envoi déjà fait : un échec du libellé n'est JAMAIS une erreur (sinon l'utilisateur renverrait)
+      if ((a === 'mail' || a === 'reply' || a === 'compose') && out.thread_id) {
+        try { Gmail.Users.Threads.modify({ addLabelIds: [essaiLabel_()] }, 'me', String(out.thread_id)); }
+        catch (err) { out.avertissement = 'Envoyé, mais le libellé « ' + ESSAI_.libelle + ' » n’a pas pu être posé : pose-le à la main dans Gmail (sinon la conversation reste hors essai).'; }
+      }
     }
   } catch (err) {
     out = { ok: false, error: String(err) };
@@ -563,7 +567,7 @@ function filesInfo_(b) {
 
 /* ════════════════════════ Mode essai (v1.63, décision d'Anthony du 09/11/2026) ════════════════════════
  * Script d'ESSAI séparé sur la vraie boîte anthony@, branché sur le projet Supabase de TEST. Propriétés du script :
- *   MODE_ESSAI = oui · LIBELLE_ESSAI = Matrice-essai (libellé Gmail posé à la main sur les conversations TEST) ·
+ *   MODE_ESSAI = oui (TOUTE valeur non vide active le mode, « non » compris : pour le quitter, supprimer la propriété) · LIBELLE_ESSAI = Matrice-essai (libellé Gmail posé à la main sur les conversations TEST) ·
  *   DESTINATAIRES_ESSAI = adresses autorisées, séparées par des virgules (alias « +… » compris).
  * Règles : une conversation est autorisée si AU MOINS UN de ses messages porte le libellé (une réponse arrivée ensuite, sans libellé,
  * reste lisible ; une conversation dont on retire le libellé ne l'est plus) ; la synchronisation part de la seule liste des
@@ -594,9 +598,33 @@ function essaiConfig_() {
 }
 /** Adresse sans « +alias », en minuscules */
 function sansAlias_(e) { var m = String(e || '').toLowerCase().match(/^([^@+]+)(\+[^@]*)?@(.+)$/); return m ? m[1] + '@' + m[3] : ''; }
+/**
+ * (relecture de 1c79901, B1) TOUTES les adresses d'un champ, ou null au moindre doute : virgule seule comme séparateur (« ; » refusé),
+ * chaque morceau = une adresse seule ou « Nom <adresse> » (nom sans @ ni chevron), exactement autant de « @ » que d'adresses.
+ */
+function adressesStrictes_(v) {
+  var s = String(v == null ? '' : v).trim(), out = [];
+  if (!s) return out;
+  if (/[;\r\n]/.test(s)) return null;
+  var parts = s.split(','), simple = /^[^\s<>"@,;()\[\]\\]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i].trim(), m;
+    if (!p) return null;
+    if (simple.test(p)) out.push(p.toLowerCase());
+    else if ((m = p.match(/^(?:"[^"@<>\\]*"|[^"<>@,;]*)\s*<([^\s<>"@,;()\[\]\\]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})>$/))) out.push(m[1].toLowerCase());
+    else return null;
+  }
+  return (s.match(/@/g) || []).length === out.length ? out : null;
+}
+/** Envoi d'essai : chaque adresse de chaque champ (À, Copie, Copie cachée) parmi les destinataires d'essai, sinon refus */
 function destOk_(list) {
   var ok = ESSAI_.dest.map(sansAlias_);
-  return addrs_([].concat(list).filter(Boolean).join(',')).every(function (a) { return ok.indexOf(sansAlias_(a.email)) >= 0; });
+  for (var i = 0; i < list.length; i++) {
+    var a = adressesStrictes_(list[i]);
+    if (a === null) return false;
+    for (var j = 0; j < a.length; j++) if (!sansAlias_(a[j]) || ok.indexOf(sansAlias_(a[j])) < 0) return false;
+  }
+  return true;
 }
 /** Conversation TEST : au moins un message porte le libellé (lecture des seuls libellés de la conversation) */
 function threadEssai_(id) {
@@ -613,7 +641,13 @@ function essaiGarde_(a, b) {
   var L = essaiLabel_();
   if (a === 'thread' || a === 'modify' || a === 'status' || a === 'reply' || (a === 'compose' && b.thread_id))
     if (!threadEssai_(b.thread_id)) return refusEssai_('Conversation hors essai (sans le libellé « ' + ESSAI_.libelle + ' »).');
-  if (a === 'modify' && [].concat(b.remove || []).map(String).indexOf(L) >= 0) return refusEssai_('Le libellé d’essai ne se retire pas depuis l’application.');
+  if (a === 'modify' && [].concat(b.remove || []).some(function (x) { var v = String(x).trim().toLowerCase(); return v === L.toLowerCase() || v === ESSAI_.libelle.toLowerCase(); }))
+    return refusEssai_('Le libellé d’essai ne se retire pas depuis l’application.');
+  // (relecture de 1c79901, B2) brouillon désigné : seulement un brouillon d'une conversation TEST (jamais écraser un brouillon réel)
+  if (a === 'compose' && b.draft_id) {
+    var d; try { d = Gmail.Users.Drafts.get('me', String(b.draft_id), { format: 'minimal' }); } catch (err) { d = null; }
+    if (!d || !d.message || !threadEssai_(d.message.threadId)) return refusEssai_('Brouillon hors essai.');
+  }
   if ((a === 'compose' || a === 'mail' || a === 'reply') && !destOk_([b.to, b.cc, b.bcc])) return refusEssai_('Destinataire hors des adresses d’essai.');
   if (a === 'reply' && !b.to) return refusEssai_('Relance d’essai : destinataire à indiquer explicitement.');
   if (a === 'attachment') {
@@ -624,7 +658,8 @@ function essaiGarde_(a, b) {
     var id = typeof b.message_id === 'string' ? b.message_id : '';
     if (!MSGID_RE_.test(id)) return null;   // refusé ensuite par mailByMsgId_ (même contrôle)
     var found = GmailApp.search('rfc822msgid:' + id.slice(1, -1) + ' label:"' + ESSAI_.libelle.replace(/"/g, '') + '"', 0, 1);
-    if (!found.length) return { ok: true, found: false, essai: { libelle: ESSAI_.libelle, id: L } };
+    // message trouvé : sa conversation doit être TEST (au moins un message portant le libellé)
+    if (!found.length || !threadEssai_(found[0].getId())) return { ok: true, found: false, essai: { libelle: ESSAI_.libelle, id: L } };
   }
   return null;
 }
@@ -639,9 +674,14 @@ function historyEssai_(b) {
     return { ok: true, account: me, remaining: [], threads: b.ids.slice(0, 50).map(String).filter(threadEssai_).map(function (id) {
       try { return threadMeta_(threadLight_(id), me); } catch (err) { return { id: id, missing: true }; } }) };
   }
-  var r = Gmail.Users.Threads.list('me', { labelIds: [L], maxResults: 50 }), depuis = String(b.start_history_id || '');
+  // pages suivantes lues aussi (relecture de 1c79901), au plus 5 pages de 50 conversations TEST
+  var depuis = String(b.start_history_id || ''), toutes = [], token = null, n = 0;
+  do {
+    var r = Gmail.Users.Threads.list('me', { labelIds: [L], maxResults: 50, pageToken: token });
+    toutes = toutes.concat(r.threads || []); token = r.nextPageToken; n++;
+  } while (token && n < 5);
   var plusRecent = function (h) { h = String(h || ''); return !depuis || h.length > depuis.length || (h.length === depuis.length && h > depuis); };
-  var ids = (r.threads || []).filter(function (t) { return plusRecent(t.historyId); }).map(function (t) { return t.id; });
+  var ids = toutes.filter(function (t) { return plusRecent(t.historyId); }).map(function (t) { return t.id; });
   var limit = Math.min(Number(b.max) || 30, 50);
   return { ok: true, account: me, history_id: String(profile.historyId), full: !depuis,
     threads: ids.slice(0, limit).map(function (id) { try { return threadMeta_(threadLight_(id), me); } catch (err) { return { id: id, missing: true }; } }),

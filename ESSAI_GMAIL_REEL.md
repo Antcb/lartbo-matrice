@@ -34,6 +34,15 @@ synchronisation planifiée (`private.sync_urls` du projet de test reste **vide**
   et d'envoi sont refusées (« Mode essai : … »). Côté serveur, le réglage `mail_essai_libelle` = `Matrice-essai` du projet de test
   fait refuser toute réponse d'un script qui n'est pas en mode essai sur ce libellé et n'enregistre que les conversations qui le
   portent. L'espace Mails affiche « Mode essai ».
+- **Destinataires** : chaque adresse de chaque champ (À, Copie, Copie cachée) doit être une adresse d'essai (alias « + » compris) ;
+  séparateur « , » seulement — « ; », adresses collées par une espace, adresse cachée dans un nom ou un domaine, virgule dans un
+  nom entre guillemets : refusés (au moindre doute, refus). Un brouillon désigné doit appartenir à une conversation TEST.
+- **Propriété `MODE_ESSAI`** : toute valeur non vide active le mode, « non » compris ; pour le quitter, **supprimer** la propriété.
+- **Limites connues (documentées)** : (a) envoi réussi mais libellé non posé (incident Gmail) → succès avec avertissement « pose-le
+  à la main », jamais une erreur qui pousserait à renvoyer ; (b) `files_info` (taille des documents Drive proposés en pièces jointes)
+  n'est pas limité au périmètre d'essai : lecture seule, au nom du titulaire, des seuls fichiers dont l'identifiant est fourni par
+  l'application (aucune lecture de Gmail) ; (c) le rôle `sauvegarde` reçoit la lecture de `private.sync_urls` ici, mais l'usage du
+  schéma `private` lui est accordé par le lot sauvegardes (v1.60.7) : sans lui, la lecture reste impossible.
 
 ## 2. Actions de la séance
 ### Côté Google — Anthony (web, dans l'ordre)

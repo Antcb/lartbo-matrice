@@ -92,7 +92,7 @@ const blob = (bytes, name = '', type = 'application/octet-stream') => ({
   _b: Buffer.from(bytes), getBytes() { return this._b; }, getName() { return name; }, getContentType() { return type; },
   setName(n) { name = n; return this; }, setDataFromString(s) { this._b = Buffer.from(String(s), 'utf8'); return this; }, getDataAsString() { return this._b.toString('utf8'); } });
 const CLE = 'cle-boite-fictive', TITULAIRE = ME;
-function bac({ threads = {}, history = null, historyError = false, driveFiles = {}, urls = {}, sendNoId = false, updateFails = false, cle = CLE, props = {}, labels = null, searches = {} } = {}) {
+function bac({ threads = {}, history = null, historyError = false, driveFiles = {}, urls = {}, sendNoId = false, updateFails = false, cle = CLE, props = {}, labels = null, searches = {}, drafts = null, modifyFails = false } = {}) {
   const log = { created: [], updated: [], sent: [], modified: [], trashed: [], untrashed: [], fetched: [], lists: [], gets: [], historyCalls: 0, searches: [] };
   const hdrs = (o) => Object.entries(o).map(([name, value]) => ({ name, value }));
   const Gmail = { Users: {
@@ -102,10 +102,11 @@ function bac({ threads = {}, history = null, historyError = false, driveFiles = 
       list: (_me, opt = {}) => { log.lists.push(opt); const L = opt.labelIds || [];
         return { threads: Object.keys(threads).filter((id) => L.every((l) => threads[id].messages.some((m) => (m.labelIds || []).includes(l))))
           .map((id) => ({ id, historyId: threads[id].historyId || '100' })) }; },
-      modify: (req, _me, id) => { log.modified.push({ id, ...req }); return { messages: [{ labelIds: ['INBOX'] }] }; },
+      modify: (req, _me, id) => { if (modifyFails) throw new Error('Gmail indisponible'); log.modified.push({ id, ...req }); return { messages: [{ labelIds: ['INBOX'] }] }; },
       trash: (_me, id) => { log.trashed.push(id); }, untrash: (_me, id) => { log.untrashed.push(id); },
     },
     Drafts: {
+      get: (_me, id) => { const d = (drafts || {})[id]; if (!d) throw new Error('Not Found'); return { id, message: { id: 'm-' + id, threadId: d } }; },
       create: (req) => { log.created.push(req); return { id: 'dr-' + log.created.length, message: { id: 'msg-d', threadId: req.message.threadId || 'neuf' } }; },
       update: (req, _me, id) => { if (updateFails) throw new Error('Requested entity was not found.'); log.updated.push({ id, req }); return { id, message: { id: 'msg-d', threadId: req.message.threadId || 'neuf' } }; },
       send: (req) => { log.sent.push(req.id); return sendNoId ? {} : { id: 'envoye-1', threadId: 'th-envoi' }; },
@@ -441,6 +442,56 @@ t('mode essai : envois réservés aux destinataires d’essai (alias compris) ; 
   assert.equal(ok.sent, true, ok.error);
   assert.deepEqual(J(log.modified.at(-1)), { id: 'th-envoi', addLabelIds: ['Label_E'] });
   assert.match(appel(ctx, await signe({ thread_id: 'aa01aa01aa01aa01', remove: ['Label_E'] }, 'modify')).error, /ne se retire pas/);
+});
+t('relecture B1 : destinataires — toutes les adresses d’un champ vérifiées ; « ; », espaces, adresse cachée dans un nom ou un domaine → refus (À, Copie, Copie cachée, action mail)', async () => {
+  const PIEGES = ['colbe.essai@example.net; vrai.contact@example.com', 'colbe.essai@example.net vrai.contact@example.com',
+    '<colbe.essai@example.net> vrai.contact@example.com', '"colbe.essai@example.net"@evil.example.com', 'colbe.essai@example.net@evil.example.com'];
+  for (const piege of PIEGES) {
+    for (const champ of ['to', 'cc', 'bcc']) {
+      const { ctx, log } = essaiBac();
+      const p = { mode: 'new', to: 'colbe.essai@example.net', subject: 'x', html: 'x', send: true, [champ]: piege };
+      const r = appel(ctx, await signe(p, 'compose'));
+      assert.match(r.error || '', /Destinataire hors/, champ + ' : ' + piege);
+      assert.equal(log.created.length + log.sent.length, 0);
+    }
+    const { ctx } = essaiBac();
+    for (const champ of ['to', 'cc']) assert.match(appel(ctx, { action: 'mail', secret: 'secret-essai', to: 'colbe.essai@example.net', subject: 'x', html: 'x', [champ]: piege }).error || '', /Destinataire hors/, 'mail ' + champ);
+  }
+  // formes légitimes acceptées
+  const { ctx } = essaiBac();
+  for (const to of ['Colbe Essai <colbe.essai@example.net>', '"Essai Colbe" <colbe.essai+salle@example.net>, titulaire@example.org'])
+    assert.equal(appel(ctx, await signe({ mode: 'new', to, subject: 'x', html: 'x', send: false }, 'compose')).ok, true, to);
+  // au moindre doute, refus : virgule dans un nom entre guillemets (découpage ambigu)
+  assert.match(appel(ctx, await signe({ mode: 'new', to: '"Essai, Colbe" <colbe.essai@example.net>', subject: 'x', html: 'x', send: false }, 'compose')).error || '', /Destinataire hors/);
+});
+t('relecture B2 : brouillon désigné hors essai (brouillon réel) → refusé, jamais écrasé ni envoyé ; brouillon d’une conversation TEST accepté', async () => {
+  const { ctx, log } = essaiBac({ drafts: { 'r-reel': 'bb02bb02bb02bb02', 'r-test': 'aa01aa01aa01aa01' } });
+  for (const id of ['r-reel', 'inconnu']) {
+    const r = appel(ctx, await signe({ mode: 'new', to: 'colbe.essai@example.net', subject: 'x', html: 'x', send: true, draft_id: id }, 'compose'));
+    assert.match(r.error || '', /Brouillon hors essai/, id);
+  }
+  assert.equal(log.updated.length + log.sent.length, 0);
+  const ok = appel(ctx, await signe({ mode: 'new', to: 'colbe.essai@example.net', subject: 'x', html: 'x', send: false, draft_id: 'r-test' }, 'compose'));
+  assert.equal(ok.ok, true, ok.error); assert.equal(log.updated.length, 1);
+});
+t('mode essai : libellé non retirable quelle que soit l’écriture ; recherche par Message-ID : conversation trouvée hors essai écartée ; libellé non posé après envoi → succès avec avertissement', async () => {
+  const { ctx } = essaiBac();
+  for (const x of [' Label_E ', 'label_e', 'matrice-essai']) assert.match(appel(ctx, await signe({ thread_id: 'aa01aa01aa01aa01', remove: [x] }, 'modify')).error || '', /ne se retire pas/, x);
+  const q = 'rfc822msgid:h1@example.org label:"Matrice-essai"';
+  const { ctx: c2 } = essaiBac({ searches: { [q]: [{ getId: () => 'bb02bb02bb02bb02' }] } });
+  assert.equal(appel(c2, await signe({ message_id: '<h1@example.org>' }, 'mail_by_msgid')).found, false);
+  const { ctx: c3 } = essaiBac({ modifyFails: true });
+  const r = appel(c3, await signe({ mode: 'new', to: 'colbe.essai@example.net', subject: 'x', html: 'x', send: true }, 'compose'));
+  assert.equal(r.ok, true); assert.equal(r.sent, true); assert.match(r.avertissement, /libellé « Matrice-essai » n’a pas pu être posé/);
+});
+t('mode essai : synchronisation au-delà de 50 conversations TEST (pages suivantes lues, toujours par libellé)', async () => {
+  const many = Object.fromEntries(Array.from({ length: 60 }, (_, i) => { const id = 'dd' + String(i).padStart(14, '0'); return [id, conv(id, [m('d' + i, ['Label_E'], { From: ME, To: 'colbe.essai@example.net' })], '700')]; }));
+  const { ctx, log } = essaiBac({ threads: many });
+  ctx.Gmail.Users.Threads.list = (_me, opt = {}) => { log.lists.push(opt); const all = Object.keys(many).map((id) => ({ id, historyId: '700' }));
+    const start = opt.pageToken ? Number(opt.pageToken) : 0; return { threads: all.slice(start, start + 50), nextPageToken: start + 50 < all.length ? String(start + 50) : undefined }; };
+  const h = appel(ctx, await signe({ start_history_id: '100', max: 50 }, 'history'));
+  assert.equal(h.threads.length + h.remaining.length, 60);
+  assert.ok(log.lists.length === 2 && log.lists.every((o) => JSON.stringify(o.labelIds) === '["Label_E"]'));
 });
 t('mode essai mal configuré → TOUT bloqué (libellé absent, inexistant, système ; destinataires absents)', async () => {
   for (const props of [{ MODE_ESSAI: 'oui' }, { ...ESSAI, LIBELLE_ESSAI: 'Inexistant' }, { ...ESSAI, LIBELLE_ESSAI: 'INBOX' }, { ...ESSAI, DESTINATAIRES_ESSAI: '' }]) {

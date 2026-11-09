@@ -106,8 +106,11 @@ Deno.serve(async (req) => {
     if (mode === 'threads') {
       const ids = threadIds(body.ids);
       for (const id of ids) {
-        const j = await script(url, secret, key, owner, 'thread', { thread_id: id });
-        if (j.thread) threads.push(j.thread);   // mode essai : conversation hors libellé écartée
+        // mode essai : une conversation refusée par le script (hors libellé) est écartée sans interrompre le reste du lot
+        try {
+          const j = await script(url, secret, key, owner, 'thread', { thread_id: id });
+          if (j.thread) threads.push(j.thread);
+        } catch (e) { if (ESSAI && e instanceof Explique && /hors essai|mode essai/i.test(e.message)) continue; throw e; }
       }
     } else {
       // plus de 30 conversations changées : le reste est gardé (pending) et lu aux passages suivants, le point de reprise avance

@@ -283,7 +283,7 @@ export async function compose(mode, row = null, msg = null){
           if (!out.sent) throw new Error('Gmail n’a pas confirmé l’envoi : rien n’est noté au journal.');
           clearDraft(key);
           await mailSync([out.thread_id]).catch(e => toast('Envoyé, mais journal pas encore à jour : ' + e.message, true));
-          toast('Mail envoyé');
+          toast(out.avertissement || 'Mail envoyé', !!out.avertissement);   // mode essai : envoyé, libellé à poser à la main
         } else { draftId = out.draft_id || draftId; keep(); toast('Brouillon enregistré dans Gmail'); }
         render(); return send;   // brouillon : la fenêtre reste ouverte
       } catch (err) {
