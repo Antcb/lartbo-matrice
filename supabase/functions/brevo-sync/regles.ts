@@ -110,6 +110,18 @@ export function listeEssai(v: unknown): Set<string> | null {
   return new Set(brut.split(/[,;\s]+/).map((e) => e.replace(/^[<"'(]+|[>"'),.]+$/g, "").trim().toLowerCase())
     .filter((e) => /^[^\s@<>"',;()]+@[^\s@<>"',;()]+\.[a-z]{2,}$/.test(e)));
 }
+/**
+ * Réglages d'UN appel de brevo-sync, à partir de la réponse de la base (relecture B3 du 09/11) : valeurs texte + mode essai calculé
+ * sur la valeur BRUTE, sans aucun état partagé entre appels simultanés. Lecture en échec (erreur, réponse vide) : exception, l'appel
+ * s'arrête — jamais de repli silencieux sur le fonctionnement normal.
+ */
+export function lireReglages(r: { data: { key: string; value: unknown }[] | null; error: { message: string } | null }): { m: Record<string, string>; essai: Set<string> | null } {
+  if (r.error || !r.data || !r.data.length) throw new Error("Lecture des réglages impossible : synchronisation Brevo arrêtée, rien n’est envoyé (réessaie dans un instant)");
+  const m: Record<string, string> = {};
+  let brut: unknown = null;
+  for (const x of r.data) { if (x.key === "brevo_essai_emails") brut = x.value; m[x.key] = typeof x.value === "string" ? x.value : (x.value == null ? "" : String(x.value)); }
+  return { m, essai: listeEssai(brut) };
+}
 /** Adresses du contact que la synchronisation peut toucher (toutes hors mode essai ; sinon seulement celles de la liste) */
 export const mailsAutorises = (c: Contact, essai: Set<string> | null): string[] => mailsOf(c).filter((e) => !essai || essai.has(e));
 

@@ -19,7 +19,7 @@ P=("${QUI[@]}" "$BIN/psql" -h "$D" -p "$PORT" -U postgres -v ON_ERROR_STOP=1 -q 
 
 # État de la production avant la migration (v1.16 / v1.32) : déclencheur ligne par ligne, à l'ajout seulement
 "${P[@]}" <<'SQL'
-create role anon; create role authenticated; create role service_role;
+create role anon; create role authenticated; create role service_role bypassrls;   -- comme Supabase : le rôle serveur ignore la RLS
 create table contacts(id uuid primary key, email text, email_2 text, first_name text, last_name text);
 create table structures(id uuid primary key, name text, inactive_at timestamptz);
 create table contact_structures(contact_id uuid references contacts(id) on delete cascade,
@@ -268,8 +268,8 @@ insert into contacts(id, email) values (u(85), 'mem2@exemple.invalid');
 update contacts set email = 'Mem1@exemple.invalid' where id = u(87);             -- adresse mémorisée donnée à un contact existant
 reset role;
 select attendu('recréé avec la même adresse (casse différente) : exclusion manuelle reprise', exclu(83), 'manuelle');
-select attendu('… journal : ancien journal + « reprise »', (select prospection_history->-1->>'motif' from contacts where id = u(83)), 'Exclusion reprise d’un contact supprimé le ' || to_char(now() at time zone 'Europe/Paris', 'DD/MM/YYYY'));
-select attendu('… ancien journal gardé', (select prospection_history->0->>'motif' from contacts where id = u(83)), 'Ne plus solliciter');
+select attendu('… trace « reprise » avec la date et le dernier motif', (select prospection_history->-1->>'motif' from contacts where id = u(83)), 'Exclusion reprise d’un contact supprimé le ' || to_char(now() at time zone 'Europe/Paris', 'DD/MM/YYYY') || ' : « Ne plus solliciter »');
+select attendu('… une seule entrée (journal du contact supprimé non recopié)', (select jsonb_array_length(prospection_history)::text from contacts where id = u(83)), '1');
 select attendu('recréé avec la 2e adresse mémorisée : exclu', exclu(84), 'manuelle');
 select attendu('recréé, exclusion automatique reprise', exclu(85), 'auto');
 select attendu('adresse mémorisée donnée à un contact existant : exclu', exclu(87), 'manuelle');
@@ -288,10 +288,44 @@ delete from contacts where id = u(83);
 insert into contacts(id, email) values (u(88), 'mem1@exemple.invalid');
 select attendu('… recréé ensuite : prospectable', coalesce(exclu(88), ''), '');
 select attendu('87 (exclusion reprise) reste exclu tant qu’on ne le remet pas', exclu(87), 'manuelle');
+-- relecture : mémoire minimale (adresse, origine, date, raison, dernier motif), lecture seule pour la sauvegarde
+select attendu('mémoire minimale : colonnes', (select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_name = 'prospection_memoire'),
+  'email,exclue_manuelle_at,hors_auto_at,memorise_at,raison,motif');
+grant usage on schema public to service_role;
+set role service_role;
+select attendu('sauvegarde (service_role) : lecture de la mémoire', (select count(*)::text from prospection_memoire), '1');
+do $$ begin
+  begin insert into prospection_memoire(email, exclue_manuelle_at, raison) values ('x@y.fr', now(), 'suppression'); raise exception 'ÉCHEC : mémoire modifiable par le rôle serveur';
+  exception when insufficient_privilege then null; end;
+  raise notice 'ok : rôle serveur en lecture seule sur la mémoire';
+end $$;
+reset role;
+-- relecture, facultatif 1 : l'exclusion suit l'adresse — un contact existant qui porte la même adresse la reçoit
+insert into contacts(id, email) values (u(89), 'dup@exemple.invalid'), (u(90), 'DUP@Exemple.invalid'), (u(93), 'deux1@exemple.invalid');
+set role authenticated;
+select set_prospection(u(89), true, 'Doublon à ne plus solliciter');
+delete from contacts where id = u(89);
+reset role;
+select attendu('doublon existant : exclusion reçue à la suppression, tracée', exclu(90) || ' | ' || (select prospection_history->-1->>'motif' from contacts where id = u(90)),
+  'manuelle | Exclusion reprise d’un contact supprimé le ' || to_char(now() at time zone 'Europe/Paris', 'DD/MM/YYYY') || ' : « Doublon à ne plus solliciter »');
+-- facultatif 3 : adresse retirée d'un contact exclu → mémorisée ; un contact créé ensuite avec elle reste exclu
+insert into contacts(id, email) values (u(91), 'ancienne@exemple.invalid');
+set role authenticated;
+select set_prospection(u(91), true, 'Changement d’adresse');
+update contacts set email = 'nouvelle@exemple.invalid' where id = u(91);
+insert into contacts(id, email) values (u(92), 'Ancienne@exemple.invalid');
+reset role;
+select attendu('adresse retirée d’un contact exclu : mémorisée, contact recréé avec elle exclu',
+  exclu(91) || ' | ' || exclu(92) || ' | ' || (select raison from prospection_memoire where email = 'ancienne@exemple.invalid') || ' | ' || (select prospection_history->-1->>'motif' from contacts where id = u(92)),
+  'manuelle | manuelle | adresse retirée | Exclusion reprise d’une adresse retirée d’un contact exclu le ' || to_char(now() at time zone 'Europe/Paris', 'DD/MM/YYYY') || ' : « Changement d’adresse »');
+-- facultatif 2 : plusieurs adresses mémorisées sur le même contact recréé → une seule trace par origine
+update contacts set email = 'ancienne@exemple.invalid', email_2 = 'dup@exemple.invalid' where id = u(93);
+select attendu('deux adresses mémorisées : une seule trace', exclu(93) || ' | ' || (select jsonb_array_length(prospection_history)::text from contacts where id = u(93)), 'manuelle | 1');
 SQL
 # migration rejouée sur une base remplie : rien de perdu
 "${P[@]}" < "$MIG"
 "${P[@]}" -o /dev/null <<'SQL'
-select attendu('migration rejouée : mémoire et exclusions intactes', memoire() || ' | ' || exclu(84) || ' | ' || exclu(87), 'mem1b@exemple.invalid:manuelle | manuelle | manuelle');
+select attendu('migration rejouée : mémoire et exclusions intactes', memoire() || ' | ' || exclu(84) || ' | ' || exclu(87) || ' | ' || exclu(92),
+  'ancienne@exemple.invalid:manuelle,dup@exemple.invalid:manuelle,mem1b@exemple.invalid:manuelle | manuelle | manuelle | manuelle');
 SQL
 echo "Déclencheurs Brevo (base jetable, port $PORT) : tous les cas vérifiés."

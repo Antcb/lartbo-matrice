@@ -456,7 +456,7 @@ export function editContact(id, prefill={}){
       ...CONTACT_COORDS,
       {k:'notes', label:'Notes', type:'textarea', full:true},
     ],
-    deleteAsk: () => ({title: 'Supprimer le contact ?', text: `Supprimer le contact « ${c.display_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || 'sans nom'} » et ses liens avec les structures ? Les dates, suivis et échanges qui le citaient restent, sans contact. Il n’est pas retiré de Brevo.${c.prospection_exclue_at || c.hors_prospection_at ? ' Il est exclu de la prospection : cette exclusion reste attachée à ses adresses et revient si un contact est recréé avec l’une d’elles (seul « Remettre en prospection » la lève).' : ''}`,
+    deleteAsk: () => ({title: 'Supprimer le contact ?', text: `Supprimer le contact « ${c.display_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || 'sans nom'} » et ses liens avec les structures ? Les dates, suivis et échanges qui le citaient restent, sans contact. Il n’est pas retiré de Brevo.${c.prospection_exclue_at || c.hors_prospection_at ? ' Il est exclu de la prospection : cette exclusion reste attachée à ses adresses, passe aux autres contacts qui les portent et revient si un contact est recréé avec l’une d’elles (seul « Remettre en prospection » la lève).' : ''}`,
       actions: [{value: 'del', label: 'Supprimer le contact', danger: true}]}),
     onDelete: id ? () => remove('contacts', id) : null,
     onSave: async v => {

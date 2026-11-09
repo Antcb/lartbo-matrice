@@ -130,16 +130,15 @@ test('contact exclu : suppression annoncée (exclusion gardée par adresse) ; co
     { id: 'hp-x', display_name: 'Xavier Exclu', email: 'xavier@exemple.invalid', prospection_exclue_at: '2026-11-09T09:00:00Z',
       prospection_history: [{ at: '2026-11-09T09:00:00Z', action: 'exclusion', origine: 'manuelle', par: 'anthony@exemple.invalid', motif: 'Ne plus solliciter' }] },
     { id: 'hp-y', display_name: 'Xavier Recréé', email: 'XAVIER@exemple.invalid', prospection_exclue_at: '2026-11-09T09:00:00Z',
-      prospection_history: [{ at: '2026-11-09T09:00:00Z', action: 'exclusion', origine: 'manuelle', par: 'anthony@exemple.invalid', motif: 'Ne plus solliciter' },
-        { at: '2026-11-09T10:00:00Z', action: 'exclusion', origine: 'manuelle', par: 'automatique', motif: 'Exclusion reprise d’un contact supprimé le 09/11/2026' }] },
+      prospection_history: [{ at: '2026-11-09T10:00:00Z', action: 'exclusion', origine: 'manuelle', par: 'automatique', motif: 'Exclusion reprise d’un contact supprimé le 09/11/2026 : « Ne plus solliciter »' }] },
   ] });
   await page.evaluate(async () => { (await import('./js/forms.js')).editContact('hp-x'); });
   await page.locator('#modal [data-act=modalDelete], #modal button', { hasText: 'Supprimer' }).first().click();
-  await expect(page.locator('dialog.ask[open]')).toContainText('cette exclusion reste attachée à ses adresses et revient si un contact est recréé avec l’une d’elles');
+  await expect(page.locator('dialog.ask[open]')).toContainText('cette exclusion reste attachée à ses adresses, passe aux autres contacts qui les portent et revient si un contact est recréé avec l’une d’elles');
   await page.locator('dialog.ask[open] button', { hasText: 'Annuler' }).click();
   await page.locator('#modal [data-act=closeModal]').first().click();
   await page.evaluate(async () => { (await import('./js/forms.js')).editContact('hp-y'); });
-  await expect(page.locator('#ct-prosp')).toContainText('« Exclusion reprise d’un contact supprimé le 09/11/2026 »');
+  await expect(page.locator('#ct-prosp')).toContainText('« Exclusion reprise d’un contact supprimé le 09/11/2026 : « Ne plus solliciter » »');
   await expect(page.locator('#ct-prosp button', { hasText: 'Remettre en prospection' })).toHaveCount(1);
   expect(await page.evaluate(async () => { const { S } = await import('./js/state.js'); const { horsProspection } = await import('./js/selectors.js');
     return horsProspection(S.db.contacts.find(c => c.id === 'hp-y')); })).toBe(true);

@@ -13,9 +13,10 @@ const TABLES = ['app_users', 'settings', 'partners', 'projects', 'structures', '
   'pennylane_a_rattacher', 'pennylane_rattachements',   // rattachements Pennylane (v1.56.9) : à déployer APRÈS la migration v1.56.9
   'spectacles',   // spectacles d'un artiste (v1.57) : à déployer APRÈS la migration v1.57 (sinon la sauvegarde échoue)
   'result_closures',   // historique des clôtures / réouvertures du résultat (v1.51 ; absent de la sauvegarde JSON jusqu'à la v1.60.3)
-  'show_deletions'];   // journal des suppressions de dates (v1.60.3) : à déployer APRÈS la migration v1.60.3 (sinon la sauvegarde échoue)
+  'show_deletions',   // journal des suppressions de dates (v1.60.3) : à déployer APRÈS la migration v1.60.3 (sinon la sauvegarde échoue)
+  'prospection_memoire'];   // liste d'opposition des adresses exclues de la prospection (lot Brevo, migration 2026-11-08_brevo_rattachements) : à déployer APRÈS cette migration (sinon la sauvegarde échoue)
 // colonne(s) de tri pour lire les grandes tables page par page
-const ORDER: Record<string, string[]> = { app_users: ['email'], settings: ['key'], contact_structures: ['contact_id', 'structure_id'] };
+const ORDER: Record<string, string[]> = { app_users: ['email'], settings: ['key'], contact_structures: ['contact_id', 'structure_id'], prospection_memoire: ['email'] };
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });
 
 async function all(table: string) {

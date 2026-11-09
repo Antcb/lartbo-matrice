@@ -3,7 +3,7 @@
 // Lancé par « npm test » (node --experimental-strip-types). Module testé : supabase/functions/brevo-sync/regles.ts
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { aAjouter, attributes, fonctionsParStructure, fonctionsTexte, horsProspection, listeEssai, mailsAutorises, names, onlyInactive, syncContact } from '../../supabase/functions/brevo-sync/regles.ts';
+import { aAjouter, attributes, fonctionsParStructure, fonctionsTexte, horsProspection, lireReglages, listeEssai, mailsAutorises, names, onlyInactive, syncContact } from '../../supabase/functions/brevo-sync/regles.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -212,7 +212,9 @@ t('déclencheur SQL : ajout, retrait et déplacement relancent la synchronisatio
   assert.match(code, /create table if not exists public\.prospection_memoire/);
   assert.match(code, /revoke all on public\.prospection_memoire from public, anon, authenticated, service_role;/);
   assert.match(code, /alter table public\.prospection_memoire enable row level security;/);
-  assert.match(code, /create or replace trigger contacts_prospection_oubli after delete on public\.contacts/);
+  assert.match(code, /create or replace trigger contacts_prospection_oubli after delete or update of email, email_2 on public\.contacts/);
+  // liste d'opposition minimale : adresse, origine, date, raison, dernier motif — pas le journal du contact
+  assert.doesNotMatch(code.slice(code.indexOf('create table if not exists public.prospection_memoire'), code.indexOf('comment on table public.prospection_memoire')), /historique|jsonb|ancien_contact/);
   assert.match(code, /create or replace trigger contacts_prospection_memoire before insert or update of email, email_2 on public\.contacts/);
   assert.ok(['contacts_clean', 'contacts_prospection_guard', 'contacts_prospection_memoire'].every((x, i, a) => !i || a[i - 1] < x));
   // effacement de la part manuelle de la mémoire : seulement dans set_prospection
@@ -319,9 +321,35 @@ t('MODE ESSAI (marche du 09/11) : seule l’adresse de la liste blanche est sync
   assert.ok(un.indexOf('await attrNames(key)') < un.indexOf('syncContact('));
   assert.match(un, /champs: a, listIds, ours, essai \}\)/);
   const tout = src.slice(src.indexOf('if (body.all) {'), src.indexOf('// Un contact'));
-  assert.match(src, /const essai = listeEssai\(ESSAI_BRUT\);/);   // valeur brute (objet, nombre… = bloqué)
+  assert.match(src, /const \{ m: s, essai \} = await settings\(\);/);   // valeur brute (objet, nombre… = bloqué), par appel (lireReglages)
   assert.ok(tout.indexOf('if (essai) return json({ ok: false') >= 0 && tout.indexOf('if (essai) return json({ ok: false') < tout.indexOf('await attrNames(key)'));
   assert.equal((src.match(/await attrNames\(key\)/g) || []).length, 2);
+});
+
+t('relecture B3 : réglages lus PAR APPEL — appels simultanés, l’un en échec de lecture : l’autre reste en mode essai, l’échec s’arrête', async () => {
+  const pause = ms => new Promise(r => setTimeout(r, ms));
+  const ok = { data: [{ key: 'brevo_api_key', value: 'xkeysib-fictive' }, { key: 'brevo_essai_emails', value: 'lea+essai@x.invalid' }], error: null };
+  // même forme que brevo-sync : lecture des réglages, puis d'autres attentes (corps de la requête, compte…), puis décision
+  const appel = async (rep, attente) => { await pause(1); const r = lireReglages(rep); await pause(attente); return r.essai ? [...r.essai] : 'NORMAL'; };
+  const res = await Promise.allSettled([appel(ok, 20), appel({ data: null, error: { message: 'délai dépassé' } }, 0), appel({ data: [], error: null }, 0), appel(ok, 5)]);
+  assert.deepEqual(res[0], { status: 'fulfilled', value: ['lea+essai@x.invalid'] });
+  assert.deepEqual(res[3], { status: 'fulfilled', value: ['lea+essai@x.invalid'] });
+  for (const r of [res[1], res[2]]) { assert.equal(r.status, 'rejected'); assert.match(r.reason.message, /Lecture des réglages impossible : synchronisation Brevo arrêtée/); }
+  assert.equal(lireReglages({ data: [{ key: 'brevo_api_key', value: 'k' }], error: null }).essai, null);   // sans réglage : normal
+  assert.deepEqual(lireReglages({ data: [{ key: 'brevo_essai_emails', value: { a: 1 } }], error: null }).essai, new Set());   // valeur brute
+  // fonction serveur : aucune variable de module pour les réglages ; settings() passe par lireReglages
+  const src = readFileSync(new URL('../../supabase/functions/brevo-sync/index.ts', import.meta.url), 'utf8');
+  assert.deepEqual([...src.matchAll(/^let (\w+)/gm)].map(m => m[1]), ['ATTRS']);   // seul cache : noms des champs du compte Brevo
+  assert.doesNotMatch(src, /ESSAI_BRUT/);
+  assert.match(src, /return lireReglages\(await sb\.from\("settings"\)/);
+  assert.match(src, /const \{ m: s, essai \} = await settings\(\);/);
+});
+t('sauvegarde JSON : la liste d’opposition est exportée (lecture seule du rôle serveur)', () => {
+  const bk = readFileSync(new URL('../../supabase/functions/backup-export/index.ts', import.meta.url), 'utf8');
+  assert.match(bk, /'prospection_memoire'\]/); assert.match(bk, /prospection_memoire: \['email'\]/);
+  const sql = readFileSync(new URL('../../supabase/migrations/2026-11-08_brevo_rattachements.sql', import.meta.url), 'utf8');
+  assert.match(sql, /grant select on public\.prospection_memoire to service_role;/);
+  assert.doesNotMatch(sql, /grant (insert|update|delete|all)[^;]*prospection_memoire/i);
 });
 
 let ko = 0;

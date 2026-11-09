@@ -29,14 +29,15 @@
 --    brevo_essai_guard : tant qu'une clé Brevo est enregistrée, l'équipe (API, rôles anon / authenticated) ne peut ni modifier ni
 --    effacer ce réglage (on vide d'abord la clé, puis la liste blanche). Sans le réglage (cas normal), aucun effet.
 --
--- 5. Mémoire des exclusions par adresse (décision d'Anthony du 09/11/2026) : un contact supprimé puis recréé avec la même adresse
---    (majuscules comprises) ne redevient pas prospectable s'il était exclu. À la suppression d'un contact exclu (manuellement ou
---    automatiquement), ses adresses en minuscules et l'origine de l'exclusion sont gardées dans public.prospection_memoire
---    (lisible et modifiable par la base seulement : RLS sans règle, aucun droit pour anon / authenticated / service_role). À la
---    création d'un contact, ou quand une adresse mémorisée lui est donnée, le même marqueur revient tout seul, tracé « Exclusion
---    reprise d'un contact supprimé le … ». Seule « Remettre en prospection » (set_prospection) efface cette mémoire, tracé ; un
---    rattachement actif ou une réactivation n'en efface que la part automatique. Brevo (désabonnements, préférences) : inchangé.
---    Table dans public : prise par la sauvegarde complète de la base ; PAS dans l'export JSON (backup-export, liste explicite).
+-- 5. Mémoire des exclusions par adresse (décision d'Anthony du 09/11/2026 ; relecture du 09/11) : l'exclusion suit l'ADRESSE.
+--    Suppression d'un contact exclu (manuellement ou automatiquement), ou adresse retirée d'un contact exclu : l'adresse en
+--    minuscules, l'origine, la date, la raison et le dernier motif sont gardés dans public.prospection_memoire (liste d'opposition,
+--    sans purge ; RLS sans règle ; aucun droit pour anon / authenticated ; service_role : lecture seule pour la sauvegarde JSON).
+--    Les autres contacts existants qui portent cette adresse reçoivent l'exclusion. À la création d'un contact, ou quand une
+--    adresse mémorisée est donnée à un contact, le même marqueur revient. Trace « Exclusion reprise d'un contact supprimé le … :
+--    « motif » » (ou « … d'une adresse retirée d'un contact exclu le … »). Seule « Remettre en prospection » (set_prospection)
+--    efface la mémoire de ses adresses, tracé ; un rattachement actif ou une réactivation n'en efface que la part automatique.
+--    Brevo (désabonnements, préférences) : inchangé. Sauvegarde : table dans public, ajoutée à l'export JSON (backup-export).
 --
 -- brevo_contact_trg (déclencheur brevo_contacts sur contacts) n'est pas modifiée : sa branche « contact_structures » n'est plus
 -- appelée (le déclencheur brevo_contact_structures est remplacé ci-dessous par la version « par requête »).
@@ -58,6 +59,7 @@
 --   drop trigger contacts_prospection_memoire on public.contacts; drop trigger contacts_prospection_oubli on public.contacts;
 --   drop function public.prospection_memoire_reprise(); drop function public.prospection_memoire_garde();
 --   drop function public.prospection_memoire_lever_auto(uuid); drop function public.prospection_mails(text, text);
+--   drop function public.prospection_dernier_motif(jsonb); drop function public.prospection_trace(text, timestamptz, text);
 --   la table public.prospection_memoire peut rester ; la supprimer = perdre les exclusions mémorisées (accord d'Anthony).
 --   brevo_structure_trg : version de supabase/migrations/2026-11-07_v1.60.2_brevo_reactivation.sql ;
 --   les colonnes contacts.hors_prospection_at, prospection_exclue_at, prospection_history peuvent rester (inutilisées) ; les retirer
@@ -263,20 +265,23 @@ end $$;
 create or replace trigger brevo_essai_guard before update or delete on public.settings
   for each row execute function public.brevo_essai_guard();
 
--- ─────────────── 5. Mémoire des exclusions par adresse (décision du 09/11/2026) ───────────────
+-- ─────────────── 5. Mémoire des exclusions par adresse (décision du 09/11/2026 ; relecture du 09/11) ───────────────
+-- Liste d'opposition : adresse en minuscules, origine (manuelle / automatique), date, raison et DERNIER motif seulement (pas le
+-- journal du contact). Aucune purge : une adresse exclue le reste tant que l'équipe ne la remet pas en prospection.
 create table if not exists public.prospection_memoire (
   email text primary key check (email = lower(btrim(email)) and email <> ''),
-  exclue_manuelle_at timestamptz,   -- exclusion manuelle (équipe) du contact supprimé
-  hors_auto_at timestamptz,         -- exclusion automatique (structure) du contact supprimé
-  contact_supprime_at timestamptz not null default now(),
-  ancien_contact uuid,
-  historique jsonb not null default '[]'::jsonb,   -- journal de prospection du contact supprimé
+  exclue_manuelle_at timestamptz,   -- exclusion manuelle (équipe)
+  hors_auto_at timestamptz,         -- exclusion automatique (structure)
+  memorise_at timestamptz not null default now(),
+  raison text not null check (raison in ('suppression', 'adresse retirée')),
+  motif text,                       -- dernier motif d'exclusion du contact
   check (exclue_manuelle_at is not null or hors_auto_at is not null)
 );
 comment on table public.prospection_memoire is
-  'Exclusions de la prospection gardées par adresse (minuscules) après la suppression du contact (décision du 09/11/2026). Écrite et lue par la base seulement ; effacée par « Remettre en prospection » (set_prospection), part automatique par un rattachement actif ou une réactivation.';
-alter table public.prospection_memoire enable row level security;   -- aucune règle : illisible par l'API
+  'Liste d’opposition : exclusions de la prospection gardées par adresse (minuscules) après la suppression du contact ou le retrait de l’adresse (décision du 09/11/2026). Écrite par la base seulement ; lue par la base et par la sauvegarde (service_role, lecture) ; effacée par « Remettre en prospection » (set_prospection), part automatique par un rattachement actif ou une réactivation. Aucune purge.';
+alter table public.prospection_memoire enable row level security;   -- aucune règle : illisible par l'API de l'équipe
 revoke all on public.prospection_memoire from public, anon, authenticated, service_role;
+grant select on public.prospection_memoire to service_role;          -- sauvegarde JSON (backup-export) : lecture seule
 
 -- Adresses d'un contact, en minuscules, sans doublon ni vide
 create or replace function public.prospection_mails(p_email text, p_email_2 text) returns text[]
@@ -284,51 +289,79 @@ language sql immutable set search_path = public as $$
   select coalesce(array_agg(distinct e), '{}') from (select lower(btrim(x)) e from unnest(array[p_email, p_email_2]) x) t where coalesce(e, '') <> ''
 $$;
 
--- Suppression d'un contact exclu : ses adresses et l'origine de l'exclusion sont gardées (fusion avec une mémoire existante)
+-- Dernier motif d'exclusion d'un journal de prospection
+create or replace function public.prospection_dernier_motif(p_hist jsonb) returns text
+language sql immutable set search_path = public as $$
+  select h->>'motif' from jsonb_array_elements(coalesce(p_hist, '[]'::jsonb)) with ordinality t(h, n)
+   where h->>'action' = 'exclusion' and coalesce(h->>'motif', '') <> '' order by n desc limit 1
+$$;
+
+-- Texte de la trace « Exclusion reprise … » (journal du contact qui reçoit l'exclusion)
+create or replace function public.prospection_trace(p_raison text, p_at timestamptz, p_motif text) returns text
+language sql immutable set search_path = public as $$
+  select case when p_raison = 'adresse retirée' then 'Exclusion reprise d’une adresse retirée d’un contact exclu le '
+              else 'Exclusion reprise d’un contact supprimé le ' end
+         || to_char(p_at at time zone 'Europe/Paris', 'DD/MM/YYYY') || coalesce(' : « ' || nullif(p_motif, '') || ' »', '')
+$$;
+
+-- Suppression d'un contact exclu, ou adresse retirée d'un contact exclu : l'adresse est gardée (fusion avec une mémoire existante),
+-- et l'exclusion suit l'adresse : les AUTRES contacts existants qui la portent la reçoivent, tracée.
 create or replace function public.prospection_memoire_garde() returns trigger
 language plpgsql security definer set search_path = public as $$
+declare mails text[]; raison text; motif text := prospection_dernier_motif(old.prospection_history); trace text;
 begin
-  if old.prospection_exclue_at is not null or old.hors_prospection_at is not null then
-    insert into prospection_memoire (email, exclue_manuelle_at, hors_auto_at, contact_supprime_at, ancien_contact, historique)
-      select e, old.prospection_exclue_at, old.hors_prospection_at, now(), old.id, coalesce(old.prospection_history, '[]'::jsonb)
-        from unnest(prospection_mails(old.email, old.email_2)) e
-    on conflict (email) do update set
-      exclue_manuelle_at = coalesce(prospection_memoire.exclue_manuelle_at, excluded.exclue_manuelle_at),
-      hors_auto_at = coalesce(prospection_memoire.hors_auto_at, excluded.hors_auto_at),
-      contact_supprime_at = excluded.contact_supprime_at, ancien_contact = excluded.ancien_contact,
-      historique = prospection_memoire.historique || excluded.historique;
+  if old.prospection_exclue_at is null and old.hors_prospection_at is null then return null; end if;
+  if tg_op = 'DELETE' then
+    mails := prospection_mails(old.email, old.email_2); raison := 'suppression';
+  else
+    mails := array(select unnest(prospection_mails(old.email, old.email_2)) except select unnest(prospection_mails(new.email, new.email_2)));
+    raison := 'adresse retirée';
   end if;
-  return old;
+  if cardinality(mails) = 0 then return null; end if;
+  insert into prospection_memoire (email, exclue_manuelle_at, hors_auto_at, memorise_at, raison, motif)
+    select e, old.prospection_exclue_at, old.hors_prospection_at, now(), raison, motif from unnest(mails) e
+  on conflict (email) do update set
+    exclue_manuelle_at = coalesce(prospection_memoire.exclue_manuelle_at, excluded.exclue_manuelle_at),
+    hors_auto_at = coalesce(prospection_memoire.hors_auto_at, excluded.hors_auto_at),
+    memorise_at = excluded.memorise_at, raison = excluded.raison, motif = coalesce(excluded.motif, prospection_memoire.motif);
+  trace := prospection_trace(raison, now(), motif);
+  update contacts k set prospection_exclue_at = old.prospection_exclue_at,
+         prospection_history = k.prospection_history || prospection_entree('exclusion', 'manuelle', 'automatique', trace)
+   where old.prospection_exclue_at is not null and k.prospection_exclue_at is null and k.id <> old.id
+     and prospection_mails(k.email, k.email_2) && mails;
+  update contacts k set hors_prospection_at = old.hors_prospection_at,
+         prospection_history = k.prospection_history || prospection_entree('exclusion', 'structure', 'automatique', trace)
+   where old.hors_prospection_at is not null and k.hors_prospection_at is null and k.id <> old.id
+     and prospection_mails(k.email, k.email_2) && mails;
+  return null;
 end $$;
 revoke all on function public.prospection_memoire_garde() from public, anon, authenticated;
-create or replace trigger contacts_prospection_oubli after delete on public.contacts
+create or replace trigger contacts_prospection_oubli after delete or update of email, email_2 on public.contacts
   for each row execute function public.prospection_memoire_garde();
 
--- Création d'un contact (ou nouvelle adresse) avec une adresse mémorisée : le marqueur revient, tracé. Nom choisi pour passer APRÈS
--- contacts_clean et contacts_prospection_guard (déclencheurs BEFORE exécutés par ordre alphabétique) : la garde voit la saisie de
--- l'équipe, la reprise est faite par la base.
+-- Création d'un contact (ou nouvelle adresse) avec une adresse mémorisée : le marqueur revient, une trace par origine (date et
+-- dernier motif de la mémoire la plus récente). Nom choisi pour passer APRÈS contacts_clean et contacts_prospection_guard
+-- (déclencheurs BEFORE exécutés par ordre alphabétique) : la garde voit la saisie de l'équipe, la reprise est faite par la base.
 create or replace function public.prospection_memoire_reprise() returns trigger
 language plpgsql security definer set search_path = public as $$
-declare man timestamptz; aut timestamptz; quand timestamptz; hist jsonb; mails text[] := prospection_mails(new.email, new.email_2);
+declare man timestamptz; aut timestamptz; r record; trace text; mails text[] := prospection_mails(new.email, new.email_2);
 begin
   if tg_op = 'UPDATE' then
     mails := array(select unnest(mails) except select unnest(prospection_mails(old.email, old.email_2)));   -- adresses nouvelles seulement
   end if;
   if cardinality(mails) = 0 then return new; end if;
-  select min(exclue_manuelle_at), min(hors_auto_at), max(contact_supprime_at), coalesce(jsonb_agg(h) filter (where h is not null), '[]'::jsonb)
-    into man, aut, quand, hist
-    from prospection_memoire m left join lateral jsonb_array_elements(m.historique) h on true where m.email = any(mails);
+  select min(exclue_manuelle_at), min(hors_auto_at) into man, aut from prospection_memoire where email = any(mails);
   if man is null and aut is null then return new; end if;
-  if tg_op = 'INSERT' then new.prospection_history := hist || coalesce(new.prospection_history, '[]'::jsonb); end if;   -- journal du contact supprimé repris
+  select raison, memorise_at, motif into r from prospection_memoire where email = any(mails) order by memorise_at desc limit 1;
+  trace := prospection_trace(r.raison, r.memorise_at, r.motif);
+  new.prospection_history := coalesce(new.prospection_history, '[]'::jsonb);
   if man is not null and new.prospection_exclue_at is null then
     new.prospection_exclue_at := man;
-    new.prospection_history := new.prospection_history || prospection_entree('exclusion', 'manuelle', 'automatique',
-      'Exclusion reprise d’un contact supprimé le ' || to_char(quand at time zone 'Europe/Paris', 'DD/MM/YYYY'));
+    new.prospection_history := new.prospection_history || prospection_entree('exclusion', 'manuelle', 'automatique', trace);
   end if;
   if aut is not null and new.hors_prospection_at is null then
     new.hors_prospection_at := aut;
-    new.prospection_history := new.prospection_history || prospection_entree('exclusion', 'structure', 'automatique',
-      'Exclusion reprise d’un contact supprimé le ' || to_char(quand at time zone 'Europe/Paris', 'DD/MM/YYYY'));
+    new.prospection_history := new.prospection_history || prospection_entree('exclusion', 'structure', 'automatique', trace);
   end if;
   return new;
 end $$;

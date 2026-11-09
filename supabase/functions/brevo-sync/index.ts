@@ -14,7 +14,7 @@
  * le navigateur n'a plus le code secret).
  */
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { aAjouter, attributes, type Champs, type ClientBrevo, type Contact, type Link, listeEssai, mailsAutorises, mailsOf, syncContact } from "./regles.ts";
+import { aAjouter, attributes, type Champs, type ClientBrevo, type Contact, type Link, lireReglages, mailsAutorises, mailsOf, syncContact } from "./regles.ts";
 
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const API = "https://api.brevo.com/v3";
@@ -30,14 +30,9 @@ async function bfetch(url: string, init: RequestInit = {}): Promise<Response> {
 }
 const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
-/** Valeur BRUTE du réglage brevo_essai_emails (mode essai : un réglage rempli sans adresse valide bloque tout, regles.ts) */
-let ESSAI_BRUT: unknown = null;
+/** Réglages de CET appel (aucun état partagé entre appels : relecture B3) ; lecture en échec = appel arrêté (lireReglages) */
 async function settings() {
-  const { data } = await sb.from("settings").select("key,value").in("key", ["brevo_api_key", "brevo_list_id", "brevo_hook_secret", "brevo_essai_emails"]);
-  const m: Record<string, string> = {};
-  ESSAI_BRUT = null;
-  for (const r of data || []) { if (r.key === "brevo_essai_emails") ESSAI_BRUT = r.value; m[r.key] = typeof r.value === "string" ? r.value : (r.value == null ? "" : String(r.value)); }
-  return m;
+  return lireReglages(await sb.from("settings").select("key,value").in("key", ["brevo_api_key", "brevo_list_id", "brevo_hook_secret", "brevo_essai_emails"]));
 }
 
 /** Compte de l'équipe connecté (jeton de session de l'utilisateur, vérifié par la base) */
@@ -110,7 +105,7 @@ const client = (key: string): ClientBrevo => ({
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
-    const s = await settings();
+    const { m: s, essai } = await settings();   // mode essai (brevo_essai_emails) : seules ses adresses, rien d'autre n'appelle Brevo
     const body = await req.json().catch(() => ({}));
     const hook = !!s.brevo_hook_secret && req.headers.get("x-hook-secret") === s.brevo_hook_secret;
     // « tout envoyer » depuis les Réglages : session d'un compte de l'équipe (vérifiée par la base, is_team)
@@ -119,9 +114,6 @@ Deno.serve(async (req) => {
     if (!s.brevo_api_key) return json({ ok: false, error: "Clé API Brevo absente (Réglages › Brevo)" });
     const key = s.brevo_api_key.trim();
     const listIds = String(s.brevo_list_id || "").split(/[,;\s]+/).map(Number).filter((n) => n > 0);
-    // mode essai (réglage brevo_essai_emails, regles.ts) : seules ces adresses sont synchronisées, rien d'autre n'appelle Brevo
-    // valeur brute : un réglage rempli sans adresse valide bloque tout (liste vide), jamais de retour au mode normal
-    const essai = listeEssai(ESSAI_BRUT);
 
     // Tout envoyer d'un coup (import Brevo)
     if (body.all) {
