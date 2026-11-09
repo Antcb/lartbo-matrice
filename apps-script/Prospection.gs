@@ -637,7 +637,11 @@ function threadEssai_(id) {
 /** Refus du mode essai, avec un CODE distinct : « hors_essai » (cette conversation n'est pas TEST : la synchronisation l'écarte et
  *  continue) ; « essai » (configuration, destinataire, brouillon, libellé… : toujours visible) — jamais déduit du texte */
 /** Forme comparable d'un libellé : NFKC, caractères invisibles retirés (espaces insécables, largeur nulle, BOM…), sans casse */
-function normLib_(x) { return String(x == null ? '' : x).normalize('NFKC').replace(/[\u00A0\u00AD\u200B-\u200D\u2060\uFEFF]/g, '').trim().toLowerCase(); }
+// caractères de format et ignorables (propriétés Unicode Cf et Default_Ignorable_Code_Point) ; classe explicite équivalente si le
+// moteur refusait les propriétés Unicode (V8 d'Apps Script les accepte : même moteur que Chrome / Node)
+var INVISIBLES_SECOURS_ = /[\u00AD\u034F\u061C\u0600-\u0605\u06DD\u070F\u0890\u0891\u08E2\u115F\u1160\u17B4\u17B5\u180B-\u180F\u200B-\u200F\u202A-\u202E\u2060-\u206F\u3164\uFE00-\uFE0F\uFEFF\uFFA0\uFFF0-\uFFFB\u{110BD}\u{110CD}\u{13430}-\u{1343F}\u{1BCA0}-\u{1BCA3}\u{1D173}-\u{1D17A}\u{E0000}-\u{E0FFF}]/gu;
+var INVISIBLES_ = (function () { try { return new RegExp('[\\p{Cf}\\p{Default_Ignorable_Code_Point}]', 'gu'); } catch (err) { return INVISIBLES_SECOURS_; } })();
+function normLib_(x) { return String(x == null ? '' : x).normalize('NFKC').replace(INVISIBLES_, '').replace(/\u00A0/g, ' ').trim().toLowerCase(); }
 function refusEssai_(why, code) { return { ok: false, refused: true, code: code || 'essai', error: why + ' Rien n’est lu ni envoyé (mode essai).' }; }
 /** Garde du mode essai, action par action, AVANT toute lecture ou écriture du contenu */
 function essaiGarde_(a, b) {

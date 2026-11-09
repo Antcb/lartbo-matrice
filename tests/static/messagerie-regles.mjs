@@ -514,6 +514,21 @@ t('relecture de ea7147b : retrait du libellé refusé malgré caractères invisi
   assert.equal(log.modified.length, 0);
   assert.equal(appel(ctx, await signe({ thread_id: 'aa01aa01aa01aa01', remove: ['Label_1'] }, 'modify')).ok, true, 'autre libellé : retrait possible');
 });
+t('vérification de 9712cb0 : caractères de format et ignorables retirés (200E, 200F, 202A, 2061, 034F, 180E, FE0F) — propriétés Unicode ET classe de secours, équivalentes', async () => {
+  const CAS = ['‎', '‏', '‪', '⁡', '͏', '᠎', '️'];
+  for (const secours of [false, true]) {
+    const { ctx, log } = essaiBac();
+    if (secours) ctx.INVISIBLES_ = ctx.INVISIBLES_SECOURS_;
+    for (const c of CAS) for (const x of ['Label_E' + c, c + 'Matrice-essai', 'Matrice' + c + '-essai'])
+      assert.match(appel(ctx, await signe({ thread_id: 'aa01aa01aa01aa01', remove: [x] }, 'modify')).error || '', /ne se retire pas/, (secours ? 'secours ' : '') + JSON.stringify(x));
+    assert.equal(log.modified.length, 0);
+  }
+  const { ctx } = essaiBac();
+  const prop = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/u, sec = new RegExp(ctx.INVISIBLES_SECOURS_.source, 'u');
+  let diff = 0;
+  for (let c = 0; c <= 0x10FFFF; c++) { if (c >= 0xD800 && c <= 0xDFFF) continue; const ch = String.fromCodePoint(c); if (prop.test(ch) !== sec.test(ch)) diff++; }
+  assert.equal(diff, 0, 'classe de secours identique aux propriétés Unicode');
+});
 t('mode essai mal configuré → TOUT bloqué (libellé absent, inexistant, système ; destinataires absents)', async () => {
   for (const props of [{ MODE_ESSAI: 'oui' }, { ...ESSAI, LIBELLE_ESSAI: 'Inexistant' }, { ...ESSAI, LIBELLE_ESSAI: 'INBOX' }, { ...ESSAI, DESTINATAIRES_ESSAI: '' }]) {
     const { ctx, log } = essaiBac({ props });
