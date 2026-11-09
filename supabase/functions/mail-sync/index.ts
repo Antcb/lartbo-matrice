@@ -6,7 +6,7 @@
 // ne touche jamais au rattachement existant, puis lance mail_process (rattachement automatique, journal du suivi, suspension des relances).
 // Rien n'est envoyé ni modifié dans Gmail ici. Dernier passage et erreur visibles dans l'espace Mails (mail_sync_state).
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { acces, compteOk, messageRows, scriptUrlOk, threadIds, threadRow, type Thread } from './regles.ts';
+import { acces, compteOk, essaiOk, messageRows, threadsEssai, scriptUrlOk, threadIds, threadRow, type Thread } from './regles.ts';
 // même signature que le relais script-google (v1.60.4) : clé dédiée mailbox_sign_key, jamais transmise
 import { outgoingBody } from '../script-google/identite.ts';
 
@@ -30,6 +30,7 @@ const shown = (e: unknown) => e instanceof Explique ? e.message.slice(0, 500) : 
  * Ni secret de session ni compte technique de plus : le script applique UNE règle (identité signée = compte qui l'exécute).
  * Réponse acceptée seulement si le compte qui exécute le script est ce titulaire (adresse du script remplacée → arrêt, rien d'écrit).
  */
+let ESSAI = '';   // libellé du mode essai (réglage mail_essai_libelle du projet de test), '' en production
 async function script(url: string, secret: string, key: string, owner: string, action: string, payload: Record<string, unknown>) {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), LIMIT_MS);
   try {
@@ -37,6 +38,8 @@ async function script(url: string, secret: string, key: string, owner: string, a
     const txt = await r.text();
     let j: any; try { j = JSON.parse(txt); } catch { throw new Explique('Réponse illisible du script de prospection'); }
     if (!j?.ok) throw new Explique(String(j?.error || '').slice(0, 300) || 'Le script de prospection a refusé la demande');
+    if (!essaiOk(j, ESSAI)) throw new Explique(`Mode essai demandé (libellé « ${ESSAI} ») mais le script de prospection n’est pas en mode essai sur ce libellé : rien n’est lu ni enregistré.`);
+    if (ESSAI) j.threads = threadsEssai(j.threads || (j.thread ? [j.thread] : []), j.essai?.id), j.thread = j.threads.length ? j.thread : null;
     if (!compteOk(j.account, owner)) throw new Explique('Le script de prospection ne s’exécute pas sous le compte titulaire de la boîte : synchronisation arrêtée, rien n’est enregistré.');
     return j;
   } catch (e) {
@@ -66,10 +69,11 @@ async function store(threads: Thread[]) {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ ok: false, error: 'Demande refusée' }, 405);
-  const { data: st, error: se } = await admin.from('settings').select('key, value').in('key', ['prospect_script_url', 'drive_webhook_secret']);
+  const { data: st, error: se } = await admin.from('settings').select('key, value').in('key', ['prospect_script_url', 'drive_webhook_secret', 'mail_essai_libelle']);
   if (se) return json({ ok: false, error: 'Réglages illisibles pour le moment.' }, 500);
   const val = (k: string) => String(st?.find((r: any) => r.key === k)?.value ?? '').trim();
   const url = val('prospect_script_url'), secret = val('drive_webhook_secret');
+  ESSAI = val('mail_essai_libelle');
   // accès : tâche planifiée (code partagé) ou compte de l'équipe
   // appel automatique : secret serveur DÉDIÉ (« mail_sync_hook », créé par la migration dans le schéma privé, jamais affiché, jamais
   // dans le navigateur, une adresse ou un journal) ; sinon compte de l'équipe. Sans justificatif ou justificatif faux : 403.
@@ -103,7 +107,7 @@ Deno.serve(async (req) => {
       const ids = threadIds(body.ids);
       for (const id of ids) {
         const j = await script(url, secret, key, owner, 'thread', { thread_id: id });
-        threads.push(j.thread);
+        if (j.thread) threads.push(j.thread);   // mode essai : conversation hors libellé écartée
       }
     } else {
       // plus de 30 conversations changées : le reste est gardé (pending) et lu aux passages suivants, le point de reprise avance

@@ -3,7 +3,7 @@
  * conversation, rattachement (structure, suivi, artiste, date), réponse, rangement, relance. Gmail reste la référence.
  */
 import { ARCHIVED, LINK_LABEL, M, MAILBOX_ADDR, checkOwner, linkState, candidates, fmtSize, labelName, loadLabels, syncState, threadsShown, userLabels } from '../mailbox.js';
-import { byId, projName, prospectTitle, structName } from '../selectors.js';
+import { byId, projName, prospectTitle, setting, structName } from '../selectors.js';
 import { S } from '../state.js';
 import { viewHead } from '../ui/bits.js';
 import { esc, fmtDate } from '../utils.js';
@@ -103,6 +103,8 @@ export function viewMails(){
       <option value="SENT" ${M.label === 'SENT' ? 'selected' : ''}>Envoyés</option><option value="${ARCHIVED}" ${M.label === ARCHIVED ? 'selected' : ''}>Archivés</option><option value="TRASH" ${M.label === 'TRASH' ? 'selected' : ''}>Corbeille</option></select>
       <input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-mails" placeholder="Objet, adresse, structure…" data-search="mails" value="${esc(S.search.mails || '')}">
       <button class="btn sm" data-act="mailSearchGmail" title="Recherche dans tout Gmail (mêmes mots-clés que Gmail : from:, has:attachment…)">Chercher dans Gmail</button></div>`;
-  return viewHead('Mails', {sub: `${esc(MAILBOX_ADDR())} · ${syncLine()}`, actions: '<button class="btn" data-act="mailRefresh">Actualiser</button> <button class="btn primary" data-act="mailCompose" data-mode="new">Nouveau mail</button>', filters})
+  // mode essai (projet de test) : périmètre rappelé, appliqué par le script et le serveur
+  const essai = String(setting('mail_essai_libelle') || '').trim();
+  return viewHead('Mails', {sub: `${esc(MAILBOX_ADDR())} · ${syncLine()}${essai ? ` · <b>Mode essai</b> : seules les conversations portant le libellé « ${esc(essai)} »` : ''}`, actions: '<button class="btn" data-act="mailRefresh">Actualiser</button> <button class="btn primary" data-act="mailCompose" data-mode="new">Nouveau mail</button>', filters})
     + (M.open ? reader() : list());
 }

@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { createHash, createHmac } from 'node:crypto';
-import { acces, compteOk, messageRows, same, scriptUrlOk, threadIds, threadRow } from '../../supabase/functions/mail-sync/regles.ts';
+import { acces, compteOk, essaiOk, messageRows, same, scriptUrlOk, threadIds, threadRow, threadsEssai } from '../../supabase/functions/mail-sync/regles.ts';
 import { callerSig, canon, identOf, outgoingBody, signedText } from '../../supabase/functions/script-google/identite.ts';
 
 const cas = [];
@@ -92,13 +92,16 @@ const blob = (bytes, name = '', type = 'application/octet-stream') => ({
   _b: Buffer.from(bytes), getBytes() { return this._b; }, getName() { return name; }, getContentType() { return type; },
   setName(n) { name = n; return this; }, setDataFromString(s) { this._b = Buffer.from(String(s), 'utf8'); return this; }, getDataAsString() { return this._b.toString('utf8'); } });
 const CLE = 'cle-boite-fictive', TITULAIRE = ME;
-function bac({ threads = {}, history = null, historyError = false, driveFiles = {}, urls = {}, sendNoId = false, updateFails = false, cle = CLE } = {}) {
-  const log = { created: [], updated: [], sent: [], modified: [], trashed: [], untrashed: [], fetched: [] };
+function bac({ threads = {}, history = null, historyError = false, driveFiles = {}, urls = {}, sendNoId = false, updateFails = false, cle = CLE, props = {}, labels = null, searches = {} } = {}) {
+  const log = { created: [], updated: [], sent: [], modified: [], trashed: [], untrashed: [], fetched: [], lists: [], gets: [], historyCalls: 0, searches: [] };
   const hdrs = (o) => Object.entries(o).map(([name, value]) => ({ name, value }));
   const Gmail = { Users: {
     Threads: {
-      get: (_me, id) => { if (!threads[id]) throw new Error('Not Found'); return JSON.parse(JSON.stringify(threads[id])); },
-      list: () => ({ threads: Object.keys(threads).map((id) => ({ id })) }),
+      get: (_me, id, opt) => { log.gets.push([id, opt?.format || '']); if (!threads[id]) throw new Error('Not Found'); return JSON.parse(JSON.stringify(threads[id])); },
+      // liste : filtre par libellé au niveau de la CONVERSATION (un message porteur suffit), comme Gmail
+      list: (_me, opt = {}) => { log.lists.push(opt); const L = opt.labelIds || [];
+        return { threads: Object.keys(threads).filter((id) => L.every((l) => threads[id].messages.some((m) => (m.labelIds || []).includes(l))))
+          .map((id) => ({ id, historyId: threads[id].historyId || '100' })) }; },
       modify: (req, _me, id) => { log.modified.push({ id, ...req }); return { messages: [{ labelIds: ['INBOX'] }] }; },
       trash: (_me, id) => { log.trashed.push(id); }, untrash: (_me, id) => { log.untrashed.push(id); },
     },
@@ -107,14 +110,15 @@ function bac({ threads = {}, history = null, historyError = false, driveFiles = 
       update: (req, _me, id) => { if (updateFails) throw new Error('Requested entity was not found.'); log.updated.push({ id, req }); return { id, message: { id: 'msg-d', threadId: req.message.threadId || 'neuf' } }; },
       send: (req) => { log.sent.push(req.id); return sendNoId ? {} : { id: 'envoye-1', threadId: 'th-envoi' }; },
     },
-    History: { list: () => { if (historyError) throw new Error('historyId expiré'); return history || { history: [] }; } },
-    Labels: { list: () => ({ labels: [{ id: 'INBOX', name: 'INBOX', type: 'system' }, { id: 'Label_1', name: 'Booking 2027', type: 'user' }] }) },
-    Messages: { Attachments: { get: () => ({ size: 10, data: 'eA' }) } },
+    History: { list: () => { log.historyCalls++; if (historyError) throw new Error('historyId expiré'); return history || { history: [] }; } },
+    Labels: { list: () => ({ labels: labels || [{ id: 'INBOX', name: 'INBOX', type: 'system' }, { id: 'Label_1', name: 'Booking 2027', type: 'user' }] }) },
+    Messages: { Attachments: { get: () => ({ size: 10, data: 'eA' }) },
+      get: (_me, id) => { const t = Object.keys(threads).find((k) => threads[k].messages.some((m) => m.id === id)); if (!t) throw new Error('Not Found'); return { id, threadId: t }; } },
     getProfile: () => ({ historyId: '999' }),
   } };
   const cache = {};
   const ctx = {
-    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => ({ WEBHOOK_SECRET: 'secret-essai', CLE_BOITE: cle })[k] ?? null }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => ({ WEBHOOK_SECRET: 'secret-essai', CLE_BOITE: cle, ...props })[k] ?? null }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
     CacheService: { getScriptCache: () => ({ get: (k) => cache[k] ?? null, put: (k, v) => { cache[k] = v; } }) },
     Session: { getEffectiveUser: () => ({ getEmail: () => ME }) },
@@ -133,7 +137,8 @@ function bac({ threads = {}, history = null, historyError = false, driveFiles = 
     UrlFetchApp: { fetch: (u) => { log.fetched.push(u); if (!urls[u]) throw new Error('404'); return { getBlob: () => blob(urls[u], 'x', 'application/pdf') }; } },
     DriveApp: { getFileById: (id) => { const f = driveFiles[id]; if (!f) throw new Error('Accès refusé');
       return { getBlob: () => blob(f.bytes, f.name, 'application/pdf'), getSize: () => f.size ?? f.bytes.length, getName: () => f.name, getMimeType: () => 'application/pdf' }; } },
-    GmailApp: { getMessageById: () => ({ getAttachments: () => [blob(Buffer.alloc(100), 'origine.pdf', 'application/pdf')] }) },
+    GmailApp: { getMessageById: () => ({ getAttachments: () => [blob(Buffer.alloc(100), 'origine.pdf', 'application/pdf')] }),
+      search: (q) => { log.searches.push(q); return searches[q] || []; } },
     Gmail,
   };
   vm.createContext(ctx);
@@ -376,6 +381,88 @@ t('synchronisation planifiée : signée au nom du titulaire inscrit, côté serv
   assert.equal(compteOk('autre@example.org', 'titulaire@example.org'), false);
   assert.equal(compteOk(undefined, 'titulaire@example.org'), false);
   assert.equal(compteOk('x@example.org', ''), false);
+});
+
+// ── Mode essai (09/11/2026) : seules les conversations TEST portant le libellé, au niveau de la conversation ──────────────────────
+const ESSAI = { MODE_ESSAI: 'oui', LIBELLE_ESSAI: 'Matrice-essai', DESTINATAIRES_ESSAI: 'colbe.essai@example.net, titulaire@example.org' };
+const LIBS = [{ id: 'INBOX', name: 'INBOX', type: 'system' }, { id: 'Label_E', name: 'Matrice-essai', type: 'user' }];
+const conv = (id, msgs, historyId = '500') => ({ id, historyId, messages: msgs });
+const m = (id, labels, h) => msg(id, labels, { Subject: 'Essai Matrice', 'Message-ID': `<${id}@example.org>`, ...h });
+// T : conversation TEST — 1er message porte le libellé ; la RÉPONSE arrivée ensuite ne le porte pas (comme Gmail)
+const T = conv('aa01aa01aa01aa01', [m('t1', ['SENT', 'Label_E'], { From: ME, To: 'colbe.essai@example.net' }), m('t2', ['INBOX'], { From: 'colbe.essai@example.net', To: ME })]);
+// H : conversation réelle hors essai, MÊME objet
+const H = conv('bb02bb02bb02bb02', [m('h1', ['INBOX'], { From: 'vrai.contact@example.com', To: ME })]);
+const essaiBac = ({ threads = {}, ...o } = {}) => bac({ props: ESSAI, labels: LIBS, ...o, threads: { 'aa01aa01aa01aa01': JSON.parse(JSON.stringify(T)), 'bb02bb02bb02bb02': H, ...threads } });
+const signe = async (p, a) => outgoingBody(p, a, 'secret-essai', TITULAIRE, CLE);
+t('mode essai : réponse arrivée SANS libellé dans une conversation TEST → récupérée (lecture et synchronisation)', async () => {
+  const { ctx } = essaiBac();
+  const r = appel(ctx, await signe({ thread_id: 'aa01aa01aa01aa01' }, 'thread'));
+  assert.equal(r.ok, true, r.error); assert.deepEqual(J(r.thread.messages.map((x) => x.id)), ['t1', 't2']);
+  assert.deepEqual(J(r.essai), { libelle: 'Matrice-essai', id: 'Label_E' });
+  const h = appel(ctx, await signe({ start_history_id: '100' }, 'history'));
+  assert.deepEqual(J(h.threads.map((x) => x.id)), ['aa01aa01aa01aa01']);
+});
+t('mode essai : conversation hors TEST au MÊME objet → refusée (lecture, réponse, rangement, pièce, synchronisation, liste)', async () => {
+  const { ctx, log } = essaiBac();
+  for (const [a, p] of [['thread', { thread_id: 'bb02bb02bb02bb02' }], ['modify', { thread_id: 'bb02bb02bb02bb02', archive: true }], ['compose', { mode: 'reply', thread_id: 'bb02bb02bb02bb02', to: 'colbe.essai@example.net', html: 'x' }],
+    ['attachment', { message_id: 'h1', attachment_id: 'x' }], ['status', { thread_id: 'bb02bb02bb02bb02' }]]) {
+    const r = appel(ctx, a === 'status' ? { action: a, secret: 'secret-essai', ...p } : await signe(p, a));
+    assert.equal(r.refused, true, a); assert.match(r.error, /hors essai|mode essai/, a);
+  }
+  assert.equal(log.modified.length + log.created.length, 0);
+  const h = appel(ctx, await signe({}, 'history'));
+  assert.ok(!h.threads.some((x) => x.id === 'bb02bb02bb02bb02'));
+  const l = appel(ctx, await signe({ q: 'Essai Matrice' }, 'threads'));
+  assert.deepEqual(J(l.threads.map((x) => x.id)), ['aa01aa01aa01aa01']);   // recherche : limitée au libellé
+  assert.deepEqual(J(appel(ctx, await signe({}, 'labels')).labels.map((x) => x.name)), ['Matrice-essai']);
+});
+t('mode essai : libellé RETIRÉ d’une conversation → plus lue ni synchronisée', async () => {
+  const sans = conv('aa01aa01aa01aa01', T.messages.map((x) => ({ ...x, labelIds: x.labelIds.filter((l) => l !== 'Label_E') })));
+  const { ctx } = essaiBac({ threads: { 'aa01aa01aa01aa01': sans } });
+  assert.equal(appel(ctx, await signe({ thread_id: 'aa01aa01aa01aa01' }, 'thread')).refused, true);
+  assert.deepEqual(J(appel(ctx, await signe({ start_history_id: '100' }, 'history')).threads), []);
+  assert.deepEqual(J(appel(ctx, await signe({ ids: ['aa01aa01aa01aa01'] }, 'history')).threads), []);   // conversation en attente : écartée aussi
+});
+t('mode essai : synchronisation SANS l’historique de toute la boîte — une liste par libellé, puis les seules conversations changées', async () => {
+  const { ctx, log } = essaiBac({ threads: { 'cc03cc03cc03cc03': conv('cc03cc03cc03cc03', [m('c1', ['Label_E'], { From: ME, To: 'colbe.essai@example.net' })], '90') } });
+  const h = appel(ctx, await signe({ start_history_id: '100' }, 'history'));
+  assert.equal(log.historyCalls, 0, 'jamais History.list en mode essai');
+  assert.ok(log.lists.length >= 1 && log.lists.every((o) => JSON.stringify(o.labelIds) === '["Label_E"]'), 'toute liste filtrée par le libellé');
+  assert.deepEqual(J(h.threads.map((x) => x.id)), ['aa01aa01aa01aa01']);   // cc03 inchangée depuis le point de reprise : pas relue
+  assert.ok(!log.gets.some(([id]) => id === 'bb02bb02bb02bb02'), 'aucune lecture d’une conversation hors essai');
+});
+t('mode essai : envois réservés aux destinataires d’essai (alias compris) ; conversation créée marquée TEST ; libellé jamais retiré', async () => {
+  const { ctx, log } = essaiBac();
+  assert.match(appel(ctx, await signe({ mode: 'new', to: 'vrai.contact@example.com', subject: 'x', html: 'x', send: true }, 'compose')).error, /Destinataire hors/);
+  assert.match(appel(ctx, await signe({ mode: 'new', to: 'colbe.essai@example.net', bcc: 'autre@example.com', subject: 'x', html: 'x', send: true }, 'compose')).error, /Destinataire hors/);
+  assert.match(appel(ctx, { action: 'mail', secret: 'secret-essai', to: 'vrai.contact@example.com', subject: 'x', html: 'x' }).error, /Destinataire hors/);
+  assert.equal(log.created.length, 0);
+  const ok = appel(ctx, await signe({ mode: 'new', to: 'Colbe.Essai+salle@example.net', subject: 'Essai', html: 'x', send: true }, 'compose'));
+  assert.equal(ok.sent, true, ok.error);
+  assert.deepEqual(J(log.modified.at(-1)), { id: 'th-envoi', addLabelIds: ['Label_E'] });
+  assert.match(appel(ctx, await signe({ thread_id: 'aa01aa01aa01aa01', remove: ['Label_E'] }, 'modify')).error, /ne se retire pas/);
+});
+t('mode essai mal configuré → TOUT bloqué (libellé absent, inexistant, système ; destinataires absents)', async () => {
+  for (const props of [{ MODE_ESSAI: 'oui' }, { ...ESSAI, LIBELLE_ESSAI: 'Inexistant' }, { ...ESSAI, LIBELLE_ESSAI: 'INBOX' }, { ...ESSAI, DESTINATAIRES_ESSAI: '' }]) {
+    const { ctx, log } = essaiBac({ props });
+    for (const [a, p] of [...ACTIONS_BOITE, ['mail_by_msgid', { message_id: '<x@y.fr>' }]]) {
+      const r = appel(ctx, await signe(p, a));
+      assert.equal(r.refused, true, a + ' ' + JSON.stringify(props)); assert.match(r.error, /Mode essai/);
+    }
+    assert.match(appel(ctx, { action: 'mail', secret: 'secret-essai', to: 'colbe.essai@example.net', subject: 'x', html: 'x' }).error, /Mode essai/);
+    assert.equal(log.created.length + log.modified.length + log.historyCalls, 0);
+    assert.ok(appel(ctx, { action: 'ping', secret: 'secret-essai' }).mode_essai.startsWith('Mode essai'));
+  }
+});
+t('mode essai : recherche par Message-ID (Apple Mail) limitée au libellé ; mail-sync refuse un script hors mode essai', async () => {
+  const { ctx, log } = essaiBac();
+  const r = appel(ctx, await signe({ message_id: '<h1@example.org>' }, 'mail_by_msgid'));
+  assert.equal(r.found, false); assert.deepEqual(log.searches, ['rfc822msgid:h1@example.org label:"Matrice-essai"']);
+  assert.equal(essaiOk({ essai: { libelle: 'Matrice-essai', id: 'Label_E' } }, 'Matrice-essai'), true);
+  assert.equal(essaiOk({}, 'Matrice-essai'), false);
+  assert.equal(essaiOk({ essai: { libelle: 'Autre', id: 'X' } }, 'Matrice-essai'), false);
+  assert.equal(essaiOk({}, ''), true);
+  assert.deepEqual(threadsEssai([{ id: 'a', labels: ['Label_E'] }, { id: 'b', labels: ['INBOX'] }, { id: 'c', missing: true }], 'Label_E').map((x) => x.id), ['a']);
 });
 
 let ok = 0;

@@ -59,3 +59,14 @@ export function messageRows(mailbox: string, threadId: string, t: Thread) {
 
 /** Réponse du script acceptée seulement si le compte qui l'exécute (« account ») est le titulaire inscrit (adresse remplacée → refus) */
 export const compteOk = (account: unknown, owner: string) => !!owner && String(account || '').trim().toLowerCase() === owner.trim().toLowerCase();
+
+/**
+ * Mode essai (réglage mail_essai_libelle du projet de TEST, v1.63) : la réponse doit venir d'un script en mode essai sur CE libellé,
+ * et seules les conversations qui le portent (au niveau de la conversation) sont enregistrées. Réglage vide : sans effet.
+ */
+export function essaiOk(reponse: { essai?: { libelle?: string; id?: string } } | null, libelle: string) {
+  if (!libelle) return true;
+  return !!reponse?.essai?.id && reponse.essai.libelle === libelle;
+}
+export const threadsEssai = <T extends { labels?: string[]; missing?: boolean }>(threads: T[], id: string | undefined) =>
+  !id ? threads : threads.filter((t) => !t.missing && (t.labels || []).includes(id));
