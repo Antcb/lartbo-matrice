@@ -496,7 +496,7 @@ async function attachOneMailLink(p, id, attempt = 0, resumed = false){
   if (!msgIdOk(id)) return toast('Lien de Mail refusé : l’identifiant du message n’a pas la forme attendue. Rien n’a été joint.', true);
   const key = 'msgid:' + id;
   // un même message n'est traité qu'une fois à la fois ; un nouvel essai programmé garde le verrou (aucune 2e chaîne par un 2e dépôt)
-  if (!resumed){ if (PENDING_MSG.has(key)) return; PENDING_MSG.add(key); }
+  if (!resumed){ if (PENDING_MSG.has(key)) return toast('Import déjà en cours pour ce message.'); PENDING_MSG.add(key); }
   let keepLock = false;
   try {
     // (décision d'Anthony du 08/11/2026 : un message reste rattaché à un seul suivi ; le suivi concerné est nommé et accessible)
@@ -532,6 +532,14 @@ async function attachOneMailLink(p, id, attempt = 0, resumed = false){
     if (st.other) return toast(`Cette conversation est déjà rattachée au suivi « ${name(st.other)} » : rien n’a été déplacé ni ajouté.`, true, open(st.other));
     // un message déjà joint avant la v1.60.4 dans CE suivi (sans clé) : compté présent, jamais réimporté
     if (old === p.id) st.present.add(metas.find(m => m.message_id === id)?.gmail_id);
+    // (relecture de 9e33475) les AUTRES messages de la conversation joints avant la v1.60.4 (sans clé) : reconnus par le Message-ID
+    // du .eml stocké (lecture seule) ; dans un autre suivi → même règle qu'avec clé : rien n'est importé, suivi nommé et ouvrable
+    for (const m of metas){
+      if (st.present.has(m.gmail_id) || m.message_id === id || !msgIdOk(m.message_id)) continue;
+      const lg = await legacyMailOwner(m.message_id);
+      if (lg.owner && lg.owner !== p.id) return toast(`Cette conversation est déjà rattachée au suivi « ${name(lg.owner)} » : rien n’a été déplacé ni ajouté.`, true, open(lg.owner));
+      if (lg.owner === p.id) st.present.add(m.gmail_id);
+    }
     const missing = metas.filter(m => !st.present.has(m.gmail_id)).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
     const total = metas.length, already = total - missing.length;
     const longNote = thread.truncated ? `Conversation très longue (${plural(thread.total, 'message')}) : seuls les ${total - 1} plus récents et le message glissé sont lus ; les plus anciens ne sont pas importés.` : '';

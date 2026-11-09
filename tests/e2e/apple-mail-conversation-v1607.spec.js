@@ -212,7 +212,9 @@ test('relecture 4 : pendant les nouveaux essais, un second dépôt du même mess
   await expect(lastToast(page)).toContainText('Synchronisation en cours');
   const calls = async () => (await state(page)).google.filter(g => g.payload.message_id === mid(3)).length;
   const before = await calls();
-  await drop(page, 3); await drop(page, 3);                                    // dépôts répétés pendant l'attente : ignorés
+  await drop(page, 3);                                                         // dépôt répété pendant l'attente : signalé, ignoré
+  await expect(lastToast(page)).toContainText('Import déjà en cours pour ce message');
+  await drop(page, 3);
   await page.waitForTimeout(300);
   expect(await calls()).toBe(before);
   await page.evaluate(m3 => { window.__BOX.prospect.threads.tA.push(m3); }, meta(3));
@@ -221,7 +223,7 @@ test('relecture 4 : pendant les nouveaux essais, un second dépôt du même mess
   expectClean(ctx);
 });
 
-test('relecture 5 : message de la conversation joint avant la v1.60.4 (sans clé) — même suivi : déjà présent ; autre suivi : accès au suivi', async ({ page }) => {
+test('relecture 5 : message de la conversation joint avant la v1.60.4 (sans clé) — même suivi : déjà présent ; autre suivi : rien importé, accès au suivi', async ({ page }) => {
   const ctx = await openSuivi(page, { prospect: { threads: { tA: [meta(1), meta(2)] } }, main: { threads: {} } });
   const old = async (pid, n) => page.evaluate(async ([pid, path, raw]) => { const { S, touch } = await import('./js/state.js');
     const f = { id: 'pf-' + path, prospect_id: pid, name: 'ancien.eml', path, mime: 'message/rfc822', size: raw.length, created_at: '2026-11-01T10:00:00Z' };
@@ -230,18 +232,19 @@ test('relecture 5 : message de la conversation joint avant la v1.60.4 (sans clé
   await drop(page, 2);
   await expect(lastToast(page)).toContainText('Conversation importée : 1 message ajouté, 1 message déjà présent');
   expect((await state(page)).logs.map(l => l.gmail)).toEqual([gid(2)]);
-  // autre conversation (messages 5 et 6) ; le 5 a été joint à pr-1 en v1.60.3 (sans clé) ; dépôt du 6 dans pr-2 : le 6 est importé,
-  // le 5 n'est ni déplacé ni dupliqué, le bilan le dit et donne accès à pr-1
+  // autre conversation (messages 5 et 6) ; le 5 a été joint à pr-1 en v1.60.3 (sans clé) ; dépôt du 6 dans pr-2 : (relecture de
+  // 9e33475) même règle qu'avec clé — rien n'est importé dans pr-2 (pas de conversation répartie), pr-1 nommé et ouvrable
   await old('pr-1', 5);
   await page.evaluate(([m5, m6]) => { window.__BOX.prospect.threads.tB = [m5, m6]; }, [meta(5), meta(6)]);
   await page.evaluate(async () => { const { S } = await import('./js/state.js'); const app = await import('./js/app.js'); S.suiviPage = 'pr-2'; app.render(); });
+  await page.evaluate(() => { window.__google = []; });
   await drop(page, 6);
-  const dlg = page.locator('dialog.ask');
-  await expect(dlg).toContainText('1 message ajouté');
-  await expect(dlg).toContainText('déjà joint au suivi « Salle Exemple');
-  await dlg.getByRole('button', { name: 'Ouvrir le suivi concerné' }).click();
+  const t = lastToast(page);
+  await expect(t).toContainText('Cette conversation est déjà rattachée au suivi « Salle Exemple');
+  expect((await state(page)).google.filter(g => g.payload.want)).toEqual([]);   // aucun contenu lu
+  await t.getByRole('button', { name: 'Ouvrir le suivi' }).click();
   await expect.poll(() => page.evaluate(async () => (await import('./js/state.js')).S.suiviPage)).toBe('pr-1');
-  expect((await state(page)).logs.map(l => [l.pid, l.gmail])).toEqual([['pr-1', gid(2)], ['pr-2', gid(6)]]);
+  expect((await state(page)).logs.map(l => [l.pid, l.gmail])).toEqual([['pr-1', gid(2)]]);   // rien dans pr-2
   expectClean(ctx);
 });
 
