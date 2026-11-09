@@ -388,14 +388,26 @@ do $$ begin
   perform set_config('request.jwt.claims', '', true);
 end $$;
 
+-- ── Adresses des synchronisations : format imposé (fonction Supabase, sans paramètre ni jeton), partagé avec cal-sync ─────────
+do $$ begin
+  insert into private.sync_urls values ('cal-sync', 'https://abcdefghijklmnop.supabase.co/functions/v1/cal-sync');
+  perform pg_temp.ok(true, 'adresse cal-sync (lot calendriers) acceptée');
+  begin insert into private.sync_urls values ('x1', 'https://abcdefghijklmnop.supabase.co/functions/v1/mail-sync?token=abc'); perform pg_temp.ok(false, 'jeton');
+    exception when check_violation then perform pg_temp.ok(true, 'adresse avec paramètre / jeton refusée'); end;
+  begin insert into private.sync_urls values ('x2', 'http://abcdefghijklmnop.supabase.co/functions/v1/mail-sync'); perform pg_temp.ok(false, 'http');
+    exception when check_violation then perform pg_temp.ok(true, 'adresse non https refusée'); end;
+  begin insert into private.sync_urls values ('x3', 'https://pirate.example.net/functions/v1/mail-sync'); perform pg_temp.ok(false, 'hôte');
+    exception when check_violation then perform pg_temp.ok(true, 'adresse hors Supabase refusée'); end;
+  delete from private.sync_urls where key = 'cal-sync';
+  perform pg_temp.ok((select count(*) from information_schema.columns where table_schema = 'private' and table_name = 'sync_urls') = 2, 'colonnes de sync_urls inchangées (empreinte du lot calendriers)');
+end $$;
+
 -- ── Tâche planifiée : rien sans adresse inscrite, jamais vers un autre serveur, secret dans l'en-tête seulement ─────────────
 do $$ begin
   perform public.mail_sync_tick();
   perform pg_temp.ok((select count(*) from net.appels) = 0, 'tâche planifiée inactive sans adresse inscrite');
-  insert into private.sync_urls values ('mail-sync', 'https://pirate.example.net/functions/v1/mail-sync');
-  perform public.mail_sync_tick();
-  perform pg_temp.ok((select count(*) from net.appels) = 0, 'adresse hors Supabase : aucun appel (le secret ne part pas)');
-  update private.sync_urls set url = 'https://abcdefghijklmnop.supabase.co/functions/v1/mail-sync' where key = 'mail-sync';
+  -- (adresse hors Supabase : désormais refusée par la contrainte de format, voir plus haut ; la fonction la refuse aussi d'elle-même)
+  insert into private.sync_urls values ('mail-sync', 'https://abcdefghijklmnop.supabase.co/functions/v1/mail-sync');
   perform public.mail_sync_tick();
   perform pg_temp.ok((select count(*) = 1 and bool_and(headers ->> 'x-hook-secret' = (select value from private.import_secrets where key = 'mail_sync_hook'))
     and bool_and(position((select value from private.import_secrets where key = 'mail_sync_hook') in url) = 0) from net.appels), 'appel planifié : secret dans l''en-tête, jamais dans l''adresse');

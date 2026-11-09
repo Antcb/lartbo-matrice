@@ -423,6 +423,20 @@ grant execute on function public.mail_link_manual(uuid, uuid, uuid, uuid, uuid),
 -- adresses des fonctions appelées par les tâches planifiées : schéma privé (inaccessible à l'application et aux comptes de l'équipe)
 create table if not exists private.sync_urls (key text primary key, url text not null);
 revoke all on private.sync_urls from public, anon, authenticated;
+-- (v1.63) format imposé : adresse d'une fonction serveur Supabase, sans paramètre ni jeton (mail-sync, et cal-sync du lot calendriers
+-- qui partage la table : même colonnes, rien d'autre ne change). Ligne existante non conforme → arrêt clair, rien n'est appliqué.
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'sync_urls_url_format' and conrelid = 'private.sync_urls'::regclass) then
+    if exists (select 1 from private.sync_urls where url !~ '^https://[a-z0-9]+\.supabase\.co/functions/v1/[a-z0-9-]+$') then
+      raise exception 'Migration messagerie arrêtée : private.sync_urls contient une adresse qui n''est pas celle d''une fonction Supabase (sans paramètre ni jeton)';
+    end if;
+    alter table private.sync_urls add constraint sync_urls_url_format check (url ~ '^https://[a-z0-9]+\.supabase\.co/functions/v1/[a-z0-9-]+$');
+  end if;
+end $$;
+-- (v1.63) sauvegarde complète (lot v1.60.7) : la table est copiée (aucun secret) — lecture accordée au rôle « sauvegarde » s'il existe
+do $$ begin
+  if exists (select 1 from pg_roles where rolname = 'sauvegarde') then grant select on private.sync_urls to sauvegarde; end if;
+end $$;
 -- secret serveur DÉDIÉ des appels automatiques (« mail_sync_hook ») : tiré au hasard ici, rangé dans le schéma privé (comme le jeton
 -- Pennylane), lu seulement par la tâche planifiée et par la fonction serveur (import_secret, réservé au rôle serveur).
 -- Personne ne le saisit ni ne le voit ; il n'est jamais envoyé au navigateur, placé dans une adresse ou écrit dans un journal.

@@ -104,7 +104,7 @@ Contrôles en base de test après chaque bloc : `mail_messages` (identifiant Gma
 
 ## 6. Déjà vérifié sans Google (simulé, réseau bloqué)
 Script de prospection exécuté avec des services Google simulés (`tests/static/messagerie-regles.mjs`), base PostgreSQL locale jetable
-(`supabase/repetitions/2026-11-08_v1.63_messagerie_essai.sql`, 83 essais), navigateur sur fausse base (`e2e/messagerie-*.spec.js`).
+(`supabase/repetitions/2026-11-08_v1.63_messagerie_essai.sql`, 89 essais), navigateur sur fausse base (`e2e/messagerie-*.spec.js`).
 Non couvert : production@ (plus tard).
 
 ## 7. Risque connu, non corrigé dans ce lot (signalé)
