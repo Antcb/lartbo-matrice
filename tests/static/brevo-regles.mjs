@@ -3,7 +3,7 @@
 // Lancé par « npm test » (node --experimental-strip-types). Module testé : supabase/functions/brevo-sync/regles.ts
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { aAjouter, attributes, fonctionsParStructure, fonctionsTexte, horsProspection, names, onlyInactive, syncContact } from '../../supabase/functions/brevo-sync/regles.ts';
+import { aAjouter, attributes, fonctionsParStructure, fonctionsTexte, horsProspection, listeEssai, mailsAutorises, names, onlyInactive, syncContact } from '../../supabase/functions/brevo-sync/regles.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -259,6 +259,34 @@ t('option B (08/11) et exclusion manuelle (09/11) : contact devenu sans structur
   const b5 = fauxBrevo({ 'lea@x.invalid': { attributes: {}, listIds: [], emailBlacklisted: true } });
   await sync(b5, C({ prospection_exclue_at: M }), [LR('Ouverte', false)], ['lea@x.invalid']);
   assert.equal(b5.base.get('lea@x.invalid').emailBlacklisted, true); assert.deepEqual(b5.base.get('lea@x.invalid').listIds, []);
+});
+
+t('MODE ESSAI (marche du 09/11) : seule l’adresse de la liste blanche est synchronisée, aucun appel pour les autres', async () => {
+  assert.equal(listeEssai(''), null); assert.equal(listeEssai(null), null); assert.equal(listeEssai('pas une adresse'), null);
+  assert.deepEqual([...listeEssai(' Prenom+Essai@X.invalid ; autre@x.invalid,')], ['prenom+essai@x.invalid', 'autre@x.invalid']);
+  const essai = listeEssai('lea+essai@x.invalid');
+  assert.deepEqual(mailsAutorises(C({ email_2: 'LEA+essai@x.invalid' }), essai), ['lea+essai@x.invalid']);
+  assert.deepEqual(mailsAutorises(C(), essai), []);
+  assert.deepEqual(mailsAutorises(C(), null), ['lea@x.invalid']);
+  // contact réel (hors liste) : AUCUN appel, même pas une lecture
+  const b = fauxBrevo({ 'lea@x.invalid': { attributes: { STRUCTURE: 'Ancienne' } } });
+  const r = await syncContact({ client: b.client, c: C(), links: [], champs: CH, listIds: [7], ours: new Set(['lea@x.invalid']), essai });
+  assert.deepEqual(b.appels, []); assert.deepEqual(r.done, []);
+  // contact d'essai avec aussi une vraie adresse : seule l'adresse d'essai est touchée
+  const b2 = fauxBrevo();
+  await syncContact({ client: b2.client, c: C({ email_2: 'lea+essai@x.invalid' }), links: [LR('ESSAI A', false)], champs: CH, listIds: [], ours: new Set(), essai });
+  assert.deepEqual([...b2.base.keys()], ['lea+essai@x.invalid']);
+  assert.ok(b2.appels.every(a => a[1] === 'lea+essai@x.invalid'));
+  // fonction serveur : en mode essai, le filtre passe AVANT tout appel à Brevo (y compris la lecture des champs) ; « tout envoyer » refusé
+  const src = readFileSync(new URL('../../supabase/functions/brevo-sync/index.ts', import.meta.url), 'utf8');
+  assert.match(src, /"brevo_essai_emails"\]/);
+  const un = src.slice(src.indexOf('// Un contact'));
+  assert.ok(un.indexOf('if (!mailsAutorises(c as Contact, essai).length) return') > 0 && un.indexOf('if (!mailsAutorises(c as Contact, essai).length) return') < un.indexOf('await attrNames(key)'));
+  assert.ok(un.indexOf('await attrNames(key)') < un.indexOf('syncContact('));
+  assert.match(un, /champs: a, listIds, ours, essai \}\)/);
+  const tout = src.slice(src.indexOf('if (body.all) {'), src.indexOf('// Un contact'));
+  assert.ok(tout.indexOf('if (essai) return json({ ok: false') >= 0 && tout.indexOf('if (essai) return json({ ok: false') < tout.indexOf('await attrNames(key)'));
+  assert.equal((src.match(/await attrNames\(key\)/g) || []).length, 2);
 });
 
 let ko = 0;

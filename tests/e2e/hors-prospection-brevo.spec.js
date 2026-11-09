@@ -94,3 +94,16 @@ test('fiche contact : exclusion automatique (structure) affichée avec son motif
   await page.locator('#modal [data-act=closeModal]').first().click();
   expectClean(ctx);
 });
+
+// Marche d'essai Brevo réel (09/11/2026) : le mode essai (réglage brevo_essai_emails) est visible dans Réglages › Brevo
+test('Réglages › Brevo : mode essai signalé avec ses adresses ; absent sans le réglage', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.waitForFunction(() => import('./js/state.js').then(m => m.S.dataLoaded === true));
+  await page.evaluate(async () => (await import('./js/app.js')).go('settings'));
+  await expect(page.locator('#main')).not.toContainText('Mode essai Brevo actif');
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
+    S.db.settings.push({ key: 'brevo_essai_emails', value: 'prenom+essai@exemple.invalid' }); touch('settings'); (await import('./js/app.js')).render(); });
+  await expect(page.locator('#main')).toContainText('Mode essai Brevo actif');
+  await expect(page.locator('#main')).toContainText('seules ces adresses sont synchronisées : prenom+essai@exemple.invalid');
+  expectClean(ctx);
+});

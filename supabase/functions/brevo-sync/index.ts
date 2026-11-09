@@ -14,7 +14,7 @@
  * le navigateur n'a plus le code secret).
  */
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { aAjouter, attributes, type Champs, type ClientBrevo, type Contact, type Link, mailsOf, syncContact } from "./regles.ts";
+import { aAjouter, attributes, type Champs, type ClientBrevo, type Contact, type Link, listeEssai, mailsAutorises, mailsOf, syncContact } from "./regles.ts";
 
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const API = "https://api.brevo.com/v3";
@@ -31,7 +31,7 @@ async function bfetch(url: string, init: RequestInit = {}): Promise<Response> {
 const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
 async function settings() {
-  const { data } = await sb.from("settings").select("key,value").in("key", ["brevo_api_key", "brevo_list_id", "brevo_hook_secret"]);
+  const { data } = await sb.from("settings").select("key,value").in("key", ["brevo_api_key", "brevo_list_id", "brevo_hook_secret", "brevo_essai_emails"]);
   const m: Record<string, string> = {};
   for (const r of data || []) m[r.key] = typeof r.value === "string" ? r.value : (r.value == null ? "" : String(r.value));
   return m;
@@ -116,10 +116,13 @@ Deno.serve(async (req) => {
     if (!s.brevo_api_key) return json({ ok: false, error: "Clé API Brevo absente (Réglages › Brevo)" });
     const key = s.brevo_api_key.trim();
     const listIds = String(s.brevo_list_id || "").split(/[,;\s]+/).map(Number).filter((n) => n > 0);
-    const a = await attrNames(key);
+    // mode essai (réglage brevo_essai_emails, regles.ts) : seules ces adresses sont synchronisées, rien d'autre n'appelle Brevo
+    const essai = listeEssai(s.brevo_essai_emails);
 
     // Tout envoyer d'un coup (import Brevo)
     if (body.all) {
+      if (essai) return json({ ok: false, error: "Mode essai Brevo actif : « tout envoyer » est désactivé pendant l’essai." });
+      const a = await attrNames(key);
       const all: Contact[] = [];
       for (let from = 0; ; from += 1000) {
         const data = await lireContacts<Contact[]>("id,email,email_2,first_name,last_name,display_name",
@@ -152,12 +155,15 @@ Deno.serve(async (req) => {
       (sel) => sb.from("contacts").select(sel).eq("id", body.contact_id).single());
     const mails = c ? mailsOf(c as Contact) : [];
     if (!c || !mails.length) return json({ ok: true, skipped: "pas de mail" });
+    // mode essai : contact hors de la liste → aucun appel à Brevo, rien d'écrit sur le contact
+    if (!mailsAutorises(c as Contact, essai).length) return json({ ok: true, skipped: "mode essai" });
+    const a = await attrNames(key);
     const st = await structuresOf([c.id]);
     // mails créés par la Matrice (avant la v1.32 : seul le mail 1, signalé par brevo_created)
     const ours = new Set<string>((c.brevo_emails || []).map((e: string) => e.toLowerCase()));
     const old: string[] = [];
     if (c.brevo_created && !ours.size && c.email) { ours.add(c.email.trim().toLowerCase()); old.push(c.email.trim().toLowerCase()); }
-    const { done, created, skipped, errors } = await syncContact({ client: client(key), c: c as Contact, links: st.get(c.id), champs: a, listIds, ours });
+    const { done, created, skipped, errors } = await syncContact({ client: client(key), c: c as Contact, links: st.get(c.id), champs: a, listIds, ours, essai });
     created.unshift(...old);
     const err = errors.length ? errors.join(" · ") : null;
     // ajout des mails créés à la liste enregistrée, sans l'écraser (une autre synchronisation du même contact peut tourner en même temps)

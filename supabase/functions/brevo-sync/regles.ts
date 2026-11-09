@@ -92,6 +92,19 @@ export function attributes(c: Contact, links: Link[] | undefined, a: Champs, mis
   return at;
 }
 
+/**
+ * MODE ESSAI (marche supabase/operations/2026-11-09_essai_brevo_contact_test.md) : réglage brevo_essai_emails = une ou plusieurs
+ * adresses (virgules). Tant qu'il est rempli, la synchronisation ne touche QUE ces adresses : toute autre adresse est ignorée AVANT
+ * le moindre appel à Brevo, et « tout envoyer » est refusé. Vide : fonctionnement normal. Sert à brancher la vraie clé Brevo sur
+ * l'espace de test sans risque pour ses autres contacts. null = mode essai inactif.
+ */
+export function listeEssai(v: unknown): Set<string> | null {
+  const l = String(v ?? "").split(/[,;\s]+/).map((e) => e.trim().toLowerCase()).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+  return l.length ? new Set(l) : null;
+}
+/** Adresses du contact que la synchronisation peut toucher (toutes hors mode essai ; sinon seulement celles de la liste) */
+export const mailsAutorises = (c: Contact, essai: Set<string> | null): string[] => mailsOf(c).filter((e) => !essai || essai.has(e));
+
 /** Réponse minimale d'un appel à Brevo (Response, ou faux client des tests) */
 export type Rep = { ok: boolean; status: number; text(): Promise<string> };
 /** Les trois appels utilisés pour un contact. Aucun appel de suppression, de désabonnement ni de retrait de liste n'existe ici. */
@@ -108,13 +121,13 @@ export type ClientBrevo = {
  * - mail déjà dans Brevo et non créé par la Matrice : jamais touché ;
  * - rejouable : relancer donne le même résultat, sans doublon (lecture avant création, « duplicate » = déjà là).
  */
-export async function syncContact(p: { client: ClientBrevo; c: Contact; links: Link[] | undefined; champs: Champs; listIds: number[]; ours: Set<string> }) {
+export async function syncContact(p: { client: ClientBrevo; c: Contact; links: Link[] | undefined; champs: Champs; listIds: number[]; ours: Set<string>; essai?: Set<string> | null }) {
   const { client, c, links, champs, listIds, ours } = p;
   const held = horsProspection(links, c.hors_prospection_at, c.prospection_exclue_at);   // hors prospection : pas de nouveau contact Brevo (v1.60.2, option B)
   const aCreer = attributes(c, links, champs, false);
   const aJour = attributes(c, links, champs, true);
   const errors: string[] = [], done: string[] = [], created: string[] = [], skipped: string[] = [], updated: string[] = [];
-  for (const email of mailsOf(c)) {
+  for (const email of mailsAutorises(c, p.essai ?? null)) {   // mode essai : seulement les adresses de la liste
     const g = await client.lire(email);
     if (!g.ok && g.status !== 404) { errors.push(`${email} : Brevo ${g.status} : ${(await g.text()).slice(0, 200)}`); continue; }
     if (g.ok) {
