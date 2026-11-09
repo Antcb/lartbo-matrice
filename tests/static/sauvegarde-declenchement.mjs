@@ -105,6 +105,8 @@ t('migration : fermeture par la seule exécution qui tient la fenêtre ; 6 déma
   assert.match(mig, /set exceptionnelle_jusqu_a = v_jusqu, tenue_par = v_id;/);
   assert.match(mig, /if not exists \(select 1 from private\.sauvegarde_fenetre where tenue_par = p_id\) then\s+return jsonb_build_object\('etat', 'non_titulaire'\)/);
   assert.match(mig, /x\.jour = v_jour\) >= 6 then\s+return jsonb_build_object\('etat', 'limite'/);
+  assert.match(mig, /function private\.sauvegarde_ouvrir\(duree interval default null\)[\s\S]*?least\(duree, interval '3 hours'\), tenue_par = null;/,
+    'ouverture manuelle : tenue_par remis à vide (la fin d’une copie ne referme pas une fenêtre ouverte à la main)');
 });
 t('migration : fonctions fermées au navigateur, ouvertes au seul rôle serveur', () => {
   assert.match(mig, /revoke all on function public\.sauvegarde_declenchement\(text, jsonb\) from public, anon, authenticated;/);

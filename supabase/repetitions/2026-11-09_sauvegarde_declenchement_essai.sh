@@ -126,6 +126,14 @@ r=$(appel demarrer '{"type":"complete","run_id":"1101","tentative":1,"origine":"
 verifie "même exécution rappelée après fermeture : même ligne" "$(champ "$r" id)" "$IB"
 verifie "même exécution rappelée après fermeture : connexion toujours fermée" "$(Q "select rolcanlogin from pg_roles where rolname = 'sauvegarde'")" "f"
 appel terminer "{\"id\":$IB,\"statut\":\"echec\"}" > /dev/null
+# ouverture MANUELLE pendant une copie : la fin de la copie ne referme pas la fenêtre ouverte à la main
+r=$(appel demarrer '{"type":"complete","run_id":"1102","tentative":1,"origine":"workflow_dispatch","forcer":true}'); IM=$(champ "$r" id)
+Q "select private.sauvegarde_ouvrir(interval '20 minutes')" > /dev/null
+r=$(appel terminer "{\"id\":$IM,\"statut\":\"succes\"}")
+verifie "ouverture manuelle pendant une copie : fin de copie non titulaire" "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["fermeture"]["etat"])' "$r")" "non_titulaire"
+verifie "ouverture manuelle : connexion gardée jusqu'à son échéance" "$(Q "select rolcanlogin and exceptionnelle_jusqu_a > now() + interval '15 minutes' from pg_roles, private.sauvegarde_fenetre where rolname = 'sauvegarde'")" "t"
+Q "update private.sauvegarde_fenetre set exceptionnelle_jusqu_a = now() - interval '1 second'"; Q "select private.sauvegarde_interrompre()" > /dev/null
+verifie "ouverture manuelle : refermée par l'interruption à l'échéance" "$(Q "select rolcanlogin from pg_roles where rolname = 'sauvegarde'")" "f"
 # limite : 6 démarrages par type et par jour
 n=$(Q "select count(*) from private.sauvegarde_executions where type = 'complete' and jour = (now() at time zone 'UTC')::date")
 for i in $(seq "$n" 5); do r=$(appel demarrer "{\"type\":\"complete\",\"run_id\":\"12$i\",\"tentative\":1,\"origine\":\"workflow_dispatch\",\"forcer\":true}"); appel terminer "{\"id\":$(champ "$r" id),\"statut\":\"echec\"}" > /dev/null; done
