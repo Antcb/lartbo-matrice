@@ -110,16 +110,22 @@ if (MSG_RAW_MAX !== 20 * 1024 * 1024 || !/var MSG_RAW_MAX_ = 20 \* 1024 \* 1024;
 if (!/action === 'mail_by_msgid'\) out = mailByMsgId_\(body\.message_id\)/.test(gsCode)) fail('scripts', 'Code.gs : action mail_by_msgid non branchée dans doPost');
 if (!/a === 'mail_by_msgid'\) out = ownerOnly_\(body, a\) \|\| mailByMsgId_\(body\.message_id\)/.test(gsProsp)) fail('scripts', 'Prospection.gs : action mail_by_msgid non branchée dans doPost');
 for (const [n, src] of [['Code.gs', gsCode], ['Prospection.gs', gsProsp]])
-  if (!/var SCRIPT_VERSION = 'v1\.60\.4'/.test(src)) fail('scripts', `${n} : SCRIPT_VERSION doit être 'v1.60.4'`);
+  if (!/var SCRIPT_VERSION = 'v1\.60\.7'/.test(src)) fail('scripts', `${n} : SCRIPT_VERSION doit être 'v1.60.7'`);
 
 // 3a. Lecture du code : seulement des méthodes de lecture (Gmail) et des opérations sur du texte
-const READ_ONLY = new Set(['search', 'forEach', 'getMessages', 'getHeader', 'trim', 'isDraft', 'push', 'test', 'slice', 'getRawContent', 'round', 'getSubject', 'getFrom', 'getDate', 'toISOString']);
+const READ_ONLY = new Set(['search', 'forEach', 'getMessages', 'getHeader', 'trim', 'isDraft', 'push', 'test', 'slice', 'getRawContent', 'round', 'getSubject', 'getFrom', 'getDate', 'toISOString',
+  // (v1.60.7) conversation : lecture de la conversation et de ses messages, opérations sur des tableaux
+  'getThread', 'getId', 'getTo', 'getCc', 'getTime', 'filter', 'sort', 'map', 'indexOf', 'isArray', 'getAttachments']);
 const fn = bCode.slice(bCode.indexOf('function mailByMsgId_'));
 const called = [...fn.matchAll(/\.([A-Za-z_$][\w$]*)\s*\(/g)].map(m => m[1]);
 const extra = [...new Set(called.filter(m => !READ_ONLY.has(m)))];
 if (extra.length) fail('lecture seule', `mailByMsgId_ appelle des méthodes hors liste de lecture : ${extra.join(', ')}`);
 if (/markRead|markUnread|addLabel|removeLabel|moveTo|star|trash|delete|modify|send|reply|forward|createDraft|Drafts|Users\.Messages|UrlFetchApp|DriveApp|PropertiesService|sb_\(/i.test(fn)) fail('lecture seule', 'mailByMsgId_ contient une écriture ou un accès à un autre service');
-if ((fn.match(/GmailApp\.search\(/g) || []).length !== 1 || !/GmailApp\.search\('rfc822msgid:' \+ id\.slice\(1, -1\), 0, 10\)/.test(fn)) fail('lecture seule', 'mailByMsgId_ : une seule recherche « rfc822msgid: » + identifiant validé attendue');
+for (const f of ['mailByMsgId_', 'threadByMsgId_']){
+  const body = (fn.split(/(?=\nfunction \w+_\()/).find(x => x.includes('function ' + f + '(')) || '');
+  if (!body) { fail('lecture seule', `${f} introuvable`); continue; }
+  if ((body.match(/GmailApp\.search\(/g) || []).length !== 1 || !/GmailApp\.search\('rfc822msgid:' \+ id\.slice\(1, -1\), 0, 10\)/.test(body)) fail('lecture seule', `${f} : une seule recherche « rfc822msgid: » + identifiant validé attendue`);
+}
 
 // 3b. Exécution réelle des deux scripts, services Google simulés : tout appel hors lecture est relevé
 const RAW = ['From: Camille Exemple <camille@example.com>', 'To: testeur@example.com', 'Subject: Programmation fictive', `Message-ID: ${ID1}`,

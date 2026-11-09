@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.60.7 — 09/11/2026
+- v1.60.7 : mail glissé depuis Apple Mail — toute la conversation Gmail est importée dans le suivi (messages reçus et envoyés, ordre chronologique, un .eml par message, pièces jointes), immédiatement et sans confirmation, avec progression puis bilan ; un nouveau dépôt n'ajoute que les messages manquants ; conversation d'un autre suivi signalée avec accès ; « synchronisation en cours » et nouveaux essais bornés si le message n'est pas encore visible chez Google ; mêmes identifiants que la messagerie intégrée (numéro à ajuster à la publication : 1.60.8 si la 1.60.7 des sauvegardes passe avant)
+
+
 ## 1.60.6 — 09/11/2026
 - Facture de solde : le rappel « Facture à envoyer » d'un solde ne tombe plus avant le jour ouvré de J-7 (il tombait 3 jours après la facture faite, quelle que soit la date du concert) — même règle côté serveur (migration préparée, non appliquée)
 
