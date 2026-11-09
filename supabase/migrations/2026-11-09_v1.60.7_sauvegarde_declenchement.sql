@@ -154,6 +154,20 @@ begin
     'statut', (select statut from private.sauvegarde_executions where id = p_id), 'fermeture', f);
 end $f$;
 
+-- Ouverture MANUELLE (select private.sauvegarde_ouvrir(interval '1 hour')) : corps d'origine (outils/fenetre_connexion.sql) +
+-- tenue_par remis à vide, pour que la fin d'une copie en cours ne referme pas une fenêtre ouverte à la main (elle se referme à
+-- son échéance, par l'interruption). Ouverture SANS durée (ancienne tâche de 01:30) : inchangée.
+create or replace function private.sauvegarde_ouvrir(duree interval default null) returns text
+language plpgsql set search_path = '' as $f$
+begin
+  if duree is not null then
+    update private.sauvegarde_fenetre set exceptionnelle_jusqu_a = now() + least(duree, interval '3 hours'), tenue_par = null;
+  end if;
+  alter role sauvegarde login;
+  return 'connexion ouverte' || case when duree is null then '' else ' jusqu''à ' ||
+    (select to_char(exceptionnelle_jusqu_a at time zone 'UTC', 'HH24:MI') || ' UTC' from private.sauvegarde_fenetre) end;
+end $f$;
+
 -- ── 3. Interruption (toutes les 15 min) : corps d'origine (outils/fenetre_connexion.sql) + verrous périmés ───────────────────
 create or replace function private.sauvegarde_interrompre() returns text
 language plpgsql set search_path = '' as $f$
@@ -242,6 +256,7 @@ revoke all on function private.sauvegarde_demarrer(text, text, integer, text, bo
 revoke all on function private.sauvegarde_fermer(bigint) from public, anon, authenticated, service_role;
 revoke all on function private.sauvegarde_terminer(bigint, text, text) from public, anon, authenticated, service_role;
 revoke all on function private.sauvegarde_interrompre() from public, anon, authenticated, service_role;
+revoke all on function private.sauvegarde_ouvrir(interval) from public, anon, authenticated, service_role;
 revoke all on function private.sauvegarde_controler() from public, anon, authenticated, service_role;
 revoke all on function private.sauvegarde_secrets_presence() from public, anon, authenticated, service_role;
 grant execute on function private.sauvegarde_secrets_presence() to sauvegarde;
