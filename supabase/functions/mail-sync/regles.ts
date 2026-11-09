@@ -70,3 +70,6 @@ export function essaiOk(reponse: { essai?: { libelle?: string; id?: string } } |
 }
 export const threadsEssai = <T extends { labels?: string[]; missing?: boolean }>(threads: T[], id: string | undefined) =>
   !id ? threads : threads.filter((t) => !t.missing && (t.labels || []).includes(id));
+
+/** Refus du script pour une conversation qui n'est pas TEST (code « hors_essai », jamais déduit du texte du message) */
+export const horsEssai = (j: unknown) => !!j && typeof j === 'object' && (j as Record<string, unknown>).refused === true && (j as Record<string, unknown>).code === 'hors_essai';

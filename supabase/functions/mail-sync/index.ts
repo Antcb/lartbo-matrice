@@ -6,7 +6,7 @@
 // ne touche jamais au rattachement existant, puis lance mail_process (rattachement automatique, journal du suivi, suspension des relances).
 // Rien n'est envoyé ni modifié dans Gmail ici. Dernier passage et erreur visibles dans l'espace Mails (mail_sync_state).
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { acces, compteOk, essaiOk, messageRows, threadsEssai, scriptUrlOk, threadIds, threadRow, type Thread } from './regles.ts';
+import { acces, compteOk, essaiOk, horsEssai, messageRows, threadsEssai, scriptUrlOk, threadIds, threadRow, type Thread } from './regles.ts';
 // même signature que le relais script-google (v1.60.4) : clé dédiée mailbox_sign_key, jamais transmise
 import { outgoingBody } from '../script-google/identite.ts';
 
@@ -19,6 +19,8 @@ const LIMIT_MS = 120_000;
 /** Erreur expliquée à l'utilisateur (message rédigé ici) ; toute autre erreur n'est montrée que sous une forme générique
  *  (détail technique seulement dans le journal du serveur — CodeQL « stack trace exposure ») */
 class Explique extends Error {}
+/** Refus « conversation hors essai » (code hors_essai du script) : seule erreur écartée sans interrompre un lot en mode essai */
+class HorsEssai extends Explique {}
 const shown = (e: unknown) => e instanceof Explique ? e.message.slice(0, 500) : 'Erreur interne de la synchronisation (détail dans le journal du serveur).';
 
 /**
@@ -37,7 +39,10 @@ async function script(url: string, secret: string, key: string, owner: string, a
     const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: await outgoingBody(payload, action, secret, owner, key, Date.now(), 'prospect'), signal: ctl.signal });
     const txt = await r.text();
     let j: any; try { j = JSON.parse(txt); } catch { throw new Explique('Réponse illisible du script de prospection'); }
-    if (!j?.ok) throw new Explique(String(j?.error || '').slice(0, 300) || 'Le script de prospection a refusé la demande');
+    if (!j?.ok) {
+      const msg = String(j?.error || '').slice(0, 300) || 'Le script de prospection a refusé la demande';
+      throw horsEssai(j) ? new HorsEssai(msg) : new Explique(msg);
+    }
     if (!essaiOk(j, ESSAI)) throw new Explique(`Mode essai demandé (libellé « ${ESSAI} ») mais le script de prospection n’est pas en mode essai sur ce libellé : rien n’est lu ni enregistré.`);
     if (ESSAI) j.threads = threadsEssai(j.threads || (j.thread ? [j.thread] : []), j.essai?.id), j.thread = j.threads.length ? j.thread : null;
     if (!compteOk(j.account, owner)) throw new Explique('Le script de prospection ne s’exécute pas sous le compte titulaire de la boîte : synchronisation arrêtée, rien n’est enregistré.');
@@ -110,7 +115,7 @@ Deno.serve(async (req) => {
         try {
           const j = await script(url, secret, key, owner, 'thread', { thread_id: id });
           if (j.thread) threads.push(j.thread);
-        } catch (e) { if (ESSAI && e instanceof Explique && /hors essai|mode essai/i.test(e.message)) continue; throw e; }
+        } catch (e) { if (ESSAI && e instanceof HorsEssai) continue; throw e; }   // toute autre erreur reste visible
       }
     } else {
       // plus de 30 conversations changées : le reste est gardé (pending) et lu aux passages suivants, le point de reprise avance

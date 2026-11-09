@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { createHash, createHmac } from 'node:crypto';
-import { acces, compteOk, essaiOk, messageRows, same, scriptUrlOk, threadIds, threadRow, threadsEssai } from '../../supabase/functions/mail-sync/regles.ts';
+import { acces, compteOk, essaiOk, horsEssai, messageRows, same, scriptUrlOk, threadIds, threadRow, threadsEssai } from '../../supabase/functions/mail-sync/regles.ts';
 import { callerSig, canon, identOf, outgoingBody, signedText } from '../../supabase/functions/script-google/identite.ts';
 
 const cas = [];
@@ -492,6 +492,27 @@ t('mode essai : synchronisation au-delà de 50 conversations TEST (pages suivant
   const h = appel(ctx, await signe({ start_history_id: '100', max: 50 }, 'history'));
   assert.equal(h.threads.length + h.remaining.length, 60);
   assert.ok(log.lists.length === 2 && log.lists.every((o) => JSON.stringify(o.labelIds) === '["Label_E"]'));
+});
+t('relecture de ea7147b : seul le refus « conversation hors essai » porte le code hors_essai ; mail-sync n’écarte que lui, toute autre erreur reste visible', async () => {
+  const { ctx } = essaiBac();
+  const hors = appel(ctx, await signe({ thread_id: 'bb02bb02bb02bb02' }, 'thread'));
+  assert.equal(hors.code, 'hors_essai'); assert.equal(horsEssai(hors), true);
+  const dest = appel(ctx, await signe({ mode: 'new', to: 'vrai.contact@example.com', subject: 'x', html: 'x' }, 'compose'));
+  assert.equal(dest.code, 'essai'); assert.equal(horsEssai(dest), false);
+  const { ctx: mal } = essaiBac({ props: { MODE_ESSAI: 'oui' } });
+  const cfg = appel(mal, await signe({ thread_id: 'aa01aa01aa01aa01' }, 'thread'));
+  assert.equal(cfg.code, 'essai'); assert.equal(horsEssai(cfg), false);
+  assert.equal(horsEssai({ ok: false, error: 'Conversation hors essai (mode essai)' }), false, 'jamais d’après le texte');
+  const src = readFileSync(new URL('../../supabase/functions/mail-sync/index.ts', import.meta.url), 'utf8');
+  assert.match(src, /catch \(e\) \{ if \(ESSAI && e instanceof HorsEssai\) continue; throw e; \}/);
+  assert.ok(!/hors essai\|mode essai/i.test(src), 'plus aucun filtrage sur le texte');
+});
+t('relecture de ea7147b : retrait du libellé refusé malgré caractères invisibles ou formes larges (NFKC)', async () => {
+  const { ctx, log } = essaiBac();
+  for (const x of ['Label_E​', '﻿Label_E', ' Matrice-essai‍', 'Ｌａｂｅｌ_Ｅ', 'Matrice­-essai'])
+    assert.match(appel(ctx, await signe({ thread_id: 'aa01aa01aa01aa01', remove: [x] }, 'modify')).error || '', /ne se retire pas/, JSON.stringify(x));
+  assert.equal(log.modified.length, 0);
+  assert.equal(appel(ctx, await signe({ thread_id: 'aa01aa01aa01aa01', remove: ['Label_1'] }, 'modify')).ok, true, 'autre libellé : retrait possible');
 });
 t('mode essai mal configuré → TOUT bloqué (libellé absent, inexistant, système ; destinataires absents)', async () => {
   for (const props of [{ MODE_ESSAI: 'oui' }, { ...ESSAI, LIBELLE_ESSAI: 'Inexistant' }, { ...ESSAI, LIBELLE_ESSAI: 'INBOX' }, { ...ESSAI, DESTINATAIRES_ESSAI: '' }]) {

@@ -634,14 +634,18 @@ function threadEssai_(id) {
     return (t.messages || []).some(function (m) { return (m.labelIds || []).indexOf(L) >= 0; });
   } catch (err) { return false; }
 }
-function refusEssai_(why) { return { ok: false, refused: true, error: why + ' Rien n’est lu ni envoyé (mode essai).' }; }
+/** Refus du mode essai, avec un CODE distinct : « hors_essai » (cette conversation n'est pas TEST : la synchronisation l'écarte et
+ *  continue) ; « essai » (configuration, destinataire, brouillon, libellé… : toujours visible) — jamais déduit du texte */
+/** Forme comparable d'un libellé : NFKC, caractères invisibles retirés (espaces insécables, largeur nulle, BOM…), sans casse */
+function normLib_(x) { return String(x == null ? '' : x).normalize('NFKC').replace(/[\u00A0\u00AD\u200B-\u200D\u2060\uFEFF]/g, '').trim().toLowerCase(); }
+function refusEssai_(why, code) { return { ok: false, refused: true, code: code || 'essai', error: why + ' Rien n’est lu ni envoyé (mode essai).' }; }
 /** Garde du mode essai, action par action, AVANT toute lecture ou écriture du contenu */
 function essaiGarde_(a, b) {
   var cfg = essaiConfig_(); if (cfg) return refusEssai_(cfg);
   var L = essaiLabel_();
   if (a === 'thread' || a === 'modify' || a === 'status' || a === 'reply' || (a === 'compose' && b.thread_id))
-    if (!threadEssai_(b.thread_id)) return refusEssai_('Conversation hors essai (sans le libellé « ' + ESSAI_.libelle + ' »).');
-  if (a === 'modify' && [].concat(b.remove || []).some(function (x) { var v = String(x).trim().toLowerCase(); return v === L.toLowerCase() || v === ESSAI_.libelle.toLowerCase(); }))
+    if (!threadEssai_(b.thread_id)) return refusEssai_('Conversation hors essai (sans le libellé « ' + ESSAI_.libelle + ' »).', 'hors_essai');
+  if (a === 'modify' && [].concat(b.remove || []).some(function (x) { var v = normLib_(x); return v === normLib_(L) || v === normLib_(ESSAI_.libelle); }))
     return refusEssai_('Le libellé d’essai ne se retire pas depuis l’application.');
   // (relecture de 1c79901, B2) brouillon désigné : seulement un brouillon d'une conversation TEST (jamais écraser un brouillon réel)
   if (a === 'compose' && b.draft_id) {
