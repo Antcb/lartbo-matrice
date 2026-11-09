@@ -1,7 +1,7 @@
 /**
  * Réglages : pourcentages par défaut (acompte + solde = 100 %), partenaires, version.
  */
-import { confirmAsk } from '../ui/dialog.js';
+import { ask, confirmAsk } from '../ui/dialog.js';
 import { APP_VERSION } from '../config.js';
 import { sb } from '../data.js';
 import { departments, setting, settingAcompte } from '../selectors.js';
@@ -10,7 +10,9 @@ import { S, touch } from '../state.js';
 import { isCoproduction, isInvoiced, paymentsOf } from '../calc.js';
 import { viewHead } from '../ui/bits.js';
 import { cIn } from '../ui/cells.js';
-import { esc, toast, pct, today } from '../utils.js';
+import { esc, toast, pct, today, fmtDate } from '../utils.js';
+import { DELAY_RULES, DELAY_MAX, TASK_DELAYS, delaysOf, remindersOf, taskDelay } from '../reminders.js';
+import { CONFIRMED_PROD } from '../constants.js';
 import { render } from '../app.js';
 import { templatesList } from '../mail.js';
 import { templateForm } from '../budget-template.js';
@@ -53,6 +55,7 @@ export function viewSettings(){
       </div>
       ${templatesList()}
       <button class="btn sm primary mt" data-act="newTemplate">Nouveau modèle</button></div>
+    ${delaysPanel()}
     <div class="panel pad"><h3 class="panel-title">Contrats</h3>
       <p class="help mb">Modèles Google Docs avec les balises &lt;&lt;…&gt;&gt; de la fiche de renseignements. Dépose le .docx dans le Drive, ouvre-le puis « Fichier › Enregistrer au format Google Docs », et colle ici le lien du Google Doc.</p>
       <div class="steps">
@@ -231,4 +234,141 @@ export async function applyAcompte(){
   }
   S.db.show_payments = await fetchAll('show_payments'); touch('show_payments');
   toast('Acomptes et soldes mis à jour'); render();
+}
+
+/* ------------------------------------------------------------------ Délais et automatismes (v1.64) */
+/** Ordre d'affichage : préparer / émettre la facture, l'envoyer, relance après impayé distingués (demande d'Anthony du 09/11) */
+const MOMENTS = ['Suivi administratif', 'Préparer / émettre la facture', 'Envoyer la facture', 'Relance après impayé', 'Suivi financier', 'Boucles'];
+const ruleRows = () => [...DELAY_RULES].sort((a, b) => MOMENTS.indexOf(a.moment) - MOMENTS.indexOf(b.moment));
+const unitTxt = (n, unit) => unit === 'mois' ? `${n} mois` : unit === 'j' ? `${n} jour${n > 1 ? 's' : ''}` : `${n} ${unit}`;
+const refTxt = r => r.dir ? `${r.dir === 'avant' ? 'avant' : 'après'} ${r.ref}` : r.ref;
+/** Délais en vigueur pour une date créée aujourd'hui (= valeur affichée et modifiée) */
+const currentDelays = (value = setting('delais')) => delaysOf({created_at: new Date().toISOString()}, value);
+/** Versions « nouvelles dates seulement » encore en vigueur : rappel des délais gardés par les dates plus anciennes */
+function olderNote(key){
+  const list = Array.isArray(setting('delais')?.[key]) ? setting('delais')[key] : [];
+  const last = list.map(v => v?.from === null || v?.from === undefined ? null : v?.from).lastIndexOf(null);
+  const froms = list.slice(last + 1).map(v => v?.from).filter(f => typeof f === 'string');
+  return froms.length ? `<span class="sub">Dates créées avant le ${esc(fmtDate(froms[0]))} : délai précédent gardé.</span>` : '';
+}
+
+function delaysPanel(){
+  const cur = currentDelays();
+  return `<div class="panel pad panel-full" id="delays-panel"><h3 class="panel-title">Délais et automatismes</h3>
+    <p class="help mb">Les délais déjà en place, réglables ici. <b>Aucun envoi automatique</b> : ces règles créent des <b>rappels internes</b> (notification, récapitulatif quotidien, étape en rouge) ou des <b>tâches</b> ; les factures sont créées en brouillon dans Pennylane et la date d’envoi se saisit à la main. Les relances suspendues d’une date restaurée, la prochaine échéance choisie à sa réactivation et la case « Relances suspendues » d’une facture priment sur ces réglages.</p>
+    <h4 class="block-title">Rappels (notifications créées chaque matin vers 6 h)</h4>
+    <div class="tbl-wrap mb"><table><thead><tr><th>Rappel</th><th>Moment</th><th>Activé</th><th>Délai</th><th>Référence</th><th>Week-end</th><th>Périmètre</th></tr></thead><tbody>
+    ${ruleRows().map(r => `<tr><td><b>${esc(r.label)}</b><span class="sub">Rappel interne${r.note ? ' · ' + esc(r.note) : ''}</span>${olderNote(r.key)}</td>
+      <td>${esc(r.moment)}</td>
+      <td><input type="checkbox" data-delay-on="${r.key}" ${cur[r.key].on ? 'checked' : ''} aria-label="${esc(r.label)} : activé"></td>
+      <td class="num"><input type="number" class="narrow" min="0" max="${DELAY_MAX[r.unit]}" step="1" data-delay-n="${r.key}" value="${cur[r.key].n}" aria-label="${esc(r.label)} : délai en ${r.unit === 'mois' ? 'mois' : 'jours'}"> ${r.unit === 'mois' ? 'mois' : 'j'}</td>
+      <td>${esc(refTxt(r))}</td><td>${esc(r.shift)}</td><td>${esc(r.scope)}</td></tr>`).join('')}
+    </tbody></table></div>
+    <h4 class="block-title">Prospection et tâches (s’appliquent aux prochaines tâches créées)</h4>
+    <div class="tbl-wrap mb"><table><thead><tr><th>Règle</th><th>Moment</th><th>Action</th><th>Valeur</th><th>Référence</th><th>Week-end</th><th>Périmètre</th></tr></thead><tbody>
+    ${TASK_DELAYS.map(r => `<tr><td><b>${esc(r.label)}</b><span class="sub">Toujours active</span></td><td>${esc(r.moment)}</td><td>${esc(r.action)}</td>
+      <td class="num"><input type="number" class="narrow" min="${r.min}" max="${r.max}" step="1" data-task-delay="${r.key}" value="${taskDelay(r.key)}" aria-label="${esc(r.label)}"> ${esc(r.unit === 'j' ? 'j' : r.unit)}</td>
+      <td>${esc(refTxt(r))}</td><td>${esc(r.shift || '—')}</td><td>${esc(r.scope)}</td></tr>`).join('')}
+    </tbody></table></div>
+    <h4 class="block-title">Délais en place, non réglables ici</h4>
+    <ul class="help mb">
+      <li><b>Échéance de paiement</b> d’une facture créée depuis la Matrice : 14 jours après la date de la facture (brouillon Pennylane ; devis : validité 30 jours). Fixée dans la fonction serveur Pennylane, modifiable dans Pennylane avant l’envoi. Aucune relance ne part de cette échéance : la relance d’impayé compte depuis l’envoi.</li>
+      <li>Rappels administratifs (étapes, boucles, factures à faire, partenaire) : plus aucun pour une date passée depuis plus de 120 jours ; « Facture de solde à faire » : plus aucun 30 jours après le concert. Factures à envoyer, impayés et commission : sans limite.</li>
+      <li>Balise de mail {{date_reponse}} (invitation à un concert) : 2 jours avant le concert.</li>
+      <li>Tâches « Urgentes » : échéance dans 7 jours ou moins (affichage seulement).</li>
+      <li>Affiches, confirmations, boucles : aucun envoi ni relance automatique en dehors des rappels ci-dessus ; la date de demande d’affiches se saisit à la main.</li>
+    </ul>
+    <div class="vh-actions"><button class="btn sm primary" data-act="saveDelays">Enregistrer les délais…</button></div></div>`;
+}
+
+/** Lecture des champs ; null + message si une valeur est hors bornes */
+function readDelays(){
+  const rules = {}, tasks = {}, bad = [];
+  for (const r of DELAY_RULES){
+    const on = document.querySelector(`[data-delay-on="${r.key}"]`), n = document.querySelector(`[data-delay-n="${r.key}"]`); if (!on || !n) return null;
+    const v = Number(String(n.value).replace(',', '.'));
+    if (!Number.isInteger(v) || v < 0 || v > DELAY_MAX[r.unit]){ n.classList.add('bad'); bad.push(`${r.label} (0 à ${DELAY_MAX[r.unit]} ${r.unit === 'mois' ? 'mois' : 'jours'}, nombre entier)`); continue; }
+    n.classList.remove('bad'); rules[r.key] = {on: on.checked, n: v};
+  }
+  for (const r of TASK_DELAYS){
+    const el = document.querySelector(`[data-task-delay="${r.key}"]`); if (!el) return null;
+    const v = Number(String(el.value).replace(',', '.'));
+    if (!Number.isInteger(v) || v < r.min || v > r.max){ el.classList.add('bad'); bad.push(`${r.label} (${r.min} à ${r.max}, nombre entier)`); continue; }
+    el.classList.remove('bad'); tasks[r.key] = v;
+  }
+  return {rules, tasks, bad};
+}
+
+/** Réglage « delais » après la modification : une version de plus par règle modifiée (historique gardé) ;
+ *  from = aujourd'hui (nouvelles dates seulement) ou null (toutes les dates) */
+export function delaysValue(changes, from, base = setting('delais'), by = S.user?.email || ''){
+  const out = base && typeof base === 'object' && !Array.isArray(base) ? JSON.parse(JSON.stringify(base)) : {};
+  const at = new Date().toISOString();
+  for (const [k, v] of Object.entries(changes)){
+    if (!Array.isArray(out[k])) out[k] = [];
+    out[k].push({on: v.on, n: v.n, from, at, by});
+  }
+  return out;
+}
+
+/** Conséquences sur les dates existantes (rappels avancés, reculés, ajoutés, retirés, et ceux qui deviennent dus tout de suite) */
+export function delaysImpact(before, after){
+  const now = today(), res = {avances: [], recules: [], ajoutes: [], retires: [], immediats: []};
+  for (const s of S.db.shows.filter(x => !x.archived_at && CONFIRMED_PROD.includes(x.status))){
+    const id = r => `${r.key}|${r.title.replace(/\(J-\d+ mois\)/, '')}|${r.step}`;
+    const A = new Map(remindersOf(s, {delais: before}).map(r => [id(r), r])), B = new Map(remindersOf(s, {delais: after}).map(r => [id(r), r]));
+    const where = [s.date ? fmtDate(s.date) : 'sans date', s.venue].filter(Boolean).join(' · ');
+    for (const [k, b] of B){
+      const a = A.get(k), line = {show: s.id, where, title: b.title, from: a?.due || null, to: b.due};
+      if (!a){ res.ajoutes.push(line); if (b.due <= now) res.immediats.push(line); }
+      else if (b.due < a.due){ res.avances.push(line); if (b.due <= now && a.due > now) res.immediats.push(line); }
+      else if (b.due > a.due) res.recules.push(line);
+    }
+    for (const [k, a] of A) if (!B.has(k)) res.retires.push({show: s.id, where, title: a.title, from: a.due, to: null});
+  }
+  return res;
+}
+const impactCount = i => i.avances.length + i.recules.length + i.ajoutes.length + i.retires.length;
+function impactText(i, max = 8){
+  if (!impactCount(i)) return 'Aucun rappel des dates en cours ne change.';
+  const lines = [];
+  const part = (label, list, fmt) => { if (!list.length) return; lines.push(`${label} : ${list.length}`);
+    list.slice(0, max).forEach(l => lines.push(`• ${l.where} — ${l.title} : ${fmt(l)}`)); if (list.length > max) lines.push(`• … et ${list.length - max} autre(s)`); };
+  const d = x => x ? fmtDate(x) : '—';
+  part('Rappels avancés', i.avances, l => `${d(l.from)} → ${d(l.to)}`);
+  part('Rappels reculés', i.recules, l => `${d(l.from)} → ${d(l.to)}`);
+  part('Rappels ajoutés (règle réactivée)', i.ajoutes, l => `échéance ${d(l.to)}`);
+  part('Rappels retirés (règle désactivée)', i.retires, l => `échéance ${d(l.from)}`);
+  if (i.immediats.length) lines.push(`Dont ${i.immediats.length} dû(s) aujourd’hui ou avant : ils partiraient au prochain passage du matin (sauf s’ils ont déjà été notifiés pour cette étape).`);
+  return lines.join('\n');
+}
+
+/** Enregistrer les délais : conséquences affichées, choix explicite ; par défaut, nouvelles dates seulement (aucun recalcul) */
+export async function saveDelays(){
+  const r = readDelays(); if (!r) return;
+  if (r.bad.length) return toast('Valeur à corriger : ' + r.bad.join(' ; '), true);
+  const cur = currentDelays();
+  const changes = Object.fromEntries(Object.entries(r.rules).filter(([k, v]) => v.on !== cur[k].on || v.n !== cur[k].n));
+  const tasks = Object.fromEntries(Object.entries(r.tasks).filter(([k, v]) => v !== taskDelay(k)));
+  if (!Object.keys(changes).length && !Object.keys(tasks).length) return toast('Aucun délai modifié');
+  const label = k => DELAY_RULES.find(x => x.key === k)?.label || TASK_DELAYS.find(x => x.key === k)?.label || k;
+  const what = [
+    ...Object.entries(changes).map(([k, v]) => { const u = DELAY_RULES.find(x => x.key === k).unit;
+      return `• ${label(k)} : ${cur[k].on ? unitTxt(cur[k].n, u) : 'désactivé'} → ${v.on ? unitTxt(v.n, u) : 'désactivé'}`; }),
+    ...Object.entries(tasks).map(([k, v]) => `• ${label(k)} : ${taskDelay(k)} → ${v} (prochaines tâches ; les tâches existantes gardent leur échéance)`),
+  ].join('\n');
+  let choice = 'tasks';
+  if (Object.keys(changes).length){
+    const now = setting('delais'), jour = today();
+    const onlyNew = delaysImpact(now, delaysValue(changes, jour)), all = delaysImpact(now, delaysValue(changes, null));
+    choice = await ask({title: 'Enregistrer les délais ?', text: `${what}\n`
+      + `Nouvelles dates seulement (conseillé) : le changement vaut pour les dates créées à partir d’aujourd’hui ; les dates en cours gardent leurs délais, aucun rappel n’est recalculé ni lancé. ${onlyNew && impactCount(onlyNew) ? impactText(onlyNew) : ''}\n`
+      + `Aussi les dates en cours : ${impactText(all)}`,
+      actions: [{value: 'new', label: 'Nouvelles dates seulement'}, {value: 'all', label: 'Aussi les dates en cours'}]});
+    if (!choice) return;
+  } else if (!(await confirmAsk('Enregistrer les délais ?', what, 'Enregistrer'))) return;
+  if (Object.keys(changes).length && !await setSetting('delais', delaysValue(changes, choice === 'all' ? null : today()))) return;
+  for (const [k, v] of Object.entries(tasks)) if (!await setSetting(k, v)) return;
+  toast(choice === 'all' ? 'Délais enregistrés : dates en cours comprises' : choice === 'new' ? 'Délais enregistrés pour les nouvelles dates' : 'Délais enregistrés');
+  render();
 }

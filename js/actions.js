@@ -16,7 +16,7 @@ import { S, localSet, setProjects, touch } from './state.js';
 import { MODALS, openModal } from './ui/modal.js';
 import { ask, askText, confirmAsk, copyText } from './ui/dialog.js';
 import { modalSaved } from './ui/drafts.js';
-import { applyAcompte, saveDepartments } from './views/settings.js';
+import { applyAcompte, saveDelays, saveDepartments } from './views/settings.js';
 import { hasLogDraft, setLogDraft } from './views/suivi.js';
 import { $, esc, eur2, fmtDate, fmtNum, safeHtml, toast, today, r2, pct as fmtPct } from './utils.js';
 import { rtStyle, rtToolbar } from './ui/richtext.js';
@@ -461,6 +461,7 @@ ${p.content_md||'(aucune)'}`;
 
   // Réglages
   applyAcompte: () => applyAcompte(),
+  saveDelays: () => saveDelays(),
   addDept: async () => { const n = await askText({title: 'Nouveau pôle', label: 'Nom du pôle', ok: 'Ajouter le pôle'}); if (!n) return; await saveDepartments([...departments(), {name:n.trim(), color:'#5B677D'}]); render(); },
   rmDept: async t => { const list = departments().slice(); const d = list[Number(t.dataset.i)];
     if (!(await confirmAsk('Supprimer le pôle ?', `Supprimer le pôle « ${d.name} » ? Les tâches concernées n’auront plus de pôle.`, 'Supprimer le pôle', {danger: true}))) return;

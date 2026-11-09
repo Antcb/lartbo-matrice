@@ -61,3 +61,11 @@ Décision d'Anthony du 08/11/2026 : aucune donnée fictive dans les comptes opé
   `supabase/operations/2026-11-09_v1.60.6_rappels_solde.sql`) : solde fait tôt (J-7), solde fait après J-7, J-7 un samedi, acompte et
   date sans jour de concert inchangés, plancher de réactivation conservé, retrait du rappel prématuré sans rattrapage puis retour
   unique à J-7. Tout est annulé (rollback). Données fictives uniquement.
+
+## v1.64 — délais et automatismes (base locale jetable)
+
+- Base locale v1.60.3 + migrations v1.60.3 et v1.60.6, puis `2026-11-09_v1.64_delais_essai.sql` (depuis la racine du dépôt ; il
+  applique deux fois `2026-11-09_v1.64_delais.sql` dans la transaction) : sans réglage, 19 relances de 14 règles identiques à la
+  v1.60.6 (règles, clés anti-doublon, échéances) et aucune notification nouvelle ; délai modifié pour toutes les dates (échéance
+  déplacée, clé inchangée, pas de doublon), règle désactivée, nouvelles dates seulement (`from`), versions successives, réglage
+  abîmé (valeurs par défaut), priorité de la prochaine échéance choisie pour la date. Tout est annulé (rollback).
