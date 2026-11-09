@@ -185,10 +185,11 @@ export async function archiveShow(id, reason){
 /** « Exclure de la prospection » (exclure = true) / « Remettre en prospection » d'un contact (fonction serveur set_prospection, motif
  *  obligatoire, auteur et date tracés dans contacts.prospection_history ; décisions du 09/11/2026) — seul chemin d'écriture de
  *  l'exclusion (garde contacts_prospection_guard) ; ne touche jamais au désabonnement Brevo */
-export async function setProspection(id, exclure, motif){
-  const {error} = await sb.rpc('set_prospection', {p_contact: id, p_exclure: !!exclure, p_motif: motif});
+export async function setProspection(id, exclure, motif, avec = null){
+  // avec : autres contacts exclus portant une adresse commune, confirmés par l'équipe (remise commune ; le serveur refuse une liste différente)
+  const {data, error} = await sb.rpc('set_prospection', {p_contact: id, p_exclure: !!exclure, p_motif: motif, ...(avec ? {p_avec: avec} : {})});
   if (error){ toast(missingFunction(error) ? 'L’exclusion de la prospection n’est pas encore installée sur le serveur.' : error.code === 'P0001' ? error.message : 'Modification impossible : ' + dbErrorText(error), true); return false; }
-  await refreshFor('contacts', 'id', [id]);
+  await refreshFor('contacts', 'id', [...new Set([id, ...(avec || []), ...(Array.isArray(data?.remis) ? data.remis : [])])]);
   return true;
 }
 /** Réactivation explicite des relances d'une date restaurée (fonction serveur reactivate_reminders) : next = {relance: 'AAAA-MM-JJ'} */

@@ -146,3 +146,41 @@ test('contact exclu : suppression annoncée (exclusion gardée par adresse) ; co
   expect(await page.evaluate(() => window.__calls.filter(c => c.table === 'contacts' && c.op !== 'select').length)).toBe(0);
   expectClean(ctx);
 });
+
+// Relecture du 09/11 : « Remettre en prospection » d'une adresse aussi portée par un autre contact exclu — liste, confirmation explicite,
+// puis remise de tous (même motif) ; sans confirmation, rien ne change
+test('remise en prospection d’une adresse partagée : autres contacts exclus listés, confirmation explicite, remise commune', async ({ page }) => {
+  const ctx = await openApp(page);
+  const ex = { prospection_exclue_at: '2026-11-09T09:00:00Z', prospection_history: [] };
+  await seed(page, { contacts: [
+    { id: 'hp-p1', display_name: 'Paul Un', email: 'paul@exemple.invalid', ...ex },
+    { id: 'hp-p2', display_name: 'Paul Deux', email: 'PAUL@exemple.invalid', email_2: 'paul.pro@exemple.invalid', ...ex },
+    { id: 'hp-p3', display_name: 'Paul Trois', email: 'paul.pro@exemple.invalid', ...ex },        // relié de proche en proche
+    { id: 'hp-p4', display_name: 'Paul Libre', email: 'paul@exemple.invalid' },                   // même adresse, pas exclu
+  ] });
+  expect(await page.evaluate(async () => { const { S } = await import('./js/state.js'); const { contactsExclusPartages } = await import('./js/selectors.js');
+    return contactsExclusPartages(S.db.contacts.find(c => c.id === 'hp-p1')).map(c => c.id).sort(); })).toEqual(['hp-p2', 'hp-p3']);
+  await page.evaluate(async () => { (await import('./js/forms.js')).editContact('hp-p1'); });
+  const bloc = page.locator('#ct-prosp'), dlg = page.locator('dialog.ask[open]');
+  // sans confirmation : rien ne change, aucun appel
+  await bloc.locator('button', { hasText: 'Remettre en prospection' }).click();
+  await expect(dlg).toContainText('Paul Deux (PAUL@exemple.invalid, paul.pro@exemple.invalid)');
+  await expect(dlg).toContainText('Paul Trois (paul.pro@exemple.invalid)');
+  await expect(dlg).not.toContainText('Paul Libre');
+  await expect(dlg).toContainText('Sans confirmation, rien ne change.');
+  await dlg.locator('button', { hasText: 'Annuler' }).click();
+  expect(await page.evaluate(() => window.__calls.filter(c => c.rpc === 'set_prospection').length)).toBe(0);
+  // confirmation explicite, puis motif : remise de tous, même motif
+  await bloc.locator('button', { hasText: 'Remettre en prospection' }).click();
+  await dlg.locator('button', { hasText: 'Remettre les 3 contacts en prospection' }).click();
+  await page.locator('dialog.ask[open] #ask-input').fill('Erreur, tous à remettre');
+  await page.locator('dialog.ask[open] button', { hasText: 'Remettre en prospection' }).click();
+  await expect(bloc).toContainText('Prospection : En prospection.');
+  const args = await page.evaluate(() => window.__calls.filter(c => c.rpc === 'set_prospection').map(c => ({ ...c.args, p_avec: [...c.args.p_avec].sort() })));
+  expect(args).toEqual([{ p_contact: 'hp-p1', p_exclure: false, p_motif: 'Erreur, tous à remettre', p_avec: ['hp-p2', 'hp-p3'] }]);
+  expect(await page.evaluate(async () => { const { S } = await import('./js/state.js');
+    return ['hp-p1', 'hp-p2', 'hp-p3'].map(id => { const c = S.db.contacts.find(x => x.id === id); return [!!c.prospection_exclue_at, c.prospection_history.at(-1).motif.startsWith('Erreur, tous à remettre')]; }); }))
+    .toEqual([[false, true], [false, true], [false, true]]);
+  await page.locator('#modal [data-act=closeModal]').first().click();
+  expectClean(ctx);
+});

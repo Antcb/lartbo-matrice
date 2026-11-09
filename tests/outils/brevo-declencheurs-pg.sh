@@ -20,7 +20,7 @@ P=("${QUI[@]}" "$BIN/psql" -h "$D" -p "$PORT" -U postgres -v ON_ERROR_STOP=1 -q 
 # État de la production avant la migration (v1.16 / v1.32) : déclencheur ligne par ligne, à l'ajout seulement
 "${P[@]}" <<'SQL'
 create role anon; create role authenticated; create role service_role bypassrls;   -- comme Supabase : le rôle serveur ignore la RLS
-create table contacts(id uuid primary key, email text, email_2 text, first_name text, last_name text);
+create table contacts(id uuid primary key, email text, email_2 text, first_name text, last_name text, display_name text);
 create table structures(id uuid primary key, name text, inactive_at timestamptz);
 create table contact_structures(contact_id uuid references contacts(id) on delete cascade,
   structure_id uuid references structures(id) on delete cascade, role text, primary key(contact_id, structure_id));
@@ -279,15 +279,34 @@ select attendu('rattachement actif : part automatique levée (contact et mémoir
 delete from contacts where id = u(85);
 insert into contacts(id, email) values (u(86), 'mem2@exemple.invalid');
 select attendu('… recréé ensuite : prospectable', coalesce(exclu(86), ''), '');
+-- relecture du 09/11 : 83 et 87 portent la même adresse exclue → remise refusée sans confirmation explicite, puis commune
+update contacts set display_name = 'Contact 87' where id = u(87);
 set role authenticated;
-select set_prospection(u(83), false, 'Revenu vers nous');
+do $$ begin
+  begin perform set_prospection(u(83), false, 'Revenu vers nous'); raise exception 'ÉCHEC : remise sans confirmation acceptée';
+  exception when raise_exception then
+    if sqlerrm like 'ÉCHEC%' then raise; end if;
+    if sqlerrm not like 'Adresse aussi portée par 1 autre contact exclu (Contact 87)%' then raise exception 'ÉCHEC : message %', sqlerrm; end if;
+  end;
+  begin perform set_prospection(u(83), false, 'Revenu vers nous', array[u(84)]); raise exception 'ÉCHEC : remise avec une autre liste acceptée';
+  exception when raise_exception then if sqlerrm like 'ÉCHEC%' then raise; end if; end;
+  raise notice 'ok : adresse partagée — remise refusée sans confirmation ou avec une liste différente';
+end $$;
 reset role;
-select attendu('« Remettre en prospection » : mémoire de ses adresses effacée, tracé', (select prospection_history->-1->>'motif' from contacts where id = u(83)) || ' | ' || memoire(),
-  'Revenu vers nous (mémoire d’exclusion de 1 adresse effacée) | mem1b@exemple.invalid:manuelle');
+select attendu('… et rien n’a changé', exclu(83) || ' | ' || exclu(87) || ' | ' || memoire(), 'manuelle | manuelle | mem1@exemple.invalid:manuelle,mem1b@exemple.invalid:manuelle');
+truncate appels;
+set role authenticated;
+select set_prospection(u(83), false, 'Revenu vers nous', array[u(87)]);
+reset role;
+select attendu('remise confirmée : les deux contacts remis, même motif, une trace chacun',
+  coalesce(exclu(83), '') || ' | ' || coalesce(exclu(87), '') || ' | ' || (select prospection_history->-1->>'motif' from contacts where id = u(83)) || ' | ' || (select prospection_history->-1->>'motif' from contacts where id = u(87)),
+  ' |  | Revenu vers nous (mémoire d’exclusion de 1 adresse effacée) | Revenu vers nous (adresse partagée, remise depuis la fiche de « MEM1@exemple.INVALID »)');
+select attendu('… mémoire de l’adresse effacée', memoire(), 'mem1b@exemple.invalid:manuelle');
+select verifie('… et Brevo relancé pour les deux', '0083×1,0087×1');
 delete from contacts where id = u(83);
 insert into contacts(id, email) values (u(88), 'mem1@exemple.invalid');
 select attendu('… recréé ensuite : prospectable', coalesce(exclu(88), ''), '');
-select attendu('87 (exclusion reprise) reste exclu tant qu’on ne le remet pas', exclu(87), 'manuelle');
+
 -- relecture : mémoire minimale (adresse, origine, date, raison, dernier motif), lecture seule pour la sauvegarde
 select attendu('mémoire minimale : colonnes', (select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_name = 'prospection_memoire'),
   'email,exclue_manuelle_at,hors_auto_at,memorise_at,raison,motif');
@@ -325,7 +344,14 @@ SQL
 # migration rejouée sur une base remplie : rien de perdu
 "${P[@]}" < "$MIG"
 "${P[@]}" -o /dev/null <<'SQL'
-select attendu('migration rejouée : mémoire et exclusions intactes', memoire() || ' | ' || exclu(84) || ' | ' || exclu(87) || ' | ' || exclu(92),
-  'ancienne@exemple.invalid:manuelle,dup@exemple.invalid:manuelle,mem1b@exemple.invalid:manuelle | manuelle | manuelle | manuelle');
+select attendu('migration rejouée : mémoire et exclusions intactes', memoire() || ' | ' || exclu(84) || ' | ' || coalesce(exclu(87), '') || ' | ' || exclu(92),
+  'ancienne@exemple.invalid:manuelle,dup@exemple.invalid:manuelle,mem1b@exemple.invalid:manuelle | manuelle |  | manuelle');
 SQL
+# relecture B4 : base avec une prospection_memoire d'une version antérieure (sans memorise_at) → migration arrêtée, rien de créé
+"${P[@]}" -c "create database b4"
+"${P[@]}" -d b4 -c "create table public.contacts(id uuid primary key, email text); create table public.prospection_memoire(email text primary key, contact_supprime_at timestamptz, historique jsonb);"
+if SORTIE=$("${P[@]}" -d b4 < "$MIG" 2>&1); then echo "ÉCHEC : migration acceptée sur une ancienne prospection_memoire"; exit 1; fi
+echo "$SORTIE" | grep -q "Migration Brevo arrêtée : la table public.prospection_memoire existe dans une version antérieure" || { echo "ÉCHEC : message B4 absent : $SORTIE"; exit 1; }
+[ "$("${P[@]}" -d b4 -At -c "select count(*) from information_schema.columns where table_name = 'contacts' and column_name = 'hors_prospection_at'")" = 0 ] || { echo "ÉCHEC : la migration a continué après la garde B4"; exit 1; }
+echo "ok : ancienne prospection_memoire (sans memorise_at) : migration arrêtée avec message, rien de modifié"
 echo "Déclencheurs Brevo (base jetable, port $PORT) : tous les cas vérifiés."

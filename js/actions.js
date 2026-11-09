@@ -8,7 +8,7 @@ import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, em
 import { CONFIRMED_PROD, FOLLOW_DATES, INVOICE_DATES, PAY_KINDS, isOff } from './constants.js';
 import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, restoreShow, save, saveLinger, sb, setProspection, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
 import { reactivateRemindersWindow, createArtistFolder, editContact, prospectionBlock, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure, showPrefillFromSuivi } from './forms.js';
-import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showLabel, showsFiltered, structName, unreadNotifs } from './selectors.js';
+import { departments, attachmentsOf, byId, contactsExclusPartages, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showLabel, showsFiltered, structName, unreadNotifs } from './selectors.js';
 import { CFG } from './config.js';
 import { propagateCommission } from './commission.js';
 import { payerLabel } from './budget.js';
@@ -192,12 +192,20 @@ export const ACTIONS = {
   // Exclusion manuelle de la prospection (décisions du 09/11/2026) : motif demandé, fonction serveur tracée ; bloc de la fiche réaffiché
   prospectionContact: async t => {
     const id = t.dataset.id, exclure = t.dataset.exclure === '1';
+    // remise d'une adresse aussi portée par d'autres contacts exclus : liste et confirmation explicite, puis remise de tous (même motif)
+    const autres = exclure ? [] : contactsExclusPartages(byId('contacts', id));
+    if (autres.length){
+      const noms = autres.map(k => `${k.display_name || 'sans nom'} (${[k.email, k.email_2].filter(Boolean).join(', ')})`).join(' ; ');
+      const ok = await ask({title: 'Adresse partagée avec d’autres contacts exclus', text: `L’exclusion suit l’adresse : ${autres.length > 1 ? `ces ${autres.length} contacts portent` : 'ce contact porte'} aussi une adresse de ce contact et ${autres.length > 1 ? 'sont exclus' : 'est exclu'} : ${noms}. La remise en prospection vaudra pour tous, avec le même motif et une trace sur chaque fiche. Sans confirmation, rien ne change.`,
+        actions: [{value: 'tous', label: `Remettre les ${autres.length + 1} contacts en prospection`}]});
+      if (ok !== 'tous') return;
+    }
     const motif = await askText(exclure
       ? {title: 'Exclure de la prospection ?', text: 'Le contact n’est plus proposé dans les prospections et n’est pas ajouté à Brevo. S’il est déjà dans Brevo, il y reste : rien n’est supprimé ni désabonné. Un rattachement à une structure ne le remet pas en prospection : seul « Remettre en prospection » le fait. Le motif, ton nom et la date sont gardés.', label: 'Motif de l’exclusion', ok: 'Exclure de la prospection'}
       : {title: 'Remettre en prospection ?', text: 'Le contact est de nouveau proposé dans les prospections et peut être ajouté à Brevo. Un désabonnement Brevo reste toujours en place. Le motif, ton nom et la date sont gardés.', label: 'Motif', ok: 'Remettre en prospection'});
     if (!motif) return;
-    if (!(await setProspection(id, exclure, motif))) return;
-    toast(exclure ? 'Contact exclu de la prospection' : 'Contact remis en prospection');
+    if (!(await setProspection(id, exclure, motif, autres.length ? autres.map(k => k.id) : null))) return;
+    toast(exclure ? 'Contact exclu de la prospection' : autres.length ? `${autres.length + 1} contacts remis en prospection` : 'Contact remis en prospection');
     const el = document.getElementById('ct-prosp'); if (el) el.outerHTML = prospectionBlock(byId('contacts', id));
   },
   brevoSyncAll: async () => {

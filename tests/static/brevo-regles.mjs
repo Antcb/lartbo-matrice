@@ -219,7 +219,7 @@ t('déclencheur SQL : ajout, retrait et déplacement relancent la synchronisatio
   assert.ok(['contacts_clean', 'contacts_prospection_guard', 'contacts_prospection_memoire'].every((x, i, a) => !i || a[i - 1] < x));
   // effacement de la part manuelle de la mémoire : seulement dans set_prospection
   const setp = code.slice(code.indexOf('function public.set_prospection'), code.indexOf('revoke all on function public.set_prospection'));
-  assert.match(setp, /delete from prospection_memoire where email = any\(prospection_mails\(k\.email, k\.email_2\)\)/);
+  assert.match(setp, /delete from prospection_memoire where email = any\(mails\);/);
   const lever = code.slice(code.indexOf('function public.prospection_memoire_lever_auto'));
   assert.match(lever, /delete from prospection_memoire where email = any\(mails\) and exclue_manuelle_at is null;/);
   // seules écritures : le marqueur hors_prospection_at (posé / effacé), jamais une autre colonne de contacts
@@ -234,7 +234,7 @@ t('déclencheur SQL : ajout, retrait et déplacement relancent la synchronisatio
   assert.match(code, /create or replace trigger contacts_prospection_guard before insert or update on public\.contacts/);
   assert.match(code, /current_user::text in \('anon', 'authenticated'\)/);
   assert.doesNotMatch(code.slice(code.indexOf('function public.contacts_prospection_guard'), code.indexOf('create or replace trigger contacts_prospection_guard')), /security definer/);
-  assert.match(code, /grant execute on function public\.set_prospection\(uuid, boolean, text\) to authenticated/);
+  assert.match(code, /grant execute on function public\.set_prospection\(uuid, boolean, text, uuid\[\]\) to authenticated/);
   assert.doesNotMatch(code.slice(code.indexOf('function public.set_prospection'), code.indexOf('revoke all on function public.set_prospection')), /emailBlacklisted|unsubscri|blacklist/i);
   assert.match(code, /create or replace trigger brevo_structure_deleted before delete on public\.structures/);
   // mode essai (relecture B2) : liste blanche ni modifiée ni effacée par l'API de l'équipe tant qu'une clé est enregistrée
@@ -350,6 +350,24 @@ t('sauvegarde JSON : la liste d’opposition est exportée (lecture seule du rô
   const sql = readFileSync(new URL('../../supabase/migrations/2026-11-08_brevo_rattachements.sql', import.meta.url), 'utf8');
   assert.match(sql, /grant select on public\.prospection_memoire to service_role;/);
   assert.doesNotMatch(sql, /grant (insert|update|delete|all)[^;]*prospection_memoire/i);
+});
+
+t('relecture du 09/11 : remise d’une adresse partagée — refusée sans la liste exacte des autres contacts exclus, puis commune ; garde B4', () => {
+  const sql = readFileSync(new URL('../../supabase/migrations/2026-11-08_brevo_rattachements.sql', import.meta.url), 'utf8');
+  const setp = sql.slice(sql.indexOf('create or replace function public.set_prospection'), sql.indexOf('revoke all on function public.set_prospection'));
+  assert.match(setp, /autres := prospection_partages\(p_contact\);/);
+  assert.match(setp, /p_avec is null or array\(select unnest\(p_avec\) except select unnest\(autres\)\) <> '\{\}'/);
+  assert.match(setp, /where c\.id = any\(tous\);/);
+  assert.ok(setp.indexOf('raise exception \'Adresse aussi portée par') < setp.indexOf('delete from prospection_memoire'));   // refus AVANT toute écriture
+  assert.match(sql, /with recursive comp\(id, mails\)/);
+  // garde B4 en tête : avant toute écriture
+  const b4 = sql.indexOf('Migration Brevo arrêtée : la table public.prospection_memoire existe dans une version antérieure');
+  assert.ok(b4 > 0 && b4 < sql.indexOf('alter table public.contacts add column'));
+  // même règle côté application
+  const sel = readFileSync(new URL('../../js/selectors.js', import.meta.url), 'utf8');
+  assert.match(sel, /export function contactsExclusPartages\(c\)/);
+  const act = readFileSync(new URL('../../js/actions.js', import.meta.url), 'utf8');
+  assert.match(act, /if \(ok !== 'tous'\) return;/);
 });
 
 let ko = 0;

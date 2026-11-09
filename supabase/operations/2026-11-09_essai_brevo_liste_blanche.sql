@@ -21,15 +21,18 @@ select count(*) filter (where brevo_created) as crees_par_la_matrice, count(*) f
 --   version de brevo-sync déployée sur le projet de test : à comparer au dépôt (outil Supabase « get_edge_function ») ; elle doit
 --   contenir « brevo_essai_emails » et « ESSAI_BRUT » ; sinon NE PAS continuer.
 
--- (1) Liste blanche. Remplacer la valeur ENTRE CROCHETS par l'adresse donnée par Anthony (avec « +essai »). Laissée telle quelle,
---     elle n'est pas une adresse : le bloc refuse et n'écrit rien.
+-- (1) Liste blanche. Remplacer la valeur ENTRE CROCHETS par l'adresse désignée par Anthony. Laissée telle quelle, elle n'est pas
+--     une adresse : le bloc refuse et n'écrit rien. Adresses acceptées : celle désignée explicitement par Anthony le 09/11/2026
+--     (anthony@lartboristerie.com, sa vraie adresse : voir la marche, variantes), ou une adresse contenant « +essai ».
 do $$
-declare a text := lower(btrim('[ADRESSE D’ESSAI DONNÉE PAR ANTHONY]'));
+declare a text := lower(btrim('[ADRESSE D’ESSAI DÉSIGNÉE PAR ANTHONY]'));
 begin
   if a !~ '^[^\s@<>"'',;()]+@[^\s@<>"'',;()]+\.[a-z]{2,}$' then
     raise exception 'Adresse d’essai invalide (« % ») : rien n’est écrit', a;
   end if;
-  if a !~ '\+essai' then raise exception 'L’adresse d’essai doit contenir « +essai » : rien n’est écrit'; end if;
+  if a <> 'anthony@lartboristerie.com' and a !~ '\+essai' then
+    raise exception 'Adresse non autorisée pour l’essai (« % ») : seule anthony@lartboristerie.com (désignée le 09/11) ou une adresse avec « +essai » : rien n’est écrit', a;
+  end if;
   insert into public.settings (key, value) values ('brevo_essai_emails', to_jsonb(a))
     on conflict (key) do update set value = excluded.value;
 end $$;

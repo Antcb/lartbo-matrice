@@ -260,6 +260,26 @@ export const horsProspection = c => !!c?.prospection_exclue_at || onlyInactive(c
  * entrée MANUELLE du journal contacts.prospection_history ({at, action, origine, par, motif}). Exclusion manuelle : levée seulement par
  * « Remettre en prospection » (fonction serveur set_prospection, motif, tracé) ; jamais par un rattachement.
  */
+/**
+ * Autres contacts EXCLUS reliés à ce contact par une adresse commune, de proche en proche (l'exclusion suit l'adresse ; décision
+ * d'Anthony du 09/11/2026). « Remettre en prospection » les liste et demande une confirmation explicite ; la remise vaut alors pour
+ * tous. Même règle : SQL prospection_partages / set_prospection (p_avec), migration 2026-11-08_brevo_rattachements.sql.
+ */
+export function contactsExclusPartages(c){
+  if (!c?.id) return [];
+  const mails = k => [k?.email, k?.email_2].map(e => String(e || '').trim().toLowerCase()).filter(Boolean);
+  const exclu = k => !!(k.prospection_exclue_at || k.hors_prospection_at);
+  const vus = new Set([c.id]), seen = new Set(mails(c)), out = [];
+  let file = [...seen];
+  while (file.length){
+    const next = [];
+    for (const k of S.db.contacts) if (!vus.has(k.id) && exclu(k) && mails(k).some(m => file.includes(m))){
+      vus.add(k.id); out.push(k); for (const m of mails(k)) if (!seen.has(m)){ seen.add(m); next.push(m); }
+    }
+    file = next;
+  }
+  return out;
+}
 export function prospectionState(c){
   const hist = Array.isArray(c?.prospection_history) ? c.prospection_history : [];
   const auto = !!c?.hors_prospection_at && !(c?.id && linksOfContact(c.id).length);

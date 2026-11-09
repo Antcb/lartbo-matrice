@@ -53,7 +53,8 @@
 --   drop trigger brevo_structure_deleted on public.structures;
 --   drop trigger contacts_prospection_guard on public.contacts;
 --   drop function public.brevo_links_trg(); drop function public.brevo_link_queue(uuid); drop function public.brevo_structure_del_trg();
---   drop function public.set_prospection(uuid, boolean, text); drop function public.contacts_prospection_guard();
+--   drop function public.set_prospection(uuid, boolean, text, uuid[]); drop function public.prospection_partages(uuid);
+--   drop function public.contacts_prospection_guard();
 --   drop function public.prospection_entree(text, text, text, text);
 --   drop trigger brevo_essai_guard on public.settings; drop function public.brevo_essai_guard();
 --   drop trigger contacts_prospection_memoire on public.contacts; drop trigger contacts_prospection_oubli on public.contacts;
@@ -65,6 +66,15 @@
 --   les colonnes contacts.hors_prospection_at, prospection_exclue_at, prospection_history peuvent rester (inutilisées) ; les retirer
 --   = suppression de colonnes et de l'historique (accord d'Anthony).
 -- =====================================================================================================
+
+-- Garde (relecture B4) : une table prospection_memoire d'une version antérieure de ce lot (sans memorise_at) arrête la migration ;
+-- aucune mise à niveau automatique. Constat du 09/11 : la table n'existe ni sur le projet de test ni en production.
+do $$ begin
+  if to_regclass('public.prospection_memoire') is not null and not exists (
+       select 1 from information_schema.columns where table_schema = 'public' and table_name = 'prospection_memoire' and column_name = 'memorise_at') then
+    raise exception 'Migration Brevo arrêtée : la table public.prospection_memoire existe dans une version antérieure (sans memorise_at). Aucune mise à niveau automatique : la reprendre à la main avec Anthony.';
+  end if;
+end $$;
 
 alter table public.contacts add column if not exists hors_prospection_at timestamptz;
 comment on column public.contacts.hors_prospection_at is
@@ -102,9 +112,36 @@ create or replace trigger contacts_prospection_guard before insert or update on 
 -- « Exclure de la prospection » (p_exclure = true) / « Remettre en prospection » (false), fiche contact — équipe seulement, motif
 -- obligatoire, tracé. Remettre lève l'exclusion manuelle ET l'exclusion automatique (structure), jamais un désabonnement Brevo ;
 -- un contact lié uniquement à des structures inactives reste hors prospection (règle v1.60.2, calculée) : refusé avec explication.
-create or replace function public.set_prospection(p_contact uuid, p_exclure boolean, p_motif text) returns jsonb
+-- Adresses d'un contact, en minuscules, sans doublon ni vide
+create or replace function public.prospection_mails(p_email text, p_email_2 text) returns text[]
+language sql immutable set search_path = public as $$
+  select coalesce(array_agg(distinct e), '{}') from (select lower(btrim(x)) e from unnest(array[p_email, p_email_2]) x) t where coalesce(e, '') <> ''
+$$;
+
+-- Contacts EXCLUS reliés à un contact par une adresse commune, de proche en proche (l'exclusion suit l'adresse ; décision du
+-- 09/11/2026) : la remise en prospection d'une adresse vaut pour tous ces contacts, après confirmation explicite
+create or replace function public.prospection_partages(p_contact uuid) returns uuid[]
+language sql stable security definer set search_path = public as $$
+  with recursive comp(id, mails) as (
+    select k.id, prospection_mails(k.email, k.email_2) from contacts k where k.id = p_contact
+    union
+    select k.id, prospection_mails(k.email, k.email_2) from contacts k join comp c on prospection_mails(k.email, k.email_2) && c.mails
+     where k.prospection_exclue_at is not null or k.hors_prospection_at is not null
+  )
+  select coalesce(array_agg(distinct id order by id) filter (where id <> p_contact), '{}') from comp
+$$;
+revoke all on function public.prospection_partages(uuid) from public, anon, authenticated;
+
+-- « Exclure de la prospection » (p_exclure = true) / « Remettre en prospection » (false), fiche contact — équipe seulement, motif
+-- obligatoire, tracé. Remettre lève l'exclusion manuelle ET l'exclusion automatique (structure), jamais un désabonnement Brevo ;
+-- un contact lié uniquement à des structures inactives reste hors prospection (règle v1.60.2, calculée) : refusé avec explication.
+-- Adresse aussi portée par d'autres contacts exclus (prospection_partages) : la remise est REFUSÉE sauf confirmation explicite, où
+-- l'interface renvoie exactement ces contacts (p_avec) ; elle s'applique alors à tous, même motif, une trace chacun, et efface la
+-- mémoire de toutes leurs adresses. Liste différente (changée entre-temps) : refus, rien ne change.
+create or replace function public.set_prospection(p_contact uuid, p_exclure boolean, p_motif text, p_avec uuid[] default null) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare k contacts%rowtype; m text := btrim(coalesce(p_motif, '')); par text := finance_actor(); n int := 0;
+        autres uuid[]; tous uuid[]; noms text; mails text[];
 begin
   if not is_team() then raise exception 'Accès réservé à l’équipe'; end if;
   if m = '' then raise exception 'Indique le motif'; end if;
@@ -123,20 +160,33 @@ begin
       end if;
       raise exception 'Ce contact n’est pas exclu de la prospection';
     end if;
-    -- mémoire des adresses (contact supprimé puis recréé) : effacée seulement ici, et tracé
-    delete from prospection_memoire where email = any(prospection_mails(k.email, k.email_2));
+    autres := prospection_partages(p_contact);
+    if cardinality(autres) > 0 and (p_avec is null or array(select unnest(p_avec) except select unnest(autres)) <> '{}'
+                                    or array(select unnest(autres) except select unnest(p_avec)) <> '{}') then
+      select string_agg(coalesce(nullif(display_name, ''), coalesce(email, email_2, 'sans nom')), ', ' order by display_name) into noms from contacts where id = any(autres);
+      raise exception 'Adresse aussi portée par % autre% contact% exclu% (%) : confirme la remise en prospection pour tous, ou rien ne change',
+        cardinality(autres), case when cardinality(autres) > 1 then 's' else '' end, case when cardinality(autres) > 1 then 's' else '' end,
+        case when cardinality(autres) > 1 then 's' else '' end, noms;
+    end if;
+    tous := array_prepend(p_contact, autres);
+    perform 1 from contacts where id = any(tous) for update;
+    -- mémoire de toutes leurs adresses (contact supprimé puis recréé) : effacée seulement ici, et tracé
+    select coalesce(array_agg(distinct e), '{}') into mails from contacts c, unnest(prospection_mails(c.email, c.email_2)) e where c.id = any(tous);
+    delete from prospection_memoire where email = any(mails);
     get diagnostics n = row_count;
-    update contacts set prospection_exclue_at = null, hors_prospection_at = null,
-           prospection_history = prospection_history || prospection_entree('remise', 'manuelle', par,
-             m || case when n > 0 then ' (mémoire d’exclusion de ' || n || ' adresse' || case when n > 1 then 's' else '' end || ' effacée)' else '' end)
-     where id = p_contact;
-    perform brevo_link_queue(p_contact);   -- de nouveau ajoutable à Brevo s'il n'y est pas ; un désabonné y reste désabonné
+    update contacts c set prospection_exclue_at = null, hors_prospection_at = null,
+           prospection_history = c.prospection_history || prospection_entree('remise', 'manuelle', par,
+             m || case when c.id <> p_contact then ' (adresse partagée, remise depuis la fiche de « ' || coalesce(nullif(k.display_name, ''), k.email, '') || ' »)' else '' end
+               || case when n > 0 and c.id = p_contact then ' (mémoire d’exclusion de ' || n || ' adresse' || case when n > 1 then 's' else '' end || ' effacée)' else '' end)
+     where c.id = any(tous);
+    perform brevo_link_queue(x) from unnest(tous) x;   -- de nouveau ajoutables à Brevo s'ils n'y sont pas ; un désabonné y reste désabonné
   end if;
   select * into k from contacts where id = p_contact;
-  return jsonb_build_object('hors_prospection_at', k.hors_prospection_at, 'prospection_exclue_at', k.prospection_exclue_at, 'prospection_history', k.prospection_history);
+  return jsonb_build_object('hors_prospection_at', k.hors_prospection_at, 'prospection_exclue_at', k.prospection_exclue_at, 'prospection_history', k.prospection_history,
+    'remis', coalesce(to_jsonb(tous), '[]'::jsonb));
 end $$;
-revoke all on function public.set_prospection(uuid, boolean, text) from public, anon;
-grant execute on function public.set_prospection(uuid, boolean, text) to authenticated;
+revoke all on function public.set_prospection(uuid, boolean, text, uuid[]) from public, anon;
+grant execute on function public.set_prospection(uuid, boolean, text, uuid[]) to authenticated;
 
 -- Relance brevo-sync pour un contact s'il existe encore et a un mail (un contact supprimé emporte ses rattachements en cascade :
 -- rien à envoyer pour lui)
@@ -282,12 +332,6 @@ comment on table public.prospection_memoire is
 alter table public.prospection_memoire enable row level security;   -- aucune règle : illisible par l'API de l'équipe
 revoke all on public.prospection_memoire from public, anon, authenticated, service_role;
 grant select on public.prospection_memoire to service_role;          -- sauvegarde JSON (backup-export) : lecture seule
-
--- Adresses d'un contact, en minuscules, sans doublon ni vide
-create or replace function public.prospection_mails(p_email text, p_email_2 text) returns text[]
-language sql immutable set search_path = public as $$
-  select coalesce(array_agg(distinct e), '{}') from (select lower(btrim(x)) e from unnest(array[p_email, p_email_2]) x) t where coalesce(e, '') <> ''
-$$;
 
 -- Dernier motif d'exclusion d'un journal de prospection
 create or replace function public.prospection_dernier_motif(p_hist jsonb) returns text
