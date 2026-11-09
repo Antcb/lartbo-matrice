@@ -38,13 +38,19 @@
 -- dans settings ; sans réglage : 14 j / 30 j comme avant) et vérification que la version en ligne est identique au dépôt ;
 -- 3. fusion de la branche (application). Aucun script Google modifié. Aucune donnée existante modifiée.
 -- Rejouable (create or replace, contrainte ajoutée si absente). Retour arrière (après accord) : réappliquer reminder_candidates de la
--- v1.60.6 et generate_reminders de la v1.60.3 ; les fonctions delais_* / reglage_simple_ok et les contraintes settings_delais_valide /
--- settings_reglages_simples peuvent rester (sans effet sur les rappels).
+-- v1.60.6 et generate_reminders de la v1.60.3 ; les fonctions delais_* / reglage_simple_ok / settings_delais_instant, le déclencheur
+-- settings_delais_instant et les contraintes settings_delais_valide / settings_reglages_simples peuvent rester (sans effet sur les rappels).
+-- Écriture concurrente : l'application relit la valeur du serveur avant de fusionner et s'arrête si elle a changé depuis l'affichage ;
+-- la fenêtre restante (relecture → écriture, quelques millisecondes) n'est pas verrouillée (pas de fonction d'écriture dédiée) :
+-- limite documentée. Réglages simples : une clé par réglage, dernière écriture retenue.
 -- =====================================================================================================
 
 do $m$
 declare b text;
 begin
+  if current_setting('server_version_num')::int < 140000 then
+    raise exception 'v1.64 : PostgreSQL 14 ou plus requis (create or replace trigger) : migration arrêtée, rien n''est appliqué';
+  end if;
   b := pg_get_functiondef('public.generate_reminders()'::regprocedure);
   if md5(b) <> '584374b0cb052c5fa226427b837b30a1' and position('v1.64 délais' in b) = 0 then
     raise exception 'v1.64 : generate_reminders n''est pas la version v1.60.3 attendue (empreinte %) : migration arrêtée, rien n''est appliqué', md5(b);
@@ -138,6 +144,35 @@ begin
 end $function$;
 revoke all on function public.delais_valide(jsonb) from public, anon;
 grant execute on function public.delais_valide(jsonb) to authenticated, service_role;
+
+-- Instant d'enregistrement posé PAR LE SERVEUR (relecture de 00698b2) : l'application envoie, pour chaque version qu'elle AJOUTE,
+-- from = '@enregistrement' (nouvelles dates seulement) et at = '@enregistrement' ; ce déclencheur les remplace par l'instant du
+-- serveur (now(), UTC, à la milliseconde, format lu par delais_instant / okFrom). Les versions déjà enregistrées ne contiennent
+-- jamais ce marqueur (remplacé à leur écriture) : leur instant n'est jamais réécrit. Sans ce déclencheur, le marqueur est refusé
+-- par la contrainte settings_delais_valide (rien n'est enregistré). L'application relit ensuite la valeur enregistrée.
+create or replace function public.settings_delais_instant() returns trigger
+ language plpgsql set search_path to 'public'
+as $function$
+declare k text; l jsonb; v jsonb := '{}'::jsonb; inst text := to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');
+begin
+  if jsonb_typeof(new.value) is distinct from 'object' then return new; end if;
+  for k, l in select key, value from jsonb_each(new.value) loop
+    if jsonb_typeof(l) = 'array' then
+      l := (select coalesce(jsonb_agg(case when jsonb_typeof(x) = 'object' then x
+                || case when x -> 'from' = '"@enregistrement"'::jsonb then jsonb_build_object('from', inst) else '{}'::jsonb end
+                || case when x -> 'at' = '"@enregistrement"'::jsonb then jsonb_build_object('at', inst) else '{}'::jsonb end
+              else x end order by i), '[]'::jsonb)
+            from jsonb_array_elements(l) with ordinality e(x, i));
+    end if;
+    v := v || jsonb_build_object(k, l);
+  end loop;
+  new.value := v;
+  return new;
+end $function$;
+revoke all on function public.settings_delais_instant() from public, anon, authenticated;
+-- create or replace trigger (PostgreSQL 14 ou plus, vérifié par la garde en tête) : rejouable sans drop
+create or replace trigger settings_delais_instant before insert or update on public.settings
+  for each row when (new.key = 'delais') execute function public.settings_delais_instant();
 
 -- Réglages simples (nouvelles tâches / nouveaux documents) : booléen ou entier dans les bornes, sinon refus à l'écriture ; une
 -- valeur absente ou illisible donne la valeur par défaut à la lecture (taskDelay, delaiDocument). Autres clés : non concernées.

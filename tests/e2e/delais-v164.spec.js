@@ -65,16 +65,21 @@ test('v1.64 délai modifié : conséquences affichées, « Nouvelles dates seule
   await dlg.locator('button', { hasText: 'Annuler' }).click();
   expect(await delais(page)).toBeNull();
   await page.locator('[data-act="saveDelays"]').click();
+  // instant d'enregistrement posé par le serveur (déclencheur settings_delais_instant, imité par la fausse base) — pas l'horloge du navigateur
+  const serveur = new Date(Date.now() + 120000).toISOString();
+  await page.evaluate(t => { window.__SERVER_NOW = t; }, serveur);
   await page.locator('dialog.ask button', { hasText: 'Nouvelles dates seulement' }).click();
   await expect(page.locator('dialog.ask')).toHaveCount(0);
   const v = await delais(page);
   expect(v.paiement).toHaveLength(1);
   expect(v.paiement[0]).toMatchObject({ on: true, n: 5 });
   // « existante » = créée avant l'INSTANT d'enregistrement (décision du 09/11), pas avant le jour
-  expect(v.paiement[0].from).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  expect(v.paiement[0].from, 'instant du serveur, relu après l’écriture').toBe(serveur);
+  expect(v.paiement[0].at).toBe(serveur);
+  expect(await page.evaluate(() => window.__DB.settings.find(x => x.key === 'delais').value.paiement[0].from), 'appli = serveur').toBe(serveur);
   expect(await due(page, 'd-1', 'acompte_paye'), 'date créée il y a 30 jours : inchangée').toBe(avant1);
   expect(await due(page, 'd-2', 'acompte_paye'), 'date créée aujourd’hui AVANT l’enregistrement : inchangée').toBe(avant2);
-  await seed(page, { shows: [P('d-3', { created_at: new Date(Date.now() + 1000).toISOString() })], show_payments: [
+  await seed(page, { shows: [P('d-3', { created_at: new Date(Date.parse(serveur) + 1).toISOString() })], show_payments: [
     { id: 'd3-a', show_id: 'd-3', kind: 'acompte', label: 'Acompte', pct: 30, invoice_number: 'F-3', sent_at: iso(-3), sort: 1 }] });
   expect(await due(page, 'd-3', 'acompte_paye') < avant2, 'date créée après l’enregistrement : nouveau délai').toBe(true);
   // la valeur affichée est celle des nouvelles dates, avec la mention de la règle gardée par les dates plus anciennes
@@ -109,7 +114,12 @@ test('v1.64 valeurs refusées hors bornes ; réglage abîmé : valeurs par défa
   await page.locator('[data-delay-n="solde_envoi"]').fill('400');
   await page.locator('[data-act="saveDelays"]').click();
   await expect(page.locator('dialog.ask')).toHaveCount(0);
-  await expect(page.locator('[data-delay-n="solde_envoi"]')).toHaveClass(/bad/);
+  // champ fautif visible : style existant des champs de tableau en erreur (td input.invalid, bordure --danger)
+  const champ = page.locator('[data-delay-n="solde_envoi"]');
+  await expect(champ).toHaveClass(/invalid/);
+  const [bord, danger] = await champ.evaluate(el => [getComputedStyle(el).borderTopColor,
+    (d => { d.style.color = 'var(--danger)'; document.body.appendChild(d); const c = getComputedStyle(d).color; d.remove(); return c; })(document.createElement('span'))]);
+  expect(bord).toBe(danger);
   expect(await delais(page)).toBeNull();
   await page.locator('[data-delay-n="solde_envoi"]').fill('7');
   await page.locator('[data-task-delay="prospect_relance_days"]').fill('5');
@@ -177,5 +187,21 @@ test('v1.64 week-ends : délai de 0 jour → lundi (politique réglable) ; ancie
   await expect(box).toContainText('Facture d’acompte à faire (contrat envoyé)');
   await expect(box).toContainText('Facture de solde à faire');
   await expect(box).toContainText('plus de 120 jours');
+  expectClean(ctx);
+});
+
+test('v1.64 écriture concurrente : réglage modifié ailleurs depuis l’affichage → rien n’est écrit, affichage mis à jour', async ({ page }) => {
+  const ctx = await openApp(page);
+  await goSettings(page);
+  await page.locator('[data-delay-n="paiement"]').fill('5');
+  // un autre poste enregistre entre-temps (fausse base seulement)
+  const autre = { precontrat: [{ on: true, n: 12, from: null, at: '2026-11-09T10:00:00.000Z', by: 'autre' }] };
+  await page.evaluate(v => { window.__DB.settings.push({ key: 'delais', value: v }); }, autre);
+  await page.locator('[data-act="saveDelays"]').click();
+  await expect(page.locator('dialog.ask')).toHaveCount(0);
+  await expect(page.locator('.toast').last()).toContainText('modifiés entre-temps');
+  expect(await page.evaluate(() => window.__DB.settings.find(x => x.key === 'delais').value), 'valeur du serveur intacte').toEqual(autre);
+  expect(await delais(page), 'affichage = serveur').toEqual(autre);
+  await expect(page.locator('[data-delay-n="precontrat"]')).toHaveValue('12');
   expectClean(ctx);
 });

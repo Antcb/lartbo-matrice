@@ -65,6 +65,11 @@ export const DELAY_MAX = {j: 365, mois: 24, aucun: 0};
 /** Limite des rappels quotidiens (règle serveur existante, Q13) : au-delà, l'élément reste visible « ancien élément à traiter » */
 export const OLD_DAYS = {120: 'concert passé depuis plus de 120 jours', 30: 'concert passé depuis plus de 30 jours'};
 const RULE = Object.fromEntries(DELAY_RULES.map(r => [r.key, r]));
+/** Marqueur envoyé pour une version AJOUTÉE : l'instant d'enregistrement est posé par le serveur (déclencheur settings_delais_instant,
+ *  relecture de 00698b2), jamais par l'horloge du navigateur ; l'application relit ensuite la valeur enregistrée */
+export const SAVE_INSTANT = '@enregistrement';
+/** Création fictive « après tout enregistrement » : délais qui s'appliqueront aux nouvelles dates (affichage des Réglages) */
+export const NEW_DATE = '9999-12-31T23:59:59.999Z';
 /** Instant d'enregistrement « AAAA-MM-JJTHH:MM:SS(.mmm)Z » réel (30 février, 9999-99-99, an 0 refusés) — même contrôle que
  *  delais_instant côté serveur */
 export const okFrom = v => { if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(v) || v.startsWith('0000')) return false;
@@ -94,7 +99,7 @@ export function delaysOf(s, value = setting('delais')){
 export function delaysAnomalies(value = setting('delais')){
   if (value == null) return [];
   if (typeof value !== 'object' || Array.isArray(value)) return [{key: null, text: 'Réglage des délais illisible : toutes les valeurs par défaut sont appliquées.'}];
-  const now = delaysOf({created_at: new Date().toISOString()}, value), out = [];
+  const now = delaysOf({created_at: NEW_DATE}, value), out = [];
   for (const k of Object.keys(value)){
     const r = ALL_RULES.find(x => x.key === k);
     if (!r){ out.push({key: k, text: `Règle inconnue « ${k} » : ignorée.`}); continue; }

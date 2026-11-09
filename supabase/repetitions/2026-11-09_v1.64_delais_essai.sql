@@ -7,6 +7,7 @@
 --  2. délai modifié pour toutes les dates : échéance déplacée, clé inchangée (pas de doublon) ; relance désactivée : plus de candidat ;
 --  3. délai modifié pour les nouvelles dates seulement (from = instant, à la milliseconde) : dates existantes inchangées ;
 --     week-ends : délais de 0 jour → lundi, politique désactivable, boucle → vendredi, solde toujours vendredi ;
+--     instant posé par le serveur (déclencheur), jamais réécrit pour une version déjà enregistrée, marqueur refusé sans déclencheur ;
 --  4. contrôle à l'écriture (contrainte) ; réglage abîmé (30 février, 9999-99-99, an 0, n = 5.0…) : valeurs par défaut ou version
 --     ignorée, generate_reminders ne s'arrête pas ;
 --  5. priorité de la date : prochaine échéance choisie à la réactivation (reminders_next) gardée.
@@ -127,6 +128,27 @@ begin
     -- solde : vendredi toujours (règle v1.60.6), même politique désactivée
     if exists (select 1 from apres where r = 'solde_envoi' and extract(isodow from due) in (6, 7)) then raise exception '3 bis : solde un week-end'; end if;
     delete from show_payments where show_id = sh; delete from shows where id = sh;
+  end;
+
+  -- 3 ter. instant d'enregistrement posé par le serveur (déclencheur settings_delais_instant, relecture de 00698b2)
+  declare v1 jsonb; inst text := to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'); begin
+    update settings set value = '{"paiement": [{"on": true, "n": 4, "from": "2026-01-01T10:00:00.000Z", "at": "2026-01-01T10:00:00.000Z", "by": "a"}, {"on": true, "n": 6, "from": "@enregistrement", "at": "@enregistrement", "by": "b"}], "precontrat": [{"on": true, "n": 11, "from": null, "at": "@enregistrement"}]}'::jsonb where key = 'delais';
+    select value into v1 from settings where key = 'delais';
+    if v1 #>> '{paiement,1,from}' <> inst or v1 #>> '{paiement,1,at}' <> inst or v1 #>> '{precontrat,0,at}' <> inst then raise exception '3 ter : instant serveur non posé (%)', v1; end if;
+    if v1 #>> '{paiement,0,from}' <> '2026-01-01T10:00:00.000Z' or v1 #>> '{paiement,0,at}' <> '2026-01-01T10:00:00.000Z' then raise exception '3 ter : version existante réécrite'; end if;
+    if v1 #> '{precontrat,0,from}' <> 'null'::jsonb then raise exception '3 ter : « toutes les dates » modifié'; end if;
+    if public.delais_instant(v1 #>> '{paiement,1,from}') is null then raise exception '3 ter : instant illisible'; end if;
+    -- réécriture (ajout d'une version) : les instants déjà enregistrés ne bougent jamais, même si l'écriture suivante a lieu plus tard
+    update settings set value = jsonb_set(v1, '{paiement}', (v1 -> 'paiement') || '[{"on": true, "n": 7, "from": "@enregistrement", "at": "@enregistrement"}]'::jsonb) where key = 'delais';
+    if (select value #>> '{paiement,1,from}' from settings where key = 'delais') <> inst then raise exception '3 ter : instant enregistré réécrit'; end if;
+    if (select jsonb_array_length(value -> 'paiement') from settings where key = 'delais') <> 3 then raise exception '3 ter : versions'; end if;
+    -- sans le déclencheur : le marqueur est refusé (contrainte), rien n'est enregistré
+    alter table settings disable trigger settings_delais_instant;
+    begin
+      update settings set value = '{"paiement": [{"on": true, "n": 6, "from": "@enregistrement"}]}'::jsonb where key = 'delais';
+      raise exception '3 ter : marqueur accepté sans déclencheur';
+    exception when check_violation then null; end;
+    alter table settings enable trigger settings_delais_instant;
   end;
 
   -- 4 bis. contrôle à l'écriture (contrainte settings_delais_valide) : valeurs refusées, valeurs justes acceptées (5.0 = entier)

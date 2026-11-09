@@ -11,7 +11,7 @@ import { isCoproduction, isInvoiced, paymentsOf } from '../calc.js';
 import { viewHead } from '../ui/bits.js';
 import { cIn } from '../ui/cells.js';
 import { esc, toast, pct, today, fmtDate } from '../utils.js';
-import { DELAY_RULES, DELAY_MAX, TASK_DELAYS, WEEKEND_RULES, delaysAnomalies, delaysOf, okFrom, okVersion, remindersOf, taskDelay, taskDelayAnomaly } from '../reminders.js';
+import { DELAY_RULES, DELAY_MAX, NEW_DATE, SAVE_INSTANT, TASK_DELAYS, WEEKEND_RULES, delaysAnomalies, delaysOf, okFrom, okVersion, remindersOf, taskDelay, taskDelayAnomaly } from '../reminders.js';
 import { CONFIRMED_PROD } from '../constants.js';
 import { render } from '../app.js';
 import { templatesList } from '../mail.js';
@@ -246,8 +246,9 @@ const WK = {apres: 'samedi / dimanche → lundi suivant (si activé ci-dessous)'
 const ALL_DELAYS = [...DELAY_RULES, ...WEEKEND_RULES];
 const valTxt = (k, v) => { const r = ALL_DELAYS.find(x => x.key === k); return r.unit === 'aucun' ? (v.on ? 'activé' : 'désactivé') : v.on ? unitTxt(v.n, r.unit) : 'désactivé'; };
 const simpleTxt = (r, v) => r.type === 'bool' ? (v ? 'activées' : 'désactivées') : `${v}${r.unit === 'j' ? ' j' : ' ' + r.unit}`;
-/** Délais en vigueur pour une date créée maintenant (= valeur affichée et modifiée) */
-const currentDelays = (value = setting('delais')) => delaysOf({created_at: new Date().toISOString()}, value);
+/** Délais des NOUVELLES dates (= valeur affichée et modifiée) : toutes les versions comptent, quelle que soit l'horloge du navigateur
+ *  (l'instant enregistré est celui du serveur) */
+const currentDelays = (value = setting('delais')) => delaysOf({created_at: NEW_DATE}, value);
 /** Versions « nouvelles dates seulement » encore en vigueur : rappel des délais gardés par les dates plus anciennes */
 function olderNote(key){
   const list = (Array.isArray(setting('delais')?.[key]) ? setting('delais')[key] : []).filter(v => v && typeof v === 'object');
@@ -303,32 +304,29 @@ function readDelays(){
     if (r.unit === 'aucun'){ rules[r.key] = {on: on.checked, n: 0}; continue; }
     const n = document.querySelector(`[data-delay-n="${r.key}"]`); if (!n) return null;
     const v = Number(String(n.value).replace(',', '.'));
-    if (String(n.value).trim() === '' || !Number.isInteger(v) || v < 0 || v > DELAY_MAX[r.unit]){ n.classList.add('bad'); bad.push(`${r.label} (0 à ${DELAY_MAX[r.unit]} ${r.unit === 'mois' ? 'mois' : 'jours'}, nombre entier)`); continue; }
-    n.classList.remove('bad'); rules[r.key] = {on: on.checked, n: v};
+    if (String(n.value).trim() === '' || !Number.isInteger(v) || v < 0 || v > DELAY_MAX[r.unit]){ n.classList.add('invalid'); bad.push(`${r.label} (0 à ${DELAY_MAX[r.unit]} ${r.unit === 'mois' ? 'mois' : 'jours'}, nombre entier)`); continue; }
+    n.classList.remove('invalid'); rules[r.key] = {on: on.checked, n: v};
   }
   for (const r of TASK_DELAYS){
     const el = document.querySelector(`[data-task-delay="${r.key}"]`); if (!el) return null;
     if (r.type === 'bool'){ tasks[r.key] = el.checked; continue; }
     const v = Number(String(el.value).replace(',', '.'));
-    if (String(el.value).trim() === '' || !Number.isInteger(v) || v < r.min || v > r.max){ el.classList.add('bad'); bad.push(`${r.label} (${r.min} à ${r.max}, nombre entier)`); continue; }
-    el.classList.remove('bad'); tasks[r.key] = v;
+    if (String(el.value).trim() === '' || !Number.isInteger(v) || v < r.min || v > r.max){ el.classList.add('invalid'); bad.push(`${r.label} (${r.min} à ${r.max}, nombre entier)`); continue; }
+    el.classList.remove('invalid'); tasks[r.key] = v;
   }
   return {rules, tasks, bad};
 }
 
 /** Réglage « delais » après la modification : une version de plus par règle modifiée (historique gardé) ;
- *  from = instant d'enregistrement (nouvelles dates seulement) ou null (toutes les dates) */
-export function delaysValue(changes, from, base = setting('delais'), by = S.user?.email || ''){
+ *  from = instant d'enregistrement (nouvelles dates seulement : marqueur SAVE_INSTANT, remplacé par l'instant du serveur) ou null
+ *  (toutes les dates) ; at = instant de l'écriture (même marqueur) */
+export function delaysValue(changes, from, base = setting('delais'), by = S.user?.email || '', at = SAVE_INSTANT){
   const out = base && typeof base === 'object' && !Array.isArray(base) ? JSON.parse(JSON.stringify(base)) : {};
-  const at = new Date().toISOString();
-  for (const [k, v] of Object.entries(changes)){
-    if (!Array.isArray(out[k])) out[k] = [];
-    out[k] = out[k].filter(x => okVersion(x, ALL_DELAYS.find(r => r.key === k).unit));   // versions illisibles retirées (refusées par la base)
-    out[k].push({on: v.on, n: v.n, from, at, by});
-  }
-  // règles inconnues ou illisibles (écrites hors de l'application) : retirées, sinon la base refuse l'enregistrement
+  // règles inconnues ou illisibles et versions illisibles (écrites hors de l'application) : retirées, sinon la base refuse l'enregistrement
   for (const k of Object.keys(out)) if (!ALL_DELAYS.some(r => r.key === k) || !Array.isArray(out[k])) delete out[k];
   for (const k of Object.keys(out)) out[k] = out[k].filter(x => okVersion(x, ALL_DELAYS.find(r => r.key === k).unit));
+  // versions ajoutées (après le nettoyage : leur marqueur d'instant n'est remplacé que par le serveur)
+  for (const [k, v] of Object.entries(changes)) (out[k] ||= []).push({on: v.on, n: v.n, from, at, by});
   return out;
 }
 
@@ -367,9 +365,35 @@ function impactText(i, max = 8){
 }
 
 /** Enregistrer les délais : conséquences affichées, choix explicite ; par défaut, nouvelles dates seulement (aucun recalcul) */
+/** Valeur du réglage « delais » sur le serveur (null : absent) ; undefined si la lecture échoue */
+async function serverDelays(){
+  const {data, error} = await sb.from('settings').select('key, value').eq('key', 'delais').maybeSingle();
+  if (error) return undefined;
+  return data?.value ?? null;
+}
+/** Valeur locale remplacée par celle du serveur (relue après une écriture ou un changement fait ailleurs) */
+function keepLocal(key, value){
+  const r = S.db.settings.find(x => x.key === key);
+  if (value === null){ if (r) S.db.settings.splice(S.db.settings.indexOf(r), 1); }
+  else if (r) r.value = value; else S.db.settings.push({key, value});
+  touch('settings');
+}
+const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+/** Écriture concurrente (relecture de 00698b2) : le réglage relu sur le serveur doit être celui qui est affiché ; sinon arrêt,
+ *  affichage mis à jour, rien n'est écrit */
+async function delaysUnchanged(){
+  const v = await serverDelays();
+  if (v === undefined){ toast('Lecture des délais enregistrés impossible : rien n’a été changé.', true); return false; }
+  if (same(v, setting('delais'))) return true;
+  keepLocal('delais', v); render();
+  toast('Les délais ont été modifiés entre-temps (autre poste ou autre personne) : l’affichage est mis à jour, rien n’a été changé. Vérifie puis recommence.', true);
+  return false;
+}
+
 export async function saveDelays(){
   const r = readDelays(); if (!r) return;
   if (r.bad.length) return toast('Rien n’est enregistré. Valeur à corriger : ' + r.bad.join(' ; '), true);
+  if (!await delaysUnchanged()) return;
   const cur = currentDelays();
   const changes = Object.fromEntries(Object.entries(r.rules).filter(([k, v]) => v.on !== cur[k].on || v.n !== cur[k].n));
   const tasks = Object.fromEntries(Object.entries(r.tasks).filter(([k, v]) => v !== taskDelay(k) || taskDelayAnomaly(k)));
@@ -382,16 +406,22 @@ export async function saveDelays(){
   let choice = 'tasks';
   if (Object.keys(changes).length){
     const now = setting('delais'), at = new Date().toISOString();
-    const onlyNew = delaysImpact(now, delaysValue(changes, at)), all = delaysImpact(now, delaysValue(changes, null));
+    // aperçu seulement : instant estimé (l'instant enregistré est celui du serveur)
+    const onlyNew = delaysImpact(now, delaysValue(changes, at, now, '', at)), all = delaysImpact(now, delaysValue(changes, null, now, '', at));
     choice = await ask({title: 'Enregistrer les délais ?', text: `${what}\n`
       + `Nouvelles dates seulement (conseillé) : le changement vaut pour les dates créées à partir de l’enregistrement ; les dates existantes gardent leur règle, aucun rappel n’est recalculé ni lancé.${impactCount(onlyNew) ? '\n' + impactText(onlyNew) : ''}\n`
       + `Aussi les dates en cours :\n${impactText(all)}`,
       actions: [{value: 'new', label: 'Nouvelles dates seulement'}, {value: 'all', label: 'Aussi les dates en cours', plain: true}]});
     if (!choice) return;
   } else if (!(await confirmAsk('Enregistrer les délais ?', what, 'Enregistrer'))) return;
-  // instant d'enregistrement (décision d'Anthony du 09/11) : pris au moment de l'écriture, après le choix
-  if (Object.keys(changes).length && !await setSetting('delais', delaysValue(changes, choice === 'all' ? null : new Date().toISOString()))){
-    toast('Rien n’a été changé : les délais précédents restent appliqués.', true); return; }
+  if (Object.keys(changes).length){
+    // relecture juste avant l'écriture (la fenêtre a pu rester ouverte) ; instant d'enregistrement posé par le serveur
+    if (!await delaysUnchanged()) return;
+    if (!await setSetting('delais', delaysValue(changes, choice === 'all' ? null : SAVE_INSTANT))){
+      keepLocal('delais', await serverDelays() ?? null); toast('Rien n’a été changé : les délais précédents restent appliqués.', true); return; }
+    const saved = await serverDelays();   // valeur réellement enregistrée (instants du serveur)
+    if (saved !== undefined) keepLocal('delais', saved);
+  }
   for (const [k, v] of Object.entries(tasks)) if (!await setSetting(k, v)){ toast(`Réglage « ${TASK_DELAYS.find(x => x.key === k).label} » non enregistré : la valeur précédente reste appliquée.`, true); return; }
   toast(choice === 'all' ? 'Délais enregistrés : dates en cours comprises' : choice === 'new' ? 'Délais enregistrés pour les nouvelles dates' : 'Délais enregistrés');
   render();

@@ -89,6 +89,10 @@
       // window.__INSERT_ERROR = { table: {code, message} } : création refusée par la base (ex. doublon d'une clé unique, code 23505 — v1.60.4)
       if (st.op === 'insert' && window.__INSERT_ERROR && window.__INSERT_ERROR[table]) return { data: null, error: window.__INSERT_ERROR[table] };
       if (st.op === 'insert') { const arr = (Array.isArray(st.patch) ? st.patch : [st.patch]).map(r => ({ id: uid(), ...r })); rows.push(...arr); return { data: clone(st.single ? arr[0] : arr), error: null }; }
+      // imitation du déclencheur settings_delais_instant (v1.64) : marqueur « @enregistrement » des versions ajoutées → instant du serveur
+      if (st.op === 'upsert' && table === 'settings') { const now = window.__SERVER_NOW || new Date().toISOString(), arr = Array.isArray(st.patch) ? st.patch : [st.patch];
+        st.patch = arr.map(p => p.key !== 'delais' || !p.value || typeof p.value !== 'object' ? p : { ...p, value: Object.fromEntries(Object.entries(p.value).map(([k, l]) =>
+          [k, Array.isArray(l) ? l.map(v => v && typeof v === 'object' ? { ...v, ...(v.from === '@enregistrement' ? { from: now } : {}), ...(v.at === '@enregistrement' ? { at: now } : {}) } : v) : l])) }); }
       if (st.op === 'upsert') { const arr = Array.isArray(st.patch) ? st.patch : [st.patch]; arr.forEach(p => { const r = rows.find(x => (p.id && x.id === p.id) || (p.key && x.key === p.key)); r ? Object.assign(r, p) : rows.push({ ...p }); }); return { data: clone(arr), error: null }; }
       // window.__DELETE_ERROR = { table: {code, message} } : suppression refusée par la base (ex. clé étrangère, v1.60.3)
       if (st.op === 'delete' && window.__DELETE_ERROR && window.__DELETE_ERROR[table]) return { data: null, error: window.__DELETE_ERROR[table] };
