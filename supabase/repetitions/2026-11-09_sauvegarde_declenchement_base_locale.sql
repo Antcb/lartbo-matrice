@@ -1,5 +1,5 @@
 -- BASE LOCALE JETABLE (PostgreSQL 16 nu, jamais Supabase, jamais la production) pour essayer la migration
--- 2026-11-09_sauvegarde_declenchement.sql. Lancée par 2026-11-09_sauvegarde_declenchement_essai.sh (voir ce fichier).
+-- 2026-11-09_v1.60.7_sauvegarde_declenchement.sql. Lancée par 2026-11-09_sauvegarde_declenchement_essai.sh (voir ce fichier).
 -- Reproduit seulement ce qu'utilisent la migration et la copie : rôles Supabase, coffre, notifications, schéma « cron » simulé
 -- (pg_cron absent en local), table privée v1.60.4 (mailbox_owners) et une table du schéma public. Données FICTIVES uniquement.
 do $$ begin

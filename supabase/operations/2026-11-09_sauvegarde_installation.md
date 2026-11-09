@@ -15,7 +15,7 @@ La migration ci-dessous refait ce droit (sans effet s'il existe déjà).
 ## B. Mise en service (dans cet ordre)
 | # | Qui | Où | Quoi |
 |---|---|---|---|
-| 1 | Claude, sur autorisation | projet de test puis production | migration `supabase/migrations/2026-11-09_sauvegarde_declenchement.sql` (le projet de test doit d'abord avoir le rôle `sauvegarde` et la fenêtre : dépôt de sauvegarde, `outils/role_sauvegarde.sql` puis `outils/fenetre_connexion.sql`) |
+| 1 | Claude, sur autorisation | projet de test puis production | migration `supabase/migrations/2026-11-09_v1.60.7_sauvegarde_declenchement.sql` (le projet de test doit d'abord avoir le rôle `sauvegarde` et la fenêtre : dépôt de sauvegarde, `outils/role_sauvegarde.sql` puis `outils/fenetre_connexion.sql`) |
 | 2 | Claude, sur autorisation | production | fonction serveur `sauvegarde-fenetre` (fichiers `index.ts` + `regles.ts`), **Verify JWT désactivé** (comme `backup-export` : la protection est le secret) ; vérifier ensuite que la version en ligne est identique au dépôt |
 | 3 | Anthony | Supabase › **Table Editor** › schéma `private` › table `import_secrets` › ligne `sauvegarde_declenchement_secret` | copier la colonne `value` (64 caractères) |
 | 4 | Anthony | GitHub › `lartbo-matrice-backup` › **Settings** › **Secrets and variables** › **Actions** › **New repository secret** | Name : `SAUVEGARDE_SIGNAL_SECRET` ; Secret : coller ; **Add secret**. Puis vider le presse-papiers |
@@ -24,7 +24,8 @@ La migration ci-dessous refait ce droit (sans effet s'il existe déjà).
 | 7 | — | nuit suivante | les deux sauvegardes tournent seules (vérifier le lendemain dans Actions : un créneau fait la copie, les autres s'arrêtent en « déjà faite ») |
 | 8 | Claude, sur autorisation | production | `supabase/operations/2026-11-09_sauvegarde_activation.sql` : retire la fenêtre fixe 01:30–04:30 et ses tâches (refusé tant qu'aucune copie n'a réussi dans le nouveau mode) |
 
-Avant l'étape 4, les workflows fusionnés gardent l'ancien fonctionnement (avertissement « mode fenêtre fixe »). Avant l'étape 8,
+Avant l'étape 4, les workflows fusionnés gardent exactement le fonctionnement d'avant : seuls le créneau principal (01:41 copie,
+02:17 JSON) et les lancements manuels sauvegardent ; les 3 créneaux de rattrapage s'arrêtent tout de suite, sans échec ni mail. Avant l'étape 8,
 la fenêtre fixe reste en service : le démarrage réel ne fait qu'ajouter le verrou, le relevé et l'alerte.
 
 ## C. Règle durable pour le schéma privé

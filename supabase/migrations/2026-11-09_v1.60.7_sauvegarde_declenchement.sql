@@ -15,8 +15,10 @@
 --     Sert de VERROU (une seule exécution en cours par type, index unique) et de preuve de réussite (contrôle d'absence).
 --  2. private.sauvegarde_demarrer / _fermer / _terminer : appelées par la fonction serveur « sauvegarde-fenetre » (secret dédié)
 --     au début et à la fin du workflow. Pour la copie complète, le démarrage ouvre la connexion du rôle « sauvegarde » pour
---     45 min (1 h au plus), la fin la referme (succès comme échec). Fermeture de secours : la tâche « sauvegarde-interruption »
---     (toutes les 15 min) referme dès l'échéance passée ⇒ connexion ouverte 1 h au plus, même si le workflow ne rappelle jamais.
+--     45 min AU PLUS, la fin la referme (succès comme échec) — seulement si c'est bien l'exécution qui tient la fenêtre
+--     (colonne private.sauvegarde_fenetre.tenue_par). Fermeture de secours : la tâche « sauvegarde-interruption » (toutes les
+--     15 min) referme dès l'échéance passée ⇒ 45 min + 15 min = connexion ouverte 1 h au plus, même si le workflow ne rappelle
+--     jamais. Au plus 6 démarrages par type et par jour (UTC) : au-delà, refus « limite ».
 --  3. private.sauvegarde_interrompre : réécrite à l'identique (dépôt de sauvegarde, outils/fenetre_connexion.sql) + libération des
 --     verrous périmés (exécution « en cours » depuis plus de 3 h ⇒ « abandon »).
 --  4. private.sauvegarde_controler + tâche « sauvegarde-controle » (13:07 UTC) : si aucune sauvegarde (complète ou JSON) n'a
@@ -33,7 +35,7 @@
 --
 -- Prérequis : rôle « sauvegarde » et fenêtre (dépôt lartbo-matrice-backup : outils/role_sauvegarde.sql puis
 -- outils/fenetre_connexion.sql), table notifications, coffre private.import_secrets. Rejouable (if not exists, create or replace,
--- on conflict do nothing, cron.schedule par nom). Retour arrière : supabase/retours-arriere/2026-11-09_sauvegarde_declenchement.sql.
+-- on conflict do nothing, cron.schedule par nom). Retour arrière : supabase/retours-arriere/2026-11-09_v1.60.7_sauvegarde_declenchement.sql.
 -- =====================================================================================================
 
 do $$ begin
@@ -62,6 +64,8 @@ create table if not exists private.sauvegarde_executions (
 );
 create unique index if not exists sauvegarde_executions_une_en_cours on private.sauvegarde_executions (type) where statut = 'en_cours';
 create unique index if not exists sauvegarde_executions_run on private.sauvegarde_executions (type, run_id, tentative);
+-- exécution qui tient la fenêtre exceptionnelle ouverte (null : aucune, ou ouverture manuelle par sauvegarde_ouvrir)
+alter table private.sauvegarde_fenetre add column if not exists tenue_par bigint;
 revoke all on private.sauvegarde_executions from public, anon, authenticated, service_role;
 grant select on private.sauvegarde_executions to sauvegarde;   -- copiée par la sauvegarde complète (aucun secret)
 grant select on sequence private.sauvegarde_executions_id_seq to sauvegarde;   -- pg_dump lit aussi la séquence d'identité
@@ -69,8 +73,9 @@ grant select on sequence private.sauvegarde_executions_id_seq to sauvegarde;   -
 -- ── 2. Démarrage, fermeture, fin ────────────────────────────────────────────────────────────────────────────────────────────
 -- Démarrage réel : verrou par type ; « deja_faite » si une exécution du même type a déjà réussi aujourd'hui (UTC) et que ce n'est
 -- pas une relance manuelle ; « occupee » si une autre exécution du même type est en cours. Appel répété par la même exécution
--- (nouvel essai réseau) : même ligne renvoyée, sans en créer une autre. Copie complète : connexion ouverte pour la durée demandée,
--- 45 min par défaut, 1 h au plus.
+-- (nouvel essai réseau) : même ligne renvoyée, sans en créer une autre, et sans rouvrir une fenêtre déjà refermée. Copie complète :
+-- connexion ouverte pour la durée demandée, 45 min par défaut ET au plus (la fermeture de secours passe dans les 15 min suivantes).
+-- Au plus 6 démarrages par type et par jour (UTC) : au-delà, « limite » (aucune ouverture).
 create or replace function private.sauvegarde_demarrer(p_type text, p_run_id text, p_tentative integer, p_origine text,
                                                        p_forcer boolean default false, p_duree interval default interval '45 minutes')
 returns jsonb language plpgsql security definer set search_path = '' as $f$
@@ -79,7 +84,7 @@ begin
   if p_type is null or p_type not in ('complete', 'json') then raise exception 'type de sauvegarde inconnu'; end if;
   if p_origine is null or p_origine not in ('schedule', 'workflow_dispatch') then raise exception 'origine inconnue'; end if;
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('sauvegarde_demarrer:' || p_type));
-  v_jusqu := now() + least(greatest(coalesce(p_duree, interval '45 minutes'), interval '5 minutes'), interval '1 hour');
+  v_jusqu := now() + least(greatest(coalesce(p_duree, interval '45 minutes'), interval '5 minutes'), interval '45 minutes');
 
   select * into e from private.sauvegarde_executions x where x.type = p_type and x.run_id = p_run_id and x.tentative = p_tentative;
   if found then
@@ -99,19 +104,23 @@ begin
          where x.type = p_type and x.statut = 'succes' and x.jour = v_jour) then
       return jsonb_build_object('etat', 'deja_faite', 'jour', v_jour);
     end if;
+    if (select count(*) from private.sauvegarde_executions x where x.type = p_type and x.jour = v_jour) >= 6 then
+      return jsonb_build_object('etat', 'limite', 'jour', v_jour, 'demarrages', 6);
+    end if;
     insert into private.sauvegarde_executions (type, jour, run_id, tentative, origine, fenetre_jusqu_a)
       values (p_type, v_jour, p_run_id, p_tentative, p_origine, case when p_type = 'complete' then v_jusqu end)
       returning id into v_id;
   end if;
 
   if p_type = 'complete' and v_jusqu > now() then
-    update private.sauvegarde_fenetre set exceptionnelle_jusqu_a = v_jusqu;
+    update private.sauvegarde_fenetre set exceptionnelle_jusqu_a = v_jusqu, tenue_par = v_id;
     alter role sauvegarde login;
   end if;
   return jsonb_build_object('etat', 'demarree', 'id', v_id, 'fenetre_jusqu_a', case when p_type = 'complete' then v_jusqu end);
 end $f$;
 
--- Fermeture de la connexion (copie complète) : dès la fin de la copie, en succès comme en échec. Sans effet sur la fenêtre FIXE
+-- Fermeture de la connexion (copie complète) : dès la fin de la copie, en succès comme en échec, SEULEMENT par l'exécution qui
+-- tient la fenêtre (une fin rejouée d'une ancienne exécution ne coupe pas la copie suivante). Sans effet sur la fenêtre FIXE
 -- tant qu'elle est en service (avant l'activation) : sauvegarde_interrompre ne ferme rien pendant la fenêtre fixe.
 create or replace function private.sauvegarde_fermer(p_id bigint) returns jsonb
 language plpgsql security definer set search_path = '' as $f$
@@ -121,8 +130,10 @@ begin
   if not found then raise exception 'exécution inconnue'; end if;
   if e.type <> 'complete' then return jsonb_build_object('etat', 'sans_fenetre'); end if;
   update private.sauvegarde_executions set fenetre_jusqu_a = least(fenetre_jusqu_a, now()) where id = p_id;
-  -- une autre copie complète ne peut pas être en cours (index unique) : la fenêtre exceptionnelle est la sienne
-  update private.sauvegarde_fenetre set exceptionnelle_jusqu_a = null where exceptionnelle_jusqu_a is not null;
+  if not exists (select 1 from private.sauvegarde_fenetre where tenue_par = p_id) then
+    return jsonb_build_object('etat', 'non_titulaire');   -- fenêtre déjà refermée, ou tenue par une autre exécution
+  end if;
+  update private.sauvegarde_fenetre set exceptionnelle_jusqu_a = null, tenue_par = null;
   r := private.sauvegarde_interrompre();
   return jsonb_build_object('etat', 'fermee', 'detail', r);
 end $f$;
@@ -158,7 +169,8 @@ begin
      or coalesce(f.exceptionnelle_jusqu_a > now(), false) then
     return 'fenêtre ouverte : rien à faire';
   end if;
-  update private.sauvegarde_fenetre set exceptionnelle_jusqu_a = null where exceptionnelle_jusqu_a is not null;
+  update private.sauvegarde_fenetre set exceptionnelle_jusqu_a = null, tenue_par = null
+   where exceptionnelle_jusqu_a is not null or tenue_par is not null;
   alter role sauvegarde nologin;
   for s in select a.pid from pg_catalog.pg_stat_activity a
             where a.usename = 'sauvegarde' and a.pid <> pg_catalog.pg_backend_pid() loop
@@ -221,7 +233,7 @@ begin
   return case p_action
     when 'demarrer' then private.sauvegarde_demarrer(p ->> 'type', p ->> 'run_id', (p ->> 'tentative')::integer, p ->> 'origine',
                                                     coalesce((p ->> 'forcer')::boolean, false),
-                                                    coalesce((p ->> 'duree_minutes')::integer, 45) * interval '1 minute')
+                                                    least(coalesce((p ->> 'duree_minutes')::integer, 45), 45) * interval '1 minute')
     when 'fermer' then private.sauvegarde_fermer((p ->> 'id')::bigint)
     when 'terminer' then private.sauvegarde_terminer((p ->> 'id')::bigint, p ->> 'statut', p ->> 'detail')
     else null end;

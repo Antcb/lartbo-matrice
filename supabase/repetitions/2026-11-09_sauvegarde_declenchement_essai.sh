@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Essais de la migration 2026-11-09_sauvegarde_declenchement.sql sur une BASE LOCALE JETABLE (PostgreSQL 16 nu, données fictives).
+# Essais de la migration 2026-11-09_v1.60.7_sauvegarde_declenchement.sql sur une BASE LOCALE JETABLE (PostgreSQL 16 nu, données fictives).
 # Jamais la production ni le projet de test : le script refuse toute adresse qui n'est pas 127.0.0.1 / localhost.
 # Usage : PGHOST=127.0.0.1 PGPORT=<port> PGUSER=postgres BACKUP_REPO=<clone de lartbo-matrice-backup> bash ce_fichier
 #   (BACKUP_REPO : branche dev/sauvegarde-declenchement, pour outils/fenetre_connexion.sql, manifeste.sql, fenetre_etat.sql)
@@ -8,7 +8,7 @@ set -uo pipefail
 case "${PGHOST:-}" in 127.0.0.1|localhost) ;; *) echo "REFUS : base locale uniquement (PGHOST=127.0.0.1)"; exit 2;; esac
 : "${BACKUP_REPO:?BACKUP_REPO manquant}"
 ICI="$(cd "$(dirname "$0")" && pwd)"; RACINE="$(cd "$ICI/../.." && pwd)"
-MIG="$RACINE/supabase/migrations/2026-11-09_sauvegarde_declenchement.sql"
+MIG="$RACINE/supabase/migrations/2026-11-09_v1.60.7_sauvegarde_declenchement.sql"
 BASE=essai_sauvegarde_declenchement
 export PGUSER="${PGUSER:-postgres}"
 dropdb --if-exists "$BASE"; createdb "$BASE"
@@ -100,9 +100,9 @@ r=$(appel terminer "{\"id\":$ID2,\"statut\":\"echec\",\"detail\":\"copie échou�
 verifie "échec : statut" "$(champ "$r" statut)" "echec"
 verifie "échec : connexion refermée" "$(Q "select rolcanlogin from pg_roles where rolname = 'sauvegarde'")" "f"
 
-# 8. Durée plafonnée à 1 h (appel direct, au-delà de ce que la fonction serveur accepte)
+# 8. Durée plafonnée à 45 min (appel direct et par la fonction publique, au-delà de ce que la fonction serveur accepte)
 Q "select private.sauvegarde_demarrer('complete', '1005', 1, 'workflow_dispatch', true, interval '5 hours')" > /dev/null
-verifie "durée plafonnée à 1 h" "$(Q "select exceptionnelle_jusqu_a <= now() + interval '1 hour' from private.sauvegarde_fenetre")" "t"
+verifie "durée plafonnée à 45 min (+ 15 min de secours = 1 h)" "$(Q "select exceptionnelle_jusqu_a <= now() + interval '45 minutes' from private.sauvegarde_fenetre")" "t"
 # 9. Fermeture de secours : le workflow ne rappelle jamais ; l'échéance passe ; l'interruption (15 min) referme
 Q "update private.sauvegarde_fenetre set exceptionnelle_jusqu_a = now() - interval '1 second'"
 verifie "secours : interruption après l'échéance" "$(Q "select private.sauvegarde_interrompre() like 'connexion fermée%'")" "t"
@@ -111,6 +111,29 @@ verifie "secours : connexion fermée" "$(Q "select rolcanlogin from pg_roles whe
 Q "update private.sauvegarde_executions set debut = now() - interval '4 hours' where run_id = '1005'"
 Q "select private.sauvegarde_interrompre()" > /dev/null
 verifie "verrou périmé : abandon" "$(Q "select statut from private.sauvegarde_executions where run_id = '1005'")" "abandon"
+
+# 10 bis. Fin rejouée d'une ANCIENNE exécution pendant une autre copie : la fenêtre de la copie en cours reste ouverte
+Q "update private.sauvegarde_executions set statut = 'echec', fin = now() where statut = 'en_cours'"
+r=$(appel demarrer '{"type":"complete","run_id":"1100","tentative":1,"origine":"workflow_dispatch","forcer":true}'); IA=$(champ "$r" id)
+appel terminer "{\"id\":$IA,\"statut\":\"echec\"}" > /dev/null
+r=$(appel demarrer '{"type":"complete","run_id":"1101","tentative":1,"origine":"workflow_dispatch","forcer":true}'); IB=$(champ "$r" id)
+r=$(appel terminer "{\"id\":$IA,\"statut\":\"echec\"}")
+verifie "fin rejouée d'une ancienne exécution : non titulaire" "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["fermeture"]["etat"])' "$r")" "non_titulaire"
+verifie "fin rejouée : connexion de la copie en cours gardée" "$(Q "select rolcanlogin from pg_roles where rolname = 'sauvegarde'")" "t"
+# même exécution rappelée APRÈS sa fermeture : aucune réouverture
+appel fermer "{\"id\":$IB}" > /dev/null
+r=$(appel demarrer '{"type":"complete","run_id":"1101","tentative":1,"origine":"workflow_dispatch","forcer":true}')
+verifie "même exécution rappelée après fermeture : même ligne" "$(champ "$r" id)" "$IB"
+verifie "même exécution rappelée après fermeture : connexion toujours fermée" "$(Q "select rolcanlogin from pg_roles where rolname = 'sauvegarde'")" "f"
+appel terminer "{\"id\":$IB,\"statut\":\"echec\"}" > /dev/null
+# limite : 6 démarrages par type et par jour
+n=$(Q "select count(*) from private.sauvegarde_executions where type = 'complete' and jour = (now() at time zone 'UTC')::date")
+for i in $(seq "$n" 5); do r=$(appel demarrer "{\"type\":\"complete\",\"run_id\":\"12$i\",\"tentative\":1,\"origine\":\"workflow_dispatch\",\"forcer\":true}"); appel terminer "{\"id\":$(champ "$r" id),\"statut\":\"echec\"}" > /dev/null; done
+r=$(appel demarrer '{"type":"complete","run_id":"1199","tentative":1,"origine":"workflow_dispatch","forcer":true}')
+verifie "7e démarrage du jour : limite" "$(champ "$r" etat)" "limite"
+verifie "limite : connexion fermée" "$(Q "select rolcanlogin from pg_roles where rolname = 'sauvegarde'")" "f"
+# les essais suivants reprennent sur des exécutions d'un autre jour (la limite est quotidienne)
+Q "update private.sauvegarde_executions set jour = jour - 2, debut = debut - interval '2 days', fin = fin - interval '2 days'"
 
 # 11. Avant l'activation : la fenêtre FIXE reste maîtresse (fin d'une copie pendant la fenêtre fixe = connexion gardée)
 Q "update private.sauvegarde_fenetre set debut = ((now() at time zone 'UTC') - interval '1 hour')::time, fin = ((now() at time zone 'UTC') + interval '1 hour')::time"

@@ -30,9 +30,9 @@ t('démarrage : valeurs valides, durée 45 min par défaut, forcer seulement si 
   assert.deepEqual(d, { action: 'demarrer', p: { type: 'complete', run_id: '42581699238', tentative: 1, origine: 'schedule', forcer: false, duree_minutes: 45 } });
   assert.equal(lireDemande({ action: 'demarrer', type: 'json', run_id: '1', tentative: 2, origine: 'workflow_dispatch', forcer: 'true' }).p.forcer, false);
 });
-t('démarrage : durée au-delà d’1 h refusée', () => {
-  assert.equal(lireDemande({ action: 'demarrer', type: 'complete', run_id: '1', tentative: 1, origine: 'schedule', duree_minutes: 61 }), 'durée invalide (5 à 60 min)');
-  assert.equal(lireDemande({ action: 'demarrer', type: 'complete', run_id: '1', tentative: 1, origine: 'schedule', duree_minutes: 60 }).p.duree_minutes, 60);
+t('démarrage : durée au-delà de 45 min refusée (45 min + 15 min de fermeture de secours = 1 h au plus)', () => {
+  assert.equal(lireDemande({ action: 'demarrer', type: 'complete', run_id: '1', tentative: 1, origine: 'schedule', duree_minutes: 46 }), 'durée invalide (5 à 45 min)');
+  assert.equal(lireDemande({ action: 'demarrer', type: 'complete', run_id: '1', tentative: 1, origine: 'schedule', duree_minutes: 45 }).p.duree_minutes, 45);
 });
 t('démarrage : type, exécution, tentative, origine contrôlés', () => {
   const base = { action: 'demarrer', type: 'complete', run_id: '1', tentative: 1, origine: 'schedule' };
@@ -60,6 +60,15 @@ t('fonction serveur : secret vérifié AVANT toute action, jamais renvoyé ni é
   assert.doesNotMatch(src, /console\.[a-z]+\([^)]*(secret|attendu|\bb\b)/, 'aucun secret ni corps de demande dans le journal');
   assert.doesNotMatch(src, /json\(\{[^}]*attendu/, 'aucun secret dans une réponse');
 });
+t('fonction serveur : réponses { ok:false, error } (§7.9), 503 si le coffre est illisible, aucun message brut de la base', () => {
+  const src = lire('supabase/functions/sauvegarde-fenetre/index.ts');
+  assert.match(src, /const refus = \(error: string, status: number\) => json\(\{ ok: false, error \}, status\)/);
+  assert.match(src, /if \(errCoffre\) \{[^}]*return refus\('[^']+', 503\)/);
+  assert.ok(src.indexOf('if (errCoffre)') < src.indexOf('secretOk('), 'coffre illisible : 503 (à réessayer), pas 403');
+  assert.doesNotMatch(src, /refus\([^)]*(error|err)\.message/, 'message brut de la base jamais renvoyé');
+  assert.doesNotMatch(src, /json\(\{ error/, 'toutes les erreurs au format { ok:false, error }');
+  assert.match(src, /json\(\{ ok: true, \.\.\.\(data/);
+});
 
 // ── 2. Schéma privé : chaque table créée par une migration est classée ───────────────────────────────────────────────────────
 // EXCLUSIONS DÉCIDÉES (même liste : dépôt lartbo-matrice-backup, outils/prive_classement.sql) : jamais copiées, présence seulement
@@ -85,11 +94,17 @@ t('séquence d’identité de la table des exécutions lisible (sinon pg_dump é
 });
 
 // ── 3. Migration ────────────────────────────────────────────────────────────────────────────────────────────────────────────
-const mig = lire('supabase/migrations/2026-11-09_sauvegarde_declenchement.sql');
+const mig = lire('supabase/migrations/2026-11-09_v1.60.7_sauvegarde_declenchement.sql');
 t('migration : connexion ouverte 1 h au plus, secours par l’interruption, verrou unique par type', () => {
-  assert.match(mig, /least\(greatest\(coalesce\(p_duree, interval '45 minutes'\), interval '5 minutes'\), interval '1 hour'\)/);
+  assert.match(mig, /least\(greatest\(coalesce\(p_duree, interval '45 minutes'\), interval '5 minutes'\), interval '45 minutes'\)/);
+  assert.match(mig, /least\(coalesce\(\(p ->> 'duree_minutes'\)::integer, 45\), 45\)/);
   assert.match(mig, /create unique index if not exists sauvegarde_executions_une_en_cours on private\.sauvegarde_executions \(type\) where statut = 'en_cours'/);
   assert.match(mig, /coalesce\(f\.exceptionnelle_jusqu_a > now\(\), false\)/, 'l’interruption referme dès l’échéance passée');
+});
+t('migration : fermeture par la seule exécution qui tient la fenêtre ; 6 démarrages par jour au plus', () => {
+  assert.match(mig, /set exceptionnelle_jusqu_a = v_jusqu, tenue_par = v_id;/);
+  assert.match(mig, /if not exists \(select 1 from private\.sauvegarde_fenetre where tenue_par = p_id\) then\s+return jsonb_build_object\('etat', 'non_titulaire'\)/);
+  assert.match(mig, /x\.jour = v_jour\) >= 6 then\s+return jsonb_build_object\('etat', 'limite'/);
 });
 t('migration : fonctions fermées au navigateur, ouvertes au seul rôle serveur', () => {
   assert.match(mig, /revoke all on function public\.sauvegarde_declenchement\(text, jsonb\) from public, anon, authenticated;/);
