@@ -158,9 +158,16 @@ Q "update private.sauvegarde_fenetre set debut = ((now() at time zone 'UTC') + i
 Q "alter role sauvegarde login"
 verifie "activation refusée si la connexion est encore ouverte hors fenêtre" "$(refus | grep -c 'connexion du rôle sauvegarde est encore ouverte')" "1"
 Q "select private.sauvegarde_interrompre()" > /dev/null
-Q "update private.sauvegarde_executions set fenetre_jusqu_a = fin + interval '1 minute' where type = 'complete' and statut = 'succes'"
+Q "update private.sauvegarde_executions set fermeture_titulaire = null where type = 'complete' and statut = 'succes'"
 verifie "activation refusée sans fermeture enregistrée" "$(refus | grep -c 'fermeture a été enregistrée')" "1"
-Q "update private.sauvegarde_executions set fenetre_jusqu_a = fin where type = 'complete' and statut = 'succes'"
+Q "update private.sauvegarde_executions set fermeture_titulaire = fin where type = 'complete' and statut = 'succes'"
+# opération lancée SANS arrêt sur erreur, pendant la fenêtre fixe (garde déclenchée) : une seule transaction → rien n'est changé
+Q "update private.sauvegarde_fenetre set debut = ((now() at time zone 'UTC') - interval '1 hour')::time, fin = ((now() at time zone 'UTC') + interval '1 hour')::time"
+psql -d "$BASE" -X -q -f "$RACINE/supabase/operations/2026-11-09_sauvegarde_activation.sql" > /dev/null 2>&1
+verifie "opération sans arrêt sur erreur, garde déclenchée : rien n'est changé" "$(Q "select debut <> fin from private.sauvegarde_fenetre")|$(Q "select count(*) from cron.job where jobname in ('sauvegarde-ouverture','sauvegarde-fermeture')")" "t|2"
+psql -d "$BASE" -X -q -c "$(cat "$RACINE/supabase/operations/2026-11-09_sauvegarde_activation.sql")" > /dev/null 2>&1
+verifie "opération envoyée en une requête, garde déclenchée : rien n'est changé" "$(Q "select debut <> fin from private.sauvegarde_fenetre")|$(Q "select count(*) from cron.job where jobname in ('sauvegarde-ouverture','sauvegarde-fermeture')")" "t|2"
+Q "update private.sauvegarde_fenetre set debut = ((now() at time zone 'UTC') + interval '6 hours')::time, fin = ((now() at time zone 'UTC') + interval '7 hours')::time"
 verifie "fenêtre fixe intacte après les refus" "$(Q "select debut <> fin from private.sauvegarde_fenetre")|$(Q "select count(*) from cron.job where jobname in ('sauvegarde-ouverture','sauvegarde-fermeture')")" "t|2"
 F "$ACT"
 verifie "activation : tâches restantes" "$(Q "select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'sauvegarde-%'")" "sauvegarde-controle,sauvegarde-interruption"
@@ -183,6 +190,8 @@ r=$(appel demarrer '{"type":"complete","run_id":"3004","tentative":1,"origine":"
 verifie "créneau suivant du même jour UTC : déjà faite (aucune copie en double)" "$(champ "$r" etat)" "deja_faite"
 
 # 13. Contrôle d'absence : aucune réussite aujourd'hui → une notification par type (sans doublon) ; réussite → aucune
+verifie "surveillance armée par la migration, délai de grâce de 24 h" "$(Q "select private.sauvegarde_controler() like 'délai de grâce jusqu''à %'")" "t"
+Q "update private.sauvegarde_surveillance set depuis = now() - interval '2 days'"
 Q "update private.sauvegarde_executions set jour = jour - 1, debut = debut - interval '1 day', fin = fin - interval '1 day'"
 verifie "contrôle : 2 alertes (complète et JSON)" "$(Q "select private.sauvegarde_controler()")" "2 alerte(s)"
 verifie "contrôle rejoué : aucun doublon" "$(Q "select private.sauvegarde_controler()")" "0 alerte(s)"
@@ -197,11 +206,49 @@ verifie "tâche pg_cron du contrôle : commande et horaire" "$(Q "select schedul
 verifie "aucun lancement GitHub depuis 3 jours : alerte complète ET JSON" "$(Q "select private.sauvegarde_controler()")" "2 alerte(s)"
 verifie "le contrôle ne lit que la base (aucun appel extérieur)" "$(Q "select prosrc !~* '(https?://|net\.http|http_(get|post)|pg_net)' from pg_proc where proname = 'sauvegarde_controler'")" "t"
 
-# 14. Retour arrière (fonctions retirées, journal gardé), puis migration rejouée
+# 13 ter. Coupure de l'alerte (première étape de tout retour arrière), puis réarmement par la migration
+F "$RACINE/supabase/retours-arriere/2026-11-09_sauvegarde_alerte_coupure.sql"
+verifie "coupure : surveillance inactive, tâche retirée" "$(Q "select active from private.sauvegarde_surveillance")|$(Q "select count(*) from cron.job where jobname = 'sauvegarde-controle'")" "f|0"
+verifie "coupure : le contrôle ne notifie plus" "$(Q "select private.sauvegarde_controler()")" "surveillance coupée"
+F "$MIG"
+verifie "migration rejouée : surveillance réarmée, nouveau délai de grâce, tâche replanifiée" "$(Q "select active and depuis > now() - interval '1 minute' from private.sauvegarde_surveillance")|$(Q "select count(*) from cron.job where jobname = 'sauvegarde-controle'")" "t|1"
+d1=$(Q "select depuis from private.sauvegarde_surveillance"); sleep 1; F "$MIG"
+verifie "migration rejouée pendant que la surveillance est active : date de mise en place inchangée" "$(Q "select depuis from private.sauvegarde_surveillance")" "$d1"
+
+# 13 quater. Après une restauration : nouvelles clés (dépôt de sauvegarde, outils/regenerer_cles.sql), jamais affichées
+av=$(Q "select string_agg(key || ':' || md5(value), ',' order by key) from private.import_secrets where key in ('mailbox_sign_key','sauvegarde_declenchement_secret')")
+sortie_cles=$(psql -d "$BASE" -X -q -At -F '|' -v ON_ERROR_STOP=1 -f "$BACKUP_REPO/outils/regenerer_cles.sql")
+ap=$(Q "select string_agg(key || ':' || md5(value), ',' order by key) from private.import_secrets where key in ('mailbox_sign_key','sauvegarde_declenchement_secret')")
+verifie "nouvelles clés : les deux valeurs ont changé" "$(python3 -c 'import sys; a=dict(x.split(":") for x in sys.argv[1].split(",")); b=dict(x.split(":") for x in sys.argv[2].split(",")); print(len(b) == 2 and all(a[k] != b[k] for k in b))' "$av" "$ap")" "True"
+verifie "nouvelles clés : sortie = nom | 64 | empreinte de 16 caractères, rien d'autre" "$(echo "$sortie_cles" | grep -cE '^(mailbox_sign_key|sauvegarde_declenchement_secret)\|64\|[0-9a-f]{16}$')|$(echo "$sortie_cles" | grep -c '')" "2|2"
+verifie "nouvelles clés : aucune valeur affichée" "$(for k in mailbox_sign_key sauvegarde_declenchement_secret; do v=$(Q "select value from private.import_secrets where key = '$k'"); echo "$sortie_cles" | grep -c "$v"; done | paste -sd+ | bc)" "0"
+verifie "nouvelles clés : mail_sync_hook non créée sans messagerie" "$(Q "select count(*) from private.import_secrets where key = 'mail_sync_hook'")" "0"
+
+# 14. Retour arrière (alerte coupée, fonctions retirées, journal gardé), puis migration rejouée
 F "$RACINE/supabase/retours-arriere/2026-11-09_sauvegarde_declenchement_retour_arriere.sql"
 verifie "retour arrière : fonctions retirées, journal gardé" "$(Q "select to_regprocedure('public.sauvegarde_declenchement(text,jsonb)') is null and to_regclass('private.sauvegarde_executions') is not null")" "t"
 F "$MIG"
 verifie "migration rejouée après retour arrière" "$(Q "select to_regprocedure('public.sauvegarde_declenchement(text,jsonb)') is not null")" "t"
+
+# 15. Base NEUVE : surveillance armée dès la migration, sans AUCUNE exécution ; échec de la première sauvegarde signalé tout de suite
+B2="${BASE}_neuve"; dropdb --if-exists "$B2"; createdb "$B2"
+Q2(){ psql -d "$B2" -X -q -At -v ON_ERROR_STOP=1 -c "$1"; }
+for f in "$ICI/2026-11-09_sauvegarde_declenchement_base_locale.sql" "$BACKUP_REPO/outils/fenetre_connexion.sql" "$MIG"; do psql -d "$B2" -X -q -v ON_ERROR_STOP=1 -f "$f" > /dev/null; done
+verifie "base neuve : surveillance armée par la migration (active, tâche pg_cron)" "$(Q2 "select active from private.sauvegarde_surveillance")|$(Q2 "select count(*) from cron.job where jobname = 'sauvegarde-controle'")" "t|1"
+Q2 "update private.sauvegarde_surveillance set depuis = now() - interval '25 hours'"
+verifie "journal VIDE (aucune exécution jamais enregistrée) après le délai : alerte complète ET JSON" "$(Q2 "select private.sauvegarde_controler()")" "2 alerte(s)"
+verifie "alerte : mise en place indiquée" "$(Q2 "select count(*) from public.notifications where body like '%aucune enregistrée depuis la mise en place%'")" "2"
+r=$(Q2 "set role service_role; select public.sauvegarde_declenchement('demarrer', '{\"type\":\"complete\",\"run_id\":\"1\",\"tentative\":1,\"origine\":\"schedule\"}'::jsonb)")
+Q2 "set role service_role; select public.sauvegarde_declenchement('terminer', '{\"id\":$(champ "$r" id),\"statut\":\"echec\",\"detail\":\"copie : failure\"}'::jsonb)" > /dev/null
+verifie "première sauvegarde en échec : notifiée tout de suite" "$(Q2 "select title from public.notifications where dedupe_key = 'sauvegarde:echec:$(champ "$r" id)'")" "Sauvegarde complète : échec"
+verifie "première sauvegarde en échec : alerte du jour toujours due (pas de réussite)" "$(Q2 "delete from public.notifications; select private.sauvegarde_controler()" | tail -1)" "2 alerte(s)"
+# fermeture par le SECOURS seulement : ne compte pas comme fermeture de la copie (garde de l'activation)
+r=$(Q2 "set role service_role; select public.sauvegarde_declenchement('demarrer', '{\"type\":\"complete\",\"run_id\":\"2\",\"tentative\":1,\"origine\":\"workflow_dispatch\",\"forcer\":true}'::jsonb)")
+Q2 "update private.sauvegarde_fenetre set exceptionnelle_jusqu_a = now() - interval '1 second'"; Q2 "select private.sauvegarde_interrompre()" > /dev/null
+Q2 "set role service_role; select public.sauvegarde_declenchement('terminer', '{\"id\":$(champ "$r" id),\"statut\":\"succes\"}'::jsonb)" > /dev/null
+verifie "fermée par le secours seulement : aucune fermeture titulaire enregistrée" "$(Q2 "select fermeture_titulaire is null from private.sauvegarde_executions where id = $(champ "$r" id)")" "t"
+verifie "activation refusée (fermeture par le secours seulement)" "$(psql -d "$B2" -X -q -v ON_ERROR_STOP=1 -f "$RACINE/supabase/operations/2026-11-09_sauvegarde_activation.sql" 2>&1 | grep -c 'fermeture a été enregistrée par la copie elle-même')" "1"
+dropdb "$B2"
 
 kill $BG 2>/dev/null; dropdb "$BASE"
 echo "BILAN : $ok essais réussis, $ko échec"

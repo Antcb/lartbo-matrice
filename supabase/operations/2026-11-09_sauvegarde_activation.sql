@@ -6,14 +6,17 @@
 -- la tâche « sauvegarde-interruption » (toutes les 15 min, inchangée).
 -- Conditions (décision d'Anthony : « ne retire l'ancienne fenêtre fixe qu'après réussite réelle du nouveau circuit et vérification
 -- de sa fermeture ») — sinon refus, rien n'est changé :
---   1. une copie complète « succes » dont la FERMETURE a été enregistrée au plus tard à sa fin (fenetre_jusqu_a <= fin) ;
+--   1. une copie complète « succes » dont la fenêtre a été refermée PAR ELLE-MÊME, titulaire de la fenêtre, au plus tard à sa fin
+--      (fermeture_titulaire <= fin) — une fermeture par le secours ou par une autre exécution ne compte pas ;
 --   2. aucune copie complète en cours ;
 --   3. lancée HORS de la fenêtre fixe, et la connexion du rôle « sauvegarde » est effectivement FERMÉE (rolcanlogin = false) :
 --      preuve que la fermeture fonctionne sans l'aide de la fenêtre fixe.
+-- UNE SEULE TRANSACTION : un refus annule tout, même lancé par « psql -f » sans arrêt sur erreur ou envoyé en une requête.
+begin;
 do $$ declare f record; t time := (now() at time zone 'UTC')::time; begin
   if not exists (select 1 from private.sauvegarde_executions where type = 'complete' and statut = 'succes'
-                   and fenetre_jusqu_a is not null and fin is not null and fenetre_jusqu_a <= fin) then
-    raise exception 'Activation refusée : aucune copie complète réussie dont la fermeture a été enregistrée (private.sauvegarde_executions)';
+                   and fermeture_titulaire is not null and fin is not null and fermeture_titulaire <= fin) then
+    raise exception 'Activation refusée : aucune copie complète réussie dont la fermeture a été enregistrée par la copie elle-même (private.sauvegarde_executions)';
   end if;
   if exists (select 1 from private.sauvegarde_executions where type = 'complete' and statut = 'en_cours') then
     raise exception 'Activation refusée : une copie complète est en cours';
@@ -33,6 +36,7 @@ do $$ begin
   if exists (select 1 from cron.job where jobname = 'sauvegarde-fermeture') then perform cron.unschedule('sauvegarde-fermeture'); end if;
 end $$;
 select private.sauvegarde_interrompre() as interruption;   -- referme tout de suite si aucune copie n'est en cours
+commit;
 -- contrôle
 select (select debut = fin from private.sauvegarde_fenetre) as fenetre_fixe_retiree,                          -- attendu : true
        (select string_agg(jobname, ', ' order by jobname) from cron.job where jobname like 'sauvegarde-%') as taches,  -- attendu : sauvegarde-controle, sauvegarde-interruption

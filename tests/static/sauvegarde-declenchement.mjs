@@ -120,6 +120,30 @@ t('migration : la fenêtre fixe n’est retirée que par l’opération d’acti
   const act = lire('supabase/operations/2026-11-09_sauvegarde_activation.sql');
   assert.match(act, /Activation refusée : aucune copie complète réussie/);
 });
+t('surveillance armée dès la migration (consigne du 09/11 11:05) : aucune attente d’une première exécution', () => {
+  assert.match(mig, /create table if not exists private\.sauvegarde_surveillance/);
+  assert.match(mig, /insert into private\.sauvegarde_surveillance \(id\) values \(true\)/);
+  assert.doesNotMatch(mig, /continue when not exists \(select 1 from private\.sauvegarde_executions where type = ty\)/, 'plus d’armement par la première exécution');
+  assert.match(mig, /if now\(\) < sv\.depuis \+ interval '24 hours' then/, 'seul un délai de grâce borné (24 h) après la mise en place');
+  assert.match(mig, /if p_statut = 'echec' then[\s\S]*?'sauvegarde:echec:' \|\| p_id/, 'tout échec notifié tout de suite');
+});
+t('retour arrière : l’alerte est toujours coupée en premier', () => {
+  const c = lire('supabase/retours-arriere/2026-11-09_sauvegarde_alerte_coupure.sql');
+  assert.match(c, /update private\.sauvegarde_surveillance set active = false;/);
+  assert.match(c, /cron\.unschedule\('sauvegarde-controle'\)/);
+  const r = lire('supabase/retours-arriere/2026-11-09_sauvegarde_declenchement_retour_arriere.sql');
+  assert.ok(r.indexOf('set active = false') < r.indexOf('drop function'), 'retour arrière complet : alerte coupée avant le reste');
+  assert.match(lire('supabase/operations/2026-11-09_sauvegarde_installation.md'), /2026-11-09_sauvegarde_alerte_coupure\.sql/);
+});
+t('retrait de la fenêtre fixe : une seule transaction, fermeture faite par la copie elle-même', () => {
+  const act = lire('supabase/operations/2026-11-09_sauvegarde_activation.sql');
+  const debut = act.indexOf('\nbegin;'), fin = act.indexOf('\ncommit;');
+  assert.ok(debut > 0 && fin > debut, 'begin … commit');
+  for (const x of ['raise exception', "update private.sauvegarde_fenetre set debut = '00:00'", "cron.unschedule('sauvegarde-ouverture')"])
+    assert.ok(act.indexOf(x) > debut && act.indexOf(x) < fin, `dans la transaction : ${x}`);
+  assert.match(act, /fermeture_titulaire is not null and fin is not null and fermeture_titulaire <= fin/);
+  assert.match(mig, /set fermeture_titulaire = now\(\) where id = p_id;/);
+});
 t('présence des secrets : nom et empreinte tronquée, jamais la valeur', () => {
   const f = mig.match(/function private\.sauvegarde_secrets_presence\(\)[\s\S]*?\$\$;/)[0];
   assert.match(f, /'cle', s\.key/);

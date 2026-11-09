@@ -21,9 +21,13 @@
 --     jamais. Au plus 6 démarrages par type et par jour (UTC) : au-delà, refus « limite ».
 --  3. private.sauvegarde_interrompre : réécrite à l'identique (dépôt de sauvegarde, outils/fenetre_connexion.sql) + libération des
 --     verrous périmés (exécution « en cours » depuis plus de 3 h ⇒ « abandon »).
---  4. private.sauvegarde_controler + tâche « sauvegarde-controle » (13:07 UTC) : si aucune sauvegarde (complète ou JSON) n'a
---     réussi depuis 00:00 UTC, notification dans l'application (table notifications, comme les rappels) — reprise dans le récap
---     mail du matin (script Google dailyJob). Rien tant qu'aucune exécution n'a été enregistrée (mise en service progressive).
+--  4. private.sauvegarde_controler + tâche pg_cron « sauvegarde-controle » (13:07 UTC), sans aucun lien avec GitHub : si aucune
+--     sauvegarde (complète, puis JSON) n'a réussi depuis 00:00 UTC, notification dans l'application (table notifications, comme les
+--     rappels) — reprise dans le récap mail du matin (script Google dailyJob). Surveillance ARMÉE DÈS LA MIGRATION (consigne
+--     d'Anthony du 09/11 11:05) : private.sauvegarde_surveillance (depuis = mise en place) ; seul un délai de grâce de 24 h après la
+--     mise en place évite une alerte le jour même ; ensuite, pas de réussite enregistrée = alerte, même si aucune exécution n'a jamais
+--     eu lieu. Tout ÉCHEC enregistré est en plus notifié tout de suite (première sauvegarde comprise). Coupure de l'alerte (retour
+--     arrière) : supabase/retours-arriere/2026-11-09_sauvegarde_alerte_coupure.sql.
 --  5. Tables du schéma privé : chaque table est CLASSÉE (règle durable, contrôlée par tests/static/sauvegarde-declenchement.mjs) :
 --       - copiée par la sauvegarde complète : lecture accordée au rôle « sauvegarde » (mailbox_owners, notion_raw, notion_cursor,
 --         sauvegarde_executions) ;
@@ -66,6 +70,21 @@ create unique index if not exists sauvegarde_executions_une_en_cours on private.
 create unique index if not exists sauvegarde_executions_run on private.sauvegarde_executions (type, run_id, tentative);
 -- exécution qui tient la fenêtre exceptionnelle ouverte (null : aucune, ou ouverture manuelle par sauvegarde_ouvrir)
 alter table private.sauvegarde_fenetre add column if not exists tenue_par bigint;
+-- heure de la fermeture faite par l'exécution TITULAIRE de la fenêtre (null : jamais fermée par elle — secours, autre exécution)
+alter table private.sauvegarde_executions add column if not exists fermeture_titulaire timestamptz;
+-- surveillance (alerte d'absence) : armée dès la migration ; « active = false » seulement par la coupure (retour arrière).
+-- Rejouer la migration après une coupure la réarme avec une nouvelle date de mise en place (nouveau délai de grâce) ; un nouveau
+-- passage pendant qu'elle est active ne change rien.
+create table if not exists private.sauvegarde_surveillance (
+  id boolean primary key default true check (id),
+  depuis timestamptz not null default now(),
+  active boolean not null default true
+);
+insert into private.sauvegarde_surveillance (id) values (true)
+  on conflict (id) do update set active = true,
+    depuis = case when private.sauvegarde_surveillance.active then private.sauvegarde_surveillance.depuis else now() end;
+revoke all on private.sauvegarde_surveillance from public, anon, authenticated, service_role;
+grant select on private.sauvegarde_surveillance to sauvegarde;   -- copiée (aucun secret)
 revoke all on private.sauvegarde_executions from public, anon, authenticated, service_role;
 grant select on private.sauvegarde_executions to sauvegarde;   -- copiée par la sauvegarde complète (aucun secret)
 grant select on sequence private.sauvegarde_executions_id_seq to sauvegarde;   -- pg_dump lit aussi la séquence d'identité
@@ -134,6 +153,7 @@ begin
     return jsonb_build_object('etat', 'non_titulaire');   -- fenêtre déjà refermée, ou tenue par une autre exécution
   end if;
   update private.sauvegarde_fenetre set exceptionnelle_jusqu_a = null, tenue_par = null;
+  update private.sauvegarde_executions set fermeture_titulaire = now() where id = p_id;
   r := private.sauvegarde_interrompre();
   return jsonb_build_object('etat', 'fermee', 'detail', r);
 end $f$;
@@ -148,6 +168,14 @@ begin
   if not found then raise exception 'exécution inconnue'; end if;
   if e.statut = 'en_cours' then
     update private.sauvegarde_executions set statut = p_statut, fin = now(), detail = left(p_detail, 300) where id = p_id;
+    if p_statut = 'echec' then   -- tout échec est signalé TOUT DE SUITE (première sauvegarde comprise), une fois par exécution
+      insert into public.notifications (kind, title, body, dedupe_key)
+      values ('sauvegarde', case e.type when 'complete' then 'Sauvegarde complète' else 'Sauvegarde quotidienne (JSON)' end || ' : échec',
+              concat_ws(' · ', 'démarrée le ' || to_char(e.debut at time zone 'Europe/Paris', 'DD/MM/YYYY HH24:MI'),
+                        nullif(left(p_detail, 200), ''), 'GitHub › lartbo-matrice-backup › Actions'),
+              'sauvegarde:echec:' || p_id)
+      on conflict (dedupe_key) do nothing;
+    end if;
   end if;
   f := private.sauvegarde_fermer(p_id);
   return jsonb_build_object('etat', 'terminee', 'id', p_id,
@@ -197,10 +225,15 @@ end $f$;
 create or replace function private.sauvegarde_controler() returns text
 language plpgsql security definer set search_path = '' as $f$
 declare ty text; lib text; d date := (now() at time zone 'UTC')::date; derniere timestamptz; dernier record; n integer := 0;
+        sv record;
 begin
+  select * into sv from private.sauvegarde_surveillance;
+  if not found or not sv.active then return 'surveillance coupée'; end if;
+  -- délai de grâce de 24 h après la mise en place (migration), pour ne pas alerter le jour même ; ensuite toujours armée
+  if now() < sv.depuis + interval '24 hours' then
+    return 'délai de grâce jusqu''à ' || to_char((sv.depuis + interval '24 hours') at time zone 'UTC', 'DD/MM HH24:MI') || ' UTC';
+  end if;
   foreach ty in array array['complete', 'json'] loop
-    -- mise en service progressive : aucun contrôle tant que ce type n'a jamais été enregistré
-    continue when not exists (select 1 from private.sauvegarde_executions where type = ty);
     continue when exists (select 1 from private.sauvegarde_executions where type = ty and statut = 'succes' and jour = d);
     lib := case ty when 'complete' then 'Sauvegarde complète' else 'Sauvegarde quotidienne (JSON)' end;
     select max(fin) into derniere from private.sauvegarde_executions where type = ty and statut = 'succes';
@@ -209,7 +242,8 @@ begin
     values ('sauvegarde', lib || ' : aucune réussite aujourd''hui',
             concat_ws(' · ',
               'dernière réussite : ' || coalesce(to_char(derniere at time zone 'Europe/Paris', 'DD/MM/YYYY HH24:MI'), 'aucune'),
-              'dernière tentative : ' || to_char(dernier.debut at time zone 'Europe/Paris', 'DD/MM/YYYY HH24:MI') || ' (' || dernier.statut || ')',
+              'dernière tentative : ' || coalesce(to_char(dernier.debut at time zone 'Europe/Paris', 'DD/MM/YYYY HH24:MI') || ' (' || dernier.statut || ')',
+                                                 'aucune enregistrée depuis la mise en place du ' || to_char(sv.depuis at time zone 'Europe/Paris', 'DD/MM/YYYY')),
               'GitHub › lartbo-matrice-backup › Actions › Run workflow'),
             'sauvegarde:' || ty || ':' || d)
     on conflict (dedupe_key) do nothing;
@@ -219,9 +253,12 @@ begin
 end $f$;
 
 -- ── 5. Schéma privé : classement des tables et présence des secrets ────────────────────────────────────────────────────────
--- Copiées par la sauvegarde complète (aucun secret ; le rôle a BYPASSRLS : seule la lecture manque) :
+-- Copiées par la sauvegarde complète (aucun secret ; le rôle a BYPASSRLS : seule la lecture manque). sync_urls (messagerie v1.61,
+-- à venir) : adresse de la fonction serveur mail-sync seulement, imposée au format https://<projet>.supabase.co/functions/v1/mail-sync
+-- (aucun jeton possible ; le secret d'appel est dans import_secrets, « mail_sync_hook », présence seulement) → copiée. Si la messagerie
+-- est installée APRÈS cette migration, sa migration doit porter la même ligne (sinon : alerte « Schéma privé » à la copie suivante).
 do $$ declare t text; begin
-  foreach t in array array['mailbox_owners', 'notion_raw', 'notion_cursor'] loop
+  foreach t in array array['mailbox_owners', 'notion_raw', 'notion_cursor', 'sync_urls'] loop
     if to_regclass('private.' || t) is not null then execute format('grant select on private.%I to sauvegarde', t); end if;
   end loop;
 end $$;
@@ -258,6 +295,7 @@ revoke all on function private.sauvegarde_terminer(bigint, text, text) from publ
 revoke all on function private.sauvegarde_interrompre() from public, anon, authenticated, service_role;
 revoke all on function private.sauvegarde_ouvrir(interval) from public, anon, authenticated, service_role;
 revoke all on function private.sauvegarde_controler() from public, anon, authenticated, service_role;
+-- (sauvegarde_surveillance : écriture réservée à la migration et à la coupure, aucun accès hors du propriétaire et du rôle de sauvegarde)
 revoke all on function private.sauvegarde_secrets_presence() from public, anon, authenticated, service_role;
 grant execute on function private.sauvegarde_secrets_presence() to sauvegarde;
 revoke all on function public.sauvegarde_declenchement(text, jsonb) from public, anon, authenticated;
