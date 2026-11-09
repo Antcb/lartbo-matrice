@@ -254,9 +254,9 @@ end $f$;
 
 -- ── 5. Schéma privé : classement des tables et présence des secrets ────────────────────────────────────────────────────────
 -- Copiées par la sauvegarde complète (aucun secret ; le rôle a BYPASSRLS : seule la lecture manque). sync_urls (messagerie v1.61,
--- à venir) : adresse de la fonction serveur mail-sync seulement, imposée au format https://<projet>.supabase.co/functions/v1/mail-sync
--- (aucun jeton possible ; le secret d'appel est dans import_secrets, « mail_sync_hook », présence seulement) → copiée. Si la messagerie
--- est installée APRÈS cette migration, sa migration doit porter la même ligne (sinon : alerte « Schéma privé » à la copie suivante).
+-- à venir) : prévue pour la seule adresse de la fonction serveur mail-sync ; son format n'est vérifié qu'À L'UTILISATION
+-- (mail_sync_tick), aucune contrainte sur la table — le lot messagerie doit ajouter une contrainte de format ET le droit de lecture du
+-- rôle sauvegarde dans sa migration. Le secret d'appel (« mail_sync_hook ») reste dans import_secrets : présence seulement.
 do $$ declare t text; begin
   foreach t in array array['mailbox_owners', 'notion_raw', 'notion_cursor', 'sync_urls'] loop
     if to_regclass('private.' || t) is not null then execute format('grant select on private.%I to sauvegarde', t); end if;

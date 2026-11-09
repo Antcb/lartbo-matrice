@@ -217,7 +217,12 @@ verifie "migration rejouée pendant que la surveillance est active : date de mis
 
 # 13 quater. Après une restauration : nouvelles clés (dépôt de sauvegarde, outils/regenerer_cles.sql), jamais affichées
 av=$(Q "select string_agg(key || ':' || md5(value), ',' order by key) from private.import_secrets where key in ('mailbox_sign_key','sauvegarde_declenchement_secret')")
-sortie_cles=$(psql -d "$BASE" -X -q -At -F '|' -v ON_ERROR_STOP=1 -f "$BACKUP_REPO/outils/regenerer_cles.sql")
+psql -d "$BASE" -X -q -At -v ON_ERROR_STOP=1 -f "$BACKUP_REPO/outils/regenerer_cles.sql" > /tmp/essai-cles-refus.txt 2>&1
+verifie "nouvelles clés SANS « set operation.restauration » : refus, rien de changé" "$(grep -c 'Refus : nouvelles clés seulement sur une base RESTAURÉE' /tmp/essai-cles-refus.txt)|$(Q "select string_agg(key || ':' || md5(value), ',' order by key) from private.import_secrets where key in ('mailbox_sign_key','sauvegarde_declenchement_secret')")" "1|$av"
+psql -d "$BASE" -X -q -At -f "$BACKUP_REPO/outils/regenerer_cles.sql" > /dev/null 2>&1   # sans arrêt sur erreur : la transaction annule tout
+verifie "nouvelles clés, refus sans arrêt sur erreur : rien de changé" "$(Q "select string_agg(key || ':' || md5(value), ',' order by key) from private.import_secrets where key in ('mailbox_sign_key','sauvegarde_declenchement_secret')")" "$av"
+rm -f /tmp/essai-cles-refus.txt
+sortie_cles=$(psql -d "$BASE" -X -q -At -F '|' -v ON_ERROR_STOP=1 -c "set operation.restauration = 'oui'" -f "$BACKUP_REPO/outils/regenerer_cles.sql")
 ap=$(Q "select string_agg(key || ':' || md5(value), ',' order by key) from private.import_secrets where key in ('mailbox_sign_key','sauvegarde_declenchement_secret')")
 verifie "nouvelles clés : les deux valeurs ont changé" "$(python3 -c 'import sys; a=dict(x.split(":") for x in sys.argv[1].split(",")); b=dict(x.split(":") for x in sys.argv[2].split(",")); print(len(b) == 2 and all(a[k] != b[k] for k in b))' "$av" "$ap")" "True"
 verifie "nouvelles clés : sortie = nom | 64 | empreinte de 16 caractères, rien d'autre" "$(echo "$sortie_cles" | grep -cE '^(mailbox_sign_key|sauvegarde_declenchement_secret)\|64\|[0-9a-f]{16}$')|$(echo "$sortie_cles" | grep -c '')" "2|2"

@@ -36,6 +36,11 @@ par les écrans Supabase, GitHub et Google.
 - **Armée par la migration** (`private.sauvegarde_surveillance`, date de mise en place) :
   - aucune attente d'une première exécution ;
   - seul un délai de grâce de **24 h** après la mise en place évite une alerte le jour même ;
+  - le contrôle ne tourne qu'**une fois par jour, à 13:07 UTC** : la **première alerte possible arrive donc entre 24 h et environ
+    48 h après la migration** (migration à 12:00 UTC → premier contrôle armé le lendemain à 13:07 ; migration à 14:00 UTC → le
+    surlendemain à 13:07) ;
+  - **pendant ce délai, les signaux d'avant restent actifs et inchangés** : mail de GitHub à chaque exécution en échec, et contrôle de
+    la copie complète par le workflow JSON (échec si la dernière copie complète date d'avant-hier) ;
   - ensuite, pas de réussite du jour = alerte, pour la copie complète **et** pour le JSON, même si aucune exécution n'a jamais eu lieu
     (vérifié sur une base neuve, journal vide).
 - **Pendant le déploiement** : l'ancien circuit n'écrit rien dans le journal. Faire donc les étapes 2 à 8 de la demande dans les
@@ -57,12 +62,16 @@ par les écrans Supabase, GitHub et Google.
 | `notion_raw`, `notion_cursor` | **copiées** (archive Notion) | `outils/role_sauvegarde.sql`, migration v1.60.7 |
 | `sauvegarde_fenetre` | **copiée** | `outils/fenetre_connexion.sql` |
 | `sauvegarde_executions`, `sauvegarde_surveillance` (nouvelles) | **copiées** (journal et date de mise en place, aucun secret) | migration v1.60.7 |
-| `sync_urls` (messagerie v1.61, à venir) | **copiée**, voir ci-dessous | migration v1.60.7 (si la table existe déjà), `outils/role_sauvegarde.sql` |
+| `sync_urls` (messagerie v1.61, à venir) | **copiée**, sous conditions à remplir par le lot messagerie (voir ci-dessous) | migration v1.60.7 (si la table existe déjà), `outils/role_sauvegarde.sql` |
 
-- **`sync_urls`** : elle contient seulement l'adresse de la fonction serveur `mail-sync`, imposée au format
-  `https://<projet>.supabase.co/functions/v1/mail-sync`. Aucun jeton n'y est possible ; le secret d'appel est `mail_sync_hook`, rangé
-  dans `import_secrets` (présence seulement). Elle ne garde ni rattachement ni anti-doublon : ceux-ci sont dans les tables `public`
-  de la messagerie, copiées.
+- **`sync_urls`** : elle est prévue pour la seule adresse de la fonction serveur `mail-sync`
+  (`https://<projet>.supabase.co/functions/v1/mail-sync`). **Ce format n'est vérifié qu'à l'utilisation** (`mail_sync_tick` ignore une
+  autre adresse) : la table elle-même n'a **aucune contrainte**. Le secret d'appel est `mail_sync_hook`, rangé dans `import_secrets`
+  (présence seulement). Elle ne garde ni rattachement ni anti-doublon : ceux-ci sont dans les tables `public` de la messagerie,
+  copiées.
+  - **À faire par le lot messagerie** (point transmis) : une **contrainte de format** sur `sync_urls.url` (même expression que
+    `mail_sync_tick`) et le **droit de lecture** `grant select on private.sync_urls to sauvegarde;`, dans sa migration. La décision
+    « copiée » ne vaut qu'avec cette contrainte ; sans elle, la ressaisir avec Anthony.
   - Une base restaurée n'appelle rien : tâches planifiées arrêtées, `mail_sync_hook` absent.
   - Si la messagerie est installée **après** la v1.60.7, sa migration doit porter
     `grant select on private.sync_urls to sauvegarde;` (à signaler à ce lot). Sinon : alerte « Schéma privé » à la copie suivante,
@@ -112,7 +121,8 @@ types, copie complète et JSON, chacun surveillé séparément)
 - la nuit suivante (étape 8) : une seule copie, les créneaux de rattrapage en « déjà faite ».
 
 **Retour arrière, à chaque état** : toujours **d'abord couper l'alerte** (`supabase/retours-arriere/2026-11-09_sauvegarde_alerte_coupure.sql`).
-- Après l'étape 9 : remettre la fenêtre fixe (section « RETOUR » de l'opération d'activation), couper l'alerte, puis les points suivants.
+- Après l'étape 9 : **couper l'alerte**, puis remettre la fenêtre fixe (section « RETOUR » de l'opération d'activation), puis les points
+  suivants.
 - Après les étapes 5 à 8 : couper l'alerte ; supprimer le secret GitHub `SAUVEGARDE_SIGNAL_SECRET`. Les workflows reviennent d'eux-mêmes
   au fonctionnement d'avant (créneau principal seul). Si besoin, annuler la fusion par une nouvelle demande.
 - Après les étapes 2 à 4 : `supabase/retours-arriere/2026-11-09_sauvegarde_declenchement_retour_arriere.sql`. Il coupe l'alerte,
