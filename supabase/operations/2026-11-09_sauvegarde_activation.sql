@@ -4,9 +4,26 @@
 -- Production, sur autorisation d'Anthony. Effet : la fenêtre FIXE 01:30–04:30 UTC disparaît ; la connexion du rôle « sauvegarde »
 -- n'est plus ouverte que par le démarrage réel d'une copie complète (45 min au plus ; 1 h au plus avec la fermeture de secours), refermée à sa fin ou au plus tard par
 -- la tâche « sauvegarde-interruption » (toutes les 15 min, inchangée).
-do $$ begin
-  if not exists (select 1 from private.sauvegarde_executions where type = 'complete' and statut = 'succes') then
-    raise exception 'Activation refusée : aucune copie complète réussie dans le nouveau mode (private.sauvegarde_executions)';
+-- Conditions (décision d'Anthony : « ne retire l'ancienne fenêtre fixe qu'après réussite réelle du nouveau circuit et vérification
+-- de sa fermeture ») — sinon refus, rien n'est changé :
+--   1. une copie complète « succes » dont la FERMETURE a été enregistrée au plus tard à sa fin (fenetre_jusqu_a <= fin) ;
+--   2. aucune copie complète en cours ;
+--   3. lancée HORS de la fenêtre fixe, et la connexion du rôle « sauvegarde » est effectivement FERMÉE (rolcanlogin = false) :
+--      preuve que la fermeture fonctionne sans l'aide de la fenêtre fixe.
+do $$ declare f record; t time := (now() at time zone 'UTC')::time; begin
+  if not exists (select 1 from private.sauvegarde_executions where type = 'complete' and statut = 'succes'
+                   and fenetre_jusqu_a is not null and fin is not null and fenetre_jusqu_a <= fin) then
+    raise exception 'Activation refusée : aucune copie complète réussie dont la fermeture a été enregistrée (private.sauvegarde_executions)';
+  end if;
+  if exists (select 1 from private.sauvegarde_executions where type = 'complete' and statut = 'en_cours') then
+    raise exception 'Activation refusée : une copie complète est en cours';
+  end if;
+  select * into f from private.sauvegarde_fenetre;
+  if (f.debut <= f.fin and t >= f.debut and t < f.fin) or (f.debut > f.fin and (t >= f.debut or t < f.fin)) then
+    raise exception 'Activation refusée : à lancer HORS de la fenêtre fixe (% – % UTC), pour vérifier la fermeture réelle', f.debut, f.fin;
+  end if;
+  if (select rolcanlogin from pg_roles where rolname = 'sauvegarde') then
+    raise exception 'Activation refusée : la connexion du rôle sauvegarde est encore ouverte hors fenêtre fixe (fermeture non vérifiée ; fenêtre manuelle ? attendre son échéance)';
   end if;
 end $$;
 -- fenêtre fixe vide (début = fin) : sauvegarde_interrompre (ancienne et nouvelle version) ne la considère plus jamais ouverte
