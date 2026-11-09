@@ -61,3 +61,18 @@ Décision d'Anthony du 08/11/2026 : aucune donnée fictive dans les comptes opé
   `supabase/operations/2026-11-09_v1.60.6_rappels_solde.sql`) : solde fait tôt (J-7), solde fait après J-7, J-7 un samedi, acompte et
   date sans jour de concert inchangés, plancher de réactivation conservé, retrait du rappel prématuré sans rattrapage puis retour
   unique à J-7. Tout est annulé (rollback). Données fictives uniquement.
+
+## Brise Glace — facture 107 reliée au solde (base locale jetable, 09/11/2026)
+
+- `2026-11-09_base_locale_complete.sh` (+ `2026-11-09_base_locale_socle.sql`) : base modèle jetable construite depuis
+  `supabase/schema.sql` et toutes les migrations du dépôt (socle Supabase simulé ; la garde d'empreinte de production de la migration
+  v1.60 est neutralisée sur cette base seulement, et signalée). Empreintes obtenues identiques à la production pour
+  `generate_reminders` (584374b0…) et `show_payments_emitted_guard` (08302c0c…).
+- `2026-11-09_brise_glace_rattachement_essai.sh` : opération `supabase/operations/2026-11-09_brise_glace_rattachement.sql` et retour
+  arrière `supabase/retours-arriere/2026-11-09_brise_glace_rattachement_retour_arriere.sql` sur l'état relevé reconstitué par les
+  déclencheurs (données fictives) : 22 contrôles — sans confirmation, opérateur hors équipe, nominal (lignes, journal, historique,
+  rappels v1.60.6, generate_reminders), rejeu, retour arrière exact et son rejeu, jour ouvré de J-7 (« Facture de solde à faire »
+  seulement), états différents (solde envoyé, solde payé, acompte au n° 33, facture signalée, autre jour, deuxième acompte, acompte
+  payé), retour arrière refusé après une vraie facture de solde ou sans opération.
+- `tests/outils/rejeu-sync-pennylane/` : rejeu de la synchronisation (fonction edge réelle, faux Pennylane, faux Supabase) sur ce cas,
+  avec le code du 06/11 (v1.51.0, 2cbd65e) et le code actuel.
