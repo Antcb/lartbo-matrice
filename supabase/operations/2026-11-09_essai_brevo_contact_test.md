@@ -32,8 +32,11 @@ Requêtes : `supabase/operations/2026-11-09_essai_brevo_liste_blanche.sql`.
 1. Contrôles en lecture seule sur le projet de test :
    - clé Brevo absente ;
    - adresses par domaine (nombres seulement) ;
-   - contacts marqués « créés par la Matrice ».
+   - contacts marqués « créés par la Matrice » ;
+   - **contacts qui portent déjà anthony@lartboristerie.com** (mail 1 ou mail 2), et parmi eux ceux marqués « créés par la Matrice » (relecture B5 ; 0 contact avec cette adresse au 09/11, contrôle à refaire à chaque séance).
    - Arrêt s'il y a une clé.
+   - **Arrêt** si un contact portant l'adresse est marqué « créé par la Matrice » : la Matrice écrirait alors sur la fiche Brevo d'Anthony. Décision d'Anthony avant de continuer.
+   - Doublons **non marqués** seulement : on continue. Voir les étapes 4 et 8.3.
 2. Migration `2026-11-08_brevo_rattachements.sql` appliquée sur le **projet de test** seulement.
 3. `brevo-sync` déployée sur le **projet de test**, puis comparée au dépôt. Elle doit contenir `brevo_essai_emails` et `lireReglages`, sinon arrêt.
 4. Liste blanche posée : anthony@lartboristerie.com, seule. Vérification qu'elle est la seule.
@@ -64,6 +67,7 @@ Aucune requête à l'API Brevo n'a lieu avant l'étape 4.
 4. **Le contact d'essai** (espace de test › Contacts › Nouveau contact)
    - Prénom et nom : les tiens, **tels qu'ils sont sur ta fiche Brevo** si elle existe.
    - Mail : anthony@lartboristerie.com. Structures : A et B.
+   - S'il existe déjà des contacts avec cette adresse (contrôle de Claude), la fenêtre **« Contact déjà présent »** s'ouvre. Choisis « Enregistrer quand même » : les contacts existants ne sont pas modifiés.
    - Sur chaque fiche structure, « Fonction ici » : « Programmatrice » pour A, « Directrice » pour B.
 
 5. **Vérifier dans Brevo** (environ 1 minute plus tard)
@@ -81,7 +85,10 @@ Aucune requête à l'API Brevo n'a lieu avant l'étape 4.
    1. « Exclure de la prospection », motif « Essai ». La fiche affiche l'auteur, la date et le motif. Brevo : rien ne change.
    2. Supprime ce contact dans l'espace de test, puis recrée-le avec la **même adresse** écrite autrement : ANTHONY@LartBoristerie.com.
       - Il revient **exclu**, avec « Exclusion reprise d'un contact supprimé le … : « Essai » ». Brevo : rien ne change.
-   3. « Remettre en prospection », motif « Fin de l'essai ». Brevo : désabonnement inchangé.
+      - S'il existe d'autres contacts avec cette adresse dans l'espace de test, l'exclusion **passe aussi sur eux**, avec la même trace. C'est la règle « l'exclusion suit l'adresse ».
+   3. « Remettre en prospection », motif « Fin de l'essai ».
+      - S'il existe d'autres contacts exclus avec cette adresse, une fenêtre les **liste** et demande une confirmation explicite. Vérifie la liste, puis confirme : tous sont remis, avec le même motif et une trace chacun. Sans confirmation, rien ne change.
+      - Brevo : désabonnement inchangé.
 
 9. **Mode essai mal configuré** : Claude remplace la liste blanche par une valeur invalide.
    - Réglages affiche « aucune adresse valide : tout est bloqué ».

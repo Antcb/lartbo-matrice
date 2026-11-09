@@ -18,8 +18,18 @@ select lower(split_part(e, '@', 2)) as domaine, count(*) as adresses
 --   contacts marqués « créés par la Matrice » dans Brevo (nombre seulement)
 select count(*) filter (where brevo_created) as crees_par_la_matrice, count(*) filter (where cardinality(brevo_emails) > 0) as avec_brevo_emails
   from public.contacts;
+--   contacts du projet de test qui portent DÉJÀ l'adresse d'essai (mail 1 ou mail 2), et parmi eux ceux marqués « créés par la
+--   Matrice » (brevo_emails la contient, ou brevo_created avec le mail 1) — relecture B5 :
+--   marqué > 0 : ARRÊT, décision d'Anthony (la Matrice écrirait sur sa fiche Brevo) ;
+--   doublons non marqués seulement : continuer, voir la marche (fenêtre « Contact déjà présent » à l'étape 4, liste à l'étape 8.3).
+select count(*) as contacts_avec_l_adresse,
+       count(*) filter (where 'anthony@lartboristerie.com' = any(coalesce(brevo_emails, '{}'))
+                           or (brevo_created and lower(btrim(email)) = 'anthony@lartboristerie.com')) as dont_marques_crees_par_la_matrice
+  from public.contacts
+ where 'anthony@lartboristerie.com' in (lower(btrim(email)), lower(btrim(email_2)));
 --   version de brevo-sync déployée sur le projet de test : à comparer au dépôt (outil Supabase « get_edge_function ») ; elle doit
---   contenir « brevo_essai_emails » et « ESSAI_BRUT » ; sinon NE PAS continuer.
+--   contenir « brevo_essai_emails » et « lireReglages » (réglages lus à chaque appel, relecture B3) et ne plus contenir
+--   « ESSAI_BRUT » ; sinon NE PAS continuer.
 
 -- (1) Liste blanche : UNIQUEMENT anthony@lartboristerie.com (décision définitive d'Anthony du 09/11/2026 : aucune autre adresse).
 --     Remplacer la valeur ENTRE CROCHETS par cette adresse ; laissée telle quelle, ou toute autre adresse : le bloc refuse et
