@@ -177,7 +177,8 @@ async function showRemove(id, choice){
 export function reactivateRemindersWindow(id, level = 1){
   const s = byId('shows', id); if (!s) return;
   const now = today(), groups = new Map();
-  for (const r of remindersOf(s, {all: true})){ const g = groups.get(r.key) || {titles: [], origin: r.origin}; g.titles.push(r.title); if (r.origin < g.origin) g.origin = r.origin; groups.set(r.key, g); }
+  // anciens éléments (sans notification côté serveur) : hors réactivation
+  for (const r of remindersOf(s, {all: true}).filter(r => !r.stale)){ const g = groups.get(r.key) || {titles: [], origin: r.origin}; g.titles.push(r.title); if (r.origin < g.origin) g.origin = r.origin; groups.set(r.key, g); }
   const keys = [...groups.keys()], values = Object.fromEntries(keys.map(k => [k, groups.get(k).origin > now ? groups.get(k).origin : now]));
   const fields = keys.map(k => ({k, type: 'date', full: true, label: `${[...new Set(groups.get(k).titles)].join(' · ')} — échéance d’origine : ${fmtDate(groups.get(k).origin)}`}));
   return openModal({level, title: 'Réactiver les relances', saveLabel: 'Réactiver les relances', values, fields,

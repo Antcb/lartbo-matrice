@@ -25,6 +25,7 @@ import { taskDelay } from './reminders.js';
 // délai de la relance (10 j par défaut) et nombre de relances par mail avant le téléphone (3 par défaut) : Réglages (v1.64)
 const relanceDays = () => taskDelay('prospect_relance_days');
 const mailRelances = () => taskDelay('prospect_relance_max');
+const relanceOn = () => taskDelay('prospect_relance_on');   // tâches de relance désactivables (décision d'Anthony du 09/11) — jamais un envoi
 const DRAFT_MARK = ' _(brouillon, pas encore envoyé)_';
 const longDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long', year:'numeric'}) : '';
 const plain = html => { const d = document.createElement('div'); d.innerHTML = String(html).replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p)>/gi, '\n'); return d.textContent.replace(/ /g, ' ').replace(/\n{3,}/g, '\n\n').trim(); };
@@ -125,7 +126,7 @@ export async function openProspection(structureId, {prospectId=null}={}){
     <div class="ml-att"><b class="fiche-lbl">Pièces jointes</b> <span id="pr-files"></span>
       <label class="btn sm file-btn">Ajouter un fichier<input type="file" class="file-input" multiple id="pr-up"></label></div>
     <p class="help">Envoyé depuis <b id="pr-from-addr">${esc(fromAddr())}</b>. « Enregistrer en brouillon » le met dans les brouillons Gmail ; « Envoyer maintenant » l’envoie tout de suite.
-      Dans les deux cas : ${relance ? `le journal du suivi est complété (avec les dates des relances précédentes) et ${(p.relances || 0) + 1 >= mailRelances() ? 'comme c’est la ' + mailRelances() + 'e relance par mail, la tâche suivante est une relance par téléphone.' : `une nouvelle tâche de relance est créée à J+${relanceDays()}.`}` : `un suivi est créé (Mailed) avec le mail dans le journal, la date proposée en « Intérêt », et une tâche Booking de relance à J+${relanceDays()}.`}</p>
+      Dans les deux cas : ${relance ? `le journal du suivi est complété (avec les dates des relances précédentes) et ${!relanceOn() ? 'aucune tâche de relance n’est créée (désactivée dans Réglages › Délais et automatismes).' : (p.relances || 0) + 1 >= mailRelances() ? 'comme c’est la ' + mailRelances() + 'e relance par mail, la tâche suivante est une relance par téléphone.' : `une nouvelle tâche de relance est créée à J+${relanceDays()}.`}` : `un suivi est créé (Mailed) avec le mail dans le journal, la date proposée en « Intérêt »${relanceOn() ? `, et une tâche Booking de relance à J+${relanceDays()}` : ' ; aucune tâche de relance (désactivée dans Réglages › Délais et automatismes)'}.`}</p>
     </div>`;
 
   let wantDraft = false, dirty = false, files = [];
@@ -328,6 +329,7 @@ export async function restoreRelances(undo){
 async function relanceTask(st, pids, subject, sent, p, n, sentOn=today()){
   await closeOpenRelances(st, p);
   if (suiviClosed(p)) return;   // suivi confirmé ou clos : plus de relance
+  if (!relanceOn()) return;   // tâches de relance désactivées (Réglages) : aucune tâche ni note de relance téléphone ; les anciennes sont closes comme avant
   // J+10 après l'envoi réel ; un samedi ou un dimanche : le lundi suivant (fonctions officielles §1.6)
   const deadline = workDay(addDays(sentOn, relanceDays()));
   const base = {department: 'Booking', status: 'To Do', assigned_to: S.user.email, deadline,

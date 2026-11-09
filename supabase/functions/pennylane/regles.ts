@@ -96,3 +96,13 @@ export function texteCommission(s: Parameters<typeof describe>[0], artist: strin
     ligne: `Commission booking pour ${artist} • Concert le ${frDate(s.date)}${lieu ? ' • ' + lieu : ''}`,
   };
 }
+
+// v1.64 (décision d'Anthony du 09/11) : délai de paiement des brouillons de facture (14 j par défaut) et validité des devis (30 j par
+// défaut) réglables dans la Matrice (Réglages › Délais et automatismes), pour les NOUVEAUX documents seulement. Valeur lisible =
+// entier (5 ou 5.0) dans les bornes ; sinon la valeur par défaut. Même contrôle que js/reminders.js taskDelay et la contrainte
+// reglage_simple_ok (supabase/migrations/2026-11-09_v1.64_delais.sql).
+export const DELAIS_DOCUMENTS = { pennylane_payment_days: { defaut: 14, min: 0, max: 365 }, pennylane_quote_days: { defaut: 30, min: 1, max: 365 } } as const;
+export function delaiDocument(cle: keyof typeof DELAIS_DOCUMENTS, valeur: unknown): number {
+  const r = DELAIS_DOCUMENTS[cle];
+  return typeof valeur === 'number' && Number.isInteger(valeur) && valeur >= r.min && valeur <= r.max ? valeur : r.defaut;
+}

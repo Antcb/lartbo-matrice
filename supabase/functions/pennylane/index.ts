@@ -7,7 +7,7 @@
 // Le jeton API est gardé côté serveur (Réglages › Pennylane). Appels depuis l'app (utilisateur connecté) :
 //   { action: 'status' } · { action: 'quote', show_id } · { action: 'invoice', payment_id } · { action: 'sync' }
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { acomptesFactures, baseCommission, caduc, describe, emise, factureIsolee, figerMontant, frDate, isBooking, montantAcompte, montantAttendu, payable, pctCommission, rangeeDansLeDrive, relieAuDevis, soldeDouteux, texteCommission } from './regles.ts';
+import { acomptesFactures, baseCommission, caduc, describe, emise, factureIsolee, figerMontant, frDate, isBooking, montantAcompte, montantAttendu, payable, pctCommission, rangeeDansLeDrive, relieAuDevis, soldeDouteux, texteCommission, delaiDocument } from './regles.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -38,6 +38,11 @@ const vatCode = (rate: number | null, country: string) => {
 // frDate, describe : regles.ts (v1.60.2, testés par tests/static/pennylane-regles.mjs)
 // jour de Paris (CONVENTIONS §1.2, v1.49) : une facture faite entre 0 h et 2 h ne prend plus la date de la veille
 const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+// délais des NOUVEAUX documents (v1.64) : lus dans settings à chaque création ; illisible ou absent → 14 j / 30 j comme avant
+async function delai(cle: 'pennylane_payment_days' | 'pennylane_quote_days') {
+  const { data } = await admin.from('settings').select('value').eq('key', cle).maybeSingle();
+  return delaiDocument(cle, data?.value);
+}
 const plusDays = (n: number) => { const d = new Date(today() + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const norm = (s: string) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const ISO2: Record<string, string> = { france: 'FR', suisse: 'CH', switzerland: 'CH', belgique: 'BE', belgium: 'BE', espagne: 'ES', spain: 'ES', allemagne: 'DE', germany: 'DE', 'pays bas': 'NL', netherlands: 'NL', luxembourg: 'LU', italie: 'IT', italy: 'IT', 'royaume uni': 'GB', portugal: 'PT', canada: 'CA' };
@@ -309,7 +314,7 @@ Deno.serve(async (req) => {
       const country = st?.admin?.country || st?.country || 'France';
       const [customer_id, tpl] = await Promise.all([customerFor(st), templates()]);
       const { doc: q, headers } = await create('quotes', {
-        customer_id, date: today(), deadline: plusDays(30), external_reference: 'matrice-devis-' + s.id + '-' + Date.now(),
+        customer_id, date: today(), deadline: plusDays(await delai('pennylane_quote_days')), external_reference: 'matrice-devis-' + s.id + '-' + Date.now(),
         pdf_invoice_subject: artist, pdf_description: describe(s),
         ...(tpl.quote ? { quote_template_id: tpl.quote } : {}),
         custom_header_fields: [{ title: 'Projet', value: artist }, { title: 'Date de réalisation', value: frDate(s.date) }],
@@ -374,7 +379,7 @@ Deno.serve(async (req) => {
       }
       const customer_id = await customerFor(st);
       const { doc: inv, headers } = await create('customer_invoices', {
-        customer_id, date: today(), deadline: plusDays(14), draft: true, external_reference: 'matrice-' + p.id + '-' + Date.now(),
+        customer_id, date: today(), deadline: plusDays(await delai('pennylane_payment_days')), draft: true, external_reference: 'matrice-' + p.id + '-' + Date.now(),
         pdf_invoice_subject: artist, pdf_description: description,
         ...(tpl.invoice ? { customer_invoice_template_id: tpl.invoice } : {}),
         custom_header_fields: headerFields, invoice_lines: [line],

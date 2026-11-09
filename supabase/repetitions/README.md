@@ -68,4 +68,6 @@ Décision d'Anthony du 08/11/2026 : aucune donnée fictive dans les comptes opé
   applique deux fois `2026-11-09_v1.64_delais.sql` dans la transaction) : sans réglage, 19 relances de 14 règles identiques à la
   v1.60.6 (règles, clés anti-doublon, échéances) et aucune notification nouvelle ; délai modifié pour toutes les dates (échéance
   déplacée, clé inchangée, pas de doublon), règle désactivée, nouvelles dates seulement (`from`), versions successives, réglage
-  abîmé (valeurs par défaut), priorité de la prochaine échéance choisie pour la date. Tout est annulé (rollback).
+  abîmé (version ignorée, la précédente gardée), instant d'enregistrement à la milliseconde, week-ends (0 jour → lundi,
+  politique désactivable, solde toujours vendredi), contraintes d'écriture (délais et réglages simples), priorité de la prochaine
+  échéance choisie pour la date. Tout est annulé (rollback).

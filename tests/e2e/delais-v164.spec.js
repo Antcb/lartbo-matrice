@@ -50,6 +50,7 @@ test('v1.64 délai modifié : conséquences affichées, « Nouvelles dates seule
   const ctx = await openApp(page);
   await seed(page, data());
   const avant1 = await due(page, 'd-1', 'acompte_paye'), avant2 = await due(page, 'd-2', 'acompte_paye');
+  expect(avant1).toBe(avant2);
   await goSettings(page);
   await page.locator('[data-delay-n="paiement"]').fill('5');
   await page.locator('[data-act="saveDelays"]').click();
@@ -68,12 +69,17 @@ test('v1.64 délai modifié : conséquences affichées, « Nouvelles dates seule
   await expect(page.locator('dialog.ask')).toHaveCount(0);
   const v = await delais(page);
   expect(v.paiement).toHaveLength(1);
-  expect(v.paiement[0]).toMatchObject({ on: true, n: 5, from: iso(0) });
-  expect(await due(page, 'd-1', 'acompte_paye'), 'date créée avant : inchangée').toBe(avant1);
-  expect(await due(page, 'd-2', 'acompte_paye') < avant2, 'date créée aujourd’hui : nouveau délai').toBe(true);
-  // la valeur affichée est celle des nouvelles dates, avec la mention du délai gardé par les dates plus anciennes
+  expect(v.paiement[0]).toMatchObject({ on: true, n: 5 });
+  // « existante » = créée avant l'INSTANT d'enregistrement (décision du 09/11), pas avant le jour
+  expect(v.paiement[0].from).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  expect(await due(page, 'd-1', 'acompte_paye'), 'date créée il y a 30 jours : inchangée').toBe(avant1);
+  expect(await due(page, 'd-2', 'acompte_paye'), 'date créée aujourd’hui AVANT l’enregistrement : inchangée').toBe(avant2);
+  await seed(page, { shows: [P('d-3', { created_at: new Date(Date.now() + 1000).toISOString() })], show_payments: [
+    { id: 'd3-a', show_id: 'd-3', kind: 'acompte', label: 'Acompte', pct: 30, invoice_number: 'F-3', sent_at: iso(-3), sort: 1 }] });
+  expect(await due(page, 'd-3', 'acompte_paye') < avant2, 'date créée après l’enregistrement : nouveau délai').toBe(true);
+  // la valeur affichée est celle des nouvelles dates, avec la mention de la règle gardée par les dates plus anciennes
   await expect(page.locator('[data-delay-n="paiement"]')).toHaveValue('5');
-  await expect(page.locator('#delays-panel')).toContainText('délai précédent gardé');
+  await expect(page.locator('#delays-panel')).toContainText('règle précédente gardée');
   expectClean(ctx);
 });
 
@@ -85,7 +91,8 @@ test('v1.64 « Aussi les dates en cours » : rappels déplacés, rappels dus tou
   await page.locator('[data-delay-on="boucle_accueil"]').uncheck();
   await page.locator('[data-act="saveDelays"]').click();
   const dlg = page.locator('dialog.ask');
-  await expect(dlg).toContainText('dû(s) aujourd’hui ou avant');
+  await expect(dlg).toContainText('Dus aujourd’hui ou avant : ils partiraient au prochain passage du matin');
+  await expect(dlg).toContainText('Dossiers concernés : 2');
   await expect(dlg).toContainText('Rappels retirés (règle désactivée)');
   await dlg.locator('button', { hasText: 'Aussi les dates en cours' }).click();
   const v = await delais(page);
@@ -107,14 +114,18 @@ test('v1.64 valeurs refusées hors bornes ; réglage abîmé : valeurs par défa
   await page.locator('[data-delay-n="solde_envoi"]').fill('7');
   await page.locator('[data-task-delay="prospect_relance_days"]').fill('5');
   await page.locator('[data-task-delay="booking_task_days"]').fill('3');
+  await page.locator('[data-task-delay="prospect_relance_on"]').uncheck();
+  await page.locator('[data-task-delay="pennylane_payment_days"]').fill('30');
   await page.locator('[data-act="saveDelays"]').click();
   const dlg = page.locator('dialog.ask');
   await expect(dlg).toContainText('les tâches existantes gardent leur échéance');
+  await expect(dlg).toContainText('Tâches de relance de prospection : activées → désactivées');
+  await expect(dlg).toContainText('14 j → 30 j (nouveaux documents seulement ; documents déjà créés inchangés)');
   await dlg.locator('button', { hasText: 'Enregistrer' }).click();
   await expect(dlg).toHaveCount(0);
   const r = await page.evaluate(async () => { const m = await import('./js/reminders.js');
-    return [m.taskDelay('prospect_relance_days'), m.taskDelay('booking_task_days'), m.taskDelay('prospect_relance_max')]; });
-  expect(r).toEqual([5, 3, 3]);
+    return [m.taskDelay('prospect_relance_days'), m.taskDelay('booking_task_days'), m.taskDelay('prospect_relance_max'), m.taskDelay('prospect_relance_on'), m.taskDelay('pennylane_payment_days'), m.taskDelay('pennylane_quote_days')]; });
+  expect(r).toEqual([5, 3, 3, false, 30, 30]);
   expect(await delais(page), 'aucune version de rappel créée').toBeNull();
   // réglage abîmé (écrit hors de l'application) : valeurs par défaut, rien ne casse
   const d = await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
@@ -124,12 +135,47 @@ test('v1.64 valeurs refusées hors bornes ; réglage abîmé : valeurs par défa
   // relecture de 86d397e (B1) : jour impossible ignoré (même règle que delais_jour en SQL), délai 5.0 = 5 (comme delais_n)
   const e = await page.evaluate(async () => { const { S, touch } = await import('./js/state.js'), m = await import('./js/reminders.js');
     const set = v => { S.db.settings.find(x => x.key === 'delais').value = v; touch('settings'); return m.delaysOf({ created_at: '2026-03-15T10:00:00Z' }); };
-    return [set({ paiement: [{ on: true, n: 4, from: null }, { on: false, n: 2, from: '2026-02-30' }] }).paiement,
-            set({ paiement: [{ on: true, n: 4, from: null }, { on: false, n: 2, from: '9999-99-99' }] }).paiement,
-            set({ paiement: [{ on: true, n: 4, from: null }, { on: false, n: 2, from: '0000-01-01' }] }).paiement,
+    const out = [set({ paiement: [{ on: true, n: 4, from: null }, { on: false, n: 2, from: '2026-02-30T10:00:00Z' }] }).paiement,
+            set({ paiement: [{ on: true, n: 4, from: null }, { on: false, n: 2, from: '9999-99-99T00:00:00Z' }] }).paiement,
+            set({ paiement: [{ on: true, n: 4, from: null }, { on: false, n: 2, from: '0000-01-01T00:00:00Z' }] }).paiement,
+            set({ paiement: [{ on: true, n: 4, from: null }, { on: false, n: 2, from: '2026-02-01' }] }).paiement,
             set(JSON.parse('{"paiement": [{"on": true, "n": 5.0, "from": null}]}')).paiement,
             set({ paiement: [{ on: true, n: 5.5, from: null }] }).paiement,
-            set({ paiement: [{ on: true, n: 6, from: '2026-02-28' }] }).paiement]; });
-  expect(e).toEqual([{ on: true, n: 4 }, { on: true, n: 4 }, { on: true, n: 4 }, { on: true, n: 5 }, { on: true, n: 10 }, { on: true, n: 6 }]);
+            set({ paiement: [{ on: true, n: 6, from: '2026-02-28T10:00:00.000Z' }] }).paiement,
+            set({ paiement: [{ on: true, n: 4, from: null }, { on: true, n: 'x' }] }).paiement];
+    return {out, anomalies: m.delaysAnomalies().map(a => a.text)}; });
+  expect(e.out).toEqual([{ on: true, n: 4 }, { on: true, n: 4 }, { on: true, n: 4 }, { on: true, n: 4 }, { on: true, n: 5 }, { on: true, n: 10 }, { on: true, n: 6 }, { on: true, n: 4 }]);
+  // anomalie signalée avec la valeur RÉELLEMENT appliquée (version précédente lisible, pas « défaut »)
+  expect(e.anomalies).toEqual(['Paiement à vérifier : 1 version illisible ignorée ; valeur appliquée aux nouvelles dates : 4 j (dernière version lisible).']);
+  await goSettings(page);
+  await expect(page.locator('#delays-panel .warn-txt')).toContainText('1 version illisible ignorée');
+  expectClean(ctx);
+});
+
+test('v1.64 week-ends : délai de 0 jour → lundi (politique réglable) ; anciens éléments à traiter visibles, sans notification', async ({ page }) => {
+  const ctx = await openApp(page);
+  let sam = -30; while (new Date(iso(sam) + 'T12:00:00').getDay() !== 6) sam--;
+  await seed(page, { shows: [P('w-1', { date: iso(40), contract_sent: iso(sam) }), P('o-1', { date: iso(-200), contract_sent: iso(-260) }), P('o-2', { date: iso(-40) })],
+    show_payments: [
+      { id: 'w1-a', show_id: 'w-1', kind: 'acompte', label: 'Acompte', pct: 30, sort: 1 },
+      { id: 'o1-a', show_id: 'o-1', kind: 'acompte', label: 'Acompte', pct: 100, sort: 1 },
+      { id: 'o2-s', show_id: 'o-2', kind: 'solde', label: 'Solde', pct: 100, sort: 1 }] });
+  expect(await due(page, 'w-1', 'facture_acompte'), 'contrat envoyé un samedi : rappel le lundi').toBe(iso(sam + 2));
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
+    S.db.settings.push({ key: 'delais', value: { weekend_apres: [{ on: false, n: 0, from: null }] } }); touch('settings'); });
+  expect(await due(page, 'w-1', 'facture_acompte'), 'politique désactivée : samedi').toBe(iso(sam));
+  // anciens éléments : obligation ouverte, plus de notification (serveur : 120 j ; 30 j pour le solde), visibles dans Production
+  const st = await page.evaluate(async () => { const m = await import('./js/reminders.js'), b = (await import('./js/selectors.js')).byId;
+    return [m.staleOf(b('shows', 'o-1')).map(r => [r.key, r.staleWhy]), m.staleOf(b('shows', 'o-2')).map(r => [r.key, r.staleWhy]), m.staleOf(b('shows', 'w-1')).length]; });
+  expect(st).toEqual([[['facture_acompte', 'concert passé depuis plus de 120 jours']], [['solde_envoi', 'concert passé depuis plus de 30 jours']], 0]);
+  await page.evaluate(async () => (await import('./js/app.js')).go('production'));
+  const box = page.locator('#stale-items');
+  await expect(box).toContainText(/Anciens éléments à traiter \(\d+\)/);   // jeu d'essai commun : d'autres dates passées peuvent y figurer
+  await expect(box).toContainText('Salle o-1');
+  await expect(box).toContainText('Salle o-2');
+  await expect(box).not.toContainText('Salle w-1');
+  await expect(box).toContainText('Facture d’acompte à faire (contrat envoyé)');
+  await expect(box).toContainText('Facture de solde à faire');
+  await expect(box).toContainText('plus de 120 jours');
   expectClean(ctx);
 });
