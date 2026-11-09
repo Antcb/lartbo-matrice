@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.60.6 — 09/11/2026
+- Facture de solde : le rappel « Facture à envoyer » d'un solde ne tombe plus avant le jour ouvré de J-7 (il tombait 3 jours après la facture faite, quelle que soit la date du concert) — même règle côté serveur (migration préparée, non appliquée)
+
+
 ## 1.60.5 — 08/11/2026
 - date confirmée ouverte directement dans Production depuis les fiches (bouton « Modifier » distinct), fenêtres de mail sur une ligne par champ (libellé à gauche, au-dessus sur téléphone), nom du compte « Payé par » lisible en entier, cas d'essai isolé « ESSAI promo » (scripts de création et de nettoyage, non appliqués)
 
