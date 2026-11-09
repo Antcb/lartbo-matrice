@@ -1,9 +1,13 @@
 -- Retour arrière de supabase/migrations/2026-11-09_v1.60.7_sauvegarde_declenchement.sql (sur décision d'Anthony seulement).
--- Ordre : 1) remettre la fenêtre FIXE si l'activation a été faite (supabase/operations/2026-11-09_sauvegarde_activation.sql,
+-- Ordre : 0) COUPER L'ALERTE tout de suite (2026-11-09_sauvegarde_alerte_coupure.sql ; ce script le refait aussi) ;
+--         1) remettre la fenêtre FIXE si l'activation a été faite (supabase/operations/2026-11-09_sauvegarde_activation.sql,
 --            section « retour ») ; 2) workflows du dépôt de sauvegarde : supprimer le secret GitHub SAUVEGARDE_SIGNAL_SECRET
 --            (ils repassent alors d'eux-mêmes au fonctionnement d'avant : créneau principal seul, fenêtre fixe, sans verrou) ;
---         3) ce script. La colonne private.sauvegarde_fenetre.tenue_par reste (sans effet).
+--         3) ce script. Restent, sans effet : la colonne private.sauvegarde_fenetre.tenue_par, la colonne
+--         fermeture_titulaire et la table private.sauvegarde_surveillance (inactive).
 -- Aucune donnée métier touchée. Le journal private.sauvegarde_executions est GARDÉ (historique), seules les fonctions sont retirées.
+-- 0. Alerte coupée d'abord (même effet que 2026-11-09_sauvegarde_alerte_coupure.sql)
+update private.sauvegarde_surveillance set active = false;
 do $$ begin
   if to_regclass('cron.job') is not null and exists (select 1 from cron.job where jobname = 'sauvegarde-controle') then
     perform cron.unschedule('sauvegarde-controle');
