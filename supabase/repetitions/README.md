@@ -53,3 +53,11 @@ Décision d'Anthony du 08/11/2026 : aucune donnée fictive dans les comptes opé
   clôture du cas 2 puis nettoyage → tables actives identiques à l'état d'avant la création (hors journaux), 3 copies dans
   `show_deletions` (dont l'historique de clôture), journal `finance_log` antérieur intact. Rejeu de 22 cas d'accrochage (modèles de mail, Pennylane, tâches, journal et membres d'artiste, événements, notifications, artiste réel lié, spectacle, contact, Factures, dépenses, suivi) : arrêt,
   aucune ligne modifiée.
+
+## v1.60.6 — facture de solde à J-7 (base locale jetable)
+
+- `2026-11-07_v1.60.3_suppression_date_base_locale.sql`, puis les migrations v1.60.3 et `2026-11-09_v1.60.6_solde_j7.sql` (deux fois),
+  puis `2026-11-09_v1.60.6_solde_j7_essai.sql` (lancé depuis la racine du dépôt : il inclut l'opération
+  `supabase/operations/2026-11-09_v1.60.6_rappels_solde.sql`) : solde fait tôt (J-7), solde fait après J-7, J-7 un samedi, acompte et
+  date sans jour de concert inchangés, plancher de réactivation conservé, retrait du rappel prématuré sans rattrapage puis retour
+  unique à J-7. Tout est annulé (rollback). Données fictives uniquement.

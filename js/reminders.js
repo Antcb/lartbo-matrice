@@ -10,7 +10,8 @@
  *  - Contrat envoyé alors que la facture d'acompte n'est pas faite (sauf acompte caduc : solde déjà facturé)
  *  - Jour ouvré le plus proche de J-7 (sans descendre sous 7 jours) : faire la facture de solde
  *  - Facture faite (numéro ou lien Pennylane) sans date d'envoi : « Facture à envoyer » 3 j après, jusqu'à la saisie de la date
- *    d'envoi (décision d'Anthony du 27/10, v1.46a : la date d'envoi se saisit toujours à la main)
+ *    d'envoi (décision d'Anthony du 27/10, v1.46a : la date d'envoi se saisit toujours à la main) ; facture de SOLDE d'une date
+ *    qui a un jour de concert : jamais avant le jour du rappel du solde (soldeReminderDay, J-7) — demande d'Anthony du 09/11, v1.60.6
  *  - Facture envoyée impayée : 10 j après l'envoi ou la dernière relance, sans limite de durée, jusqu'au paiement ;
  *    suspension possible à la main, ligne par ligne (reminders_paused)
  *  - 10 j après le premier encaissement (acompte ou solde) : commission L'ArtBo pas encore versée (pas de facture en production) ; facture partenaire pas envoyée / payée
@@ -50,10 +51,18 @@ export const paidTitle = p => `Paiement à vérifier : ${nameOf(p)}${p.reminded_
 
 /** Règle de la fonction serveur (generate_reminders) d'une facture « paiement à vérifier », selon sa nature */
 const PAID_RULE = {acompte: 'acompte_paye', solde: 'solde_paye', artbo: 'booking_commission_payee'};
+/** Échéance de « Facture à envoyer » : 3 j (ouvrés) après la facture faite ; facture de solde d'une date qui a un jour de concert :
+ *  pas avant le jour du rappel du solde (J-7, soldeReminderDay) — v1.60.6, même règle côté serveur (reminder_candidates) */
+export function sendDue(p, showDate){
+  const due = workDay(addDays(madeOn(p), SEND_DELAY));
+  if (p.kind !== 'solde' || !showDate) return due;
+  const j7 = soldeReminderDay(showDate);
+  return j7 > due ? j7 : due;
+}
 /** Factures suivies : « à envoyer » (faite, pas de date d'envoi) puis « paiement à vérifier » (envoyée, impayée, relances non suspendues) */
-function invoiceRules(pays, booking, rule){
+function invoiceRules(pays, booking, rule, showDate){
   for (const p of pays.filter(x => followedInvoice(x, booking))){
-    if (madeNotSent(p) && madeOn(p)) rule(p.kind, workDay(addDays(madeOn(p), SEND_DELAY)), sendTitle(p), 'facture_envoi');
+    if (madeNotSent(p) && madeOn(p)) rule(p.kind, sendDue(p, showDate), sendTitle(p), 'facture_envoi');
     if (p.sent_at && !p.paid_at && !p.reminders_paused) rule(p.kind, plus10(last(p)), paidTitle(p), PAID_RULE[p.kind] || 'autre_payee');
   }
 }
@@ -70,7 +79,7 @@ export function remindersOf(s, {all = false} = {}){
   if (s.prod_mode === 'booking'){
     const com = first('artbo');
     if (s.contract_cosigned_sent && com && !isInvoiced(com)) rule('artbo', s.contract_cosigned_sent, 'Facture de commission à faire (contrat co-signé)', 'booking_commission');
-    invoiceRules(pays, true, rule);
+    invoiceRules(pays, true, rule, s.date);
     // acomptes / soldes : factures de l'artiste à l'organisateur, jamais relancées par L'ArtBo (décision d'Anthony du 26/10, lot C1)
     return out;
   }
@@ -84,7 +93,7 @@ export function remindersOf(s, {all = false} = {}){
   // une fois la facture faite (numéro / lien Pennylane), c'est la règle « Facture à envoyer » qui prend le relais (v1.46a)
   if (s.contract_sent && ac && !isInvoiced(ac) && !isInvoiced(so)) rule('acompte', s.contract_sent, 'Facture d’acompte à faire (contrat envoyé)', 'facture_acompte');
   if (s.date && so && !isInvoiced(so) && s.date >= addDays(now, -30)) rule('solde', soldeReminderDay(s.date), 'Facture de solde à faire', 'solde_envoi');
-  invoiceRules(pays, false, rule);
+  invoiceRules(pays, false, rule, s.date);
   // 4 mois calendaires avant le concert ; samedi / dimanche → vendredi précédent (Q12, v1.49) — même règle côté serveur
   if (upcoming && s.date && !s.boucle_tech) rule('boucle_tech', workDayBefore(addMonths(s.date, -4)), 'Boucle accueil & technique à envoyer (J-4 mois)', 'boucle_accueil');
   if (upcoming && s.contract_cosigned_sent && !s.boucle_com) rule('boucle_com', s.contract_cosigned_sent, 'Boucle communication à envoyer', 'boucle_com');
