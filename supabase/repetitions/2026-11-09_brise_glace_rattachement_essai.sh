@@ -141,6 +141,20 @@ cas "retour arrière avec Drive et relance" ok "$RB_SET" "$RB"
 # réglages de la transaction non conservés dans la séance (set_config local)
 base; S15=$( (echo "$OK_SET"; cat "$OP"; echo "select 'claims=' || coalesce(current_setting('request.jwt.claims', true), '') || ';reg=' || coalesce(current_setting('matrice.regularisation', true), '');") | psql -X -q -At -d $DB 2>/dev/null | grep '^claims=')
 [ "$S15" = "claims=;reg=" ] && echo "OK     aucun réglage de transaction laissé dans la séance" || { echo "ÉCHEC  réglages laissés : $S15"; ECHECS=$((ECHECS+1)); }
+# 6 quater : le n° du DEVIS D-AB-2026-11-33 n'est pas confondu avec une facture F-AB-2026-11-33 (confirmation d'Anthony du 09/11)
+base "$AUTRE update show_payments set invoice_number = 'D-AB-2026-11-33' where show_id = '$OTH' and kind = 'acompte'; insert into pennylane_a_rattacher(pennylane_id, show_id, invoice_number, amount_ht, reason) values ('99990034', null, 'D-AB-2026-11-33', 1, 'essai')"
+cas "devis D-AB-2026-11-33 connu ailleurs : pas confondu" ok "$OK_SET" "$OP"
+# 6 quinquies : contrôle en lecture seule après une nouvelle synchronisation
+CTL="$R/supabase/operations/2026-11-09_brise_glace_controle_apres_synchro.sql"
+base; lancer "$OK_SET" "$OP" >/dev/null; av=$(snap)
+C1=$(psql -X -q -At -F'|' -d $DB -f "$CTL" | awk -F'|' '$3 != "t" {print $1}' | tr '\n' ' '); ap=$(snap)
+[ -z "$C1" ] && [ "$av" = "$ap" ] && echo "OK     contrôle après synchronisation : 9/9, lecture seule" || { echo "ÉCHEC  contrôle après synchronisation : $C1"; ECHECS=$((ECHECS+1)); }
+$Q -c "insert into pennylane_a_rattacher(pennylane_id, show_id, invoice_number, amount_ht, reason) values ('34170228875264', '$SH', 'F-AB-2026-11-107', 228.99, 'essai')" >/dev/null
+$Q -c "select set_config('request.jwt.claims','{\"role\":\"service_role\"}',false); update show_payments set invoice_number = 'F-AB-2026-11-107' where id = '$SO'" >/dev/null
+C2=$(psql -X -q -At -F'|' -d $DB -f "$CTL" | awk -F'|' '$3 != "t" {print $1}' | tr '\n' ' ')
+[ "$C2" = "3 5 6 8 " ] && echo "OK     contrôle après synchronisation : écarts détectés (contrôles $C2)" || { echo "ÉCHEC  contrôle après synchronisation (écarts) : $C2"; ECHECS=$((ECHECS+1)); }
+base; C3=$(psql -X -q -At -F'|' -d $DB -f "$CTL" | awk -F'|' '$3 != "t" {print $1}' | tr '\n' ' ')
+[ "$C3" = "1 2 3 8 " ] && echo "OK     contrôle sans opération : non conforme ($C3)" || { echo "ÉCHEC  contrôle sans opération : $C3"; ECHECS=$((ECHECS+1)); }
 # 7. retour arrière refusé si le solde a été facturé après l'opération
 base; lancer "$OK_SET" "$OP" >/dev/null
 $Q -c "update show_payments set invoice_number = 'F-AB-2026-11-250' where id = '$SO'" >/dev/null

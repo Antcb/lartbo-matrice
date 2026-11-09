@@ -55,6 +55,13 @@ union all select 'autres factures Pennylane connues de la date', (select count(*
 union all select 'autres lignes avec cette facture', count(*) from public.show_payments
   where show_id::text not like 'b021e7d4-%' and (pennylane_id = '34170228875264'
         or upper(regexp_replace(coalesce(invoice_number, ''), '[^A-Za-z0-9]', '', 'g')) in ('FAB202611107', 'FAB20261133'));
+-- état de synchronisation : la fonction pennylane ne tient pas de journal de ses passages ; indices lisibles en base : dernière
+-- écriture du serveur (service_role) sur les lignes de la date, dernier signalement vu pour la date, dernier signalement vu tous
+-- dossiers confondus (mis à jour à chaque passage qui signale au moins une facture)
+select 'état de synchronisation' t,
+       (select max(f.at) from public.finance_log f where f.show_id::text like 'b021e7d4-%' and f.actor = 'service_role') derniere_ecriture_serveur_date,
+       (select max(r.last_seen_at) from public.pennylane_a_rattacher r where r.show_id::text like 'b021e7d4-%') dernier_signalement_date,
+       (select max(r.last_seen_at) from public.pennylane_a_rattacher r) dernier_signalement_tous_dossiers;
 select n.created_at, n.kind, n.title, n.dedupe_key, n.withdrawn_at, n.withdrawn_reason
   from public.notifications n where n.show_id::text like 'b021e7d4-%' and n.kind in ('facture_envoi', 'solde_envoi', 'acompte_paye', 'solde_paye')
   order by n.created_at;
@@ -123,8 +130,9 @@ begin
   select count(*) into n from public.show_payments where id not in (a.id, so.id)
      and (pennylane_id = pid or upper(regexp_replace(coalesce(invoice_number, ''), '[^A-Za-z0-9]', '', 'g')) = 'FAB202611107');
   if n > 0 then raise exception 'Brise Glace : la facture 107 figure sur % autre(s) ligne(s) : rien n''est modifié', n; end if;
-  -- n° 33 (premier n° noté sur l'acompte) : s'il est connu ailleurs (autre ligne, signalement, historique), 33 est peut-être le vrai
-  -- document d'acompte et 107 le solde → arrêt (relecture de 3dd83dd, B1). Même contrôle pour 107 hors de ces deux lignes.
+  -- n° 33 (premier n° noté sur l'acompte) : s'il est connu ailleurs COMME FACTURE (F-AB-2026-11-33, comparaison normalisée qui ne
+  -- confond pas le devis D-AB-2026-11-33 — préfixe F), 33 est peut-être une autre facture → arrêt (relecture de 3dd83dd, B1).
+  -- Même contrôle pour 107 hors de ces deux lignes.
   select count(*) into n from public.show_payments where id not in (a.id, so.id)
      and upper(regexp_replace(coalesce(invoice_number, ''), '[^A-Za-z0-9]', '', 'g')) = 'FAB20261133';
   if n > 0 then raise exception 'Brise Glace : le n° F-AB-2026-11-33 figure sur % autre(s) ligne(s) : vérifier quel document est l''acompte, rien n''est modifié', n; end if;
