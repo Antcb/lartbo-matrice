@@ -1,7 +1,7 @@
 /**
  * Brevo : ajoute dans Brevo les contacts de la Matrice qui n'y sont pas encore (mail, prénom, nom, structure).
  * Un mail déjà présent dans Brevo n'est JAMAIS modifié : ni ses champs, ni ses listes, ni son désabonnement.
- * Contact lié uniquement à des structures inactives (v1.60.2), ou sans structure et marqué hors prospection (option B, 08/11/2026) :
+ * Contact lié uniquement à des structures inactives (v1.60.2), sans structure et marqué (option B, 08/11), ou exclu à la main (09/11) :
  * pas ajouté (hors prospection) ; rien n'est supprimé ni désabonné.
  * Exception (depuis la v1.16) : un mail CRÉÉ par la Matrice (contacts.brevo_emails) garde prénom, nom et structure(s) à jour ;
  * ajout ET retrait d'un rattachement à une structure (08/11/2026) : champ « structure » mis à jour, jamais de suppression, de
@@ -89,11 +89,11 @@ async function structuresOf(ids: string[]) {
   return out;
 }
 
-/** Contacts lus avec le marqueur « hors prospection » (migration 2026-11-08) ; base sans cette colonne (migration pas encore
+/** Contacts lus avec les marqueurs « hors prospection », automatique et manuel (migration 2026-11-08) ; base sans cette colonne (migration pas encore
  * appliquée) : relu sans elle, la règle v1.60.2 seule s'applique (jamais d'arrêt de la synchronisation) */
 async function lireContacts<T>(cols: string, q: (sel: string) => PromiseLike<{ data: T | null; error: { message: string } | null }>): Promise<T | null> {
-  const r = await q(`${cols},hors_prospection_at`);
-  if (r.error && /hors_prospection_at/.test(r.error.message)) return (await q(cols)).data;
+  const r = await q(`${cols},hors_prospection_at,prospection_exclue_at`);
+  if (r.error && /hors_prospection_at|prospection_exclue_at/.test(r.error.message)) return (await q(cols)).data;
   return r.data;
 }
 

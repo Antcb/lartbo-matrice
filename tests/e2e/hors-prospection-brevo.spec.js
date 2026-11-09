@@ -41,3 +41,56 @@ test('option B : contact sans structure marqué hors prospection proposé seulem
   expect(await writes(page)).toBe(0);
   expectClean(ctx);
 });
+
+// Décisions d'Anthony du 09/11/2026 : exclusion MANUELLE, explicite et tracée, sur la fiche contact ; un rattachement actif ne la lève pas.
+test('fiche contact : « Exclure de la prospection » / « Remettre en prospection » avec motif, état affiché, un seul chemin d’écriture', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, DATA);
+  await page.evaluate(async () => { (await import('./js/forms.js')).editContact('hp-s'); });
+  const bloc = page.locator('#ct-prosp');
+  await expect(bloc).toContainText('Prospection : En prospection.');
+  await expect(bloc).toContainText('Le désabonnement Brevo n’est jamais modifié');
+  await expect(bloc.locator('button', { hasText: 'Remettre en prospection' })).toHaveCount(0);
+  // exclusion : motif obligatoire (fenêtre de l'application, jamais une fenêtre native)
+  await bloc.locator('button', { hasText: 'Exclure de la prospection' }).click();
+  const dlg = page.locator('dialog.ask[open]');
+  await expect(dlg).toContainText('Un rattachement à une structure ne le remet pas en prospection');
+  await dlg.locator('button', { hasText: 'Exclure de la prospection' }).click();
+  await expect(dlg.locator('.help.err')).toHaveText('À remplir');
+  await dlg.locator('#ask-input').fill('A demandé à ne plus être sollicité');
+  await dlg.locator('button', { hasText: 'Exclure de la prospection' }).click();
+  await expect(bloc).toContainText('Exclu de la prospection par l’équipe depuis le');
+  await expect(bloc).toContainText('par testeur@example.com : « A demandé à ne plus être sollicité »');
+  await expect(bloc.locator('button', { hasText: 'Exclure de la prospection' })).toHaveCount(0);
+  const calls = await page.evaluate(() => window.__calls.filter(c => c.rpc === 'set_prospection').map(c => c.args));
+  expect(calls).toEqual([{ p_contact: 'hp-s', p_exclure: true, p_motif: 'A demandé à ne plus être sollicité' }]);
+  // exclu manuellement : hors prospection même rattaché à une structure active (le rattachement ne lève que l'exclusion automatique)
+  expect(await page.evaluate(async () => { const { S } = await import('./js/state.js'); const { horsProspection } = await import('./js/selectors.js');
+    S.db.contact_structures.push({ contact_id: 'hp-s', structure_id: 'hp-o' }); (await import('./js/state.js')).touch('contact_structures');
+    return horsProspection(S.db.contacts.find(c => c.id === 'hp-s')); })).toBe(true);
+  // remise en prospection : motif, tracée
+  await bloc.locator('button', { hasText: 'Remettre en prospection' }).click();
+  await expect(dlg).toContainText('Un désabonnement Brevo reste toujours en place');
+  await dlg.locator('#ask-input').fill('Erreur de saisie');
+  await dlg.locator('button', { hasText: 'Remettre en prospection' }).click();
+  await expect(bloc).toContainText('Prospection : En prospection.');
+  const hist = await page.evaluate(async () => { const { S } = await import('./js/state.js'); return S.db.contacts.find(c => c.id === 'hp-s').prospection_history.map(e => [e.action, e.origine, e.par, e.motif]); });
+  expect(hist).toEqual([['exclusion', 'manuelle', 'testeur@example.com', 'A demandé à ne plus être sollicité'], ['remise', 'manuelle', 'testeur@example.com', 'Erreur de saisie']]);
+  // aucune écriture directe des colonnes de prospection : seulement la fonction serveur
+  expect(await page.evaluate(() => window.__calls.filter(c => c.table === 'contacts' && c.op !== 'select').length)).toBe(0);
+  await page.locator('#modal [data-act=closeModal]').first().click();
+  expectClean(ctx);
+});
+
+test('fiche contact : exclusion automatique (structure) affichée avec son motif ; « Remettre en prospection » proposé', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { contacts: [{ id: 'hp-a', display_name: 'Ali Auto', email: 'ali@exemple.invalid', hors_prospection_at: '2026-11-08T10:00:00Z',
+    prospection_history: [{ at: '2026-11-08T10:00:00Z', action: 'exclusion', origine: 'structure', par: 'automatique', motif: 'Structure inactive supprimée : Salle Z' }] }] });
+  await page.evaluate(async () => { (await import('./js/forms.js')).editContact('hp-a'); });
+  const bloc = page.locator('#ct-prosp');
+  await expect(bloc).toContainText('Hors prospection depuis le 08/11/2026 : Structure inactive supprimée : Salle Z. Il y revient s’il est rattaché à une structure active.');
+  await expect(bloc.locator('button', { hasText: 'Remettre en prospection' })).toHaveCount(1);
+  await expect(bloc.locator('button', { hasText: 'Exclure de la prospection' })).toHaveCount(1);
+  await page.locator('#modal [data-act=closeModal]').first().click();
+  expectClean(ctx);
+});

@@ -207,17 +207,32 @@ t('déclencheur SQL : ajout, retrait et déplacement relancent la synchronisatio
   assert.match(code, /select n\.contact_id, n\.structure_id, n\.role from brevo_nouv n except select o\.contact_id, o\.structure_id, o\.role from brevo_anc o/);
   assert.doesNotMatch(code, /\bdrop\b|\bdelete from\b|\btruncate\b|brevo_contact_trg\(\) returns/i);
   // seules écritures : le marqueur hors_prospection_at (posé / effacé), jamais une autre colonne de contacts
-  assert.deepEqual([...new Set(code.match(/update contacts k set \w+/g))], ['update contacts k set hors_prospection_at']);
+  // seules écritures : les marqueurs de prospection (automatique, manuel) et leur journal, jamais une autre colonne de contacts
+  assert.deepEqual([...new Set((code.match(/update contacts (?:k )?set [^;]*?where/g) || []).flatMap(u => u.match(/\b(\w+) = /g)).map(x => x.replace(' = ', '')))].sort(),
+    ['hors_prospection_at', 'prospection_exclue_at', 'prospection_history']);
+  // décisions du 09/11 : un rattachement actif ou une réactivation ne lèvent que le marqueur automatique
+  const levees = code.split('prospection_entree(\'remise\', \'structure\'');
+  assert.equal(levees.length, 3);   // rattachement actif, réactivation
+  for (const avant of levees.slice(0, -1)) { const stmt = avant.slice(avant.lastIndexOf('update contacts')); assert.match(stmt, /^update contacts k set hors_prospection_at = null,/); assert.doesNotMatch(stmt, /prospection_exclue_at/); }
+  // garde : écriture directe des colonnes de prospection par l'API refusée ; seul chemin d'équipe : set_prospection (motif, tracé)
+  assert.match(code, /create or replace trigger contacts_prospection_guard before insert or update on public\.contacts/);
+  assert.match(code, /current_user::text in \('anon', 'authenticated'\)/);
+  assert.doesNotMatch(code.slice(code.indexOf('function public.contacts_prospection_guard'), code.indexOf('create or replace trigger contacts_prospection_guard')), /security definer/);
+  assert.match(code, /grant execute on function public\.set_prospection\(uuid, boolean, text\) to authenticated/);
+  assert.doesNotMatch(code.slice(code.indexOf('function public.set_prospection'), code.indexOf('revoke all on function public.set_prospection')), /emailBlacklisted|unsubscri|blacklist/i);
   assert.match(code, /create or replace trigger brevo_structure_deleted before delete on public\.structures/);
   // essai en base jetable : tests/outils/brevo-declencheurs-pg.sh (50 rattachements, structure de 40 contacts, réécriture à l'identique)
   assert.match(readFileSync(new URL('../outils/brevo-declencheurs-pg.sh', import.meta.url), 'utf8'), /fonction et structure réécrites à l’identique : aucun appel[\s\S]*suppression d’une structure inactive : ses contacts uniquement inactifs marqués[\s\S]*contact créé sans structure : pas marqué/);
 });
-t('option B (08/11) : contact devenu sans structure après sa dernière structure inactive = toujours hors Brevo ; créé sans structure = ajouté', async () => {
+t('option B (08/11) et exclusion manuelle (09/11) : contact devenu sans structure après sa dernière structure inactive = toujours hors Brevo ; créé sans structure = ajouté', async () => {
   const M = '2026-11-08T10:00:00Z';
   assert.equal(horsProspection([], M), true);
   assert.equal(horsProspection([], null), false);
   assert.equal(horsProspection([LR('Ouverte', false)], M), false);        // rattaché à une structure active : prospectable
   assert.equal(horsProspection([LR('Fermée', true)], null), true);        // règle v1.60.2 inchangée
+  // exclusion MANUELLE (09/11) : hors prospection quelles que soient les structures, même actives
+  assert.equal(horsProspection([LR('Ouverte', false)], null, M), true);
+  assert.equal(horsProspection([], null, M), true);
   // marqué, sans structure : ni création, ni liste
   const b = fauxBrevo();
   const r = await sync(b, C({ hors_prospection_at: M }), []);
@@ -236,7 +251,14 @@ t('option B (08/11) : contact devenu sans structure après sa dernière structur
   assert.deepEqual(list.map(x => x.email), ['b@x.invalid']); assert.equal(skipped_inactive, 1);
   // même règle côté application (js/selectors.js)
   const sel = readFileSync(new URL('../../js/selectors.js', import.meta.url), 'utf8');
-  assert.match(sel, /export const horsProspection = c => onlyInactive\(c\) \|\| \(!!c\?\.hors_prospection_at && !\(c\?\.id && linksOfContact\(c\.id\)\.length\)\);/);
+  assert.match(sel, /export const horsProspection = c => !!c\?\.prospection_exclue_at \|\| onlyInactive\(c\) \|\| \(!!c\?\.hors_prospection_at && !\(c\?\.id && linksOfContact\(c\.id\)\.length\)\);/);
+  // exclu à la main, jamais créé dans Brevo (même rattaché à une structure active) ; déjà dans Brevo : rien d'autre que ses champs
+  const b4 = fauxBrevo();
+  const r4 = await sync(b4, C({ prospection_exclue_at: M }), [LR('Ouverte', false)]);
+  assert.equal(b4.base.size, 0); assert.deepEqual(r4.skipped, ['lea@x.invalid']);
+  const b5 = fauxBrevo({ 'lea@x.invalid': { attributes: {}, listIds: [], emailBlacklisted: true } });
+  await sync(b5, C({ prospection_exclue_at: M }), [LR('Ouverte', false)], ['lea@x.invalid']);
+  assert.equal(b5.base.get('lea@x.invalid').emailBlacklisted, true); assert.deepEqual(b5.base.get('lea@x.invalid').listIds, []);
 });
 
 let ko = 0;

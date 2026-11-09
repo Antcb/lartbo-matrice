@@ -25,6 +25,11 @@ create table structures(id uuid primary key, name text, inactive_at timestamptz)
 create table contact_structures(contact_id uuid references contacts(id) on delete cascade,
   structure_id uuid references structures(id) on delete cascade, role text, primary key(contact_id, structure_id));
 create table appels(n serial, contact uuid);
+-- fonctions existantes en production (is_team : RLS ; finance_actor : v1.42, auteur d'après la session)
+create function is_team() returns boolean language sql as $$ select true $$;
+create or replace function public.finance_actor() returns text language sql stable set search_path = public as $$
+  select coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'email',
+                  nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role', session_user::text) $$;
 create function brevo_queue(p_contact uuid) returns void language sql as $$ insert into appels(contact) values (p_contact) $$;
 create or replace function public.brevo_contact_trg() returns trigger language plpgsql security definer set search_path = public as $$
 begin
@@ -139,6 +144,70 @@ select verifie_marques('réactivation d’une structure : marqueur de ses contac
 select verifie('… et ses contacts relancés (61, 66)', '0061×1,0066×1');
 update contact_structures set role = 'Régie' where contact_id = u(65);
 select verifie_marques('fonction changée : marqueur inchangé', '0063,0065');
+truncate appels;
+-- ───── Décisions du 09/11 : exclusion MANUELLE, journal, garde ─────
+grant usage on schema public to authenticated; grant select, insert, update on contacts to authenticated;
+create function hist(i int) returns text language sql as $$
+  select coalesce(string_agg(e->>'action' || '/' || (e->>'origine') || '/' || (e->>'par'), ',' order by ord), '')
+    from contacts, jsonb_array_elements(prospection_history) with ordinality as h(e, ord) where id = u(i) $$;
+create function exclus() returns text language sql as $$
+  select coalesce(string_agg(right(id::text, 4), ',' order by id), '') from contacts where prospection_exclue_at is not null $$;
+create function attendu(cas text, obtenu text, voulu text) returns void language plpgsql as $$
+begin
+  if obtenu is distinct from voulu then raise exception 'ÉCHEC « % » : attendu [%], obtenu [%]', cas, voulu, obtenu; end if;
+  raise notice 'ok : %', cas;
+end $$;
+select attendu('journal automatique du contact 63 (structure inactive supprimée)', hist(63), 'exclusion/structure/automatique');
+select attendu('journal automatique du contact 62 (exclu puis rattaché à une structure active)', hist(62), 'exclusion/structure/automatique,remise/structure/automatique');
+-- l'équipe, connectée (rôle authenticated, adresse dans la session)
+select set_config('request.jwt.claims', '{"email":"equipe@exemple.invalid","role":"authenticated"}', false);
+set role authenticated;
+select set_prospection(u(64), true, '  A demandé à ne plus être sollicité  ');
+reset role;
+select attendu('exclusion manuelle par set_prospection (équipe)', exclus(), '0064');
+select attendu('… tracée : action, origine, auteur', hist(64), 'exclusion/manuelle/equipe@exemple.invalid');
+select attendu('… motif nettoyé', (select prospection_history->-1->>'motif' from contacts where id = u(64)), 'A demandé à ne plus être sollicité');
+select verifie('… exclure ne relance pas Brevo', '');
+insert into contact_structures(contact_id, structure_id) values (u(64), u(203));
+select attendu('rattachement à une structure active : l’exclusion MANUELLE reste', exclus(), '0064');
+set role authenticated;
+select set_prospection(u(63), true, 'Exclu aussi à la main');   -- 63 : exclusion automatique ET manuelle
+reset role;
+insert into contact_structures(contact_id, structure_id) values (u(63), u(203));
+select attendu('… alors que l’exclusion automatique est levée', (select (hors_prospection_at is null)::text from contacts where id = u(63)), 'true');
+select attendu('contact exclu des deux façons rattaché à une structure active : seule l’automatique est levée', exclus(), '0063,0064');
+update structures set inactive_at = now() where id = u(203);
+update structures set inactive_at = null where id = u(203);
+select attendu('réactivation d’une structure : l’exclusion MANUELLE reste', exclus(), '0063,0064');
+truncate appels;
+set role authenticated;
+do $$ begin
+  begin update contacts set prospection_exclue_at = null where id = u(64); raise exception 'ÉCHEC : écriture directe acceptée';
+  exception when raise_exception then if sqlerrm like 'ÉCHEC%' then raise; end if; end;
+  begin update contacts set hors_prospection_at = now() where id = u(68); raise exception 'ÉCHEC : écriture directe acceptée';
+  exception when raise_exception then if sqlerrm like 'ÉCHEC%' then raise; end if; end;
+  begin update contacts set prospection_history = '[]' where id = u(64); raise exception 'ÉCHEC : écriture directe acceptée';
+  exception when raise_exception then if sqlerrm like 'ÉCHEC%' then raise; end if; end;
+  begin insert into contacts(id, email, prospection_exclue_at) values (u(90), 'z@x.invalid', now()); raise exception 'ÉCHEC : écriture directe acceptée';
+  exception when raise_exception then if sqlerrm like 'ÉCHEC%' then raise; end if; end;
+  update contacts set first_name = 'Autorisé' where id = u(64);   -- les autres colonnes restent modifiables
+  begin perform set_prospection(u(64), true, 'encore'); raise exception 'ÉCHEC : double exclusion acceptée';
+  exception when raise_exception then if sqlerrm like 'ÉCHEC%' then raise; end if; end;
+  begin perform set_prospection(u(64), false, '   '); raise exception 'ÉCHEC : motif vide accepté';
+  exception when raise_exception then if sqlerrm like 'ÉCHEC%' then raise; end if; end;
+  begin perform set_prospection(u(67), false, 'rien à lever'); raise exception 'ÉCHEC : remise d’un contact non exclu acceptée';
+  exception when raise_exception then if sqlerrm like 'ÉCHEC%' then raise; end if; end;
+  raise notice 'ok : écritures directes de l’API refusées (3 colonnes, insertion), autres colonnes libres ; double exclusion, motif vide, remise sans exclusion refusés';
+end $$;
+reset role; truncate appels; set role authenticated;   -- le prénom modifié a relancé Brevo (déclencheur brevo_contacts, normal)
+select set_prospection(u(64), false, 'Erreur de saisie');
+select set_prospection(u(65), false, 'Contact repris en direct');   -- 65 : exclusion automatique seulement
+reset role;
+select attendu('remise en prospection : exclusion manuelle levée (63 reste exclu, non remis)', exclus(), '0063');
+select attendu('… exclusion automatique levée aussi (action explicite)', (select (hors_prospection_at is null)::text from contacts where id = u(65)), 'true');
+select attendu('… tracée', hist(64), 'exclusion/manuelle/equipe@exemple.invalid,remise/manuelle/equipe@exemple.invalid');
+select verifie('… et Brevo relancé pour les contacts remis', '0064×1,0065×1');
+select attendu('nom modifié par l’équipe', (select first_name from contacts where id = u(64)), 'Autorisé');
 truncate appels;
 do $$ begin
   if (select count(*) from contacts) <> 48 then raise exception 'ÉCHEC : un contact a disparu'; end if;

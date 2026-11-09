@@ -44,8 +44,9 @@ function rcptRows(contacts, q, box){
   return contacts.flatMap(c => {
     const mails = mailsOf(c), sts = linksOfContact(c.id), here = !!sid && sts.some(st => st.id === sid);
     const where = sts.length ? sts.slice(0, 3).map(st => st.name + (isInactive(st) ? ' (inactive)' : '')).join(', ') + (sts.length > 3 ? ` +${sts.length - 3}` : '') : 'sans structure';
-    // hors prospection (v1.60.2 ; option B du 08/11/2026 : sans structure après le retrait de sa dernière structure inactive)
-    const hors = horsProspection(c), why = onlyInactive(c) ? 'structures inactives uniquement' : hors ? 'hors prospection (structure inactive retirée)' : '';
+    // hors prospection (v1.60.2 ; option B du 08/11/2026 : sans structure après le retrait de sa dernière structure inactive ;
+    // exclusion manuelle par l'équipe, 09/11/2026)
+    const hors = horsProspection(c), why = c.prospection_exclue_at ? 'exclu de la prospection par l’équipe' : onlyInactive(c) ? 'structures inactives uniquement' : hors ? 'hors prospection (structure inactive retirée)' : '';
     if (!mails.length) return [{id:'sans-adresse:' + c.id, label:c.display_name, inactive:hors, here, hint:['pas d’adresse mail', where].join(' · ')}];
     return [...mails].sort((a, b) => hit(a) - hit(b)).filter(m => !chosen.has(m.toLowerCase()))
       .map(m => ({id:m, label:c.display_name, inactive:hors, here,
@@ -199,7 +200,7 @@ async function update(input){
     items = items.filter(it => !it.inactive);
     if (n) items.push(kind === 'rcpt'
       // prospection (v1.60.2 ; option B du 08/11/2026) : contacts hors prospection (horsProspection), montrés seulement sur demande
-      ? {more:true, label:`Afficher aussi ${n} adresse${n>1?'s':''} de contacts hors prospection (structures inactives)`, hint:'hors prospection par défaut'}
+      ? {more:true, label:`Afficher aussi ${n} adresse${n>1?'s':''} de contacts hors prospection`, hint:'hors prospection par défaut'}
       : {more:true, label:`Afficher aussi ${n} structure${n>1?'s':''} inactive${n>1?'s':''}`, hint:'fermée(s), gardée(s) avec leur historique'});
   }
   if (box.dataset.create) items = items.concat([{create:true, label:`+ Créer « ${q} »`, q}]);

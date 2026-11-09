@@ -18,6 +18,9 @@
  * migration 2026-11-08_brevo_rattachements.sql). Sans structure et marqué, il reste hors prospection et hors Brevo (ni ajout, ni
  * liste) jusqu'à un rattachement à une structure active ou une réactivation ; un contact CRÉÉ sans structure n'est pas marqué et
  * est ajouté comme avant. Même règle : js/selectors.js (horsProspection). Rien n'est supprimé ni désabonné.
+ * Exclusion MANUELLE (décision du 09/11/2026) : contacts.prospection_exclue_at, posée et levée seulement par l'équipe (fonction SQL
+ * set_prospection, motif, tracé) : hors prospection et hors Brevo quelles que soient ses structures. Un contact déjà dans Brevo y reste
+ * (aucune suppression, aucun désabonnement ; ses champs restent à jour si la Matrice l'a créé).
  *
  * Fonction propre à chaque structure (contact_structures.role) — décision d'Anthony du 08/11/2026 : champ texte Brevo « FONCTIONS »,
  * lisible, « Festival B : Programmatrice ; Théâtre Z : Directrice » (structures triées, sans doublon), information seulement
@@ -29,9 +32,11 @@ export type Link = { name: string; inactive: boolean; role?: string | null };
 
 export const onlyInactive = (links: Link[] = []): boolean => links.length > 0 && links.every((l) => l.inactive);
 
-/** Hors prospection et hors Brevo : lié uniquement à des structures inactives (v1.60.2), ou sans structure et marqué (option B,
- * contacts.hors_prospection_at). Même règle que js/selectors.js (horsProspection). */
-export const horsProspection = (links: Link[] = [], marque?: string | null): boolean => onlyInactive(links) || (links.length === 0 && !!marque);
+/** Hors prospection et hors Brevo : lié uniquement à des structures inactives (v1.60.2), sans structure et marqué automatiquement
+ * (option B, contacts.hors_prospection_at), ou exclu MANUELLEMENT par l'équipe (contacts.prospection_exclue_at, décision du 09/11 :
+ * jamais levée par un rattachement). Même règle que js/selectors.js (horsProspection). */
+export const horsProspection = (links: Link[] = [], marque?: string | null, manuel?: string | null): boolean =>
+  !!manuel || onlyInactive(links) || (links.length === 0 && !!marque);
 
 const fr = (a: string, b: string) => a.localeCompare(b, "fr", { sensitivity: "base" }) || (a < b ? -1 : a > b ? 1 : 0);
 
@@ -55,12 +60,12 @@ export function fonctionsParStructure(links: Link[] = []): { structure: string; 
 export const fonctionsTexte = (links: Link[] = []): string => fonctionsParStructure(links).map((f) => `${f.structure} : ${f.fonction}`).join(" ; ");
 
 /** Adresses à ajouter à Brevo : celles des contacts qui ne sont pas hors prospection (horsProspection) */
-export function aAjouter<T extends { c: { id: string; hors_prospection_at?: string | null } }>(cand: T[], links: Map<string, Link[]>): { list: T[]; skipped_inactive: number } {
-  const list = cand.filter((x) => !horsProspection(links.get(x.c.id), x.c.hors_prospection_at));
+export function aAjouter<T extends { c: { id: string; hors_prospection_at?: string | null; prospection_exclue_at?: string | null } }>(cand: T[], links: Map<string, Link[]>): { list: T[]; skipped_inactive: number } {
+  const list = cand.filter((x) => !horsProspection(links.get(x.c.id), x.c.hors_prospection_at, x.c.prospection_exclue_at));
   return { list, skipped_inactive: cand.length - list.length };
 }
 
-export type Contact = { id: string; email: string | null; email_2?: string | null; first_name: string | null; last_name: string | null; display_name: string | null; hors_prospection_at?: string | null };
+export type Contact = { id: string; email: string | null; email_2?: string | null; first_name: string | null; last_name: string | null; display_name: string | null; hors_prospection_at?: string | null; prospection_exclue_at?: string | null };
 export type Champs = { first?: string; last?: string; struct?: string; fonctions?: string };
 
 /** Mails valides d'un contact (mail 1 puis mail 2), en minuscules et sans doublon */
@@ -105,7 +110,7 @@ export type ClientBrevo = {
  */
 export async function syncContact(p: { client: ClientBrevo; c: Contact; links: Link[] | undefined; champs: Champs; listIds: number[]; ours: Set<string> }) {
   const { client, c, links, champs, listIds, ours } = p;
-  const held = horsProspection(links, c.hors_prospection_at);   // hors prospection : pas de nouveau contact Brevo (v1.60.2, option B)
+  const held = horsProspection(links, c.hors_prospection_at, c.prospection_exclue_at);   // hors prospection : pas de nouveau contact Brevo (v1.60.2, option B)
   const aCreer = attributes(c, links, champs, false);
   const aJour = attributes(c, links, champs, true);
   const errors: string[] = [], done: string[] = [], created: string[] = [], skipped: string[] = [], updated: string[] = [];

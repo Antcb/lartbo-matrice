@@ -16,6 +16,15 @@
 --    touché. Les contacts déjà passés par ce cas AVANT cette migration ne sont pas marqués (aucun historique des rattachements :
 --    aucune valeur inventée).
 --
+-- 3. Exclusion MANUELLE (décisions d'Anthony du 09/11/2026) : contacts.prospection_exclue_at, posée et levée seulement par
+--    l'équipe, par la fonction set_prospection (« Exclure de la prospection » / « Remettre en prospection », fiche contact, motif
+--    obligatoire). Un rattachement actif ou une réactivation n'efface que le marqueur AUTOMATIQUE (hors_prospection_at), jamais
+--    l'exclusion manuelle ni un désabonnement Brevo. « Remettre en prospection » lève les deux marqueurs (action explicite), ne touche
+--    jamais au désabonnement Brevo et relance brevo-sync. Traçabilité : contacts.prospection_history (même principe que
+--    shows.archive_history : liste de {at, action, origine, par, motif}), complétée par la base à chaque pose ou levée, automatique
+--    (par « automatique ») ou manuelle (auteur = finance_actor(), l'adresse du compte connecté). Garde contacts_prospection_guard :
+--    une écriture directe de l'équipe par l'API (rôles anon / authenticated) sur ces trois colonnes est refusée.
+--
 -- brevo_contact_trg (déclencheur brevo_contacts sur contacts) n'est pas modifiée : sa branche « contact_structures » n'est plus
 -- appelée (le déclencheur brevo_contact_structures est remplacé ci-dessous par la version « par requête »).
 -- Aucune donnée existante n'est modifiée (colonne ajoutée vide). Rejouable. Sans clé Brevo ou sans adresse des fonctions serveur,
@@ -28,14 +37,82 @@
 --   drop trigger brevo_contact_structures_retrait on public.contact_structures;
 --   drop trigger brevo_contact_structures_modif on public.contact_structures;
 --   drop trigger brevo_structure_deleted on public.structures;
+--   drop trigger contacts_prospection_guard on public.contacts;
 --   drop function public.brevo_links_trg(); drop function public.brevo_link_queue(uuid); drop function public.brevo_structure_del_trg();
+--   drop function public.set_prospection(uuid, boolean, text); drop function public.contacts_prospection_guard();
+--   drop function public.prospection_entree(text, text, text, text);
 --   brevo_structure_trg : version de supabase/migrations/2026-11-07_v1.60.2_brevo_reactivation.sql ;
---   la colonne contacts.hors_prospection_at peut rester (inutilisée) ; la retirer = suppression de colonne (accord d'Anthony).
+--   les colonnes contacts.hors_prospection_at, prospection_exclue_at, prospection_history peuvent rester (inutilisées) ; les retirer
+--   = suppression de colonnes et de l'historique (accord d'Anthony).
 -- =====================================================================================================
 
 alter table public.contacts add column if not exists hors_prospection_at timestamptz;
 comment on column public.contacts.hors_prospection_at is
-  'Hors prospection et hors Brevo depuis (option B, 08/11/2026) : contact lié uniquement à des structures inactives quand il a perdu un rattachement. Effacé par un rattachement à une structure active ou une réactivation. Posé et effacé par les déclencheurs Brevo seulement.';
+  'Exclusion AUTOMATIQUE (structure) de la prospection et de Brevo depuis (option B, 08/11/2026) : contact lié uniquement à des structures inactives quand il a perdu un rattachement. Effacée par un rattachement à une structure active, une réactivation ou « Remettre en prospection ». Jamais écrite directement par l’API (contacts_prospection_guard).';
+alter table public.contacts add column if not exists prospection_exclue_at timestamptz;
+comment on column public.contacts.prospection_exclue_at is
+  'Exclusion MANUELLE de la prospection et de Brevo depuis (décision du 09/11/2026) : posée et levée seulement par set_prospection (équipe, motif). Jamais levée par un rattachement ni une réactivation.';
+alter table public.contacts add column if not exists prospection_history jsonb not null default '[]'::jsonb;
+comment on column public.contacts.prospection_history is
+  'Journal des exclusions / remises en prospection : [{at, action (exclusion | remise), origine (structure | manuelle), par, motif}]. Complété par la base seulement.';
+
+-- Entrée du journal de prospection d'un contact
+create or replace function public.prospection_entree(p_action text, p_origine text, p_par text, p_motif text) returns jsonb
+language sql stable set search_path = public as $$
+  select jsonb_build_array(jsonb_build_object('at', now(), 'action', p_action, 'origine', p_origine, 'par', p_par, 'motif', p_motif))
+$$;
+revoke all on function public.prospection_entree(text, text, text, text) from public, anon, authenticated;
+
+-- Garde : les trois colonnes de prospection ne s'écrivent jamais directement par l'API de l'équipe (rôles anon / authenticated) ;
+-- seuls les déclencheurs Brevo et set_prospection (SECURITY DEFINER : rôle propriétaire) les modifient. Pas SECURITY DEFINER.
+create or replace function public.contacts_prospection_guard() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if current_user::text in ('anon', 'authenticated') and (
+       (tg_op = 'INSERT' and (new.hors_prospection_at is not null or new.prospection_exclue_at is not null or new.prospection_history <> '[]'::jsonb))
+    or (tg_op = 'UPDATE' and (new.hors_prospection_at is distinct from old.hors_prospection_at or new.prospection_exclue_at is distinct from old.prospection_exclue_at
+                              or new.prospection_history is distinct from old.prospection_history))) then
+    raise exception 'L’exclusion de la prospection se change seulement par « Exclure de la prospection » ou « Remettre en prospection » (fiche du contact), avec un motif.';
+  end if;
+  return new;
+end $$;
+create or replace trigger contacts_prospection_guard before insert or update on public.contacts
+  for each row execute function public.contacts_prospection_guard();
+
+-- « Exclure de la prospection » (p_exclure = true) / « Remettre en prospection » (false), fiche contact — équipe seulement, motif
+-- obligatoire, tracé. Remettre lève l'exclusion manuelle ET l'exclusion automatique (structure), jamais un désabonnement Brevo ;
+-- un contact lié uniquement à des structures inactives reste hors prospection (règle v1.60.2, calculée) : refusé avec explication.
+create or replace function public.set_prospection(p_contact uuid, p_exclure boolean, p_motif text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare k contacts%rowtype; m text := btrim(coalesce(p_motif, '')); par text := finance_actor();
+begin
+  if not is_team() then raise exception 'Accès réservé à l’équipe'; end if;
+  if m = '' then raise exception 'Indique le motif'; end if;
+  if length(m) > 500 then raise exception 'Motif trop long (500 caractères au plus)'; end if;
+  select * into k from contacts where id = p_contact for update;
+  if not found then raise exception 'Contact introuvable'; end if;
+  if p_exclure then
+    if k.prospection_exclue_at is not null then raise exception 'Ce contact est déjà exclu de la prospection'; end if;
+    update contacts set prospection_exclue_at = now(), prospection_history = prospection_history || prospection_entree('exclusion', 'manuelle', par, m)
+     where id = p_contact;
+  else
+    if k.prospection_exclue_at is null and k.hors_prospection_at is null then
+      if exists (select 1 from contact_structures l where l.contact_id = p_contact)
+         and not exists (select 1 from contact_structures l join structures s on s.id = l.structure_id where l.contact_id = p_contact and s.inactive_at is null) then
+        raise exception 'Ce contact est lié uniquement à des structures inactives : rattache-le à une structure active, ou réactive l’une de ses structures';
+      end if;
+      raise exception 'Ce contact n’est pas exclu de la prospection';
+    end if;
+    update contacts set prospection_exclue_at = null, hors_prospection_at = null,
+           prospection_history = prospection_history || prospection_entree('remise', 'manuelle', par, m)
+     where id = p_contact;
+    perform brevo_link_queue(p_contact);   -- de nouveau ajoutable à Brevo s'il n'y est pas ; un désabonné y reste désabonné
+  end if;
+  select * into k from contacts where id = p_contact;
+  return jsonb_build_object('hors_prospection_at', k.hors_prospection_at, 'prospection_exclue_at', k.prospection_exclue_at, 'prospection_history', k.prospection_history);
+end $$;
+revoke all on function public.set_prospection(uuid, boolean, text) from public, anon;
+grant execute on function public.set_prospection(uuid, boolean, text) to authenticated;
 
 -- Relance brevo-sync pour un contact s'il existe encore et a un mail (un contact supprimé emporte ses rattachements en cascade :
 -- rien à envoyer pour lui)
@@ -65,14 +142,17 @@ begin
   if perdus is not null then
     -- marqués s'ils ne sont liés (structures restantes et retirées encore présentes) qu'à des structures inactives ; une structure
     -- supprimée est traitée avant la cascade par brevo_structure_del_trg
-    update contacts k set hors_prospection_at = now()
+    update contacts k set hors_prospection_at = now(),
+           prospection_history = k.prospection_history || prospection_entree('exclusion', 'structure', 'automatique', 'Rattachement retiré : plus lié qu’à des structures inactives')
      where k.hors_prospection_at is null and k.id = any(perdus)
        and exists (select 1 from brevo_anc o join structures s on s.id = o.structure_id where o.contact_id = k.id and s.inactive_at is not null)
        and not exists (select 1 from brevo_anc o join structures s on s.id = o.structure_id where o.contact_id = k.id and s.inactive_at is null)
        and not exists (select 1 from contact_structures l join structures s on s.id = l.structure_id where l.contact_id = k.id and s.inactive_at is null);
   end if;
   if tg_op in ('INSERT', 'UPDATE') then
-    update contacts k set hors_prospection_at = null
+    -- marqueur AUTOMATIQUE seulement : l'exclusion manuelle (prospection_exclue_at) n'est jamais levée ici
+    update contacts k set hors_prospection_at = null,
+           prospection_history = k.prospection_history || prospection_entree('remise', 'structure', 'automatique', 'Rattaché à une structure active')
      where k.hors_prospection_at is not null
        and k.id in (select n.contact_id from brevo_nouv n join structures s on s.id = n.structure_id where s.inactive_at is null);
   end if;
@@ -108,7 +188,8 @@ create or replace function public.brevo_structure_del_trg() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
   if old.inactive_at is not null then
-    update contacts k set hors_prospection_at = now()
+    update contacts k set hors_prospection_at = now(),
+           prospection_history = k.prospection_history || prospection_entree('exclusion', 'structure', 'automatique', 'Structure inactive supprimée : ' || coalesce(old.name, ''))
      where k.hors_prospection_at is null
        and k.id in (select l.contact_id from contact_structures l where l.structure_id = old.id)
        and not exists (select 1 from contact_structures l join structures s on s.id = l.structure_id where l.contact_id = k.id and s.inactive_at is null);
@@ -127,7 +208,9 @@ declare c uuid;
 begin
   -- seulement le passage inactive → active (une désactivation n'ajoute ni ne retire rien dans Brevo)
   if old.inactive_at is not null and new.inactive_at is null then
-    update contacts k set hors_prospection_at = null
+    -- marqueur AUTOMATIQUE seulement (jamais l'exclusion manuelle)
+    update contacts k set hors_prospection_at = null,
+           prospection_history = k.prospection_history || prospection_entree('remise', 'structure', 'automatique', 'Structure réactivée : ' || coalesce(new.name, ''))
      where k.hors_prospection_at is not null and k.id in (select l.contact_id from contact_structures l where l.structure_id = new.id);
     for c in select l.contact_id from contact_structures l join contacts k on k.id = l.contact_id
              where l.structure_id = new.id and (k.email is not null or k.email_2 is not null) loop

@@ -6,8 +6,8 @@ import { afterFeeChange, askConfirmation, becameConfirmed, sendConfirmation, val
 import { go, render } from './app.js';
 import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, FOLLOW_DATES, INVOICE_DATES, PAY_KINDS, isOff } from './constants.js';
-import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, restoreShow, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
-import { reactivateRemindersWindow, createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure, showPrefillFromSuivi } from './forms.js';
+import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, restoreShow, save, saveLinger, sb, setProspection, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
+import { reactivateRemindersWindow, createArtistFolder, editContact, prospectionBlock, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure, showPrefillFromSuivi } from './forms.js';
 import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showLabel, showsFiltered, structName, unreadNotifs } from './selectors.js';
 import { CFG } from './config.js';
 import { propagateCommission } from './commission.js';
@@ -189,6 +189,17 @@ export const ACTIONS = {
     if (error) return toast(error.message, true);
     const r = S.db.settings.find(x => x.key === key); if (r) r.value = el.innerHTML; else S.db.settings.push({key, value: el.innerHTML});
     toast('Signature enregistrée'); },
+  // Exclusion manuelle de la prospection (décisions du 09/11/2026) : motif demandé, fonction serveur tracée ; bloc de la fiche réaffiché
+  prospectionContact: async t => {
+    const id = t.dataset.id, exclure = t.dataset.exclure === '1';
+    const motif = await askText(exclure
+      ? {title: 'Exclure de la prospection ?', text: 'Le contact n’est plus proposé dans les prospections et n’est pas ajouté à Brevo. S’il est déjà dans Brevo, il y reste : rien n’est supprimé ni désabonné. Un rattachement à une structure ne le remet pas en prospection : seul « Remettre en prospection » le fait. Le motif, ton nom et la date sont gardés.', label: 'Motif de l’exclusion', ok: 'Exclure de la prospection'}
+      : {title: 'Remettre en prospection ?', text: 'Le contact est de nouveau proposé dans les prospections et peut être ajouté à Brevo. Un désabonnement Brevo reste toujours en place. Le motif, ton nom et la date sont gardés.', label: 'Motif', ok: 'Remettre en prospection'});
+    if (!motif) return;
+    if (!(await setProspection(id, exclure, motif))) return;
+    toast(exclure ? 'Contact exclu de la prospection' : 'Contact remis en prospection');
+    const el = document.getElementById('ct-prosp'); if (el) el.outerHTML = prospectionBlock(byId('contacts', id));
+  },
   brevoSyncAll: async () => {
     const n = S.db.contacts.reduce((n, c) => n + new Set([c.email, c.email_2].filter(e => /@/.test(e || '')).map(e => e.trim().toLowerCase())).size, 0);
     if (!(await confirmAsk('Envoyer les contacts dans Brevo ?', `Contacts de la Matrice avec un mail : ${n}. Seuls ceux qui ne sont pas encore dans Brevo sont ajoutés : les autres (et les désabonnés) ne sont pas touchés. Les contacts hors prospection (liés uniquement à des structures inactives, ou qui ont perdu leur dernière structure inactive) ne sont pas ajoutés.`, 'Envoyer à Brevo'))) return;

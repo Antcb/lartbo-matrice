@@ -238,9 +238,21 @@ export const onlyInactive = c => { const l = c?.id ? linksOfContact(c.id) : []; 
  * contacts.hors_prospection_at — décision d'Anthony du 08/11/2026 (option B) : un contact qui a perdu un rattachement alors qu'il
  * n'était lié qu'à des structures inactives ne revient pas en prospection en devenant « sans structure » ; un contact créé sans
  * structure n'est pas marqué. Le marqueur est posé et effacé par la base seulement (rattachement à une structure active,
- * réactivation). Même règle : supabase/functions/brevo-sync/regles.ts (horsProspection). Relances (relancesSuspended) : inchangées.
+ * réactivation). Exclusion MANUELLE (contacts.prospection_exclue_at, décision du 09/11) : hors prospection quelles que soient ses
+ * structures. Même règle : supabase/functions/brevo-sync/regles.ts (horsProspection). Relances (relancesSuspended) : inchangées.
  */
-export const horsProspection = c => onlyInactive(c) || (!!c?.hors_prospection_at && !(c?.id && linksOfContact(c.id).length));
+export const horsProspection = c => !!c?.prospection_exclue_at || onlyInactive(c) || (!!c?.hors_prospection_at && !(c?.id && linksOfContact(c.id).length));
+/**
+ * État de prospection d'un contact pour sa fiche (décisions du 09/11/2026) : {hors, manuel, auto, inactives, derniere} — derniere = dernière
+ * entrée MANUELLE du journal contacts.prospection_history ({at, action, origine, par, motif}). Exclusion manuelle : levée seulement par
+ * « Remettre en prospection » (fonction serveur set_prospection, motif, tracé) ; jamais par un rattachement.
+ */
+export function prospectionState(c){
+  const hist = Array.isArray(c?.prospection_history) ? c.prospection_history : [];
+  const auto = !!c?.hors_prospection_at && !(c?.id && linksOfContact(c.id).length);
+  return {hors: horsProspection(c), manuel: !!c?.prospection_exclue_at, auto, inactives: onlyInactive(c), markers: !!(c?.prospection_exclue_at || c?.hors_prospection_at),
+    derniere: [...hist].reverse().find(e => e?.origine === 'manuelle') || null, autoEntree: [...hist].reverse().find(e => e?.origine === 'structure') || null};
+}
 /** Adresses d'un champ « À » (nom <adresse>, virgules, points-virgules) */
 const addrsIn = v => (String(v || '').match(/[^\s<>,;"]+@[^\s<>,;"]+/g) || []).map(m => m.toLowerCase());
 /**

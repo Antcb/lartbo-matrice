@@ -140,6 +140,12 @@
       DB.notifications.forEach(n => { if (n.show_id === a.p_show && !n.withdrawn_at) Object.assign(n, { withdrawn_at: new Date().toISOString(), withdrawn_reason: 'Date archivée' }); }); return null; },
     restore_show: a => { const s = DB.shows.find(x => x.id === a.p_show); Object.assign(s, { archived_at: null, archived_by: null, archived_reason: null, restored_at: new Date().toISOString(), reminders_suspended_at: new Date().toISOString(), reminders_next: null }); return null; },
     reactivate_reminders: a => { const s = DB.shows.find(x => x.id === a.p_show); Object.assign(s, { reminders_suspended_at: null, reminders_reactivated_at: new Date().toISOString(), reminders_next: a.p_next }); return null; },
+    // décisions du 09/11/2026 : exclusion manuelle de la prospection (même effet que la fonction SQL set_prospection, sans Brevo)
+    set_prospection: a => { const c = DB.contacts.find(x => x.id === a.p_contact), at = new Date().toISOString();
+      const e = { at, action: a.p_exclure ? 'exclusion' : 'remise', origine: 'manuelle', par: USER, motif: a.p_motif };
+      Object.assign(c, a.p_exclure ? { prospection_exclue_at: at } : { prospection_exclue_at: null, hors_prospection_at: null },
+        { prospection_history: [...(c.prospection_history || []), e] });
+      return { hors_prospection_at: c.hors_prospection_at || null, prospection_exclue_at: c.prospection_exclue_at || null, prospection_history: c.prospection_history }; },
     mail_vars: () => ({ artiste: 'Artiste Alpha', date: 'mardi 1er juin 2027', ville: 'Bourg-Test', lieu: 'Festival Fictif', cachet_ht: '6 000 €', contact: 'Camille',
       lien_fiche: 'https://exemple.invalid/fiche.html?t=jeton-fiche-test-0001' }),
     // v1.40 (A2) : fiche d'une date booking / production avec le mode transmis par le serveur (migration 2026-10-25_v1.40_fiche_mode)
