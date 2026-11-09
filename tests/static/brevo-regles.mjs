@@ -202,10 +202,24 @@ t('déclencheur SQL : ajout, retrait et déplacement relancent la synchronisatio
   assert.match(code, /create or replace trigger brevo_contact_structures_modif after update on public\.contact_structures\s+referencing old table as brevo_anc new table as brevo_nouv for each statement/);
   assert.doesNotMatch(code, /on public\.contact_structures\s+for each row/);
   // une seule relance par contact ; en modification, seuls les couples (contact, structure) apparus ou disparus comptent
-  assert.equal((code.match(/select distinct/g) || []).length, 3);
+  assert.equal((code.match(/for c in select distinct/g) || []).length, 3);
   // fonction comprise (décision du 08/11) : un changement de fonction relance, une réécriture à l'identique non
   assert.match(code, /select n\.contact_id, n\.structure_id, n\.role from brevo_nouv n except select o\.contact_id, o\.structure_id, o\.role from brevo_anc o/);
-  assert.doesNotMatch(code, /\bdrop\b|\bdelete from\b|\btruncate\b|brevo_contact_trg\(\) returns/i);
+  assert.doesNotMatch(code, /\bdrop\b|\btruncate\b|brevo_contact_trg\(\) returns/i);
+  // seules suppressions : dans la mémoire des exclusions (remise en prospection, part automatique levée), jamais de données métier
+  assert.deepEqual([...new Set(code.match(/delete from \w+/gi))], ['delete from prospection_memoire']);
+  // décision du 09/11 : mémoire par adresse, illisible par l'API, reprise après la garde (ordre alphabétique des déclencheurs BEFORE)
+  assert.match(code, /create table if not exists public\.prospection_memoire/);
+  assert.match(code, /revoke all on public\.prospection_memoire from public, anon, authenticated, service_role;/);
+  assert.match(code, /alter table public\.prospection_memoire enable row level security;/);
+  assert.match(code, /create or replace trigger contacts_prospection_oubli after delete on public\.contacts/);
+  assert.match(code, /create or replace trigger contacts_prospection_memoire before insert or update of email, email_2 on public\.contacts/);
+  assert.ok(['contacts_clean', 'contacts_prospection_guard', 'contacts_prospection_memoire'].every((x, i, a) => !i || a[i - 1] < x));
+  // effacement de la part manuelle de la mémoire : seulement dans set_prospection
+  const setp = code.slice(code.indexOf('function public.set_prospection'), code.indexOf('revoke all on function public.set_prospection'));
+  assert.match(setp, /delete from prospection_memoire where email = any\(prospection_mails\(k\.email, k\.email_2\)\)/);
+  const lever = code.slice(code.indexOf('function public.prospection_memoire_lever_auto'));
+  assert.match(lever, /delete from prospection_memoire where email = any\(mails\) and exclue_manuelle_at is null;/);
   // seules écritures : le marqueur hors_prospection_at (posé / effacé), jamais une autre colonne de contacts
   // seules écritures : les marqueurs de prospection (automatique, manuel) et leur journal, jamais une autre colonne de contacts
   assert.deepEqual([...new Set((code.match(/update contacts (?:k )?set [^;]*?where/g) || []).flatMap(u => u.match(/\b(\w+) = /g)).map(x => x.replace(' = ', '')))].sort(),

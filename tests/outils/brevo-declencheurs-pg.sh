@@ -19,7 +19,7 @@ P=("${QUI[@]}" "$BIN/psql" -h "$D" -p "$PORT" -U postgres -v ON_ERROR_STOP=1 -q 
 
 # État de la production avant la migration (v1.16 / v1.32) : déclencheur ligne par ligne, à l'ajout seulement
 "${P[@]}" <<'SQL'
-create role anon; create role authenticated;
+create role anon; create role authenticated; create role service_role;
 create table contacts(id uuid primary key, email text, email_2 text, first_name text, last_name text);
 create table structures(id uuid primary key, name text, inactive_at timestamptz);
 create table contact_structures(contact_id uuid references contacts(id) on delete cascade,
@@ -239,5 +239,59 @@ do $$ begin
     raise exception 'ÉCHEC : brevo_contact_structures est encore ligne par ligne'; end if;
   raise notice 'ok : aucun autre contact supprimé ; déclencheurs par requête';
 end $$;
+-- ───── Décision du 09/11 : exclusion gardée par adresse après la suppression du contact ─────
+grant delete on contacts to authenticated;
+create function exclu(i int) returns text language sql as $$
+  select concat_ws('+', case when prospection_exclue_at is not null then 'manuelle' end, case when hors_prospection_at is not null then 'auto' end) from contacts where id = u(i) $$;
+create function memoire() returns text language sql as $$
+  select coalesce(string_agg(email || ':' || concat_ws('+', case when exclue_manuelle_at is not null then 'manuelle' end, case when hors_auto_at is not null then 'auto' end), ',' order by email), '') from prospection_memoire $$;
+insert into contacts(id, email, email_2) values (u(81), 'Mem1@Exemple.invalid', 'mem1b@exemple.invalid'), (u(82), 'mem2@exemple.invalid', null), (u(87), 'neuf@exemple.invalid', null);
+insert into structures(id, name, inactive_at) values (u(301), 'Fermée M', now()), (u(302), 'Ouverte M', null);
+insert into contact_structures(contact_id, structure_id) values (u(82), u(301));
+delete from contact_structures where contact_id = u(82);                      -- 82 : exclusion automatique
+set role authenticated;
+select set_prospection(u(81), true, 'Ne plus solliciter');                      -- 81 : exclusion manuelle (2 adresses)
+delete from contacts where id in (u(81), u(82));                                -- suppression par l'équipe
+reset role;
+select attendu('suppression de contacts exclus : adresses gardées en minuscules, avec l’origine', memoire(), 'mem1@exemple.invalid:manuelle,mem1b@exemple.invalid:manuelle,mem2@exemple.invalid:auto');
+set role authenticated;
+do $$ begin
+  begin perform 1 from prospection_memoire; raise exception 'ÉCHEC : mémoire lisible par l’équipe';
+  exception when insufficient_privilege then null; end;
+  begin delete from prospection_memoire; raise exception 'ÉCHEC : mémoire modifiable par l’équipe';
+  exception when insufficient_privilege then null; end;
+  raise notice 'ok : mémoire ni lisible ni modifiable par l’équipe';
+end $$;
+insert into contacts(id, email) values (u(83), 'MEM1@exemple.INVALID');          -- même adresse, casse différente
+insert into contacts(id, email, email_2) values (u(84), 'autre@exemple.invalid', 'mem1b@exemple.invalid');   -- 2e adresse mémorisée
+insert into contacts(id, email) values (u(85), 'mem2@exemple.invalid');
+update contacts set email = 'Mem1@exemple.invalid' where id = u(87);             -- adresse mémorisée donnée à un contact existant
+reset role;
+select attendu('recréé avec la même adresse (casse différente) : exclusion manuelle reprise', exclu(83), 'manuelle');
+select attendu('… journal : ancien journal + « reprise »', (select prospection_history->-1->>'motif' from contacts where id = u(83)), 'Exclusion reprise d’un contact supprimé le ' || to_char(now() at time zone 'Europe/Paris', 'DD/MM/YYYY'));
+select attendu('… ancien journal gardé', (select prospection_history->0->>'motif' from contacts where id = u(83)), 'Ne plus solliciter');
+select attendu('recréé avec la 2e adresse mémorisée : exclu', exclu(84), 'manuelle');
+select attendu('recréé, exclusion automatique reprise', exclu(85), 'auto');
+select attendu('adresse mémorisée donnée à un contact existant : exclu', exclu(87), 'manuelle');
+select attendu('contact créé avec une autre adresse : pas exclu', coalesce(exclu(68), ''), '');
+insert into contact_structures(contact_id, structure_id) values (u(85), u(302));
+select attendu('rattachement actif : part automatique levée (contact et mémoire), manuelle gardée', exclu(85) || ' | ' || memoire(), ' | mem1@exemple.invalid:manuelle,mem1b@exemple.invalid:manuelle');
+delete from contacts where id = u(85);
+insert into contacts(id, email) values (u(86), 'mem2@exemple.invalid');
+select attendu('… recréé ensuite : prospectable', coalesce(exclu(86), ''), '');
+set role authenticated;
+select set_prospection(u(83), false, 'Revenu vers nous');
+reset role;
+select attendu('« Remettre en prospection » : mémoire de ses adresses effacée, tracé', (select prospection_history->-1->>'motif' from contacts where id = u(83)) || ' | ' || memoire(),
+  'Revenu vers nous (mémoire d’exclusion de 1 adresse effacée) | mem1b@exemple.invalid:manuelle');
+delete from contacts where id = u(83);
+insert into contacts(id, email) values (u(88), 'mem1@exemple.invalid');
+select attendu('… recréé ensuite : prospectable', coalesce(exclu(88), ''), '');
+select attendu('87 (exclusion reprise) reste exclu tant qu’on ne le remet pas', exclu(87), 'manuelle');
+SQL
+# migration rejouée sur une base remplie : rien de perdu
+"${P[@]}" < "$MIG"
+"${P[@]}" -o /dev/null <<'SQL'
+select attendu('migration rejouée : mémoire et exclusions intactes', memoire() || ' | ' || exclu(84) || ' | ' || exclu(87), 'mem1b@exemple.invalid:manuelle | manuelle | manuelle');
 SQL
 echo "Déclencheurs Brevo (base jetable, port $PORT) : tous les cas vérifiés."

@@ -251,6 +251,8 @@ export const onlyInactive = c => { const l = c?.id ? linksOfContact(c.id) : []; 
  * structure n'est pas marqué. Le marqueur est posé et effacé par la base seulement (rattachement à une structure active,
  * réactivation). Exclusion MANUELLE (contacts.prospection_exclue_at, décision du 09/11) : hors prospection quelles que soient ses
  * structures. Même règle : supabase/functions/brevo-sync/regles.ts (horsProspection). Relances (relancesSuspended) : inchangées.
+ * Contact supprimé puis recréé avec la même adresse (décision du 09/11) : la base remet le même marqueur (table prospection_memoire,
+ * migration 2026-11-08_brevo_rattachements.sql) ; la règle ci-dessous n'a rien à faire de plus.
  */
 export const horsProspection = c => !!c?.prospection_exclue_at || onlyInactive(c) || (!!c?.hors_prospection_at && !(c?.id && linksOfContact(c.id).length));
 /**

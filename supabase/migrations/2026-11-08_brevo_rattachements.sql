@@ -29,6 +29,15 @@
 --    brevo_essai_guard : tant qu'une clé Brevo est enregistrée, l'équipe (API, rôles anon / authenticated) ne peut ni modifier ni
 --    effacer ce réglage (on vide d'abord la clé, puis la liste blanche). Sans le réglage (cas normal), aucun effet.
 --
+-- 5. Mémoire des exclusions par adresse (décision d'Anthony du 09/11/2026) : un contact supprimé puis recréé avec la même adresse
+--    (majuscules comprises) ne redevient pas prospectable s'il était exclu. À la suppression d'un contact exclu (manuellement ou
+--    automatiquement), ses adresses en minuscules et l'origine de l'exclusion sont gardées dans public.prospection_memoire
+--    (lisible et modifiable par la base seulement : RLS sans règle, aucun droit pour anon / authenticated / service_role). À la
+--    création d'un contact, ou quand une adresse mémorisée lui est donnée, le même marqueur revient tout seul, tracé « Exclusion
+--    reprise d'un contact supprimé le … ». Seule « Remettre en prospection » (set_prospection) efface cette mémoire, tracé ; un
+--    rattachement actif ou une réactivation n'en efface que la part automatique. Brevo (désabonnements, préférences) : inchangé.
+--    Table dans public : prise par la sauvegarde complète de la base ; PAS dans l'export JSON (backup-export, liste explicite).
+--
 -- brevo_contact_trg (déclencheur brevo_contacts sur contacts) n'est pas modifiée : sa branche « contact_structures » n'est plus
 -- appelée (le déclencheur brevo_contact_structures est remplacé ci-dessous par la version « par requête »).
 -- Aucune donnée existante n'est modifiée (colonne ajoutée vide). Rejouable. Sans clé Brevo ou sans adresse des fonctions serveur,
@@ -46,6 +55,10 @@
 --   drop function public.set_prospection(uuid, boolean, text); drop function public.contacts_prospection_guard();
 --   drop function public.prospection_entree(text, text, text, text);
 --   drop trigger brevo_essai_guard on public.settings; drop function public.brevo_essai_guard();
+--   drop trigger contacts_prospection_memoire on public.contacts; drop trigger contacts_prospection_oubli on public.contacts;
+--   drop function public.prospection_memoire_reprise(); drop function public.prospection_memoire_garde();
+--   drop function public.prospection_memoire_lever_auto(uuid); drop function public.prospection_mails(text, text);
+--   la table public.prospection_memoire peut rester ; la supprimer = perdre les exclusions mémorisées (accord d'Anthony).
 --   brevo_structure_trg : version de supabase/migrations/2026-11-07_v1.60.2_brevo_reactivation.sql ;
 --   les colonnes contacts.hors_prospection_at, prospection_exclue_at, prospection_history peuvent rester (inutilisées) ; les retirer
 --   = suppression de colonnes et de l'historique (accord d'Anthony).
@@ -89,7 +102,7 @@ create or replace trigger contacts_prospection_guard before insert or update on 
 -- un contact lié uniquement à des structures inactives reste hors prospection (règle v1.60.2, calculée) : refusé avec explication.
 create or replace function public.set_prospection(p_contact uuid, p_exclure boolean, p_motif text) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare k contacts%rowtype; m text := btrim(coalesce(p_motif, '')); par text := finance_actor();
+declare k contacts%rowtype; m text := btrim(coalesce(p_motif, '')); par text := finance_actor(); n int := 0;
 begin
   if not is_team() then raise exception 'Accès réservé à l’équipe'; end if;
   if m = '' then raise exception 'Indique le motif'; end if;
@@ -108,8 +121,12 @@ begin
       end if;
       raise exception 'Ce contact n’est pas exclu de la prospection';
     end if;
+    -- mémoire des adresses (contact supprimé puis recréé) : effacée seulement ici, et tracé
+    delete from prospection_memoire where email = any(prospection_mails(k.email, k.email_2));
+    get diagnostics n = row_count;
     update contacts set prospection_exclue_at = null, hors_prospection_at = null,
-           prospection_history = prospection_history || prospection_entree('remise', 'manuelle', par, m)
+           prospection_history = prospection_history || prospection_entree('remise', 'manuelle', par,
+             m || case when n > 0 then ' (mémoire d’exclusion de ' || n || ' adresse' || case when n > 1 then 's' else '' end || ' effacée)' else '' end)
      where id = p_contact;
     perform brevo_link_queue(p_contact);   -- de nouveau ajoutable à Brevo s'il n'y est pas ; un désabonné y reste désabonné
   end if;
@@ -155,7 +172,9 @@ begin
        and not exists (select 1 from contact_structures l join structures s on s.id = l.structure_id where l.contact_id = k.id and s.inactive_at is null);
   end if;
   if tg_op in ('INSERT', 'UPDATE') then
-    -- marqueur AUTOMATIQUE seulement : l'exclusion manuelle (prospection_exclue_at) n'est jamais levée ici
+    -- marqueur AUTOMATIQUE seulement : l'exclusion manuelle (prospection_exclue_at) n'est jamais levée ici ; mémoire des adresses :
+    -- part automatique levée aussi (prospection_memoire_lever_auto), part manuelle gardée
+    perform prospection_memoire_lever_auto(x.contact_id) from (select distinct n.contact_id from brevo_nouv n join structures s on s.id = n.structure_id where s.inactive_at is null) x;
     update contacts k set hors_prospection_at = null,
            prospection_history = k.prospection_history || prospection_entree('remise', 'structure', 'automatique', 'Rattaché à une structure active')
      where k.hors_prospection_at is not null
@@ -213,7 +232,8 @@ declare c uuid;
 begin
   -- seulement le passage inactive → active (une désactivation n'ajoute ni ne retire rien dans Brevo)
   if old.inactive_at is not null and new.inactive_at is null then
-    -- marqueur AUTOMATIQUE seulement (jamais l'exclusion manuelle)
+    -- marqueur AUTOMATIQUE seulement (jamais l'exclusion manuelle) ; mémoire des adresses : part automatique seulement
+    perform prospection_memoire_lever_auto(l.contact_id) from contact_structures l where l.structure_id = new.id;
     update contacts k set hors_prospection_at = null,
            prospection_history = k.prospection_history || prospection_entree('remise', 'structure', 'automatique', 'Structure réactivée : ' || coalesce(new.name, ''))
      where k.hors_prospection_at is not null and k.id in (select l.contact_id from contact_structures l where l.structure_id = new.id);
@@ -242,3 +262,88 @@ begin
 end $$;
 create or replace trigger brevo_essai_guard before update or delete on public.settings
   for each row execute function public.brevo_essai_guard();
+
+-- ─────────────── 5. Mémoire des exclusions par adresse (décision du 09/11/2026) ───────────────
+create table if not exists public.prospection_memoire (
+  email text primary key check (email = lower(btrim(email)) and email <> ''),
+  exclue_manuelle_at timestamptz,   -- exclusion manuelle (équipe) du contact supprimé
+  hors_auto_at timestamptz,         -- exclusion automatique (structure) du contact supprimé
+  contact_supprime_at timestamptz not null default now(),
+  ancien_contact uuid,
+  historique jsonb not null default '[]'::jsonb,   -- journal de prospection du contact supprimé
+  check (exclue_manuelle_at is not null or hors_auto_at is not null)
+);
+comment on table public.prospection_memoire is
+  'Exclusions de la prospection gardées par adresse (minuscules) après la suppression du contact (décision du 09/11/2026). Écrite et lue par la base seulement ; effacée par « Remettre en prospection » (set_prospection), part automatique par un rattachement actif ou une réactivation.';
+alter table public.prospection_memoire enable row level security;   -- aucune règle : illisible par l'API
+revoke all on public.prospection_memoire from public, anon, authenticated, service_role;
+
+-- Adresses d'un contact, en minuscules, sans doublon ni vide
+create or replace function public.prospection_mails(p_email text, p_email_2 text) returns text[]
+language sql immutable set search_path = public as $$
+  select coalesce(array_agg(distinct e), '{}') from (select lower(btrim(x)) e from unnest(array[p_email, p_email_2]) x) t where coalesce(e, '') <> ''
+$$;
+
+-- Suppression d'un contact exclu : ses adresses et l'origine de l'exclusion sont gardées (fusion avec une mémoire existante)
+create or replace function public.prospection_memoire_garde() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if old.prospection_exclue_at is not null or old.hors_prospection_at is not null then
+    insert into prospection_memoire (email, exclue_manuelle_at, hors_auto_at, contact_supprime_at, ancien_contact, historique)
+      select e, old.prospection_exclue_at, old.hors_prospection_at, now(), old.id, coalesce(old.prospection_history, '[]'::jsonb)
+        from unnest(prospection_mails(old.email, old.email_2)) e
+    on conflict (email) do update set
+      exclue_manuelle_at = coalesce(prospection_memoire.exclue_manuelle_at, excluded.exclue_manuelle_at),
+      hors_auto_at = coalesce(prospection_memoire.hors_auto_at, excluded.hors_auto_at),
+      contact_supprime_at = excluded.contact_supprime_at, ancien_contact = excluded.ancien_contact,
+      historique = prospection_memoire.historique || excluded.historique;
+  end if;
+  return old;
+end $$;
+revoke all on function public.prospection_memoire_garde() from public, anon, authenticated;
+create or replace trigger contacts_prospection_oubli after delete on public.contacts
+  for each row execute function public.prospection_memoire_garde();
+
+-- Création d'un contact (ou nouvelle adresse) avec une adresse mémorisée : le marqueur revient, tracé. Nom choisi pour passer APRÈS
+-- contacts_clean et contacts_prospection_guard (déclencheurs BEFORE exécutés par ordre alphabétique) : la garde voit la saisie de
+-- l'équipe, la reprise est faite par la base.
+create or replace function public.prospection_memoire_reprise() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare man timestamptz; aut timestamptz; quand timestamptz; hist jsonb; mails text[] := prospection_mails(new.email, new.email_2);
+begin
+  if tg_op = 'UPDATE' then
+    mails := array(select unnest(mails) except select unnest(prospection_mails(old.email, old.email_2)));   -- adresses nouvelles seulement
+  end if;
+  if cardinality(mails) = 0 then return new; end if;
+  select min(exclue_manuelle_at), min(hors_auto_at), max(contact_supprime_at), coalesce(jsonb_agg(h) filter (where h is not null), '[]'::jsonb)
+    into man, aut, quand, hist
+    from prospection_memoire m left join lateral jsonb_array_elements(m.historique) h on true where m.email = any(mails);
+  if man is null and aut is null then return new; end if;
+  if tg_op = 'INSERT' then new.prospection_history := hist || coalesce(new.prospection_history, '[]'::jsonb); end if;   -- journal du contact supprimé repris
+  if man is not null and new.prospection_exclue_at is null then
+    new.prospection_exclue_at := man;
+    new.prospection_history := new.prospection_history || prospection_entree('exclusion', 'manuelle', 'automatique',
+      'Exclusion reprise d’un contact supprimé le ' || to_char(quand at time zone 'Europe/Paris', 'DD/MM/YYYY'));
+  end if;
+  if aut is not null and new.hors_prospection_at is null then
+    new.hors_prospection_at := aut;
+    new.prospection_history := new.prospection_history || prospection_entree('exclusion', 'structure', 'automatique',
+      'Exclusion reprise d’un contact supprimé le ' || to_char(quand at time zone 'Europe/Paris', 'DD/MM/YYYY'));
+  end if;
+  return new;
+end $$;
+revoke all on function public.prospection_memoire_reprise() from public, anon, authenticated;
+create or replace trigger contacts_prospection_memoire before insert or update of email, email_2 on public.contacts
+  for each row execute function public.prospection_memoire_reprise();
+
+-- Part automatique de la mémoire levée pour les adresses d'un contact (rattachement actif, réactivation) ; part manuelle gardée
+create or replace function public.prospection_memoire_lever_auto(p_contact uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare mails text[];
+begin
+  select prospection_mails(email, email_2) into mails from contacts where id = p_contact;
+  if mails is null or cardinality(mails) = 0 then return; end if;
+  update prospection_memoire set hors_auto_at = null where email = any(mails) and hors_auto_at is not null and exclue_manuelle_at is not null;
+  delete from prospection_memoire where email = any(mails) and exclue_manuelle_at is null;
+end $$;
+revoke all on function public.prospection_memoire_lever_auto(uuid) from public, anon, authenticated;

@@ -121,3 +121,29 @@ test('Réglages › Brevo : mode essai signalé avec ses adresses ; absent sans 
     .toEqual([null, null, [], ['a+essai@x.fr', 'b@y.org']]);
   expectClean(ctx);
 });
+
+// Décision du 09/11/2026 : l'exclusion survit à la suppression du contact (mémoire par adresse, côté base) — annoncée à la suppression,
+// et visible sur le contact recréé (journal « Exclusion reprise d'un contact supprimé le … » posé par la base)
+test('contact exclu : suppression annoncée (exclusion gardée par adresse) ; contact recréé : exclusion reprise affichée', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { contacts: [
+    { id: 'hp-x', display_name: 'Xavier Exclu', email: 'xavier@exemple.invalid', prospection_exclue_at: '2026-11-09T09:00:00Z',
+      prospection_history: [{ at: '2026-11-09T09:00:00Z', action: 'exclusion', origine: 'manuelle', par: 'anthony@exemple.invalid', motif: 'Ne plus solliciter' }] },
+    { id: 'hp-y', display_name: 'Xavier Recréé', email: 'XAVIER@exemple.invalid', prospection_exclue_at: '2026-11-09T09:00:00Z',
+      prospection_history: [{ at: '2026-11-09T09:00:00Z', action: 'exclusion', origine: 'manuelle', par: 'anthony@exemple.invalid', motif: 'Ne plus solliciter' },
+        { at: '2026-11-09T10:00:00Z', action: 'exclusion', origine: 'manuelle', par: 'automatique', motif: 'Exclusion reprise d’un contact supprimé le 09/11/2026' }] },
+  ] });
+  await page.evaluate(async () => { (await import('./js/forms.js')).editContact('hp-x'); });
+  await page.locator('#modal [data-act=modalDelete], #modal button', { hasText: 'Supprimer' }).first().click();
+  await expect(page.locator('dialog.ask[open]')).toContainText('cette exclusion reste attachée à ses adresses et revient si un contact est recréé avec l’une d’elles');
+  await page.locator('dialog.ask[open] button', { hasText: 'Annuler' }).click();
+  await page.locator('#modal [data-act=closeModal]').first().click();
+  await page.evaluate(async () => { (await import('./js/forms.js')).editContact('hp-y'); });
+  await expect(page.locator('#ct-prosp')).toContainText('« Exclusion reprise d’un contact supprimé le 09/11/2026 »');
+  await expect(page.locator('#ct-prosp button', { hasText: 'Remettre en prospection' })).toHaveCount(1);
+  expect(await page.evaluate(async () => { const { S } = await import('./js/state.js'); const { horsProspection } = await import('./js/selectors.js');
+    return horsProspection(S.db.contacts.find(c => c.id === 'hp-y')); })).toBe(true);
+  await page.locator('#modal [data-act=closeModal]').first().click();
+  expect(await page.evaluate(() => window.__calls.filter(c => c.table === 'contacts' && c.op !== 'select').length)).toBe(0);
+  expectClean(ctx);
+});

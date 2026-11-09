@@ -21,6 +21,8 @@
  * Exclusion MANUELLE (décision du 09/11/2026) : contacts.prospection_exclue_at, posée et levée seulement par l'équipe (fonction SQL
  * set_prospection, motif, tracé) : hors prospection et hors Brevo quelles que soient ses structures. Un contact déjà dans Brevo y reste
  * (aucune suppression, aucun désabonnement ; ses champs restent à jour si la Matrice l'a créé).
+ * Contact supprimé puis recréé avec la même adresse (décision du 09/11) : la base lui remet le même marqueur (prospection_memoire),
+ * donc il reste hors Brevo ; rien à faire ici.
  *
  * Fonction propre à chaque structure (contact_structures.role) — décision d'Anthony du 08/11/2026 : champ texte Brevo « FONCTIONS »,
  * lisible, « Festival B : Programmatrice ; Théâtre Z : Directrice » (structures triées, sans doublon), information seulement
