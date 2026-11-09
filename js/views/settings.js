@@ -256,7 +256,7 @@ function delaysPanel(){
   const cur = currentDelays();
   return `<div class="panel pad panel-full" id="delays-panel"><h3 class="panel-title">Délais et automatismes</h3>
     <p class="help mb">Les délais déjà en place, réglables ici. <b>Aucun envoi automatique</b> : ces règles créent des <b>rappels internes</b> (notification, récapitulatif quotidien, étape en rouge) ou des <b>tâches</b> ; les factures sont créées en brouillon dans Pennylane et la date d’envoi se saisit à la main. Les relances suspendues d’une date restaurée, la prochaine échéance choisie à sa réactivation et la case « Relances suspendues » d’une facture priment sur ces réglages.</p>
-    <h4 class="block-title">Rappels (notifications créées chaque matin vers 6 h)</h4>
+    <h4 class="block-title">Rappels (notifications créées chaque matin à 5 h UTC : 6 h à Paris l’hiver, 7 h l’été)</h4>
     <div class="tbl-wrap mb"><table><thead><tr><th>Rappel</th><th>Moment</th><th>Activé</th><th>Délai</th><th>Référence</th><th>Week-end</th><th>Périmètre</th></tr></thead><tbody>
     ${ruleRows().map(r => `<tr><td><b>${esc(r.label)}</b><span class="sub">Rappel interne${r.note ? ' · ' + esc(r.note) : ''}</span>${olderNote(r.key)}</td>
       <td>${esc(r.moment)}</td>
@@ -364,7 +364,7 @@ export async function saveDelays(){
     choice = await ask({title: 'Enregistrer les délais ?', text: `${what}\n`
       + `Nouvelles dates seulement (conseillé) : le changement vaut pour les dates créées à partir d’aujourd’hui ; les dates en cours gardent leurs délais, aucun rappel n’est recalculé ni lancé. ${onlyNew && impactCount(onlyNew) ? impactText(onlyNew) : ''}\n`
       + `Aussi les dates en cours : ${impactText(all)}`,
-      actions: [{value: 'new', label: 'Nouvelles dates seulement'}, {value: 'all', label: 'Aussi les dates en cours'}]});
+      actions: [{value: 'new', label: 'Nouvelles dates seulement'}, {value: 'all', label: 'Aussi les dates en cours', plain: true}]});
     if (!choice) return;
   } else if (!(await confirmAsk('Enregistrer les délais ?', what, 'Enregistrer'))) return;
   if (Object.keys(changes).length && !await setSetting('delais', delaysValue(changes, choice === 'all' ? null : today()))) return;

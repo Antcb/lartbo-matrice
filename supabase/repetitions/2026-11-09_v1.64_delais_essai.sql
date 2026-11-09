@@ -6,7 +6,8 @@
 --     nouvelle après la migration ; migration rejouée sans effet ;
 --  2. délai modifié pour toutes les dates : échéance déplacée, clé inchangée (pas de doublon) ; relance désactivée : plus de candidat ;
 --  3. délai modifié pour les nouvelles dates seulement (from) : dates existantes inchangées ;
---  4. réglage abîmé : valeurs par défaut, generate_reminders ne s'arrête pas ;
+--  4. contrôle à l'écriture (contrainte) ; réglage abîmé (30 février, 9999-99-99, an 0, n = 5.0…) : valeurs par défaut ou version
+--     ignorée, generate_reminders ne s'arrête pas ;
 --  5. priorité de la date : prochaine échéance choisie à la réactivation (reminders_next) gardée.
 begin;
 -- table des réglages (absente de la base locale minimale ; même structure que supabase/schema.sql)
@@ -99,7 +100,31 @@ begin
   if (select raw from apres where r = 'autre_payee') <> jour - 25 + 8 then raise exception '3 : versions'; end if;
   if (public.delais_dossier(now() + interval '2 days') #>> '{paiement,on}')::boolean then raise exception '3 : nouvelle date : relance désactivée attendue'; end if;
 
-  -- 4. réglage abîmé : défauts, rien ne s'arrête
+  -- 4 bis. contrôle à l'écriture (contrainte settings_delais_valide) : valeurs refusées, valeurs justes acceptées (5.0 = entier)
+  declare refus int := 0; v text; begin
+    foreach v in array array['{"paiement": [{"on": true, "n": 5, "from": "2026-02-30"}]}', '{"paiement": [{"on": true, "n": 5, "from": "9999-99-99"}]}',
+      '{"paiement": [{"on": true, "n": 5, "from": "0000-01-01"}]}', '{"paiement": [{"on": true, "n": 5.5}]}', '{"paiement": [{"on": true, "n": 400}]}',
+      '{"boucle_accueil": [{"on": true, "n": 30}]}', '{"inconnue": [{"n": 1}]}', '{"paiement": "x"}', '"texte"', '{"paiement": [{"on": "oui", "n": 1}]}',
+      '{"paiement": [{"on": true, "n": 1, "from": 20261101}]}'] loop
+      begin update settings set value = v::jsonb where key = 'delais'; exception when check_violation then refus := refus + 1; end;
+    end loop;
+    if refus <> 11 then raise exception '4 bis : % refus sur 11', refus; end if;
+  end;
+  update settings set value = '{"paiement": [{"on": true, "n": 5.0, "from": null, "at": "x", "by": "y"}, {"on": false, "n": 2, "from": "2026-02-28"}]}'::jsonb where key = 'delais';
+  if (public.delais_dossier(now() - interval '400 days') #>> '{paiement,n}')::int <> 5 then raise exception '4 bis : 5.0 non lu comme 5'; end if;
+
+  -- 4. réglage abîmé (écrit avant la contrainte, ou contrainte retirée) : défauts, rien ne s'arrête — contrainte retirée DANS la
+  -- transaction annulée pour l'essai seulement
+  alter table settings drop constraint settings_delais_valide;
+  -- relecture de 86d397e (B1) : jour impossible ou an 0 dans « from » → version ignorée, generate_reminders ne s'arrête pas ; n = 5.0 → 5
+  foreach regles in array array['2026-02-30', '9999-99-99', '0000-01-01', '2026-13-01'] loop
+    update settings set value = jsonb_build_object('paiement', jsonb_build_array(jsonb_build_object('on', true, 'n', 4, 'from', null),
+      jsonb_build_object('on', false, 'n', 2, 'from', regles))) where key = 'delais';
+    if (select raw from apres where r = 'autre_payee') <> jour - 25 + 4 then raise exception '4 : « from » % non ignoré', regles; end if;
+    perform public.generate_reminders();
+  end loop;
+  update settings set value = '{"paiement": [{"on": true, "n": 5.0, "from": null}]}'::jsonb where key = 'delais';
+  if (select raw from apres where r = 'autre_payee') <> jour - 25 + 5 then raise exception '4 : n = 5.0'; end if;
   update settings set value = '{"paiement": "x", "precontrat": [{"n": "abc"}, {"n": 9999}, 3, {"from": "demain", "n": 1}], "solde_envoi": [{"n": -2}]}'::jsonb where key = 'delais';
   if (select raw from apres where r = 'autre_payee') <> jour - 25 + 10 or (select raw from apres where r = 'precontrat') <> jour - 12 + 10 then raise exception '4 : défauts non gardés'; end if;
   if (public.delais_dossier(now()) #>> '{solde_envoi,n}')::int <> 7 then raise exception '4 : solde'; end if;

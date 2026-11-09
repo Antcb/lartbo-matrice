@@ -54,7 +54,10 @@ export const DELAY_RULES = [
 /** Bornes d'un délai saisi (jours ou mois) */
 export const DELAY_MAX = {j: 365, mois: 24};
 const RULE = Object.fromEntries(DELAY_RULES.map(r => [r.key, r]));
-const okDay = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+/** Jour « AAAA-MM-JJ » du calendrier (30 février, 9999-99-99 refusés) — même contrôle que delais_jour côté serveur */
+const okDay = v => { if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v) || v.startsWith('0000')) return false;   // an 0 : refusé aussi par PostgreSQL
+  const d = new Date(v + 'T12:00:00Z');
+  return !isNaN(d) && d.toISOString().slice(0, 10) === v; };
 const okN = (v, unit) => Number.isInteger(v) && v >= 0 && v <= DELAY_MAX[unit];
 /** Délais d'une date : {règle: {on, n}} — dernière version applicable selon le jour de création de la date (jour de Paris) ;
  *  valeur illisible ignorée (défaut gardé). value : réglage « delais » (autre valeur pour mesurer l'effet d'une modification). */

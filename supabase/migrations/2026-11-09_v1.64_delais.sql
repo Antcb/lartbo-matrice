@@ -20,10 +20,13 @@
 --
 -- Garde (avant toute écriture) : generate_reminders = v1.60.3 (md5(pg_get_functiondef) 584374b0cb052c5fa226427b837b30a1) et
 -- reminder_candidates = v1.60.6 (808cb33bf574c49d64279f7dceecbde9, migration 2026-11-09_v1.60.6_solde_j7.sql), ou déjà cette version
--- (marqueur « v1.64 délais ») ; sinon arrêt, rien n'est appliqué. Appliquer d'abord la v1.60.6 ET son opération
--- supabase/operations/2026-11-09_v1.60.6_rappels_solde.sql (elle reconstruit les clés au format v1.60.6).
--- Rejouable (create or replace). Retour arrière (après accord) : réappliquer reminder_candidates de la v1.60.6 et generate_reminders de
--- la v1.60.3 ; la fonction delais_dossier peut rester (inutilisée).
+-- (marqueur « v1.64 délais ») ; sinon arrêt, rien n'est appliqué.
+-- ORDRE OBLIGATOIRE : migration v1.60.6, PUIS l'opération supabase/operations/2026-11-09_v1.60.6_rappels_solde.sql, PUIS cette
+-- migration. L'opération v1.60.6 reconstruit les clés au format v1.60.6 (règle:k:échéance) : lancée après la v1.64, elle ne trouverait
+-- rien et s'arrêterait sans rien modifier (garde « attendu »), et le rappel prématuré resterait actif.
+-- Rejouable (create or replace, contrainte ajoutée si absente). Retour arrière (après accord) : réappliquer reminder_candidates de la
+-- v1.60.6 et generate_reminders de la v1.60.3 ; delais_dossier, delais_jour, delais_n, delais_valide et la contrainte
+-- settings_delais_valide peuvent rester (sans effet tant que le réglage « delais » est absent).
 -- =====================================================================================================
 
 do $m$
@@ -40,6 +43,30 @@ begin
 end $m$;
 
 -- ─────────────── 1. Délais d'une date (même résolution que js/reminders.js delaysOf) ───────────────
+-- Jour « AAAA-MM-JJ » lu sans jamais lever d'erreur (relecture de 86d397e, B1) : forme exacte ET date du calendrier (30 février,
+-- 9999-99-99 → null) ; même contrôle que okDay (js/reminders.js). Une version dont « from » est illisible est ignorée.
+create or replace function public.delais_jour(p text) returns date
+ language plpgsql immutable set search_path to 'public'
+as $function$
+begin
+  if p is null or p !~ '^\d{4}-\d{2}-\d{2}$' then return null; end if;
+  if to_char(p::date, 'YYYY-MM-DD') <> p then return null; end if;
+  return p::date;
+exception when others then return null;
+end $function$;
+revoke all on function public.delais_jour(text) from public, anon;
+grant execute on function public.delais_jour(text) to authenticated, service_role;
+
+-- Délai lisible d'une version : nombre entier (5 ou 5.0, comme okN en JS) entre 0 et la borne ; sinon null (défaut gardé)
+create or replace function public.delais_n(p jsonb, p_max int) returns int
+ language sql immutable set search_path to 'public'
+as $function$
+  select case when jsonb_typeof(p) = 'number'
+              then case when p::numeric >= 0 and p::numeric <= p_max and p::numeric = trunc(p::numeric) then p::numeric::int end end
+$function$;
+revoke all on function public.delais_n(jsonb, int) from public, anon;
+grant execute on function public.delais_n(jsonb, int) to authenticated, service_role;
+
 -- Valeurs par défaut : MÊMES valeurs que DELAY_RULES (js/reminders.js) — contrôle automatique : tests/static/delais.mjs.
 create or replace function public.delais_dossier(p_created timestamptz)
  returns jsonb language sql stable security definer set search_path to 'public'
@@ -50,17 +77,47 @@ as $function$
   reg as (select value v from settings where key = 'delais' and jsonb_typeof(value) = 'object'),
   jour as (select (p_created at time zone 'Europe/Paris')::date j)
   select jsonb_object_agg(def.k, coalesce((
-    select jsonb_build_object('on', not coalesce(x -> 'on' = 'false'::jsonb, false),
-                              'n', case when jsonb_typeof(x -> 'n') = 'number' and (x ->> 'n') ~ '^\d{1,3}$' and (x ->> 'n')::int <= def.mx
-                                        then (x ->> 'n')::int else def.n end)
+    select jsonb_build_object('on', not coalesce(x -> 'on' = 'false'::jsonb, false), 'n', coalesce(public.delais_n(x -> 'n', def.mx), def.n))
     from reg, jour, jsonb_array_elements(case when jsonb_typeof(reg.v -> def.k) = 'array' then reg.v -> def.k else '[]'::jsonb end) with ordinality e(x, i)
     where jsonb_typeof(x) = 'object'
       and (x -> 'from' is null or x -> 'from' = 'null'::jsonb
-           or ((x ->> 'from') ~ '^\d{4}-\d{2}-\d{2}$' and jour.j is not null and jour.j >= (x ->> 'from')::date))
+           or (jsonb_typeof(x -> 'from') = 'string' and jour.j is not null and jour.j >= public.delais_jour(x ->> 'from')))
     order by i desc limit 1), jsonb_build_object('on', true, 'n', def.n)))
   from def
 $function$;
 revoke all on function public.delais_dossier(timestamptz) from public, anon, authenticated, service_role;
+
+-- Contrôle à l'écriture du réglage « delais » (relecture de 86d397e) : règles connues, versions {on booléen, n entier dans les bornes,
+-- from null ou jour du calendrier} ; at / by (trace) libres. Contrainte de table plutôt que setting_write_ok (texte v1.60.4 inchangé,
+-- aucune autre clé touchée) : elle vaut pour tous les comptes, y compris le serveur. Aucune ligne existante (réglage absent).
+create or replace function public.delais_valide(v jsonb) returns boolean
+ language plpgsql immutable set search_path to 'public'
+as $function$
+declare k text; liste jsonb; x jsonb; mx int;
+begin
+  if jsonb_typeof(v) <> 'object' then return false; end if;
+  for k, liste in select key, value from jsonb_each(v) loop
+    mx := case when k = 'boucle_accueil' then 24
+               when k in ('precontrat', 'contrat_envoi', 'contrat_signe', 'contrat_cosigne', 'facture_acompte', 'solde_envoi', 'booking_commission',
+                          'facture_envoi', 'paiement', 'commission', 'commission_partenaire', 'boucle_com') then 365 end;
+    if mx is null or jsonb_typeof(liste) <> 'array' then return false; end if;
+    for x in select value from jsonb_array_elements(liste) loop
+      if jsonb_typeof(x) <> 'object' then return false; end if;
+      if x ? 'on' and jsonb_typeof(x -> 'on') <> 'boolean' then return false; end if;
+      if public.delais_n(x -> 'n', mx) is null then return false; end if;
+      if x ? 'from' and jsonb_typeof(x -> 'from') <> 'null'
+         and (jsonb_typeof(x -> 'from') <> 'string' or public.delais_jour(x ->> 'from') is null) then return false; end if;
+    end loop;
+  end loop;
+  return true;
+end $function$;
+revoke all on function public.delais_valide(jsonb) from public, anon;
+grant execute on function public.delais_valide(jsonb) to authenticated, service_role;
+do $c$ begin
+  if not exists (select 1 from pg_constraint where conname = 'settings_delais_valide' and conrelid = 'public.settings'::regclass) then
+    alter table public.settings add constraint settings_delais_valide check (key <> 'delais' or public.delais_valide(value));
+  end if;
+end $c$;
 
 -- ─────────────── 2. Relances candidates (RÉÉCRITE ENTIÈREMENT, §7.5 ; texte v1.60.6 + délais réglables) ───────────────
 -- v1.64 délais : chaque règle lit son activation (on) et son délai (n) dans delais_dossier(created_at) ; k = clé anti-doublon

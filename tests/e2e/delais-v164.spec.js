@@ -57,8 +57,9 @@ test('v1.64 délai modifié : conséquences affichées, « Nouvelles dates seule
   await expect(dlg).toContainText('Paiement à vérifier : 10 jours → 5 jours');
   await expect(dlg).toContainText('Rappels avancés');
   await expect(dlg).toContainText('Salle d-1');
-  await expect(dlg.locator('button.btn:not(.primary)')).toHaveText('Annuler');
-  await expect(dlg.locator('button.primary')).toHaveText(['Nouvelles dates seulement', 'Aussi les dates en cours']);
+  // choix conseillé en bouton principal ; « Aussi les dates en cours » en bouton neutre (relecture de 86d397e)
+  await expect(dlg.locator('button.btn:not(.primary)')).toHaveText(['Annuler', 'Aussi les dates en cours']);
+  await expect(dlg.locator('button.primary')).toHaveText('Nouvelles dates seulement');
   // Annuler : rien n'est enregistré
   await dlg.locator('button', { hasText: 'Annuler' }).click();
   expect(await delais(page)).toBeNull();
@@ -120,5 +121,15 @@ test('v1.64 valeurs refusées hors bornes ; réglage abîmé : valeurs par défa
     S.db.settings.push({ key: 'delais', value: { paiement: 'x', solde_envoi: [{ n: -3 }, 7, { n: 9, from: 'demain' }] } }); touch('settings');
     return (await import('./js/reminders.js')).delaysOf({ created_at: new Date().toISOString() }); });
   expect([d.paiement, d.solde_envoi]).toEqual([{ on: true, n: 10 }, { on: true, n: 7 }]);
+  // relecture de 86d397e (B1) : jour impossible ignoré (même règle que delais_jour en SQL), délai 5.0 = 5 (comme delais_n)
+  const e = await page.evaluate(async () => { const { S, touch } = await import('./js/state.js'), m = await import('./js/reminders.js');
+    const set = v => { S.db.settings.find(x => x.key === 'delais').value = v; touch('settings'); return m.delaysOf({ created_at: '2026-03-15T10:00:00Z' }); };
+    return [set({ paiement: [{ on: true, n: 4, from: null }, { on: false, n: 2, from: '2026-02-30' }] }).paiement,
+            set({ paiement: [{ on: true, n: 4, from: null }, { on: false, n: 2, from: '9999-99-99' }] }).paiement,
+            set({ paiement: [{ on: true, n: 4, from: null }, { on: false, n: 2, from: '0000-01-01' }] }).paiement,
+            set(JSON.parse('{"paiement": [{"on": true, "n": 5.0, "from": null}]}')).paiement,
+            set({ paiement: [{ on: true, n: 5.5, from: null }] }).paiement,
+            set({ paiement: [{ on: true, n: 6, from: '2026-02-28' }] }).paiement]; });
+  expect(e).toEqual([{ on: true, n: 4 }, { on: true, n: 4 }, { on: true, n: 4 }, { on: true, n: 5 }, { on: true, n: 10 }, { on: true, n: 6 }]);
   expectClean(ctx);
 });
