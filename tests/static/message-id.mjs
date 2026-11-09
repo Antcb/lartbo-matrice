@@ -108,8 +108,13 @@ if (gsRe !== String(MSGID_RE)) fail('scripts', `expression du Message-ID différ
 if (!new RegExp(`var MSGID_MAX_ = ${MSGID_MAX};`).test(bCode)) fail('scripts', 'longueur maximale du Message-ID différente entre eml.js et les scripts');
 if (MSG_RAW_MAX !== 20 * 1024 * 1024 || !/var MSG_RAW_MAX_ = 20 \* 1024 \* 1024;/.test(bCode)) fail('scripts', 'taille maximale du contenu brut différente entre eml.js et les scripts');
 if (!/action === 'mail_by_msgid'\) out = mailByMsgId_\(body\.message_id\)/.test(gsCode)) fail('scripts', 'Code.gs : action mail_by_msgid non branchée dans doPost');
+// ordre dans doPost : titulaire (ownerOnly_), puis garde du mode essai, puis refus éventuel — avant toute action (recherche de texte,
+// sans expression régulière : pas de retour arrière coûteux)
+const ordreGarde = src => { const i = src.indexOf('var refus = BOITE_[a] ? ownerOnly_(body, a) : null;'),
+  j = src.indexOf("if (!refus && ESSAI_ && a !== 'ping') refus = essaiGarde_(a, body);"), k = src.indexOf('if (refus) out = refus;'), l = src.indexOf("else if (a === 'ping')");
+  return i > 0 && i < j && j < k && k < l; };
 // (v1.63) Prospection.gs : toutes les actions de boîte, dont mail_by_msgid, passent par ownerOnly_ AVANT d'être exécutées (BOITE_)
-if (!/a === 'mail_by_msgid'\) out = mailByMsgId_\(body\.message_id\)/.test(gsProsp) || !/var refus = BOITE_\[a\] \? ownerOnly_\(body, a\) : null;(\s*\/\/[^\n]*)*\s*if \(!refus && ESSAI_ && a !== 'ping'\) refus = essaiGarde_\(a, body\);\s*if \(refus\) out = refus;/.test(gsProsp)
+if (!/a === 'mail_by_msgid'\) out = mailByMsgId_\(body\.message_id\)/.test(gsProsp) || !ordreGarde(gsProsp)
   || !/var BOITE_ = \{[^}]*mail_by_msgid: 1/.test(gsProsp)) fail('scripts', 'Prospection.gs : action mail_by_msgid non branchée dans doPost ou non réservée au titulaire');
 // version du code renvoyée par « ping » : celle de la dernière modification de CHAQUE script (Prospection.gs : messagerie v1.61.0)
 for (const [n, src, v] of [['Code.gs', gsCode, '1.60.4'], ['Prospection.gs', gsProsp, '1.61.0']])
