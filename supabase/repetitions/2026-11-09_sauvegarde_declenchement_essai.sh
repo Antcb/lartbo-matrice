@@ -150,13 +150,37 @@ r=$(appel demarrer '{"type":"complete","run_id":"1006","tentative":1,"origine":"
 appel terminer "{\"id\":$ID3,\"statut\":\"succes\"}" > /dev/null
 verifie "transition : fenêtre fixe en cours, connexion gardée" "$(Q "select rolcanlogin from pg_roles where rolname = 'sauvegarde'")" "t"
 
-# 12. Activation (opération) : fenêtre fixe retirée, tâches d'ouverture / fermeture retirées, connexion fermée
-F "$RACINE/supabase/operations/2026-11-09_sauvegarde_activation.sql"
+# 12. Activation (opération) : refusée pendant la fenêtre fixe, sans fermeture enregistrée, connexion ouverte ; puis acceptée
+ACT="$RACINE/supabase/operations/2026-11-09_sauvegarde_activation.sql"
+refus(){ psql -d "$BASE" -X -q -v ON_ERROR_STOP=1 -f "$ACT" 2>&1 | grep -o 'Activation refusée : [^(]*' | head -1 | sed 's/ *$//'; }
+verifie "activation refusée pendant la fenêtre fixe" "$(refus | grep -c 'à lancer HORS de la fenêtre fixe')" "1"
+Q "update private.sauvegarde_fenetre set debut = ((now() at time zone 'UTC') + interval '6 hours')::time, fin = ((now() at time zone 'UTC') + interval '7 hours')::time"
+Q "alter role sauvegarde login"
+verifie "activation refusée si la connexion est encore ouverte hors fenêtre" "$(refus | grep -c 'connexion du rôle sauvegarde est encore ouverte')" "1"
+Q "select private.sauvegarde_interrompre()" > /dev/null
+Q "update private.sauvegarde_executions set fenetre_jusqu_a = fin + interval '1 minute' where type = 'complete' and statut = 'succes'"
+verifie "activation refusée sans fermeture enregistrée" "$(refus | grep -c 'fermeture a été enregistrée')" "1"
+Q "update private.sauvegarde_executions set fenetre_jusqu_a = fin where type = 'complete' and statut = 'succes'"
+verifie "fenêtre fixe intacte après les refus" "$(Q "select debut <> fin from private.sauvegarde_fenetre")|$(Q "select count(*) from cron.job where jobname in ('sauvegarde-ouverture','sauvegarde-fermeture')")" "t|2"
+F "$ACT"
 verifie "activation : tâches restantes" "$(Q "select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'sauvegarde-%'")" "sauvegarde-controle,sauvegarde-interruption"
 verifie "activation : connexion fermée" "$(Q "select rolcanlogin from pg_roles where rolname = 'sauvegarde'")" "f"
 etat=$(SV "select 1" >/dev/null; Q "select private.sauvegarde_ouvrir(interval '5 minutes')" >/dev/null; psql "host=$PGHOST port=$PGPORT dbname=$BASE user=sauvegarde" -X -At -F '|' -f "$BACKUP_REPO/outils/fenetre_etat.sql" 2>&1 | cut -d'|' -f1)
 verifie "état de la fenêtre après activation (outils/fenetre_etat.sql)" "$etat" "OK"
 Q "update private.sauvegarde_fenetre set exceptionnelle_jusqu_a = now() - interval '1 second'"; Q "select private.sauvegarde_interrompre()" > /dev/null
+
+# 12 bis. Découpage quotidien en UTC, quel que soit le fuseau de la session (Paris, ou UTC+14)
+Q "update private.sauvegarde_executions set jour = jour - 5, debut = debut - interval '5 days', fin = fin - interval '5 days'"
+r=$(Q "set timezone = 'Pacific/Kiritimati'; set role service_role; select public.sauvegarde_declenchement('demarrer', '{\"type\":\"json\",\"run_id\":\"3001\",\"tentative\":1,\"origine\":\"workflow_dispatch\",\"forcer\":true}'::jsonb)")
+verifie "jour de l'exécution = date UTC du démarrage réel (session UTC+14)" "$(Q "select jour = (now() at time zone 'UTC')::date from private.sauvegarde_executions where run_id = '3001'")" "t"
+appel terminer "{\"id\":$(champ "$r" id),\"statut\":\"echec\"}" > /dev/null
+# exécution démarrée la veille (UTC) et finie après minuit : compte pour la veille ; le premier créneau du jour refait une copie
+Q "insert into private.sauvegarde_executions (type, jour, run_id, tentative, origine, debut, fin, statut) values ('complete', (now() at time zone 'UTC')::date - 1, '3002', 1, 'schedule', now() - interval '1 day', now() - interval '1 minute', 'succes')"
+r=$(appel demarrer '{"type":"complete","run_id":"3003","tentative":1,"origine":"schedule"}')
+verifie "réussite démarrée la veille : le créneau du jour copie quand même" "$(champ "$r" etat)" "demarree"
+appel terminer "{\"id\":$(champ "$r" id),\"statut\":\"succes\"}" > /dev/null
+r=$(appel demarrer '{"type":"complete","run_id":"3004","tentative":1,"origine":"schedule"}')
+verifie "créneau suivant du même jour UTC : déjà faite (aucune copie en double)" "$(champ "$r" etat)" "deja_faite"
 
 # 13. Contrôle d'absence : aucune réussite aujourd'hui → une notification par type (sans doublon) ; réussite → aucune
 Q "update private.sauvegarde_executions set jour = jour - 1, debut = debut - interval '1 day', fin = fin - interval '1 day'"
@@ -166,6 +190,12 @@ verifie "contrôle : notification lisible" "$(Q "select count(*) from public.not
 Q "delete from public.notifications where kind = 'sauvegarde'"
 r=$(appel demarrer '{"type":"json","run_id":"2002","tentative":1,"origine":"schedule"}'); appel terminer "{\"id\":$(champ "$r" id),\"statut\":\"succes\"}" > /dev/null
 verifie "contrôle : JSON réussi aujourd'hui, seule la complète alerte" "$(Q "select private.sauvegarde_controler()")|$(Q "select string_agg(dedupe_key, ',') from public.notifications where kind = 'sauvegarde'" | cut -d: -f2)" "1 alerte(s)|complete"
+# 13 bis. Alerte INDÉPENDANTE de GitHub : aucune exécution depuis 3 jours (GitHub n'a rien lancé), seule la tâche pg_cron agit
+Q "delete from public.notifications where kind = 'sauvegarde'"
+Q "update private.sauvegarde_executions set jour = jour - 3, debut = debut - interval '3 days', fin = fin - interval '3 days'"
+verifie "tâche pg_cron du contrôle : commande et horaire" "$(Q "select schedule || ' | ' || command || ' | ' || active from cron.job where jobname = 'sauvegarde-controle'")" "7 13 * * * | select private.sauvegarde_controler() | true"
+verifie "aucun lancement GitHub depuis 3 jours : alerte complète ET JSON" "$(Q "select private.sauvegarde_controler()")" "2 alerte(s)"
+verifie "le contrôle ne lit que la base (aucun appel extérieur)" "$(Q "select prosrc !~* '(https?://|net\.http|http_(get|post)|pg_net)' from pg_proc where proname = 'sauvegarde_controler'")" "t"
 
 # 14. Retour arrière (fonctions retirées, journal gardé), puis migration rejouée
 F "$RACINE/supabase/retours-arriere/2026-11-09_sauvegarde_declenchement_retour_arriere.sql"
