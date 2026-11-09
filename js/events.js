@@ -94,8 +94,8 @@ document.addEventListener('drop', async e => {
   e.preventDefault(); z.classList.remove('over');
   // (v1.60.3) lecture et copie en mémoire DANS l'événement : un message glissé depuis Apple Mail est un .eml temporaire
   // que Mail efface ou réécrit ensuite (l'envoi répondait alors « Failed to fetch ») ; message clair si rien n'est lisible
-  // (v1.60.4) pièces jointes d'un suivi : un message d'Apple Mail arrivé sans fichier (seul le lien « message:%3C<Message-ID>%3E »)
-  // est cherché dans les boîtes Google puis joint à CE suivi après confirmation (prospection.js attachMailLinks)
+  // (v1.60.4, v1.60.7) pièces jointes d'un suivi : un message d'Apple Mail arrivé sans fichier (seul le lien « message:%3C<Message-ID>%3E »)
+  // est cherché dans les boîtes Google, puis toute sa conversation est importée dans CE suivi, sans question (prospection.js attachMailLinks)
   let owner = null; try { owner = z.dataset.drop ? JSON.parse(z.dataset.drop) : null; } catch { owner = null; }
   const {files, msgIds} = await takeDropped(e, {mailLinks: !!owner?.prospect_id});
   if (!files.length){ if (msgIds?.length && owner?.prospect_id) await attachMailLinks(owner.prospect_id, msgIds); return; }

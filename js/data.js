@@ -553,8 +553,11 @@ async function mailToJournal(pid, m, importKey = null, gmailId = null, quiet = f
   const p = byId('prospects', pid); if (!p) return 'suivi introuvable';
   const e = emlEntry(pid, m); if (!e || e.exists) return '';
   const {date} = e.row;
-  const {data: row, error} = await insertRow('prospect_logs', {...e.row, author: S.user?.email, ...(importKey ? {import_key: importKey} : {}),
-    ...(gmailId ? {gmail_message_id: gmailId} : {})});
+  const base = {...e.row, author: S.user?.email, ...(importKey ? {import_key: importKey} : {})};
+  let {data: row, error} = await insertRow('prospect_logs', {...base, ...(gmailId ? {gmail_message_id: gmailId} : {})});
+  // colonne gmail_message_id absente (migration v1.60.7 pas encore appliquée) : même ligne sans elle (même repli que la messagerie) ;
+  // la clé « msgid:<Message-ID> » suffit à éviter les doublons
+  if (error && gmailId && (['PGRST204', '42703'].includes(error.code) || /gmail_message_id/.test(error.message || ''))) ({data: row, error} = await insertRow('prospect_logs', base));
   if (error) return error.code === '23505' ? DUP_NOW : `enregistrement refusé : ${dbErrorText(error)}`;
   if (!quiet) toast('Mail ajouté au journal');
   if (!p.last_contact || date > p.last_contact) await save('prospects', pid, {last_contact: date}, {rerender: false});

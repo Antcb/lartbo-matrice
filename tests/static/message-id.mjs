@@ -115,7 +115,7 @@ for (const [n, src] of [['Code.gs', gsCode], ['Prospection.gs', gsProsp]])
 // 3a. Lecture du code : seulement des méthodes de lecture (Gmail) et des opérations sur du texte
 const READ_ONLY = new Set(['search', 'forEach', 'getMessages', 'getHeader', 'trim', 'isDraft', 'push', 'test', 'slice', 'getRawContent', 'round', 'getSubject', 'getFrom', 'getDate', 'toISOString',
   // (v1.60.7) conversation : lecture de la conversation et de ses messages, opérations sur des tableaux
-  'getThread', 'getId', 'getTo', 'getCc', 'getTime', 'filter', 'sort', 'map', 'indexOf', 'isArray', 'getAttachments']);
+  'getThread', 'getId', 'getTo', 'getCc', 'getTime', 'filter', 'sort', 'map', 'indexOf', 'isArray', 'getAttachments', 'some', 'concat']);
 const fn = bCode.slice(bCode.indexOf('function mailByMsgId_'));
 const called = [...fn.matchAll(/\.([A-Za-z_$][\w$]*)\s*\(/g)].map(m => m[1]);
 const extra = [...new Set(called.filter(m => !READ_ONLY.has(m)))];

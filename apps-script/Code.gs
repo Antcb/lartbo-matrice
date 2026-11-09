@@ -169,7 +169,7 @@ function mailByMsgId_(id) {
  * (v1.60.7, décision d'Anthony du 09/11/2026) CONVERSATION entière du message glissé, en LECTURE SEULE : même recherche exacte que
  * mailByMsgId_ (rfc822msgid: + identifiant validé, en-tête Message-ID identique, brouillons exclus), puis la conversation Gmail de
  * ce message (son identifiant de conversation, jamais une ressemblance d'objet) : ses messages, reçus et envoyés, brouillons exclus,
- * dans l'ordre chronologique, THREAD_MAX_ au plus (les plus récents). Sans « want » : description seulement (identifiant Gmail,
+ * dans l'ordre chronologique, THREAD_MAX_ au plus (les plus récents, et toujours le message glissé ; « total » = nombre réel). Sans « want » : description seulement (identifiant Gmail,
  * Message-ID, objet, expéditeur, destinataires, copies, date, nombre de pièces jointes). Avec « want » (identifiants Gmail de CETTE conversation) : contenu
  * brut (.eml) de ces messages en plus, 20 Mo au plus par appel ; ceux qui n'entrent pas sont rendus dans « rest » (passe suivante),
  * un message seul de plus de 20 Mo est signalé « too_big ». Aucune modification (ni « lu », ni libellé, ni déplacement).
@@ -193,8 +193,15 @@ function threadByMsgId_(id, want) {
   }
   var all = thread.getMessages().filter(function (m) { return !m.isDraft(); });
   all.sort(function (a, b) { return a.getDate().getTime() - b.getDate().getTime(); });
-  var truncated = all.length > THREAD_MAX_;
-  if (truncated) all = all.slice(all.length - THREAD_MAX_);
+  // (relecture de 0e9d3cc, B1) conversation trop longue : les THREAD_MAX_ - 1 plus récents ET toujours le message glissé lui-même
+  var total = all.length, truncated = total > THREAD_MAX_, dropped = found[0].getId();
+  if (truncated) {
+    var keep = all.slice(total - THREAD_MAX_);
+    if (!keep.some(function (m) { return m.getId() === dropped; })) {
+      keep = all.filter(function (m) { return m.getId() === dropped; }).concat(all.slice(total - (THREAD_MAX_ - 1)));
+    }
+    all = keep;
+  }
   var wanted = Array.isArray(want) ? want.filter(function (w) { return typeof w === 'string' && GMAIL_ID_RE_.test(w); }).slice(0, THREAD_MAX_) : null;
   var budget = MSG_RAW_MAX_, rest = [], given = 0;
   var messages = all.map(function (m) {
@@ -209,7 +216,7 @@ function threadByMsgId_(id, want) {
     }
     return meta;
   });
-  return { ok: true, found: true, thread_id: threadId, truncated: truncated, messages: messages, rest: rest };
+  return { ok: true, found: true, thread_id: threadId, truncated: truncated, total: total, messages: messages, rest: rest };
 }
 // ─────────────── fin : Message-ID ───────────────
 

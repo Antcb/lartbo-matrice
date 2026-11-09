@@ -75,6 +75,16 @@ for (const [name, file, signed] of [['anthony@ (Prospection.gs)', P, true], ['pr
   s = script(file, OWNER, { t3: [big(1), big(2), { ...big(3), raw: 'y'.repeat(21 * 1024 * 1024) }] });
   r = s.call(await body({ message_id: '<test-1@exemple-fictif.fr>', want: ['18f0000000000a01', '18f0000000000a02', '18f0000000000a03'] }));
   eq(`${name} : 20 Mo au plus par appel, le reste à la passe suivante`, [r.messages.map(m => !!m.raw), r.rest, r.messages[2].too_big], [[true, false, false], ['18f0000000000a02'], 21]);
+  // 4b. (relecture de 0e9d3cc, B1) conversation de 150 messages : les 99 plus récents ET toujours le message glissé, dans l'ordre
+  const many = Array.from({ length: 150 }, (_, i) => ({ ...msg(i + 1, i % 2 ? T2 : OWNER, i % 2 ? OWNER : T2, new Date(Date.UTC(2026, 10, 1) + i * 3600e3).toISOString()),
+    gid: '18f00000' + String(i + 1).padStart(8, '0'), mid: `<long-${i + 1}@exemple-fictif.fr>` }));
+  s = script(file, OWNER, { tL: [...many].reverse() });
+  r = s.call(await body({ message_id: '<long-4@exemple-fictif.fr>' }));
+  eq(`${name} : 150 messages, dépôt du 4e : lui + les 99 plus récents, ordre chronologique`,
+    [r.found, r.truncated, r.total, r.messages.length, r.messages[0].message_id, r.messages[1].message_id, r.messages[99].message_id],
+    [true, true, 150, 100, '<long-4@exemple-fictif.fr>', '<long-52@exemple-fictif.fr>', '<long-150@exemple-fictif.fr>']);
+  r = s.call(await body({ message_id: '<long-140@exemple-fictif.fr>' }));
+  eq(`${name} : 150 messages, dépôt d'un récent : les 100 plus récents`, [r.messages.length, r.messages[0].message_id, r.total], [100, '<long-51@exemple-fictif.fr>', 150]);
   // 5. absent ; identifiant invalide refusé sans recherche ; aucun appel hors lecture
   s = script(file, OWNER, { t1: [M1] });
   eq(`${name} : message absent`, s.call(await body({ message_id: '<absent@exemple-fictif.fr>' })), { ok: true, found: false });
