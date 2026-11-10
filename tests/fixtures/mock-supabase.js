@@ -90,6 +90,9 @@
       // (v1.60.7) ou une fonction (ligne insérée → erreur ou rien) : refus selon le contenu (ex. colonne pas encore créée)
       if (st.op === 'insert' && window.__INSERT_ERROR && window.__INSERT_ERROR[table]){ const ie = window.__INSERT_ERROR[table], err = typeof ie === 'function' ? ie(st.patch) : ie;
         if (err) return { data: null, error: err }; }
+      // window.__MISSING_COL = { table: 'colonne' } : colonne absente de la base (migration pas encore appliquée), comme PostgREST (PGRST204)
+      if ((st.op === 'insert' || st.op === 'update') && window.__MISSING_COL && window.__MISSING_COL[table] && [].concat(st.patch).some(r => r && window.__MISSING_COL[table] in r))
+        return { data: null, error: { code: 'PGRST204', message: `Could not find the '${window.__MISSING_COL[table]}' column of '${table}' in the schema cache` } };
       if (st.op === 'insert') { const arr = (Array.isArray(st.patch) ? st.patch : [st.patch]).map(r => ({ id: uid(), ...r })); rows.push(...arr); return { data: clone(st.single ? arr[0] : arr), error: null }; }
       // imitation du déclencheur settings_delais_instant (v1.64) : marqueur « @enregistrement » des versions ajoutées → instant du serveur
       if (st.op === 'upsert' && table === 'settings') { const now = window.__SERVER_NOW || new Date().toISOString(), arr = Array.isArray(st.patch) ? st.patch : [st.patch];
@@ -133,6 +136,8 @@
     // messagerie : boîte anthony@ réservée à son propriétaire (window.__MAILBOX_OWNER = false : autre membre de l'équipe)
     is_mailbox_owner: () => window.__MAILBOX_OWNER ?? true,
     is_team: () => true,
+    // messagerie : boîte anthony@ réservée à son propriétaire (window.__MAILBOX_OWNER = false : autre membre de l'équipe)
+    is_mailbox_owner: () => window.__MAILBOX_OWNER ?? true,
     show_deletion_state: a => deletionState(a.p_show),
     delete_show: a => { const id = a.p_show, st = deletionState(id);
       DB.show_deletions.push({ id: DB.show_deletions.length + 1, show_id: id, actor: USER, snapshot: { show: DB.shows.find(x => x.id === id), result_closures: DB.result_closures.filter(r => r.show_id === id) } });
@@ -188,11 +193,17 @@
         // window.__FN_ERROR = { nom: 'message' } : la fonction serveur répond par cette erreur (essais de la file des résumés IA)
         functions: { invoke: async (name, o) => { window.__calls.push({ fn: name, body: o && o.body, url: String(url) });
           const err = window.__FN_ERROR && window.__FN_ERROR[name];
-          return err ? { data: null, error: { message: err } } : { data: { ok: true }, error: null }; } },
+          // window.__FN_REPLY = { nom: corps => réponse } : réponse simulée d'une fonction serveur (messagerie v1.61 : script-google, mail-sync)
+          const rep = window.__FN_REPLY && window.__FN_REPLY[name];
+          return err ? { data: null, error: { message: err } } : { data: rep ? clone(await rep(o && o.body)) : { ok: true }, error: null }; } },
         storage: { from: bucket => ({ upload: async () => ({ data: {}, error: null }),
           // fichiers effacés notés dans window.__calls ({ storageRemove: bucket, paths }) pour vérifier qu'aucun fichier ne reste orphelin
           remove: async paths => { window.__calls.push({ storageRemove: bucket, paths: [...paths] }); return { data: [], error: null }; },
-          createSignedUrl: async () => ({ data: { signedUrl: 'about:blank' }, error: null }), createSignedUrls: async p => ({ data: p.map(() => ({ signedUrl: 'about:blank' })), error: null }) }) },
+          // liens temporaires notés à part (window.__signed : stockage, chemin, durée) — messagerie v1.63 : pièces jointes des projets
+          createSignedUrl: async (path, expires) => { (window.__signed ||= []).push({ bucket, path, expires }); return { data: { signedUrl: 'about:blank#' + bucket + '/' + path }, error: null }; },
+          // window.__STORAGE_LIST = { bucket: [{name, metadata: {size}}] } : contenu simulé d'un dossier (tailles des documents)
+          list: async () => ({ data: (window.__STORAGE_LIST && window.__STORAGE_LIST[bucket]) || [], error: null }),
+          createSignedUrls: async p => ({ data: p.map(() => ({ signedUrl: 'about:blank' })), error: null }) }) },
         channel: () => { const c = { on: () => c, subscribe: () => c, unsubscribe: async () => 'ok' }; return c; },
         removeChannel: async () => 'ok',
         auth: {

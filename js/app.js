@@ -33,11 +33,12 @@ import { viewStructures } from './views/structures.js';
 import { viewProspects } from './views/suivi.js';
 import { viewTicketing } from './views/ticketing.js';
 import { viewTodo } from './views/todo.js';
+import { viewMails } from './views/mails.js';
 import { startRealtime } from './realtime.js';
 import { bootTrace, startDiag } from './diag.js';
 
 const VIEW_FN = {booking:viewBooking, production:viewProduction, ticketing:viewTicketing, communication:viewCommunication,
-  projects:viewProjects, todo:viewTodo, prospects:viewProspects, contacts:viewContacts, structures:viewStructures, settings:viewSettings, employees:viewEmployees};
+  projects:viewProjects, todo:viewTodo, prospects:viewProspects, mails:viewMails, contacts:viewContacts, structures:viewStructures, settings:viewSettings, employees:viewEmployees};
 
 function header(){
   const unread = unreadNotifs();
@@ -151,6 +152,7 @@ document.addEventListener('change', async e => {
   const t = e.target;
   if (t.id==='f-year'){ S.year=Number(t.value); localSet('year',S.year); render(); return; }
   if (t.id==='f-project'){ setProjects(t.value.split(',')); render(); return; }
+  if (t.dataset.change && ACTIONS[t.dataset.change]){ await ACTIONS[t.dataset.change](t); return; }   // listes déroulantes à action (v1.61)
   // Enregistrement direct : data-t (table) data-id data-f (champ)
   if (t.dataset.t && t.dataset.id && t.dataset.f && !t.dataset.custom){
     let v = t.type==='checkbox' ? t.checked : t.value;

@@ -71,3 +71,9 @@ Décision d'Anthony du 08/11/2026 : aucune donnée fictive dans les comptes opé
   abîmé (version ignorée, la précédente gardée), instant d'enregistrement à la milliseconde, week-ends (0 jour → lundi,
   politique désactivable, solde toujours vendredi), contraintes d'écriture (délais et réglages simples), priorité de la prochaine
   échéance choisie pour la date. Tout est annulé (rollback).
+- `2026-11-08_v1.63_messagerie_base_locale.sql` puis `supabase/migrations/2026-11-06_v1.61_messagerie.sql` (deux fois : rejouable) puis
+  `2026-11-08_v1.63_messagerie_essai.sql` (transaction annulée, après les migrations v1.47 et cle_boite) : 89 essais — format des adresses de private.sync_urls (cal-sync compris), adresse du script de la boîte modifiable par le titulaire seulement, — titulaire non écrit par la migration, adresse lisible par le serveur seul, — boîte réservée au propriétaire (RLS, rattachement manuel), absence automatique signalée, rétablissement avec échéance future, rattachement (dont « aucun suivi » choisi à la main conservé, correction A → B : relances de B suspendues, celles de A signalées et rétablies seulement sur demande ; non-remise, réponse automatique et message de l'équipe sans suspension ; dépose Apple Mail ↔ synchronisation dans les deux sens), (unique, plusieurs contacts d'une structure,
+  plusieurs structures ou suivis, fil de prospection, conversation connue par References dont réponse Apple Mail, déjà rattachée),
+  aucun doublon (synchronisations répétées, envoi depuis L'ArtBotrice, mail déposé depuis Apple Mail), relances suspendues à la
+  réponse (pas sur un avis de non-remise), rattachement manuel (équipe, bonne structure, journal qui suit), droits, RLS, tâche
+  planifiée (rien sans adresse, jamais hors Supabase, secret en en-tête seulement). Garde de prérequis vérifiée sur une base vide.

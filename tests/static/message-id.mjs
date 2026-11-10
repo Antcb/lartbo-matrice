@@ -108,9 +108,18 @@ if (gsRe !== String(MSGID_RE)) fail('scripts', `expression du Message-ID différ
 if (!new RegExp(`var MSGID_MAX_ = ${MSGID_MAX};`).test(bCode)) fail('scripts', 'longueur maximale du Message-ID différente entre eml.js et les scripts');
 if (MSG_RAW_MAX !== 20 * 1024 * 1024 || !/var MSG_RAW_MAX_ = 20 \* 1024 \* 1024;/.test(bCode)) fail('scripts', 'taille maximale du contenu brut différente entre eml.js et les scripts');
 if (!/action === 'mail_by_msgid'\) out = mailByMsgId_\(body\.message_id\)/.test(gsCode)) fail('scripts', 'Code.gs : action mail_by_msgid non branchée dans doPost');
-if (!/a === 'mail_by_msgid'\) out = ownerOnly_\(body, a\) \|\| mailByMsgId_\(body\.message_id\)/.test(gsProsp)) fail('scripts', 'Prospection.gs : action mail_by_msgid non branchée dans doPost');
-for (const [n, src] of [['Code.gs', gsCode], ['Prospection.gs', gsProsp]])
-  if (!/var SCRIPT_VERSION = 'v1\.60\.8'/.test(src)) fail('scripts', `${n} : SCRIPT_VERSION doit être 'v1.60.8'`);
+// ordre dans doPost : titulaire (ownerOnly_), puis garde du mode essai, puis refus éventuel — avant toute action (recherche de texte,
+// sans expression régulière : pas de retour arrière coûteux)
+const ordreGarde = src => { const i = src.indexOf('var refus = BOITE_[a] ? ownerOnly_(body, a) : null;'),
+  j = src.indexOf("if (!refus && ESSAI_ && a !== 'ping') refus = essaiGarde_(a, body);"), k = src.indexOf('if (refus) out = refus;'), l = src.indexOf("else if (a === 'ping')");
+  return i > 0 && i < j && j < k && k < l; };
+// (v1.63) Prospection.gs : toutes les actions de boîte, dont mail_by_msgid, passent par ownerOnly_ AVANT d'être exécutées (BOITE_)
+if (!/a === 'mail_by_msgid'\) out = mailByMsgId_\(body\.message_id\)/.test(gsProsp) || !ordreGarde(gsProsp)
+  || !/var BOITE_ = \{[^}]*mail_by_msgid: 1/.test(gsProsp) || !/var BOITE_ = \{[^}]*thread_by_msgid: 1/.test(gsProsp)
+  || !/a === 'thread_by_msgid'\) out = threadByMsgId_\(body\.message_id, body\.want\)/.test(gsProsp)) fail('scripts', 'Prospection.gs : action mail_by_msgid non branchée dans doPost ou non réservée au titulaire');
+// version du code renvoyée par « ping » : celle de la dernière modification de CHAQUE script (Prospection.gs : messagerie, provisoire v1.62.0)
+for (const [n, src, v] of [['Code.gs', gsCode, '1.60.8'], ['Prospection.gs', gsProsp, '1.62.0']])
+  if (!new RegExp(`var SCRIPT_VERSION = 'v${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`).test(src)) fail('scripts', `${n} : SCRIPT_VERSION doit être 'v${v}'`);
 
 // 3a. Lecture du code : seulement des méthodes de lecture (Gmail) et des opérations sur du texte
 const READ_ONLY = new Set(['search', 'forEach', 'getMessages', 'getHeader', 'trim', 'isDraft', 'push', 'test', 'slice', 'getRawContent', 'round', 'getSubject', 'getFrom', 'getDate', 'toISOString',
@@ -151,7 +160,8 @@ function run(file, msgs, call){
   return { out: typeof out === 'string' ? JSON.parse(out) : JSON.parse(JSON.stringify(out)), ...log };
 }
 // identité du titulaire de la boîte (compte qui exécute le script), signée comme par le relais script-google (v1.60.4)
-// (relecture B1 : clé dédiée CLE_BOITE, signature sur adresse, action, Message-ID et horodatage)
+// (relecture B1 : clé dédiée CLE_BOITE, signature sur adresse, action, Message-ID et horodatage ; messagerie, relecture de f95da56 :
+// texte v2 qui nomme aussi la cible « prospect » et la boîte « anthony » du script de prospection — Code.gs ne vérifie aucune signature)
 const owner = body => { const ts = Date.now(), mid = typeof body.message_id === 'string' ? body.message_id : '';
   return { caller: 'boite@example.com', caller_ts: ts, caller_sig: createHmac('sha256', 'cle-boite-de-test').update(['matrice-boite-v2', 'prospect', 'anthony', 'boite@example.com', body.action, mid, String(ts)].join('|')).digest('hex') }; };
 const post = body => ctx => ctx.doPost({ postData: { contents: JSON.stringify({ ...owner(body), ...body }) } });

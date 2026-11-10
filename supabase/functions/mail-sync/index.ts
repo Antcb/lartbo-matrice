@@ -1,0 +1,152 @@
+// Messagerie intégrée (v1.61) — synchronisation de la boîte anthony@ (Gmail = référence) vers L'ArtBotrice.
+//   - tâche planifiée de la base (toutes les 5 min, en-tête x-hook-secret = secret serveur dédié « mail_sync_hook ») : { mode: 'sync' }
+//   - propriétaire de la boîte connecté (is_mailbox_owner, compte d'Anthony) : { mode: 'sync' } (« Actualiser ») ou { mode: 'threads', ids: [...] } (conversations ouvertes /
+//     trouvées par une recherche Gmail : relues côté serveur, jamais reprises telles que fournies par le navigateur).
+// Le script de prospection lit Gmail ; cette fonction enregistre conversations et messages (identifiants Gmail uniques : aucun doublon),
+// ne touche jamais au rattachement existant, puis lance mail_process (rattachement automatique, journal du suivi, suspension des relances).
+// Rien n'est envoyé ni modifié dans Gmail ici. Dernier passage et erreur visibles dans l'espace Mails (mail_sync_state).
+import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
+import { acces, compteOk, essaiOk, horsEssai, messageRows, threadsEssai, scriptUrlOk, threadIds, threadRow, type Thread } from './regles.ts';
+// même signature que le relais script-google (v1.60.4) : clé dédiée mailbox_sign_key, jamais transmise
+import { outgoingBody } from '../script-google/identite.ts';
+
+const URL_ = Deno.env.get('SUPABASE_URL')!;
+const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
+const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-hook-secret' };
+const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
+const MAILBOX = 'anthony';
+const LIMIT_MS = 120_000;
+/** Erreur expliquée à l'utilisateur (message rédigé ici) ; toute autre erreur n'est montrée que sous une forme générique
+ *  (détail technique seulement dans le journal du serveur — CodeQL « stack trace exposure ») */
+class Explique extends Error {}
+/** Refus « conversation hors essai » (code hors_essai du script) : seule erreur écartée sans interrompre un lot en mode essai */
+class HorsEssai extends Explique {}
+const shown = (e: unknown) => e instanceof Explique ? e.message.slice(0, 500) : 'Erreur interne de la synchronisation (détail dans le journal du serveur).';
+
+/**
+ * Appel d'une action de BOÎTE du script (history, thread), signé AU NOM DU TITULAIRE inscrit (private.mailbox_owners), avec la clé
+ * dédiée — exactement comme le relais signe pour une session : même texte signé, même fenêtre de 5 minutes, même usage unique.
+ * Pourquoi ce choix (synchronisation planifiée, sans session) : seul ce code serveur, lancé par la tâche planifiée (secret dédié
+ * mail_sync_hook) ou par le titulaire lui-même (session vérifiée), lit la clé et le titulaire (rôle serveur, schéma privé) ; rien
+ * n'est envoyé au navigateur ni à un journal ; la signature couvre la demande entière (identite.ts), donc ne sert qu'à cette lecture.
+ * Ni secret de session ni compte technique de plus : le script applique UNE règle (identité signée = compte qui l'exécute).
+ * Réponse acceptée seulement si le compte qui exécute le script est ce titulaire (adresse du script remplacée → arrêt, rien d'écrit).
+ */
+let ESSAI = '';   // libellé du mode essai (réglage mail_essai_libelle du projet de test), '' en production
+async function script(url: string, secret: string, key: string, owner: string, action: string, payload: Record<string, unknown>) {
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), LIMIT_MS);
+  try {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: await outgoingBody(payload, action, secret, owner, key, Date.now(), 'prospect'), signal: ctl.signal });
+    const txt = await r.text();
+    let j: any; try { j = JSON.parse(txt); } catch { throw new Explique('Réponse illisible du script de prospection'); }
+    if (!j?.ok) {
+      const msg = String(j?.error || '').slice(0, 300) || 'Le script de prospection a refusé la demande';
+      throw horsEssai(j) ? new HorsEssai(msg) : new Explique(msg);
+    }
+    if (!essaiOk(j, ESSAI)) throw new Explique(`Mode essai demandé (libellé « ${ESSAI} ») mais le script de prospection n’est pas en mode essai sur ce libellé : rien n’est lu ni enregistré.`);
+    if (ESSAI) j.threads = threadsEssai(j.threads || (j.thread ? [j.thread] : []), j.essai?.id), j.thread = j.threads.length ? j.thread : null;
+    if (!compteOk(j.account, owner)) throw new Explique('Le script de prospection ne s’exécute pas sous le compte titulaire de la boîte : synchronisation arrêtée, rien n’est enregistré.');
+    return j;
+  } catch (e) {
+    if (ctl.signal.aborted) throw new Explique('Le script de prospection met plus de 2 minutes : synchronisation reprise au prochain passage.');
+    throw e;
+  } finally { clearTimeout(timer); }
+}
+
+/** Enregistre les conversations ; renvoie les identifiants internes à traiter. Le rattachement n'est jamais modifié ici. */
+async function store(threads: Thread[]) {
+  const ids: string[] = [];
+  for (const t of threads) {
+    if (t.missing || !t.id) continue;   // supprimée définitivement de Gmail : la ligne reste (historique), rien n'est effacé
+    const { data, error } = await admin.from('mail_threads').upsert(threadRow(MAILBOX, t), { onConflict: 'mailbox,gmail_thread_id' }).select('id').single();
+    if (error) { console.error('Enregistrement d’une conversation', error.message); throw new Explique('Enregistrement d’une conversation impossible pour le moment.'); }
+    ids.push(data.id);
+    const msgs = messageRows(MAILBOX, data.id, t);
+    if (msgs.length) {
+      // message déjà connu : libellés / pièces jointes mis à jour ; son lien avec le journal (prospect_log_id, non envoyé ici) est gardé
+      const { error: e2 } = await admin.from('mail_messages').upsert(msgs, { onConflict: 'mailbox,gmail_message_id' });
+      if (e2) { console.error('Enregistrement des messages', e2.message); throw new Explique('Enregistrement des messages impossible pour le moment.'); }
+    }
+  }
+  return ids;
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
+  if (req.method !== 'POST') return json({ ok: false, error: 'Demande refusée' }, 405);
+  const { data: st, error: se } = await admin.from('settings').select('key, value').in('key', ['prospect_script_url', 'drive_webhook_secret', 'mail_essai_libelle']);
+  if (se) return json({ ok: false, error: 'Réglages illisibles pour le moment.' }, 500);
+  const val = (k: string) => String(st?.find((r: any) => r.key === k)?.value ?? '').trim();
+  const url = val('prospect_script_url'), secret = val('drive_webhook_secret');
+  ESSAI = val('mail_essai_libelle');
+  // accès : tâche planifiée (code partagé) ou compte de l'équipe
+  // appel automatique : secret serveur DÉDIÉ (« mail_sync_hook », créé par la migration dans le schéma privé, jamais affiché, jamais
+  // dans le navigateur, une adresse ou un journal) ; sinon compte de l'équipe. Sans justificatif ou justificatif faux : 403.
+  const hook = req.headers.get('x-hook-secret') || '';
+  const { data: hookSecret } = hook ? await admin.rpc('import_secret', { k: 'mail_sync_hook' }) : { data: null };
+  // session de l'appelant : propriétaire de la boîte (is_mailbox_owner) vérifié avec SA session (jamais avec le rôle serveur)
+  let isOwner = false;
+  if (req.headers.get('Authorization')) {
+    const user = createClient(URL_, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization') || '' } }, auth: { persistSession: false } });
+    const { data } = await user.rpc('is_mailbox_owner', { p_mailbox: MAILBOX });
+    isOwner = data === true;
+  }
+  const body = await req.json().catch(() => ({}));
+  const mode = body?.mode === 'threads' ? 'threads' : 'sync';
+  // le secret de la tâche planifiée ne sert qu'à la synchronisation planifiée ; relire des conversations précises = compte de l'équipe
+  const ok = acces({ hook, hookSecret: hookSecret ? String(hookSecret) : null, owner: isOwner, mode });
+  if (!ok.ok) return json({ ok: false, error: ok.error }, ok.status);
+  if (!url) return json({ ok: false, error: 'Le script de prospection n’est pas encore installé : Réglages › Prospection.' });
+  // titulaire inscrit et clé de la boîte (rôle serveur seulement) : sans eux, rien n'est lu
+  const { data: ownerEmail } = await admin.rpc('mailbox_owner_email', { p_mailbox: MAILBOX });
+  const { data: signKey } = await admin.rpc('import_secret', { k: 'mailbox_sign_key' });
+  const owner = String(ownerEmail || '').trim().toLowerCase(), key = String(signKey || '');
+  if (!owner) return json({ ok: false, error: 'Titulaire de la boîte anthony@ pas encore inscrit (ESSAI_GMAIL_REEL.md) : rien n’est synchronisé.' });
+  if (!key) return json({ ok: false, error: 'Clé de la boîte absente (migration v1.60.4 cle_boite) : rien n’est synchronisé.' });
+  if (!scriptUrlOk(url)) return json({ ok: false, error: 'L’adresse du script de prospection n’est pas une adresse de script publiée (…/exec).' });
+
+  const now = new Date().toISOString();
+  try {
+    let threads: Thread[] = [], historyId: string | null = null, remaining = 0, pendingAfter: string[] = [];
+    if (mode === 'threads') {
+      const ids = threadIds(body.ids);
+      for (const id of ids) {
+        // mode essai : une conversation refusée par le script (hors libellé) est écartée sans interrompre le reste du lot
+        try {
+          const j = await script(url, secret, key, owner, 'thread', { thread_id: id });
+          if (j.thread) threads.push(j.thread);
+        } catch (e) { if (ESSAI && e instanceof HorsEssai) continue; throw e; }   // toute autre erreur reste visible
+      }
+    } else {
+      // plus de 30 conversations changées : le reste est gardé (pending) et lu aux passages suivants, le point de reprise avance
+      // toujours (relecture v1.61, B1 : jamais deux fois les mêmes 30, plus de balayage complet sans fin)
+      const { data: state } = await admin.from('mail_sync_state').select('history_id, pending').eq('mailbox', MAILBOX).maybeSingle();
+      await admin.from('mail_sync_state').upsert({ mailbox: MAILBOX, last_run_at: now }, { onConflict: 'mailbox' });
+      const pending: string[] = state?.pending || [];
+      if (pending.length) {
+        const j = await script(url, secret, key, owner, 'history', { ids: pending.slice(0, 30) });
+        threads = j.threads || []; pendingAfter = pending.slice(30);
+      } else {
+        const j = await script(url, secret, key, owner, 'history', { start_history_id: state?.history_id || null, max: 30 });
+        threads = j.threads || []; pendingAfter = (j.remaining || []).map(String);
+        historyId = j.history_id ? String(j.history_id) : null;
+      }
+      remaining = pendingAfter.length;
+    }
+    const ids = await store(threads);
+    const { data: processed, error: pe } = ids.length ? await admin.rpc('mail_process', { p_threads: ids }) : { data: 0, error: null };
+    if (pe) { console.error('Rattachement / journal', pe.message); throw new Explique('Rattachement / journal impossible pour le moment.'); }
+    if (mode === 'sync') {
+      const patch: Record<string, unknown> = { mailbox: MAILBOX, last_ok_at: new Date().toISOString(), last_error: null, pending: pendingAfter };
+      if (historyId) patch.history_id = historyId;
+      await admin.from('mail_sync_state').upsert(patch, { onConflict: 'mailbox' });
+    }
+    return json({ ok: true, threads: ids.length, journal: processed ?? 0, remaining });
+  } catch (e) {
+    if (!(e instanceof Explique)) console.error(e);
+    const msg = shown(e);
+    console.error('mail-sync', msg);
+    if (mode === 'sync') await admin.from('mail_sync_state').upsert({ mailbox: MAILBOX, last_error: msg, last_run_at: now }, { onConflict: 'mailbox' });
+    return json({ ok: false, error: msg });
+  }
+});
