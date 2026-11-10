@@ -157,3 +157,21 @@ for (const [nom, f] of cas) {
 }
 console.log(`Sauvegardes (démarrage réel) : ${cas.length - ko}/${cas.length} essais réussis.`);
 if (ko) process.exit(1);
+
+// (10/11/2026, essai réel) Supabase refuse un UPDATE sans WHERE venant de l'API : la dernière définition de chaque fonction appelée par
+// sauvegarde-fenetre ne doit contenir aucune mise à jour de private.sauvegarde_fenetre sans condition
+{
+  const fs = await import('node:fs');
+  const dir = new URL('../../supabase/migrations/', import.meta.url);
+  const files = fs.readdirSync(dir).filter((f) => /sauvegarde/.test(f)).sort();
+  const last = {};
+  for (const f of files) {
+    const s = fs.readFileSync(new URL(f, dir), 'utf8');
+    for (const m of s.matchAll(/create or replace function private\.(sauvegarde_demarrer|sauvegarde_fermer)\([\s\S]*?end \$f\$;/g)) last[m[1]] = m[0];
+  }
+  for (const [n, body] of Object.entries(last)) {
+    const sans = [...body.matchAll(/update private\.sauvegarde_fenetre set [^;]*;/g)].map((x) => x[0]).filter((u) => !/\bwhere\b/.test(u));
+    if (sans.length) { console.error(`ÉCHEC : ${n} met à jour sauvegarde_fenetre sans WHERE (refusé par Supabase via l'API)`); process.exit(1); }
+    console.log(`ok : ${n} : aucune mise à jour sans WHERE (exigence de l'API Supabase)`);
+  }
+}
