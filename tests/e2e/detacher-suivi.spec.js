@@ -6,38 +6,38 @@ import { openApp, expectClean } from './helpers.js';
 const writes = page => page.evaluate(() => window.__calls.filter(c => c.table && c.op !== 'select').map(c => ({ table: c.table, op: c.op, patch: c.patch })));
 
 async function ouvrirSuiviAvecDates(page) {
-  // sh-3 : rattachée explicitement (autre structure) ; sh-2 : même structure et même artiste, listée sans lien enregistré
+  // sh-1 : rattachée explicitement (autre structure, même artiste) ; sh-2 : même structure et même artiste, listée sans lien enregistré
   await page.evaluate(async () => {
     const { S } = await import('./js/state.js'); const app = await import('./js/app.js');
-    for (const db of [window.__DB, S.db]) db.shows.find(s => s.id === 'sh-3').prospect_id = 'pr-1';
+    for (const db of [window.__DB, S.db]) db.shows.find(s => s.id === 'sh-1').prospect_id = 'pr-1';
     window.__calls.length = 0;
     app.go('prospects'); S.suiviPage = 'pr-1'; app.render();
   });
-  await expect(page.locator('.plan-row[data-id="sh-3"]')).toBeVisible();
+  await expect(page.locator('.plan-row[data-id="sh-1"]')).toBeVisible();
 }
 
 test('« Détacher du suivi » : seulement sur une date liée, Annuler ne touche à rien', async ({ page }) => {
   const ctx = await openApp(page);
   await ouvrirSuiviAvecDates(page);
   await expect(page.locator('.plan-row[data-id="sh-2"] [data-act="detachShow"]'), 'pas de lien en base : rien à détacher').toHaveCount(0);
-  await page.locator('.plan-row[data-id="sh-3"] [data-act="detachShow"]').click();
+  await page.locator('.plan-row[data-id="sh-1"] [data-act="detachShow"]').click();
   const dlg = page.locator('dialog.ask');
   await expect(dlg).toContainText('Rien n\'est supprimé');
   await dlg.getByRole('button', { name: 'Annuler' }).click();
   await expect(dlg).toHaveCount(0);
   expect(await writes(page)).toEqual([]);
-  expect(await page.evaluate(() => window.__DB.shows.find(s => s.id === 'sh-3').prospect_id)).toBe('pr-1');
+  expect(await page.evaluate(() => window.__DB.shows.find(s => s.id === 'sh-1').prospect_id)).toBe('pr-1');
   expectClean(ctx);
 });
 
 test('détacher retire seulement le lien, note le détachement au journal, et le lien se refait', async ({ page }) => {
   const ctx = await openApp(page);
-  const avant = await page.evaluate(() => ({ show: { ...window.__DB.shows.find(s => s.id === 'sh-3') }, logs: window.__DB.prospect_logs.length,
+  const avant = await page.evaluate(() => ({ show: { ...window.__DB.shows.find(s => s.id === 'sh-1') }, logs: window.__DB.prospect_logs.length,
     pays: JSON.stringify(window.__DB.show_payments), tasks: JSON.stringify(window.__DB.tasks || []) }));
   await ouvrirSuiviAvecDates(page);
-  await page.locator('.plan-row[data-id="sh-3"] [data-act="detachShow"]').click();
+  await page.locator('.plan-row[data-id="sh-1"] [data-act="detachShow"]').click();
   await page.locator('dialog.ask').getByRole('button', { name: 'Détacher du suivi' }).click();
-  await expect(page.locator('.plan-row[data-id="sh-3"]'), 'date plus listée dans ce suivi').toHaveCount(0);
+  await expect(page.locator('.plan-row[data-id="sh-1"]'), 'date plus listée dans ce suivi').toHaveCount(0);
 
   const w = await writes(page);
   expect(w.filter(c => c.op === 'delete'), 'aucune suppression').toEqual([]);
@@ -48,7 +48,7 @@ test('détacher retire seulement le lien, note le détachement au journal, et le
   expect(logs[0].patch.body).toContain('Date détachée de ce suivi');
   expect(w.every(c => ['shows', 'prospect_logs'].includes(c.table)), 'aucune autre table écrite').toBe(true);
 
-  const apres = await page.evaluate(() => ({ show: { ...window.__DB.shows.find(s => s.id === 'sh-3') }, logs: window.__DB.prospect_logs.length,
+  const apres = await page.evaluate(() => ({ show: { ...window.__DB.shows.find(s => s.id === 'sh-1') }, logs: window.__DB.prospect_logs.length,
     pays: JSON.stringify(window.__DB.show_payments), tasks: JSON.stringify(window.__DB.tasks || []) }));
   const { prospect_id: _a, updated_at: _u1, ...restAvant } = avant.show;
   const { prospect_id: _b, updated_at: _u2, ...restApres } = apres.show;
@@ -60,8 +60,8 @@ test('détacher retire seulement le lien, note le détachement au journal, et le
   await expect(page.locator('.suivi-block')).toContainText('Date détachée de ce suivi');
 
   // le rattachement existant refait le lien
-  await page.evaluate(() => { const el = document.querySelector('[data-link-show="pr-1"]'); el.value = 'sh-3'; el.dispatchEvent(new Event('change', { bubbles: true })); });
-  await expect.poll(() => page.evaluate(() => window.__DB.shows.find(s => s.id === 'sh-3').prospect_id)).toBe('pr-1');
-  await expect(page.locator('.plan-row[data-id="sh-3"]')).toBeVisible();
+  await page.evaluate(() => { const el = document.querySelector('[data-link-show="pr-1"]'); el.value = 'sh-1'; el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await expect.poll(() => page.evaluate(() => window.__DB.shows.find(s => s.id === 'sh-1').prospect_id)).toBe('pr-1');
+  await expect(page.locator('.plan-row[data-id="sh-1"]')).toBeVisible();
   expectClean(ctx);
 });
