@@ -31,7 +31,7 @@ export async function callerSig(key: string, target: string, mailbox: string, em
 
 /**
  * (v1.63, messagerie) Identifiant signé, UNE règle pour toutes les actions de boîte de Prospection.gs :
- *  - « mail_by_msgid » : le Message-ID (sa demande se réduit à lui ; inchangé depuis la v1.60.4) ;
+ *  - « mail_by_msgid », « thread_by_msgid » : le Message-ID (inchangé depuis la v1.60.4 / v1.60.8) ;
  *  - toute autre action : « sha256: » + empreinte de la demande ENTIÈRE (forme canonique : clés triées, JSON), champs réservés
  *    exclus (action, secret, caller…). Une signature captée ne peut donc servir ni pour une autre conversation, ni pour un autre
  *    destinataire, texte ou rangement : seulement pour la même demande, une fois, dans les 5 minutes.
@@ -46,7 +46,9 @@ export function canon(v: unknown): string {
   return JSON.stringify(v === undefined ? null : v);
 }
 export async function identOf(action: string, payload: Record<string, unknown>): Promise<string> {
-  if (action === 'mail_by_msgid') return typeof payload.message_id === 'string' ? payload.message_id : '';
+  // recherche par Message-ID (message seul, ou sa conversation : v1.60.8) : le Message-ID, comme publié — « want » ne peut viser
+  // que des messages de CETTE conversation, déjà couverte par l'identifiant signé
+  if (action === 'mail_by_msgid' || action === 'thread_by_msgid') return typeof payload.message_id === 'string' ? payload.message_id : '';
   const rest = Object.fromEntries(Object.entries(payload).filter(([k]) => !RESERVED.includes(k)));
   const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canon(rest)));
   return 'sha256:' + [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');

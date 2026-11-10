@@ -115,19 +115,26 @@ const ordreGarde = src => { const i = src.indexOf('var refus = BOITE_[a] ? owner
   return i > 0 && i < j && j < k && k < l; };
 // (v1.63) Prospection.gs : toutes les actions de boîte, dont mail_by_msgid, passent par ownerOnly_ AVANT d'être exécutées (BOITE_)
 if (!/a === 'mail_by_msgid'\) out = mailByMsgId_\(body\.message_id\)/.test(gsProsp) || !ordreGarde(gsProsp)
-  || !/var BOITE_ = \{[^}]*mail_by_msgid: 1/.test(gsProsp)) fail('scripts', 'Prospection.gs : action mail_by_msgid non branchée dans doPost ou non réservée au titulaire');
-// version du code renvoyée par « ping » : celle de la dernière modification de CHAQUE script (Prospection.gs : messagerie v1.61.0)
-for (const [n, src, v] of [['Code.gs', gsCode, '1.60.4'], ['Prospection.gs', gsProsp, '1.61.0']])
+  || !/var BOITE_ = \{[^}]*mail_by_msgid: 1/.test(gsProsp) || !/var BOITE_ = \{[^}]*thread_by_msgid: 1/.test(gsProsp)
+  || !/a === 'thread_by_msgid'\) out = threadByMsgId_\(body\.message_id, body\.want\)/.test(gsProsp)) fail('scripts', 'Prospection.gs : action mail_by_msgid non branchée dans doPost ou non réservée au titulaire');
+// version du code renvoyée par « ping » : celle de la dernière modification de CHAQUE script (Prospection.gs : messagerie, provisoire v1.62.0)
+for (const [n, src, v] of [['Code.gs', gsCode, '1.60.8'], ['Prospection.gs', gsProsp, '1.62.0']])
   if (!new RegExp(`var SCRIPT_VERSION = 'v${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`).test(src)) fail('scripts', `${n} : SCRIPT_VERSION doit être 'v${v}'`);
 
 // 3a. Lecture du code : seulement des méthodes de lecture (Gmail) et des opérations sur du texte
-const READ_ONLY = new Set(['search', 'forEach', 'getMessages', 'getHeader', 'trim', 'isDraft', 'push', 'test', 'slice', 'getRawContent', 'round', 'getSubject', 'getFrom', 'getDate', 'toISOString']);
+const READ_ONLY = new Set(['search', 'forEach', 'getMessages', 'getHeader', 'trim', 'isDraft', 'push', 'test', 'slice', 'getRawContent', 'round', 'getSubject', 'getFrom', 'getDate', 'toISOString',
+  // (v1.60.7) conversation : lecture de la conversation et de ses messages, opérations sur des tableaux
+  'getThread', 'getId', 'getTo', 'getCc', 'getTime', 'filter', 'sort', 'map', 'indexOf', 'isArray', 'getAttachments', 'some', 'concat']);
 const fn = bCode.slice(bCode.indexOf('function mailByMsgId_'));
 const called = [...fn.matchAll(/\.([A-Za-z_$][\w$]*)\s*\(/g)].map(m => m[1]);
 const extra = [...new Set(called.filter(m => !READ_ONLY.has(m)))];
 if (extra.length) fail('lecture seule', `mailByMsgId_ appelle des méthodes hors liste de lecture : ${extra.join(', ')}`);
 if (/markRead|markUnread|addLabel|removeLabel|moveTo|star|trash|delete|modify|send|reply|forward|createDraft|Drafts|Users\.Messages|UrlFetchApp|DriveApp|PropertiesService|sb_\(/i.test(fn)) fail('lecture seule', 'mailByMsgId_ contient une écriture ou un accès à un autre service');
-if ((fn.match(/GmailApp\.search\(/g) || []).length !== 1 || !/GmailApp\.search\('rfc822msgid:' \+ id\.slice\(1, -1\), 0, 10\)/.test(fn)) fail('lecture seule', 'mailByMsgId_ : une seule recherche « rfc822msgid: » + identifiant validé attendue');
+for (const f of ['mailByMsgId_', 'threadByMsgId_']){
+  const body = (fn.split(/(?=\nfunction \w+_\()/).find(x => x.includes('function ' + f + '(')) || '');
+  if (!body) { fail('lecture seule', `${f} introuvable`); continue; }
+  if ((body.match(/GmailApp\.search\(/g) || []).length !== 1 || !/GmailApp\.search\('rfc822msgid:' \+ id\.slice\(1, -1\), 0, 10\)/.test(body)) fail('lecture seule', `${f} : une seule recherche « rfc822msgid: » + identifiant validé attendue`);
+}
 
 // 3b. Exécution réelle des deux scripts, services Google simulés : tout appel hors lecture est relevé
 const RAW = ['From: Camille Exemple <camille@example.com>', 'To: testeur@example.com', 'Subject: Programmation fictive', `Message-ID: ${ID1}`,

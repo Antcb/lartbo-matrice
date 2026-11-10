@@ -39,7 +39,7 @@ t('une seule règle : toutes les actions de boîte du script sont réservées au
   const relais = readFileSync(new URL('../../supabase/functions/script-google/index.ts', import.meta.url), 'utf8');
   const gs = readFileSync(new URL('../../apps-script/Prospection.gs', import.meta.url), 'utf8');
   const boite = Object.keys(JSON.parse((gs.match(/var BOITE_ = (\{[^}]*\})/) || [])[1].replace(/(\w+):/g, '"$1":')));
-  assert.deepEqual(boite.sort(), ['attachment', 'compose', 'files_info', 'history', 'labels', 'mail_by_msgid', 'modify', 'thread', 'threads']);
+  assert.deepEqual(boite.sort(), ['attachment', 'compose', 'files_info', 'history', 'labels', 'mail_by_msgid', 'modify', 'thread', 'thread_by_msgid', 'threads']);   // thread_by_msgid : import Apple Mail v1.60.8
   for (const a of boite) assert.ok(gs.includes(`a === '${a}'`), 'action absente du script : ' + a);
   for (const a of ['mail', 'reply', 'status', 'ping']) assert.ok(!boite.includes(a), 'prospection : droits de l’équipe conservés (' + a + ')');
   assert.ok(!/OWNER_ONLY|is_mailbox_owner/.test(relais), 'aucun second mécanisme dans le relais');
@@ -528,6 +528,12 @@ t('vérification de 9712cb0 : caractères de format et ignorables retirés (200E
   let diff = 0;
   for (let c = 0; c <= 0x10FFFF; c++) { if (c >= 0xD800 && c <= 0xDFFF) continue; const ch = String.fromCodePoint(c); if (prop.test(ch) !== sec.test(ch)) diff++; }
   assert.equal(diff, 0, 'classe de secours identique aux propriétés Unicode');
+});
+t('thread_by_msgid (import Apple Mail v1.60.8) : titulaire seulement ; en mode essai, conversation hors libellé non trouvée', async () => {
+  const { ctx } = essaiBac();
+  assert.match(appel(ctx, await outgoingBody({ message_id: '<h1@example.org>' }, 'thread_by_msgid', 'secret-essai', 'collegue@example.net', CLE)).error, /réservée à son titulaire/);
+  const r = appel(ctx, await signe({ message_id: '<h1@example.org>' }, 'thread_by_msgid'));
+  assert.equal(r.found, false);
 });
 t('mode essai mal configuré → TOUT bloqué (libellé absent, inexistant, système ; destinataires absents)', async () => {
   for (const props of [{ MODE_ESSAI: 'oui' }, { ...ESSAI, LIBELLE_ESSAI: 'Inexistant' }, { ...ESSAI, LIBELLE_ESSAI: 'INBOX' }, { ...ESSAI, DESTINATAIRES_ESSAI: '' }]) {
