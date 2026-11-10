@@ -196,7 +196,8 @@ function sidePanel(p, st, proj, linked){
   const linkedRow = s=>`<div class="plan-row ${s.date===S.wsTarget?'target':''}" data-id="${s.id}"><span class="d">${period(s)}<br><span class="muted" style="font-weight:400">${s.date?s.date.slice(0,4):''}</span></span>
       <span><b>${esc(projName(s.project_id))}</b> <span class="muted">${esc(s.venue)}</span><br>${stSelect(s)} ${s.fee_ht?`<b class="fee-tag">${eur(s.fee_ht)} HT</b>`:''}</span>
       <span style="display:flex;gap:4px;flex-direction:column;align-items:flex-end"><button type="button" class="btn sm" data-act="editShow" data-id="${s.id}">Modifier</button>
-        ${s.date && s.date!==S.wsTarget?`<button type="button" class="btn sm ghost" data-act="wsSetTarget" data-d="${s.date}">Centrer</button>`:''}</span></div>`;
+        ${s.date && s.date!==S.wsTarget?`<button type="button" class="btn sm ghost" data-act="wsSetTarget" data-d="${s.date}">Centrer</button>`:''}
+        ${s.prospect_id===p.id?`<button type="button" class="btn sm ghost" data-act="detachShow" data-id="${s.id}" data-p="${p.id}" title="Retire seulement le lien avec ce suivi : rien n’est supprimé">Détacher du suivi</button>`:''}</span></div>`;
   const linkedHTML = `<div class="panel pad"><h3 class="block-title">Dates de ce suivi <span class="count">${active.length}</span></h3>
     ${active.map(linkedRow).join('') || '<p class="muted mb-sm">Aucune date en cours pour ce suivi.</p>'}
     ${others.length ? fold('suivi-others', 'Sans suite, annulées ou autres artistes', others.map(linkedRow).join(''), {count: others.length}) : ''}

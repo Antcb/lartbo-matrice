@@ -23,7 +23,7 @@ import { rtStyle, rtToolbar } from './ui/richtext.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
 import { exportShows } from './exports.js';
-import { callProspect, cancelAutoRelances, closeNoAnswer, deleteProspect, markLogSent, openProspection, prospectDeleteAsk, restoreRelances, setSuiviPlace } from './prospection.js';
+import { callProspect, cancelAutoRelances, closeNoAnswer, deleteProspect, markLogSent, openProspection, prospectDeleteAsk, restoreRelances, setSuiviPlace, detachShowFromSuivi } from './prospection.js';
 import { EMP_ACTIONS, editEmployee } from './views/employees.js';
 import { BUDGET_ACTIONS, confirmProvisionalCommission } from './budget-actions.js';
 
@@ -385,6 +385,7 @@ export const ACTIONS = {
     const fest = (st?.tags||[]).some(x=>/festival/i.test(x));
     editShow(null, S.wsProject && projIds(p).includes(S.wsProject) ? S.wsProject : projIds(p)[0], {...showPrefillFromSuivi(p, st), date:S.wsTarget||null, status: fest?'Option Festival':'Option Salle', prospect_id: p.id}); },
   suiviLieuClear: t => setSuiviPlace(t.dataset.id, null),
+  detachShow: t => detachShowFromSuivi(t.dataset.id, t.dataset.p),   // lien date ↔ suivi retiré, rien supprimé (10/11/2026)
   wsTask: t => { const p = byId('prospects', t.dataset.id); editTask(null, {structure_id:p.structure_id, project_ids:projIds(p), department:'Booking', prospect_id:p.id}); },
   noAnswerClose: async t => { if (await confirmAsk('Clore le suivi ?', 'Pas de réponse au téléphone : la tâche est terminée et le suivi est clos (noté dans son journal).', 'Clore le suivi')) await closeNoAnswer(t.dataset.id); },
   rmProj: async (t, e) => { e.stopPropagation(); const tb = t.dataset.t || 'prospects', r = byId(tb, t.dataset.id); const ids = projIds(r).filter(x=>x!==t.dataset.p);

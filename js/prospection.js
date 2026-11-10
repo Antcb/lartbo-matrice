@@ -10,7 +10,7 @@ import { render } from './app.js';
 import { contentTypeOf, insert, legacyMailOwner, legacyUnverifiedOk, mailAttachedTo, purgeStored, remove, save, sb, signedUrl, threadStatus, typedFile, uploadDetail } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
 import { PROSPECT_TAGS, attOk, attSizeHTML, callGoogle, callScript, fill, todoOk, tplLabel, tplProjects } from './mail.js';
-import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, placeOfEvent, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName } from './selectors.js';
+import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, placeOfEvent, projIds, projName, prospectTitle, prospectsOfStructure, setting, showLabel, structName } from './selectors.js';
 import { S, touch } from './state.js';
 import { geocode } from './geo.js';
 import { CONFIRMED_PROD } from './constants.js';
@@ -431,6 +431,30 @@ export async function setSuiviPlace(pid, pl){
     if (g){ patch.lat = g.lat; patch.lng = g.lng; patch.department = patch.department || g.department_code || null; }
   }
   if (await save('prospects', pid, patch)) toast(pl ? 'Lieu du suivi enregistré' : 'Lieu du suivi retiré');
+}
+
+/**
+ * Détacher une date de son suivi (demande d'Anthony du 10/11/2026) : retire SEULEMENT le lien shows.prospect_id.
+ * Rien n'est supprimé : la date garde finances, documents, tâches et historique ; le suivi garde journal, mails et fichiers.
+ * Une note au journal du suivi trace qui et quand (la date n'a pas de journal). Le lien se refait par « Rattacher une date existante ».
+ * Seul un lien explicite se détache : une date affichée parce qu'elle a la même structure et le même artiste n'a pas de lien en base.
+ */
+const sameStructArtist = (s, p) => !!(p?.structure_id && s?.structure_id === p.structure_id && projIds(p).includes(s.project_id));
+export async function detachShowFromSuivi(showId, pid){
+  const s = byId('shows', showId), p = byId('prospects', pid);
+  if (!s || !p || s.prospect_id !== p.id){ toast('Cette date n’est pas rattachée à ce suivi : rien à détacher.', true); render(); return false; }
+  const label = showLabel(s);
+  const text = `« ${label} » ne sera plus rattachée au suivi « ${prospectTitle(p)} ».
+Rien n'est supprimé : la date garde ses factures, son budget, ses documents, ses tâches et son historique ; le suivi garde son journal, ses mails et ses fichiers.
+Le détachement est noté dans le journal du suivi. Pour la rattacher à nouveau : « Rattacher une date existante ».`
+    + (sameStructArtist(s, p) ? '\nMême structure et même artiste que le suivi : la date restera listée dans « Dates de ce suivi », sans lien enregistré.' : '');
+  if (!(await confirmAsk('Détacher la date du suivi ?', text, 'Détacher du suivi'))) return false;
+  if (!(await save('shows', s.id, {prospect_id: null}, {rerender: false}))){ render(); return false; }   // refus : message de save, rien d'autre n'est écrit
+  const log = await insert('prospect_logs', {prospect_id: p.id, date: today(), kind: 'Note', author: S.user?.email || null,
+    body: `**Date détachée de ce suivi** : ${label}${S.user?.email ? ` (par ${S.user.email})` : ''}. Rien n'a été supprimé.`});
+  render();
+  toast(log ? 'Date détachée du suivi' : 'Date détachée du suivi, mais la note du journal n’a pas pu être enregistrée', !log);
+  return true;
 }
 
 /*
