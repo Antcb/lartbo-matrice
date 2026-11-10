@@ -6,7 +6,7 @@
 import { vatConflict, BILL_KINDS, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
 import { byId, isArchived, projName, setting, showsFiltered, spectacleName, structName } from '../selectors.js';
-import { followedInvoice, lateSteps, remindersOf } from '../reminders.js';
+import { followedInvoice, lateSteps, remindersOf, staleOf } from '../reminders.js';
 import { S } from '../state.js';
 import { filterBar, remindersSuspendedNote, stBadge, stSelect, tabsBar, viewHead } from '../ui/bits.js';
 import { cChk, cIn, cSel } from '../ui/cells.js';
@@ -51,8 +51,14 @@ export function viewProduction(){
         <span class="muted small">${sh ? esc([fmtDate(sh.date), sh.venue, projName(sh.project_id), sh.status].filter(Boolean).join(' · ')) : `date supprimée · ${esc(projName(a.project_id) || 'artiste inconnu')}`}</span></div>`; }).join('')}</div>` : '';
   const archHTML = archivedFin.length ? `<div class="panel pad mb"><p class="help full"><b>Dates archivées comptées dans ces montants</b> (hors de la liste et des relances) :</p>
     ${archivedFin.map(s => `<div class="file-row"><a href="#" data-act="editShow" data-id="${s.id}">${esc([fmtDate(s.date), s.venue, projName(s.project_id)].filter(Boolean).join(' · '))}</a> <span class="badge tag">date archivée</span></div>`).join('')}</div>` : '';
-  if (!all.length && !archivedFin.length) return head + awayHTML + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
-  return head + awayHTML + `
+  // anciens éléments à traiter (décision d'Anthony du 09/11) : obligations encore ouvertes d'une date passée au-delà de la limite des
+  // notifications quotidiennes (120 j ; 30 j pour la facture de solde à faire) — toutes années, pour qu'elles ne disparaissent jamais
+  const stale = S.db.shows.filter(s => !isArchived(s) && CONFIRMED_PROD.includes(s.status)).flatMap(s => staleOf(s).map(r => ({s, r})))
+    .sort((a, b) => String(a.s.date).localeCompare(String(b.s.date)));
+  const staleHTML = stale.length ? `<div class="panel pad mb" id="stale-items"><p class="help full"><b>Anciens éléments à traiter</b> (${stale.length}) : obligations encore ouvertes sur des concerts passés. Plus de notification quotidienne au-delà de la limite (120 jours après le concert, 30 jours pour la facture de solde à faire) ; elles restent ici jusqu’à ce que l’étape soit faite.</p>
+    ${stale.map(({s, r}) => `<div class="file-row"><a href="#" data-act="editShow" data-id="${s.id}">${esc([fmtDate(s.date), s.venue, projName(s.project_id)].filter(Boolean).join(' · '))}</a> <span class="warn-txt small">${esc(r.title)}</span> <span class="muted small">— ${esc(r.staleWhy)}, échéance du ${esc(fmtDate(r.due))}</span></div>`).join('')}</div>` : '';
+  if (!all.length && !archivedFin.length) return head + awayHTML + staleHTML + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
+  return head + awayHTML + staleHTML + `
     <div class="stat-row">
       <div class="stat"><b>${eur2(artbo)}</b><span>Commissions L'ArtBo</span></div>
       <div class="stat"><b>${eur2(partner)}</b><span>dont partenaires</span></div>
@@ -227,7 +233,7 @@ function suiviTab(s, booking, steps, late){
   const rem = remindersOf(s);
   return `<p class="tab-intro">Chaque étape prend la date du jour où elle est faite (les mails envoyés depuis la Matrice la remplissent tout seuls).</p>
     <div class="steps">${steps.map(([k,l])=>`<label style="${late.has(k)?'color:var(--danger);font-weight:700':''}">${l}</label>${dateInput(s[k], `data-t="shows" data-id="${s.id}" data-f="${k}"`)}`).join('')}</div>
-    ${rem.length ? `<div class="mt">${rem.map(r=>`<div class="${r.late?'':'muted'}" style="font-size:13px;${r.late?'color:var(--danger);font-weight:600':''}">${r.late?'⚠︎':'•'} ${esc(r.title)} — ${r.late?'depuis le':'le'} ${fmtDate(r.due)}</div>`).join('')}</div>` : ''}`;
+    ${rem.length ? `<div class="mt">${rem.map(r=>`<div class="${r.late?'':'muted'}" style="font-size:13px;${r.late?'color:var(--danger);font-weight:600':''}">${r.late?'⚠︎':'•'} ${esc(r.title)} — ${r.late?'depuis le':'le'} ${fmtDate(r.due)}${r.stale ? ` (ancien élément : ${esc(r.staleWhy)}, plus de notification quotidienne)` : ''}</div>`).join('')}</div>` : ''}`;
 }
 
 /** Factures : ce que l'organisateur paie (acomptes, solde), la commission, les autres lignes */

@@ -15,7 +15,7 @@ import { contactMails, contactsWithMail, defaultCommission, settingAcompte, suiv
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow, remindersSuspendedNote } from './ui/bits.js';
-import { remindersOf } from './reminders.js';
+import { remindersOf, taskDelay } from './reminders.js';
 import { hiddenFields, openModal } from './ui/modal.js';
 import { $, downloadCSV, esc, fmtDate, norm, toast, today, workDay, addDays, pct } from './utils.js';
 import { driveHTML } from './views/production.js';
@@ -177,7 +177,8 @@ async function showRemove(id, choice){
 export function reactivateRemindersWindow(id, level = 1){
   const s = byId('shows', id); if (!s) return;
   const now = today(), groups = new Map();
-  for (const r of remindersOf(s, {all: true})){ const g = groups.get(r.key) || {titles: [], origin: r.origin}; g.titles.push(r.title); if (r.origin < g.origin) g.origin = r.origin; groups.set(r.key, g); }
+  // anciens éléments (sans notification côté serveur) : hors réactivation
+  for (const r of remindersOf(s, {all: true}).filter(r => !r.stale)){ const g = groups.get(r.key) || {titles: [], origin: r.origin}; g.titles.push(r.title); if (r.origin < g.origin) g.origin = r.origin; groups.set(r.key, g); }
   const keys = [...groups.keys()], values = Object.fromEntries(keys.map(k => [k, groups.get(k).origin > now ? groups.get(k).origin : now]));
   const fields = keys.map(k => ({k, type: 'date', full: true, label: `${[...new Set(groups.get(k).titles)].join(' · ')} — échéance d’origine : ${fmtDate(groups.get(k).origin)}`}));
   return openModal({level, title: 'Réactiver les relances', saveLabel: 'Réactiver les relances', values, fields,
@@ -334,8 +335,8 @@ export async function createArtistFolder(projectId){
 export const driveId = s => { const m = String(s).match(/folders\/([\w-]{10,})/) || String(s).match(/[?&]id=([\w-]{10,})/); return m ? m[1] : String(s).trim(); };
 
 /* ------------------------------------------------------------------ Tâches */
-/** Tâche Booking : à réaliser sous 10 jours par défaut */
-const BOOKING_DAYS = 10;
+/** Tâche Booking : à réaliser sous 10 jours par défaut (réglable : Réglages › Délais et automatismes, v1.64) */
+const bookingDays = () => taskDelay('booking_task_days');
 // échéance à J+n, décalée au lundi si elle tombe un samedi ou un dimanche
 const inDays = n => workDay(addDays(today(), n));   // fonctions officielles (§1.6), jour de Paris
 
@@ -349,7 +350,7 @@ function suiviOptions(t){
 
 export function editTask(id, prefill={}){
   const t = id ? byId('tasks', id) : {status:'To Do', assigned_to: S.user.email, project_ids: S.project?[S.project]:[], ...prefill};
-  if (!id && !t.deadline && /^booking$/i.test(t.department || '')) t.deadline = inDays(BOOKING_DAYS);
+  if (!id && !t.deadline && /^booking$/i.test(t.department || '')) t.deadline = inDays(bookingDays());
   const files = id ? attachmentsOf('task_id', id) : [];
   openModal({ title: id ? 'Tâche' : 'Nouvelle tâche', values: {...t, project_ids: projIds(t)},
     fields: [
@@ -403,8 +404,8 @@ export function editTask(id, prefill={}){
     const f = $('#modal form').elements;
     f.department?.addEventListener('change', () => {
       if (/^booking$/i.test(f.department.value) && !f.deadline.value){
-        f.deadline.value = inDays(BOOKING_DAYS);
-        const txt = f.deadline.closest('.dt')?.querySelector('.dt-txt'); if (txt) txt.value = inDays(BOOKING_DAYS).split('-').reverse().join('/');
+        f.deadline.value = inDays(bookingDays());
+        const txt = f.deadline.closest('.dt')?.querySelector('.dt-txt'); if (txt) txt.value = inDays(bookingDays()).split('-').reverse().join('/');
       }
     });
   }

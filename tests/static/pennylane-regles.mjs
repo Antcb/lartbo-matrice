@@ -2,7 +2,7 @@
 // Lancé par « npm test » (node --experimental-strip-types). Module testé : supabase/functions/pennylane/regles.ts
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { acomptesFactures, baseCommission, caduc, codeLieu, describe, emise, factureIsolee, figerMontant, rangeeDansLeDrive, montantAttendu, payable, pctCommission, relieAuDevis, soldeDouteux, texteCommission } from '../../supabase/functions/pennylane/regles.ts';
+import { acomptesFactures, baseCommission, caduc, codeLieu, describe, emise, factureIsolee, figerMontant, rangeeDansLeDrive, montantAttendu, payable, pctCommission, relieAuDevis, soldeDouteux, texteCommission, delaiDocument } from '../../supabase/functions/pennylane/regles.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -139,6 +139,21 @@ t('v1.60.2 : nouvelle facture de commission avec le lieu réel et le code du lie
   assert.match(src, /const txt = texteCommission\(s, artist\)/, 'facture de commission : textes communs');
   assert.doesNotMatch(src, /s\.city \|\| s\.venue/, 'plus de « ville ou lieu » seul');
   assert.doesNotMatch(src, /function describe\(/, 'une seule fonction describe (regles.ts)');
+});
+
+t('v1.64 délais des nouveaux documents : réglage lisible appliqué, sinon 14 j (facture) / 30 j (devis) comme avant', () => {
+  assert.equal(delaiDocument('pennylane_payment_days', undefined), 14);
+  assert.equal(delaiDocument('pennylane_payment_days', null), 14);
+  assert.equal(delaiDocument('pennylane_quote_days', undefined), 30);
+  assert.equal(delaiDocument('pennylane_payment_days', 30), 30);
+  assert.equal(delaiDocument('pennylane_payment_days', 0), 0, 'paiement à réception');
+  assert.equal(delaiDocument('pennylane_payment_days', JSON.parse('5.0')), 5, '5.0 = 5 (comme le contrôle de la base)');
+  for (const v of [5.5, -1, 366, '20', true, {}]) assert.equal(delaiDocument('pennylane_payment_days', v), 14, String(v));
+  assert.equal(delaiDocument('pennylane_quote_days', 0), 30, 'devis : 1 jour au moins');
+  const src = readFileSync(new URL('../../supabase/functions/pennylane/index.ts', import.meta.url), 'utf8');
+  assert.match(src, /deadline: plusDays\(await delai\('pennylane_quote_days'\)\)/, 'devis : validité réglée');
+  assert.match(src, /deadline: plusDays\(await delai\('pennylane_payment_days'\)\), draft: true/, 'facture : échéance réglée');
+  assert.doesNotMatch(src, /plusDays\((14|30)\)/, 'plus de 14 / 30 en dur');
 });
 
 let ko = 0;
