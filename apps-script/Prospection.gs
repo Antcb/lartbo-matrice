@@ -18,7 +18,7 @@
  * avec le code écrit en dur continue de fonctionner tel quel (la Matrice envoie toujours le même code, depuis son serveur).
  */
 /** Version du code (renvoyée par « ping », pour vérifier le redéploiement) */
-var SCRIPT_VERSION = 'v1.60.4';
+var SCRIPT_VERSION = 'v1.60.8';
 var SECRET = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET') || '';
 
 function doPost(e) {
@@ -33,6 +33,7 @@ function doPost(e) {
     else if (a === 'reply') out = reply_(body);
     else if (a === 'status') out = status_(body.thread_id);
     else if (a === 'mail_by_msgid') out = ownerOnly_(body, a) || mailByMsgId_(body.message_id);   // v1.60.4 : lecture seule, titulaire de la boîte seulement
+    else if (a === 'thread_by_msgid') out = ownerOnly_(body, a) || threadByMsgId_(body.message_id, body.want);   // v1.60.7 : conversation, lecture seule, titulaire seulement
     else out = { ok: false, error: 'Action inconnue : ' + a };
   } catch (err) {
     out = { ok: false, error: String(err) };
@@ -132,6 +133,59 @@ function mailByMsgId_(id) {
   var m = found[0], raw = String(m.getRawContent() || '');
   if (raw.length > MSG_RAW_MAX_) return { ok: false, error: 'Message trop lourd pour être joint (' + Math.round(raw.length / 104857.6) / 10 + ' Mo, 20 Mo au plus).' };
   return { ok: true, found: true, message: { message_id: id, subject: m.getSubject(), from: m.getFrom(), date: m.getDate().toISOString(), size: raw.length, raw: raw } };
+}
+/**
+ * (v1.60.7, décision d'Anthony du 09/11/2026) CONVERSATION entière du message glissé, en LECTURE SEULE : même recherche exacte que
+ * mailByMsgId_ (rfc822msgid: + identifiant validé, en-tête Message-ID identique, brouillons exclus), puis la conversation Gmail de
+ * ce message (son identifiant de conversation, jamais une ressemblance d'objet) : ses messages, reçus et envoyés, brouillons exclus,
+ * dans l'ordre chronologique, THREAD_MAX_ au plus (les plus récents, et toujours le message glissé ; « total » = nombre réel). Sans « want » : description seulement (identifiant Gmail,
+ * Message-ID, objet, expéditeur, destinataires, copies, date, nombre de pièces jointes). Avec « want » (identifiants Gmail de CETTE conversation) : contenu
+ * brut (.eml) de ces messages en plus, 20 Mo au plus par appel ; ceux qui n'entrent pas sont rendus dans « rest » (passe suivante),
+ * un message seul de plus de 20 Mo est signalé « too_big ». Aucune modification (ni « lu », ni libellé, ni déplacement).
+ */
+var THREAD_MAX_ = 100;
+var GMAIL_ID_RE_ = /^[0-9a-f]{6,32}$/;
+function threadByMsgId_(id, want) {
+  id = typeof id === 'string' ? id : '';
+  if (!id || id.length > MSGID_MAX_ || !MSGID_RE_.test(id)) return { ok: false, error: 'Identifiant de message refusé : forme attendue <identifiant@domaine>.' };
+  var found = [];
+  GmailApp.search('rfc822msgid:' + id.slice(1, -1), 0, 10).forEach(function (t) {
+    t.getMessages().forEach(function (m) {
+      var h = String(m.getHeader('Message-ID') || m.getHeader('Message-Id') || '').trim();
+      if (!m.isDraft() && h === id) found.push(m);
+    });
+  });
+  if (!found.length) return { ok: true, found: false };
+  var thread = found[0].getThread(), threadId = thread.getId();
+  for (var i = 1; i < found.length; i++) {
+    if (found[i].getThread().getId() !== threadId) return { ok: false, error: 'Plusieurs conversations de cette boîte portent cet identifiant : import impossible par ce chemin.' };
+  }
+  var all = thread.getMessages().filter(function (m) { return !m.isDraft(); });
+  all.sort(function (a, b) { return a.getDate().getTime() - b.getDate().getTime(); });
+  // (relecture de 0e9d3cc, B1) conversation trop longue : les THREAD_MAX_ - 1 plus récents ET toujours le message glissé lui-même
+  var total = all.length, truncated = total > THREAD_MAX_, dropped = found[0].getId();
+  if (truncated) {
+    var keep = all.slice(total - THREAD_MAX_);
+    if (!keep.some(function (m) { return m.getId() === dropped; })) {
+      keep = all.filter(function (m) { return m.getId() === dropped; }).concat(all.slice(total - (THREAD_MAX_ - 1)));
+    }
+    all = keep;
+  }
+  var wanted = Array.isArray(want) ? want.filter(function (w) { return typeof w === 'string' && GMAIL_ID_RE_.test(w); }).slice(0, THREAD_MAX_) : null;
+  var budget = MSG_RAW_MAX_, rest = [], given = 0;
+  var messages = all.map(function (m) {
+    var gid = m.getId();
+    var meta = { gmail_id: gid, message_id: String(m.getHeader('Message-ID') || m.getHeader('Message-Id') || '').trim(), subject: m.getSubject(),
+      from: m.getFrom(), to: m.getTo(), cc: m.getCc(), date: m.getDate().toISOString(), att: m.getAttachments({ includeInlineImages: false }).length };
+    if (wanted && wanted.indexOf(gid) >= 0) {
+      var raw = String(m.getRawContent() || '');
+      if (raw.length > MSG_RAW_MAX_) meta.too_big = Math.round(raw.length / 104857.6) / 10;
+      else if (given > 0 && raw.length > budget) rest.push(gid);
+      else { meta.raw = raw; budget -= raw.length; given++; }
+    }
+    return meta;
+  });
+  return { ok: true, found: true, thread_id: threadId, truncated: truncated, total: total, messages: messages, rest: rest };
 }
 // ─────────────── fin : Message-ID ───────────────
 

@@ -31,6 +31,14 @@ async function openSuivi(page, mailbox){
       if (name !== 'script-google') return orig(name, o);
       window.__google.push({ target: o.body.target, action: o.body.action, payload: o.body.payload });
       const r = window.__MAILBOX[o.body.target];
+      // (v1.60.7) l'application demande la CONVERSATION (thread_by_msgid) : une réponse « message trouvé » de ces essais v1.60.4
+      // devient une conversation d'un seul message (identifiant Gmail tiré du Message-ID) ; le contenu n'est rendu que s'il est demandé
+      if (o.body.action === 'thread_by_msgid' && r && r.found === true && r.message){
+        const m = r.message, gid = '18f' + [...m.message_id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7).toString(16).padStart(13, '0');
+        const meta = { gmail_id: gid, message_id: m.message_id, subject: m.subject, from: m.from, to: '', cc: '', date: m.date, att: (String(m.raw).match(/Content-Disposition: attachment/g) || []).length };
+        if ((o.body.payload.want || []).includes(gid)) meta.raw = m.raw;
+        return { data: { ok: true, found: true, thread_id: 't-' + gid, messages: [meta], rest: [] }, error: null };
+      }
       return { data: r || { ok: false, error: 'Action inconnue : ' + o.body.action }, error: null };
     };
     window.__removed = [];
@@ -38,6 +46,8 @@ async function openSuivi(page, mailbox){
       remove: async paths => { window.__removed.push(...paths); return { data: [], error: null }; },
       // fichiers déjà stockés (mails joints avant la v1.60.4) : lecture seule, téléchargements relevés
       download: async path => { (window.__downloads ||= []).push(path); const t = (window.__STORED || {})[path]; return t == null ? { data: null, error: { message: 'absent' } } : { data: new Blob([t]), error: null }; } });
+    // (v1.60.7) nouveaux essais « synchronisation en cours » : désactivés dans ces essais v1.60.4 (essayés dans apple-mail-conversation-v1607)
+    (await import('./js/prospection.js')).SYNC_RETRIES.length = 0;
     app.go('prospects'); S.suiviPage = 'pr-1'; app.render();
   }, mailbox);
   await expect(page.locator('.log-attach [data-drop]')).toBeVisible();
@@ -58,21 +68,15 @@ const state = page => page.evaluate(() => ({
   google: window.__google, up: window.__up.length,
   diag: window.__DB.client_errors.filter(r => r.message === 'dépôt : aucun fichier').map(r => r.stack) }));
 
-test('v1.60.4 lien message: seul (comme chez Anthony) : message retrouvé dans production@, confirmation, joint au suivi et au journal', async ({ page }) => {
+test('v1.60.4 lien message: seul (comme chez Anthony) : message retrouvé dans production@, joint sans question au suivi et au journal (v1.60.7)', async ({ page }) => {
   const ctx = await openSuivi(page, { prospect: ABSENT, main: FOUND() });
   const r = await dropLink(page);
   expect(r).toEqual({ prevented: true, types: ['text/uri-list', 'text/plain'], files: 0 });
-  const dlg = page.locator('dialog.ask');
-  await expect(dlg).toContainText('Joindre ce message au suivi « Salle Exemple');
-  await expect(dlg).toContainText('Programmation fictive · Camille Exemple <camille@example.com> · 03/11/2026');
-  await expect(dlg).toContainText('Trouvé dans la boîte production@');
+  await expect(page.locator('.toast').last()).toContainText('Conversation importée : 1 message ajouté, 0 message déjà présent — conversation lue dans production@');
+  await expect(page.locator('dialog.ask')).toHaveCount(0);   // (v1.60.7) aucune confirmation
   let s = await state(page);
-  expect(s.up).toBe(0);                                // rien n'est joint avant la confirmation
-  // recherche dans anthony@ puis production@, avec le seul Message-ID validé
-  expect(s.google).toEqual([{ target: 'prospect', action: 'mail_by_msgid', payload: { message_id: ID } }, { target: 'main', action: 'mail_by_msgid', payload: { message_id: ID } }]);
-  await dlg.getByRole('button', { name: 'Joindre au suivi' }).click();
-  await expect(page.locator('.toast', { hasText: '1 fichier ajouté' })).toBeVisible();
-  s = await state(page);
+  // recherche dans anthony@ puis production@, avec le seul Message-ID validé ; contenu demandé ensuite à production@ seulement
+  expect(s.google.map(g => [g.target, g.action, g.payload.message_id, !!g.payload.want])).toEqual([['prospect', 'thread_by_msgid', ID, false], ['main', 'thread_by_msgid', ID, false], ['main', 'thread_by_msgid', ID, true]]);
   expect(s.files).toEqual([{ name: 'Programmation fictive.eml', mime: 'message/rfc822', key: 'msgid:' + ID }]);
   expect(s.logs).toHaveLength(1);
   expect(s.logs[0]).toMatchObject({ pid: 'pr-1', kind: 'Mail', date: '2026-11-03', key: 'msgid:' + ID });
@@ -85,25 +89,22 @@ test('v1.60.4 lien message: seul (comme chez Anthony) : message retrouvé dans p
   // aucune adresse transmise par le glisser n'est ouverte par le réseau
   expect(ctx.urls.filter(u => /^(message|file):/i.test(u))).toEqual([]);
 
-  // doublon : le même message glissé une seconde fois → relu (lecture seule) pour vérifier qu'il ne manque rien, rien n'est ajouté
+  // doublon : le même message glissé une seconde fois → conversation relue (description seule), rien n'est ajouté
   await dropLink(page);
-  await expect(page.locator('.toast').last()).toContainText('déjà joint à ce suivi');
+  await expect(page.locator('.toast').last()).toContainText('Conversation déjà complète dans ce suivi : 1 message, rien n’a été ajouté');
   await expect(page.locator('dialog.ask')).toHaveCount(0);
   s = await state(page);
-  expect(s.files).toHaveLength(1); expect(s.logs).toHaveLength(1); expect(s.google).toHaveLength(4); expect(s.up).toBe(1);
+  expect(s.files).toHaveLength(1); expect(s.logs).toHaveLength(1); expect(s.google.filter(g => g.payload.want)).toHaveLength(1); expect(s.up).toBe(1);
   expectClean(ctx);
 });
 
-test('v1.60.4 lien message: : « Annuler » ne joint rien', async ({ page }) => {
+test('v1.60.4 lien message: : trouvé dans anthony@ — production@ n’est pas consultée (v1.60.7 : plus de question « Annuler »)', async ({ page }) => {
   const ctx = await openSuivi(page, { prospect: FOUND(), main: ABSENT });
   await dropLink(page);
-  const dlg = page.locator('dialog.ask');
-  await expect(dlg).toContainText('Trouvé dans la boîte anthony@');
-  await dlg.getByRole('button', { name: 'Annuler' }).click();
-  await expect(page.locator('.toast').last()).toContainText('Rien n’a été joint');
+  await expect(page.locator('.toast').last()).toContainText('conversation lue dans anthony@');
   const s = await state(page);
-  expect(s.files).toEqual([]); expect(s.logs).toEqual([]); expect(s.up).toBe(0);
-  expect(s.google.map(g => g.target)).toEqual(['prospect']);   // trouvé dans anthony@ : production@ n'est pas consultée
+  expect(s.files).toHaveLength(1); expect(s.logs).toHaveLength(1);
+  expect(s.google.map(g => g.target)).toEqual(['prospect', 'prospect']);   // description puis contenu, dans anthony@ seulement
   expectClean(ctx);
 });
 
@@ -144,11 +145,11 @@ test('v1.60.4 lien message: : réponse d’un script qui ne correspond pas au li
   const dlg = page.locator('dialog.ask');
   await expect(dlg).toContainText('anthony@ : réponse du script illisible');
   await dlg.getByRole('button', { name: 'Fermer' }).click();
-  // identifiant annoncé correct mais contenu d'un autre message : refusé avant toute question
+  // identifiant annoncé correct mais contenu d'un autre message : jamais joint, dit dans le bilan
   await page.evaluate(([ok, raw]) => { window.__MAILBOX = { prospect: { ...ok, message: { ...ok.message, raw } }, main: null }; }, [FOUND(), eml(other)]);
   await dropLink(page);
-  await expect(page.locator('.toast').last()).toContainText('ne correspond pas au lien de Mail');
-  await expect(dlg).toHaveCount(0);
+  await expect(dlg).toContainText('contenu renvoyé par le script illisible ou différent : non importé');
+  await dlg.getByRole('button', { name: 'Fermer' }).click();
   const s = await state(page);
   expect(s.files).toEqual([]); expect(s.up).toBe(0);
   expectClean(ctx);
@@ -200,11 +201,12 @@ test('v1.60.4 décision 3 : mail joint AVANT la v1.60.4 (.eml stocké sans clé)
   const before = await page.evaluate(() => JSON.stringify(window.__DB.prospect_files));
   const writes = () => page.evaluate(() => window.__calls.filter(c => ['prospect_files', 'prospect_logs'].includes(c.table) && c.op !== 'select').length);
   const w0 = await writes();
-  // lien du même message déposé sur le même suivi : reconnu sans consulter Gmail, rien d'ajouté
+  // lien du même message déposé sur le même suivi : reconnu comme déjà présent ; sa conversation est relue (description seule,
+  // v1.60.7) pour d'éventuels autres messages ; rien n'est réimporté
   await dropLink(page);
-  await expect(page.locator('.toast').last()).toContainText('déjà joint à ce suivi (avant la v1.60.4)');
+  await expect(page.locator('.toast').last()).toContainText('Conversation déjà complète dans ce suivi : 1 message, rien n’a été ajouté');
   let s = await state(page);
-  expect(s.google).toEqual([]); expect(s.up).toBe(0);
+  expect(s.google.filter(g => g.payload.want)).toEqual([]); expect(s.up).toBe(0);
   // .eml du même message déposé sur un AUTRE suivi : reconnu, refusé, accès au suivi d'origine
   await page.evaluate(async () => { const { S } = await import('./js/state.js'); const app = await import('./js/app.js'); S.suiviPage = 'pr-2'; app.render(); });
   await page.evaluate(raw => { const dt = new DataTransfer(); dt.items.add(new File([raw], 'Devis fictif.eml', { type: '' }));
@@ -228,14 +230,14 @@ test('v1.60.4 décision 1 : recherche dans anthony@ refusée par le script (comp
   const ctx = await openSuivi(page, { prospect: refused, main: FOUND() });
   await dropLink(page);
   const dlg = page.locator('dialog.ask');
-  await expect(dlg).toContainText('Trouvé dans la boîte production@');
-  await dlg.getByRole('button', { name: 'Annuler' }).click();
+  await expect(page.locator('.toast').last()).toContainText('conversation lue dans production@');
+  // même chose avec un message absent de production@ : le refus d'anthony@ est dit tel quel
   await page.evaluate(() => { window.__MAILBOX.main = { ok: true, found: false }; });
-  await dropLink(page);
+  await dropLink(page, 'message:%3Cautre-absent@exemple-fictif.fr%3E');
   await expect(dlg).toContainText('anthony@ : Recherche dans la boîte titulaire@exemple-fictif.fr réservée à son titulaire : rien n’a été consulté.');
   await expect(dlg).toContainText('production@ : message absent');
   await dlg.getByRole('button', { name: 'Fermer' }).click();
-  expect((await state(page)).up).toBe(0);
+  expect((await state(page)).up).toBe(1);
   expectClean(ctx);
 });
 
@@ -248,20 +250,16 @@ test('v1.60.4 lien message: invalide (espace, recherche glissée) ou plusieurs l
   let s = await state(page);
   expect(s.google).toEqual([]);
   expect(s.diag.map(d => JSON.parse(d)['Message-ID présent'])).toEqual(['non', 'non', 'non']);
-  // deux messages glissés ensemble (deux liens) : chacun cherché et confirmé à part
+  // deux messages glissés ensemble (deux liens) : chacun cherché et importé à part (v1.60.7 : sans question)
   const ID2 = '<CAJ+fictif=XyZ_0123@mail.exemple.com>';
   await page.evaluate(([a, b]) => { window.__MAILBOX = { prospect: a, main: null }; window.__seq = [a, b]; }, [FOUND(), FOUND(eml(ID2, 'Second message fictif.'), ID2)]);
   await page.evaluate(async () => { const d = await import('./js/data.js'); const inv = d.sb.functions.invoke;
     d.sb.functions.invoke = async (n, o) => { if (n === 'script-google' && o.body.target === 'prospect') window.__MAILBOX.prospect = window.__seq.shift(); return inv(n, o); }; });
+  await page.evaluate(([a, b]) => { window.__seq = [a, a, b, b]; }, [FOUND(), FOUND(eml(ID2, 'Second message fictif.'), ID2)]);
   await dropLink(page, `${LINK}\r\nmessage:%3C${encodeURIComponent(ID2.slice(1, -1))}%3E`);
-  const dlg = page.locator('dialog.ask');
-  await expect(dlg).toContainText('Programmation fictive');
-  await dlg.getByRole('button', { name: 'Joindre au suivi' }).click();
-  await expect(dlg).toBeVisible();
-  await dlg.getByRole('button', { name: 'Annuler' }).click();
+  await expect.poll(async () => (await state(page)).files.map(f => f.key)).toEqual(['msgid:' + ID, 'msgid:' + ID2]);
   s = await state(page);
-  expect(s.google.filter(g => g.target === 'prospect').map(g => g.payload.message_id)).toEqual([ID, ID2]);
-  expect(s.files.map(f => f.key)).toEqual(['msgid:' + ID]);
+  expect([...new Set(s.google.filter(g => g.target === 'prospect').map(g => g.payload.message_id))]).toEqual([ID, ID2]);
   expectClean(ctx);
 });
 
@@ -319,21 +317,18 @@ test('v1.60.4 .eml transmis : original conservé, journal lisible (objet, date, 
   const dlg = page.locator('dialog.ask');
   await expect(dlg).toContainText('déjà joint à ce suivi en entier (même Message-ID)');
   await dlg.getByRole('button', { name: 'Fermer' }).click();
-  // puis le lien seul du même message : même clé, même vérification partie par partie, rien d'ajouté
+  // puis le lien seul du même message : même clé, même vérification partie par partie, rien d'ajouté (conversation relue sans contenu)
   await dropLink(page);
-  await expect(page.locator('.toast').last()).toContainText('déjà joint à ce suivi');
+  await expect(page.locator('.toast').last()).toContainText('Conversation déjà complète dans ce suivi');
   s = await state(page);
-  expect(s.files).toHaveLength(2); expect(s.logs).toHaveLength(1); expect(s.google).toHaveLength(1); expect(s.up).toBe(2);
+  expect(s.files).toHaveLength(2); expect(s.logs).toHaveLength(1); expect(s.google.filter(g => g.payload.want)).toEqual([]); expect(s.up).toBe(2);
   expectClean(ctx);
 });
 
-test('v1.60.4 lien message: : message retrouvé avec pièce jointe — la confirmation l’annonce, original + pièce + journal', async ({ page }) => {
+test('v1.60.4 lien message: : message retrouvé avec pièce jointe — original + pièce + journal, sans question (v1.60.7)', async ({ page }) => {
   const ctx = await openSuivi(page, { prospect: FOUND(MULTI()), main: ABSENT });
   await dropLink(page);
-  const dlg = page.locator('dialog.ask');
-  await expect(dlg).toContainText('1 pièce jointe du mail : dévis fictif.pdf');
-  await dlg.getByRole('button', { name: 'Joindre au suivi' }).click();
-  await expect(page.locator('.toast', { hasText: '2 fichiers ajoutés' })).toBeVisible();
+  await expect(page.locator('.toast').last()).toContainText('1 message ajouté, 0 message déjà présent (2 fichiers enregistrés, pièces jointes comprises)');
   const s = await state(page);
   expect(s.files.map(f => f.key)).toEqual(['msgid:' + ID, 'msgid:' + ID + ':pj:1']);
   expect(s.logs[0].body).toContain('**Cc :** copie@example.com');
@@ -342,14 +337,16 @@ test('v1.60.4 lien message: : message retrouvé avec pièce jointe — la confir
 
 // ─── Relecture v1.60.4 : points facultatifs corrigés ───
 
-test('v1.60.4 relecture 5 : la confirmation montre objet, expéditeur et date relus dans le .eml, pas ceux de la réponse du script', async ({ page }) => {
+test('v1.60.4 relecture 5 : objet, expéditeur et date relus dans le .eml, pas ceux de la réponse du script (v1.60.7 : nom du fichier et journal)', async ({ page }) => {
   const reply = FOUND(MULTI()); reply.message.subject = 'Objet annoncé par le script'; reply.message.from = 'annonce@exemple.fr'; reply.message.date = '2020-01-01T00:00:00.000Z';
   const ctx = await openSuivi(page, { prospect: reply, main: ABSENT });
   await dropLink(page);
-  const dlg = page.locator('dialog.ask');
-  await expect(dlg).toContainText('Devis fictif · Camille Exemplé <camille@example.com> · 04/11/2026');
-  await expect(dlg).not.toContainText('Objet annoncé'); await expect(dlg).not.toContainText('annonce@'); await expect(dlg).not.toContainText('01/01/2020');
-  await dlg.getByRole('button', { name: 'Annuler' }).click();
+  await expect(page.locator('.toast').last()).toContainText('Conversation importée');
+  const s = await state(page);
+  expect(s.files[0].name).toBe('Devis fictif.eml');
+  expect(s.logs[0]).toMatchObject({ date: '2026-11-04' });
+  expect(s.logs[0].body).toContain('**Devis fictif**'); expect(s.logs[0].body).toContain('Camille Exemplé <camille@example.com>');
+  expect(JSON.stringify(s)).not.toContain('Objet annoncé'); expect(JSON.stringify(s)).not.toContain('annonce@');
   expectClean(ctx);
 });
 
@@ -360,9 +357,7 @@ test('v1.60.4 relecture 2 : plus de 20 pièces jointes — 20 extraites, les aut
   const ctx = await openSuivi(page, { prospect: FOUND(big), main: ABSENT });
   await dropLink(page);
   const dlg = page.locator('dialog.ask');
-  await expect(dlg).toContainText('20 pièces jointes du mail');
-  await expect(dlg).toContainText('2 pièces non extraites (plus de 20, ou trop imbriquées) : l’original .eml les contient.');
-  await dlg.getByRole('button', { name: 'Joindre au suivi' }).click();
+  // (v1.60.7) plus de confirmation : les pièces non extraites sont annoncées dans le bilan de l'import
   await expect(dlg).toContainText('2 pièces du mail non extraites');
   await expect(dlg).toContainText('l’original .eml les contient');
   await dlg.getByRole('button', { name: 'Fermer' }).click();
@@ -376,7 +371,6 @@ test('v1.60.4 relecture 3 : joint au même moment depuis un autre poste (clé un
   await page.evaluate(() => { window.__INSERT_ERROR = { prospect_files: { code: '23505', message: 'duplicate key value violates unique constraint "prospect_files_import_key_key"' } }; });
   await dropLink(page);
   const dlg = page.locator('dialog.ask');
-  await dlg.getByRole('button', { name: 'Joindre au suivi' }).click();
   await expect(dlg).toContainText('déjà joint par ailleurs au même moment (autre poste ou autre onglet) : rien n’a été ajouté');
   await expect(dlg).not.toContainText('duplicate');
   await expect(page.locator('.toast', { hasText: 'duplicate' })).toHaveCount(0);
@@ -405,15 +399,12 @@ test('v1.60.4 relecture 4 : import partiel (journal refusé, pièce manquante) �
   await expect(page.locator('.toast', { hasText: 'Mail ajouté au journal' })).toBeVisible();
   s = await state(page);
   expect(s.files).toHaveLength(2); expect(s.logs).toHaveLength(1); expect(s.up).toBe(2);
-  // pièce du mail perdue (ligne absente) : le lien du même message la complète, seule, après une confirmation qui le dit
+  // pièce du mail perdue (ligne absente) : le lien du même message la complète, seule (v1.60.7 : sans question, compté « complété »)
   await page.evaluate(async id => { const { S, touch } = await import('./js/state.js');
     const k = 'msgid:' + id + ':pj:1'; window.__DB.prospect_files = window.__DB.prospect_files.filter(f => f.import_key !== k);
     S.db.prospect_files = S.db.prospect_files.filter(f => f.import_key !== k); touch('prospect_files'); }, ID);
   await dropLink(page);
-  await expect(dlg).toContainText('Ce message est déjà joint en partie à ce suivi');
-  await expect(dlg).toContainText('Seul ce qui manque sera ajouté : 1 pièce du mail.');
-  await dlg.getByRole('button', { name: 'Compléter le suivi' }).click();
-  await expect(page.locator('.toast', { hasText: '1 fichier ajouté' })).toBeVisible();
+  await expect(page.locator('.toast').last()).toContainText('0 message ajouté, 1 message complété, 0 message déjà présent');
   s = await state(page);
   expect(s.files.map(f => f.key).sort()).toEqual(['msgid:' + ID, 'msgid:' + ID + ':pj:1']); expect(s.logs).toHaveLength(1); expect(s.up).toBe(3);
   expectClean(ctx);
@@ -426,7 +417,6 @@ test('v1.60.4 relecture B2 : ancien .eml illisible — vérification incomplète
     window.__DB.prospect_files.push({ ...f }); S.db.prospect_files.push({ ...f }); touch('prospect_files'); window.__STORED = {}; });   // téléchargement en échec
   await dropLink(page);
   const dlg = page.locator('dialog.ask');
-  await dlg.getByRole('button', { name: 'Joindre au suivi' }).click();
   await expect(dlg).toContainText('Vérification incomplète');
   await expect(dlg).toContainText('1 fichier .eml joint avant la v1.60.4 illisible pour le moment');
   await dlg.getByRole('button', { name: 'Annuler' }).click();
@@ -435,7 +425,7 @@ test('v1.60.4 relecture B2 : ancien .eml illisible — vérification incomplète
   // le fichier redevient lisible : l'échec n'a pas été mémorisé, le mail est reconnu comme déjà joint, rien n'est ajouté
   await page.evaluate(raw => { window.__STORED = { 'pr-1/1700000000000_Devis_fictif.eml': raw }; }, MULTI());
   await dropLink(page);
-  await expect(page.locator('.toast').last()).toContainText('déjà joint à ce suivi (avant la v1.60.4)');
+  await expect(page.locator('.toast').last()).toContainText('Conversation déjà complète dans ce suivi');
   s = await state(page);
   expect(s.up).toBe(0);
   // relu à chaque vérification tant qu'il était illisible (jamais mémorisé en échec)

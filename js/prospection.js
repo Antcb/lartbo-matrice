@@ -7,7 +7,7 @@
  */
 import { ask, confirmAsk } from './ui/dialog.js';
 import { render } from './app.js';
-import { contentTypeOf, insert, legacyMailOwner, legacyUnverifiedOk, mailAttachedTo, mailParts, mailPartsMissing, purgeStored, remove, save, sb, signedUrl, typedFile, uploadFiles } from './data.js';
+import { contentTypeOf, insert, legacyMailOwner, legacyUnverifiedOk, mailAttachedTo, purgeStored, remove, save, sb, signedUrl, threadStatus, typedFile, uploadDetail } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
 import { PROSPECT_TAGS, attOk, attSizeHTML, callGoogle, callScript, fill, todoOk, tplLabel, tplProjects } from './mail.js';
 import { suiviClosed, byId, byUsage, contactMails, eventsOfStructure, filesOf, linksOfStructure, logsOf, placeOfEvent, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName } from './selectors.js';
@@ -19,7 +19,7 @@ import { recipientsField, syncChips } from './ui/recipients.js';
 import { dateInput } from './ui/datefield.js';
 import { openModal } from './ui/modal.js';
 import { rtStyle, rtToolbar, wrapMail } from './ui/richtext.js';
-import { esc, firstName, fmtDate, toast, today, workDay, dayOf, addDays } from './utils.js';
+import { esc, firstName, fmtDate, runAct, toast, today, workDay, dayOf, addDays } from './utils.js';
 
 const RELANCE_DAYS = 10;
 const MAIL_RELANCES = 3;   // après 3 relances par mail sans réponse : relance par téléphone
@@ -430,32 +430,41 @@ export async function setSuiviPlace(pid, pl){
 }
 
 /*
- * ─── Message glissé depuis Apple Mail sans fichier (v1.60.4) ───
- * Mail (Mac) ne transmet parfois qu'un lien « message:%3C<Message-ID>%3E ». L'identifiant (validé : eml.js msgIdOk) sert à retrouver
- * CE message dans les boîtes Google, par le circuit serveur existant (relais script-google : compte de l'équipe vérifié, code secret
- * ajouté côté serveur) : action en LECTURE SEULE « mail_by_msgid » du script de prospection (anthony@) puis du script principal
- * (production@). Le script exige une correspondance exacte de l'en-tête Message-ID et ne renvoie que ce message.
- * Rattachement EXPLICITE au suivi cible après confirmation, par le chemin habituel (uploadFiles : pièce jointe + entrée « Mail » au
- * journal), clé anti-doublon « msgid:<Message-ID> » sur la pièce jointe et sur l'entrée du journal.
+ * ─── Message glissé depuis Apple Mail sans fichier (v1.60.4 ; conversation entière, sans confirmation : v1.60.7) ───
+ * Mail (Mac) ne transmet qu'un lien « message:%3C<Message-ID>%3E ». L'identifiant (validé : eml.js msgIdOk) sert à retrouver CE
+ * message dans les boîtes Google, par le circuit serveur existant (relais script-google, identité signée v2) : action en LECTURE
+ * SEULE « thread_by_msgid » du script de prospection (anthony@, titulaire seulement) puis du script principal (production@, équipe).
+ * Le script exige une correspondance exacte de l'en-tête Message-ID, puis lit la CONVERSATION GMAIL de ce message (identifiant de
+ * conversation Gmail, jamais une ressemblance d'objet) : tous ses messages, reçus et envoyés. Décision d'Anthony du 09/11/2026 :
+ * import immédiat, sans question, avec progression puis bilan (ajoutés, déjà présents, erreurs) ; seuls les messages manquants sont
+ * ajoutés (mêmes identifiants que la messagerie : « msgid:<Message-ID> » et prospect_logs.gmail_message_id) ; conversation déjà
+ * rattachée à un autre suivi : rien n'est déplacé ni dupliqué, le suivi est nommé et peut s'ouvrir. Message pas encore visible chez
+ * Google : « synchronisation en cours », nouveaux essais espacés (SYNC_RETRIES), jamais présenté comme complet.
  */
-const MAILBOXES = [
-  {label: 'anthony@', call: id => callProspect('mail_by_msgid', {message_id: id}),
+const BOXES = [
+  {label: 'anthony@', call: (id, want) => callProspect('thread_by_msgid', want ? {message_id: id, want} : {message_id: id}),
     outdated: 'script de prospection pas à jour (Réglages › Prospection : « Copier le code à jour », coller dans le script d’anthony@, puis nouvelle version)'},
-  {label: 'production@', call: id => callScript('mail_by_msgid', {message_id: id}),
+  {label: 'production@', call: (id, want) => callScript('thread_by_msgid', want ? {message_id: id, want} : {message_id: id}),
     outdated: 'script Google pas à jour (Réglages › Google : « Copier le code à jour », coller dans Code.gs de production@, puis nouvelle version)'},
 ];
+/** Nouveaux essais quand le message n'est pas encore visible chez Google (secondes) — reprise bornée */
+export const SYNC_RETRIES = [15, 30, 60, 120];
+/** Passes de lecture au plus par import (le script renvoie 20 Mo au plus par appel ; le reste à la passe suivante) */
+const THREAD_PASSES = 12;
+const GMAIL_ID = /^[0-9a-f]{6,32}$/;
 const PENDING_MSG = new Set();   // un même message en cours de rattachement n'est pas traité deux fois (double dépôt)
 
-/** Cherche le message dans anthony@ puis production@ : {mail} si trouvé, sinon {tried: [[boîte, résultat]]} */
-export async function findMailByMsgId(id){
+/** Conversation du message dans anthony@ puis production@ (sans contenu) : {thread: {box, call, thread_id, messages, truncated}} si
+ *  trouvée, sinon {tried: [[boîte, résultat]]} — résultat « absent » quand la boîte a répondu sans le trouver */
+export async function findThreadByMsgId(id){
   const tried = [];
-  for (const box of MAILBOXES){
+  for (const box of BOXES){
     let r;
     try { r = await box.call(id); }
     catch (err){ tried.push([box.label, /Action inconnue|pas à jour/i.test(err.message || '') ? box.outdated : err.message || 'recherche impossible']); continue; }
-    const m = r?.message;
-    if (r?.found === true && m && m.message_id === id && typeof m.raw === 'string' && m.raw.length > 0 && m.raw.length <= MSG_RAW_MAX)
-      return {mail: {...m, box: box.label}, tried};
+    const ms = Array.isArray(r?.messages) ? r.messages.filter(m => m && GMAIL_ID.test(String(m.gmail_id || ''))) : null;
+    if (r?.found === true && ms && ms.some(m => m.message_id === id))
+      return {thread: {box: box.label, call: box.call, thread_id: String(r.thread_id || ''), messages: ms, truncated: !!r.truncated, total: Number(r.total) || ms.length}, tried};
     tried.push([box.label, r?.found === false ? 'absent' : 'réponse du script illisible']);
   }
   return {tried};
@@ -464,14 +473,14 @@ export async function findMailByMsgId(id){
 const fileTitle = s => String(s || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100) || 'message';
 
 /** Message introuvable (ou boîtes inaccessibles) : message clair, rien de joint ; parcours le plus court sans Bureau = noter au journal */
-async function mailNotFound(p, tried){
+async function mailNotFound(p, tried, attempt = 0){
   const searched = tried.filter(([, r]) => r === 'absent');
   const lines = tried.map(([b, r]) => `${b} : ${r === 'absent' ? 'message absent' : r}`);
   const head = searched.length === tried.length ? 'Message introuvable dans les boîtes Google (compte de Mail non relié) : ce message n’est ni dans anthony@ ni dans production@. Rien n’a été joint.'
     : searched.length ? 'Message introuvable dans les boîtes Google consultées (compte de Mail non relié ?). Rien n’a été joint.'
     : 'Le message n’a pas pu être cherché dans les boîtes Google. Rien n’a été joint.';
   const choice = await ask({title: searched.length ? 'Message introuvable' : 'Recherche impossible',
-    text: [head, ...lines, 'Pour garder une trace tout de suite, sans enregistrer de fichier : note l’échange dans le journal de ce suivi (type « Mail »).'].join('\n'),
+    text: [head, ...(attempt ? [`Toujours introuvable après ${attempt > 1 ? `${attempt} nouveaux essais` : 'un nouvel essai'} : si le message vient d’être envoyé, dépose-le de nouveau dans quelques minutes (import incomplet).`] : []), ...lines, 'Pour garder une trace tout de suite, sans enregistrer de fichier : note l’échange dans le journal de ce suivi (type « Mail »).'].join('\n'),
     actions: [{value: 'journal', label: 'Noter dans le journal'}], cancel: 'Fermer'});
   if (choice !== 'journal') return;
   const form = document.querySelector(`form[data-logform="${CSS.escape(p.id)}"]`); if (!form) return;
@@ -479,53 +488,112 @@ async function mailNotFound(p, tried){
   form.elements.body.focus();
 }
 
-/** Un message (Message-ID validé) : contrôle de doublon, recherche, confirmation explicite, rattachement */
-async function attachOneMailLink(p, id){
+const keyOfMeta = m => msgIdOk(m.message_id) ? 'msgid:' + m.message_id : 'gmail:' + m.gmail_id;
+const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
+
+/** Un message (Message-ID validé) : sa conversation entière est importée dans le suivi, sans question (décision du 09/11/2026) */
+async function attachOneMailLink(p, id, attempt = 0, resumed = false){
   if (!msgIdOk(id)) return toast('Lien de Mail refusé : l’identifiant du message n’a pas la forme attendue. Rien n’a été joint.', true);
   const key = 'msgid:' + id;
-  if (PENDING_MSG.has(key)) return;
-  PENDING_MSG.add(key);
+  // un même message n'est traité qu'une fois à la fois ; un nouvel essai programmé garde le verrou (aucune 2e chaîne par un 2e dépôt)
+  if (!resumed){ if (PENDING_MSG.has(key)) return toast('Import déjà en cours pour ce message.'); PENDING_MSG.add(key); }
+  let keepLock = false;
   try {
-    // déjà joint à un AUTRE suivi : refusé sans consulter les boîtes Google
-    toast('Recherche du message (suivis, puis boîtes Google)…');
     // (décision d'Anthony du 08/11/2026 : un message reste rattaché à un seul suivi ; le suivi concerné est nommé et accessible)
-    const open = id => ({label: 'Ouvrir le suivi', act: 'openSuivi', id});
-    const name = id => prospectTitle(byId('prospects', id) || {name: 'autre suivi'});
+    const open = pid => ({label: 'Ouvrir le suivi', act: 'openSuivi', id: pid});
+    const name = pid => prospectTitle(byId('prospects', pid) || {name: 'autre suivi'});
+    toast('Import de la conversation : recherche du message (suivis, puis boîtes Google)…');
     const where = await mailAttachedTo(key);
     if (where && where !== p.id) return toast(`Ce message est déjà joint au suivi « ${name(where)} » : rien n’a été ajouté.`, true, open(where));
-    // joint avant la v1.60.4 (sans clé) : reconnu par le Message-ID du .eml déjà stocké, en lecture seule, sans consulter Gmail
+    // joint avant la v1.60.4 (sans clé) : reconnu par le Message-ID du .eml déjà stocké, en lecture seule
     const legacyCheck = where ? {owner: null, incomplete: ''} : await legacyMailOwner(id), old = legacyCheck.owner;
-    if (old) return toast(old === p.id ? 'Ce message est déjà joint à ce suivi (avant la v1.60.4) : rien n’a été ajouté.'
-      : `Ce message est déjà joint au suivi « ${name(old)} » (avant la v1.60.4) : rien n’a été ajouté.`, true, old === p.id ? null : open(old));
-    const {mail, tried} = await findMailByMsgId(id);
-    if (!mail) return mailNotFound(p, tried);
-    const got = new File([mail.raw], 'message.eml', {type: 'message/rfc822'});
-    let m; try { m = await readEml(got); } catch { m = null; }
-    // double contrôle : le contenu reçu porte bien CE Message-ID
-    if (!m || m.messageId !== id) return toast('Le message renvoyé par le script Google ne correspond pas au lien de Mail : rien n’a été joint.', true);
-    const file = new File([got], fileTitle(m.subject) + '.eml', {type: 'message/rfc822'});   // nom tiré du .eml lui-même
-    // ce qui est déjà joint, clé par clé : complet → rien ; partiel → seules les parties manquantes seront ajoutées
-    const plan = await mailParts(p.id, key, m);
-    if (plan.other) return toast(`Ce message est déjà joint au suivi « ${name(plan.other)} » : rien n’a été ajouté.`, true, open(plan.other));
-    const unverified = plan.unverified || legacyCheck.incomplete;
-    if (plan.legacy) return toast('Ce mail est déjà au journal de ce suivi (ajouté autrement) : rien n’a été ajouté.', true);
-    if (!mailPartsMissing(plan)) return toast('Ce message est déjà joint à ce suivi : rien n’a été ajouté.', true);
-    const partial = where === p.id;
-    const n = m.attachments.length, sk = m.attachmentsSkipped;
-    const att = (n ? `\n${n} pièce${n > 1 ? 's' : ''} jointe${n > 1 ? 's' : ''} du mail : ${m.attachments.map(a => a.name).join(', ')}` : '')
-      + (sk ? `\n${sk} pièce${sk > 1 ? 's' : ''} non extraite${sk > 1 ? 's' : ''} (plus de 20, ou trop imbriquée${sk > 1 ? 's' : ''}) : l’original .eml les contient.` : '');
-    const missing = [plan.original && 'le mail original (.eml)', plan.log && 'l’entrée du journal', plan.pj.length && `${plan.pj.length} pièce${plan.pj.length > 1 ? 's' : ''} du mail`].filter(Boolean).join(', ');
-    // objet, expéditeur et date relus dans le .eml lui-même (pas dans la réponse du script)
-    const ok = await confirmAsk(partial ? 'Compléter ce message' : 'Joindre ce message',
-      `${partial ? 'Ce message est déjà joint en partie à ce suivi. Compléter' : 'Joindre ce message au'} suivi « ${prospectTitle(p)} » ?\n${m.subject || '(sans objet)'} · ${m.fromLine || 'expéditeur inconnu'} · ${m.date ? fmtDate(m.date) : 'date inconnue'}${att}\nTrouvé dans la boîte ${mail.box}. ${partial ? `Seul ce qui manque sera ajouté : ${missing}.` : 'Le mail original (.eml) et ses pièces jointes seront ajoutés au suivi, avec une entrée au journal.'}`,
-      partial ? 'Compléter le suivi' : 'Joindre au suivi');
-    if (!ok) return toast('Rien n’a été joint.');
-    // anciens .eml pas tous vérifiables : avertissement explicite avant tout rattachement (relecture B2)
-    if (unverified && !(await legacyUnverifiedOk(unverified, m.subject || 'ce message'))) return toast('Rien n’a été joint.');
-    // même chemin qu'un .eml déposé : la clé est revérifiée en base juste avant l'envoi (joint entre-temps depuis un autre poste)
-    await uploadFiles({prospect_id: p.id, import_key: key, legacy_ok: true}, [file]);
+    if (old && old !== p.id) return toast(`Ce message est déjà joint au suivi « ${name(old)} » (avant la v1.60.4) : rien n’a été ajouté.`, true, open(old));
+    // anciens .eml pas tous vérifiables : avertissement explicite avant tout rattachement (relecture B2 de la v1.60.4)
+    // (déjà acceptée au premier essai : pas redemandée aux nouveaux essais)
+    if (legacyCheck.incomplete && !resumed && !(await legacyUnverifiedOk(legacyCheck.incomplete, 'ce message'))) return toast('Rien n’a été joint.');
+
+    const {thread, tried} = await findThreadByMsgId(id);
+    if (!thread){
+      // boîtes joignables mais message pas encore visible (réponse toute récente) : synchronisation en cours, reprise bornée
+      const reachable = tried.length && tried.every(([, r]) => r === 'absent');
+      if (reachable && attempt < SYNC_RETRIES.length){
+        const wait = SYNC_RETRIES[attempt];
+        toast(`Synchronisation en cours : le message n’est pas encore visible chez Google. Nouvel essai dans ${wait} s (${attempt + 1}/${SYNC_RETRIES.length}). Rien n’est encore importé.`);
+        keepLock = true;
+        setTimeout(() => attachOneMailLink(p, id, attempt + 1, true), wait * 1000);
+        return;
+      }
+      return mailNotFound(p, tried, attempt);
+    }
+
+    // ce qui est déjà là, message par message (mêmes identifiants que la messagerie) ; conversation d'un autre suivi : rien
+    const metas = thread.messages.map(m => ({...m, key: keyOfMeta(m)}));
+    const st = await threadStatus(p.id, metas);
+    if (st.other) return toast(`Cette conversation est déjà rattachée au suivi « ${name(st.other)} » : rien n’a été déplacé ni ajouté.`, true, open(st.other));
+    // un message déjà joint avant la v1.60.4 dans CE suivi (sans clé) : compté présent, jamais réimporté
+    if (old === p.id) st.present.add(metas.find(m => m.message_id === id)?.gmail_id);
+    // (relecture de 9e33475) les AUTRES messages de la conversation joints avant la v1.60.4 (sans clé) : reconnus par le Message-ID
+    // du .eml stocké (lecture seule) ; dans un autre suivi → même règle qu'avec clé : rien n'est importé, suivi nommé et ouvrable
+    for (const m of metas){
+      if (st.present.has(m.gmail_id) || m.message_id === id || !msgIdOk(m.message_id)) continue;
+      const lg = await legacyMailOwner(m.message_id);
+      if (lg.owner && lg.owner !== p.id) return toast(`Cette conversation est déjà rattachée au suivi « ${name(lg.owner)} » : rien n’a été déplacé ni ajouté.`, true, open(lg.owner));
+      if (lg.owner === p.id) st.present.add(m.gmail_id);
+    }
+    const missing = metas.filter(m => !st.present.has(m.gmail_id)).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+    const total = metas.length, already = total - missing.length;
+    const longNote = thread.truncated ? `Conversation très longue (${plural(thread.total, 'message')}) : seuls les ${total - 1} plus récents et le message glissé sont lus ; les plus anciens ne sont pas importés.` : '';
+    if (!missing.length) return toast(`Conversation déjà complète dans ce suivi : ${plural(total, 'message')}, rien n’a été ajouté.${longNote ? ' ' + longNote : ''}`);
+
+    // lecture des contenus manquants, en plusieurs passes si la conversation est lourde ; chaque message passe par le même chemin
+    // qu'un .eml déposé (original, entrée du journal, pièces jointes, clés anti-doublon)
+    let added = 0, completed = 0, full = 0, files = 0, elsewhere = null; const errors = [], doneIds = new Set();
+    let want = missing.map(m => m.gmail_id), passes = 0;
+    while (want.length && passes < THREAD_PASSES){
+      passes++;
+      toast(`Import de la conversation : ${doneIds.size}/${missing.length} message${missing.length > 1 ? 's' : ''}…${passes > 1 ? ` (passe ${passes})` : ''}`);
+      let r;
+      try { r = await thread.call(id, want); } catch (err){ errors.push([`lecture dans ${thread.box}`, err.message || 'erreur du script']); break; }
+      const got = Array.isArray(r?.messages) ? r.messages : [];
+      for (const meta of missing){
+        if (doneIds.has(meta.gmail_id) || !want.includes(meta.gmail_id)) continue;
+        const g = got.find(x => x && x.gmail_id === meta.gmail_id);
+        const label = `${meta.subject || '(sans objet)'} · ${fmtDate(meta.date) || 'date inconnue'}`;
+        if (g?.too_big){ doneIds.add(meta.gmail_id); errors.push([label, `message trop lourd (${g.too_big} Mo, 20 Mo au plus) : non importé`]); continue; }
+        if (typeof g?.raw !== 'string' || !g.raw.length) continue;   // pas dans cette passe : passe suivante
+        doneIds.add(meta.gmail_id);
+        if (g.raw.length > MSG_RAW_MAX){ errors.push([label, 'message trop lourd : non importé']); continue; }
+        const got1 = new File([g.raw], 'message.eml', {type: 'message/rfc822'});
+        let m; try { m = await readEml(got1); } catch { m = null; }
+        if (!m || (msgIdOk(meta.message_id) && m.messageId !== meta.message_id)){ errors.push([label, 'contenu renvoyé par le script illisible ou différent : non importé']); continue; }
+        const file = new File([got1], fileTitle(m.subject) + '.eml', {type: 'message/rfc822'});
+        const d = await uploadDetail({prospect_id: p.id, import_key: meta.key, gmail_message_id: meta.gmail_id, legacy_ok: true}, [file], {quiet: true});
+        files += d.ok;
+        if (d.done.includes(file.name)) added++;
+        else if (d.done.some(n => n.startsWith(file.name + ' :'))) completed++;
+        // déjà là en entier (pièces comprises, selon notre lecture du .eml), ou joint à CE suivi avant la v1.60.4 (sans clé) :
+        // compté présent, ce n'est pas une erreur ; joint à un autre suivi : dit, avec accès à ce suivi
+        const whole = d.failed.filter(([, why]) => /^déjà joint à ce suivi en entier|^déjà au journal de ce suivi \(joint avant la v1\.60\.4\)/.test(why));
+        elsewhere = elsewhere || d.elsewhere;
+        if (whole.length) full++;
+        for (const [n, why] of d.failed) if (!whole.some(w => w[1] === why)) errors.push([n, why]);
+      }
+      want = (Array.isArray(r?.rest) ? r.rest : []).filter(x => missing.some(m => m.gmail_id === x) && !doneIds.has(x));
+    }
+    const left = missing.filter(m => !doneIds.has(m.gmail_id));
+    if (left.length) errors.push([plural(left.length, 'message'), `non lu${left.length > 1 ? 's' : ''} dans ${thread.box} (dépose de nouveau ce mail pour reprendre : seuls les messages manquants seront ajoutés)`]);
     render();
-  } finally { PENDING_MSG.delete(key); }
+    const present = already + full;
+    const head = `${plural(added, 'message')} ajouté${added > 1 ? 's' : ''}${completed ? `, ${plural(completed, 'message')} complété${completed > 1 ? 's' : ''}` : ''}, ${plural(present, 'message')} déjà présent${present > 1 ? 's' : ''}`
+      + `${files > added ? ` (${plural(files, 'fichier')} enregistrés, pièces jointes comprises)` : ''} — conversation lue dans ${thread.box}.`;
+    if (errors.length || longNote){
+      const {ask, inform} = await import('./ui/dialog.js');
+      const title = errors.length ? 'Import de la conversation : incomplet' : 'Conversation importée';
+      const text = [head, ...(longNote ? [longNote] : []), ...errors.map(([n, why]) => `✗ ${n} — ${why}`)].join('\n');
+      if (elsewhere){ if (await ask({title, text, actions: [{value: true, label: 'Ouvrir le suivi concerné'}], cancel: 'Fermer'})) runAct('openSuivi', elsewhere); }
+      else await inform({title, text});
+    } else toast(`Conversation importée : ${head}`);
+  } finally { if (!keepLock) PENDING_MSG.delete(key); }
 }
 
 /** Dépôt d'un ou plusieurs liens « message: » sur les pièces jointes d'un suivi (events.js) : un message après l'autre, 5 au plus */

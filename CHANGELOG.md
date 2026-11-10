@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.60.8 — 10/11/2026
+- Mail glissé depuis Apple Mail : toute la conversation Gmail est importée dans le suivi (messages reçus et envoyés, ordre chronologique, un .eml par message, pièces jointes), immédiatement et sans confirmation, avec progression puis bilan ; un nouveau dépôt n'ajoute que les messages manquants ; conversation déjà rattachée à un autre suivi signalée avec accès, jamais déplacée ; « synchronisation en cours » et nouveaux essais bornés si le message n'est pas encore visible chez Google
+
+
 ## 1.60.7 — 09/11/2026
 - Sauvegardes : démarrage réel des sauvegardes (verrou, connexion du rôle de sauvegarde ouverte 45 min au plus et refermée à la fin, fermeture de secours, contrôle d'absence à 13:07 UTC avec notification), lecture de private.mailbox_owners par la sauvegarde complète, présence des secrets (nom + empreinte) — migration 2026-11-09_v1.60.7_sauvegarde_declenchement.sql et fonction serveur sauvegarde-fenetre, à installer (supabase/operations/2026-11-09_sauvegarde_installation.md)
 

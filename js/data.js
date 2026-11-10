@@ -403,6 +403,35 @@ export async function mailParts(pid, key, m){
   return {other, legacy, unverified, original: !orig, log: !log && !inLog, pj: pjOwners.map((o, i) => o ? 0 : i + 1).filter(Boolean)};
 }
 export const mailPartsMissing = st => st.original || st.log || st.pj.length > 0;
+
+/**
+ * État d'une conversation Gmail pour un suivi (v1.60.7, import de la conversation entière) — messages repérés par les MÊMES
+ * identifiants que la messagerie intégrée : clé « msgid:<Message-ID> » (prospect_files / prospect_logs.import_key) et identifiant
+ * Gmail du message (prospect_logs.gmail_message_id). metas : [{gmail_id, key, att}] (clé « msgid:… » ou « gmail:<id> », nombre de
+ * pièces jointes selon Gmail).
+ * {other : suivi qui porte déjà un message de cette conversation | null, present : Set des gmail_id déjà joints à CE suivi
+ * (original .eml, entrée du journal et pièces jointes)}. Lu en base, pas seulement à l'écran.
+ */
+export async function threadStatus(pid, metas){
+  const ids = metas.map(x => x.gmail_id).filter(Boolean);
+  const byGmail = new Map(S.db.prospect_logs.filter(l => l.gmail_message_id && ids.includes(l.gmail_message_id)).map(l => [l.gmail_message_id, l.prospect_id]));
+  if (ids.length){
+    const {data} = await sb.from('prospect_logs').select('prospect_id, gmail_message_id').in('gmail_message_id', ids);
+    for (const r of data || []) if (r.gmail_message_id && !byGmail.has(r.gmail_message_id)) byGmail.set(r.gmail_message_id, r.prospect_id);
+  }
+  let other = null; const present = new Set();
+  for (const x of metas){
+    const file = await keyOwner('prospect_files', x.key), log = await keyOwner('prospect_logs', x.key) || byGmail.get(x.gmail_id) || null;
+    const o = [file, log].find(v => v && v !== pid);
+    if (o){ other = other || o; continue; }
+    if (file !== pid || log !== pid) continue;
+    // pièces jointes (nombre donné par Gmail, 20 au plus) : chacune doit être là, sinon le message est relu pour les compléter
+    let pj = true;
+    if (x.key.startsWith('msgid:')) for (let i = 1; i <= Math.min(Number(x.att) || 0, 20) && pj; i++) pj = await keyOwner('prospect_files', `${x.key}:pj:${i}`) === pid;
+    if (pj) present.add(x.gmail_id);
+  }
+  return {other, present};
+}
 const otherText = where => `déjà joint au suivi « ${prospectTitle(byId('prospects', where) || {name: 'autre suivi'})} » (même Message-ID) : rien n’a été ajouté`;
 const DUP_NOW = 'déjà joint par ailleurs au même moment (autre poste ou autre onglet) : rien n’a été ajouté';
 const skippedText = n => `${n} pièce${n > 1 ? 's' : ''} du mail non extraite${n > 1 ? 's' : ''} (plus de 20, ou trop imbriquée${n > 1 ? 's' : ''}) : l’original .eml les contient`;
@@ -439,13 +468,32 @@ async function storeOne(table, folder, owner, file, extra = {}){
  *    pièces jointes du mail extraites en pièces du suivi (clé « msgid:<Message-ID>:pj:<n> ») ; pièces non extraites annoncées.
  */
 export async function uploadFiles(owner, files){
+  const {ok, done, failed, elsewhere} = await uploadDetail(owner, files);
+  // bilan qui reste affiché tant qu'on ne le ferme pas : fichiers ajoutés et refusés, avec le motif (v1.53, aucune perte silencieuse)
+  if (failed.length){
+    const {ask, inform} = await import('./ui/dialog.js');
+    const title = `${ok} fichier${ok > 1 ? 's' : ''} ajouté${ok > 1 ? 's' : ''}, ${failed.length} refusé${failed.length > 1 ? 's' : ''}`;
+    const text = [...done.map(n => `✓ ${n}`), ...failed.map(([n, why]) => `✗ ${n} — ${why}`)].join('\n');
+    // (v1.60.4) mail déjà rattaché à un autre suivi : accès direct à ce suivi (action existante « openSuivi »)
+    if (elsewhere){ if (await ask({title, text, actions: [{value: true, label: 'Ouvrir le suivi concerné'}], cancel: 'Fermer'})) runAct('openSuivi', elsewhere); }
+    else await inform({title, text});
+  } else if (ok) toast(`${ok} fichier${ok > 1 ? 's' : ''} ajouté${ok > 1 ? 's' : ''} : ${done.join(', ')}`);
+  return ok;
+}
+
+/**
+ * Même envoi que uploadFiles, sans fenêtre de bilan : {ok, done, failed: [[nom, motif]], elsewhere} (v1.60.7 : l'import d'une
+ * conversation entière fait UN bilan pour tous ses messages). owner.gmail_message_id : identifiant Gmail du message, posé sur son
+ * entrée du journal (prospect_logs.gmail_message_id, même identifiant que la messagerie intégrée — aucun doublon à sa publication).
+ */
+export async function uploadDetail(owner, files, {quiet = false} = {}){
   if (typeof owner === 'string') owner = {prospect_id: owner};
   // legacy_ok : avertissement « vérification incomplète » déjà accepté (parcours du lien message:), pas de seconde question
-  const {import_key: givenKey = null, legacy_ok: legacyOk = false, ...base} = owner;
+  const {import_key: givenKey = null, legacy_ok: legacyOk = false, gmail_message_id: gmailId = null, ...base} = owner;
   const pid = base.prospect_id;
   const table = pid ? 'prospect_files' : 'attachments';
   const folder = pid || (base.task_id ? 'task/' + base.task_id : 'project/' + base.project_id);
-  toast(`Envoi de ${files.length} fichier(s)…`);
+  if (!quiet) toast(`Envoi de ${files.length} fichier(s)…`);
   let ok = 0, elsewhere = null; const done = [], failed = [];
   const eml = pid ? await import('./eml.js') : null;
   for (const file of files){
@@ -467,7 +515,7 @@ export async function uploadFiles(owner, files){
       ok++; done.push(file.name);
     } else done.push(`${file.name} : déjà joint, complété`);
     if (!mail) continue;
-    if (plan.log){ const why = await mailToJournal(pid, mail, key); if (why) failed.push([`${file.name} (entrée du journal)`, why]); }
+    if (plan.log){ const why = await mailToJournal(pid, mail, key, gmailId, quiet); if (why) failed.push([`${file.name} (entrée du journal)`, why]); }
     for (const i of plan.pj){
       const a = mail.attachments[i - 1], f = new File([a.bytes], a.name, {type: a.type});
       const [aok, awhy] = await storeOne(table, folder, base, f, key ? {import_key: `${key}:pj:${i}`} : {});
@@ -475,16 +523,7 @@ export async function uploadFiles(owner, files){
     }
     if (mail.attachmentsSkipped) failed.push([file.name, skippedText(mail.attachmentsSkipped)]);
   }
-  // bilan qui reste affiché tant qu'on ne le ferme pas : fichiers ajoutés et refusés, avec le motif (v1.53, aucune perte silencieuse)
-  if (failed.length){
-    const {ask, inform} = await import('./ui/dialog.js');
-    const title = `${ok} fichier${ok > 1 ? 's' : ''} ajouté${ok > 1 ? 's' : ''}, ${failed.length} refusé${failed.length > 1 ? 's' : ''}`;
-    const text = [...done.map(n => `✓ ${n}`), ...failed.map(([n, why]) => `✗ ${n} — ${why}`)].join('\n');
-    // (v1.60.4) mail déjà rattaché à un autre suivi : accès direct à ce suivi (action existante « openSuivi »)
-    if (elsewhere){ if (await ask({title, text, actions: [{value: true, label: 'Ouvrir le suivi concerné'}], cancel: 'Fermer'})) runAct('openSuivi', elsewhere); }
-    else await inform({title, text});
-  } else if (ok) toast(`${ok} fichier${ok > 1 ? 's' : ''} ajouté${ok > 1 ? 's' : ''} : ${done.join(', ')}`);
-  return ok;
+  return {ok, done, failed, elsewhere};
 }
 
 /**
@@ -510,13 +549,17 @@ export function emlEntry(pid, m){
 
 /** Entrée « Mail » au journal pour un mail joint au suivi ; importKey : clé anti-doublon « msgid:<Message-ID> » (v1.60.4).
  *  Renvoie '' (ajoutée ou déjà présente) ou le motif d'échec, en français (repris dans le bilan). */
-async function mailToJournal(pid, m, importKey = null){
+async function mailToJournal(pid, m, importKey = null, gmailId = null, quiet = false){
   const p = byId('prospects', pid); if (!p) return 'suivi introuvable';
   const e = emlEntry(pid, m); if (!e || e.exists) return '';
   const {date} = e.row;
-  const {data: row, error} = await insertRow('prospect_logs', {...e.row, author: S.user?.email, ...(importKey ? {import_key: importKey} : {})});
+  const base = {...e.row, author: S.user?.email, ...(importKey ? {import_key: importKey} : {})};
+  let {data: row, error} = await insertRow('prospect_logs', {...base, ...(gmailId ? {gmail_message_id: gmailId} : {})});
+  // colonne gmail_message_id absente (migration v1.60.7 pas encore appliquée) : même ligne sans elle (même repli que la messagerie) ;
+  // la clé « msgid:<Message-ID> » suffit à éviter les doublons
+  if (error && gmailId && (['PGRST204', '42703'].includes(error.code) || /gmail_message_id/.test(error.message || ''))) ({data: row, error} = await insertRow('prospect_logs', base));
   if (error) return error.code === '23505' ? DUP_NOW : `enregistrement refusé : ${dbErrorText(error)}`;
-  toast('Mail ajouté au journal');
+  if (!quiet) toast('Mail ajouté au journal');
   if (!p.last_contact || date > p.last_contact) await save('prospects', pid, {last_contact: date}, {rerender: false});
   return '';
 }
