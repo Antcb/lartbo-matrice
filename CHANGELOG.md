@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.61.0 — 10/11/2026
+- Réglages › Délais : délais des rappels et des tâches réglables (activation, nombre de jours, nouvelles dates seulement ou toutes), politique des week-ends réglable, relances de prospection désactivables, délais Pennylane (paiement des brouillons, validité des devis) réglables ; obligations de plus de 120 jours visibles dans Production › « Anciens éléments à traiter »
+
+
 ## 1.60.8 — 10/11/2026
 - Mail glissé depuis Apple Mail : toute la conversation Gmail est importée dans le suivi (messages reçus et envoyés, ordre chronologique, un .eml par message, pièces jointes), immédiatement et sans confirmation, avec progression puis bilan ; un nouveau dépôt n'ajoute que les messages manquants ; conversation déjà rattachée à un autre suivi signalée avec accès, jamais déplacée ; « synchronisation en cours » et nouveaux essais bornés si le message n'est pas encore visible chez Google
 
