@@ -1,5 +1,8 @@
 # Agendas Google des artistes — préparation, essai et publication (guide d'Anthony)
 
+> **Messagerie (boîte anthony@)** : autre lot, document unique **ESSAI_GMAIL_REEL.md** (deux comptes de test T1, T2, une seule
+> demande d'autorisation, ordre de publication obligatoire : migration → interface → `mail-sync` → `Prospection.gs` → `sync_urls`).
+
 Préparé le 08/11/2026 (décisions d'Anthony du 08/11). Tout se fait **dans le navigateur** : rien à installer, aucune commande.
 Claude donne une étape à la fois et attend « fait » avant la suivante. Aucun agenda d'artiste réel n'est lu avant la fin de l'essai
 et l'autorisation de publication. Le script ne demande qu'un accès : **voir** les agendas (il ne peut rien créer, modifier ni supprimer).

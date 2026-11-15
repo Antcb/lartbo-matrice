@@ -69,7 +69,7 @@ for (const o of [{ ok: false, error: 'Code secret du script de prospection incor
   const src = readFileSync(join(ROOT, 'supabase/functions/script-google/index.ts'), 'utf8');
   const need = [["code dédié lu dans le coffre", /import_secret', \{ k: 'prospect_script_secret' \}/],
     ['code dédié absent → refus (aucun repli silencieux)', /if \(!secret\) return json\(\{ ok: false, error: 'Code secret de prospection absent/],
-    ['pièces jointes contrôlées avant tout envoi', /attachmentsCheck\(payload\.attachments, templateDriveIds\(tpls\), URL_\)[\s\S]*if \(!chk\.ok\) return json[\s\S]*res = await send\(secret\)/],
+    ['pièces jointes contrôlées avant tout envoi', /attachmentsCheck\(payload\.attachments, new Set\(\[\.\.\.templateDriveIds\(tpls\), \.\.\.artistDriveIds\(arts\)\]\), URL_\)[\s\S]*if \(!chk\.ok\) return json[\s\S]*res = await send\(secret\)/],
     ['repli de transition limité à la cible « prospect » et au refus exact', /if \(prospect && res\.ok && isOldProspectRefusal\(res\.parsed\) && common\) res = await send\(common\);/],
     ['script principal inchangé (code commun)', /let secret = common;\s*if \(prospect\) \{/]];
   for (const [label, re] of need) if (!re.test(src)) fail(`relais script-google : ${label}`);
@@ -135,3 +135,15 @@ for (const o of [{ ok: false, error: 'Code secret du script de prospection incor
 
 if (problems.length) { console.error('✗ Code dédié et pièces jointes du script de prospection :\n  - ' + problems.join('\n  - ')); process.exit(1); }
 console.log('✓ Script de prospection : code dédié (code commun refusé, transition par le relais), pièces jointes limitées aux modèles et au stockage de la Matrice, rien créé sur refus');
+
+// (messagerie, 15/11/2026) documents de la fiche artiste joignables : stockage « artiste » signé et fichiers Drive des artist_docs
+{
+  const m = await import('../../supabase/functions/script-google/identite.ts');
+  const U = 'https://abcdefghijklmnopqrst.supabase.co';
+  const ok1 = m.matriceUrlOk(U + '/storage/v1/object/sign/artiste/p1/doc.pdf?token=x.y', U);
+  const no1 = m.matriceUrlOk(U + '/storage/v1/object/sign/rh/p1/doc.pdf?token=x.y', U);
+  const ids = m.artistDriveIds([{ artist_docs: [{ file_id: 'A'.repeat(30) }, { path: 'x' }] }]);
+  const chk = m.attachmentsCheck([{ id: 'A'.repeat(30) }], ids, U), refus = m.attachmentsCheck([{ id: 'B'.repeat(30) }], ids, U);
+  if (!ok1 || no1 || !chk.ok || refus.ok) { console.error('ÉCHEC : pièces jointes des documents artistes', { ok1, no1, chk, refus }); process.exit(1); }
+  console.log('✓ Pièces jointes : documents de la fiche artiste acceptés, autres stockages et fichiers Drive inconnus refusés');
+}
