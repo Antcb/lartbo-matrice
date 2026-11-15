@@ -31,7 +31,7 @@ test('définition unique d’une facture émise', async ({ page }) => {
       autreDate: c.soldeInvoiced('sh-1'),
     };
   });
-  expect(r).toEqual({ vide: false, envoyee: true, payee: true, numerotee: true, pennylane: true, soldeFacture: true, acompteBloque: true, autreDate: false });
+  expect(r).toEqual({ vide: false, envoyee: true, payee: true, numerotee: true, pennylane: true, soldeFacture: true, acompteBloque: false, autreDate: false });
   expectClean(ctx);
 });
 
@@ -203,10 +203,15 @@ test('relecture 3 : « Valider les conditions » avec un nouveau cachet demande 
   expectClean(ctx);
 });
 
-test('relecture 4 : solde émis → un acompte ne se supprime plus depuis le tableau', async ({ page }) => {
+test('relecture 4 (règle du 10/11/2026) : solde émis → un acompte non facturé peut seulement être retiré (0 %)', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, [{ id: 'z-a', show_id: 'v-1', kind: 'acompte', label: 'Acompte', pct: 30, sort: 1 }, { id: 'z-s', show_id: 'v-1', kind: 'solde', label: 'Solde', pct: 70, sent_at: '2026-03-01', sort: 100 }]);
-  await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.openProd.add('v-1'); S.tab['prod:v-1'] = 'factures'; (await import('./js/app.js')).go('production'); });
+  const r = await page.evaluate(async () => { const c = await import('./js/calc.js');
+    return { autre: c.changeBlocked('show_payments', 'z-a', { pct: 50 }), retire: c.changeBlocked('show_payments', 'z-a', { pct: 0 }) }; });
+  expect(r.autre, 'changer le % : refusé').toBeTruthy();
+  expect(r.retire, 'retirer (0 %) : permis').toBe('');
+  expectClean(ctx);
+});
   await expect(page.locator('input[data-id="z-a"][data-f="pct"]')).toBeDisabled();
   await expect(page.locator('button[data-act="delPay"][data-id="z-a"]')).toHaveCount(0);
   await page.evaluate(async () => (await import('./js/actions.js')).ACTIONS.delPay({ dataset: { id: 'z-a' } }));
