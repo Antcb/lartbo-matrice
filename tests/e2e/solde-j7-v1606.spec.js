@@ -9,6 +9,9 @@ const iso = n => { const d = new Date(); d.setDate(d.getDate() + n); return d.to
 const P = (id, extra = {}) => ({ id, project_id: 'art-a', venue: 'Salle ' + id, date: iso(23), status: 'Confirmée Salle',
   contract_type: 'Cession', fee_ht: 10000, vat_rate: 5.5, prod_mode: 'production', artbo_pct: 15, ...extra });
 // premier décalage n ≥ 30 tel que (aujourd'hui + n − 7) soit un samedi
+// facture faite il y a AGO jours (≥ 4) : AGO + 3 jours tombe un jour de semaine (sinon le report au lundi des délais v1.61.0
+// rendrait le test dépendant du jour où il tourne)
+const AGO = (() => { for (let n = 4; ; n++){ const d = new Date(); d.setDate(d.getDate() - n + 3); if (d.getDay() % 6) return -n; } })();
 const satOffset = () => { for (let n = 30; ; n++){ const d = new Date(); d.setDate(d.getDate() + n - 7); if (d.getDay() === 6) return n; } };
 
 async function seed(page, tables) {
@@ -26,8 +29,8 @@ const j7 = (page, d) => page.evaluate(async x => (await import('./js/reminders.j
 test('v1.60.6 solde fait tôt : « Facture à envoyer » au jour du rappel du solde (J-7), pas 3 jours après ; acompte inchangé', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, { shows: [P('j7-1')], show_payments: [
-    { id: 'j7-1a', show_id: 'j7-1', kind: 'acompte', label: 'Acompte', pct: 30, invoice_number: 'F-A1', invoiced_on: iso(-4), sort: 1 },
-    { id: 'j7-1s', show_id: 'j7-1', kind: 'solde', label: 'Solde', pct: 70, invoice_number: 'F-S1', invoiced_on: iso(-4), sort: 2 },
+    { id: 'j7-1a', show_id: 'j7-1', kind: 'acompte', label: 'Acompte', pct: 30, invoice_number: 'F-A1', invoiced_on: iso(AGO), sort: 1 },
+    { id: 'j7-1s', show_id: 'j7-1', kind: 'solde', label: 'Solde', pct: 70, invoice_number: 'F-S1', invoiced_on: iso(AGO), sort: 2 },
   ] });
   const r = await send(page, 'j7-1'), jour = await j7(page, iso(23));
   const so = r.find(x => x[0] === 'Facture à envoyer : Solde (F-S1)'), ac = r.find(x => x[0] === 'Facture à envoyer : Acompte (F-A1)');
@@ -47,9 +50,9 @@ test('v1.60.6 solde fait après J-7 : règle des 3 jours ; J-7 un samedi : vendr
   const ctx = await openApp(page);
   const we = satOffset();
   await seed(page, { shows: [P('j7-2', { date: iso(5) }), P('j7-3', { date: iso(we) }), P('j7-4', { date: null })], show_payments: [
-    { id: 'j7-2s', show_id: 'j7-2', kind: 'solde', label: 'Solde', pct: 100, invoice_number: 'F-S2', invoiced_on: iso(-4), sort: 1 },
-    { id: 'j7-3s', show_id: 'j7-3', kind: 'solde', label: 'Solde', pct: 100, invoice_number: 'F-S3', invoiced_on: iso(-4), sort: 1 },
-    { id: 'j7-4s', show_id: 'j7-4', kind: 'solde', label: 'Solde', pct: 100, invoice_number: 'F-S4', invoiced_on: iso(-4), sort: 1 },
+    { id: 'j7-2s', show_id: 'j7-2', kind: 'solde', label: 'Solde', pct: 100, invoice_number: 'F-S2', invoiced_on: iso(AGO), sort: 1 },
+    { id: 'j7-3s', show_id: 'j7-3', kind: 'solde', label: 'Solde', pct: 100, invoice_number: 'F-S3', invoiced_on: iso(AGO), sort: 1 },
+    { id: 'j7-4s', show_id: 'j7-4', kind: 'solde', label: 'Solde', pct: 100, invoice_number: 'F-S4', invoiced_on: iso(AGO), sort: 1 },
   ] });
   const tard = (await send(page, 'j7-2'))[0];
   expect(tard[2], 'solde fait après J-7 : en retard 3 jours après').toBe(true);
