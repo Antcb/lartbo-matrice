@@ -13,14 +13,14 @@ async function ouvrirSuiviAvecDates(page) {
     window.__calls.length = 0;
     app.go('prospects'); S.suiviPage = 'pr-1'; app.render();
   });
-  await expect(page.locator('.plan-row[data-id="sh-1"]')).toBeVisible();
+  await expect(page.locator('.plan-row[data-id="sh-1"]').first()).toBeVisible();
 }
 
 test('« Détacher du suivi » : seulement sur une date liée, Annuler ne touche à rien', async ({ page }) => {
   const ctx = await openApp(page);
   await ouvrirSuiviAvecDates(page);
   await expect(page.locator('.plan-row[data-id="sh-2"] [data-act="detachShow"]'), 'pas de lien en base : rien à détacher').toHaveCount(0);
-  await page.locator('.plan-row[data-id="sh-1"] [data-act="detachShow"]').click();
+  await page.locator('.plan-row[data-id="sh-1"] [data-act="detachShow"]').first().click();
   const dlg = page.locator('dialog.ask');
   await expect(dlg).toContainText('Rien n\'est supprimé');
   await dlg.getByRole('button', { name: 'Annuler' }).click();
@@ -35,7 +35,7 @@ test('détacher retire seulement le lien, note le détachement au journal, et le
   const avant = await page.evaluate(() => ({ show: { ...window.__DB.shows.find(s => s.id === 'sh-1') }, logs: window.__DB.prospect_logs.length,
     pays: JSON.stringify(window.__DB.show_payments), tasks: JSON.stringify(window.__DB.tasks || []) }));
   await ouvrirSuiviAvecDates(page);
-  await page.locator('.plan-row[data-id="sh-1"] [data-act="detachShow"]').click();
+  await page.locator('.plan-row[data-id="sh-1"] [data-act="detachShow"]').first().click();
   await page.locator('dialog.ask').getByRole('button', { name: 'Détacher du suivi' }).click();
   await expect(page.locator('.plan-row[data-id="sh-1"]'), 'date plus listée dans ce suivi').toHaveCount(0);
 
@@ -62,6 +62,6 @@ test('détacher retire seulement le lien, note le détachement au journal, et le
   // le rattachement existant refait le lien
   await page.evaluate(() => { const el = document.querySelector('[data-link-show="pr-1"]'); el.value = 'sh-1'; el.dispatchEvent(new Event('change', { bubbles: true })); });
   await expect.poll(() => page.evaluate(() => window.__DB.shows.find(s => s.id === 'sh-1').prospect_id)).toBe('pr-1');
-  await expect(page.locator('.plan-row[data-id="sh-1"]')).toBeVisible();
+  await expect(page.locator('.plan-row[data-id="sh-1"]').first()).toBeVisible();
   expectClean(ctx);
 });
