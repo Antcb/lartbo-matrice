@@ -40,5 +40,78 @@ export async function outgoingBody(payload: Record<string, unknown>, action: str
   const messageId = typeof payload.message_id === 'string' ? payload.message_id : '';   // identifiant signé (Message-ID)
   const mailbox = MAILBOX_OF[target] || '';
   const caller_sig = signKey && mailbox ? await callerSig(signKey, target, mailbox, caller, action, messageId, now) : '';
-  return JSON.stringify({ ...payload, action, secret, caller, caller_ts: now, caller_sig });
+  // (réserve sécurité du 10/11/2026) fichiers Drive joints, déjà contrôlés par le relais (attachmentsCheck) : leur liste est signée
+  // à part (att_sig) — le script de prospection ne lit un fichier Drive que s'il figure dans une liste signée de moins de 5 minutes
+  const ids = driveIdsOf(payload.attachments);
+  const att = ids.length && signKey && mailbox ? { att_sig: await hmacHex(signKey, attSignedText(target, mailbox, now, ids)) } : {};
+  return JSON.stringify({ ...payload, action, secret, caller, caller_ts: now, caller_sig, ...att });
 }
+
+// ─────────────── Pièces jointes du script de prospection (réserve sécurité du 10/11/2026) ───────────────
+/**
+ * Avant : le script de prospection lisait N'IMPORTE QUEL fichier Drive de la boîte anthony@ par son identifiant (blobs_) et allait
+ * chercher n'importe quelle adresse. Règle la plus restrictive compatible avec les usages existants (question listée pour Anthony) :
+ *  - fichier Drive {id} : seulement un fichier joint à un modèle de mail de la Matrice (mail_templates.attachments, saisi dans
+ *    Réglages › Modèles de mail) — contrôlé ICI par le relais, puis liste signée (att_sig, clé CLE_BOITE jamais transmise) vérifiée
+ *    par le script ;
+ *  - fichier de la Matrice {url, name} : seulement un lien temporaire signé du stockage « suivi » de CE projet Supabase ;
+ *  - toute autre forme : la demande entière est refusée, rien n'est créé ni envoyé (jamais de mail parti sans une pièce prévue).
+ */
+export const DRIVE_ID_RE = /^[\w-]{25,200}$/;
+export const ATT_MAX = 20;
+export const attSignedText = (target: string, mailbox: string, ts: number, ids: string[]) =>
+  ['matrice-pj-v1', target, mailbox, String(ts), ids.join(',')].join('|');
+export async function hmacHex(key: string, text: string): Promise<string> {
+  const enc = new TextEncoder();
+  const k = await crypto.subtle.importKey('raw', enc.encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', k, enc.encode(text));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+export const driveIdsOf = (list: unknown): string[] =>
+  Array.isArray(list) ? list.filter((f: any) => f && typeof f === 'object' && typeof f.id === 'string').map((f: any) => f.id) : [];
+/** Identifiants Drive joints aux modèles de mail de la Matrice (lignes mail_templates : { attachments }) */
+export const templateDriveIds = (rows: unknown): Set<string> => new Set((Array.isArray(rows) ? rows : [])
+  .flatMap((r: any) => Array.isArray(r?.attachments) ? r.attachments : [])
+  .map((a: any) => typeof a?.id === 'string' ? a.id : '').filter((id: string) => DRIVE_ID_RE.test(id)));
+/** Lien temporaire signé du stockage « suivi » de ce projet Supabase (créé par l'application, signedUrl de js/data.js) */
+export function matriceUrlOk(u: unknown, supabaseUrl: string): boolean {
+  if (typeof u !== 'string' || u.length > 2000) return false;
+  try {
+    const x = new URL(u), base = new URL(supabaseUrl);
+    return x.protocol === 'https:' && x.origin === base.origin && !x.username && !x.password && !x.hash
+      && x.pathname.startsWith('/storage/v1/object/sign/suivi/') && !x.pathname.includes('/../') && !!x.searchParams.get('token');
+  } catch { return false; }
+}
+/**
+ * Contrôle serveur des pièces jointes envoyées au script de prospection. Renvoie la liste nettoyée (seulement {id} ou {url, name})
+ * ou le motif du refus (la demande n'est alors pas transmise). Absence de pièce jointe : rien à contrôler.
+ */
+export function attachmentsCheck(list: unknown, allowedDrive: Set<string>, supabaseUrl: string):
+  { ok: true; attachments?: Array<Record<string, string>> } | { ok: false; error: string } {
+  if (list === undefined || list === null) return { ok: true };
+  const no = (why: string) => ({ ok: false as const, error: `Pièce jointe refusée : ${why}. Rien n’a été créé ni envoyé.` });
+  if (!Array.isArray(list)) return no('liste illisible');
+  if (list.length > ATT_MAX) return no(`${ATT_MAX} pièces jointes au plus`);
+  const out: Array<Record<string, string>> = [];
+  for (const f of list as any[]) {
+    if (!f || typeof f !== 'object') return no('pièce illisible');
+    if (f.id !== undefined) {
+      if (typeof f.id !== 'string' || !DRIVE_ID_RE.test(f.id) || f.url !== undefined) return no('identifiant Drive illisible');
+      if (!allowedDrive.has(f.id)) return no('ce fichier Drive n’est joint à aucun modèle de mail de la Matrice (Réglages › Modèles de mail)');
+      out.push({ id: f.id });
+    } else if (f.url !== undefined) {
+      if (!matriceUrlOk(f.url, supabaseUrl)) return no('le lien n’est pas un fichier de la Matrice (lien temporaire expiré ou illisible ? réessaie)');
+      out.push({ url: f.url, name: String(f.name ?? 'piece-jointe').slice(0, 200) });
+    } else return no('pièce sans fichier (lien temporaire non obtenu : réessaie)');
+  }
+  return { ok: true, attachments: out };
+}
+
+/**
+ * TRANSITION (bascule sans coupure) : refus EXACT de l'ancien script de prospection (code v1.60.8 et antérieur, qui n'attend que le
+ * code commun). Ce refus intervient avant toute action (rien n'est fait) : le relais renvoie alors la même demande avec le code commun.
+ * Le nouveau script ne renvoie jamais ce texte et refuse le code commun : une fois redéployé, ce repli ne sert plus. À retirer dans
+ * un lot ultérieur, après confirmation du redéploiement (« Tester » affiche le code v1.61.1).
+ */
+export const OLD_PROSPECT_REFUSAL = 'Code secret du script de prospection incorrect';
+export const isOldProspectRefusal = (o: any) => !!o && typeof o === 'object' && o.ok === false && o.error === OLD_PROSPECT_REFUSAL && Object.keys(o).length === 2; 
