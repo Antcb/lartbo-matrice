@@ -7,7 +7,7 @@
  *  - 10 j après « Pré-contrat complété » sans « Contrat envoyé »
  *  - 10 j après « Contrat envoyé » sans « Contrat signé »
  *  - 10 j après « Contrat signé » sans « Contrat co-signé renvoyé »
- *  - Contrat envoyé alors que la facture d'acompte n'est pas faite (sauf acompte caduc : solde déjà facturé)
+ *  - Contrat envoyé alors que la facture d'acompte n'est pas faite (même si le solde est déjà facturé : l'acompte reste dû, 10/11/2026)
  *  - Jour ouvré le plus proche de J-7 (sans descendre sous 7 jours) : faire la facture de solde
  *  - Facture faite (numéro ou lien Pennylane) sans date d'envoi : « Facture à envoyer » 3 j après, jusqu'à la saisie de la date
  *    d'envoi (décision d'Anthony du 27/10, v1.46a : la date d'envoi se saisit toujours à la main) ; facture de SOLDE d'une date
@@ -21,7 +21,7 @@
  * échéance d'origine (v1.60.3).
  *   Jamais de relance d'acompte ni de solde (factures de l'artiste à l'organisateur).
  */
-import { commissionState, isInvoiced, paymentsOf } from './calc.js';
+import { acompteRetire, commissionState, isInvoiced, paymentsOf } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { addDays, eur2, today, workDay, addMonths, workDayBefore } from './utils.js';
 import { setting } from './selectors.js';
@@ -199,9 +199,10 @@ export function remindersOf(s, {all = false, delais} = {}){
   if (on('contrat_signe') && upcoming && s.contract_sent && !s.contract_signed) rule('contract_signed', after('contrat_signe', s.contract_sent), 'Contrat signé à récupérer', 'contrat_signe');
   if (on('contrat_cosigne') && upcoming && s.contract_signed && !s.contract_cosigned_sent) rule('contract_cosigned_sent', after('contrat_cosigne', s.contract_signed), 'Contrat co-signé à renvoyer', 'contrat_cosigne');
   const ac = first('acompte'), so = first('solde');
-  // acompte devenu caduc (solde déjà facturé) : plus réclamé (lot C1) — même règle côté serveur (generate_reminders, facture_acompte)
+  // acompte non facturé : réclamé même si le solde l'est déjà (plus d'acompte « caduc », décision du 10/11/2026) — même règle
+  // côté serveur (reminder_candidates, facture_acompte, migration v1.61.1) ; il sort des rappels quand on le retire (0 %)
   // une fois la facture faite (numéro / lien Pennylane), c'est la règle « Facture à envoyer » qui prend le relais (v1.46a)
-  if (on('facture_acompte') && s.contract_sent && ac && !isInvoiced(ac) && !isInvoiced(so)) rule('acompte', after('facture_acompte', s.contract_sent), 'Facture d’acompte à faire (contrat envoyé)', 'facture_acompte');
+  if (on('facture_acompte') && s.contract_sent && ac && !isInvoiced(ac) && !acompteRetire(ac)) rule('acompte', after('facture_acompte', s.contract_sent), 'Facture d’acompte à faire (contrat envoyé)', 'facture_acompte');
   if (on('solde_envoi') && s.date && so && !isInvoiced(so)) rule('solde', soldeReminderDay(s.date, d.solde_envoi.n), 'Facture de solde à faire', 'solde_envoi');
   invoiceRules(pays, false, rule, s.date, d, monday);
   // 4 mois calendaires avant le concert ; samedi / dimanche → vendredi précédent (Q12, v1.49 ; réglable : weekend_avant) — même règle côté serveur

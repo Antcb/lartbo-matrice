@@ -150,8 +150,8 @@ export function accountOf(projectId){
       // commission (lot D1) : seuls les versements réels sortent du compte ; le reste à transférer reste « à venir »
       if (pay.kind === 'artbo'){ const st = commissionState(pay); a.outDone += st.transferred; if (conf) a.outTodo += st.remaining; continue; }
       if (!conf && !pay.paid_at) continue;
-      // acompte prévu ou caduc (pas facturé) : déjà compris dans le solde (cession − acomptes facturés), jamais compté deux fois (lot C1)
-      if (pay.kind === 'acompte' && !isInvoiced(pay)) continue;
+      // acompte prévu (pas facturé) : à recevoir sur son compte, comme le solde — le solde n'en compte plus le montant
+      // (cession − acomptes de la date, décision du 10/11/2026), la cession n'est donc jamais comptée deux fois
       if (['acompte','solde','autre'].includes(pay.kind)){
         const who = payee(pay);
         if (who === 'compte') pay.paid_at ? a.inDone += v : a.inTodo += v;
