@@ -37,7 +37,7 @@ test('détacher retire seulement le lien, note le détachement au journal, et le
   await ouvrirSuiviAvecDates(page);
   await page.locator('.plan-row[data-id="sh-1"] [data-act="detachShow"]').first().click();
   await page.locator('dialog.ask').getByRole('button', { name: 'Détacher du suivi' }).click();
-  await expect(page.locator('.plan-row[data-id="sh-1"]'), 'date plus listée dans ce suivi').toHaveCount(0);
+  await expect(page.locator('.plan-row[data-id="sh-1"] [data-act="detachShow"]'), 'plus de lien : plus rien à détacher (la date peut rester listée si même structure et même artiste)').toHaveCount(0);
 
   const w = await writes(page);
   expect(w.filter(c => c.op === 'delete'), 'aucune suppression').toEqual([]);
