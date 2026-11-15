@@ -41,6 +41,17 @@ export const structName = id => byId('structures', id)?.name || '';
 export const teamName = email => TEAM_NAMES[email] || (email ? email.split('@')[0] : '');
 
 export function setting(k){ const s = S.db.settings.find(x=>x.key===k); return s ? s.value : null; }
+/**
+ * Mode essai Brevo (réglage brevo_essai_emails ; marche supabase/operations/2026-11-09_essai_brevo_contact_test.md) : null = inactif
+ * (réglage absent ou vide) ; sinon les adresses VALIDES retenues — liste vide = rempli sans adresse valide = TOUT est bloqué
+ * (relecture B2 du 09/11). Même règle : supabase/functions/brevo-sync/regles.ts (listeEssai).
+ */
+export function listeEssaiBrevo(v = setting('brevo_essai_emails')){
+  if (v == null || (typeof v === 'string' && !v.trim())) return null;
+  const brut = Array.isArray(v) ? v.join(',') : typeof v === 'string' ? v : JSON.stringify(v);
+  return [...new Set(brut.split(/[,;\s]+/).map(e => e.replace(/^[<"'(]+|[>"'),.]+$/g, '').trim().toLowerCase())
+    .filter(e => /^[^\s@<>"',;()]+@[^\s@<>"',;()]+\.[a-z]{2,}$/.test(e)))];
+}
 
 /** Lien d'une page publique (fiche, artiste, salarié). En test, « &test » est ajouté : le lien ouvre la base de test (jamais
  *  la vraie fiche) et se reconnaît. Même règle pour le lien {{lien_fiche}} des mails (fonction SQL mail_vars, complété
@@ -233,6 +244,48 @@ export const isInactive = st => !!st?.inactive_at;
  * active reste prospectable ; un contact sans structure n'est pas concerné. Réactiver la structure rétablit tout (rien n'est enregistré).
  */
 export const onlyInactive = c => { const l = c?.id ? linksOfContact(c.id) : []; return l.length > 0 && l.every(isInactive); };
+/**
+ * Hors prospection (et hors Brevo) : lié uniquement à des structures inactives (v1.60.2), OU sans structure et marqué
+ * contacts.hors_prospection_at — décision d'Anthony du 08/11/2026 (option B) : un contact qui a perdu un rattachement alors qu'il
+ * n'était lié qu'à des structures inactives ne revient pas en prospection en devenant « sans structure » ; un contact créé sans
+ * structure n'est pas marqué. Le marqueur est posé et effacé par la base seulement (rattachement à une structure active,
+ * réactivation). Exclusion MANUELLE (contacts.prospection_exclue_at, décision du 09/11) : hors prospection quelles que soient ses
+ * structures. Même règle : supabase/functions/brevo-sync/regles.ts (horsProspection). Relances (relancesSuspended) : inchangées.
+ * Contact supprimé puis recréé avec la même adresse (décision du 09/11) : la base remet le même marqueur (table prospection_memoire,
+ * migration 2026-11-08_brevo_rattachements.sql) ; la règle ci-dessous n'a rien à faire de plus.
+ */
+export const horsProspection = c => !!c?.prospection_exclue_at || onlyInactive(c) || (!!c?.hors_prospection_at && !(c?.id && linksOfContact(c.id).length));
+/**
+ * État de prospection d'un contact pour sa fiche (décisions du 09/11/2026) : {hors, manuel, auto, inactives, derniere} — derniere = dernière
+ * entrée MANUELLE du journal contacts.prospection_history ({at, action, origine, par, motif}). Exclusion manuelle : levée seulement par
+ * « Remettre en prospection » (fonction serveur set_prospection, motif, tracé) ; jamais par un rattachement.
+ */
+/**
+ * Autres contacts EXCLUS reliés à ce contact par une adresse commune, de proche en proche (l'exclusion suit l'adresse ; décision
+ * d'Anthony du 09/11/2026). « Remettre en prospection » les liste et demande une confirmation explicite ; la remise vaut alors pour
+ * tous. Même règle : SQL prospection_partages / set_prospection (p_avec), migration 2026-11-08_brevo_rattachements.sql.
+ */
+export function contactsExclusPartages(c){
+  if (!c?.id) return [];
+  const mails = k => [k?.email, k?.email_2].map(e => String(e || '').trim().toLowerCase()).filter(Boolean);
+  const exclu = k => !!(k.prospection_exclue_at || k.hors_prospection_at);
+  const vus = new Set([c.id]), seen = new Set(mails(c)), out = [];
+  let file = [...seen];
+  while (file.length){
+    const next = [];
+    for (const k of S.db.contacts) if (!vus.has(k.id) && exclu(k) && mails(k).some(m => file.includes(m))){
+      vus.add(k.id); out.push(k); for (const m of mails(k)) if (!seen.has(m)){ seen.add(m); next.push(m); }
+    }
+    file = next;
+  }
+  return out;
+}
+export function prospectionState(c){
+  const hist = Array.isArray(c?.prospection_history) ? c.prospection_history : [];
+  const auto = !!c?.hors_prospection_at && !(c?.id && linksOfContact(c.id).length);
+  return {hors: horsProspection(c), manuel: !!c?.prospection_exclue_at, auto, inactives: onlyInactive(c), markers: !!(c?.prospection_exclue_at || c?.hors_prospection_at),
+    derniere: [...hist].reverse().find(e => e?.origine === 'manuelle') || null, autoEntree: [...hist].reverse().find(e => e?.origine === 'structure') || null};
+}
 /** Adresses d'un champ « À » (nom <adresse>, virgules, points-virgules) */
 const addrsIn = v => (String(v || '').match(/[^\s<>,;"]+@[^\s<>,;"]+/g) || []).map(m => m.toLowerCase());
 /**

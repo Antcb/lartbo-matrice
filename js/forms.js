@@ -12,7 +12,7 @@ import { CFG } from './config.js';
 import { CONTACT_ROLES, STRUCT_TAGS, CONFIRMED_PROD, CONTRACTS, EVENT_KINDS, PRICING, PRIORITIES, PRIORITY_OPTS, PROSPECT, PROSPECT_OPTS, STATUSES, TASK_STATUS, TASK_STATUS_OPTS, TEAM_NAMES, TICKETING, isOff } from './constants.js';
 import { archiveShow, deleteShow, insert, reactivateReminders, purgeStored, refreshFor, remove, removeWhere, save, saveLinger, sb, showDeletionState, signedUrl, syncLinks, uploadFiles } from './data.js';
 import { fillCoords, geocode, geoFrance, searchPlaces } from './geo.js';
-import { contactMails, contactsWithMail, defaultCommission, settingAcompte, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, placeOfSuivi, projIds, showPlaceNote, projName, projectOptions, prospectTitle, spectaclesOf, defaultSpectacleId } from './selectors.js';
+import { contactMails, contactsWithMail, prospectionState, defaultCommission, settingAcompte, suiviClosed, attachmentsOf, byId, deptNames, isDone, eventsOfStructure, setting, lastExchange, linksOfContact, linksOfStructure, placeOfSuivi, projIds, showPlaceNote, projName, projectOptions, prospectTitle, spectaclesOf, defaultSpectacleId } from './selectors.js';
 import { S, touch } from './state.js';
 import { CREATORS } from './ui/autocomplete.js';
 import { fileRow, remindersSuspendedNote } from './ui/bits.js';
@@ -430,12 +430,30 @@ const CONTACT_COORDS = [
   {k:'email', label:'Mail', type:'email'}, {k:'email_2', label:'Mail 2', type:'email'},
   {k:'phone', label:'Téléphone'}, {k:'phone_2', label:'Téléphone 2'},
 ];
+/**
+ * Prospection d'un contact, sur sa fiche (décisions d'Anthony du 09/11/2026) : état (exclusion manuelle par l'équipe, exclusion
+ * automatique « structure », structures inactives uniquement, ou en prospection), dernier motif, auteur et date, et l'action
+ * explicite « Exclure de la prospection » / « Remettre en prospection » (motif demandé ; fonction serveur set_prospection, tracée).
+ * Ne touche jamais au désabonnement Brevo. Réaffiché en place après l'action (les saisies de la fiche ne sont pas perdues).
+ */
+export function prospectionBlock(c){
+  if (!c?.id) return '';
+  const st = prospectionState(c), d = st.derniere, a = st.autoEntree;
+  const by = e => e ? [e.par && e.par !== 'automatique' ? `par ${e.par}` : '', e.motif ? `« ${e.motif} »` : ''].filter(Boolean).join(' : ') : '';
+  const text = st.manuel ? `Exclu de la prospection par l’équipe depuis le ${fmtDate(c.prospection_exclue_at)}${by(d) ? ', ' + by(d) : ''}. Un rattachement à une structure ne le remet pas en prospection.`
+    : st.auto ? `Hors prospection depuis le ${fmtDate(c.hors_prospection_at)} : ${a?.motif || 'dernière structure inactive retirée'}. Il y revient s’il est rattaché à une structure active.`
+    : st.inactives ? 'Hors prospection : lié uniquement à des structures inactives (il y revient si l’une est réactivée ou s’il est rattaché à une structure active).'
+    : 'En prospection.';
+  const btn = (exclure, label) => `<button type="button" class="btn sm" data-act="prospectionContact" data-id="${esc(c.id)}" data-exclure="${exclure ? 1 : 0}">${label}</button>`;
+  const buttons = [st.markers ? btn(false, 'Remettre en prospection') : '', st.manuel ? '' : btn(true, 'Exclure de la prospection')].filter(Boolean).join(' ');
+  return `<div class="full" id="ct-prosp"><p class="help">Prospection : ${esc(text)} Le désabonnement Brevo n’est jamais modifié.</p><div class="vh-actions mt-sm">${buttons}</div></div>`;
+}
 export function editContact(id, prefill={}){
   const c = id ? byId('contacts', id) : {...prefill};
   const links = id ? linksOfContact(id).map(s=>s.id) : (prefill._structures || []);
   const brevo = !id ? '' : c.brevo_error ? `<p class="help full" style="color:var(--danger)">Brevo : ${esc(c.brevo_error)}</p>`
     : c.brevo_at ? `<p class="help full">Dans Brevo (mis à jour le ${fmtDate(c.brevo_at)}).</p>` : '';
-  return openModal({ title: id ? c.display_name : 'Nouveau contact', values: {...c, _structures: links}, extra: brevo,
+  return openModal({ title: id ? c.display_name : 'Nouveau contact', values: {...c, _structures: links}, extra: brevo + prospectionBlock(c),
     fields: [
       {k:'first_name', label:'Prénom'}, {k:'last_name', label:'Nom'},
       {k:'_structures', label:'Structures', type:'links', source:'structures', create:true, full:true},
@@ -443,7 +461,7 @@ export function editContact(id, prefill={}){
       ...CONTACT_COORDS,
       {k:'notes', label:'Notes', type:'textarea', full:true},
     ],
-    deleteAsk: () => ({title: 'Supprimer le contact ?', text: `Supprimer le contact « ${c.display_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || 'sans nom'} » et ses liens avec les structures ? Les dates, suivis et échanges qui le citaient restent, sans contact. Il n’est pas retiré de Brevo.`,
+    deleteAsk: () => ({title: 'Supprimer le contact ?', text: `Supprimer le contact « ${c.display_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || 'sans nom'} » et ses liens avec les structures ? Les dates, suivis et échanges qui le citaient restent, sans contact. Il n’est pas retiré de Brevo.${c.prospection_exclue_at || c.hors_prospection_at ? ' Il est exclu de la prospection : cette exclusion reste attachée à ses adresses, passe aux autres contacts qui les portent et revient si un contact est recréé avec l’une d’elles (seul « Remettre en prospection » la lève).' : ''}`,
       actions: [{value: 'del', label: 'Supprimer le contact', danger: true}]}),
     onDelete: id ? () => remove('contacts', id) : null,
     onSave: async v => {
