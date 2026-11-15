@@ -36,7 +36,7 @@ function script(file, owner, threads){
     getAttachments: o => { if (!o || o.includeInlineImages !== false) log.forbidden.push('getAttachments sans includeInlineImages:false'); return Array(m.att || 0).fill({}); } }, 'message');
   const GmailApp = guard({ search: (q, a, b) => { log.searches.push(q); const mid = '<' + q.replace('rfc822msgid:', '') + '>';
     return Object.keys(threads).filter(id => threads[id].some(m => m.mid === mid)).map(threadObj); } }, 'GmailApp');
-  const props = { WEBHOOK_SECRET: SECRET, CLE_BOITE: KEY }, cache = {};
+  const props = { WEBHOOK_SECRET: SECRET, SECRET_PROSPECTION: SECRET, CLE_BOITE: KEY }, cache = {};
   const ctx = { GmailApp, Logger: { log() {} }, Session: { getEffectiveUser: () => ({ getEmail: () => owner }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] ?? null, getProperties: () => props }) },
     CacheService: { getScriptCache: () => ({ get: k => cache[k] ?? null, put: (k, v) => { cache[k] = v; } }) },

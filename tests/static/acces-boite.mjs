@@ -26,7 +26,7 @@ const IDA = '<a-fictif-0001@exemple-fictif.fr>', IDB = '<b-fictif-0002@exemple-f
 /** Script Google réel, compte d'exécution « owner » ; GmailApp simulé (renvoie le message demandé) ; cache partagé si fourni */
 function script(file, owner, { key = KEY, cache = {}, lock = { ok: true, log: [] } } = {}){
   const searches = [];
-  const props = { WEBHOOK_SECRET: SECRET, ...(key ? { CLE_BOITE: key } : {}) };
+  const props = { WEBHOOK_SECRET: SECRET, SECRET_PROSPECTION: SECRET, ...(key ? { CLE_BOITE: key } : {}) };   // (v1.61.1) code dédié du script de prospection : même valeur fictive ici, séparation contrôlée par secret-prospection.mjs
   const msg = id => ({ getHeader: () => id, isDraft: () => false, getRawContent: () => `Message-ID: ${id}\r\n\r\nx`, getSubject: () => 'Fictif', getFrom: () => 'x@exemple-fictif.fr', getDate: () => new Date('2026-11-03T09:00:00Z') });
   const ctx = { Logger: { log() {} }, Session: { getEffectiveUser: () => ({ getEmail: () => owner }) },
     GmailApp: { search: q => { searches.push(q); return [{ getMessages: () => [msg('<' + q.replace('rfc822msgid:', '') + '>')] }]; } },
@@ -56,7 +56,7 @@ const isRefused = r => [r.ok, r.refused, r.searched, /rien n’a été consulté
   eq('relais : le navigateur ne remplace ni l’identité ni sa signature', [forged.caller, forged.action, forged.secret, forged.caller_sig === await callerSig(KEY, 'prospect', 'anthony', AUTRE, 'mail_by_msgid', IDA, forged.caller_ts)], [AUTRE, 'mail_by_msgid', SECRET, true]);
   eq('relais : sans clé dédiée, aucune signature', JSON.parse(await outgoingBody({ message_id: IDA }, 'mail_by_msgid', SECRET, ANTHONY, '')).caller_sig, '');
   const src = readFileSync(join(ROOT, 'supabase/functions/script-google/index.ts'), 'utf8');
-  if (!/user\.auth\.getUser\(jwt\)/.test(src) || !/import_secret', \{ k: 'mailbox_sign_key' \}/.test(src) || !/outgoingBody\(payload, body\.action, secret, email, String\(signKey \|\| ''\), Date\.now\(\), body\?\.target \|\| 'main'\)/.test(src) || !/body: outgoing,/.test(src))
+  if (!/user\.auth\.getUser\(jwt\)/.test(src) || !/import_secret', \{ k: 'mailbox_sign_key' \}/.test(src) || !/const target = body\?\.target \|\| 'main'/.test(src) || !/outgoingBody\(payload, body\.action, code, email, String\(signKey \|\| ''\), Date\.now\(\), target\)/.test(src) || !/body: outgoing,/.test(src))
     fail('relais script-google : adresse de la session vérifiée (getUser), clé dédiée lue par import_secret, corps signé (outgoingBody)');
   if (src.indexOf("rpc('is_team')") < 0 || src.indexOf("rpc('is_team')") > src.indexOf('getUser(jwt)')) fail('relais script-google : is_team doit rester vérifié avant tout');
   const mig = readFileSync(join(ROOT, 'supabase/migrations/2026-11-08_v1.60.4_cle_boite.sql'), 'utf8');

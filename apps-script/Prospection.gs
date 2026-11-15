@@ -9,28 +9,31 @@
  *  2. À gauche « Services » › + › « Gmail API » › Ajouter (sert aux relances dans le même fil).
  *  3. Déployer › Nouveau déploiement › Application Web · Exécuter en tant que : moi · Accès : Tout le monde.
  *  4. Coller l'adresse du déploiement (…/exec) dans Réglages › Prospection.
- *  5. Paramètres du projet (roue dentée) › Propriétés du script › ajouter WEBHOOK_SECRET = le code secret des scripts
- *     (même valeur que le script principal ; il n'est plus affiché dans la Matrice : Supabase › table settings › drive_webhook_secret).
+ *  5. (v1.61.1) Paramètres du projet (roue dentée) › Propriétés du script › ajouter SECRET_PROSPECTION = le code secret DÉDIÉ de
+ *     ce script (Supabase › Table Editor › schéma private › import_secrets › ligne prospect_script_secret › valeur). Ce n'est PAS
+ *     le code du script principal (WEBHOOK_SECRET / drive_webhook_secret) : celui-ci est désormais refusé ici. Sans SECRET_PROSPECTION,
+ *     le script refuse tout. L'ancienne propriété WEBHOOK_SECRET n'est plus lue (elle peut être retirée une fois « Tester » au vert).
  *  6. (v1.60.4) Même endroit : ajouter CLE_BOITE = la clé de la boîte (Supabase › Table Editor › schéma private ›
  *     import_secrets › ligne mailbox_sign_key › valeur). Sans elle, la recherche d'un message par son identifiant est refusée.
  *
- * Le code secret n'est jamais écrit dans ce code (v1.47) : il est lu dans les propriétés du script. Un script déjà installé
- * avec le code écrit en dur continue de fonctionner tel quel (la Matrice envoie toujours le même code, depuis son serveur).
+ * Le code secret n'est jamais écrit dans ce code (v1.47) : il est lu dans les propriétés du script (SECRET_PROSPECTION, v1.61.1).
+ * Ordre de bascule : poser SECRET_PROSPECTION AVANT de redéployer ce code (sinon tout est refusé jusqu'à ce qu'elle soit posée).
  */
 /** Version du code (renvoyée par « ping », pour vérifier le redéploiement) */
-var SCRIPT_VERSION = 'v1.60.8';
-var SECRET = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET') || '';
+var SCRIPT_VERSION = 'v1.61.1';
+// (v1.61.1, réserve sécurité du 10/11/2026) code DÉDIÉ : jamais de repli sur WEBHOOK_SECRET (code commun avec production@)
+var SECRET = PropertiesService.getScriptProperties().getProperty('SECRET_PROSPECTION') || '';
 
 function doPost(e) {
   var out;
   try {
     var body = JSON.parse(e.postData.contents || '{}');
-    if (!SECRET) return json_({ ok: false, error: 'Script de prospection : ajoute la propriété WEBHOOK_SECRET (Paramètres du projet › Propriétés du script)' });
-    if (!body.secret || body.secret !== SECRET) return json_({ ok: false, error: 'Code secret du script de prospection incorrect' });
+    if (!SECRET) return json_({ ok: false, error: 'Script de prospection : ajoute la propriété SECRET_PROSPECTION (Paramètres du projet › Propriétés du script) : rien n’a été fait.' });
+    if (typeof body.secret !== 'string' || !body.secret || body.secret !== SECRET) return json_({ ok: false, error: 'Code secret de prospection refusé (propriété SECRET_PROSPECTION pas à jour ?) : rien n’a été fait.' });
     var a = body.action;
     if (a === 'ping') out = { ok: true, account: Session.getEffectiveUser().getEmail(), version: SCRIPT_VERSION };
-    else if (a === 'mail') out = mail_(body);
-    else if (a === 'reply') out = reply_(body);
+    else if (a === 'mail') out = attRefused_(body) || mail_(body);   // v1.61.1 : pièces jointes contrôlées avant toute création
+    else if (a === 'reply') out = attRefused_(body) || reply_(body);
     else if (a === 'status') out = status_(body.thread_id);
     else if (a === 'mail_by_msgid') out = ownerOnly_(body, a) || mailByMsgId_(body.message_id);   // v1.60.4 : lecture seule, titulaire de la boîte seulement
     else if (a === 'thread_by_msgid') out = ownerOnly_(body, a) || threadByMsgId_(body.message_id, body.want);   // v1.60.7 : conversation, lecture seule, titulaire seulement
@@ -43,7 +46,48 @@ function doPost(e) {
 
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 
-/** Pièces jointes : fichiers Drive {id} ou fichiers de la Matrice {url (lien temporaire), name} */
+// ─────────────── Pièces jointes autorisées (v1.61.1, réserve sécurité du 10/11/2026) ───────────────
+/**
+ * Avant, n'importe quel fichier Drive de cette boîte (par son identifiant) et n'importe quelle adresse pouvaient être joints.
+ * Désormais (même règle que le relais, supabase/functions/script-google/identite.ts attachmentsCheck) :
+ *  - fichier Drive {id} : seulement si le serveur de la Matrice l'a autorisé (fichier joint à un modèle de mail) — liste des
+ *    identifiants signée (att_sig, HMAC-SHA256 avec CLE_BOITE, jamais transmise), horodatage à moins de 5 minutes ;
+ *  - fichier de la Matrice {url, name} : seulement un lien temporaire signé du stockage « suivi » d'un projet Supabase ;
+ *  - sinon la demande entière est refusée AVANT toute création : aucun brouillon, aucun envoi.
+ */
+var DRIVE_ID_RE_ = /^[\w-]{25,200}$/;
+var MATRICE_URL_RE_ = /^https:\/\/[a-z0-9]{20}\.supabase\.co\/storage\/v1\/object\/sign\/suivi\/[^?#\s]+\?token=[\w.-]+$/;
+var ATT_MAX_ = 20;
+function attRefused_(b) {
+  var list = b.attachments;
+  if (list === undefined || list === null) return null;
+  var no = function (why) { return { ok: false, refused: true, error: 'Pièce jointe refusée : ' + why + '. Rien n’a été créé ni envoyé.' }; };
+  if (!Array.isArray(list)) return no('liste illisible');
+  if (list.length > ATT_MAX_) return no(ATT_MAX_ + ' pièces jointes au plus');
+  var ids = [];
+  for (var i = 0; i < list.length; i++) {
+    var f = list[i];
+    if (!f || typeof f !== 'object') return no('pièce illisible');
+    if (f.id !== undefined) {
+      if (typeof f.id !== 'string' || !DRIVE_ID_RE_.test(f.id) || f.url !== undefined) return no('identifiant Drive illisible');
+      ids.push(f.id);
+    } else if (f.url !== undefined) {
+      if (typeof f.url !== 'string' || f.url.length > 2000 || !MATRICE_URL_RE_.test(f.url) || f.url.indexOf('/../') >= 0) return no('le lien n’est pas un fichier de la Matrice');
+    } else return no('pièce sans fichier');
+  }
+  if (!ids.length) return null;
+  if (!CLE_BOITE_) return no('fichier Drive non vérifiable : ajoute la propriété CLE_BOITE (Paramètres du projet › Propriétés du script)');
+  var ts = Number(b.caller_ts), sig = typeof b.att_sig === 'string' ? b.att_sig : '';
+  if (!sig || !isFinite(ts)) return no('fichier Drive non autorisé par le serveur de la Matrice');
+  var text = ['matrice-pj-v1', CIBLE_, BOITE_NOM_, String(ts), ids.join(',')].join('|');
+  var bytes = Utilities.computeHmacSha256Signature(text, CLE_BOITE_, Utilities.Charset.UTF_8);
+  var hex = bytes.map(function (x) { return ('0' + (x & 255).toString(16)).slice(-2); }).join('');
+  if (hex !== sig) return no('fichier Drive non autorisé par le serveur de la Matrice');
+  if (Math.abs(Date.now() - ts) > CALLER_WINDOW_MS_) return no('demande expirée (plus de 5 minutes) : réessaie');
+  return null;
+}
+
+/** Pièces jointes : fichiers Drive {id} ou fichiers de la Matrice {url (lien temporaire), name} — contrôlées avant par attRefused_ */
 function blobs_(list) {
   return (list || []).map(function (f) {
     try {

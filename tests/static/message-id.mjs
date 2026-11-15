@@ -109,8 +109,9 @@ if (!new RegExp(`var MSGID_MAX_ = ${MSGID_MAX};`).test(bCode)) fail('scripts', '
 if (MSG_RAW_MAX !== 20 * 1024 * 1024 || !/var MSG_RAW_MAX_ = 20 \* 1024 \* 1024;/.test(bCode)) fail('scripts', 'taille maximale du contenu brut différente entre eml.js et les scripts');
 if (!/action === 'mail_by_msgid'\) out = mailByMsgId_\(body\.message_id\)/.test(gsCode)) fail('scripts', 'Code.gs : action mail_by_msgid non branchée dans doPost');
 if (!/a === 'mail_by_msgid'\) out = ownerOnly_\(body, a\) \|\| mailByMsgId_\(body\.message_id\)/.test(gsProsp)) fail('scripts', 'Prospection.gs : action mail_by_msgid non branchée dans doPost');
-for (const [n, src] of [['Code.gs', gsCode], ['Prospection.gs', gsProsp]])
-  if (!/var SCRIPT_VERSION = 'v1\.60\.8'/.test(src)) fail('scripts', `${n} : SCRIPT_VERSION doit être 'v1.60.8'`);
+// (v1.61.1) Prospection.gs seul change (code dédié, pièces jointes) : son numéro permet de vérifier le redéploiement
+for (const [n, src, v] of [['Code.gs', gsCode, 'v1.60.8'], ['Prospection.gs', gsProsp, 'v1.61.1']])
+  if (!new RegExp(`var SCRIPT_VERSION = '${v.replace(/\./g, '\\.')}'`).test(src)) fail('scripts', `${n} : SCRIPT_VERSION doit être '${v}'`);
 
 // 3a. Lecture du code : seulement des méthodes de lecture (Gmail) et des opérations sur du texte
 const READ_ONLY = new Set(['search', 'forEach', 'getMessages', 'getHeader', 'trim', 'isDraft', 'push', 'test', 'slice', 'getRawContent', 'round', 'getSubject', 'getFrom', 'getDate', 'toISOString',
@@ -138,7 +139,7 @@ function run(file, msgs, call){
   const message = o => guard({ getHeader: h => /^message-id$/i.test(h) ? o.header : '', isDraft: () => !!o.draft, getRawContent: () => o.raw ?? RAW,
     getSubject: () => 'Programmation fictive', getFrom: () => 'Camille Exemple <camille@example.com>', getDate: () => new Date('2026-11-03T09:00:00Z') }, MSG_OK, 'message');
   const GmailApp = guard({ search: (q, a, b) => { log.searches.push([q, a, b]); return [guard({ getMessages: () => msgs.map(message) }, new Set(['getMessages']), 'fil')]; } }, new Set(['search']), 'GmailApp');
-  const props = { WEBHOOK_SECRET: 'secret-de-test', CLE_BOITE: 'cle-boite-de-test' };
+  const props = { WEBHOOK_SECRET: 'secret-de-test', SECRET_PROSPECTION: 'secret-de-test', CLE_BOITE: 'cle-boite-de-test' };
   const cache = {};
   const ctx = { GmailApp, Logger: { log() {} }, Session: { getEffectiveUser: () => ({ getEmail: () => 'boite@example.com' }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k], getProperties: () => props }) },

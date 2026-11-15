@@ -173,9 +173,9 @@ export const ACTIONS = {
   relance: t => openProspection(null, {prospectId: t.dataset.id}),
   copyProspectScript: async () => {
     try {
-      // le code secret n'est plus injecté (v1.47) : le script le lit dans ses propriétés (WEBHOOK_SECRET), voir l'en-tête du script
+      // le code secret n'est plus injecté (v1.47) : le script le lit dans ses propriétés (SECRET_PROSPECTION, code dédié v1.61.1), voir l'en-tête du script
       const code = await (await fetch('apps-script/Prospection.gs?v=' + Date.now())).text();
-      await navigator.clipboard.writeText(code); toast('Code du script copié : colle-le dans le nouveau projet Apps Script, puis ajoute la propriété WEBHOOK_SECRET (voir l’en-tête du code)');
+      await navigator.clipboard.writeText(code); toast('Code du script copié : colle-le dans le projet Apps Script, avec les propriétés SECRET_PROSPECTION et CLE_BOITE (voir l’en-tête du code)');
     } catch (err) { toast('Copie impossible : ' + err.message, true); }
   },
   copyMainScript: async () => {
