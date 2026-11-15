@@ -2,7 +2,8 @@
 // Lancé par « npm test » (node --experimental-strip-types). Module testé : supabase/functions/pennylane/regles.ts
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { acomptesFactures, baseCommission, caduc, codeLieu, describe, emise, factureIsolee, figerMontant, rangeeDansLeDrive, montantAttendu, payable, pctCommission, relieAuDevis, soldeDouteux, texteCommission, delaiDocument } from '../../supabase/functions/pennylane/regles.ts';
+import * as regles from '../../supabase/functions/pennylane/regles.ts';
+import { acomptesDeLaDate, baseCommission, codeLieu, describe, emise, factureIsolee, figerMontant, rangeeDansLeDrive, montantAttendu, payable, pctCommission, relieAuDevis, soldeDouteux, texteCommission, delaiDocument } from '../../supabase/functions/pennylane/regles.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -36,11 +37,20 @@ t('facture isolée : commission en booking, autre ligne en production ; jamais l
   assert.equal(factureIsolee({ kind: 'autre' }, 'production'), true);
   assert.equal(factureIsolee({ kind: 'autre' }, 'booking'), false);
 });
-t('solde attendu = cession − acomptes facturés (10 000 → 10 000 sans acompte facturé, 7 000 avec 30 % facturé)', () => {
+t('v1.61.1 solde attendu = cession − TOUS les acomptes de la date, prévus et facturés (décision du 10/11/2026)', () => {
   const prevu = { kind: 'acompte', pct: 30 }, facture = { kind: 'acompte', pct: 30, invoice_number: 'F-AB-1' };
-  assert.equal(acomptesFactures([prevu], 10000), 0);
-  assert.equal(montantAttendu({ kind: 'solde', pct: 70 }, 10000, acomptesFactures([prevu], 10000)), 10000);
-  assert.equal(montantAttendu({ kind: 'solde', pct: 70 }, 10000, acomptesFactures([facture], 10000)), 7000);
+  assert.equal(acomptesDeLaDate([prevu], 10000), 3000);
+  assert.equal(montantAttendu({ kind: 'solde', pct: 70 }, 10000, acomptesDeLaDate([prevu], 10000)), 7000);   // acompte prévu : déjà déduit
+  assert.equal(montantAttendu({ kind: 'solde', pct: 70 }, 10000, acomptesDeLaDate([facture], 10000)), 7000);
+  // capture d'Anthony : cachet 9 000, acompte 50 % prévu non facturé → solde 4 500 (et non 9 000)
+  assert.equal(montantAttendu({ kind: 'solde', pct: 50 }, 9000, acomptesDeLaDate([{ kind: 'acompte', pct: 50 }, { kind: 'solde', pct: 50 }], 9000)), 4500);
+  // acompte passé à 30 % → 6 300 ; retiré (0 %) → 9 000 ; facturé à 4 500 (montant figé) → 4 500 ; montant saisi de l'acompte : il fait foi
+  assert.equal(montantAttendu({ kind: 'solde' }, 9000, acomptesDeLaDate([{ kind: 'acompte', pct: 30 }], 9000)), 6300);
+  assert.equal(montantAttendu({ kind: 'solde' }, 9000, acomptesDeLaDate([{ kind: 'acompte', pct: 0 }], 9000)), 9000);
+  assert.equal(montantAttendu({ kind: 'solde' }, 9000, acomptesDeLaDate([{ kind: 'acompte', pct: 50, amount: 4500, invoice_number: 'F-1' }], 9000)), 4500);
+  assert.equal(montantAttendu({ kind: 'solde' }, 9000, acomptesDeLaDate([{ kind: 'acompte', pct: 50, amount: 4000 }], 9000)), 5000);
+  // deux acomptes (un facturé, un prévu)
+  assert.equal(montantAttendu({ kind: 'solde' }, 10000, acomptesDeLaDate([facture, { kind: 'acompte', pct: 20 }], 10000)), 5000);
   assert.equal(montantAttendu({ kind: 'solde', amount: 3600 }, 4500, 900), 3600);   // montant saisi : il fait foi
   assert.equal(montantAttendu({ kind: 'acompte', pct: 20 }, 4500, 0), 900);
   assert.equal(montantAttendu({ kind: 'solde' }, 1000, 1500), 0);                   // jamais négatif
@@ -50,11 +60,12 @@ t('facture émise : même définition que l’application', () => {
   assert.equal(emise({ kind: 'acompte', invoice_number: '  ' }), false);
   for (const f of ['sent_at', 'paid_at', 'invoice_number', 'pennylane_id']) assert.equal(emise({ kind: 'acompte', [f]: 'x' }), true, f);
 });
-t('acompte caduc : jamais relié automatiquement quand le solde est facturé', () => {
-  const prevu = { kind: 'acompte', pct: 30 }, soldeEmis = { kind: 'solde', invoice_number: 'F-1' };
-  assert.equal(caduc(prevu, [prevu, soldeEmis]), true);
-  assert.equal(caduc(prevu, [prevu, { kind: 'solde', pct: 70 }]), false);           // solde pas encore facturé : acompte prévu
-  assert.equal(caduc({ kind: 'acompte', sent_at: '2026-01-01' }, [soldeEmis]), false); // acompte facturé : pas caduc
+t('v1.61.1 plus d’acompte « caduc » : la règle n’existe plus (un acompte non facturé reste dû et se relie)', () => {
+  assert.equal('caduc' in regles, false);
+  assert.equal('acomptesFactures' in regles, false);
+  // l'acompte prévu d'une date dont le solde est émis reste une ligne reliable depuis le devis
+  assert.equal(relieAuDevis({ kind: 'acompte', pct: 30 }, 'production'), true);
+  assert.equal(figerMontant({ kind: 'acompte', pct: 30 }), true);
 });
 t('rangement Drive : inchangé pour acompte / solde / autre ; jamais pour la commission booking', () => {
   for (const k of ['acompte', 'solde', 'autre']) assert.equal(rangeeDansLeDrive({ kind: k }), true, k);

@@ -19,8 +19,8 @@ export const isCoproduction = s => s?.contract_type === 'Co-Production';
 export function payAmount(p){
   if (p.amount!=null && p.amount!=='') return Number(p.amount);
   const s = byId('shows', p.show_id); const fee = Number(s?.fee_ht)||0;
-  // production : solde pas encore facturé = cession − acomptes EFFECTIVEMENT facturés (règle d'Anthony du 26/10, lot C1).
-  // Un acompte seulement prévu ne le réduit pas. Un solde facturé garde son montant (jamais recalculé, §6.4).
+  // production : solde pas encore émis = cession − TOUS les acomptes de la date, prévus et facturés (décision d'Anthony du
+  // 10/11/2026, qui remplace la règle C1 du 26/10). Un solde émis garde son montant (jamais recalculé, §6.4).
   if (p.kind==='solde' && s && !isBookingShow(s) && !isInvoiced(p)) return soldeDue(p.show_id, p.id);
   // commission : % de la ligne > % de la date > % de l'artiste > Réglages selon le mode de la date (§6.3, v1.46a — plus de 0 ni de 15 en dur)
   // base : cachet HT, plus la part du résultat validée en coréalisation (rémunération brute de l'artiste, v1.51)
@@ -103,15 +103,21 @@ export const EMITTED_FIELDS = ['sent_at', 'paid_at', 'invoice_number', 'pennylan
 export const hasFinancialRecord = showId => paymentsOf(showId).some(p => EMITTED_FIELDS.some(k => filled(p[k])) || (p.kind === 'artbo' && transfersOf(p.id).length > 0));   // un versement de commission engage aussi la date (v1.43)
 /** Champs qui figent une ligne : commission de production = seulement sa date de versement */
 export const emittedFieldsOf = p => selfPaidCommission(p) ? ['paid_at'] : EMITTED_FIELDS;
-/** Acompte : 'facture' (émis), 'prevu' (au contrat, pas encore facturé), 'caduc' (jamais facturé alors que le solde l'est :
- *  plus réclamé, historique gardé) ; '' pour les autres lignes */
-export const acompteState = p => p?.kind !== 'acompte' ? '' : isInvoiced(p) ? 'facture' : soldeInvoiced(p.show_id) ? 'caduc' : 'prevu';
-/** Solde à facturer d'une date de production : cession − acomptes effectivement facturés (jamais négatif).
+/** Acompte : 'facture' (émis), 'prevu' (au contrat, pas encore facturé : déjà déduit du solde, reste dû) ; '' pour les autres lignes.
+ *  Décision d'Anthony du 10/11/2026 : plus d'acompte « caduc » automatique quand le solde est facturé — il reste dû (même compte,
+ *  mêmes relances) jusqu'à ce que l'utilisateur le retire (0 %). Même règle côté base : show_payments_caduc_guard (v1.61.1). */
+export const acompteState = p => p?.kind !== 'acompte' ? '' : isInvoiced(p) ? 'facture' : 'prevu';
+/** Acompte RETIRÉ par l'utilisateur (non facturé, 0 % ou 0 € : plus dû) : ni rappel ni étape de suivi. Même règle côté base :
+ *  reminder_candidates (a_retire, migration v1.61.1). */
+export const acompteRetire = p => p?.kind === 'acompte' && !isInvoiced(p)
+  && (p.amount != null && p.amount !== '' ? Number(p.amount) === 0 : p.pct != null && p.pct !== '' && Number(p.pct) === 0);
+/** Solde à facturer d'une date de production : cession − tous les acomptes de la date, prévus et facturés (jamais négatif ;
+ *  décision du 10/11/2026). Même règle : base payment_amount_for, Pennylane montantAttendu.
  *  Protection (plusieurs lignes de solde sur une date, cas anormal que l'application ne crée pas) : les autres soldes émis ou
  *  saisis sont déduits, et seul le PREMIER solde calculé reçoit le reste — la cession n'est jamais comptée deux fois. */
 export function soldeDue(showId, id = null){
   const pays = paymentsOf(showId), fee = Number(byId('shows', showId)?.fee_ht) || 0;
-  const done = pays.filter(p => p.kind === 'acompte' && isInvoiced(p)).reduce((t, p) => t + (payAmount(p) || 0), 0);
+  const done = pays.filter(p => p.kind === 'acompte').reduce((t, p) => t + (payAmount(p) || 0), 0);
   const me = id && pays.find(p => p.id === id), others = pays.filter(p => p.kind === 'solde' && p.id !== id);
   const computed = q => !isInvoiced(q) && (q.amount == null || q.amount === '');
   const before = q => (q.sort || 0) < (me.sort || 0) || ((q.sort || 0) === (me.sort || 0) && String(q.id) < String(me.id));
@@ -121,18 +127,28 @@ export function soldeDue(showId, id = null){
 }
 /** Plusieurs lignes de solde sur une date : anomalie signalée (jamais corrigée automatiquement) */
 export const multiSolde = showId => paymentsOf(showId).filter(p => p.kind === 'solde').length > 1;
-/** Solde déjà facturé : les acomptes de la date ne peuvent plus changer (§6.4) */
+/** Solde déjà facturé : aucun acompte ajouté ; un acompte non facturé peut seulement être retiré (0 %), §6.4 (10/11/2026) */
 export const soldeInvoiced = showId => paymentsOf(showId).some(p => p.kind === 'solde' && isInvoiced(p));
 /** Pourquoi une ligne de facturation ne peut plus changer ('' = modifiable) */
 export function billLockReason(p){
   if (!p) return '';
   if (isInvoiced(p)) return selfPaidCommission(p) ? 'Commission déjà versée : elle ne se modifie plus.' : 'Facture déjà émise (envoyée, numérotée, dans Pennylane ou payée) : elle ne se modifie plus.';
-  if (p.kind === 'acompte' && soldeInvoiced(p.show_id)) return 'Le solde de cette date est déjà facturé : les acomptes ne peuvent plus changer.';
+  // solde facturé : un acompte NON facturé reste modifiable pour être retiré (0 %, ou supprimé) — seul ce changement est permis
+  // (acompteRetireOnly, appelé par changeBlocked) ; décision d'Anthony du 10/11/2026
   // commission de production versée en partie (lot D1) : son total est figé dès le premier versement (base : show_payments_commission_lock)
   if (p.kind === 'artbo' && transfersOf(p.id).length) return 'Commission en partie versée : son montant total ne se modifie plus (note les versements restants).';
   return '';
 }
 
+/** Solde déjà facturé (production) : un acompte non facturé ne peut plus que se RETIRER — % à 0 (montant vide ou 0) ; tout autre
+ *  changement de son %, de son montant, de sa TVA, de sa date ou de son type est refusé (le solde émis, figé, ne se réadapte plus). */
+function acompteRetireOnly(row, patch){
+  if (row.kind !== 'acompte' || isInvoiced(row) || isBookingShow(byId('shows', row.show_id)) || !soldeInvoiced(row.show_id)) return '';
+  const zero = v => v == null || v === '' || Number(v) === 0;
+  const retire = !['vat_rate', 'show_id', 'kind'].some(k => k in patch && !sameVal(patch[k], row[k]))
+    && 'pct' in patch && Number(patch.pct) === 0 && patch.pct !== null && patch.pct !== '' && zero('amount' in patch ? patch.amount : row.amount);
+  return retire ? '' : 'Le solde de cette date est déjà facturé : un acompte non facturé peut seulement être retiré (0 %).';
+}
 const sameVal = (a, b) => (a == null || a === '' ? null : Number.isFinite(Number(a)) ? Number(a) : a) === (b == null || b === '' ? null : Number.isFinite(Number(b)) ? Number(b) : b);
 /** GARDE-FOU CENTRAL (appelé par data.save pour TOUT enregistrement) : refuse un changement qui modifierait une facture émise,
  *  directement (montant, %, TVA de la ligne) ou par la date dont son montant dépend (cachet, TVA, % de commission ou de partenaire).
@@ -228,12 +244,10 @@ export function changeBlocked(table, id, patch){
     }
     if (isInvoiced(row) && emittedFieldsOf(row).some(k => k in patch && !blank(row[k]) && blank(patch[k])))
       return 'Facture déjà émise : son numéro, sa date d’envoi, sa date de paiement et son identifiant Pennylane ne s’effacent pas (une régularisation se décide à part).';
-    // acompte caduc (date de production dont le solde est déjà facturé, lot C1) : il ne s'émet plus — sinon la date serait facturée
-    // au-delà de sa cession. Même règle côté base : déclencheur show_payments_caduc_guard (migration v1.41 acompte caduc)
-    if (!isBookingShow(byId('shows', row.show_id)) && acompteState(row) === 'caduc' && isInvoiced({...row, ...patch}))
-      return 'Acompte caduc : le solde de cette date est déjà facturé, cet acompte ne se facture plus (il dépasserait la cession). Une régularisation se décide à part.';
+    // (v1.61.1, décision d'Anthony du 10/11/2026) plus d'acompte « caduc » : un acompte non facturé reste dû et peut s'émettre
+    // même après le solde (la base ne le refuse plus : show_payments_caduc_guard)
     if (!['amount', 'pct', 'vat_rate', 'show_id', 'kind'].some(k => k in patch && !sameVal(patch[k], row[k]))) return '';
-    return billLockReason(row);
+    return billLockReason(row) || acompteRetireOnly(row, patch);
   }
   // mode d'une date engagée (lot D1, décisions du 26/10) : jamais changé — même définition large que la suppression d'une date.
   // Même règle côté base : shows_frozen_guard, project_mode_to_shows, show_follow_project_mode (show_has_financial_record)
@@ -267,7 +281,7 @@ export function billPct(p){
   if (p.amount != null && p.amount !== '' && fee) return Number(p.amount) / fee * 100;   // montant saisi : il fait foi
   return p.pct != null && p.pct !== '' ? Number(p.pct) : null;
 }
-/** Solde de production pas encore émis : son montant est calculé (cession − acomptes facturés, lot C1) */
+/** Solde de production pas encore émis : son montant est calculé (cession − acomptes de la date, décision du 10/11/2026) */
 export const soldeComputed = p => !!p && p.kind === 'solde' && !isInvoiced(p) && (p.amount == null || p.amount === '') && !isBookingShow(byId('shows', p.show_id));
 /** % RÉEL d'une ligne dans l'onglet Factures : pour un solde calculé, sa part effective (pas le % prévu au contrat) */
 export function billedPct(p){
@@ -277,17 +291,16 @@ export function billedPct(p){
 }
 /** Total des factures d'une date face au cachet */
 export function billingOf(s){
-  // acomptes prévus (pas encore facturés) ou caducs : hors du total facturé (ils ne réduisent pas le solde, lot C1)
+  // tous les acomptes (prévus et facturés) + le solde = le cachet (décision du 10/11/2026 : le solde n'en compte plus le reste)
   const all = paymentsOf(s.id).filter(p => BILL_KINDS.includes(p.kind));
-  const lines = all.filter(p => p.kind !== 'acompte' || isInvoiced(p));
-  const planned = all.filter(p => acompteState(p) === 'prevu'), lapsed = all.filter(p => acompteState(p) === 'caduc');
+  const lines = all, planned = all.filter(p => acompteState(p) === 'prevu');
   const sum = (list, f) => r2(list.reduce((t, p) => t + (f(p) || 0), 0));
   const ht = sum(lines, payAmount), fee = Number(s.fee_ht) || 0;
   return {lines, ht, ttc: sum(lines, p => ttc(payAmount(p), payVat(p))), fee, feeTtc: ttc(fee, showVat(s)) || 0,
     pct: fee ? r2(ht / fee * 100) : 0, gap: r2(fee - ht),
     sentHt: sum(lines.filter(p => p.sent_at), payAmount), paidHt: sum(lines.filter(p => p.paid_at), payAmount),
     otherHt: sum(paymentsOf(s.id).filter(p => p.kind === 'autre'), payAmount),
-    planned, plannedHt: sum(planned, planAmount), lapsed, lapsedHt: sum(lapsed, planAmount)};
+    planned, plannedHt: sum(planned, payAmount)};
 }
 
 /**

@@ -7,7 +7,7 @@
 // Le jeton API est gardé côté serveur (Réglages › Pennylane). Appels depuis l'app (utilisateur connecté) :
 //   { action: 'status' } · { action: 'quote', show_id } · { action: 'invoice', payment_id } · { action: 'sync' }
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { acomptesFactures, baseCommission, caduc, describe, emise, factureIsolee, figerMontant, frDate, isBooking, montantAcompte, montantAttendu, payable, pctCommission, rangeeDansLeDrive, relieAuDevis, soldeDouteux, texteCommission, delaiDocument } from './regles.ts';
+import { acomptesDeLaDate, baseCommission, describe, emise, factureIsolee, figerMontant, frDate, isBooking, montantAcompte, montantAttendu, payable, pctCommission, rangeeDansLeDrive, relieAuDevis, soldeDouteux, texteCommission, delaiDocument } from './regles.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -184,17 +184,17 @@ Deno.serve(async (req) => {
       // factures faites dans Pennylane depuis le devis créé par la Matrice (acompte puis solde) : reconnues par leur devis et leur montant HT
       const byQuote: Record<string, any[]> = {};
       for (const x of Object.values(byId)) if (x.quote?.id && x.status !== 'cancelled') (byQuote[String(x.quote.id)] ||= []).push(x);
-      const linked: any[] = [], caducs: string[] = [], douteux: string[] = [], erreurs: string[] = [];
+      const linked: any[] = [], douteux: string[] = [], erreurs: string[] = [];
       let aRattacher = 0;   // erreurs : écritures refusées (jamais comptées comme faites)
       if (Object.keys(byQuote).length) {
         const open = (await readAll(() => admin.from('show_payments').select('id, show_id, kind, label, pct, amount, sort, invoice_number, pennylane_id, sent_at, paid_at, shows!inner(fee_ht, pennylane_quote_id, prod_mode)')
           .in('kind', ['acompte', 'solde']).is('invoice_number', null).is('pennylane_id', null).is('hors_calcul', null).not('shows.pennylane_quote_id', 'is', null)) || [])
           .filter((p: any) => relieAuDevis(p, p.shows?.prod_mode));   // booking : factures de l'artiste, jamais reliées (lot C1)
-        // acomptes déjà facturés de ces dates : le solde attendu = cession − acomptes facturés (comme Pennylane)
+        // acomptes de ces dates (prévus et facturés) : le solde attendu = cession − acomptes de la date (décision du 10/11/2026)
         const ids = [...new Set(open.map((p: any) => p.show_id))];
         const acs = ids.length ? await readAll(() => admin.from('show_payments').select('show_id, kind, amount, pct, sent_at, paid_at, invoice_number, pennylane_id').in('kind', ['acompte', 'solde']).is('hors_calcul', null).in('show_id', ids)) : [];
         const facture: Record<string, number> = {};
-        for (const id of ids) { const fee = Number((open.find((p: any) => p.show_id === id) as any)?.shows?.fee_ht) || 0; facture[id as string] = acomptesFactures((acs || []).filter((a: any) => a.show_id === id), fee); }
+        for (const id of ids) { const fee = Number((open.find((p: any) => p.show_id === id) as any)?.shows?.fee_ht) || 0; facture[id as string] = acomptesDeLaDate((acs || []).filter((a: any) => a.show_id === id), fee); }
         const taken = await readAll(() => admin.from('show_payments').select('id, pennylane_id, invoice_number').or('invoice_number.not.is.null,pennylane_id.not.is.null'));
         const used = new Set<string>(); for (const t of taken || []) { if (t.pennylane_id) used.add('id:' + t.pennylane_id); if (t.invoice_number) used.add('n:' + norm(t.invoice_number)); }
         // factures déjà choisies à la main (historique des rattachements) : plus jamais reliées automatiquement
@@ -204,7 +204,7 @@ Deno.serve(async (req) => {
         const flag = (x: any, show_id: string, reason: string) => { if (!pending.has(String(x.id))) pending.set(String(x.id), { x, show_id, reason }); };
         // par date : une facture n'est reliée seule que si elle correspond à UNE seule ligne et que cette ligne n'a qu'UNE facture
         // possible (jamais sur le seul montant quand plusieurs correspondances existent — décision d'Anthony du 06/11/2026) ;
-        // après chaque acompte relié, le solde attendu est recalculé (cession − acomptes facturés) et on recommence
+        // après chaque acompte relié (montant figé sur la facture), le solde attendu est recalculé (cession − acomptes) et on recommence
         const byShow: Record<string, any[]> = {};
         for (const p of open || []) (byShow[p.show_id] ||= []).push(p);
         for (const [sid, lines] of Object.entries(byShow)) {
@@ -227,8 +227,7 @@ Deno.serve(async (req) => {
             const step = pairs.some(([p]) => p.kind === 'acompte') ? [pairs.find(([p]) => p.kind === 'acompte')!] : pairs;
             for (const [p, x] of step) {
               rest = rest.filter((q: any) => q.id !== p.id);
-              // acompte caduc (solde déjà facturé) : jamais relié automatiquement (relecture C1, B3)
-              if (caduc(p, acsDate)) { caducs.push(x.invoice_number || String(x.id)); flag(x, sid, 'Acompte caduc (solde déjà facturé) : la date serait facturée au-delà de sa cession'); continue; }
+              // (v1.61.1) plus d'acompte « caduc » : un acompte non facturé reste dû et se relie même si le solde est déjà facturé
               // facture qui peut être un acompte déjà noté à la main : jamais reliée au solde sans choix de l'utilisateur
               if (soldeDouteux(p, Number(x.currency_amount_before_tax), acsDate, fee)) { douteux.push(x.invoice_number || String(x.id)); flag(x, sid, 'Même montant qu’un acompte déjà noté à la main : est-ce cet acompte ou le solde ?'); continue; }
               // acompte / solde relié pas encore émis : montant figé sur celui de la facture (lots C1 et D1) ; déjà émis : inchangé (A1)
@@ -237,7 +236,8 @@ Deno.serve(async (req) => {
               if (e1) { erreurs.push(`${x.invoice_number || x.id} : ${e1.message}`); continue; }   // refusée : ni reliée, ni comptée
               if (!done1?.length) continue;   // ligne prise entre-temps (rattachement manuel simultané) : rien de compté
               used.add('id:' + x.id); if (x.invoice_number) used.add('n:' + norm(x.invoice_number));
-              if (p.kind === 'acompte') facture[sid] = (facture[sid] || 0) + ('amount' in fige ? Number((fige as any).amount) : (montantAcompte(p, fee) || 0));
+              // acompte déjà compté (prévu) : seul l'écart entre la facture et le montant prévu change le solde attendu
+              if (p.kind === 'acompte' && 'amount' in fige) facture[sid] = (facture[sid] || 0) + Number((fige as any).amount) - (montantAcompte(p, fee) || 0);
               linked.push(x.invoice_number);
             }
           }
@@ -297,7 +297,7 @@ Deno.serve(async (req) => {
         }
       }
       const filed = await fileInvoices(toFile);
-      return json({ ok: true, updated, pennylaneLate, linked, caducs, douteux, aRattacher, erreurs, filed });
+      return json({ ok: true, updated, pennylaneLate, linked, douteux, aRattacher, erreurs, filed });
     }
 
     if (body.action === 'quote') {

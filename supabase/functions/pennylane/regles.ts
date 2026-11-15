@@ -3,7 +3,9 @@
 //  - Booking : L'ArtBo n'est qu'agent. Seule sa facture de commission (kind « artbo ») est suivie ; les acomptes / soldes sont
 //    les factures de l'artiste à l'organisateur : jamais reliés, jamais marqués payés depuis Pennylane.
 //  - Production : la commission n'est pas une facture (L'ArtBo se la verse) : jamais reliée ni marquée payée depuis Pennylane.
-//  - Production : solde attendu = cession − acomptes effectivement facturés (comme Pennylane, qui déduit les acomptes facturés).
+//  - Production : solde attendu = cession − TOUS les acomptes de la date, prévus et facturés (décision d'Anthony du 10/11/2026, qui
+//    remplace « cession − acomptes effectivement facturés » du lot C1). Plus d'acompte « caduc » : un acompte non facturé reste dû
+//    et se relie normalement, même après le solde.
 
 export type Ligne = {
   id?: string; show_id?: string; kind: string; amount?: number | string | null; pct?: number | string | null;
@@ -23,8 +25,6 @@ export const payable = (p: Ligne, mode: string | null | undefined) =>
 export const rangeeDansLeDrive = (p: Ligne) => p.kind !== 'artbo';
 /** Ligne qui peut être reliée à une facture faite depuis le devis Pennylane : acompte ou solde de production */
 export const relieAuDevis = (p: Ligne, mode: string | null | undefined) => !isBooking(mode) && ['acompte', 'solde'].includes(p.kind);
-/** Acompte caduc : jamais facturé alors que le solde de la date l'est (plus réclamé ; jamais relié automatiquement) */
-export const caduc = (p: Ligne, lignesDeLaDate: Ligne[]) => p.kind === 'acompte' && !emise(p) && lignesDeLaDate.some(l => l.kind === 'solde' && emise(l));
 /** Acompte ou solde relié depuis le devis : son montant est figé sur celui de la facture Pennylane (le montant réel de la
  *  facture fait référence — décision d'Anthony du 26/10, lot D1) QUE s'il n'est pas déjà émis (envoyé / payé / numéroté / lié)
  *  et sans montant saisi — une ligne émise ne change jamais de montant (A1, relecture C1). Sans cela, la base figerait le
@@ -48,17 +48,20 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 /** Montant HT prévu d'un acompte (saisi, ou % × cachet) */
 export const montantAcompte = (p: Ligne, fee: number) =>
   plein(p.amount) ? Number(p.amount) : plein(p.pct) ? Math.round(fee * Number(p.pct)) / 100 : null;
-/** Total HT des acomptes effectivement facturés d'une date */
-export const acomptesFactures = (lignes: Ligne[], fee: number) =>
-  r2(lignes.filter(p => p.kind === 'acompte' && emise(p)).reduce((t, p) => t + (montantAcompte(p, fee) || 0), 0));
-/** Montant HT attendu dans Pennylane pour une ligne pas encore reliée : acompte prévu ; solde = cession − acomptes facturés */
-export function montantAttendu(p: Ligne, fee: number, dejaFactures: number): number | null {
+/** Total HT de TOUS les acomptes d'une date, prévus et facturés (lignes hors calcul exclues par l'appelant) — décision du 10/11/2026.
+ *  Même règle : js/calc.js soldeDue, base payment_amount_for (migration v1.61.1). */
+export const acomptesDeLaDate = (lignes: Ligne[], fee: number) =>
+  r2(lignes.filter(p => p.kind === 'acompte').reduce((t, p) => t + (montantAcompte(p, fee) || 0), 0));
+/** Montant HT attendu dans Pennylane pour une ligne pas encore reliée : acompte prévu ; solde = cession − acomptes de la date */
+export function montantAttendu(p: Ligne, fee: number, acomptes: number): number | null {
   if (plein(p.amount)) return Number(p.amount);
-  if (p.kind === 'solde') return Math.max(0, r2(fee - dejaFactures));
+  if (p.kind === 'solde') return Math.max(0, r2(fee - acomptes));
   return montantAcompte(p, fee);
 }
 
 /**
+ * (Inchangé le 10/11/2026 : seul un acompte ÉMIS à la main est concerné ; un acompte prévu, lui, est une ligne candidate comme le
+ * solde — deux lignes du même montant ne sont jamais reliées seules, « à choisir ».)
  * Solde douteux (Monestier, 06/11/2026) : la facture Pennylane faite depuis le devis a le montant d'un acompte de la date DÉJÀ
  * compté comme facturé dans la Matrice sans être relié à Pennylane (numéro, envoi ou paiement noté à la main). Elle peut être cet
  * acompte : elle n'est jamais reliée automatiquement au solde — signalée « à rattacher » (le choix revient à l'utilisateur).

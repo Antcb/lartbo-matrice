@@ -1,6 +1,6 @@
 // Lot C1 (décisions d'Anthony du 26/10/2026) : règles métier booking / production.
-//  - Production : solde à facturer = cession − acomptes EFFECTIVEMENT facturés ; acompte prévu ≠ réduction du solde ;
-//    solde figé dès qu'il est émis ; acompte non facturé « caduc » quand le solde l'est (historique gardé).
+//  - Production : solde figé dès qu'il est émis. RÈGLE REMPLACÉE le 10/11/2026 (v1.61.1, tests/e2e/solde-prevu.spec.js) :
+//    solde à facturer = cession − TOUS les acomptes (prévus et facturés) ; plus d'acompte « caduc » (il reste dû).
 //  - Indicateurs ① reste à encaisser production, ② factures émises impayées production, ③ commissions booking à encaisser.
 //  - Commission de production : pas une facture ; seul son versement (date) la fige.
 import { test, expect } from '@playwright/test';
@@ -24,18 +24,18 @@ const calc = (page, fn, ...a) => page.evaluate(async ([f, args]) => {
   return c[f](...args.map(ref));
 }, [fn, a]);
 
-test('C1 solde : 10 000 € sans acompte facturé, 7 000 € après un acompte de 30 % facturé ; l’acompte prévu ne réduit pas le solde', async ({ page }) => {
+test('v1.61.1 solde : 7 000 € dès qu’un acompte de 30 % est prévu, inchangé quand il est facturé', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, { shows: [P('c-1', 10000)], show_payments: [
     { id: 'c1-a', show_id: 'c-1', kind: 'acompte', label: 'Acompte', pct: 30, sort: 1 },
     { id: 'c1-s', show_id: 'c-1', kind: 'solde', label: 'Solde', pct: 70, sort: 2 },
   ] });
-  expect(await calc(page, 'payAmount', '@show_payments:c1-s')).toBe(10000);
+  expect(await calc(page, 'payAmount', '@show_payments:c1-s')).toBe(7000);
   expect(await calc(page, 'acompteState', '@show_payments:c1-a')).toBe('prevu');
   expect(await calc(page, 'planAmount', '@show_payments:c1-s'), 'échéancier du contrat : 70 %').toBe(7000);
   let b = await calc(page, 'billingOf', '@shows:c-1');
   expect([b.ht, b.gap, b.plannedHt]).toEqual([10000, 0, 3000]);
-  // l'acompte est facturé (numéro) : le solde à facturer devient 7 000 €
+  // l'acompte est facturé (numéro) : le solde à facturer reste 7 000 €
   await page.evaluate(async () => (await import('./js/data.js')).save('show_payments', 'c1-a', { invoice_number: 'F-AB-1' }));
   expect(await calc(page, 'payAmount', '@show_payments:c1-s')).toBe(7000);
   expect(await calc(page, 'acompteState', '@show_payments:c1-a')).toBe('facture');
@@ -48,20 +48,22 @@ test('C1 solde : 10 000 € sans acompte facturé, 7 000 € après un acompte d
   expectClean(ctx);
 });
 
-test('C1 acompte caduc : solde intégral facturé → acompte non facturé caduc, hors indicateurs, historique gardé ; affichage dans l’onglet Factures', async ({ page }) => {
+test('v1.61.1 solde facturé avant l’acompte : solde figé à 50 %, l’acompte reste dû (« prévu », plus jamais « caduc »)', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, { shows: [P('c-2', 9000)], show_payments: [
     { id: 'c2-a', show_id: 'c-2', kind: 'acompte', label: 'Acompte prévu', pct: 50, sort: 1 },
     { id: 'c2-s', show_id: 'c-2', kind: 'solde', label: 'Solde', pct: 50, sort: 2 },
   ] });
   await page.evaluate(async () => (await import('./js/data.js')).save('show_payments', 'c2-s', { invoice_number: 'F-AB-S' }));
-  expect((await dbPay(page, 'c2-s')).amount, 'solde intégral').toBe(9000);
-  expect(await calc(page, 'acompteState', '@show_payments:c2-a')).toBe('caduc');
+  expect((await dbPay(page, 'c2-s')).amount, 'solde = cession − acompte prévu').toBe(4500);
+  expect(await calc(page, 'acompteState', '@show_payments:c2-a')).toBe('prevu');
   const f = await calc(page, 'financeOf', ['@shows:c-2']);
-  expect([f.resteProd, f.impayesProd], '① 9 000 restant, ② 9 000 émis impayés (jamais additionnés)').toEqual([9000, 9000]);
+  expect([f.resteProd, f.impayesProd], '① 9 000 restant, ② 4 500 émis impayés (jamais additionnés)').toEqual([9000, 4500]);
   expect(await dbPay(page, 'c2-a')).toMatchObject({ pct: 50, label: 'Acompte prévu' });
   await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.year = new Date().getFullYear(); S.openProd.add('c-2'); S.tab['prod:c-2'] = 'factures'; (await import('./js/app.js')).go('production'); });
-  await expect(page.locator('tr', { has: page.locator('[data-id="c2-a"][data-f="label"]') }).locator('.badge', { hasText: 'caduc' })).toBeVisible();
+  await expect(page.locator('tr', { has: page.locator('[data-id="c2-a"][data-f="label"]') }).locator('.badge', { hasText: 'prévu, non facturé' })).toBeVisible();
+  await expect(page.locator('.badge', { hasText: 'caduc' })).toHaveCount(0);
+  await expect(page.locator('.bill-total.ok')).toHaveCount(1);   // acompte 4 500 + solde 4 500 = cachet
   await expect(page.locator('input[data-id="c2-s"][data-f="pct"]')).toBeDisabled();   // solde émis : verrouillé
   expectClean(ctx);
 });
@@ -84,7 +86,7 @@ test('C1 indicateurs : ① reste à encaisser production, ② factures émises i
   const f = await calc(page, 'financeOf', ['@shows:i-1', '@shows:i-2', '@shows:i-3']);
   expect({ reste: f.resteProd, impayes: f.impayesProd, commissions: f.commissionsBooking, n: [f.factures, f.commissions] })
     .toEqual({ reste: 7000 + 5000, impayes: 2500, commissions: 1200, n: [1, 1] });
-  expect(await calc(page, 'payAmount', '@show_payments:i2-s'), 'solde i-2 = 5 000 − 2 500 facturés').toBe(2500);
+  expect(await calc(page, 'payAmount', '@show_payments:i2-s'), 'solde i-2 = 5 000 − 2 500 facturés − 500 prévus (v1.61.1)').toBe(2000);
   expect(await calc(page, 'tracked', '@show_payments:i3-s')).toBe(false);
   expect(await calc(page, 'tracked', '@show_payments:i3-c')).toBe(true);
   expectClean(ctx);
@@ -119,7 +121,7 @@ test('C1 commission de production : un numéro saisi ne la rend pas « émise »
   expectClean(ctx);
 });
 
-test('C1 compte dédié : l’acompte prévu n’est jamais compté deux fois (déjà compris dans le solde à facturer)', async ({ page }) => {
+test('v1.61.1 compte dédié : acompte prévu à recevoir + solde = la cession, jamais comptée deux fois', async ({ page }) => {
   const ctx = await openApp(page);
   const avant = await page.evaluate(async () => (await import('./js/budget.js')).accountOf('art-a').inTodo);
   await seed(page, { shows: [P('a-1', 10000)], show_payments: [
@@ -159,7 +161,7 @@ test('C1 relecture B2 : « Conditions » et mail gardent l’échéancier prévu
     { id: 'r2-s', show_id: 'r-2', kind: 'solde', label: 'Solde', pct: 70, sort: 2 },
   ] });
   expect(await calc(page, 'billPct', '@show_payments:r2-s'), '% au contrat').toBe(70);
-  expect(await calc(page, 'billedPct', '@show_payments:r2-s'), 'part réelle (onglet Factures)').toBe(100);
+  expect(await calc(page, 'billedPct', '@show_payments:r2-s'), 'part réelle (onglet Factures) = % au contrat (v1.61.1)').toBe(70);
   await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.year = new Date().getFullYear(); S.openProd.add('r-2'); S.tab['prod:r-2'] = 'conditions'; (await import('./js/app.js')).go('production'); });
   const steps = page.locator('.steps').filter({ hasText: 'Acomptes' });
   await expect(steps).toContainText('Acompte 30 %');
@@ -167,22 +169,26 @@ test('C1 relecture B2 : « Conditions » et mail gardent l’échéancier prévu
   expectClean(ctx);
 });
 
-test('C1 relecture B3 : un acompte caduc ne s’émet plus (jamais au-delà de la cession)', async ({ page }) => {
+test('v1.61.1 (remplace C1 B3) : après le solde, l’acompte non facturé s’émet encore ; il ne peut que se retirer (0 %)', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, { shows: [P('r-3', 10000)], show_payments: [
     { id: 'r3-a', show_id: 'r-3', kind: 'acompte', label: 'Acompte', pct: 30, sort: 1 },
     { id: 'r3-s', show_id: 'r-3', kind: 'solde', label: 'Solde', pct: 70, sort: 2 },
   ] });
   expect(await save(page, 'show_payments', 'r3-s', { invoice_number: 'F-S' })).toBeTruthy();
-  for (const f of ['invoice_number', 'sent_at', 'paid_at', 'pennylane_id']) {
-    expect(await save(page, 'show_payments', 'r3-a', { [f]: f === 'sent_at' || f === 'paid_at' ? `${Y}-11-02` : 'X-1' }), f).toBeFalsy();
-  }
-  const a = await dbPay(page, 'r3-a'); expect([a.invoice_number ?? null, a.sent_at ?? null, a.paid_at ?? null, a.pennylane_id ?? null]).toEqual([null, null, null, null]);
+  expect((await dbPay(page, 'r3-s')).amount, 'solde figé à 70 %').toBe(7000);
+  // % ou montant de l'acompte : refusés (le solde émis ne se réadapte plus) ; ajout d'un acompte : refusé ; libellé : libre
+  expect(await calc(page, 'changeBlocked', 'show_payments', 'r3-a', { pct: 20, amount: null })).toContain('peut seulement être retiré');
+  expect(await calc(page, 'changeBlocked', 'show_payments', 'r3-a', { amount: 2000, pct: 20 })).toContain('peut seulement être retiré');
+  expect(await calc(page, 'changeBlocked', 'show_payments', 'r3-a', { pct: 0, amount: null })).toBe('');
+  expect(await calc(page, 'changeBlocked', 'show_payments', 'r3-a', { amount: 0, pct: 0 })).toBe('');
+  expect(await save(page, 'show_payments', 'r3-a', { label: 'Acompte (à faire)' })).toBeTruthy();
+  // l'acompte reste dû : il s'émet (plus de refus « caduc »)
+  expect(await save(page, 'show_payments', 'r3-a', { invoice_number: 'F-A' })).toBeTruthy();
+  expect((await dbPay(page, 'r3-a')).amount, 'acompte figé à son émission').toBe(3000);
   const b = await calc(page, 'billingOf', '@shows:r-3');
   expect([b.ht, b.gap]).toEqual([10000, 0]);
   expect((await calc(page, 'financeOf', ['@shows:r-3'])).impayesProd).toBe(10000);
-  // libellé encore modifiable (historique)
-  expect(await save(page, 'show_payments', 'r3-a', { label: 'Acompte (caduc)' })).toBeTruthy();
   expect(ctx.errors).toEqual([]);
 });
 
@@ -231,7 +237,7 @@ test('C1 double comptage : deux lignes de solde sur une date → la cession n’
   expectClean(ctx);
 });
 
-test('C1 acompte caduc : protection limitée à la production (booking : factures de l’artiste, non concernées)', async ({ page }) => {
+test('C1 booking : un acompte de l’artiste après son solde n’est jamais bloqué (factures de l’artiste, non concernées)', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, { shows: [B('k-1', 5000)], show_payments: [
     { id: 'k1-a', show_id: 'k-1', kind: 'acompte', label: 'Acompte artiste', pct: 50, sort: 1 },
@@ -256,31 +262,36 @@ test('C1 plusieurs soldes : émettre le second solde ne le fige jamais à 0 €'
 const ouvrirFactures = (page, ids) => page.evaluate(async ids => { const { S } = await import('./js/state.js'); S.year = new Date().getFullYear();
   ids.forEach(i => { S.openProd.add(i); S.tab['prod:' + i] = 'factures'; }); (await import('./js/app.js')).go('production'); }, ids);
 
-test('C1 affichage : le solde affiche 10 000 € tant que l’acompte de 30 % n’est pas facturé (et non 7 000 €)', async ({ page }) => {
+test('v1.61.1 affichage : le solde affiche 70 % · 7 000 € dès que l’acompte de 30 % est prévu', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, { shows: [P('v-1', 10000, { venue: 'Affichage solde' })], show_payments: [
     { id: 'v1-a', show_id: 'v-1', kind: 'acompte', label: 'Acompte', pct: 30, sort: 1 },
     { id: 'v1-s', show_id: 'v-1', kind: 'solde', label: 'Solde', pct: 70, sort: 2 },
   ] });
   await ouvrirFactures(page, ['v-1']);
-  await expect(page.locator('input[data-id="v1-s"][data-f="amount"]')).toHaveAttribute('placeholder', '10000');
+  await expect(page.locator('input[data-id="v1-s"][data-f="amount"]')).toHaveAttribute('placeholder', '7000');
   await expect(page.locator('input[data-id="v1-a"][data-f="amount"]')).toHaveAttribute('placeholder', '3000');
-  await expect(page.locator('input[data-id="v1-s"][data-f="pct"]')).toHaveValue('100');
+  await expect(page.locator('input[data-id="v1-s"][data-f="pct"]')).toHaveValue('70');
   await expect(page.locator('tr', { has: page.locator('[data-id="v1-a"][data-f="label"]') }).locator('.badge', { hasText: 'prévu, non facturé' })).toBeVisible();
   expectClean(ctx);
 });
 
-test('C1 affichage : aucune alerte « factures 130 % » sur une date dont l’acompte est caduc', async ({ page }) => {
+test('v1.61.1 affichage : solde déjà facturé à 100 % (avant ce lot) + acompte prévu → « de trop » signalé, jusqu’au retrait à 0 %', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, { shows: [P('v-2', 5000, { venue: 'Affichage caduc' })], show_payments: [
     { id: 'v2-a', show_id: 'v-2', kind: 'acompte', label: 'Acompte', pct: 30, sort: 1 },
     { id: 'v2-s', show_id: 'v-2', kind: 'solde', label: 'Solde', pct: 70, amount: 5000, invoice_number: 'F-V2', sent_at: `${Y}-10-20`, sort: 2 },
   ] });
   await ouvrirFactures(page, ['v-2']);
-  await expect(page.locator('tr', { has: page.locator('[data-id="v2-a"][data-f="label"]') }).locator('.badge', { hasText: 'caduc' })).toBeVisible();
-  await expect(page.locator('.warn-badge', { hasText: /factures \d/ })).toHaveCount(0);
-  await expect(page.locator('.warn-badge', { hasText: 'de trop' })).toHaveCount(0);
+  await expect(page.locator('tr', { has: page.locator('[data-id="v2-a"][data-f="label"]') }).locator('.badge', { hasText: 'prévu, non facturé' })).toBeVisible();
+  await expect(page.locator('.warn-badge', { hasText: 'de trop' })).toHaveCount(1);   // 1 500 € de trop : anomalie visible, rien de corrigé
+  expect((await dbPay(page, 'v2-a')).pct, 'aucune donnée modifiée').toBe(30);
+  // retrait de l'acompte : 0 % dans l'onglet Factures (seul changement permis) → total = cachet
+  await page.locator('input[data-id="v2-a"][data-f="pct"]').fill('0');
+  await page.locator('input[data-id="v2-a"][data-f="pct"]').dispatchEvent('change');
   await expect(page.locator('.bill-total.ok')).toHaveCount(1);
+  expect((await dbPay(page, 'v2-a')).pct).toBe(0);
+  expect((await dbPay(page, 'v2-s')).amount, 'solde émis inchangé').toBe(5000);
   expectClean(ctx);
 });
 
