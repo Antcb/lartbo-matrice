@@ -23,7 +23,7 @@ export function etatBrevo(email, fiche, contactId, protegees = protegeesBrevo())
   if (fiche.statut === 'supprimee_brevo') return {alerte: true, recreer: true, texte: 'fiche supprimée dans Brevo : MATRICE ne la recrée pas d’elle-même'};
   if (fiche.statut === 'conflit') return {alerte: true, texte: fiche.detail || 'changement d’adresse en conflit : aucune fusion'};
   if (fiche.statut === 'detachee') return {texte: fiche.detail || 'conservée dans Brevo, plus gérée'};
-  if (fiche.statut === 'creation' || fiche.statut === 'suppression') return {texte: 'opération en cours…'};
+  if (['creation', 'renommage', 'suppression'].includes(fiche.statut)) return {texte: 'opération en cours…'};
   return {texte: fiche.origine === 'preexistante' ? 'gérée par MATRICE (fiche préexistante : jamais supprimée automatiquement)' : 'gérée par MATRICE'};
 }
 
@@ -32,7 +32,8 @@ export const brevoBlockHTML = c => c?.id ? `<div class="full" id="ct-brevo"></di
 export async function fillBrevoContact(c){
   const el = document.getElementById('ct-brevo'); if (!el || !c?.id) return;
   const list = mails(c), anciennes = [];
-  const {data, error} = await sb.from('brevo_fiches').select('email, statut, origine, detail, contact_id').or(`contact_id.eq.${c.id}${list.length ? `,email.in.(${list.map(e => `"${e.replace(/"/g, '')}"`).join(',')})` : ''}`);
+  const sures = list.filter(e => /^[^\s"\\,()]+$/.test(e));   // caractères qui casseraient le filtre : adresse lue par son contact seulement
+  const {data, error} = await sb.from('brevo_fiches').select('email, statut, origine, detail, contact_id').or(`contact_id.eq.${c.id}${sures.length ? `,email.in.(${sures.map(e => `"${e}"`).join(',')})` : ''}`);
   if (error){ el.innerHTML = `<p class="help">Brevo : état indisponible (${esc(error.message)}).</p>`; return; }
   const parMail = new Map((data || []).map(f => [f.email, f]));
   for (const f of data || []) if (!list.includes(f.email) && f.contact_id === c.id && ['active', 'conflit'].includes(f.statut)) anciennes.push(f);

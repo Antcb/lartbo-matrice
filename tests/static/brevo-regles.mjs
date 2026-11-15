@@ -79,7 +79,7 @@ function fauxRegistre(lignes = [], contacts = () => []) {
     lire: async (e) => (m.has(e) ? { ...m.get(e) } : null),
     changer: async (e, att, patch) => { const f = m.get(e); if (!f || !egal(f, att)) return false; Object.assign(f, patch); return true; },
     reserver: async (f) => { const x = m.get(f.email); if (!x) { m.set(f.email, { detail: null, ...f }); return true; } if (x.statut !== 'supprimee') return false; Object.assign(x, f); return true; },
-    renommer: async (a, n, id) => { const t = m.get(n); if (t && t.statut !== 'supprimee') return false; const f = m.get(a); if (!f || f.contact_id !== id) return false; m.delete(n); m.delete(a); m.set(n, { ...f, email: n }); return true; },
+    renommer: async (a, n, id) => { const t = m.get(n); if (t && t.statut !== 'supprimee') return false; const f = m.get(a); if (!f || f.contact_id !== id || !['active', 'conflit', 'detachee', 'renommage'].includes(f.statut)) return false; m.delete(n); m.delete(a); m.set(n, { ...f, email: n, statut: 'renommage' }); return true; },
     porteurs: async (emails) => { const r = new Map(); for (const e of emails) { const ids = contacts().filter((k) => [k.email, k.email_2].map((x) => String(x || '').trim().toLowerCase()).includes(e)).map((k) => k.id); if (ids.length) r.set(e, ids); } return r; },
     journal: async (e, id, action, detail) => { traces.push([e, id, action, detail]); },
   };
@@ -467,7 +467,8 @@ t('v1.64 règles 3 et 2 : contact supprimé = fiche MATRICE supprimée ; désabo
   assert.deepEqual([...x.b.base.keys()].sort(), ['b@x.invalid', 'c@x.invalid', 'd@x.invalid']);
   assert.deepEqual(x.b.appels.filter(a => a[0] === 'supprimer').map(a => a[1]), ['a@x.invalid']);
   assert.equal(x.r.m.get('a@x.invalid').statut, 'supprimee');
-  for (const e of ['b@x.invalid', 'c@x.invalid', 'd@x.invalid']) { assert.equal(x.r.m.get(e).statut, 'detachee'); assert.equal(x.r.m.get(e).contact_id, null); }
+  for (const e of ['b@x.invalid', 'c@x.invalid', 'd@x.invalid']) assert.equal(x.r.m.get(e).statut, 'detachee');
+  assert.equal(x.r.m.get('d@x.invalid').contact_id, null);   // désabonnées : gardent leur contact et emplacement (reprise sans nouvelle fiche)
   assert.ok(x.r.traces.some(j => j[0] === 'a@x.invalid' && j[2] === 'supprimee'));
   assert.equal(desabonnee('pas du json'), true, 'réponse illisible : jamais de suppression');
 });
@@ -554,7 +555,7 @@ t('v1.64 règles 8 et 10 : rien ne remonte de Brevo vers MATRICE ; la prospectio
   }
 });
 t('v1.64 SQL : registre amorcé sans rien supprimer ; contact supprimé relayé ; recréation réservée à l’équipe', () => {
-  const sql = readFileSync(new URL('../../supabase/migrations/2026-11-16_v1.64_brevo_reference.sql', import.meta.url), 'utf8');
+  const sql = readFileSync(new URL('../../supabase/migrations/2026-11-16_v1.64.0_brevo_reference.sql', import.meta.url), 'utf8');
   const code = sql.replace(/--.*$/gm, '');
   assert.doesNotMatch(code, /\bdrop table|\bdelete from|\btruncate|alter table public\.contacts/i);
   assert.match(code, /create trigger brevo_contact_supprime after delete on public\.contacts/);
@@ -563,6 +564,48 @@ t('v1.64 SQL : registre amorcé sans rien supprimer ; contact supprimé relayé 
   assert.match(code, /function public\.brevo_recreer[\s\S]*?if not public\.is_team\(\)/);
   assert.match(code, /grant execute on function public\.brevo_porteurs\(text\[\]\) to service_role;/);
   assert.doesNotMatch(code, /insert into public\.settings \(key, value\) values \('brevo_adoption'/, 'adoption jamais activée par la migration');
+});
+
+// ───────────── relecture indépendante v1.64 (16/11) : 3 bloquants corrigés ─────────────
+t('relecture B1 : adresse mal saisie = rien supprimé ; corrigée ensuite = MÊME fiche renommée (pas de suppression puis création)', async () => {
+  const x = env({ 'lea@x.invalid': { listIds: [7], emailBlacklisted: true } }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
+  const r = await x.run(C({ email: 'lea@nouveau' }));
+  assert.deepEqual(r.removed, []); assert.deepEqual(ecritures(x.b), []); assert.match(x.r.m.get('lea@x.invalid').detail, /non valide/);
+  const r2 = await x.run(C({ email: 'lea@nouveau.fr' }));
+  assert.deepEqual(r2.renamed, ['lea@nouveau.fr']); assert.deepEqual([...x.b.base.keys()], ['lea@nouveau.fr']);
+  assert.equal(x.b.base.get('lea@nouveau.fr').emailBlacklisted, true);
+});
+t('relecture B1 : adresse vidée puis nouvelle adresse (deux enregistrements) — désabonnée : la fiche gardée est reprise, jamais de nouvelle fiche inscrite', async () => {
+  const x = env({ 'lea@x.invalid': { listIds: [], listUnsubscribed: [7] } }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
+  await x.run(C({ email: null, email_2: 'perso@x.invalid' }));
+  assert.equal(x.b.base.has('lea@x.invalid'), true); assert.equal(x.r.m.get('lea@x.invalid').statut, 'detachee');
+  await x.run(C({ email: 'lea.nouvelle@x.invalid', email_2: 'perso@x.invalid' }));
+  assert.equal(x.b.base.has('lea.nouvelle@x.invalid'), true); assert.deepEqual(x.b.base.get('lea.nouvelle@x.invalid').listUnsubscribed, [7]);
+  assert.deepEqual(x.b.appels.filter(a => a[0] === 'creer').map(a => a[1]), ['perso@x.invalid'], 'seule la vraie nouvelle adresse est créée');
+  assert.equal(x.r.m.get('lea.nouvelle@x.invalid').statut, 'detachee');
+});
+t('relecture B2 : changement vers une adresse partagée ou protégée = conflit, l’ancienne fiche n’est jamais supprimée', async () => {
+  const autre = { id: 'k2', email: 'commune@x.invalid', first_name: 'A', last_name: 'B', display_name: 'A B' };
+  const x = env({ 'lea@x.invalid': {} }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }], [autre]);
+  const r = await x.run(C({ email: 'commune@x.invalid' }));
+  assert.deepEqual(r.removed, []); assert.deepEqual(r.conflicts, ['lea@x.invalid']); assert.equal(x.b.base.has('lea@x.invalid'), true);
+  assert.deepEqual(ecritures(x.b), []);
+  const y = env({ 'lea@x.invalid': {} }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
+  await y.run(C({ email: 'anthony@lartboristerie.com' }), { protegees: listeProtegees('anthony@lartboristerie.com') });
+  assert.equal(y.b.base.has('lea@x.invalid'), true); assert.deepEqual(ecritures(y.b), []); assert.equal(y.r.m.get('lea@x.invalid').statut, 'conflit');
+});
+t('relecture B3 : synchronisation pendant un renommage = opération en cours respectée, jamais « supprimée dans Brevo » à tort', async () => {
+  const x = env({ 'lea@x.invalid': {} }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
+  const modif = x.b.client.modifier; let lache; const verrou = new Promise(r => { lache = r; });
+  x.b.client.modifier = async (e, corps) => { if (corps.attributes.EMAIL) await verrou; return modif(e, corps); };
+  const c = C({ email: 'lea.neuf@x.invalid' });
+  const p1 = x.run(c);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  assert.equal(x.r.m.get('lea.neuf@x.invalid').statut, 'renommage');
+  const r2 = await x.run(c);   // deuxième synchronisation (rattachements) pendant le PUT
+  assert.deepEqual(r2.deletedInBrevo, []); assert.equal(x.b.appels.filter(a => a[0] === 'creer').length, 0);
+  lache(); await p1;
+  assert.equal(x.r.m.get('lea.neuf@x.invalid').statut, 'active'); assert.deepEqual([...x.b.base.keys()], ['lea.neuf@x.invalid']);
 });
 
 let ko = 0;

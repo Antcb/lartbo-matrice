@@ -144,13 +144,13 @@ export type ClientBrevo = {
  * - origine « matrice » : fiche créée par MATRICE (une par une ou import en masse) : mise à jour, renommage, suppression ;
  * - origine « preexistante » : fiche qui existait dans Brevo, adoptée (opération d'adoption distincte, autorisée par Anthony) :
  *   mise à jour et renommage, JAMAIS de suppression automatique.
- * Statuts : creation / suppression (opération en cours, réservée), active, conflit (changement d'adresse vers une adresse déjà
+ * Statuts : creation / renommage / suppression (opération en cours, réservée : aucune autre synchronisation n'y touche), active, conflit (changement d'adresse vers une adresse déjà
  * présente dans Brevo : aucune fusion), supprimee_brevo (fiche supprimée à la main dans Brevo : jamais recréée automatiquement,
  * même par l'import en masse), detachee (plus liée à un contact, conservée dans Brevo), supprimee (supprimée par MATRICE).
  * Toutes les écritures du registre sont conditionnelles (« si l'état est encore … ») : deux synchronisations simultanées du même
  * contact ne font jamais deux fois la même opération dans Brevo.
  */
-export type Statut = "creation" | "active" | "conflit" | "supprimee_brevo" | "detachee" | "suppression" | "supprimee";
+export type Statut = "creation" | "renommage" | "active" | "conflit" | "supprimee_brevo" | "detachee" | "suppression" | "supprimee";
 export type Fiche = { email: string; contact_id: string | null; champ: "email" | "email_2" | null; origine: "matrice" | "preexistante"; statut: Statut; detail?: string | null };
 export type Registre = {
   deContact(contactId: string): Promise<Fiche[]>;
@@ -159,7 +159,7 @@ export type Registre = {
   changer(email: string, attendu: Partial<Fiche>, patch: Partial<Fiche>): Promise<boolean>;
   /** Réserve une adresse (nouvelle ligne, ou reprise d'une ligne « supprimee ») ; faux si elle est déjà tenue */
   reserver(f: Fiche): Promise<boolean>;
-  /** Changement d'adresse au registre (conditionnel) ; faux si la nouvelle adresse est déjà tenue */
+  /** Changement d'adresse au registre (conditionnel), statut « renommage » posé dans la même écriture ; faux si la nouvelle adresse est déjà tenue */
   renommer(ancien: string, nouveau: string, contactId: string): Promise<boolean>;
   /** Contacts MATRICE qui portent chaque adresse (mail 1 ou mail 2) */
   porteurs(emails: string[]): Promise<Map<string, string[]>>;
@@ -209,7 +209,7 @@ export async function supprimerFiche(o: Opts, f: Fiche): Promise<{ action: strin
     return { action: "absente" };
   }
   if (desabonnee(await g.text())) {
-    if (await registre.changer(f.email, { statut: f.statut }, { statut: "detachee", contact_id: null, champ: null, detail: "Désabonnée : conservée dans Brevo" }))
+    if (await registre.changer(f.email, { statut: f.statut }, { statut: "detachee", detail: "Désabonnée : conservée dans Brevo" }))
       await registre.journal(f.email, f.contact_id, "detachee", "désabonnée, conservée dans Brevo");
     return { action: "conservee_desabonnee" };
   }
@@ -263,36 +263,53 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
   const intouchable = (e: string) => protegees.has(e) || !autorise(e);
   const consommees = new Set<string>();
 
-  // 1. adresses que le contact n'a plus
-  for (const f of reg.filter((f) => !mails.some((m) => m.e === f.email))) {
+  // 1. adresses que le contact n'a plus (fiches gérées), puis fiches désabonnées détachées de ce contact (reprises si son
+  //    emplacement reçoit une nouvelle adresse : même fiche, le désabonnement suit, jamais de nouvelle fiche inscrite)
+  const detachees = (await registre.deContact(c.id)).filter((f) => f.statut === "detachee" && f.champ && !mails.some((m) => m.e === f.email));
+  const sources = [...reg.filter((f) => !mails.some((m) => m.e === f.email)), ...detachees];
+  for (const f of sources) {
+    const active = ACTIVES.includes(f.statut);
     if (intouchable(f.email)) { protectedSkip.push(f.email); continue; }
-    if (partagee(f.email)) { await quitter(p, f, autresQue(f.email)); continue; }
-    const nouveau = mails.find((m) => m.champ === f.champ && !reg.some((x) => x.email === m.e));
-    if (nouveau && !intouchable(nouveau.e) && !partagee(nouveau.e)) {
+    if (active && partagee(f.email)) { await quitter(p, f, autresQue(f.email)); continue; }
+    // emplacement rempli avec une adresse NON VALIDE (faute de frappe) : rien n'est supprimé ni créé en attendant une adresse correcte
+    if (f.champ && String(c[f.champ] || "").trim() && !mails.some((m) => m.champ === f.champ)) {
+      await registre.changer(f.email, { statut: f.statut }, { detail: "Adresse saisie non valide : en attente d’une adresse correcte" });
+      protectedSkip.push(f.email); continue;
+    }
+    const nouveau = mails.find((m) => m.champ === f.champ && !consommees.has(m.e) && !reg.some((x) => x.email === m.e));
+    if (nouveau) {
       consommees.add(nouveau.e);
-      const tenue = await registre.lire(nouveau.e);
-      if (tenue && tenue.statut !== "supprimee") { await registre.changer(f.email, { statut: f.statut }, { statut: "conflit", detail: `Nouvelle adresse ${nouveau.e} déjà connue de MATRICE : aucune fusion` }); conflicts.push(f.email); continue; }
-      const g = await client.lire(nouveau.e);
-      if (!g.ok && g.status !== 404) { errors.push(await err(nouveau.e, g)); continue; }
-      if (g.ok) {
-        if (await registre.changer(f.email, { statut: f.statut }, { statut: "conflit", detail: `Nouvelle adresse ${nouveau.e} déjà présente dans Brevo : aucune fusion, à traiter à la main` }))
+      // nouvelle adresse protégée, partagée ou hors essai : aucune opération, jamais de suppression de l'ancienne fiche
+      if (intouchable(nouveau.e) || partagee(nouveau.e)) {
+        if (await registre.changer(f.email, { statut: f.statut }, { ...(active ? { statut: "conflit" as const } : {}), detail: `Nouvelle adresse ${nouveau.e} protégée ou partagée : aucune opération` }))
           await registre.journal(f.email, c.id, "conflit", nouveau.e);
         conflicts.push(f.email); continue;
       }
-      if (!await registre.renommer(f.email, nouveau.e, c.id)) continue;   // déjà traité par une autre synchronisation
+      const tenue = await registre.lire(nouveau.e);
+      if (tenue && tenue.statut !== "supprimee") { await registre.changer(f.email, { statut: f.statut }, { ...(active ? { statut: "conflit" as const } : {}), detail: `Nouvelle adresse ${nouveau.e} déjà connue de MATRICE : aucune fusion` }); conflicts.push(f.email); continue; }
+      const g = await client.lire(nouveau.e);
+      if (!g.ok && g.status !== 404) { errors.push(await err(nouveau.e, g)); continue; }
+      if (g.ok) {
+        if (await registre.changer(f.email, { statut: f.statut }, { ...(active ? { statut: "conflit" as const } : {}), detail: `Nouvelle adresse ${nouveau.e} déjà présente dans Brevo : aucune fusion, à traiter à la main` }))
+          await registre.journal(f.email, c.id, "conflit", nouveau.e);
+        conflicts.push(f.email); continue;
+      }
+      // renommage réservé au registre (statut « renommage » : opération en cours, aucune autre synchronisation n'y touche)
+      if (!await registre.renommer(f.email, nouveau.e, c.id)) continue;
       const r = await client.modifier(f.email, { attributes: { ...aJour, EMAIL: nouveau.e } });
       if (!r.ok) {
         const e = await err(f.email, r);
         await registre.renommer(nouveau.e, f.email, c.id);
         // ancienne fiche supprimée à la main dans Brevo : jamais recréée ; la nouvelle adresse est traitée comme une adresse nouvelle (étape 2)
-        if (r.status === 404) { await registre.changer(f.email, { contact_id: c.id }, { statut: "supprimee_brevo", detail: "Fiche supprimée dans Brevo : non recréée" }); deletedInBrevo.push(f.email); consommees.delete(nouveau.e); }
-        else { await registre.changer(f.email, { contact_id: c.id }, { detail: e }); errors.push(e); }
+        if (r.status === 404) { await registre.changer(f.email, { statut: "renommage" }, { statut: "supprimee_brevo", detail: "Fiche supprimée dans Brevo : non recréée" }); deletedInBrevo.push(f.email); consommees.delete(nouveau.e); }
+        else { await registre.changer(f.email, { statut: "renommage" }, { statut: f.statut, detail: e }); errors.push(e); }
         continue;
       }
-      await registre.changer(nouveau.e, { contact_id: c.id }, { statut: "active", champ: nouveau.champ, detail: null });
+      await registre.changer(nouveau.e, { statut: "renommage" }, { statut: active ? "active" : "detachee", champ: nouveau.champ, detail: active ? null : "Désabonnée : conservée dans Brevo" });
       await registre.journal(nouveau.e, c.id, "renommee", `ancienne adresse ${f.email}`);
       renamed.push(nouveau.e); done.push(nouveau.e); continue;
     }
+    if (!active) continue;   // fiche désabonnée détachée sans nouvelle adresse : rien
     const q = await quitter(p, f, []);
     if (q.error) errors.push(q.error); else removed.push(f.email);
   }
