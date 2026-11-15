@@ -1,7 +1,8 @@
 # Essai réel — Brevo v1.64.0 (MATRICE fait référence)
 
 Préparé le 16/11/2026. **À lancer seulement avec l'accord d'Anthony** (déploiement en production en mode essai).
-Adresses d'essai (boîte Gmail d'Anthony, à confirmer par lui) : `colbe.anthony+essai1@gmail.com`, `colbe.anthony+essai2@gmail.com`.
+Adresses d'essai validées par Anthony le 16/11 : `colbe.anthony@gmail.com` (déjà dans Brevo, liste 2 : sert au cas « conflit », jamais modifiée) et `colbe.anthony+essai@gmail.com` (absente de Brevo).
+Lieu : **projet de TEST** (aucun déploiement en production), avec la vraie clé Brevo et la liste blanche ci-dessous ; aucune liste donnée à la création (pas d'inscription à « Live France »).
 `anthony@lartboristerie.com` est protégée : jamais utilisée pour l'essai.
 
 ## Garde-fous pendant tout l'essai
@@ -11,7 +12,7 @@ Adresses d'essai (boîte Gmail d'Anthony, à confirmer par lui) : `colbe.anthony
 
 ## Déploiement (dans cet ordre, avec accord)
 1. Migration `supabase/migrations/2026-11-16_v1.64.0_brevo_reference.sql` (une transaction ; rien supprimé ni modifié dans les données existantes).
-2. `brevo_essai_emails` = `colbe.anthony+essai1@gmail.com, colbe.anthony+essai2@gmail.com`.
+2. `brevo_essai_emails` = `colbe.anthony@gmail.com, colbe.anthony+essai@gmail.com`.
 3. Fonction `brevo-sync` v1.64.0 puis `backup-export` (tables `brevo_fiches`, `brevo_journal`).
 4. Publication de l'application v1.64.0 (PR, tests au vert, « Rebase and merge »).
 

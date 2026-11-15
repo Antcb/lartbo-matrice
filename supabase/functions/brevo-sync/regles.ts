@@ -267,6 +267,21 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
 
   // 1. adresses que le contact n'a plus (fiches gérées), puis fiches désabonnées détachées de ce contact (reprises si son
   //    emplacement reçoit une nouvelle adresse : même fiche, le désabonnement suit, jamais de nouvelle fiche inscrite)
+  // décision d'Anthony du 16/11 : fiche supprimée volontairement dans Brevo = jamais recréée, MÊME si l'adresse du contact change
+  // ensuite → la nouvelle adresse du même emplacement hérite du blocage (non créée ; « Recréer dans Brevo » pour la lever)
+  const bloquer = async (ancienne: string, nouveau: { e: string; champ: "email" | "email_2" }) => {
+    if (!await registre.reserver({ email: nouveau.e, contact_id: c.id, champ: nouveau.champ, origine: "matrice", statut: "supprimee_brevo",
+      detail: `Ancienne fiche ${ancienne} supprimée dans Brevo : nouvelle adresse non créée (« Recréer dans Brevo » pour la créer)` })) return false;
+    await registre.changer(ancienne, { statut: "supprimee_brevo" }, { champ: null });
+    await registre.journal(nouveau.e, c.id, "bloquee", `ancienne fiche ${ancienne} supprimée dans Brevo`);
+    deletedInBrevo.push(nouveau.e); return true;
+  };
+  for (const f of toutes.filter((x) => x.statut === "supprimee_brevo" && x.champ && !mails.some((m) => m.e === x.email))) {
+    if (String(c[f.champ!] || "").trim() && !mails.some((m) => m.champ === f.champ)) continue;   // adresse non valide : en attente
+    const nouveau = mails.find((m) => m.champ === f.champ && !reg.some((x) => x.email === m.e));
+    if (!nouveau || intouchable(nouveau.e) || partagee(nouveau.e) || (await registre.lire(nouveau.e))) continue;
+    consommees.add(nouveau.e); await bloquer(f.email, nouveau);
+  }
   const sources = [...reg.filter((f) => !mails.some((m) => m.e === f.email)), ...detachees];
   for (const f of sources) {
     const active = ACTIVES.includes(f.statut);
@@ -305,8 +320,8 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
       if (!r.ok) {
         const e = await err(f.email, r);
         await registre.renommer(nouveau.e, f.email, c.id);
-        // ancienne fiche supprimée à la main dans Brevo : jamais recréée ; la nouvelle adresse est traitée comme une adresse nouvelle (étape 2)
-        if (r.status === 404) { await registre.changer(f.email, { statut: "renommage" }, { statut: "supprimee_brevo", detail: "Fiche supprimée dans Brevo : non recréée" }); deletedInBrevo.push(f.email); consommees.delete(nouveau.e); }
+        // ancienne fiche supprimée à la main dans Brevo : jamais recréée, et la nouvelle adresse hérite du blocage (décision du 16/11)
+        if (r.status === 404) { await registre.changer(f.email, { statut: "renommage" }, { statut: "supprimee_brevo", detail: "Fiche supprimée dans Brevo : non recréée" }); deletedInBrevo.push(f.email); await bloquer(f.email, nouveau); }
         else { await registre.changer(f.email, { statut: "renommage" }, { statut: f.statut, detail: e }); errors.push(e); }
         continue;
       }
