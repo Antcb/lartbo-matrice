@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.63.3 — 15/11/2026
+- Sauvegarde JSON : lecture de l'état de synchronisation de la messagerie (sans colonne id), qui aurait arrêté tout l'export
+
+
 ## 1.63.2 — 15/11/2026
 - Messagerie : au transfert, les PDF joints depuis Apple Mail sont bien listés (ils étaient déjà envoyés)
 

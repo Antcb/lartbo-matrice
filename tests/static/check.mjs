@@ -204,6 +204,15 @@ for (const f of JS.filter(p => !p.endsWith('js/utils.js'))) {
   const app = list(readFileSync(join(ROOT, 'js/state.js'), 'utf8')), backup = list(readFileSync(join(ROOT, 'supabase/functions/backup-export/index.ts'), 'utf8'));
   if (!app.length || !backup.length) fail('sauvegarde', 'liste des tables introuvable (js/state.js ou backup-export)');
   for (const t of app) if (!backup.includes(t)) fail('sauvegarde', `table « ${t} » chargée par l'application mais absente de l'export de sauvegarde (supabase/functions/backup-export)`);
+  // (v1.63.3, relecture indépendante du 15/11) tri page par page : une table sans colonne « id » doit avoir sa clé dans ORDER,
+  // sinon la lecture échoue (« column … id does not exist ») et TOUTE la sauvegarde JSON s'arrête
+  const bsrc = readFileSync(join(ROOT, 'supabase/functions/backup-export/index.ts'), 'utf8');
+  const order = new Set([...(bsrc.match(/ORDER[^=]*=\s*\{([^}]*)\}/)?.[1] || '').matchAll(/([a-z_]+)\s*:/g)].map(m => m[1]));
+  const sql = walk(join(ROOT, 'supabase'), f => f.endsWith('.sql')).map(f => readFileSync(f, 'utf8')).join('\n');
+  for (const t of backup.filter(t => !order.has(t))) {
+    const m = sql.match(new RegExp(`create table (?:if not exists )?(?:public\\.)?${t}\\s*\\(([\\s\\S]*?)\\n\\);`, 'i'));
+    if (m && !/(^|\n)\s*id\s/i.test(m[1])) fail('sauvegarde', `table « ${t} » sans colonne id : ajoute sa clé de tri dans ORDER (supabase/functions/backup-export)`);
+  }
 }
 
 // 11. Renommages Drive (décision d'Anthony du 07/11/2026) : le tableau de renommage du script Google ne coche JAMAIS une proposition
