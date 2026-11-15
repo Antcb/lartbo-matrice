@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.63.2 — 15/11/2026
+- Messagerie : au transfert, les PDF joints depuis Apple Mail sont bien listés (ils étaient déjà envoyés)
+
+
 ## 1.63.1 — 15/11/2026
 - Messagerie : ouverture d'une conversation et pièces jointes reçues (le service Gmail rend des octets, pas du base64) ; tests de la messagerie, des délais, du solde et des agendas ajoutés au contrôle GitHub
 
