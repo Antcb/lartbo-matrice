@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.63.1 — 15/11/2026
+- Messagerie : ouverture d'une conversation et pièces jointes reçues (le service Gmail rend des octets, pas du base64) ; tests de la messagerie, des délais, du solde et des agendas ajoutés au contrôle GitHub
+
+
 ## 1.63.0 — 15/11/2026
 - Messagerie intégrée de la boîte anthony@ (lecture des conversations complètes, réponse, transfert, brouillons, modèles et signatures, pièces jointes des projets, rattachement aux structures et suivis, libellés Gmail, relances suspendues sur une vraie réponse) ; Brevo : rattachements par structure, champ FONCTIONS, exclusions automatiques et manuelles distinctes, désabonnements préservés
 

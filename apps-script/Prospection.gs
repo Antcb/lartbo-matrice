@@ -21,7 +21,7 @@
  * Ordre de bascule : poser SECRET_PROSPECTION AVANT de redéployer ce code (sinon tout est refusé jusqu'à ce qu'elle soit posée).
  */
 /** Version du code (renvoyée par « ping », pour vérifier le redéploiement) */
-var SCRIPT_VERSION = 'v1.63.0';
+var SCRIPT_VERSION = 'v1.63.1';
 // (v1.61.1, réserve sécurité du 10/11/2026) code DÉDIÉ : jamais de repli sur WEBHOOK_SECRET (code commun avec production@)
 var SECRET = PropertiesService.getScriptProperties().getProperty('SECRET_PROSPECTION') || '';
 
@@ -431,7 +431,13 @@ var META_FIELDS_ = 'id,messages(id,threadId,labelIds,internalDate,snippet,payloa
   + 'parts(mimeType,filename,headers,body(size,attachmentId),parts(mimeType,filename,headers,body(size,attachmentId),parts(mimeType,filename,headers,body(size,attachmentId))))))';
 function threadLight_(id) { return Gmail.Users.Threads.get('me', id, { format: 'full', fields: META_FIELDS_ }); }
 function me_() { return Session.getEffectiveUser().getEmail().toLowerCase(); }
-function b64dec_(data) { return Utilities.newBlob(Utilities.base64DecodeWebSafe(data)).getDataAsString('UTF-8'); }
+/** (v1.63.1) Données Gmail : le service avancé Gmail rend des OCTETS (tableau), pas du base64 ; base64 « web safe » accepté aussi (bourrage ajouté) */
+function bytes_(data) {
+  if (typeof data !== 'string') return data || [];
+  var s = data.replace(/\s/g, ''); while (s.length % 4) s += '=';
+  return Utilities.base64DecodeWebSafe(s);
+}
+function b64dec_(data) { return Utilities.newBlob(bytes_(data)).getDataAsString('UTF-8'); }
 
 /** Parcours des parties d'un message : corps HTML / texte et pièces jointes (nom, taille, type, identifiant) */
 function parts_(payload, acc) {
@@ -602,7 +608,7 @@ function strictBlobs_(list) {
 function attachment_(b) {
   var a = Gmail.Users.Messages.Attachments.get('me', String(b.message_id), String(b.attachment_id));
   if ((a.size || 0) > 20 * 1024 * 1024) throw new Error('Pièce jointe trop lourde pour être reprise ici (plus de 20 Mo)');
-  return { ok: true, size: a.size, data: a.data };   // base64 « web safe »
+  return { ok: true, size: a.size, data: Utilities.base64EncodeWebSafe(bytes_(a.data)) };   // base64 « web safe » (v1.63.1 : le service avancé rend des octets)
 }
 
 /**
