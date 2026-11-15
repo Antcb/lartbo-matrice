@@ -16,9 +16,10 @@ const TABLES = ['app_users', 'settings', 'partners', 'projects', 'structures', '
   'show_deletions',   // journal des suppressions de dates (v1.60.3) : à déployer APRÈS la migration v1.60.3 (sinon la sauvegarde échoue)
   'artist_calendars', 'artist_calendar_events',   // agendas des artistes (v1.62) : à déployer APRÈS la migration v1.62 des calendriers
   'mail_threads', 'mail_messages', 'mail_sync_state',   // messagerie (v1.61) : à déployer APRÈS la migration v1.61
-  'prospection_memoire'];   // liste d'opposition des adresses exclues de la prospection (lot Brevo, migration 2026-11-08_brevo_rattachements) : à déployer APRÈS cette migration (sinon la sauvegarde échoue)
+  'prospection_memoire',   // liste d'opposition des adresses exclues de la prospection (lot Brevo, migration 2026-11-08_brevo_rattachements) : à déployer APRÈS cette migration (sinon la sauvegarde échoue)
+  'brevo_fiches', 'brevo_journal'];   // registre et journal Brevo (v1.64) : à déployer APRÈS la migration v1.64 (sinon la sauvegarde échoue)
 // colonne(s) de tri pour lire les grandes tables page par page
-const ORDER: Record<string, string[]> = { app_users: ['email'], settings: ['key'], contact_structures: ['contact_id', 'structure_id'], prospection_memoire: ['email'], mail_sync_state: ['mailbox'] };
+const ORDER: Record<string, string[]> = { app_users: ['email'], settings: ['key'], contact_structures: ['contact_id', 'structure_id'], prospection_memoire: ['email'], mail_sync_state: ['mailbox'], brevo_fiches: ['email'] };
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });
 
 async function all(table: string) {

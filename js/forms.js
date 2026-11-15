@@ -24,6 +24,7 @@ import { cancelAutoRelances, closeNoAnswer, deleteProspect, prospectDeleteAsk } 
 import { afterFeeChange, askConfirmation, becameConfirmed } from './confirm-flow.js';
 import { spectFields, spectValue } from './budget-template.js';
 import { deptOf } from './contract.js';
+import { brevoBlockHTML, fillBrevoContact } from './brevo.js';
 
 const team = () => CFG.TEAM.map(e=>[e, TEAM_NAMES[e]||e]);
 const activeProjects = keep => projectOptions(true, keep).map(x=>[x.id, x.name]);
@@ -453,7 +454,7 @@ export function editContact(id, prefill={}){
   const links = id ? linksOfContact(id).map(s=>s.id) : (prefill._structures || []);
   const brevo = !id ? '' : c.brevo_error ? `<p class="help full" style="color:var(--danger)">Brevo : ${esc(c.brevo_error)}</p>`
     : c.brevo_at ? `<p class="help full">Dans Brevo (mis à jour le ${fmtDate(c.brevo_at)}).</p>` : '';
-  return openModal({ title: id ? c.display_name : 'Nouveau contact', values: {...c, _structures: links}, extra: brevo + prospectionBlock(c),
+  const out = openModal({ title: id ? c.display_name : 'Nouveau contact', values: {...c, _structures: links}, extra: brevo + brevoBlockHTML(c) + prospectionBlock(c),
     fields: [
       {k:'first_name', label:'Prénom'}, {k:'last_name', label:'Nom'},
       {k:'_structures', label:'Structures', type:'links', source:'structures', create:true, full:true},
@@ -461,7 +462,7 @@ export function editContact(id, prefill={}){
       ...CONTACT_COORDS,
       {k:'notes', label:'Notes', type:'textarea', full:true},
     ],
-    deleteAsk: () => ({title: 'Supprimer le contact ?', text: `Supprimer le contact « ${c.display_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || 'sans nom'} » et ses liens avec les structures ? Les dates, suivis et échanges qui le citaient restent, sans contact. Il n’est pas retiré de Brevo.${c.prospection_exclue_at || c.hors_prospection_at ? ' Il est exclu de la prospection : cette exclusion reste attachée à ses adresses, passe aux autres contacts qui les portent et revient si un contact est recréé avec l’une d’elles (seul « Remettre en prospection » la lève).' : ''}`,
+    deleteAsk: () => ({title: 'Supprimer le contact ?', text: `Supprimer le contact « ${c.display_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || 'sans nom'} » et ses liens avec les structures ? Les dates, suivis et échanges qui le citaient restent, sans contact. Brevo : une fiche créée par MATRICE est supprimée ; une fiche désabonnée, préexistante, protégée ou partagée avec un autre contact est conservée.${c.prospection_exclue_at || c.hors_prospection_at ? ' Il est exclu de la prospection : cette exclusion reste attachée à ses adresses, passe aux autres contacts qui les portent et revient si un contact est recréé avec l’une d’elles (seul « Remettre en prospection » la lève).' : ''}`,
       actions: [{value: 'del', label: 'Supprimer le contact', danger: true}]}),
     onDelete: id ? () => remove('contacts', id) : null,
     onSave: async v => {
@@ -480,6 +481,8 @@ export function editContact(id, prefill={}){
       return row;
     }
   });
+  if (id) fillBrevoContact(c);   // état Brevo de chaque adresse (registre, v1.64), lu après l'ouverture
+  return out;
 }
 
 /* ------------------------------------------------------------------ Structures */

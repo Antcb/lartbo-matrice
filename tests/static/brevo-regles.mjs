@@ -3,7 +3,7 @@
 // Lancé par « npm test » (node --experimental-strip-types). Module testé : supabase/functions/brevo-sync/regles.ts
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { aAjouter, attributes, fonctionsParStructure, fonctionsTexte, horsProspection, lireReglages, listeEssai, mailsAutorises, names, onlyInactive, syncContact } from '../../supabase/functions/brevo-sync/regles.ts';
+import { aAjouter, attributes, desabonnee, fonctionsParStructure, fonctionsTexte, horsProspection, lireReglages, listeEssai, listeProtegees, mailsAutorises, names, onlyInactive, supprimerContact, syncContact as syncReel } from '../../supabase/functions/brevo-sync/regles.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -44,10 +44,16 @@ function fauxBrevo(init = {}) {
   const rep = (status, txt = '') => ({ ok: status < 300, status, text: async () => txt });
   const client = {
     lire: async (email) => { appels.push(['lire', email]); return base.has(email) ? rep(200, JSON.stringify(base.get(email))) : rep(404, 'not found'); },
+    // PUT /contacts/{email} : seuls les champs envoyés changent ; EMAIL renomme LA MÊME fiche (listes, désabonnement gardés)
     modifier: async (email, corps) => {
       appels.push(['modifier', email, structuredClone(corps)]);
       if (!base.has(email)) return rep(404, 'not found');
-      Object.assign(base.get(email).attributes, corps.attributes);
+      const { EMAIL, ...reste } = corps.attributes;
+      if (EMAIL && EMAIL !== email) {
+        if (base.has(EMAIL)) return rep(400, '{"code":"duplicate_parameter"}');
+        base.set(EMAIL, base.get(email)); base.delete(email); email = EMAIL;
+      }
+      Object.assign(base.get(email).attributes, reste);
       return rep(204);
     },
     creer: async (corps) => {
@@ -56,11 +62,39 @@ function fauxBrevo(init = {}) {
       base.set(corps.email, { attributes: { ...corps.attributes }, listIds: [...(corps.listIds || [])], emailBlacklisted: false });
       return rep(201, '{"id":1}');
     },
+    supprimer: async (email) => { appels.push(['supprimer', email]); if (!base.has(email)) return rep(404); base.delete(email); return rep(204); },
   };
-  // tout autre appel (suppression, désabonnement, retrait de liste…) n'existe pas : y accéder fait échouer le test
+  // tout autre appel (désabonnement, retrait de liste…) n'existe pas : y accéder fait échouer le test
   const garde = new Proxy(client, { get: (o, k) => { if (!(k in o) && typeof k === 'string' && k !== 'then') throw new Error(`appel interdit : ${k}`); return o[k]; } });
   return { client: garde, base, appels };
 }
+// Faux registre (table brevo_fiches) en mémoire, mêmes règles que celui de la fonction serveur : écritures conditionnelles.
+// contacts : les contacts MATRICE (pour savoir qui porte chaque adresse).
+function fauxRegistre(lignes = [], contacts = () => []) {
+  const m = new Map(lignes.map((f) => [f.email, { champ: null, origine: 'matrice', statut: 'active', detail: null, ...f }]));
+  const traces = [];
+  const egal = (f, att) => Object.entries(att).every(([k, v]) => (f[k] ?? null) === v);
+  return { m, traces,
+    deContact: async (id) => [...m.values()].filter((f) => f.contact_id === id).map((f) => ({ ...f })),
+    lire: async (e) => (m.has(e) ? { ...m.get(e) } : null),
+    changer: async (e, att, patch) => { const f = m.get(e); if (!f || !egal(f, att)) return false; Object.assign(f, patch); return true; },
+    reserver: async (f) => { const x = m.get(f.email); if (!x) { m.set(f.email, { detail: null, ...f }); return true; } if (x.statut !== 'supprimee') return false; Object.assign(x, f); return true; },
+    renommer: async (a, n, id) => { const t = m.get(n); if (t && t.statut !== 'supprimee') return false; const f = m.get(a); if (!f || f.contact_id !== id) return false; m.delete(n); m.delete(a); m.set(n, { ...f, email: n }); return true; },
+    porteurs: async (emails) => { const r = new Map(); for (const e of emails) { const ids = contacts().filter((k) => [k.email, k.email_2].map((x) => String(x || '').trim().toLowerCase()).includes(e)).map((k) => k.id); if (ids.length) r.set(e, ids); } return r; },
+    journal: async (e, id, action, detail) => { traces.push([e, id, action, detail]); },
+  };
+}
+// ancienne écriture des tests (ensemble « ours » = adresses créées par MATRICE) : convertie en registre, gardé d'un appel à l'autre
+const REG = new WeakMap();
+const syncContact = (o) => {
+  let r = o.registre;
+  if (!r) {
+    const cle = o.ours || {};
+    r = REG.get(cle) || fauxRegistre([...(o.ours || [])].map((e) => ({ email: e, contact_id: o.c.id, champ: String(o.c.email_2 || '').trim().toLowerCase() === e ? 'email_2' : 'email' })), () => [o.c]);
+    REG.set(cle, r);
+  }
+  return syncReel({ ...o, registre: r });
+};
 const CH = { first: 'PRENOM', last: 'NOM', struct: 'STRUCTURE' };
 const C = (o = {}) => ({ id: 'k1', email: 'lea@x.invalid', email_2: null, first_name: 'Léa', last_name: 'Martin', display_name: 'Léa Martin', ...o });
 const LR = (name, inactive, role = null) => ({ name, inactive, role });
@@ -159,16 +193,23 @@ t('contact lié uniquement à des structures inactives : pas créé ; déjà pr�
   await sync(b2, C(), [LR('Fermée', true)], ['lea@x.invalid']);   // retrait de la seule structure active
   assert.deepEqual(b2.base.get('lea@x.invalid'), { attributes: { STRUCTURE: 'Fermée', PRENOM: 'Léa', NOM: 'Martin' }, listIds: [7], emailBlacklisted: false });
 });
-t('aucune suppression : le faux client n’offre que lire / modifier / créer, et la fonction serveur n’a aucun autre appel', async () => {
+t('v1.64 : suppression seulement par supprimerFiche ; jamais de désabonnement, de réabonnement ni de changement de liste', async () => {
   const b = fauxBrevo({ 'lea@x.invalid': {} });
   await sync(b, C(), [], ['lea@x.invalid']);
   assert.deepEqual([...new Set(b.appels.map(a => a[0]))].sort(), ['lire', 'modifier']);
-  assert.throws(() => b.client.supprimer, /appel interdit/);
   const src = readFileSync(new URL('../../supabase/functions/brevo-sync/index.ts', import.meta.url), 'utf8');
-  assert.doesNotMatch(src, /\/contacts\/lists\/[^`"]*\/contacts\/remove|method: "DELETE"|emailBlacklisted|unlinkListIds|smsBlacklisted/);
-  assert.match(src, /syncContact\(\{ client: client\(key\)/);
-  const reg = readFileSync(new URL('../../supabase/functions/brevo-sync/regles.ts', import.meta.url), 'utf8');
-  assert.doesNotMatch(reg.replace(/^\s*(\/\/|\*|\/\*\*).*$/gm, ''), /DELETE|emailBlacklisted|unlinkListIds|listIds:\s*\[\]/);
+  const code = src.replace(/^\s*(\/\/|\*|\/\*\*).*$/gm, '');
+  assert.equal((code.match(/method: "DELETE"/g) || []).length, 1, 'un seul appel de suppression (client.supprimer)');
+  assert.doesNotMatch(code, /\/contacts\/lists\/[^`"]*\/contacts\/remove|unlinkListIds|smsBlacklisted|emailBlacklisted\s*:|"emailBlacklisted"/);
+  assert.match(src, /syncContact\(\{ client: client\(key\), registre/);
+  const reg = readFileSync(new URL('../../supabase/functions/brevo-sync/regles.ts', import.meta.url), 'utf8').replace(/^\s*(\/\/|\*|\/\*\*).*$/gm, '');
+  assert.doesNotMatch(reg, /unlinkListIds|emailBlacklisted\s*:|listIds:\s*\[\]/);
+  assert.equal((reg.match(/client\.supprimer\(/g) || []).length, 1, 'supprimer : uniquement dans supprimerFiche');
+  assert.ok(reg.indexOf('client.supprimer(') > reg.indexOf('export async function supprimerFiche') && reg.indexOf('client.supprimer(') < reg.indexOf('async function quitter'));
+  // toute mise à jour n'envoie QUE des champs ; une liste n'est donnée qu'à la création
+  for (const m of reg.matchAll(/client\.modifier\([^,]+, (\{[^\n]*?\})\)/g)) assert.match(m[1], /^\{ attributes: /);
+  const lignes = reg.split('\n').filter(l => /listIds/.test(l));
+  for (const l of lignes) assert.ok(/listIds\?: number\[\] \}\): Promise<Rep>|listIds: number\[\]; adoption|const \{ client, registre, c, links, champs, listIds \}|client\.creer\(\{ email, attributes: aCreer, \.\.\.\(listIds\.length \? \{ listIds \} : \{\}\) \}\)/.test(l), l);
 });
 t('rejouable, sans doublon : deux passages identiques = un seul contact par mail, mêmes champs', async () => {
   const b = fauxBrevo();
@@ -315,15 +356,17 @@ t('MODE ESSAI (marche du 09/11) : seule l’adresse de la liste blanche est sync
   assert.ok(b2.appels.every(a => a[1] === 'lea+essai@x.invalid'));
   // fonction serveur : en mode essai, le filtre passe AVANT tout appel à Brevo (y compris la lecture des champs) ; « tout envoyer » refusé
   const src = readFileSync(new URL('../../supabase/functions/brevo-sync/index.ts', import.meta.url), 'utf8');
-  assert.match(src, /"brevo_essai_emails"\]/);
+  assert.match(src, /"brevo_essai_emails"/);
   const un = src.slice(src.indexOf('// Un contact'));
-  assert.ok(un.indexOf('if (!mailsAutorises(c as Contact, essai).length) return') > 0 && un.indexOf('if (!mailsAutorises(c as Contact, essai).length) return') < un.indexOf('await attrNames(key)'));
+  const garde = 'if (!mailsAutorises(c as Contact, essai).length && !fiches.some((f) => !essai || essai.has(f.email))) return';
+  assert.ok(un.indexOf(garde) > 0 && un.indexOf(garde) < un.indexOf('await attrNames(key)'));
   assert.ok(un.indexOf('await attrNames(key)') < un.indexOf('syncContact('));
-  assert.match(un, /champs: a, listIds, ours, essai \}\)/);
+  assert.match(un, /champs: a, listIds, essai, protegees, adoption \}\)/);
   const tout = src.slice(src.indexOf('if (body.all) {'), src.indexOf('// Un contact'));
   assert.match(src, /const \{ m: s, essai \} = await settings\(\);/);   // valeur brute (objet, nombre… = bloqué), par appel (lireReglages)
   assert.ok(tout.indexOf('if (essai) return json({ ok: false') >= 0 && tout.indexOf('if (essai) return json({ ok: false') < tout.indexOf('await attrNames(key)'));
-  assert.equal((src.match(/await attrNames\(key\)/g) || []).length, 2);
+  assert.equal((src.match(/await attrNames\(key\)/g) || []).length, 3);   // un contact, tout envoyer, adoption (refusée en mode essai avant tout appel)
+  assert.ok(src.indexOf('adoption désactivée pendant l’essai') < src.indexOf('return json(await adopter('));
 });
 
 t('relecture B3 : réglages lus PAR APPEL — appels simultanés, l’un en échec de lecture : l’autre reste en mode essai, l’échec s’arrête', async () => {
@@ -346,7 +389,7 @@ t('relecture B3 : réglages lus PAR APPEL — appels simultanés, l’un en éch
 });
 t('sauvegarde JSON : la liste d’opposition est exportée (lecture seule du rôle serveur)', () => {
   const bk = readFileSync(new URL('../../supabase/functions/backup-export/index.ts', import.meta.url), 'utf8');
-  assert.match(bk, /'prospection_memoire'\]/); assert.match(bk, /prospection_memoire: \['email'\]/);
+  assert.match(bk, /'prospection_memoire',/); assert.match(bk, /'brevo_fiches', 'brevo_journal'\]/); assert.match(bk, /brevo_fiches: \['email'\]/); assert.match(bk, /prospection_memoire: \['email'\]/);
   const sql = readFileSync(new URL('../../supabase/migrations/2026-11-08_brevo_rattachements.sql', import.meta.url), 'utf8');
   assert.match(sql, /grant select on public\.prospection_memoire to service_role;/);
   assert.doesNotMatch(sql, /grant (insert|update|delete|all)[^;]*prospection_memoire/i);
@@ -368,6 +411,158 @@ t('relecture du 09/11 : remise d’une adresse partagée — refusée sans la li
   assert.match(sel, /export function contactsExclusPartages\(c\)/);
   const act = readFileSync(new URL('../../js/actions.js', import.meta.url), 'utf8');
   assert.match(act, /if \(ok !== 'tous'\) return;/);
+});
+
+// ───────────── v1.64 (décisions d'Anthony du 16/11/2026) : MATRICE fait référence ─────────────
+// Contacts MATRICE simulés (pour « qui porte cette adresse ») ; registre explicite ; fiches Brevo avec listes et désabonnements.
+const P = { first: 'PRENOM', last: 'NOM', struct: 'STRUCTURE' };
+const env = (fiches = {}, lignes = [], contacts = []) => {
+  const b = fauxBrevo(fiches); const ks = [...contacts]; const r = fauxRegistre(lignes, () => ks);
+  const run = (c, o = {}) => { const i = ks.findIndex(k => k.id === c.id); if (i >= 0) ks[i] = c; else ks.push(c);
+    return syncReel({ client: b.client, registre: r, c, links: o.links || [LR('Salle A', false)], champs: P, listIds: [7], essai: o.essai ?? null, protegees: o.protegees || new Set(), adoption: !!o.adoption }); };
+  const del = (id, o = {}) => { const i = ks.findIndex(k => k.id === id); if (i >= 0) ks.splice(i, 1);
+    return supprimerContact({ client: b.client, registre: r, contactId: id, essai: o.essai ?? null, protegees: o.protegees || new Set() }); };
+  return { b, r, ks, run, del };
+};
+const ecritures = (b) => b.appels.filter(a => a[0] !== 'lire');
+
+t('v1.64 règle 1 : création puis modification = fiche créée (liste donnée UNE fois) puis champs à jour, registre « matrice »', async () => {
+  const x = env();
+  await x.run(C());
+  assert.deepEqual(x.b.base.get('lea@x.invalid').listIds, [7]);
+  assert.equal(x.r.m.get('lea@x.invalid').statut, 'active'); assert.equal(x.r.m.get('lea@x.invalid').origine, 'matrice');
+  x.b.base.get('lea@x.invalid').listIds = [];   // la personne s'est retirée de la liste dans Brevo
+  await x.run(C({ first_name: 'Léana' }));
+  assert.equal(x.b.base.get('lea@x.invalid').attributes.PRENOM, 'Léana');
+  assert.deepEqual(x.b.base.get('lea@x.invalid').listIds, [], 'jamais réinscrite dans une liste');
+  assert.equal(x.b.appels.filter(a => a[0] === 'creer').length, 1);
+});
+t('v1.64 règles 2 et 9 : changement d’adresse = MÊME fiche renommée (désabonnement, listes, champs gardés), aucun doublon', async () => {
+  const x = env({ 'lea@x.invalid': { attributes: { PRENOM: 'Léa', PREF: 'mensuelle' }, listIds: [3], emailBlacklisted: true } },
+    [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
+  const r = await x.run(C({ email: 'lea.martin@x.invalid' }));
+  assert.deepEqual(r.renamed, ['lea.martin@x.invalid']); assert.deepEqual(r.errors, []);
+  assert.equal(x.b.base.has('lea@x.invalid'), false); assert.equal(x.b.base.size, 1);
+  assert.deepEqual(x.b.base.get('lea.martin@x.invalid'), { attributes: { PRENOM: 'Léa', PREF: 'mensuelle', NOM: 'Martin', STRUCTURE: 'Salle A' }, listIds: [3], emailBlacklisted: true });
+  assert.equal(x.r.m.has('lea@x.invalid'), false); assert.equal(x.r.m.get('lea.martin@x.invalid').statut, 'active');
+  assert.equal(x.b.appels.filter(a => ['creer', 'supprimer'].includes(a[0])).length, 0);
+});
+t('v1.64 règle 9 : nouvelle adresse déjà présente dans Brevo = conflit signalé, aucune fusion ni suppression', async () => {
+  const x = env({ 'lea@x.invalid': { listIds: [7] }, 'autre@x.invalid': { attributes: { PRENOM: 'Autre' }, listIds: [9] } },
+    [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
+  const avant = structuredClone([...x.b.base]);
+  const r = await x.run(C({ email: 'autre@x.invalid' }));
+  assert.deepEqual(r.conflicts, ['lea@x.invalid']);
+  assert.deepEqual([...x.b.base], avant, 'Brevo inchangé');
+  assert.equal(x.r.m.get('lea@x.invalid').statut, 'conflit'); assert.match(x.r.m.get('lea@x.invalid').detail, /autre@x\.invalid/);
+  // l'autre fiche est libérée dans Brevo : le changement d'adresse se fait au passage suivant
+  x.b.base.delete('autre@x.invalid');
+  const r2 = await x.run(C({ email: 'autre@x.invalid' }));
+  assert.deepEqual(r2.renamed, ['autre@x.invalid']); assert.equal(x.r.m.get('autre@x.invalid').statut, 'active');
+});
+t('v1.64 règles 3 et 2 : contact supprimé = fiche MATRICE supprimée ; désabonnée = conservée ; préexistante = jamais supprimée', async () => {
+  const x = env({ 'a@x.invalid': {}, 'b@x.invalid': { emailBlacklisted: true }, 'c@x.invalid': { listUnsubscribed: [7] }, 'd@x.invalid': {} },
+    [{ email: 'a@x.invalid', contact_id: 'k1' }, { email: 'b@x.invalid', contact_id: 'k1' }, { email: 'c@x.invalid', contact_id: 'k2' }, { email: 'd@x.invalid', contact_id: 'k3', origine: 'preexistante' }]);
+  for (const id of ['k1', 'k2', 'k3']) await x.del(id);
+  assert.deepEqual([...x.b.base.keys()].sort(), ['b@x.invalid', 'c@x.invalid', 'd@x.invalid']);
+  assert.deepEqual(x.b.appels.filter(a => a[0] === 'supprimer').map(a => a[1]), ['a@x.invalid']);
+  assert.equal(x.r.m.get('a@x.invalid').statut, 'supprimee');
+  for (const e of ['b@x.invalid', 'c@x.invalid', 'd@x.invalid']) { assert.equal(x.r.m.get(e).statut, 'detachee'); assert.equal(x.r.m.get(e).contact_id, null); }
+  assert.ok(x.r.traces.some(j => j[0] === 'a@x.invalid' && j[2] === 'supprimee'));
+  assert.equal(desabonnee('pas du json'), true, 'réponse illisible : jamais de suppression');
+});
+t('v1.64 règle 7 (2e adresse) : retirer le mail 2 suit les règles de suppression ; le mail 1 est seulement mis à jour', async () => {
+  const x = env({ 'lea@x.invalid': {}, 'perso@x.invalid': {} }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }, { email: 'perso@x.invalid', contact_id: 'k1', champ: 'email_2' }]);
+  const r = await x.run(C({ email_2: null }));
+  assert.deepEqual(r.removed, ['perso@x.invalid']); assert.deepEqual(r.updated, ['lea@x.invalid']);
+  assert.equal(x.b.base.has('perso@x.invalid'), false); assert.equal(x.b.base.has('lea@x.invalid'), true);
+});
+t('v1.64 règle 4 : adresse partagée par plusieurs contacts = aucune opération (ni mise à jour, ni création, ni suppression)', async () => {
+  const autre = { id: 'k2', email: 'lea@x.invalid', first_name: 'Autre', last_name: 'Personne', display_name: 'Autre Personne' };
+  const x = env({ 'lea@x.invalid': { attributes: { PRENOM: 'Ancien' } } }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }], [autre]);
+  const r = await x.run(C());
+  assert.deepEqual(r.protected, ['lea@x.invalid']); assert.deepEqual(ecritures(x.b), []);
+  assert.equal(x.b.base.get('lea@x.invalid').attributes.PRENOM, 'Ancien');
+  // un contact qui porte l'adresse est supprimé : la fiche revient à l'autre contact, jamais supprimée
+  const s = await x.del('k1');
+  assert.deepEqual(s.fiches, [{ email: 'lea@x.invalid', action: 'transferee' }]);
+  assert.equal(x.r.m.get('lea@x.invalid').contact_id, 'k2'); assert.equal(x.b.base.has('lea@x.invalid'), true);
+  const x2 = env({}, [], [autre]);
+  await x2.run(C()); assert.equal(x2.b.base.size, 0, 'adresse partagée absente de Brevo : pas créée');
+});
+t('v1.64 règle 5 : adresse protégée (anthony@) = aucun appel, même pas une lecture, ni à la suppression', async () => {
+  const prot = listeProtegees('anthony@lartboristerie.com');
+  const x = env({ 'anthony@lartboristerie.com': { attributes: { PRENOM: 'Anthony' } } }, [{ email: 'anthony@lartboristerie.com', contact_id: 'k1', champ: 'email' }]);
+  await x.run(C({ email: 'anthony@lartboristerie.com' }), { protegees: prot });
+  await x.run(C({ email: 'nouvelle@x.invalid' }), { protegees: prot });   // même un changement d'adresse ne la renomme pas
+  await x.del('k1', { protegees: prot });
+  assert.ok(x.b.appels.every(a => a[1] !== 'anthony@lartboristerie.com'));
+  assert.deepEqual(x.b.base.get('anthony@lartboristerie.com').attributes, { PRENOM: 'Anthony' });
+});
+t('v1.64 règle 6 : fiche gérée supprimée à la main dans Brevo = jamais recréée automatiquement (signalée)', async () => {
+  const x = env({}, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
+  const r = await x.run(C()); const r2 = await x.run(C({ first_name: 'Léa2' }));
+  assert.deepEqual(r.deletedInBrevo, ['lea@x.invalid']); assert.deepEqual(r2.deletedInBrevo, ['lea@x.invalid']);
+  assert.equal(x.b.appels.filter(a => a[0] === 'creer').length, 0); assert.equal(x.r.m.get('lea@x.invalid').statut, 'supprimee_brevo');
+  // fiche détachée (désabonnée conservée) supprimée ensuite dans Brevo, puis reprise par un contact : pas recréée non plus
+  const y = env({}, [{ email: 'lea@x.invalid', contact_id: null, statut: 'detachee' }]);
+  await y.run(C()); assert.equal(y.b.base.size, 0); assert.equal(y.r.m.get('lea@x.invalid').statut, 'supprimee_brevo');
+  // recréation volontaire (brevo_recreer : statut remis à « supprimee ») : recréée
+  x.r.m.get('lea@x.invalid').statut = 'supprimee';
+  await x.run(C()); assert.equal(x.b.base.has('lea@x.invalid'), true);
+});
+t('v1.64 règle 7 : import en masse aux mêmes règles (registre « matrice », protégées, partagées, fiches supprimées dans Brevo écartées)', () => {
+  const src = readFileSync(new URL('../../supabase/functions/brevo-sync/index.ts', import.meta.url), 'utf8');
+  const tout = src.slice(src.indexOf('if (body.all) {'), src.indexOf('// Un contact'));
+  assert.match(tout, /if \(known\.has\(e\) \|\| seen\.has\(e\) \|\| protegees\.has\(e\) \|\| \(porteurs\.get\(e\) \|\| \[\]\)\.length > 1\) continue;/);
+  assert.match(tout, /if \(f && f\.statut !== "supprimee"\) continue;/);
+  assert.match(tout, /registre\.reserver\(\{ email: x\.email, contact_id: x\.c\.id, champ: x\.champ, origine: "matrice", statut: "creation" \}\)/);
+  assert.ok(tout.indexOf('registre.reserver(') < tout.indexOf('/contacts/import'), 'réservé au registre avant l’import');
+  assert.match(tout, /updateExistingContacts: false/);
+});
+t('v1.64 adoption : fiche préexistante jamais touchée sans autorisation ; adoptée = mise à jour et renommage, jamais supprimée', async () => {
+  const x = env({ 'lea@x.invalid': { attributes: { PRENOM: 'Ancien' }, listIds: [2] } });
+  await x.run(C());
+  assert.deepEqual(ecritures(x.b), []); assert.equal(x.r.m.size, 0);
+  await x.run(C(), { adoption: true });
+  assert.equal(x.r.m.get('lea@x.invalid').origine, 'preexistante'); assert.equal(x.b.base.get('lea@x.invalid').attributes.PRENOM, 'Léa');
+  await x.run(C({ email: 'lea2@x.invalid' }), { adoption: true });
+  assert.equal(x.b.base.has('lea2@x.invalid'), true); assert.deepEqual(x.b.base.get('lea2@x.invalid').listIds, [2]);
+  await x.del('k1');
+  assert.equal(x.b.base.has('lea2@x.invalid'), true); assert.equal(x.r.m.get('lea2@x.invalid').statut, 'detachee');
+  assert.equal(x.b.appels.filter(a => a[0] === 'supprimer').length, 0);
+  const src = readFileSync(new URL('../../supabase/functions/brevo-sync/index.ts', import.meta.url), 'utf8');
+  assert.match(src, /body\.adoption === "executer" && body\.confirmer === "ADOPTER"/);
+  assert.match(src, /adoption = String\(s\.brevo_adoption \|\| ""\)\.trim\(\) === "oui"/);
+});
+t('v1.64 modifications concurrentes : deux synchronisations simultanées = une seule création, un seul renommage', async () => {
+  const x = env();
+  await Promise.all([x.run(C()), x.run(C())]);
+  assert.equal(x.b.appels.filter(a => a[0] === 'creer').length, 1); assert.equal(x.b.base.size, 1);
+  await Promise.all([x.run(C({ email: 'n@x.invalid' })), x.run(C({ email: 'n@x.invalid' }))]);
+  assert.equal(x.b.appels.filter(a => a[0] === 'modifier' && a[2].attributes.EMAIL).length, 1);
+  assert.deepEqual([...x.b.base.keys()], ['n@x.invalid']);
+});
+t('v1.64 règles 8 et 10 : rien ne remonte de Brevo vers MATRICE ; la prospection Gmail ignore les désabonnements Brevo', () => {
+  const src = readFileSync(new URL('../../supabase/functions/brevo-sync/index.ts', import.meta.url), 'utf8');
+  const ecr = [...src.matchAll(/sb\.from\("([a-z_]+)"\)\.(update|insert|upsert|delete)/g)].map(m => m[1]);
+  assert.deepEqual([...new Set(ecr)].sort(), ['brevo_fiches', 'brevo_journal', 'contacts', 'settings']);
+  assert.match(src, /sb\.from\("contacts"\)\.update\(\{ brevo_at: new Date\(\)\.toISOString\(\), brevo_error: err \}\)/);
+  for (const f of ['js/prospection.js', 'js/mailbox.js', 'apps-script/Prospection.gs']) {
+    const t2 = readFileSync(new URL('../../' + f, import.meta.url), 'utf8');
+    assert.doesNotMatch(t2, /brevo_fiches|emailBlacklisted|desabonn/i, f);
+  }
+});
+t('v1.64 SQL : registre amorcé sans rien supprimer ; contact supprimé relayé ; recréation réservée à l’équipe', () => {
+  const sql = readFileSync(new URL('../../supabase/migrations/2026-11-16_v1.64_brevo_reference.sql', import.meta.url), 'utf8');
+  const code = sql.replace(/--.*$/gm, '');
+  assert.doesNotMatch(code, /\bdrop table|\bdelete from|\btruncate|alter table public\.contacts/i);
+  assert.match(code, /create trigger brevo_contact_supprime after delete on public\.contacts/);
+  assert.match(code, /on conflict \(email\) do nothing/);
+  assert.match(code, /'brevo_protegees', to_jsonb\('anthony@lartboristerie\.com'::text\)\)\s*on conflict \(key\) do nothing/);
+  assert.match(code, /function public\.brevo_recreer[\s\S]*?if not public\.is_team\(\)/);
+  assert.match(code, /grant execute on function public\.brevo_porteurs\(text\[\]\) to service_role;/);
+  assert.doesNotMatch(code, /insert into public\.settings \(key, value\) values \('brevo_adoption'/, 'adoption jamais activée par la migration');
 });
 
 let ko = 0;

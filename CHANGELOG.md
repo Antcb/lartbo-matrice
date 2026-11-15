@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.64.0 — 16/11/2026
+- Brevo : MATRICE fait référence (registre des fiches gérées, changement d'adresse sans doublon, suppression contrôlée, adresses protégées et partagées, fiches supprimées dans Brevo jamais recréées d'elles-mêmes, import en masse aux mêmes règles)
+
+
 ## 1.63.3 — 15/11/2026
 - Sauvegarde JSON : lecture de l'état de synchronisation de la messagerie (sans colonne id), qui aurait arrêté tout l'export
 
