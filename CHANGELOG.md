@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.62.0 — 15/11/2026
+- Détacher une date de son suivi sans rien supprimer ; solde affiché à sa part prévue dès le départ (cession − acomptes prévus et facturés, se réadapte si l'acompte change) ; calendriers des artistes en lecture seule (indisponibilités dans Booking, repères « Show » sur la carte, avertissements de conflit) ; script de prospection protégé par un code secret dédié et pièces jointes limitées aux fichiers de la Matrice
+
+
 ## 1.61.0 — 10/11/2026
 - Réglages › Délais : délais des rappels et des tâches réglables (activation, nombre de jours, nouvelles dates seulement ou toutes), politique des week-ends réglable, relances de prospection désactivables, délais Pennylane (paiement des brouillons, validité des devis) réglables ; obligations de plus de 120 jours visibles dans Production › « Anciens éléments à traiter »
 
