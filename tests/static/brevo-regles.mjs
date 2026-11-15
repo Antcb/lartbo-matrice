@@ -608,6 +608,29 @@ t('relecture B3 : synchronisation pendant un renommage = opération en cours res
   assert.equal(x.r.m.get('lea.neuf@x.invalid').statut, 'active'); assert.deepEqual([...x.b.base.keys()], ['lea.neuf@x.invalid']);
 });
 
+t('relecture 2 (16/11) : fiche désabonnée détachée dont l’adresse est reprise par un AUTRE contact = jamais renommée ni réinscrite', async () => {
+  const ks = [];
+  const x = env({ 'a@x.invalid': { listIds: [], listUnsubscribed: [7] } }, [{ email: 'a@x.invalid', contact_id: 'k1', champ: 'email' }], ks);
+  await x.run(C({ email: null }));                           // k1 perd a (désabonnée) : détachée, gardée
+  x.ks.push({ id: 'kX', email: 'a@x.invalid', first_name: 'X', last_name: 'Y', display_name: 'X Y' });   // un autre contact porte a
+  const r = await x.run(C({ email: 'n@x.invalid' }));        // k1 reçoit n : PAS de renommage de a
+  assert.deepEqual(r.renamed, []); assert.deepEqual(x.b.base.get('a@x.invalid').listUnsubscribed, [7]);
+  assert.equal(x.b.base.has('a@x.invalid'), true);
+  const r2 = await x.run({ id: 'kX', email: 'a@x.invalid', first_name: 'X', last_name: 'Y', display_name: 'X Y' });
+  assert.equal(x.b.appels.filter(a => a[0] === 'creer' && a[1] === 'a@x.invalid').length, 0, 'jamais recréée abonnée');
+  assert.equal(x.b.base.get('a@x.invalid').listUnsubscribed.length, 1);
+});
+t('relecture 2 : erreur réseau pendant un renommage ou une création = registre remis en l’état, rien de bloqué', async () => {
+  const x = env({ 'lea@x.invalid': {} }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
+  x.b.client.modifier = async () => { throw new Error('réseau coupé'); };
+  const r = await x.run(C({ email: 'neuf@x.invalid' }));
+  assert.equal(r.errors.length, 1); assert.equal(x.r.m.get('lea@x.invalid').statut, 'active'); assert.equal(x.r.m.has('neuf@x.invalid'), false);
+  const y = env();
+  y.b.client.creer = async () => { throw new Error('réseau coupé'); };
+  const r2 = await y.run(C());
+  assert.equal(r2.errors.length, 1); assert.equal(y.r.m.get('lea@x.invalid').statut, 'supprimee');
+});
+
 let ko = 0;
 for (const [nom, f] of cas) { try { await f(); console.log('  ✓ ' + nom); } catch (e) { ko++; console.error('  ✗ ' + nom + '\n    ' + e.message); } }
 console.log(`Règles Brevo : ${cas.length - ko}/${cas.length} cas vérifiés.`);

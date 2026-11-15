@@ -256,8 +256,10 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
   const renamed: string[] = [], removed: string[] = [], conflicts: string[] = [], protectedSkip: string[] = [], deletedInBrevo: string[] = [];
   const mails = emplacements(c);
   const autorise = (e: string) => !essai || essai.has(e);
-  const reg = (await registre.deContact(c.id)).filter((f) => ACTIVES.includes(f.statut));
-  const porteurs = await registre.porteurs([...new Set([...mails.map((m) => m.e), ...reg.map((f) => f.email)])]);
+  const toutes = await registre.deContact(c.id);
+  const reg = toutes.filter((f) => ACTIVES.includes(f.statut));
+  const detachees = toutes.filter((f) => f.statut === "detachee" && f.champ && !mails.some((m) => m.e === f.email));
+  const porteurs = await registre.porteurs([...new Set([...mails.map((m) => m.e), ...reg.map((f) => f.email), ...detachees.map((f) => f.email)])]);
   const autresQue = (e: string) => (porteurs.get(e) || []).filter((id) => id !== c.id);
   const partagee = (e: string) => autresQue(e).length > 0;
   const intouchable = (e: string) => protegees.has(e) || !autorise(e);
@@ -265,12 +267,13 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
 
   // 1. adresses que le contact n'a plus (fiches gérées), puis fiches désabonnées détachées de ce contact (reprises si son
   //    emplacement reçoit une nouvelle adresse : même fiche, le désabonnement suit, jamais de nouvelle fiche inscrite)
-  const detachees = (await registre.deContact(c.id)).filter((f) => f.statut === "detachee" && f.champ && !mails.some((m) => m.e === f.email));
   const sources = [...reg.filter((f) => !mails.some((m) => m.e === f.email)), ...detachees];
   for (const f of sources) {
     const active = ACTIVES.includes(f.statut);
     if (intouchable(f.email)) { protectedSkip.push(f.email); continue; }
-    if (active && partagee(f.email)) { await quitter(p, f, autresQue(f.email)); continue; }
+    // adresse portée par un autre contact : fiche gérée = transfert / détachement ; fiche désabonnée détachée = jamais reprise ici
+    // (relecture du 16/11 : la reprendre ferait passer le désabonnement à la mauvaise personne et réinscrire l'adresse)
+    if (partagee(f.email)) { if (active) await quitter(p, f, autresQue(f.email)); continue; }
     // emplacement rempli avec une adresse NON VALIDE (faute de frappe) : rien n'est supprimé ni créé en attendant une adresse correcte
     if (f.champ && String(c[f.champ] || "").trim() && !mails.some((m) => m.champ === f.champ)) {
       await registre.changer(f.email, { statut: f.statut }, { detail: "Adresse saisie non valide : en attente d’une adresse correcte" });
@@ -296,7 +299,9 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
       }
       // renommage réservé au registre (statut « renommage » : opération en cours, aucune autre synchronisation n'y touche)
       if (!await registre.renommer(f.email, nouveau.e, c.id)) continue;
-      const r = await client.modifier(f.email, { attributes: { ...aJour, EMAIL: nouveau.e } });
+      let r: Rep;
+      try { r = await client.modifier(f.email, { attributes: { ...aJour, EMAIL: nouveau.e } }); }
+      catch (x) { r = { ok: false, status: 0, text: async () => String(x) }; }   // erreur réseau : le registre revient à l'état d'avant
       if (!r.ok) {
         const e = await err(f.email, r);
         await registre.renommer(nouveau.e, f.email, c.id);
@@ -363,7 +368,9 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
     }
     if (held) { skipped.push(email); continue; }
     if (!await registre.reserver({ email, contact_id: c.id, champ, origine: "matrice", statut: "creation" })) { done.push(email); continue; }
-    const r = await client.creer({ email, attributes: aCreer, ...(listIds.length ? { listIds } : {}) });
+    let r: Rep;
+    try { r = await client.creer({ email, attributes: aCreer, ...(listIds.length ? { listIds } : {}) }); }
+    catch (x) { r = { ok: false, status: 0, text: async () => String(x) }; }   // erreur réseau : réservation levée (statut « supprimee »)
     const txt = r.ok ? "" : await r.text();
     if (r.ok) {
       await registre.changer(email, { statut: "creation" }, { statut: "active", detail: null });
