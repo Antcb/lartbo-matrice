@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.63.0 — 15/11/2026
+- Messagerie intégrée de la boîte anthony@ (lecture des conversations complètes, réponse, transfert, brouillons, modèles et signatures, pièces jointes des projets, rattachement aux structures et suivis, libellés Gmail, relances suspendues sur une vraie réponse) ; Brevo : rattachements par structure, champ FONCTIONS, exclusions automatiques et manuelles distinctes, désabonnements préservés
+
+
 ## 1.62.0 — 15/11/2026
 - Détacher une date de son suivi sans rien supprimer ; solde affiché à sa part prévue dès le départ (cession − acomptes prévus et facturés, se réadapte si l'acompte change) ; calendriers des artistes en lecture seule (indisponibilités dans Booking, repères « Show » sur la carte, avertissements de conflit) ; script de prospection protégé par un code secret dédié et pièces jointes limitées aux fichiers de la Matrice
 
