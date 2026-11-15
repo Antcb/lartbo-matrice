@@ -57,7 +57,7 @@ test('détacher retire seulement le lien, note le détachement au journal, et le
   expect(apres.logs, 'journal du suivi : une ligne de plus, aucune retirée').toBe(avant.logs + 1);
   expect(apres.pays).toBe(avant.pays);
   expect(apres.tasks).toBe(avant.tasks);
-  await expect(page.locator('.suivi-block')).toContainText('Date détachée de ce suivi');
+  await expect(page.locator('.suivi-block', { hasText: 'Date détachée de ce suivi' }).first()).toContainText('Date détachée de ce suivi');
 
   // le rattachement existant refait le lien
   await page.evaluate(() => { const el = document.querySelector('[data-link-show="pr-1"]'); el.value = 'sh-1'; el.dispatchEvent(new Event('change', { bubbles: true })); });
