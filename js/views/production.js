@@ -3,7 +3,7 @@
  * Chaque date se déplie : suivi admin, commissions, dossier Drive, facturation.
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
-import { vatConflict, BILL_KINDS, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
+import { vatConflict, BILL_KINDS, acompteRetire, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
 import { byId, isArchived, projName, setting, showsFiltered, spectacleName, structName } from '../selectors.js';
 import { followedInvoice, lateSteps, remindersOf, staleOf } from '../reminders.js';
@@ -81,7 +81,7 @@ function prodRow(s){
   const pays = paymentsOf(s.id).filter(tracked);
   const steps = booking ? BOOKING_STEPS : PROD_STEPS;
   const late = lateSteps(s);
-  const checks = steps.map(([k])=>({ok:!!s[k], late:late.has(k)})).concat(pays.filter(p=>p.kind!=='cnm' && acompteState(p)!=='caduc').map(p=>({ok:!!p.paid_at, late:late.has(p.kind)})));
+  const checks = steps.map(([k])=>({ok:!!s[k], late:late.has(k)})).concat(pays.filter(p=>p.kind!=='cnm' && !acompteRetire(p)).map(p=>({ok:!!p.paid_at, late:late.has(p.kind)})));
   const open = S.openProd.has(s.id);
   return `<div class="prod-row ${open?'open':''}" id="prod-${s.id}">
     <div class="prod-head" data-act="toggleProd" data-id="${s.id}" aria-expanded="${open}">
@@ -239,16 +239,16 @@ function suiviTab(s, booking, steps, late){
 /** Factures : ce que l'organisateur paie (acomptes, solde), la commission, les autres lignes */
 function billingTab(s, booking, pays, late){
   return `<div class="prod-bill">
-      <p class="tab-intro">${booking ? 'La facture de commission de L’ArtBo à l’artiste (et la part partenaire). Les factures d’acompte et de solde sont celles de l’artiste à l’organisateur : elles ne sont pas suivies ici.' : 'Ce que l’organisateur paie (acomptes facturés + solde = le cachet), et la commission de L’ArtBo.'} Montants HT ; saisis le %, le HT ou le TTC, les deux autres se calculent.</p>
+      <p class="tab-intro">${booking ? 'La facture de commission de L’ArtBo à l’artiste (et la part partenaire). Les factures d’acompte et de solde sont celles de l’artiste à l’organisateur : elles ne sont pas suivies ici.' : 'Ce que l’organisateur paie (acomptes + solde = le cachet), et la commission de L’ArtBo.'} Montants HT ; saisis le %, le HT ou le TTC, les deux autres se calculent.</p>
       ${isCorea(s) && pays.some(p => p.kind === 'artbo') ? `<p class="muted small">Commission de coréalisation : ${s.corea_share == null || s.corea_share === '' ? 'provisoire, sur le MG seul (part du résultat pas encore validée)' : `sur MG + part validée (${eur2(Number(s.fee_ht || 0) + Number(s.corea_share))} HT)`}.</p>` : ''}
       <div class="tbl-wrap"><table>
         <thead><tr><th>Ligne</th><th class="num">%</th><th class="num">Montant HT</th><th class="num">TVA</th><th class="num">TTC</th><th>Arrive sur</th><th>N° facture</th><th>Envoyée</th><th>Relancée</th><th>Payée</th><th>Pennylane</th><th></th></tr></thead>
         <tbody>${pays.map(p=>{ const a=payAmount(p), ov=p.amount!=null, selfPaid = !booking && p.kind==='artbo';   // production : pas de facture, L'ArtBo se verse sa commission
           const why = billLockReason(p), lock = why ? `disabled title="${esc(why)}"` : '';   // facture émise : montants verrouillés (§6.4)
-          const st = acompteState(p), soldeCalc = p.kind === 'solde' && !isInvoiced(p) && !ov;   // solde calculé : cession − acomptes facturés
-          const pctLock = lock || (soldeCalc ? 'disabled title="Calculé : cession − acomptes effectivement facturés (saisis un montant HT pour le fixer)"' : '');
-          return `<tr class="${st === 'caduc' ? 'muted' : ''}">
-          <td>${cIn('show_payments',p.id,'label',p.label)}${soldeCalc && !booking ? ` <span class="badge" title="Montant calculé (cession − acomptes effectivement facturés) : aucune facture de solde n’est encore émise">calculé, non facturé</span>` : ''}${st === 'prevu' ? ` <span class="badge" title="Prévu au contrat (${pct(billPct(p))}), pas encore facturé : il ne réduit pas le solde">prévu, non facturé</span>` : st === 'caduc' ? ' <span class="badge" title="Jamais facturé alors que le solde l’est : plus réclamé, historique conservé">caduc</span>' : ''}</td>
+          const st = acompteState(p), soldeCalc = p.kind === 'solde' && !isInvoiced(p) && !ov;   // solde calculé : cession − acomptes de la date (10/11/2026)
+          const pctLock = lock || (soldeCalc ? 'disabled title="Calculé : cession − acomptes de la date, prévus et facturés (saisis un montant HT pour le fixer)"' : '');
+          return `<tr>
+          <td>${cIn('show_payments',p.id,'label',p.label)}${soldeCalc && !booking ? ` <span class="badge" title="Montant calculé (cession − acomptes de la date, prévus et facturés) : aucune facture de solde n’est encore émise">calculé, non facturé</span>` : ''}${st === 'prevu' && !acompteRetire(p) ? ` <span class="badge" title="Prévu au contrat (${pct(billPct(p))}), pas encore facturé : déjà déduit du solde, il reste dû (mets 0 % pour le retirer)">prévu, non facturé</span>` : ''}</td>
           <td class="num">${BILL_KINDS.includes(p.kind) ? `<input type="number" step="any" inputmode="decimal" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="pct" value="${pctVal(billedPct(p))}" aria-label="% du cachet" ${pctLock}>`
             : ['cnm','autre'].includes(p.kind) ? cIn('show_payments',p.id,'pct',p.pct,'number','class="narrow"') : `<span class="muted">${payPct(p)??'—'}</span>`}</td>
           <td class="num"><input type="number" step="any" data-t="show_payments" data-id="${p.id}" data-f="amount" value="${ov?p.amount:''}" placeholder="${a==null?'à saisir':a}" ${lock || 'title="Laisse vide pour le calcul automatique"'} class="${ov?'override':''}"></td>
@@ -278,7 +278,7 @@ function billingTab(s, booking, pays, late){
       ${(f => f.length ? `<div class="mt"><p class="help full"><b>Pièces à rattacher</b> : factures déposées sans ligne sûre (rien n’a été rattaché automatiquement). Ouvre-les, puis rattache chacune à sa ligne.</p>
         ${f.map(a => `<div class="file-row"><span class="file-ico" aria-hidden="true">📎</span><a href="#" data-act="openAttachment" data-id="${a.id}">${esc(a.name)}</a>
           <button type="button" class="btn sm" data-act="attachPiece" data-id="${a.id}" data-show="${s.id}">Rattacher</button></div>`).join('')}</div>` : '')(piecesToAttach(s))}
-      <p class="muted small mt-sm">Vide = calcul automatique sur le cachet HT ; un montant saisi à la main apparaît en orange. TVA par défaut : 5,5 % sur le cachet, 20 % sur les commissions. Le solde à facturer = cession − acomptes effectivement facturés (un acompte seulement prévu ne le réduit pas) ; une fois facturé, son montant ne bouge plus. Acomptes + solde ne dépassent jamais 100 % du cachet (commissions et autres lignes à part).</p>
+      <p class="muted small mt-sm">Vide = calcul automatique sur le cachet HT ; un montant saisi à la main apparaît en orange. TVA par défaut : 5,5 % sur le cachet, 20 % sur les commissions. Le solde à facturer = cession − acomptes de la date, prévus et facturés (un acompte modifié ou retiré à 0 % le réadapte) ; une fois facturé, son montant ne bouge plus. Acomptes + solde ne dépassent jamais 100 % du cachet (commissions et autres lignes à part).</p>
     </div>`;
 }
 
@@ -298,13 +298,13 @@ function horsCalculHTML(s){
 function billFoot(s){
   const b = billingOf(s), ok = Math.abs(b.gap) < 0.01;
   return `<tfoot><tr class="bill-total ${ok ? 'ok' : 'warn'}">
-    <td><b>Total factures</b><div class="muted tiny">acomptes facturés + solde</div></td>
+    <td><b>Total factures</b><div class="muted tiny">acomptes + solde</div></td>
     <td class="num"><b>${pct(b.pct)}</b></td><td class="num nowrap"><b>${eur2(b.ht)}</b></td><td></td><td class="num nowrap"><b>${eur2(b.ttc)}</b></td>
     <td colspan="7">${ok ? `<span class="ok-badge">✓ = cachet (${eur2(b.fee)} HT · ${eur2(b.feeTtc)} TTC)</span>`
       : `<span class="warn-badge">${b.gap > 0 ? `Il manque ${eur2(b.gap)} HT` : `${eur2(-b.gap)} HT de trop`} par rapport au cachet (${eur2(b.fee)} HT)</span>`}
       <span class="muted nowrap"> · envoyées ${eur2(b.sentHt)} HT · payées ${eur2(b.paidHt)} HT${b.otherHt ? ` · autres lignes ${eur2(b.otherHt)} HT` : ''}</span>
       ${multiSolde(s.id) ? '<span class="warn-badge">Plusieurs lignes de solde sur cette date : à vérifier (le reste à facturer ne va qu’à la première)</span>' : ''}
-      ${b.plannedHt ? `<span class="muted nowrap"> · acomptes prévus, non facturés : ${eur2(b.plannedHt)} HT (compris dans le solde)</span>` : ''}${b.lapsedHt ? `<span class="muted nowrap"> · acomptes caducs : ${eur2(b.lapsedHt)} HT</span>` : ''}</td></tr></tfoot>`;
+      ${b.plannedHt ? `<span class="muted nowrap"> · dont acomptes prévus, non facturés : ${eur2(b.plannedHt)} HT</span>` : ''}</td></tr></tfoot>`;
 }
 /** Alerte dans l'en-tête de la date quand les factures ne tombent pas juste */
 function billWarn(s, booking){
@@ -347,7 +347,7 @@ function pennylaneCell(p, s){
   const fix = ['acompte','solde'].includes(p.kind) && !p.paid_at ? ` <button class="btn sm ghost" data-act="pennylaneAttach" data-pid="${esc(p.pennylane_id)}" data-show="${p.show_id}" title="La facture est sur la mauvaise ligne ? Choisir la bonne (le document Pennylane n’est pas modifié)">Corriger</button>` : '';
   if (p.pennylane_id) return (p.pennylane_url ? `<a class="btn sm ghost" href="${esc(p.pennylane_url)}" target="_blank" rel="noopener">Facture ↗</a>` : '<span class="ok-badge">Facture créée</span>') + fix;
   if (['acompte','solde'].includes(p.kind)){
-    if (p.invoice_number || acompteState(p) === 'caduc') return '';   // acompte caduc : ne se facture plus (lot C1)
+    if (p.invoice_number) return '';
     return s?.pennylane_quote_id
       ? `<a class="btn sm ghost" href="${esc(s.pennylane_quote_url || 'https://app.pennylane.com/')}" target="_blank" rel="noopener" title="Ouvre le devis dans Pennylane : « Créer une facture d’acompte » (ou la facture de solde). Le numéro revient ici avec « Synchroniser Pennylane ».">Facturer depuis le devis ↗</a>`
       : isCoproduction(s) ? ''   // coproduction : jamais de devis (résultat inconnu), décision du 27/10/2026

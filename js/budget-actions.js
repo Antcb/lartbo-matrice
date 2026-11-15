@@ -239,7 +239,6 @@ export const BUDGET_ACTIONS = {
       render();
       const lines = [out.linked?.length ? `${out.linked.length} facture(s) faite(s) depuis le devis, numéro repris : ${out.linked.filter(Boolean).join(', ')}\n` : '', out.updated.length ? `${out.updated.length} facture(s) marquée(s) payée(s) :\n- ` + out.updated.map(u => u.label).join('\n- ') : (out.linked?.length || out.filed?.done?.length) ? '' : 'Rien de nouveau : la Matrice est à jour.',
         out.erreurs?.length ? `\nÉcritures REFUSÉES (rien n’a été modifié pour ces lignes) — à examiner :\n- ` + out.erreurs.join('\n- ') : '',
-        out.caducs?.length ? `\nFacture(s) Pennylane d’acompte NON reliée(s) : l’acompte est caduc (solde déjà facturé), la date serait facturée au-delà de sa cession — à examiner :\n- ` + out.caducs.join('\n- ') : '',
         out.douteux?.length ? `\nFacture(s) Pennylane NON reliée(s) au solde : même montant qu’un acompte déjà noté à la main sur la date (numéro, envoi ou paiement) — à rattacher à la main à la bonne ligne :\n- ` + out.douteux.join('\n- ') : '',
         out.aRattacher ? `\n${out.aRattacher} facture(s) du devis NON reliée(s) automatiquement (plusieurs correspondances possibles, ou montant sans ligne) : « Rattacher… » dans l’onglet Factures de la date.` : '',
         out.pennylaneLate.length ? `\nPayées dans la Matrice mais pas encore dans Pennylane (à mettre à jour dans Pennylane) :\n- ` + out.pennylaneLate.join('\n- ') : '',
@@ -267,10 +266,9 @@ export const BUDGET_ACTIONS = {
     const num = cur?.invoice_number || pend?.invoice_number || 'Facture ' + pid, amt = pend?.amount_ht ?? cur?.amount;
     if (pend?.cancelled_at) return toast('Facture annulée dans Pennylane : elle ne se rattache plus', true);
     // lignes possibles : sans facture Pennylane ; un n° noté à la main seulement s'il est celui de ce document (cas Monestier) ;
-    // jamais une ligne payée sans n°, ni un acompte caduc (même règle que la base : pennylane_rattacher)
+    // jamais une ligne payée sans n° (même règle que la base : pennylane_rattacher) ; plus d'acompte « caduc » (10/11/2026)
     const same = n => String(n || '').replace(/[^a-z0-9]/gi, '').toUpperCase() === String(num).replace(/[^a-z0-9]/gi, '').toUpperCase();   // comme la synchronisation (norm)
-    // (acompte « caduc » seulement parce que CETTE facture est sur le solde : il redevient possible — c'est la correction attendue)
-    const targets = lines.filter(p => p.id !== cur?.id && !p.pennylane_id && (acompteState(p) !== 'caduc' || cur?.kind === 'solde')
+    const targets = lines.filter(p => p.id !== cur?.id && !p.pennylane_id
       && (!String(p.invoice_number || '').trim() ? !p.paid_at : same(p.invoice_number)));
     if (!targets.length) return toast('Aucune ligne possible : chaque acompte / solde a déjà une autre facture (ou un paiement sans n°). Corrige d’abord la ligne concernée.', true);
     const assoc = lines.map(p => `<li>${esc(p.label || p.kind)} · ${eur2(payAmount(p) || 0)} HT · ${p.pennylane_id ? `facture ${esc(p.invoice_number || p.pennylane_id)}` : p.invoice_number ? `n° ${esc(p.invoice_number)} (noté à la main)` : '<span class="muted">aucune facture</span>'}${p.paid_at ? ' · payée' : ''}</li>`).join('');
@@ -406,7 +404,7 @@ const cleanDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : null;
 /** Lignes auxquelles une facture de vente peut être rattachée : celles affichées dans l'onglet Factures
  *  (date en booking : aucune — acomptes / soldes de l'artiste, hors du suivi de L'ArtBo) */
 const attachableLines = s => !s || s.prod_mode === 'booking' ? []   // booking : acomptes / soldes = factures de l'artiste, jamais rattachées (lot C1)
-  : paymentsOf(s.id).filter(p => ['acompte','solde','autre'].includes(p.kind) && acompteState(p) !== 'caduc');   // acompte caduc : ne s'émet plus (lot C1)
+  : paymentsOf(s.id).filter(p => ['acompte','solde','autre'].includes(p.kind));   // plus d'acompte « caduc » (10/11/2026) : un acompte prévu reste dû
 
 /**
  * Ligne d'acompte / de solde d'une facture de vente lue par l'IA. Seules correspondances sûres :

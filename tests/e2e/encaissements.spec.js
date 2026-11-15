@@ -166,7 +166,7 @@ test('A2-D : deux pièces d’acompte successives ne réécrivent jamais une fac
   await piece('F-002', 2500, 'acompte');
   expect(await dbPay(page, 'q-1')).toMatchObject({ invoice_number: 'F-001', file_name: 'F-001.pdf' });
   expect(await dbPay(page, 'q-2')).toMatchObject({ invoice_number: 'F-002', file_name: 'F-002.pdf' });
-  // le solde est ensuite facturé dans Pennylane (lot C1 : avant, les acomptes non facturés seraient caducs et ne se rattacheraient plus)
+  // le solde est ensuite facturé dans Pennylane
   await page.evaluate(async () => (await import('./js/data.js')).save('show_payments', 'q-s', { invoice_number: 'F-PL', pennylane_id: '77' }));
   expect((await dbPay(page, 'q-s')).amount, 'solde figé : cession − acomptes facturés').toBe(5000);
   // 3e pièce d'acompte, et une pièce de solde dont le numéro diffère de la facture Pennylane : aucune ligne libre
@@ -185,15 +185,15 @@ test('A2 point 6 : un montant seul ne rattache jamais à une ligne d’un autre 
   const ctx = await openApp(page);
   await seed(page, { shows: [PROD], show_payments: [
     { id: 'm-a', show_id: 'e-1', kind: 'acompte', label: 'Acompte', pct: 30, sort: 1 },     // 3 000 €
-    { id: 'm-s', show_id: 'e-1', kind: 'solde', label: 'Solde', pct: 50, sort: 2 },         // à facturer : 10 000 € (aucun acompte facturé, lot C1)
-    { id: 'm-o', show_id: 'e-1', kind: 'autre', label: 'Défraiement', amount: 10000, sort: 3 },
+    { id: 'm-s', show_id: 'e-1', kind: 'solde', label: 'Solde', pct: 70, sort: 2 },         // à facturer : 7 000 € (cession − acompte prévu, v1.61.1)
+    { id: 'm-o', show_id: 'e-1', kind: 'autre', label: 'Défraiement', amount: 7000, sort: 3 },
   ] });
   const piece = (doc, n) => page.evaluate(async ([d, nom]) => (await import('./js/budget-actions.js')).applyPiece({
     doc: { type: 'facture_emise', ...d }, path: `budget/e-1/${nom}`, name: nom, show_id: 'e-1', project_id: 'art-a', line: null }), [doc, n]);
-  // pièce « acompte » de 10 000 € : le solde de 10 000 € n'est pas une correspondance sûre
-  expect(await piece({ numero: 'F-10', montant_ht: 10000, acompte_ou_solde: 'acompte' }, 'F-10.pdf')).toBeNull();
-  // sans type lu : deux lignes libres de 10 000 € → ambigu
-  expect(await piece({ numero: 'F-11', montant_ht: 10000 }, 'F-11.pdf')).toBeNull();
+  // pièce « acompte » de 7 000 € : le solde de 7 000 € n'est pas une correspondance sûre
+  expect(await piece({ numero: 'F-10', montant_ht: 7000, acompte_ou_solde: 'acompte' }, 'F-10.pdf')).toBeNull();
+  // sans type lu : deux lignes libres de 7 000 € → ambigu
+  expect(await piece({ numero: 'F-11', montant_ht: 7000 }, 'F-11.pdf')).toBeNull();
   // sans type lu : une seule ligne libre de 3 000 € → sûre
   expect(await piece({ numero: 'F-12', montant_ht: 3000 }, 'F-12.pdf')).toEqual({ table: 'show_payments', id: 'm-a' });
   for (const id of ['m-s', 'm-o']) expect((await dbPay(page, id)).file_path ?? null, id).toBeNull();
@@ -209,7 +209,7 @@ test('A2 point 6 : un montant seul ne rattache jamais à une ligne d’un autre 
   await page.locator('#modal input[name="invoice_number"]').fill('F-10');
   await page.locator('#modal button[type=submit]').click();
   await expect(page.locator('#modal')).not.toBeVisible();
-  expect(await dbPay(page, 'm-s')).toMatchObject({ file_path: 'budget/e-1/F-10.pdf', file_name: 'F-10.pdf', invoice_number: 'F-10', pct: 50 });
+  expect(await dbPay(page, 'm-s')).toMatchObject({ file_path: 'budget/e-1/F-10.pdf', file_name: 'F-10.pdf', invoice_number: 'F-10', pct: 70 });
   expect((await dbPay(page, 'm-s')).paid_at ?? null).toBeNull();
   // F-12 (acompte de 3 000 €) est émis : solde figé à 10 000 − 3 000
   expect((await dbPay(page, 'm-s')).amount).toBe(7000);
@@ -219,7 +219,7 @@ test('A2 point 6 : un montant seul ne rattache jamais à une ligne d’un autre 
   expectClean(ctx);
 });
 
-test('C1 relances : jamais d’acompte ni de solde booking ; la commission booking reste relancée ; acompte caduc plus réclamé', async ({ page }) => {
+test('C1 relances : jamais d’acompte ni de solde booking ; la commission booking reste relancée ; v1.61.1 acompte réclamé jusqu’à son retrait', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page, { shows: [BOOKING, { ...PROD, contract_sent: '2026-01-02' }], show_payments: [
     { id: 'r-a', show_id: 'e-3', kind: 'acompte', label: 'Acompte', pct: 50, sort: 1 },
@@ -230,13 +230,15 @@ test('C1 relances : jamais d’acompte ni de solde booking ; la commission booki
   ] });
   const rel = id => page.evaluate(async i => (await import('./js/reminders.js')).remindersOf((await import('./js/selectors.js')).byId('shows', i)).map(x => [x.step, x.title]), id);
   expect(await rel('e-3')).toEqual([['artbo', 'Paiement à vérifier : Commission (F-AB-9)']]);   // libellé commun app / serveur (v1.46)
-  // production : contrat envoyé, acompte prévu pas envoyé → « Facture d'acompte à faire »… jusqu'à ce que le solde soit facturé
+  // production : contrat envoyé, acompte prévu pas envoyé → « Facture d'acompte à faire »… même après le solde, jusqu'au retrait (0 %)
   expect((await rel('e-1')).some(([k, t]) => k === 'acompte' && t === 'Facture d’acompte à faire (contrat envoyé)')).toBe(true);
   await page.evaluate(async () => (await import('./js/data.js')).save('show_payments', 'q-s', { invoice_number: 'F-SOLDE', sent_at: '2026-01-10' }));
-  expect((await rel('e-1')).some(([k, t]) => k === 'acompte' && t === 'Facture d’acompte à faire (contrat envoyé)'), 'acompte caduc : plus réclamé').toBe(false);
-  expect(await page.evaluate(async () => (await import('./js/calc.js')).acompteState((await import('./js/selectors.js')).byId('show_payments', 'q-a')))).toBe('caduc');
-  expect(await dbPay(page, 'q-a')).toMatchObject({ pct: 30 });   // historique conservé
-  expect((await dbPay(page, 'q-s')).amount, 'solde intégral figé : 10 000 €').toBe(10000);
+  expect((await rel('e-1')).some(([k, t]) => k === 'acompte' && t === 'Facture d’acompte à faire (contrat envoyé)'), 'acompte toujours dû : réclamé').toBe(true);
+  expect(await page.evaluate(async () => (await import('./js/calc.js')).acompteState((await import('./js/selectors.js')).byId('show_payments', 'q-a')))).toBe('prevu');
+  expect((await dbPay(page, 'q-s')).amount, 'solde figé : 10 000 − 3 000 prévus').toBe(7000);
+  await page.evaluate(async () => (await import('./js/data.js')).save('show_payments', 'q-a', { pct: 0, amount: null }));
+  expect((await rel('e-1')).some(([k]) => k === 'acompte'), 'acompte retiré (0 %) : plus réclamé').toBe(false);
+  expect((await dbPay(page, 'q-s')).amount, 'solde émis inchangé').toBe(7000);
   expectClean(ctx);
 });
 

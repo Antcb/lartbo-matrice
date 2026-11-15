@@ -216,7 +216,7 @@ test('v1.60.3 : boucle com dans la progression et l’alerte de retard (producti
   await expect(page.locator('.prod-tab .steps > label', { hasText: 'Boucle communication' })).toHaveCount(0);
   expect(await page.evaluate(async () => { const { lateSteps } = await import('./js/reminders.js'); const { S } = await import('./js/state.js');
     return lateSteps(S.db.shows.find(s => s.id === 'sh-1')).has('boucle_com'); }), 'pas de retard de boucle com en booking').toBe(false);
-  await expect(page.locator('#prod-sh-1 .progress i')).toHaveCount(2 + await page.evaluate(async () => { const { paymentsOf, tracked, acompteState } = await import('./js/calc.js');
-    return paymentsOf('sh-1').filter(tracked).filter(p => p.kind !== 'cnm' && acompteState(p) !== 'caduc').length; }));   // 2 étapes de BOOKING_STEPS + factures suivies
+  await expect(page.locator('#prod-sh-1 .progress i')).toHaveCount(2 + await page.evaluate(async () => { const { paymentsOf, tracked, acompteRetire } = await import('./js/calc.js');
+    return paymentsOf('sh-1').filter(tracked).filter(p => p.kind !== 'cnm' && !acompteRetire(p)).length; }));   // 2 étapes de BOOKING_STEPS + factures suivies
   expectClean(ctx);
 });

@@ -62,7 +62,7 @@ export async function validateTerms(showId){
   const booking = isBookingOnly(s);
   const acs = acomptesOf(showId);
   const locked = isInvoiced;                       // facture émise : envoyée, payée, numérotée ou dans Pennylane (§6.4)
-  const soldeLock = !booking && soldeInvoiced(showId);   // solde facturé : plus aucun acompte ne change (§6.4)
+  const soldeLock = !booking && soldeInvoiced(showId);   // solde facturé : les % ne changent plus ici ; retrait (0 %) dans l'onglet Factures (§6.4, 10/11/2026)
   const def = defaultAcompte(s.project_id);   // artiste, sinon Réglages (v1.59) ; 0 % gardé tel quel (= sans acompte) ; 50 si le réglage est vide (§6.4)
   // coproduction (décision du 27/10/2026) : aucun acompte proposé par défaut — seulement ceux qui existent réellement
   const pcts = acs.length ? acs.map(p => ({v: r2(billPct(p) ?? 0), due: p.due_label || ''})) : isCoproduction(s) || def === 0 ? [] : [{v: def, due: ''}];   // réglage à 0 % : date sans acompte
@@ -74,7 +74,7 @@ export async function validateTerms(showId){
   const extra = booking ? `<p class="mode-note">Booking uniquement : pas d’acompte ni de solde, seulement la facture de commission. L’organisateur et l’artiste font leur contrat entre eux.</p>`
     : `<div class="field full"><label>Acomptes</label>
       <div class="terms-acs">
-        ${soldeLock ? '<p class="mode-note">Le solde est déjà facturé : les acomptes ne peuvent plus changer (seules les échéances se modifient).</p>' : ''}
+        ${soldeLock ? '<p class="mode-note">Le solde est déjà facturé : les acomptes ne changent plus ici (seules les échéances se modifient). Un acompte non facturé se retire à 0 % dans l’onglet Factures.</p>' : ''}
         <label class="terms-n">Nombre d’acomptes <select id="terms-n" ${soldeLock ? 'disabled' : ''}>${[0, 1, 2, 3].map(n => `<option ${n === (acs.length || (isCoproduction(s) || def === 0 ? 0 : 1)) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <div id="terms-list">${acRows(pcts)}</div>
         <div class="terms-solde" id="terms-solde"></div>
