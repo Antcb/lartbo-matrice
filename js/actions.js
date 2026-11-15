@@ -7,9 +7,9 @@ import { afterFeeChange, askConfirmation, becameConfirmed, sendConfirmation, val
 import { go, render } from './app.js';
 import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, FOLLOW_DATES, INVOICE_DATES, PAY_KINDS, isOff } from './constants.js';
-import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, restoreShow, save, saveLinger, sb, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
-import { reactivateRemindersWindow, createArtistFolder, editContact, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure, showPrefillFromSuivi } from './forms.js';
-import { departments, attachmentsOf, byId, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showLabel, showsFiltered, structName, unreadNotifs } from './selectors.js';
+import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, restoreShow, save, saveLinger, sb, setProspection, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
+import { reactivateRemindersWindow, createArtistFolder, editContact, prospectionBlock, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure, showPrefillFromSuivi } from './forms.js';
+import { departments, attachmentsOf, byId, contactsExclusPartages, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showLabel, showsFiltered, structName, unreadNotifs } from './selectors.js';
 import { CFG } from './config.js';
 import { propagateCommission } from './commission.js';
 import { payerLabel } from './budget.js';
@@ -196,17 +196,36 @@ export const ACTIONS = {
     if (error) return toast(error.message, true);
     const r = S.db.settings.find(x => x.key === key); if (r) r.value = el.innerHTML; else S.db.settings.push({key, value: el.innerHTML});
     toast('Signature enregistrée'); },
+  // Exclusion manuelle de la prospection (décisions du 09/11/2026) : motif demandé, fonction serveur tracée ; bloc de la fiche réaffiché
+  prospectionContact: async t => {
+    const id = t.dataset.id, exclure = t.dataset.exclure === '1';
+    // remise d'une adresse aussi portée par d'autres contacts exclus : liste et confirmation explicite, puis remise de tous (même motif)
+    const autres = exclure ? [] : contactsExclusPartages(byId('contacts', id));
+    if (autres.length){
+      const noms = autres.map(k => `${k.display_name || 'sans nom'} (${[k.email, k.email_2].filter(Boolean).join(', ')})`).join(' ; ');
+      const ok = await ask({title: 'Adresse partagée avec d’autres contacts exclus', text: `L’exclusion suit l’adresse : ${autres.length > 1 ? `ces ${autres.length} contacts portent` : 'ce contact porte'} aussi une adresse de ce contact et ${autres.length > 1 ? 'sont exclus' : 'est exclu'} : ${noms}. La remise en prospection vaudra pour tous, avec le même motif et une trace sur chaque fiche. Sans confirmation, rien ne change.`,
+        actions: [{value: 'tous', label: `Remettre les ${autres.length + 1} contacts en prospection`}]});
+      if (ok !== 'tous') return;
+    }
+    const motif = await askText(exclure
+      ? {title: 'Exclure de la prospection ?', text: 'Le contact n’est plus proposé dans les prospections et n’est pas ajouté à Brevo. S’il est déjà dans Brevo, il y reste : rien n’est supprimé ni désabonné. Un rattachement à une structure ne le remet pas en prospection : seul « Remettre en prospection » le fait. Le motif, ton nom et la date sont gardés.', label: 'Motif de l’exclusion', ok: 'Exclure de la prospection'}
+      : {title: 'Remettre en prospection ?', text: 'Le contact est de nouveau proposé dans les prospections et peut être ajouté à Brevo. Un désabonnement Brevo reste toujours en place. Le motif, ton nom et la date sont gardés.', label: 'Motif', ok: 'Remettre en prospection'});
+    if (!motif) return;
+    if (!(await setProspection(id, exclure, motif, autres.length ? autres.map(k => k.id) : null))) return;
+    toast(exclure ? 'Contact exclu de la prospection' : autres.length ? `${autres.length + 1} contacts remis en prospection` : 'Contact remis en prospection');
+    const el = document.getElementById('ct-prosp'); if (el) el.outerHTML = prospectionBlock(byId('contacts', id));
+  },
   brevoSyncAll: async () => {
     const n = S.db.contacts.reduce((n, c) => n + new Set([c.email, c.email_2].filter(e => /@/.test(e || '')).map(e => e.trim().toLowerCase())).size, 0);
-    if (!(await confirmAsk('Envoyer les contacts dans Brevo ?', `Contacts de la Matrice avec un mail : ${n}. Seuls ceux qui ne sont pas encore dans Brevo sont ajoutés : les autres (et les désabonnés) ne sont pas touchés. Les contacts liés uniquement à des structures inactives ne sont pas ajoutés.`, 'Envoyer à Brevo'))) return;
+    if (!(await confirmAsk('Envoyer les contacts dans Brevo ?', `Contacts de la Matrice avec un mail : ${n}. Seuls ceux qui ne sont pas encore dans Brevo sont ajoutés : les autres (et les désabonnés) ne sont pas touchés. Les contacts hors prospection (liés uniquement à des structures inactives, ou qui ont perdu leur dernière structure inactive) ne sont pas ajoutés.`, 'Envoyer à Brevo'))) return;
     toast('Envoi à Brevo…');
     try {
       // session de l'utilisateur (compte de l'équipe) au lieu du code secret du déclencheur (v1.47)
       const {data, error} = await sb.functions.invoke('brevo-sync', {body: {all: true}});
       const out = data || await error?.context?.json?.().catch(() => null) || {ok: false, error: 'Brevo injoignable pour le moment : réessaie dans un instant.'};
       if (!out.ok) throw new Error(out.error || 'Erreur Brevo');
-      // contacts liés uniquement à des structures inactives : pas ajoutés (v1.60.2), annoncés
-      const held = out.skipped_inactive ? ` · ${out.skipped_inactive} adresse${out.skipped_inactive > 1 ? 's' : ''} non ajoutée${out.skipped_inactive > 1 ? 's' : ''} (contacts liés uniquement à des structures inactives)` : '';
+      // contacts hors prospection (v1.60.2 ; option B du 08/11/2026) : pas ajoutés, annoncés
+      const held = out.skipped_inactive ? ` · ${out.skipped_inactive} adresse${out.skipped_inactive > 1 ? 's' : ''} non ajoutée${out.skipped_inactive > 1 ? 's' : ''} (contacts hors prospection : structures inactives)` : '';
       toast((out.count ? `${out.count} nouveaux contacts envoyés : Brevo les importe (quelques minutes)` : 'Aucun nouveau contact à ajouter dans Brevo') + held);
     } catch (err) { toast(err.message, true); }
   },
