@@ -566,7 +566,8 @@ t('compose : pièce Drive acceptée seulement avec la liste signée (att_sig) ; 
   const base = { mode: 'new', to: 'a@example.net', subject: 'x', html: 'x', send: false };
   const ok1 = appel(ctx, await signe({ ...base, attachments: [{ id: DRV, name: 'Modèle.pdf' }] }, 'compose'));
   assert.equal(ok1.ok, true, ok1.error); assert.equal(log.created.length, 1);
-  const sansListe = JSON.parse(await signe({ ...base, attachments: [{ id: DRV, name: 'Modèle.pdf' }] }, 'compose')); delete sansListe.att_sig;
+  // horodatage distinct : même demande dans la même milliseconde = « déjà utilisée » (protection anti-rejeu), échec aléatoire en CI
+  const sansListe = JSON.parse(await outgoingBody({ ...base, attachments: [{ id: DRV, name: 'Modèle.pdf' }] }, 'compose', 'secret-essai', TITULAIRE, CLE, Date.now() + 1000)); delete sansListe.att_sig;
   const r1 = appel(ctx, sansListe);
   assert.equal(r1.refused, true); assert.match(r1.error, /Pièce jointe refusée : fichier Drive non autorisé/);
   const r2 = appel(ctx, await signe({ ...base, attachments: [{ url: 'https://abcdefghijklmnopqrst.supabase.co/storage/v1/object/sign/rh/a/b.pdf?token=t', name: 'b.pdf' }] }, 'compose'));   // « rh » jamais joignable (« suivi » et « artiste » le sont, v1.63.0)
