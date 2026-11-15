@@ -9,7 +9,8 @@ export const TABLES = ['structures','contacts','contact_structures','projects','
   'pennylane_a_rattacher', 'pennylane_rattachements',   // factures du devis à rattacher à la main et historique des choix (v1.56.9)
   'spectacles',   // spectacles d'un artiste, chacun son budget type (v1.57)
   'show_deletions',   // journal des suppressions de dates (v1.60.3, lecture seule ; absent tant que la migration n'est pas appliquée)
-  'artist_calendars', 'artist_calendar_events'];   // agendas Google des artistes, lecture seule (v1.62)
+  'artist_calendars', 'artist_calendar_events',   // agendas Google des artistes, lecture seule (v1.62)
+  'mail_threads', 'mail_sync_state'];   // messagerie intégrée, boîte anthony@ (v1.61) ; les messages restent lus dans Gmail
 
 export const S = {
   rtBuffers: new Set(), rtApply: null,   // changements en direct gardés pendant un rechargement partiel (data.js refreshFor)
