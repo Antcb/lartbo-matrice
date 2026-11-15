@@ -649,6 +649,17 @@ t('décision du 16/11 : fiche supprimée dans Brevo = nouvelle adresse du contac
   assert.ok(y.r.traces.some(t => t[2] === 'bloquee'));
 });
 
+t('relecture 3 : le blocage d’une fiche supprimée dans Brevo ne passe jamais à une autre adresse gérée du contact', async () => {
+  const x = env({ 'b@x.invalid': {} }, [{ email: 'a@x.invalid', contact_id: 'k1', champ: 'email', statut: 'supprimee_brevo' }, { email: 'b@x.invalid', contact_id: 'k1', champ: 'email_2' }]);
+  await x.run(C({ email: 'b@x.invalid', email_2: null }));   // a retiré, b remonte en mail 1
+  const r = await x.run(C({ email: 'e@x.invalid', email_2: null }));
+  assert.deepEqual(r.renamed, ['e@x.invalid']); assert.deepEqual(r.removed, []); assert.deepEqual([...x.b.base.keys()], ['e@x.invalid']);
+  // nouvelle adresse déjà connue comme « supprimée par MATRICE » : le blocage s'applique quand même
+  const y = env({}, [{ email: 'a@x.invalid', contact_id: 'k1', champ: 'email', statut: 'supprimee_brevo' }, { email: 'n@x.invalid', contact_id: null, statut: 'supprimee' }]);
+  await y.run(C({ email: 'n@x.invalid' }));
+  assert.equal(y.b.appels.filter(a => a[0] === 'creer').length, 0); assert.equal(y.r.m.get('n@x.invalid').statut, 'supprimee_brevo');
+});
+
 let ko = 0;
 for (const [nom, f] of cas) { try { await f(); console.log('  ✓ ' + nom); } catch (e) { ko++; console.error('  ✗ ' + nom + '\n    ' + e.message); } }
 console.log(`Règles Brevo : ${cas.length - ko}/${cas.length} cas vérifiés.`);

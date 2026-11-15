@@ -278,8 +278,12 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
   };
   for (const f of toutes.filter((x) => x.statut === "supprimee_brevo" && x.champ && !mails.some((m) => m.e === x.email))) {
     if (String(c[f.champ!] || "").trim() && !mails.some((m) => m.champ === f.champ)) continue;   // adresse non valide : en attente
+    // emplacement repris depuis par une fiche gérée du contact (ex. mail 2 remonté en mail 1) : le blocage ne passe jamais à elle
+    if (reg.some((x) => x.champ === f.champ)) { await registre.changer(f.email, { statut: "supprimee_brevo" }, { champ: null }); continue; }
     const nouveau = mails.find((m) => m.champ === f.champ && !reg.some((x) => x.email === m.e));
-    if (!nouveau || intouchable(nouveau.e) || partagee(nouveau.e) || (await registre.lire(nouveau.e))) continue;
+    if (!nouveau || intouchable(nouveau.e) || partagee(nouveau.e)) continue;
+    const t = await registre.lire(nouveau.e);
+    if (t && t.statut !== "supprimee") continue;   // ligne « supprimee » (supprimée autrefois par MATRICE) : reprise par la réservation
     consommees.add(nouveau.e); await bloquer(f.email, nouveau);
   }
   const sources = [...reg.filter((f) => !mails.some((m) => m.e === f.email)), ...detachees];
