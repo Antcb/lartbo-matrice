@@ -117,9 +117,9 @@ const ordreGarde = src => { const i = src.indexOf('var refus = BOITE_[a] ? owner
 if (!/a === 'mail_by_msgid'\) out = mailByMsgId_\(body\.message_id\)/.test(gsProsp) || !ordreGarde(gsProsp)
   || !/var BOITE_ = \{[^}]*mail_by_msgid: 1/.test(gsProsp) || !/var BOITE_ = \{[^}]*thread_by_msgid: 1/.test(gsProsp)
   || !/a === 'thread_by_msgid'\) out = threadByMsgId_\(body\.message_id, body\.want\)/.test(gsProsp)) fail('scripts', 'Prospection.gs : action mail_by_msgid non branchée dans doPost ou non réservée au titulaire');
-// version du code renvoyée par « ping » : celle de la dernière modification de CHAQUE script (Prospection.gs : messagerie v1.63.0,
+// version du code renvoyée par « ping » : celle de la dernière modification de CHAQUE script (Prospection.gs : messagerie v1.63.1,
 // avec le code dédié et les pièces jointes contrôlées de la v1.61.1) — comparaison de texte, sans expression régulière
-for (const [n, src, v] of [['Code.gs', gsCode, 'v1.60.8'], ['Prospection.gs', gsProsp, 'v1.63.0']])
+for (const [n, src, v] of [['Code.gs', gsCode, 'v1.60.8'], ['Prospection.gs', gsProsp, 'v1.63.1']])
   if (!src.includes(`var SCRIPT_VERSION = '${v}'`)) fail('scripts', `${n} : SCRIPT_VERSION doit être '${v}'`);
 
 // 3a. Lecture du code : seulement des méthodes de lecture (Gmail) et des opérations sur du texte

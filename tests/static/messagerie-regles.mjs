@@ -560,7 +560,7 @@ t('mode essai : recherche par Message-ID (Apple Mail) limitée au libellé ; mai
 
 // (publication v1.63 sur v1.62.0) pièces jointes contrôlées (v1.61.1, attRefused_) AUSSI pour l'envoi de la messagerie (compose),
 // après le titulaire ; liste signée à part (att_sig) exclue de l'empreinte de la demande, des deux côtés
-t('compose : pièce Drive acceptée seulement avec la liste signée (att_sig) ; lien hors stockage « suivi » refusé ; rien n’est créé', async () => {
+t('compose : pièce Drive acceptée seulement avec la liste signée (att_sig) ; lien hors stockages « suivi » et « artiste » refusé ; rien n’est créé', async () => {
   const DRV = 'driveFichierModele0000000001';
   const { ctx, log } = bac({ threads: { th1: FIL }, driveFiles: { [DRV]: { bytes: Buffer.alloc(64), name: 'Modèle.pdf' } } });
   const base = { mode: 'new', to: 'a@example.net', subject: 'x', html: 'x', send: false };
@@ -569,10 +569,24 @@ t('compose : pièce Drive acceptée seulement avec la liste signée (att_sig) ; 
   const sansListe = JSON.parse(await signe({ ...base, attachments: [{ id: DRV, name: 'Modèle.pdf' }] }, 'compose')); delete sansListe.att_sig;
   const r1 = appel(ctx, sansListe);
   assert.equal(r1.refused, true); assert.match(r1.error, /Pièce jointe refusée : fichier Drive non autorisé/);
-  const r2 = appel(ctx, await signe({ ...base, attachments: [{ url: 'https://abcdefghijklmnopqrst.supabase.co/storage/v1/object/sign/artiste/a/b.pdf?token=t', name: 'b.pdf' }] }, 'compose'));
+  const r2 = appel(ctx, await signe({ ...base, attachments: [{ url: 'https://abcdefghijklmnopqrst.supabase.co/storage/v1/object/sign/rh/a/b.pdf?token=t', name: 'b.pdf' }] }, 'compose'));   // « rh » jamais joignable (« suivi » et « artiste » le sont, v1.63.0)
   assert.equal(r2.refused, true); assert.match(r2.error, /Pièce jointe refusée/);
   assert.equal(log.created.length, 1); assert.equal(log.fetched.length, 0);
   assert.ok(RESERVED.includes('att_sig') && ctx.RESERVES_.includes('att_sig'), 'att_sig exclu de l’empreinte des deux côtés');
+});
+
+// (v1.63.1, essai réel du 15/11) le service avancé Gmail rend le corps et les pièces jointes en OCTETS (tableau signé), pas en base64 :
+// « Exception: Impossible de décoder la chaîne » à l'ouverture d'une conversation
+t('corps et pièce jointe en octets (service avancé Gmail réel) : lus sans erreur ; base64 sans bourrage accepté aussi', () => {
+  const signes = (s) => [...Buffer.from(s, 'utf8')].map((b) => (b > 127 ? b - 256 : b));
+  const { ctx } = bac();
+  const acc = ctx.parts_({ mimeType: 'multipart/alternative', parts: [
+    { mimeType: 'text/plain', body: { data: signes('Réponse à l’essai'), size: 20 } },
+    { mimeType: 'text/html', body: { data: Buffer.from('<p>Été</p>').toString('base64url').replace(/=+$/, ''), size: 12 } }] }, { html: '', text: '', attachments: [] });
+  assert.equal(acc.text, 'Réponse à l’essai'); assert.equal(acc.html, '<p>Été</p>');
+  ctx.Gmail.Users.Messages.Attachments.get = () => ({ size: 3, data: signes('é!') });
+  const a = ctx.attachment_({ message_id: 'g1', attachment_id: 'att1' });
+  assert.equal(typeof a.data, 'string'); assert.equal(Buffer.from(a.data, 'base64url').toString('utf8'), 'é!');
 });
 
 let ok = 0;
