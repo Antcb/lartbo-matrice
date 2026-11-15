@@ -8,7 +8,7 @@
 // migration 2026-11-10_v1.61.1_secret_prospection.sql ; propriété SECRET_PROSPECTION du script) — jamais celui du script principal
 // (drive_webhook_secret), sauf repli de TRANSITION ci-dessous ; pièces jointes contrôlées ici (identite.ts, attachmentsCheck).
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { attachmentsCheck, isOldProspectRefusal, outgoingBody, templateDriveIds } from './identite.ts';
+import { artistDriveIds, attachmentsCheck, isOldProspectRefusal, outgoingBody, templateDriveIds } from './identite.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -60,7 +60,9 @@ Deno.serve(async (req) => {
     if (prospect && 'attachments' in payload) {
       const { data: tpls, error: te } = await admin.from('mail_templates').select('attachments');
       if (te) { console.error('modèles', te.message); return json({ ok: false, error: 'Modèles de mail illisibles pour le moment : réessaie dans un instant. Rien n’a été envoyé.' }, 500); }
-      const chk = attachmentsCheck(payload.attachments, templateDriveIds(tpls), URL_);
+      const { data: arts, error: ae } = await admin.from('projects').select('artist_docs');
+      if (ae) { console.error('documents artistes', ae.message); return json({ ok: false, error: 'Documents des artistes illisibles pour le moment : réessaie dans un instant. Rien n’a été envoyé.' }, 500); }
+      const chk = attachmentsCheck(payload.attachments, new Set([...templateDriveIds(tpls), ...artistDriveIds(arts)]), URL_);
       if (!chk.ok) return json({ ok: false, error: chk.error });
       payload.attachments = chk.attachments;
     }

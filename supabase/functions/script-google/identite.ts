@@ -97,13 +97,18 @@ export const driveIdsOf = (list: unknown): string[] =>
 export const templateDriveIds = (rows: unknown): Set<string> => new Set((Array.isArray(rows) ? rows : [])
   .flatMap((r: any) => Array.isArray(r?.attachments) ? r.attachments : [])
   .map((a: any) => typeof a?.id === 'string' ? a.id : '').filter((id: string) => DRIVE_ID_RE.test(id)));
-/** Lien temporaire signé du stockage « suivi » de ce projet Supabase (créé par l'application, signedUrl de js/data.js) */
+/** (messagerie, exigence d'Anthony du 09/11 : documents des projets joignables) fichiers Drive des documents de la fiche artiste
+ *  (projects.artist_docs[].file_id) : autorisés comme ceux des modèles de mail */
+export const artistDriveIds = (rows: unknown): Set<string> => new Set((Array.isArray(rows) ? rows : [])
+  .flatMap((r: any) => Array.isArray(r?.artist_docs) ? r.artist_docs : [])
+  .map((d: any) => typeof d?.file_id === 'string' ? d.file_id : '').filter((id: string) => DRIVE_ID_RE.test(id)));
+/** Lien temporaire signé du stockage « suivi » ou « artiste » de ce projet Supabase (créé par l'application, signedUrl de js/data.js) */
 export function matriceUrlOk(u: unknown, supabaseUrl: string): boolean {
   if (typeof u !== 'string' || u.length > 2000) return false;
   try {
     const x = new URL(u), base = new URL(supabaseUrl);
     return x.protocol === 'https:' && x.origin === base.origin && !x.username && !x.password && !x.hash
-      && x.pathname.startsWith('/storage/v1/object/sign/suivi/') && !x.pathname.includes('/../') && !!x.searchParams.get('token');
+      && (x.pathname.startsWith('/storage/v1/object/sign/suivi/') || x.pathname.startsWith('/storage/v1/object/sign/artiste/')) && !x.pathname.includes('/../') && !!x.searchParams.get('token');
   } catch { return false; }
 }
 /**
@@ -121,7 +126,7 @@ export function attachmentsCheck(list: unknown, allowedDrive: Set<string>, supab
     if (!f || typeof f !== 'object') return no('pièce illisible');
     if (f.id !== undefined) {
       if (typeof f.id !== 'string' || !DRIVE_ID_RE.test(f.id) || f.url !== undefined) return no('identifiant Drive illisible');
-      if (!allowedDrive.has(f.id)) return no('ce fichier Drive n’est joint à aucun modèle de mail de la Matrice (Réglages › Modèles de mail)');
+      if (!allowedDrive.has(f.id)) return no('ce fichier Drive n’est ni joint à un modèle de mail ni un document d’une fiche artiste de la Matrice');
       out.push({ id: f.id });
     } else if (f.url !== undefined) {
       if (!matriceUrlOk(f.url, supabaseUrl)) return no('le lien n’est pas un fichier de la Matrice (lien temporaire expiré ou illisible ? réessaie)');

@@ -85,7 +85,7 @@ function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).se
  *  - sinon la demande entière est refusée AVANT toute création : aucun brouillon, aucun envoi.
  */
 var DRIVE_ID_RE_ = /^[\w-]{25,200}$/;
-var MATRICE_URL_RE_ = /^https:\/\/[a-z0-9]{20}\.supabase\.co\/storage\/v1\/object\/sign\/suivi\/[^?#\s]+\?token=[\w.-]+$/;
+var MATRICE_URL_RE_ = /^https:\/\/[a-z0-9]{20}\.supabase\.co\/storage\/v1\/object\/sign\/(suivi|artiste)\/[^?#\s]+\?token=[\w.-]+$/;
 var ATT_MAX_ = 20;
 function attRefused_(b) {
   var list = b.attachments;
