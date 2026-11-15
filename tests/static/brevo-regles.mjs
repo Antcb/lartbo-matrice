@@ -631,6 +631,24 @@ t('relecture 2 : erreur réseau pendant un renommage ou une création = registre
   assert.equal(r2.errors.length, 1); assert.equal(y.r.m.get('lea@x.invalid').statut, 'supprimee');
 });
 
+t('décision du 16/11 : fiche supprimée dans Brevo = nouvelle adresse du contact NON créée non plus ; « Recréer » la débloque', async () => {
+  // a) déjà notée supprimée dans Brevo, puis changement d'adresse
+  const x = env({}, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email', statut: 'supprimee_brevo' }]);
+  const r = await x.run(C({ email: 'lea.neuf@x.invalid' }));
+  assert.equal(x.b.appels.filter(a => a[0] === 'creer').length, 0); assert.deepEqual(r.deletedInBrevo, ['lea.neuf@x.invalid']);
+  assert.equal(x.r.m.get('lea.neuf@x.invalid').statut, 'supprimee_brevo');
+  await x.run(C({ email: 'lea.neuf@x.invalid', first_name: 'Autre' }));
+  assert.equal(x.b.appels.filter(a => a[0] === 'creer').length, 0, 'toujours bloquée aux passages suivants');
+  x.r.m.get('lea.neuf@x.invalid').statut = 'supprimee';   // brevo_recreer
+  await x.run(C({ email: 'lea.neuf@x.invalid' })); assert.equal(x.b.base.has('lea.neuf@x.invalid'), true);
+  // b) découverte au moment du renommage (404) : ni recréée, ni nouvelle fiche
+  const y = env({}, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
+  await y.run(C({ email: 'lea.neuf@x.invalid' }));
+  assert.equal(y.b.appels.filter(a => a[0] === 'creer').length, 0); assert.equal(y.b.base.size, 0);
+  assert.equal(y.r.m.get('lea@x.invalid').statut, 'supprimee_brevo'); assert.equal(y.r.m.get('lea.neuf@x.invalid').statut, 'supprimee_brevo');
+  assert.ok(y.r.traces.some(t => t[2] === 'bloquee'));
+});
+
 let ko = 0;
 for (const [nom, f] of cas) { try { await f(); console.log('  ✓ ' + nom); } catch (e) { ko++; console.error('  ✗ ' + nom + '\n    ' + e.message); } }
 console.log(`Règles Brevo : ${cas.length - ko}/${cas.length} cas vérifiés.`);
