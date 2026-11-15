@@ -17,6 +17,7 @@ import { payerLabel } from './budget.js';
 import { S, localSet, setProjects, touch } from './state.js';
 import { MODALS, openModal } from './ui/modal.js';
 import { ask, askText, confirmAsk, copyText } from './ui/dialog.js';
+import { brevoDoublonsHTML, brevoRecreer } from './brevo.js';
 import { modalSaved } from './ui/drafts.js';
 import { applyAcompte, saveDelays, saveDepartments } from './views/settings.js';
 import { hasLogDraft, setLogDraft } from './views/suivi.js';
@@ -219,9 +220,16 @@ export const ACTIONS = {
     toast(exclure ? 'Contact exclu de la prospection' : autres.length ? `${autres.length + 1} contacts remis en prospection` : 'Contact remis en prospection');
     const el = document.getElementById('ct-prosp'); if (el) el.outerHTML = prospectionBlock(byId('contacts', id));
   },
+  // fiche supprimée à la main dans Brevo : recréée seulement à la demande (règle du 16/11/2026), après confirmation
+  brevoRecreer: async t => {
+    const c = byId('contacts', t.dataset.id), email = t.dataset.email;
+    if (!(await confirmAsk('Recréer la fiche dans Brevo ?', `La fiche ${email} a été supprimée directement dans Brevo. MATRICE la recrée dans la liste Brevo des Réglages. Vérifie avant qu’elle n’a pas été supprimée volontairement (demande de la personne).`, 'Recréer dans Brevo'))) return;
+    await brevoRecreer(email, c);
+  },
+  brevoDoublons: async () => { const el = document.getElementById('brevo-doublons'); if (el) el.innerHTML = await brevoDoublonsHTML(); },
   brevoSyncAll: async () => {
     const n = S.db.contacts.reduce((n, c) => n + new Set([c.email, c.email_2].filter(e => /@/.test(e || '')).map(e => e.trim().toLowerCase())).size, 0);
-    if (!(await confirmAsk('Envoyer les contacts dans Brevo ?', `Contacts de la Matrice avec un mail : ${n}. Seuls ceux qui ne sont pas encore dans Brevo sont ajoutés : les autres (et les désabonnés) ne sont pas touchés. Les contacts hors prospection (liés uniquement à des structures inactives, ou qui ont perdu leur dernière structure inactive) ne sont pas ajoutés.`, 'Envoyer à Brevo'))) return;
+    if (!(await confirmAsk('Envoyer les contacts dans Brevo ?', `Contacts de la Matrice avec un mail : ${n}. Seules les adresses absentes de Brevo sont ajoutées, puis gérées par MATRICE comme un contact créé seul. Jamais ajoutées : adresses protégées, adresses partagées par plusieurs contacts, fiches supprimées dans Brevo, contacts hors prospection. Les fiches déjà dans Brevo (et les désabonnés) ne sont pas touchées.`, 'Envoyer à Brevo'))) return;
     toast('Envoi à Brevo…');
     try {
       // session de l'utilisateur (compte de l'équipe) au lieu du code secret du déclencheur (v1.47)
