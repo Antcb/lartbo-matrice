@@ -30,6 +30,31 @@ export async function callerSig(key: string, target: string, mailbox: string, em
 }
 
 /**
+ * (v1.63, messagerie) Identifiant signé, UNE règle pour toutes les actions de boîte de Prospection.gs :
+ *  - « mail_by_msgid », « thread_by_msgid » : le Message-ID (inchangé depuis la v1.60.4 / v1.60.8) ;
+ *  - toute autre action : « sha256: » + empreinte de la demande ENTIÈRE (forme canonique : clés triées, JSON), champs réservés
+ *    exclus (action, secret, caller…). Une signature captée ne peut donc servir ni pour une autre conversation, ni pour un autre
+ *    destinataire, texte ou rangement : seulement pour la même demande, une fois, dans les 5 minutes.
+ * Même calcul dans apps-script/Prospection.gs (canon_, identOf_), contrôlé par tests/static/messagerie-regles.mjs.
+ */
+export const RESERVED = ['action', 'secret', 'caller', 'caller_ts', 'caller_sig', 'att_sig'];   // att_sig : liste signée à part (pièces jointes)
+export function canon(v: unknown): string {
+  if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+  if (v && typeof v === 'object') return '{' + Object.keys(v as Record<string, unknown>).sort()
+    .filter((k) => (v as Record<string, unknown>)[k] !== undefined)
+    .map((k) => JSON.stringify(k) + ':' + canon((v as Record<string, unknown>)[k])).join(',') + '}';
+  return JSON.stringify(v === undefined ? null : v);
+}
+export async function identOf(action: string, payload: Record<string, unknown>): Promise<string> {
+  // recherche par Message-ID (message seul, ou sa conversation : v1.60.8) : le Message-ID, comme publié — « want » ne peut viser
+  // que des messages de CETTE conversation, déjà couverte par l'identifiant signé
+  if (action === 'mail_by_msgid' || action === 'thread_by_msgid') return typeof payload.message_id === 'string' ? payload.message_id : '';
+  const rest = Object.fromEntries(Object.entries(payload).filter(([k]) => !RESERVED.includes(k)));
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canon(rest)));
+  return 'sha256:' + [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
  * Corps envoyé au script : la demande du navigateur d'abord, puis action, code secret des scripts et identité signée — rien dans
  * « payload » ne peut les remplacer. signKey : clé dédiée (jamais envoyée) ; absente → identité sans signature (refusée par le
  * script de prospection, sans effet sur les autres actions).
@@ -37,9 +62,8 @@ export async function callerSig(key: string, target: string, mailbox: string, em
 export async function outgoingBody(payload: Record<string, unknown>, action: string, secret: string, email: string,
   signKey: string, now: number = Date.now(), target: string = 'prospect'): Promise<string> {
   const caller = email.trim().toLowerCase();
-  const messageId = typeof payload.message_id === 'string' ? payload.message_id : '';   // identifiant signé (Message-ID)
   const mailbox = MAILBOX_OF[target] || '';
-  const caller_sig = signKey && mailbox ? await callerSig(signKey, target, mailbox, caller, action, messageId, now) : '';
+  const caller_sig = signKey && mailbox ? await callerSig(signKey, target, mailbox, caller, action, await identOf(action, payload), now) : '';
   // (réserve sécurité du 10/11/2026) fichiers Drive joints, déjà contrôlés par le relais (attachmentsCheck) : leur liste est signée
   // à part (att_sig) — le script de prospection ne lit un fichier Drive que s'il figure dans une liste signée de moins de 5 minutes
   const ids = driveIdsOf(payload.attachments);
@@ -73,13 +97,18 @@ export const driveIdsOf = (list: unknown): string[] =>
 export const templateDriveIds = (rows: unknown): Set<string> => new Set((Array.isArray(rows) ? rows : [])
   .flatMap((r: any) => Array.isArray(r?.attachments) ? r.attachments : [])
   .map((a: any) => typeof a?.id === 'string' ? a.id : '').filter((id: string) => DRIVE_ID_RE.test(id)));
-/** Lien temporaire signé du stockage « suivi » de ce projet Supabase (créé par l'application, signedUrl de js/data.js) */
+/** (messagerie, exigence d'Anthony du 09/11 : documents des projets joignables) fichiers Drive des documents de la fiche artiste
+ *  (projects.artist_docs[].file_id) : autorisés comme ceux des modèles de mail */
+export const artistDriveIds = (rows: unknown): Set<string> => new Set((Array.isArray(rows) ? rows : [])
+  .flatMap((r: any) => Array.isArray(r?.artist_docs) ? r.artist_docs : [])
+  .map((d: any) => typeof d?.file_id === 'string' ? d.file_id : '').filter((id: string) => DRIVE_ID_RE.test(id)));
+/** Lien temporaire signé du stockage « suivi » ou « artiste » de ce projet Supabase (créé par l'application, signedUrl de js/data.js) */
 export function matriceUrlOk(u: unknown, supabaseUrl: string): boolean {
   if (typeof u !== 'string' || u.length > 2000) return false;
   try {
     const x = new URL(u), base = new URL(supabaseUrl);
     return x.protocol === 'https:' && x.origin === base.origin && !x.username && !x.password && !x.hash
-      && x.pathname.startsWith('/storage/v1/object/sign/suivi/') && !x.pathname.includes('/../') && !!x.searchParams.get('token');
+      && (x.pathname.startsWith('/storage/v1/object/sign/suivi/') || x.pathname.startsWith('/storage/v1/object/sign/artiste/')) && !x.pathname.includes('/../') && !!x.searchParams.get('token');
   } catch { return false; }
 }
 /**
@@ -97,7 +126,7 @@ export function attachmentsCheck(list: unknown, allowedDrive: Set<string>, supab
     if (!f || typeof f !== 'object') return no('pièce illisible');
     if (f.id !== undefined) {
       if (typeof f.id !== 'string' || !DRIVE_ID_RE.test(f.id) || f.url !== undefined) return no('identifiant Drive illisible');
-      if (!allowedDrive.has(f.id)) return no('ce fichier Drive n’est joint à aucun modèle de mail de la Matrice (Réglages › Modèles de mail)');
+      if (!allowedDrive.has(f.id)) return no('ce fichier Drive n’est ni joint à un modèle de mail ni un document d’une fiche artiste de la Matrice');
       out.push({ id: f.id });
     } else if (f.url !== undefined) {
       if (!matriceUrlOk(f.url, supabaseUrl)) return no('le lien n’est pas un fichier de la Matrice (lien temporaire expiré ou illisible ? réessaie)');
