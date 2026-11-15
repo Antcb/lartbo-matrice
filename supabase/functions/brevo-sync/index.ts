@@ -97,7 +97,7 @@ const registre: Registre = {
     const t = await registre.lire(nouveau);
     if (t && t.statut !== "supprimee") return false;
     if (t) ok(await sb.from("brevo_fiches").delete().eq("email", nouveau).eq("statut", "supprimee"));
-    const r = await sb.from("brevo_fiches").update({ email: nouveau, maj_at: new Date().toISOString() }).eq("email", ancien).eq("contact_id", contactId).select("email");
+    const r = await sb.from("brevo_fiches").update({ email: nouveau, statut: "renommage", maj_at: new Date().toISOString() }).eq("email", ancien).eq("contact_id", contactId).in("statut", ["active", "conflit", "detachee", "renommage"]).select("email");
     if (r.error?.code === "23505") return false;
     return (ok(r) as unknown[]).length > 0;
   },
@@ -193,7 +193,7 @@ async function adopter(key: string, protegees: Set<string>, executer: boolean, l
     cand.push({ email: e, c, champ, at, change });
   }
   if (!executer) return { ok: true, apercu: true, ...n, modifications_par_champ: parChamp };
-  const lot = cand.slice(0, Math.max(1, Math.min(limite, 2000)));
+  const lot = cand.slice(0, Math.max(1, Math.min(limite, 500)));   // lots courts : jamais près du temps limite de la fonction
   let adoptees = 0; const erreurs: string[] = [];
   for (let i = 0; i < lot.length; i += 100) {
     const pris = [];
@@ -243,7 +243,7 @@ Deno.serve(async (req) => {
     if (body.adoption) {
       if (!hook) return json({ ok: false, error: "Accès refusé" }, 401);
       if (essai) return json({ ok: false, error: "Mode essai Brevo actif : adoption désactivée pendant l’essai." });
-      return json(await adopter(key, protegees, body.adoption === "executer" && body.confirmer === "ADOPTER", Number(body.limite) || 1000));
+      return json(await adopter(key, protegees, body.adoption === "executer" && body.confirmer === "ADOPTER", Number(body.limite) || 500));
     }
 
     // Tout envoyer d'un coup (import Brevo) : mêmes règles qu'un contact créé seul (registre, protections, fiches supprimées dans Brevo)

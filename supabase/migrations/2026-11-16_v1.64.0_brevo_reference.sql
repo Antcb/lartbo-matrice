@@ -1,4 +1,4 @@
--- v1.64 — Brevo : MATRICE fait référence, Brevo est l'outil de diffusion (décisions d'Anthony du 16/11/2026, 11 règles validées).
+-- v1.64.0 — Brevo : MATRICE fait référence, Brevo est l'outil de diffusion (décisions d'Anthony du 16/11/2026, 11 règles validées).
 -- Registre des fiches Brevo gérées par MATRICE (brevo_fiches), journal (brevo_journal), adresses protégées (réglage brevo_protegees),
 -- contacts supprimés (déclencheur brevo_contact_supprime), adresses partagées (brevo_porteurs, brevo_doublons), recréation volontaire
 -- d'une fiche supprimée dans Brevo (brevo_recreer). AUCUNE donnée existante n'est modifiée ni supprimée : le registre est seulement
@@ -13,7 +13,7 @@ create table if not exists public.brevo_fiches (
   contact_id uuid,                     -- pas de clé étrangère : la ligne survit à la suppression du contact (règles de suppression)
   champ text check (champ in ('email', 'email_2')),
   origine text not null check (origine in ('matrice', 'preexistante')),
-  statut text not null check (statut in ('creation', 'active', 'conflit', 'supprimee_brevo', 'detachee', 'suppression', 'supprimee')),
+  statut text not null check (statut in ('creation', 'renommage', 'active', 'conflit', 'supprimee_brevo', 'detachee', 'suppression', 'supprimee')),
   detail text,
   maj_at timestamptz not null default now()
 );
@@ -42,18 +42,24 @@ grant select, insert on public.brevo_journal to service_role;
 -- Amorçage : fiches DÉJÀ créées par MATRICE (règle inchangée jusqu'ici). Adresse encore portée par le contact : active ; adresse que
 -- le contact n'a plus (changée avant la v1.64) : détachée (jamais supprimée à cause de l'amorçage). Adresse revendiquée par deux
 -- contacts : la première seulement (on conflict do nothing) — elle sera protégée comme adresse partagée.
+-- Cas ancien (avant la v1.32, brevo_created sans brevo_emails) : on ne sait pas si le mail 1 ACTUEL est celui qui a été créé →
+-- inscrit comme « preexistante » (mise à jour, jamais supprimé automatiquement), par prudence.
 insert into public.brevo_fiches (email, contact_id, champ, origine, statut, detail)
 select x.e,
        case when x.champ is null then null else x.id end,
-       x.champ, 'matrice',
+       x.champ, x.origine,
        case when x.champ is null then 'detachee' else 'active' end,
        case when x.champ is null then 'Amorçage v1.64 : adresse plus portée par le contact' end
 from (
-  select c.id, lower(btrim(e)) e,
-         case when lower(btrim(e)) = lower(btrim(c.email)) then 'email' when lower(btrim(e)) = lower(btrim(c.email_2)) then 'email_2' end champ
-  from public.contacts c, unnest(coalesce(c.brevo_emails, '{}') ||
-       case when c.brevo_created and coalesce(cardinality(c.brevo_emails), 0) = 0 and c.email is not null then array[c.email] else '{}'::text[] end) e
-  where coalesce(btrim(e), '') <> ''
+  select c.id, lower(btrim(e.v)) e, e.origine,
+         case when lower(btrim(e.v)) = lower(btrim(c.email)) then 'email' when lower(btrim(e.v)) = lower(btrim(c.email_2)) then 'email_2' end champ
+  from public.contacts c
+  cross join lateral (
+    select v, 'matrice' origine from unnest(coalesce(c.brevo_emails, '{}')) v
+    union all
+    select c.email, 'preexistante' where c.brevo_created and coalesce(cardinality(c.brevo_emails), 0) = 0 and c.email is not null
+  ) e
+  where coalesce(btrim(e.v), '') <> ''
 ) x
 on conflict (email) do nothing;
 
@@ -131,7 +137,7 @@ end $$;
 create or replace function public.brevo_contact_supprime_trg() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  if exists (select 1 from public.brevo_fiches f where f.contact_id = old.id and f.statut in ('active', 'conflit')) then
+  if exists (select 1 from public.brevo_fiches f where f.contact_id = old.id and f.statut in ('active', 'conflit', 'creation', 'renommage')) then
     perform public.brevo_post(jsonb_build_object('contact_supprime', old.id));
   end if;
   return old;
