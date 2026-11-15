@@ -35,6 +35,10 @@ export const LINK_LABEL = {auto: 'Rattaché automatiquement', manuel: 'Rattaché
 /** État affiché : un retrait manuel (« manuel » sans structure ni suivi) n'est plus « À rattacher » et n'est jamais refait automatiquement */
 export const linkState = t => t.link_status === 'manuel' && !t.structure_id && !t.prospect_id ? 'aucun' : t.link_status;
 
+/** (v1.63.2, essai réel du 15/11) pièce listée au transfert : tout sauf une IMAGE intégrée au texte. Apple Mail marque « inline » les PDF
+ *  joints, que le script transfère bien (getAttachments sans images intégrées) : ils doivent donc être listés. */
+export const fwdListed = a => !(a?.inline && /^image\//i.test(a.mime || ''));
+
 /** État de l'espace Mails (mémoire de la page) */
 export const M = {owner: undefined, filter: 'inbox', label: '', labels: null, search: null, open: null, thread: null, loading: false, error: '', images: new Set()};
 
@@ -227,7 +231,7 @@ export async function compose(mode, row = null, msg = null){
   ctx.contact_id = hits.length === 1 ? hits[0].id : '';
   let files = saved.files || (mode === 'forward' ? [] : []), draftId = saved.draft_id || null, wantDraft = false;
   // transfert : seules les vraies pièces jointes d'origine (les images intégrées au texte ne sont ni listées ni jointes)
-  const keepFwd = mode === 'forward' ? (base?.attachments || []).filter(a => !a.inline) : [];
+  const keepFwd = mode === 'forward' ? (base?.attachments || []).filter(fwdListed) : [];
   const sig = setting('prospect_signature') || '';
   const subjectDefault = !base ? '' : mode === 'forward' ? (/^(tr|fwd?)\s*:/i.test(base.subject) ? base.subject : 'Tr : ' + base.subject) : (/^re\s*:/i.test(base.subject) ? base.subject : 'Re: ' + base.subject);
   const tpls = S.db.mail_templates.slice().sort((a, b) => (a.kind || '').localeCompare(b.kind || '') || (a.name || '').localeCompare(b.name || ''));

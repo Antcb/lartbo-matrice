@@ -138,6 +138,13 @@ test('v1.61 : limite de Gmail calculée sur le message encodé (base64), pas sur
   expect(r.deux).toBeGreaterThan(25);
 });
 
+test('v1.63.2 : transfert — un PDF joint marqué « inline » par Apple Mail est listé, une image intégrée au texte ne l’est pas', async ({ page }) => {
+  await openApp(page);
+  const r = await page.evaluate(async () => { const { fwdListed } = await import('./js/mailbox.js');
+    return [fwdListed({ inline: true, mime: 'application/pdf' }), fwdListed({ inline: true, mime: 'image/png' }), fwdListed({ mime: 'image/jpeg' })]; });
+  expect(r).toEqual([true, false, true]);
+});
+
 test('v1.61 : un modèle inséré ne remplace jamais un texte sélectionné (relecture B3)', async ({ page }) => {
   const ctx = await openApp(page);
   await preparer(page);
