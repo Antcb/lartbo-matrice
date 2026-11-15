@@ -2,6 +2,7 @@
  * Formulaires de création / modification : date, projet, tâche, contact, structure, suivi, événement,
  * créations rapides (structure, contact) depuis un champ de recherche, export CSV des suivis, photo de projet.
  */
+import { calCheckBeforeSave, calPanelHTML } from './calendars.js';
 import { ask, askText } from './ui/dialog.js';
 import { FORMAT_FIELD, exportTable } from './exports.js';
 import { propagateCommission } from './commission.js';
@@ -211,6 +212,8 @@ export function editShow(id, projectId, prefill={}){
       if (v.spectacle_id && byId('spectacles', v.spectacle_id)?.project_id !== v.project_id) { toast('Ce spectacle n’est pas celui de cet artiste : choisis-en un autre', true); return false; }
       if (!id && !v.spectacle_id && spectaclesOf(v.project_id).some(x => x.active)) { toast('Choisis le spectacle de cette date', true); return false; }
       await locateShow(v, s);
+      // agenda Google de l'artiste : chevauchement avec une indisponibilité (ou agenda plus à jour) → avertissement, poursuite possible
+      if (!(await calCheckBeforeSave(v, id ? s : null))) return false;
       const before = s.status, wasOff = isOff(before), nowOff = isOff(v.status), oldFee = s.fee_ht;
       let showId = id, ok = true;
       if (id){
@@ -281,6 +284,7 @@ export function editProject(id){
       {k:'contract_template_cc', label:'Contrat de cession', full:true, placeholder:'https://docs.google.com/document/d/…'},
       {k:'contract_template_cr', label:'Contrat de co-réalisation', full:true, placeholder:'https://docs.google.com/document/d/…'},
       {k:'notes', label:'Notes', type:'textarea', full:true},
+      ...(id ? [{k:'_h_cal', type:'html', full:true, html:`<h3 class="block-title mt-sm">Agenda Google (lecture seule)</h3>${calPanelHTML(id)}`}] : []),
     ],
     deleteAsk: () => ({title: 'Supprimer l’artiste ?', text: `Supprimer l’artiste « ${p.name || ''} » de la Matrice ?\nSes lignes de budget et ses modèles de mail propres sont supprimés avec lui ; ses dates, suivis et tâches restent, sans artiste.\nSes membres et son journal (échanges et pièces jointes) restent en base mais ne s’affichent plus nulle part.\nSes dossiers et fichiers Google Drive ne sont pas touchés.`,
       actions: [{value: 'del', label: 'Supprimer l’artiste', danger: true}]}),
