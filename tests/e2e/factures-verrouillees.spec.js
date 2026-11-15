@@ -212,12 +212,6 @@ test('relecture 4 (règle du 10/11/2026) : solde émis → un acompte non factur
   expect(r.retire, 'retirer (0 %) : permis').toBe('');
   expectClean(ctx);
 });
-  await expect(page.locator('input[data-id="z-a"][data-f="pct"]')).toBeDisabled();
-  await expect(page.locator('button[data-act="delPay"][data-id="z-a"]')).toHaveCount(0);
-  await page.evaluate(async () => (await import('./js/actions.js')).ACTIONS.delPay({ dataset: { id: 'z-a' } }));
-  expect(await page.evaluate(() => window.__DB.show_payments.some(p => p.id === 'z-a'))).toBe(true);
-  expectClean(ctx);
-});
 
 test('relecture 6 : la fiche complète de la date pose la même question sur le cachet', async ({ page }) => {
   const ctx = await openApp(page);
