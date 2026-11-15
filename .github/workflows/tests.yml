@@ -38,6 +38,8 @@ jobs:
         run: node --experimental-strip-types --no-warnings static/acces-boite.mjs
       - name: Conversation entière d'un mail glissé (scripts Google simulés, lecture seule)
         run: node --experimental-strip-types --no-warnings static/conversation.mjs
+      - name: Script de prospection — code dédié et pièces jointes limitées (relais et script simulés)
+        run: node --experimental-strip-types --no-warnings static/secret-prospection.mjs
       - name: Syntaxe des fonctions serveur (une fonction qui ne démarrerait pas une fois déployée)
         run: node --no-warnings static/fonctions-syntaxe.mjs
       - name: Règles de la synchronisation Pennylane (fausses données, aucun appel)
