@@ -369,7 +369,8 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
     if (f && f.contact_id !== c.id && ACTIVES.includes(f.statut) && await registre.changer(email, { contact_id: f.contact_id }, { contact_id: c.id, champ })) f = await registre.lire(email);
     if (f && f.statut === "supprimee_brevo") { deletedInBrevo.push(email); continue; }
     if (f && f.contact_id === c.id && ACTIVES.includes(f.statut)) {
-      if (f.champ !== champ) await registre.changer(email, { contact_id: c.id }, { champ });
+      // cas ambigu : emplacements du registre gardés tels quels (sinon la synchronisation suivante ne verrait plus le conflit)
+      if (f.champ !== champ && !ambigu) await registre.changer(email, { contact_id: c.id }, { champ });
       const g = await client.lire(email);
       if (!g.ok && g.status !== 404) { errors.push(await err(email, g)); continue; }
       if (!g.ok) {
