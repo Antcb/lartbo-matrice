@@ -265,6 +265,27 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
   const intouchable = (e: string) => protegees.has(e) || !autorise(e);
   const consommees = new Set<string>();
 
+  // CAS AMBIGU (décision d'Anthony du 16/11/2026) : le contact avait DEUX adresses gérées (mail 1 et mail 2) et, dans le même
+  // enregistrement, les deux emplacements changent, avec au moins une adresse quittée et au moins une adresse nouvelle (ex. mail 1
+  // vidé et mail 2 changé ; mail 2 remonté en mail 1 et nouveau mail 2). On ne peut pas savoir quelle fiche devient quelle adresse :
+  // AUCUNE fiche n'est supprimée ni renommée, et la nouvelle adresse n'est pas créée, tant que le conflit n'est pas résolu (l'équipe
+  // remet l'une des anciennes adresses, enregistre, puis change l'autre). Les adresses gérées encore portées restent mises à jour.
+  const norme = (v: unknown) => String(v || "").trim().toLowerCase();
+  const reg1 = reg.find((f) => f.champ === "email"), reg2 = reg.find((f) => f.champ === "email_2");
+  const ambigu = !!reg1 && !!reg2 && norme(c.email) !== reg1.email && norme(c.email_2) !== reg2.email
+    && reg.some((f) => !mails.some((m) => m.e === f.email)) && mails.some((m) => !reg.some((f) => f.email === m.e));
+  const enAttente: string[] = [];
+  if (ambigu) {
+    const detail = `Les deux adresses ont changé dans le même enregistrement (${mails.map((m) => m.e).join(", ") || "aucune adresse"}) : rien n’est fait dans Brevo. Remets l’une des deux anciennes adresses, enregistre, puis change l’autre.`;
+    for (const f of reg.filter((x) => !mails.some((m) => m.e === x.email))) {
+      if (intouchable(f.email)) { protectedSkip.push(f.email); continue; }
+      if (await registre.changer(f.email, { statut: f.statut, contact_id: c.id }, { statut: "conflit", detail }))
+        await registre.journal(f.email, c.id, "conflit", "deux adresses changées en même temps");
+      conflicts.push(f.email);
+    }
+    for (const m of mails) if (!reg.some((f) => f.email === m.e)) { consommees.add(m.e); enAttente.push(m.e); }
+  }
+
   // 1. adresses que le contact n'a plus (fiches gérées), puis fiches désabonnées détachées de ce contact (reprises si son
   //    emplacement reçoit une nouvelle adresse : même fiche, le désabonnement suit, jamais de nouvelle fiche inscrite)
   // décision d'Anthony du 16/11 : fiche supprimée volontairement dans Brevo = jamais recréée, MÊME si l'adresse du contact change
@@ -276,7 +297,7 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
     await registre.journal(nouveau.e, c.id, "bloquee", `ancienne fiche ${ancienne} supprimée dans Brevo`);
     deletedInBrevo.push(nouveau.e); return true;
   };
-  for (const f of toutes.filter((x) => x.statut === "supprimee_brevo" && x.champ && !mails.some((m) => m.e === x.email))) {
+  for (const f of ambigu ? [] : toutes.filter((x) => x.statut === "supprimee_brevo" && x.champ && !mails.some((m) => m.e === x.email))) {
     if (String(c[f.champ!] || "").trim() && !mails.some((m) => m.champ === f.champ)) continue;   // adresse non valide : en attente
     // emplacement repris depuis par une fiche gérée du contact (ex. mail 2 remonté en mail 1) : le blocage ne passe jamais à elle
     if (reg.some((x) => x.champ === f.champ)) { await registre.changer(f.email, { statut: "supprimee_brevo" }, { champ: null }); continue; }
@@ -286,7 +307,7 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
     if (t && t.statut !== "supprimee") continue;   // ligne « supprimee » (supprimée autrefois par MATRICE) : reprise par la réservation
     consommees.add(nouveau.e); await bloquer(f.email, nouveau);
   }
-  const sources = [...reg.filter((f) => !mails.some((m) => m.e === f.email)), ...detachees];
+  const sources = ambigu ? [] : [...reg.filter((f) => !mails.some((m) => m.e === f.email)), ...detachees];
   for (const f of sources) {
     const active = ACTIVES.includes(f.statut);
     if (intouchable(f.email)) { protectedSkip.push(f.email); continue; }
@@ -404,7 +425,7 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
       errors.push(`${email} : Brevo ${r.status} : ${txt.slice(0, 200)}`);
     }
   }
-  return { done, created, updated, skipped, errors, renamed, removed, conflicts, protected: protectedSkip, deletedInBrevo };
+  return { done, created, updated, skipped, errors, renamed, removed, conflicts, protected: protectedSkip, deletedInBrevo, enAttente };
 }
 
 /**

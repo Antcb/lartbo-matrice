@@ -660,6 +660,44 @@ t('relecture 3 : le blocage d’une fiche supprimée dans Brevo ne passe jamais 
   assert.equal(y.b.appels.filter(a => a[0] === 'creer').length, 0); assert.equal(y.r.m.get('n@x.invalid').statut, 'supprimee_brevo');
 });
 
+t('décision du 16/11 — cas ambigu des deux adresses : rien supprimé, rien renommé, rien créé tant que le conflit n’est pas résolu', async () => {
+  const deux = () => env({ 'a@x.invalid': { listIds: [7] }, 'b@x.invalid': { listIds: [], listUnsubscribed: [7] } },
+    [{ email: 'a@x.invalid', contact_id: 'k1', champ: 'email' }, { email: 'b@x.invalid', contact_id: 'k1', champ: 'email_2' }]);
+  // a) mail 1 vidé et mail 2 changé dans le même enregistrement
+  const x = deux();
+  const r = await x.run(C({ email: null, email_2: 'c@x.invalid' }));
+  assert.deepEqual(r.removed, []); assert.deepEqual(r.renamed, []); assert.deepEqual(r.created, []); assert.deepEqual(r.enAttente, ['c@x.invalid']);
+  assert.deepEqual(ecritures(x.b), [], 'aucune écriture dans Brevo');
+  assert.deepEqual([...x.b.base.keys()].sort(), ['a@x.invalid', 'b@x.invalid']);
+  assert.equal(x.r.m.get('a@x.invalid').statut, 'conflit'); assert.equal(x.r.m.get('b@x.invalid').statut, 'conflit');
+  assert.match(x.r.m.get('a@x.invalid').detail, /Remets l’une des deux anciennes adresses/);
+  assert.equal(x.r.m.has('c@x.invalid'), false);
+  // une nouvelle synchronisation (rattachement…) sans correction : toujours rien
+  await x.run(C({ email: null, email_2: 'c@x.invalid', first_name: 'Autre' }));
+  assert.deepEqual(ecritures(x.b), []);
+  // résolution : l'équipe remet b en mail 2, enregistre (a retiré seul = règle de retrait), puis change b
+  const r2 = await x.run(C({ email: null, email_2: 'b@x.invalid' }));
+  assert.deepEqual(r2.removed, ['a@x.invalid']); assert.equal(x.r.m.get('b@x.invalid').statut, 'active');
+  const r3 = await x.run(C({ email: null, email_2: 'c@x.invalid' }));
+  assert.deepEqual(r3.renamed, ['c@x.invalid']); assert.deepEqual(x.b.base.get('c@x.invalid').listUnsubscribed, [7], 'désabonnement gardé');
+  // b) mail 2 remonté en mail 1 et nouveau mail 2 : ambigu aussi
+  const y = deux();
+  const s = await y.run(C({ email: 'b@x.invalid', email_2: 'd@x.invalid' }));
+  assert.deepEqual(s.removed, []); assert.deepEqual(s.renamed, []); assert.deepEqual(s.created, []);
+  assert.deepEqual(ecritures(y.b).filter(a => a[0] !== 'modifier' || a[2].attributes.EMAIL), [], 'seule la mise à jour des champs de b');
+  assert.equal(y.r.m.get('a@x.invalid').statut, 'conflit'); assert.equal(y.b.base.has('a@x.invalid'), true);
+  // c) cas NON ambigus inchangés : un seul emplacement changé = renommage ; inversion mail 1 / mail 2 = rien ; retrait seul = retrait
+  const z = deux();
+  const u = await z.run(C({ email: 'a@x.invalid', email_2: 'e@x.invalid' }));
+  assert.deepEqual(u.renamed, ['e@x.invalid']); assert.deepEqual(u.conflicts, []);
+  const w = deux();
+  const v = await w.run(C({ email: 'b@x.invalid', email_2: 'a@x.invalid' }));
+  assert.deepEqual(v.removed, []); assert.deepEqual(v.conflicts, []); assert.deepEqual(v.renamed, []);
+  const q = deux();
+  const qq = await q.run(C({ email: 'b@x.invalid', email_2: null }));
+  assert.deepEqual(qq.removed, ['a@x.invalid']); assert.deepEqual(qq.conflicts, []);
+});
+
 let ko = 0;
 for (const [nom, f] of cas) { try { await f(); console.log('  ✓ ' + nom); } catch (e) { ko++; console.error('  ✗ ' + nom + '\n    ' + e.message); } }
 console.log(`Règles Brevo : ${cas.length - ko}/${cas.length} cas vérifiés.`);
