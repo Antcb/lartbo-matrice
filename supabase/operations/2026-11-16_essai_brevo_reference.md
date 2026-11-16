@@ -33,3 +33,10 @@ Contrôles après chaque scénario : lecture de la fiche Brevo (GET, sans modifi
 - Fiches d'essai restantes : suppression dans Brevo seulement avec l'accord d'Anthony.
 - `brevo_essai_emails` vidé → fonctionnement normal (la protection d'anthony@ reste).
 - L'adoption des fiches préexistantes reste une opération distincte : aperçu chiffré présenté à Anthony, exécution seulement sur son autorisation explicite.
+
+## Résultats de l'essai du 16/11 (matin) et suite
+- Scénarios 1, 2, 5 (conflit), cas ambigu, suppression, fiche supprimée dans Brevo : conformes.
+- Scénario 4 : même fiche renommée (même identifiant, historique gardé) MAIS désabonnement global perdu : Brevo réabonne une
+  fiche dont l'adresse change (documentation de PUT /contacts). Décision d'Anthony (16/11) : un contact désabonné ne doit jamais
+  redevenir abonné à cause de MATRICE → garantie impossible (comportement documenté de Brevo, désabonnements par liste non
+  garantis) → option 2 : changement d'adresse d'une fiche désabonnée bloqué (conflit explicite), rien renommé ni créé.
