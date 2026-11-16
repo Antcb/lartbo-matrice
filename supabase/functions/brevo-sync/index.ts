@@ -296,7 +296,7 @@ Deno.serve(async (req) => {
     const err = r.errors.length ? r.errors.join(" · ") : null;
     await sb.from("contacts").update({ brevo_at: new Date().toISOString(), brevo_error: err }).eq("id", c.id);
     return json({ ok: !err, error: err, emails: r.done, ...(r.skipped.length ? { skipped_inactive: r.skipped } : {}),
-      renamed: r.renamed, removed: r.removed, conflicts: r.conflicts, protected: r.protected, deleted_in_brevo: r.deletedInBrevo });
+      renamed: r.renamed, removed: r.removed, conflicts: r.conflicts, protected: r.protected, deleted_in_brevo: r.deletedInBrevo, en_attente: r.enAttente });
   } catch (e) {
     const msg = String(e);
     if (/unrecognised IP/i.test(msg)) return json({ ok: false, error: "Brevo bloque la connexion (adresse IP non autorisée). Dans Brevo : Paramètres › Sécurité › IP autorisées, désactive le blocage des adresses IP inconnues, puis réessaie." });
