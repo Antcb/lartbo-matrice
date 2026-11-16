@@ -686,6 +686,9 @@ t('décision du 16/11 — cas ambigu des deux adresses : rien supprimé, rien re
   assert.deepEqual(s.removed, []); assert.deepEqual(s.renamed, []); assert.deepEqual(s.created, []);
   assert.deepEqual(ecritures(y.b).filter(a => a[0] !== 'modifier' || a[2].attributes.EMAIL), [], 'seule la mise à jour des champs de b');
   assert.equal(y.r.m.get('a@x.invalid').statut, 'conflit'); assert.equal(y.b.base.has('a@x.invalid'), true);
+  const s2 = await y.run(C({ email: 'b@x.invalid', email_2: 'd@x.invalid', first_name: 'Autre' }));   // synchronisation suivante : toujours gelé
+  assert.deepEqual(s2.removed, []); assert.deepEqual(s2.created, []); assert.equal(y.b.base.has('a@x.invalid'), true);
+  assert.equal(y.r.m.get('b@x.invalid').champ, 'email_2', 'emplacements du registre inchangés pendant le conflit');
   // c) cas NON ambigus inchangés : un seul emplacement changé = renommage ; inversion mail 1 / mail 2 = rien ; retrait seul = retrait
   const z = deux();
   const u = await z.run(C({ email: 'a@x.invalid', email_2: 'e@x.invalid' }));
