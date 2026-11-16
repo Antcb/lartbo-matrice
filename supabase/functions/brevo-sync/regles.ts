@@ -264,6 +264,13 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
   const partagee = (e: string) => autresQue(e).length > 0;
   const intouchable = (e: string) => protegees.has(e) || !autorise(e);
   const consommees = new Set<string>();
+  // Conflit signalé sur une fiche (statut « conflit » si elle est gérée, détachée sinon) ; conflit INCHANGÉ (même statut, même
+  // explication) : rien n'est réécrit et rien n'est ajouté au journal (pas de doublon à chaque synchronisation)
+  const signaler = async (f: Fiche, active: boolean, detail: string, quoi: string) => {
+    const statut: Statut = active ? "conflit" : f.statut;
+    if (f.statut === statut && (f.detail ?? null) === detail) return;
+    if (await registre.changer(f.email, { statut: f.statut, contact_id: c.id }, { statut, detail })) await registre.journal(f.email, c.id, "conflit", quoi);
+  };
 
   // CAS AMBIGU (décision d'Anthony du 16/11/2026) : le contact avait DEUX adresses gérées (mail 1 et mail 2) et, dans le même
   // enregistrement, les deux emplacements changent, avec au moins une adresse quittée et au moins une adresse nouvelle (ex. mail 1
@@ -279,8 +286,7 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
     const detail = `Les deux adresses ont changé dans le même enregistrement (${mails.map((m) => m.e).join(", ") || "aucune adresse"}) : rien n’est fait dans Brevo. Remets l’une des deux anciennes adresses, enregistre, puis change l’autre.`;
     for (const f of reg.filter((x) => !mails.some((m) => m.e === x.email))) {
       if (intouchable(f.email)) { protectedSkip.push(f.email); continue; }
-      if (await registre.changer(f.email, { statut: f.statut, contact_id: c.id }, { statut: "conflit", detail }))
-        await registre.journal(f.email, c.id, "conflit", "deux adresses changées en même temps");
+      await signaler(f, true, detail, "deux adresses changées en même temps");
       conflicts.push(f.email);
     }
     for (const m of mails) if (!reg.some((f) => f.email === m.e)) { consommees.add(m.e); enAttente.push(m.e); }
@@ -324,17 +330,26 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
       consommees.add(nouveau.e);
       // nouvelle adresse protégée, partagée ou hors essai : aucune opération, jamais de suppression de l'ancienne fiche
       if (intouchable(nouveau.e) || partagee(nouveau.e)) {
-        if (await registre.changer(f.email, { statut: f.statut }, { ...(active ? { statut: "conflit" as const } : {}), detail: `Nouvelle adresse ${nouveau.e} protégée ou partagée : aucune opération` }))
-          await registre.journal(f.email, c.id, "conflit", nouveau.e);
+        await signaler(f, active, `Nouvelle adresse ${nouveau.e} protégée ou partagée : aucune opération`, nouveau.e);
         conflicts.push(f.email); continue;
       }
       const tenue = await registre.lire(nouveau.e);
-      if (tenue && tenue.statut !== "supprimee") { await registre.changer(f.email, { statut: f.statut }, { ...(active ? { statut: "conflit" as const } : {}), detail: `Nouvelle adresse ${nouveau.e} déjà connue de MATRICE : aucune fusion` }); conflicts.push(f.email); continue; }
+      if (tenue && tenue.statut !== "supprimee") { await signaler(f, active, `Nouvelle adresse ${nouveau.e} déjà connue de MATRICE : aucune fusion`, nouveau.e); conflicts.push(f.email); continue; }
       const g = await client.lire(nouveau.e);
       if (!g.ok && g.status !== 404) { errors.push(await err(nouveau.e, g)); continue; }
       if (g.ok) {
-        if (await registre.changer(f.email, { statut: f.statut }, { ...(active ? { statut: "conflit" as const } : {}), detail: `Nouvelle adresse ${nouveau.e} déjà présente dans Brevo : aucune fusion, à traiter à la main` }))
-          await registre.journal(f.email, c.id, "conflit", nouveau.e);
+        await signaler(f, active, `Nouvelle adresse ${nouveau.e} déjà présente dans Brevo : aucune fusion, à traiter à la main`, nouveau.e);
+        conflicts.push(f.email); continue;
+      }
+      // FICHE DÉSABONNÉE (décision d'Anthony du 16/11/2026, option 2) : Brevo RÉABONNE une fiche dont l'adresse change (documentation
+      // de PUT /contacts : « If a blocklisted contact's email address is updated, it is going to remove that blocklisting », constaté à
+      // l'essai réel) et ne garantit rien pour les désabonnements par liste. Un contact désabonné ne doit jamais redevenir abonné à
+      // cause de MATRICE : changement d'adresse BLOQUÉ (conflit explicite), ancienne fiche intacte, nouvelle adresse NON créée,
+      // abonnement jamais modifié. À traiter à la main.
+      const g0 = await client.lire(f.email);
+      if (!g0.ok && g0.status !== 404) { errors.push(await err(f.email, g0)); continue; }
+      if (g0.ok && desabonnee(await g0.text())) {
+        await signaler(f, active, `Fiche désabonnée dans Brevo : changement d’adresse vers ${nouveau.e} bloqué (Brevo réabonnerait la nouvelle adresse). Nouvelle adresse non créée ; à traiter à la main.`, `désabonnée : changement vers ${nouveau.e} bloqué`);
         conflicts.push(f.email); continue;
       }
       // renommage réservé au registre (statut « renommage » : opération en cours, aucune autre synchronisation n'y touche)

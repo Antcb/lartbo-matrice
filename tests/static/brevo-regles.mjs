@@ -51,7 +51,8 @@ function fauxBrevo(init = {}) {
       const { EMAIL, ...reste } = corps.attributes;
       if (EMAIL && EMAIL !== email) {
         if (base.has(EMAIL)) return rep(400, '{"code":"duplicate_parameter"}');
-        base.set(EMAIL, base.get(email)); base.delete(email); email = EMAIL;
+        // comme Brevo (documentation de PUT /contacts, constaté à l'essai réel du 16/11) : le désabonnement global saute au renommage
+        base.set(EMAIL, { ...base.get(email), emailBlacklisted: false }); base.delete(email); email = EMAIL;
       }
       Object.assign(base.get(email).attributes, reste);
       return rep(204);
@@ -437,13 +438,13 @@ t('v1.64 règle 1 : création puis modification = fiche créée (liste donnée U
   assert.deepEqual(x.b.base.get('lea@x.invalid').listIds, [], 'jamais réinscrite dans une liste');
   assert.equal(x.b.appels.filter(a => a[0] === 'creer').length, 1);
 });
-t('v1.64 règles 2 et 9 : changement d’adresse = MÊME fiche renommée (désabonnement, listes, champs gardés), aucun doublon', async () => {
-  const x = env({ 'lea@x.invalid': { attributes: { PRENOM: 'Léa', PREF: 'mensuelle' }, listIds: [3], emailBlacklisted: true } },
+t('v1.64 règles 2 et 9 : changement d’adresse (fiche abonnée) = MÊME fiche renommée (listes, champs gardés), aucun doublon', async () => {
+  const x = env({ 'lea@x.invalid': { attributes: { PRENOM: 'Léa', PREF: 'mensuelle' }, listIds: [3] } },
     [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
   const r = await x.run(C({ email: 'lea.martin@x.invalid' }));
   assert.deepEqual(r.renamed, ['lea.martin@x.invalid']); assert.deepEqual(r.errors, []);
   assert.equal(x.b.base.has('lea@x.invalid'), false); assert.equal(x.b.base.size, 1);
-  assert.deepEqual(x.b.base.get('lea.martin@x.invalid'), { attributes: { PRENOM: 'Léa', PREF: 'mensuelle', NOM: 'Martin', STRUCTURE: 'Salle A' }, listIds: [3], emailBlacklisted: true });
+  assert.deepEqual(x.b.base.get('lea.martin@x.invalid'), { attributes: { PRENOM: 'Léa', PREF: 'mensuelle', NOM: 'Martin', STRUCTURE: 'Salle A' }, listIds: [3], emailBlacklisted: false });
   assert.equal(x.r.m.has('lea@x.invalid'), false); assert.equal(x.r.m.get('lea.martin@x.invalid').statut, 'active');
   assert.equal(x.b.appels.filter(a => ['creer', 'supprimer'].includes(a[0])).length, 0);
 });
@@ -568,21 +569,23 @@ t('v1.64 SQL : registre amorcé sans rien supprimer ; contact supprimé relayé 
 
 // ───────────── relecture indépendante v1.64 (16/11) : 3 bloquants corrigés ─────────────
 t('relecture B1 : adresse mal saisie = rien supprimé ; corrigée ensuite = MÊME fiche renommée (pas de suppression puis création)', async () => {
-  const x = env({ 'lea@x.invalid': { listIds: [7], emailBlacklisted: true } }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
+  const x = env({ 'lea@x.invalid': { listIds: [7] } }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
   const r = await x.run(C({ email: 'lea@nouveau' }));
   assert.deepEqual(r.removed, []); assert.deepEqual(ecritures(x.b), []); assert.match(x.r.m.get('lea@x.invalid').detail, /non valide/);
   const r2 = await x.run(C({ email: 'lea@nouveau.fr' }));
   assert.deepEqual(r2.renamed, ['lea@nouveau.fr']); assert.deepEqual([...x.b.base.keys()], ['lea@nouveau.fr']);
-  assert.equal(x.b.base.get('lea@nouveau.fr').emailBlacklisted, true);
+  assert.deepEqual(x.b.base.get('lea@nouveau.fr').listIds, [7]);
 });
-t('relecture B1 : adresse vidée puis nouvelle adresse (deux enregistrements) — désabonnée : la fiche gardée est reprise, jamais de nouvelle fiche inscrite', async () => {
+t('relecture B1 + option 2 (16/11) : adresse vidée puis nouvelle adresse — désabonnée : fiche gardée intacte, nouvelle adresse NI renommée NI créée', async () => {
   const x = env({ 'lea@x.invalid': { listIds: [], listUnsubscribed: [7] } }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
   await x.run(C({ email: null, email_2: 'perso@x.invalid' }));
   assert.equal(x.b.base.has('lea@x.invalid'), true); assert.equal(x.r.m.get('lea@x.invalid').statut, 'detachee');
-  await x.run(C({ email: 'lea.nouvelle@x.invalid', email_2: 'perso@x.invalid' }));
-  assert.equal(x.b.base.has('lea.nouvelle@x.invalid'), true); assert.deepEqual(x.b.base.get('lea.nouvelle@x.invalid').listUnsubscribed, [7]);
+  const r = await x.run(C({ email: 'lea.nouvelle@x.invalid', email_2: 'perso@x.invalid' }));
+  assert.deepEqual(r.renamed, []); assert.deepEqual(r.conflicts, ['lea@x.invalid']);
+  assert.equal(x.b.base.has('lea.nouvelle@x.invalid'), false, 'nouvelle adresse non créée');
+  assert.deepEqual(x.b.base.get('lea@x.invalid').listUnsubscribed, [7], 'désabonnement intact');
   assert.deepEqual(x.b.appels.filter(a => a[0] === 'creer').map(a => a[1]), ['perso@x.invalid'], 'seule la vraie nouvelle adresse est créée');
-  assert.equal(x.r.m.get('lea.nouvelle@x.invalid').statut, 'detachee');
+  assert.equal(x.r.m.get('lea@x.invalid').statut, 'detachee'); assert.match(x.r.m.get('lea@x.invalid').detail, /désabonnée/);
 });
 t('relecture B2 : changement vers une adresse partagée ou protégée = conflit, l’ancienne fiche n’est jamais supprimée', async () => {
   const autre = { id: 'k2', email: 'commune@x.invalid', first_name: 'A', last_name: 'B', display_name: 'A B' };
@@ -678,8 +681,9 @@ t('décision du 16/11 — cas ambigu des deux adresses : rien supprimé, rien re
   // résolution : l'équipe remet b en mail 2, enregistre (a retiré seul = règle de retrait), puis change b
   const r2 = await x.run(C({ email: null, email_2: 'b@x.invalid' }));
   assert.deepEqual(r2.removed, ['a@x.invalid']); assert.equal(x.r.m.get('b@x.invalid').statut, 'active');
-  const r3 = await x.run(C({ email: null, email_2: 'c@x.invalid' }));
-  assert.deepEqual(r3.renamed, ['c@x.invalid']); assert.deepEqual(x.b.base.get('c@x.invalid').listUnsubscribed, [7], 'désabonnement gardé');
+  const r3 = await x.run(C({ email: null, email_2: 'c@x.invalid' }));   // b est désabonnée : changement bloqué (option 2)
+  assert.deepEqual(r3.renamed, []); assert.deepEqual(r3.conflicts, ['b@x.invalid']); assert.equal(x.b.base.has('c@x.invalid'), false);
+  assert.deepEqual(x.b.base.get('b@x.invalid').listUnsubscribed, [7], 'désabonnement gardé');
   // b) mail 2 remonté en mail 1 et nouveau mail 2 : ambigu aussi
   const y = deux();
   const s = await y.run(C({ email: 'b@x.invalid', email_2: 'd@x.invalid' }));
@@ -690,7 +694,8 @@ t('décision du 16/11 — cas ambigu des deux adresses : rien supprimé, rien re
   assert.deepEqual(s2.removed, []); assert.deepEqual(s2.created, []); assert.equal(y.b.base.has('a@x.invalid'), true);
   assert.equal(y.r.m.get('b@x.invalid').champ, 'email_2', 'emplacements du registre inchangés pendant le conflit');
   // c) cas NON ambigus inchangés : un seul emplacement changé = renommage ; inversion mail 1 / mail 2 = rien ; retrait seul = retrait
-  const z = deux();
+  const z = env({ 'a@x.invalid': { listIds: [7] }, 'b@x.invalid': { listIds: [7] } },   // b abonnée ici (la désabonnée est bloquée : option 2)
+    [{ email: 'a@x.invalid', contact_id: 'k1', champ: 'email' }, { email: 'b@x.invalid', contact_id: 'k1', champ: 'email_2' }]);
   const u = await z.run(C({ email: 'a@x.invalid', email_2: 'e@x.invalid' }));
   assert.deepEqual(u.renamed, ['e@x.invalid']); assert.deepEqual(u.conflicts, []);
   const w = deux();
@@ -699,6 +704,37 @@ t('décision du 16/11 — cas ambigu des deux adresses : rien supprimé, rien re
   const q = deux();
   const qq = await q.run(C({ email: 'b@x.invalid', email_2: null }));
   assert.deepEqual(qq.removed, ['a@x.invalid']); assert.deepEqual(qq.conflicts, []);
+});
+
+t('option 2 (16/11) : fiche désabonnée (globalement ou d’une liste) = changement d’adresse bloqué, rien créé, abonnement jamais touché', async () => {
+  for (const etat of [{ emailBlacklisted: true }, { listUnsubscribed: [7] }]) {
+    const x = env({ 'lea@x.invalid': { listIds: [3], ...etat } }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
+    const avant = structuredClone([...x.b.base]);
+    const r = await x.run(C({ email: 'lea.neuf@x.invalid' }));
+    assert.deepEqual(r.renamed, []); assert.deepEqual(r.created, []); assert.deepEqual(r.removed, []); assert.deepEqual(r.conflicts, ['lea@x.invalid']);
+    assert.deepEqual([...x.b.base], avant, 'Brevo strictement inchangé');
+    assert.deepEqual(ecritures(x.b), [], 'aucune écriture dans Brevo');
+    assert.equal(x.r.m.get('lea@x.invalid').statut, 'conflit'); assert.match(x.r.m.get('lea@x.invalid').detail, /désabonnée.*bloqué/);
+    assert.equal(x.r.m.has('lea.neuf@x.invalid'), false);
+    // synchronisations suivantes sans correction : toujours bloqué, aucun doublon au journal
+    await x.run(C({ email: 'lea.neuf@x.invalid', first_name: 'Autre' })); await x.run(C({ email: 'lea.neuf@x.invalid' }));
+    assert.deepEqual(ecritures(x.b), []);
+    assert.equal(x.r.traces.filter(j => j[2] === 'conflit').length, 1, 'une seule ligne au journal');
+    // retour à l'ancienne adresse : conflit levé, champs mis à jour, abonnement inchangé
+    await x.run(C());
+    assert.equal(x.r.m.get('lea@x.invalid').statut, 'active'); assert.deepEqual(x.b.base.get('lea@x.invalid').listIds, [3]);
+    assert.equal(!!x.b.base.get('lea@x.invalid').emailBlacklisted, !!etat.emailBlacklisted);
+  }
+});
+t('journal : un conflit inchangé n’ajoute aucune ligne (cas ambigu, adresse déjà présente dans Brevo)', async () => {
+  const x = env({ 'a@x.invalid': {}, 'b@x.invalid': {} }, [{ email: 'a@x.invalid', contact_id: 'k1', champ: 'email' }, { email: 'b@x.invalid', contact_id: 'k1', champ: 'email_2' }]);
+  for (let i = 0; i < 3; i++) await x.run(C({ email: null, email_2: 'c@x.invalid', first_name: 'N' + i }));
+  assert.equal(x.r.traces.filter(j => j[2] === 'conflit').length, 2, 'une ligne par fiche, pas une par synchronisation');
+  const y = env({ 'lea@x.invalid': {}, 'autre@x.invalid': {} }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
+  for (let i = 0; i < 3; i++) await y.run(C({ email: 'autre@x.invalid', first_name: 'N' + i }));
+  assert.equal(y.r.traces.filter(j => j[2] === 'conflit').length, 1);
+  await y.run(C({ email: 'autre2@x.invalid' }));   // explication différente : nouvelle ligne (rien d'avalé)
+  assert.ok(y.r.traces.filter(j => j[2] === 'conflit').length >= 1);
 });
 
 let ko = 0;
