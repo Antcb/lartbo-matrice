@@ -260,7 +260,10 @@ Deno.serve(async (req) => {
       // nouvelle fiche après une suppression dans Brevo, jamais d'inscription à une liste malgré une opposition) ; synchronisation une par une
       const opp = (e: string) => { const b = known.get(e); return !!b && (b.emailBlacklisted === true || (b.listUnsubscribed || []).length > 0); };
       const enSuspens = new Set<string>();
-      for (const f of tenues.values()) if (f.contact_id && (["conflit", "supprimee_brevo"].includes(f.statut) || (f.statut === "detachee" && f.champ) || (["active", "detachee"].includes(f.statut) && opp(f.email)))) enSuspens.add(f.contact_id);
+      // fiche gérée absente de Brevo (supprimée à la main, pas encore notée) : suspens aussi
+      for (const f of tenues.values()) if (f.contact_id && (["conflit", "supprimee_brevo"].includes(f.statut) || (f.statut === "detachee" && f.champ) || (["active", "detachee"].includes(f.statut) && opp(f.email)) || (f.statut === "active" && !known.has(f.email)))) enSuspens.add(f.contact_id);
+      // fiche PRÉEXISTANTE (non adoptée) désabonnée portée par le contact : opposition, aucune nouvelle adresse importée avec liste
+      for (const c of all) if (emplacements(c).some((m) => !protegees.has(m.e) && opp(m.e))) enSuspens.add(c.id);
       let suspendues = 0;
       // chaque adresse (mail 1 et mail 2) devient une fiche Brevo ; jamais : déjà dans Brevo, protégée, partagée, ou connue du registre
       // (une fiche gérée absente de Brevo a été supprimée à la main dans Brevo : jamais recréée)

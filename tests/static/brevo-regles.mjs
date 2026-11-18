@@ -785,6 +785,27 @@ t('décision du 17/11 : fiche supprimée à la main dans Brevo = AUCUNE nouvelle
   assert.equal(y.r.m.get('a@x.invalid').statut, 'supprimee_brevo');
 });
 
+t('relecture 17/11 (R4, R5) : fiche supprimée dans Brevo DÉCOUVERTE pendant le passage = aucune nouvelle adresse créée, quel que soit l’ordre ; fiche préexistante désabonnée = deuxième adresse sans liste', async () => {
+  // R4a : a gérée (supprimée à la main dans Brevo), b nouvelle en mail 2
+  const x = env({}, [{ email: 'a@x.invalid', contact_id: 'k1', champ: 'email' }]);
+  const r = await x.run(C({ email: 'a@x.invalid', email_2: 'b@x.invalid' }));
+  assert.deepEqual(r.created, []); assert.deepEqual(x.b.appels.filter(z => z[0] === 'creer'), []);
+  assert.equal(x.r.m.get('a@x.invalid').statut, 'supprimee_brevo'); assert.equal(x.r.m.get('b@x.invalid').statut, 'supprimee_brevo');
+  // R4b : ordre inverse (nouvelle adresse en mail 1, fiche gérée en mail 2)
+  const y = env({}, [{ email: 'a@x.invalid', contact_id: 'k1', champ: 'email_2' }]);
+  const r2 = await y.run(C({ email: 'n@x.invalid', email_2: 'a@x.invalid' }));
+  assert.deepEqual(r2.created, []); assert.equal(y.r.m.get('n@x.invalid').statut, 'supprimee_brevo');
+  // R5 : fiche préexistante (hors registre, non adoptée) désabonnée portée par le contact → b créée SANS liste, p jamais touchée
+  const z = env({ 'p@x.invalid': { listIds: [3], emailBlacklisted: true } });
+  const r3 = await z.run(C({ email: 'p@x.invalid', email_2: 'b@x.invalid' }));
+  assert.deepEqual(r3.created, ['b@x.invalid']); assert.deepEqual(z.b.base.get('b@x.invalid').listIds, []);
+  assert.deepEqual(z.b.appels.filter(a => a[1] === 'p@x.invalid' && a[0] !== 'lire'), [], 'fiche préexistante jamais modifiée');
+  // préexistante abonnée : liste donnée comme avant
+  const w = env({ 'p@x.invalid': { listIds: [3] } });
+  await w.run(C({ email: 'p@x.invalid', email_2: 'b@x.invalid' }));
+  assert.deepEqual(w.b.base.get('b@x.invalid').listIds, [7]);
+});
+
 let ko = 0;
 for (const [nom, f] of cas) { try { await f(); console.log('  ✓ ' + nom); } catch (e) { ko++; console.error('  ✗ ' + nom + '\n    ' + e.message); } }
 console.log(`Règles Brevo : ${cas.length - ko}/${cas.length} cas vérifiés.`);
