@@ -283,13 +283,16 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
     }
     return lu.get(email)!;
   };
-  /** Une fiche Brevo de ce contact est désabonnée (globalement ou d'une liste) : une nouvelle adresse est créée SANS liste */
+  /** Une fiche Brevo de ce contact est désabonnée (globalement ou d'une liste) — fiche du registre, ou fiche préexistante (non adoptée)
+   * portée par le contact : une nouvelle adresse est créée SANS liste */
   const opposition = async () => {
     for (const f of toutes) if (["active", "conflit", "detachee"].includes(f.statut) && !intouchable(f.email) && await estDesabonnee(f.email)) return true;
+    for (const m of mails) if (!intouchable(m.e) && !partagee(m.e) && await estDesabonnee(m.e)) return true;
     return false;
   };
-  /** Une fiche de ce contact a été supprimée à la main dans Brevo : aucune nouvelle fiche créée automatiquement, quel que soit l'emplacement */
-  const supprimeeDansBrevo = toutes.find((f) => f.statut === "supprimee_brevo");
+  /** Une fiche de ce contact a été supprimée à la main dans Brevo (connue au départ, ou découverte pendant CE passage) : aucune nouvelle
+   * fiche créée automatiquement, quel que soit l'emplacement. Les créations sont faites EN DERNIER (après toutes les lectures). */
+  const supprimeeDansBrevo = () => toutes.find((f) => f.statut === "supprimee_brevo")?.email || deletedInBrevo[0];
 
   // CAS AMBIGU (décision d'Anthony du 16/11/2026) : le contact avait DEUX adresses gérées (mail 1 et mail 2) et, dans le même
   // enregistrement, les deux emplacements changent, avec au moins une adresse quittée et au moins une adresse nouvelle (ex. mail 1
@@ -401,7 +404,8 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
     if (q.error) errors.push(q.error); else removed.push(f.email);
   }
 
-  // 2. adresses actuelles du contact
+  // 2. adresses actuelles du contact (les créations sont mises de côté et faites après toutes les lectures)
+  const creations: { email: string; champ: "email" | "email_2"; f: Fiche | null }[] = [];
   for (const { e: email, champ } of mails) {
     if (consommees.has(email)) continue;
     if (intouchable(email)) { if (autorise(email)) protectedSkip.push(email); continue; }
@@ -440,6 +444,7 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
     const g = await client.lire(email);
     if (!g.ok && g.status !== 404) { errors.push(await err(email, g)); continue; }
     if (g.ok) {
+      lu.set(email, desabonnee(await g.text()));   // opposition éventuelle d'une fiche préexistante (lue une seule fois)
       // fiche préexistante : adoptée seulement si l'adoption a été autorisée ; sinon jamais touchée
       if (p.adoption && await registre.reserver({ email, contact_id: c.id, champ, origine: "preexistante", statut: "active" })) {
         await registre.journal(email, c.id, "adoptee");
@@ -449,12 +454,16 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
       }
       done.push(email); continue;
     }
+    creations.push({ email, champ, f });
+  }
+  for (const { email, champ, f } of creations) {
     // fiche du contact supprimée à la main dans Brevo (décision du 17/11) : aucune nouvelle fiche créée automatiquement, quel que soit
     // l'emplacement ; l'adresse est notée « supprimée dans Brevo » (bloquée seule) : seule « Recréer dans Brevo » la lève, pour elle seule
-    if (supprimeeDansBrevo && !(f && f.statut === "supprimee" && f.detail === RECREATION)) {
+    const supp = supprimeeDansBrevo();
+    if (supp && !(f && f.statut === "supprimee" && f.detail === RECREATION)) {
       if (await registre.reserver({ email, contact_id: c.id, champ, origine: "matrice", statut: "supprimee_brevo",
-        detail: `Une fiche de ce contact (${supprimeeDansBrevo.email}) a été supprimée dans Brevo : nouvelle adresse non créée (« Recréer dans Brevo » pour la créer)` }))
-        await registre.journal(email, c.id, "bloquee", `fiche ${supprimeeDansBrevo.email} supprimée dans Brevo`);
+        detail: `Une fiche de ce contact (${supp}) a été supprimée dans Brevo : nouvelle adresse non créée (« Recréer dans Brevo » pour la créer)` }))
+        await registre.journal(email, c.id, "bloquee", `fiche ${supp} supprimée dans Brevo`);
       deletedInBrevo.push(email); continue;
     }
     if (held) { skipped.push(email); continue; }
