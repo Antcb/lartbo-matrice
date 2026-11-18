@@ -3,7 +3,7 @@
 // Lancé par « npm test » (node --experimental-strip-types). Module testé : supabase/functions/brevo-sync/regles.ts
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { aAjouter, attributes, desabonnee, fonctionsParStructure, fonctionsTexte, horsProspection, lireReglages, listeEssai, listeProtegees, mailsAutorises, names, onlyInactive, supprimerContact, syncContact as syncReel } from '../../supabase/functions/brevo-sync/regles.ts';
+import { RECREATION, aAjouter, attributes, desabonnee, fonctionsParStructure, fonctionsTexte, horsProspection, lireReglages, listeEssai, listeProtegees, mailsAutorises, names, onlyInactive, supprimerContact, syncContact as syncReel } from '../../supabase/functions/brevo-sync/regles.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -210,7 +210,7 @@ t('v1.64 : suppression seulement par supprimerFiche ; jamais de désabonnement, 
   // toute mise à jour n'envoie QUE des champs ; une liste n'est donnée qu'à la création
   for (const m of reg.matchAll(/client\.modifier\([^,]+, (\{[^\n]*?\})\)/g)) assert.match(m[1], /^\{ attributes: /);
   const lignes = reg.split('\n').filter(l => /listIds/.test(l));
-  for (const l of lignes) assert.ok(/listIds\?: number\[\] \}\): Promise<Rep>|listIds: number\[\]; adoption|const \{ client, registre, c, links, champs, listIds \}|client\.creer\(\{ email, attributes: aCreer, \.\.\.\(listIds\.length \? \{ listIds \} : \{\}\) \}\)/.test(l), l);
+  for (const l of lignes) assert.ok(/listIds\?: number\[\] \}\): Promise<Rep>|listIds: number\[\]; adoption|const \{ client, registre, c, links, champs, listIds \}|client\.creer\(\{ email, attributes: aCreer, \.\.\.\(listIds\.length && !sansListe \? \{ listIds \} : \{\}\) \}\)/.test(l), l);
 });
 t('rejouable, sans doublon : deux passages identiques = un seul contact par mail, mêmes champs', async () => {
   const b = fauxBrevo();
@@ -576,17 +576,28 @@ t('relecture B1 : adresse mal saisie = rien supprimé ; corrigée ensuite = MÊM
   assert.deepEqual(r2.renamed, ['lea@nouveau.fr']); assert.deepEqual([...x.b.base.keys()], ['lea@nouveau.fr']);
   assert.deepEqual(x.b.base.get('lea@nouveau.fr').listIds, [7]);
 });
-t('relecture B1 + option 2 (16/11) : adresse vidée puis nouvelle adresse — désabonnée : fiche gardée intacte, nouvelle adresse NI renommée NI créée', async () => {
+t('relecture B1 + décision du 17/11 : adresse désabonnée vidée et autre adresse saisie — même enregistrement = remplacement BLOQUÉ ; deux enregistrements = nouvelle adresse créée SANS liste', async () => {
+  // a) même enregistrement : remplacement → conflit, rien créé, fiche désabonnée intacte
   const x = env({ 'lea@x.invalid': { listIds: [], listUnsubscribed: [7] } }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
-  await x.run(C({ email: null, email_2: 'perso@x.invalid' }));
-  assert.equal(x.b.base.has('lea@x.invalid'), true); assert.equal(x.r.m.get('lea@x.invalid').statut, 'detachee');
-  const r = await x.run(C({ email: 'lea.nouvelle@x.invalid', email_2: 'perso@x.invalid' }));
-  assert.deepEqual(r.renamed, []); assert.deepEqual(r.conflicts, ['lea@x.invalid']);
-  assert.equal(x.b.base.has('lea.nouvelle@x.invalid'), false, 'nouvelle adresse non créée');
-  assert.deepEqual(x.b.base.get('lea@x.invalid').listUnsubscribed, [7], 'désabonnement intact');
-  assert.deepEqual(x.b.appels.filter(a => a[0] === 'creer').map(a => a[1]), ['perso@x.invalid'], 'seule la vraie nouvelle adresse est créée');
-  assert.equal(x.r.m.get('lea@x.invalid').statut, 'detachee'); assert.match(x.r.m.get('lea@x.invalid').detail, /désabonnée/);
+  const r = await x.run(C({ email: null, email_2: 'perso@x.invalid' }));
+  assert.deepEqual(r.conflicts, ['lea@x.invalid']); assert.deepEqual(r.created, []); assert.deepEqual(r.enAttente, ['perso@x.invalid']);
+  assert.deepEqual(ecritures(x.b), [], 'aucune écriture dans Brevo');
+  assert.equal(x.r.m.get('lea@x.invalid').statut, 'conflit'); assert.match(x.r.m.get('lea@x.invalid').detail, /remplacement bloqué/);
+  await x.run(C({ email: null, email_2: 'perso@x.invalid', first_name: 'Autre' }));   // toujours bloqué
+  assert.deepEqual(ecritures(x.b), []);
+  // b) deux enregistrements : adresse vidée (fiche désabonnée conservée), puis vraie nouvelle adresse = créée SANS liste
+  const y = env({ 'lea@x.invalid': { listIds: [], listUnsubscribed: [7] } }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
+  await y.run(C({ email: null }));
+  assert.equal(y.r.m.get('lea@x.invalid').statut, 'detachee'); assert.equal(y.b.base.has('lea@x.invalid'), true);
+  const r2 = await y.run(C({ email: null, email_2: 'perso@x.invalid' }));
+  assert.deepEqual(r2.created, ['perso@x.invalid']); assert.deepEqual(y.b.base.get('perso@x.invalid').listIds, [], 'jamais inscrite à une liste');
+  assert.ok(y.r.traces.some(j => j[0] === 'perso@x.invalid' && j[2] === 'creee' && /sans liste/.test(j[3])));
+  assert.deepEqual(y.b.base.get('lea@x.invalid').listUnsubscribed, [7], 'désabonnement intact');
+  // c) même emplacement repris par une nouvelle adresse : renommage bloqué (option 2), rien créé
+  const r3 = await y.run(C({ email: 'lea.nouvelle@x.invalid', email_2: 'perso@x.invalid' }));
+  assert.deepEqual(r3.renamed, []); assert.equal(y.b.base.has('lea.nouvelle@x.invalid'), false);
 });
+
 t('relecture B2 : changement vers une adresse partagée ou protégée = conflit, l’ancienne fiche n’est jamais supprimée', async () => {
   const autre = { id: 'k2', email: 'commune@x.invalid', first_name: 'A', last_name: 'B', display_name: 'A B' };
   const x = env({ 'lea@x.invalid': {} }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }], [autre]);
@@ -642,7 +653,7 @@ t('décision du 16/11 : fiche supprimée dans Brevo = nouvelle adresse du contac
   assert.equal(x.r.m.get('lea.neuf@x.invalid').statut, 'supprimee_brevo');
   await x.run(C({ email: 'lea.neuf@x.invalid', first_name: 'Autre' }));
   assert.equal(x.b.appels.filter(a => a[0] === 'creer').length, 0, 'toujours bloquée aux passages suivants');
-  x.r.m.get('lea.neuf@x.invalid').statut = 'supprimee';   // brevo_recreer
+  Object.assign(x.r.m.get('lea.neuf@x.invalid'), { statut: 'supprimee', contact_id: null, champ: null, detail: RECREATION });   // brevo_recreer
   await x.run(C({ email: 'lea.neuf@x.invalid' })); assert.equal(x.b.base.has('lea.neuf@x.invalid'), true);
   // b) découverte au moment du renommage (404) : ni recréée, ni nouvelle fiche
   const y = env({}, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
@@ -733,8 +744,45 @@ t('journal : un conflit inchangé n’ajoute aucune ligne (cas ambigu, adresse d
   const y = env({ 'lea@x.invalid': {}, 'autre@x.invalid': {} }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
   for (let i = 0; i < 3; i++) await y.run(C({ email: 'autre@x.invalid', first_name: 'N' + i }));
   assert.equal(y.r.traces.filter(j => j[2] === 'conflit').length, 1);
+  y.b.base.set('autre2@x.invalid', { attributes: {}, listIds: [], emailBlacklisted: false });
   await y.run(C({ email: 'autre2@x.invalid' }));   // explication différente : nouvelle ligne (rien d'avalé)
-  assert.ok(y.r.traces.filter(j => j[2] === 'conflit').length >= 1);
+  assert.equal(y.r.traces.filter(j => j[2] === 'conflit').length, 2);
+});
+
+t('décision du 17/11 : vraie deuxième adresse d’un contact désabonné = créée SANS liste, fiche désabonnée intacte ; suppression d’une adresse désabonnée = fiche gardée', async () => {
+  const x = env({ 'lea@x.invalid': { listIds: [3], emailBlacklisted: true } }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
+  const r = await x.run(C({ email_2: 'pro@x.invalid' }));
+  assert.deepEqual(r.created, ['pro@x.invalid']); assert.deepEqual(x.b.base.get('pro@x.invalid').listIds, []);
+  assert.equal(x.b.base.get('lea@x.invalid').emailBlacklisted, true); assert.deepEqual(x.b.base.get('lea@x.invalid').listIds, [3]);
+  assert.equal(x.b.appels.filter(a => a[0] === 'modifier' && a[1] === 'lea@x.invalid' && a[2].attributes.EMAIL).length, 0);
+  // l'adresse désabonnée retirée du contact : fiche gardée dans Brevo (historique du désabonnement conservé)
+  const r2 = await x.run(C({ email: null, email_2: 'pro@x.invalid' }));
+  assert.deepEqual(r2.created, []); assert.equal(x.b.base.has('lea@x.invalid'), true); assert.equal(x.b.base.get('lea@x.invalid').emailBlacklisted, true);
+  assert.equal(x.r.m.get('lea@x.invalid').statut, 'detachee');
+  // contact supprimé : la fiche désabonnée reste, l'autre (abonnée, créée par MATRICE) est supprimée
+  await x.del('k1');
+  assert.equal(x.b.base.has('lea@x.invalid'), true); assert.equal(x.b.base.has('pro@x.invalid'), false);
+  // sans opposition : la liste est donnée comme avant
+  const y = env({ 'lea@x.invalid': { listIds: [7] } }, [{ email: 'lea@x.invalid', contact_id: 'k1', champ: 'email' }]);
+  await y.run(C({ email_2: 'pro@x.invalid' }));
+  assert.deepEqual(y.b.base.get('pro@x.invalid').listIds, [7]);
+});
+t('décision du 17/11 : fiche supprimée à la main dans Brevo = AUCUNE nouvelle fiche pour ce contact, quel que soit l’emplacement ; « Recréer » ne débloque que son adresse', async () => {
+  const x = env({ 'b@x.invalid': { listIds: [7] } }, [{ email: 'a@x.invalid', contact_id: 'k1', champ: 'email', statut: 'supprimee_brevo' }, { email: 'b@x.invalid', contact_id: 'k1', champ: 'email_2' }]);
+  // b remonte en mail 1, nouvelle adresse en mail 2 (cas de la relecture R2), puis une autre adresse encore
+  const r = await x.run(C({ email: 'b@x.invalid', email_2: 'n@x.invalid', first_name: 'Neuf' }));
+  assert.deepEqual(r.created, []); assert.ok(r.deletedInBrevo.includes('n@x.invalid'));
+  assert.equal(x.r.m.get('n@x.invalid').statut, 'supprimee_brevo'); assert.equal(x.b.base.has('n@x.invalid'), false);
+  assert.equal(x.b.base.get('b@x.invalid').attributes.PRENOM, 'Neuf', 'fiche existante toujours synchronisée'); assert.deepEqual(x.b.base.get('b@x.invalid').listIds, [7]);
+  const y = env({}, [{ email: 'a@x.invalid', contact_id: 'k1', champ: 'email', statut: 'supprimee_brevo' }]);
+  await y.run(C({ email: 'a@x.invalid', email_2: 'm@x.invalid' }));   // a toujours portée en mail 1, m saisie en mail 2
+  await y.run(C({ email: 'a@x.invalid', email_2: 'm@x.invalid' }));
+  assert.equal(y.b.appels.filter(z => z[0] === 'creer').length, 0); assert.equal(y.r.m.get('m@x.invalid').statut, 'supprimee_brevo');
+  // « Recréer » sur m seulement : m créée ; a reste bloquée, et une 3e adresse reste bloquée
+  Object.assign(y.r.m.get('m@x.invalid'), { statut: 'supprimee', contact_id: null, champ: null, detail: RECREATION });
+  const r3 = await y.run(C({ email: 'a@x.invalid', email_2: 'm@x.invalid' }));
+  assert.deepEqual(r3.created, ['m@x.invalid']); assert.equal(y.b.base.has('a@x.invalid'), false);
+  assert.equal(y.r.m.get('a@x.invalid').statut, 'supprimee_brevo');
 });
 
 let ko = 0;

@@ -40,3 +40,8 @@ Contrôles après chaque scénario : lecture de la fiche Brevo (GET, sans modifi
   fiche dont l'adresse change (documentation de PUT /contacts). Décision d'Anthony (16/11) : un contact désabonné ne doit jamais
   redevenir abonné à cause de MATRICE → garantie impossible (comportement documenté de Brevo, désabonnements par liste non
   garantis) → option 2 : changement d'adresse d'une fiche désabonnée bloqué (conflit explicite), rien renommé ni créé.
+- Décisions du 17/11 : remplacement d'une adresse désabonnée bloqué aussi par l'autre emplacement (même enregistrement) ; vraie
+  deuxième adresse d'un contact désabonné créée SANS liste ; fiche supprimée dans Brevo = aucune nouvelle fiche pour le contact
+  (adresse par adresse, « Recréer dans Brevo ») ; import en masse : contacts en suspens écartés.
+- Lever un conflit « désabonnée » : remettre l'ancienne adresse dans MATRICE (le conflit disparaît à l'enregistrement) ; si la
+  personne a vraiment changé d'adresse, traiter à la main dans Brevo (son opposition doit suivre), puis mettre la fiche contact à jour.

@@ -20,7 +20,7 @@ export function etatBrevo(email, fiche, contactId, protegees = protegeesBrevo())
   const autres = autresPorteurs(email, contactId);
   if (autres.length) return {alerte: true, texte: `adresse partagée avec ${autres.map(k => k.display_name || 'un contact sans nom').join(', ')} : aucune synchronisation, à dédoublonner`};
   if (!fiche || fiche.statut === 'supprimee') return {texte: 'pas gérée par MATRICE (fiche Brevo préexistante, ou contact hors prospection)'};
-  if (fiche.statut === 'supprimee_brevo') return {alerte: true, recreer: true, texte: 'fiche supprimée dans Brevo : MATRICE ne la recrée pas d’elle-même'};
+  if (fiche.statut === 'supprimee_brevo') return {alerte: true, recreer: true, texte: fiche.detail || 'fiche supprimée dans Brevo : MATRICE ne la recrée pas d’elle-même'};
   if (fiche.statut === 'conflit') return {alerte: true, texte: fiche.detail || 'changement d’adresse en conflit : aucune fusion'};
   if (fiche.statut === 'detachee') return {texte: fiche.detail || 'conservée dans Brevo, plus gérée'};
   if (['creation', 'renommage', 'suppression'].includes(fiche.statut)) return {texte: 'opération en cours…'};

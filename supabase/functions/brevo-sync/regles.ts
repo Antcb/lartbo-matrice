@@ -166,6 +166,8 @@ export type Registre = {
   journal(email: string, contactId: string | null, action: string, detail?: string): Promise<void>;
 };
 export const ACTIVES: Statut[] = ["active", "conflit"];
+/** Marque posée par brevo_recreer (SQL) sur l'adresse dont l'équipe demande explicitement la recréation : elle seule est débloquée */
+export const RECREATION = "Recréation demandée";
 /** Fiche Brevo désabonnée (désinscrite de tout envoi, ou d'au moins une liste) : jamais supprimée, l'inscription n'est jamais touchée */
 export function desabonnee(json: string): boolean {
   try { const j = JSON.parse(json || "{}"); return j.emailBlacklisted === true || (Array.isArray(j.listUnsubscribed) && j.listUnsubscribed.length > 0); }
@@ -271,6 +273,23 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
     if (f.statut === statut && (f.detail ?? null) === detail) return;
     if (await registre.changer(f.email, { statut: f.statut, contact_id: c.id }, { statut, detail })) await registre.journal(f.email, c.id, "conflit", quoi);
   };
+  // OPPOSITIONS du contact (décisions d'Anthony du 16/11/2026, précisées le 17/11) : lecture de Brevo mise en cache, une fois par fiche
+  const lu = new Map<string, boolean>();
+  const estDesabonnee = async (email: string): Promise<boolean> => {
+    if (!lu.has(email)) {
+      const g = await client.lire(email);
+      // 404 : fiche absente (pas d'opposition à lire) ; autre erreur : prudence = considérée désabonnée
+      lu.set(email, g.ok ? desabonnee(await g.text()) : g.status !== 404);
+    }
+    return lu.get(email)!;
+  };
+  /** Une fiche Brevo de ce contact est désabonnée (globalement ou d'une liste) : une nouvelle adresse est créée SANS liste */
+  const opposition = async () => {
+    for (const f of toutes) if (["active", "conflit", "detachee"].includes(f.statut) && !intouchable(f.email) && await estDesabonnee(f.email)) return true;
+    return false;
+  };
+  /** Une fiche de ce contact a été supprimée à la main dans Brevo : aucune nouvelle fiche créée automatiquement, quel que soit l'emplacement */
+  const supprimeeDansBrevo = toutes.find((f) => f.statut === "supprimee_brevo");
 
   // CAS AMBIGU (décision d'Anthony du 16/11/2026) : le contact avait DEUX adresses gérées (mail 1 et mail 2) et, dans le même
   // enregistrement, les deux emplacements changent, avec au moins une adresse quittée et au moins une adresse nouvelle (ex. mail 1
@@ -370,6 +389,14 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
       renamed.push(nouveau.e); done.push(nouveau.e); continue;
     }
     if (!active) continue;   // fiche désabonnée détachée sans nouvelle adresse : rien
+    // REMPLACEMENT par l'AUTRE emplacement dans le même enregistrement (adresse vidée, nouvelle adresse saisie ailleurs) : pour une
+    // fiche désabonnée, c'est un changement d'adresse → bloqué et signalé (décision du 17/11) ; la nouvelle adresse n'est pas créée
+    const ailleurs = mails.filter((m) => !consommees.has(m.e) && !toutes.some((x) => x.email === m.e));
+    if (ailleurs.length && await estDesabonnee(f.email)) {
+      await signaler(f, true, `Fiche désabonnée dans Brevo : remplacée par ${ailleurs.map((m) => m.e).join(", ")} dans le même enregistrement — remplacement bloqué (Brevo réabonnerait la personne). Nouvelle adresse non créée ; à traiter à la main.`, `désabonnée : remplacement par ${ailleurs.map((m) => m.e).join(", ")} bloqué`);
+      for (const m of ailleurs) { consommees.add(m.e); enAttente.push(m.e); }
+      conflicts.push(f.email); continue;
+    }
     const q = await quitter(p, f, []);
     if (q.error) errors.push(q.error); else removed.push(f.email);
   }
@@ -422,15 +449,26 @@ export async function syncContact(p: Opts & { c: Contact; links: Link[] | undefi
       }
       done.push(email); continue;
     }
+    // fiche du contact supprimée à la main dans Brevo (décision du 17/11) : aucune nouvelle fiche créée automatiquement, quel que soit
+    // l'emplacement ; l'adresse est notée « supprimée dans Brevo » (bloquée seule) : seule « Recréer dans Brevo » la lève, pour elle seule
+    if (supprimeeDansBrevo && !(f && f.statut === "supprimee" && f.detail === RECREATION)) {
+      if (await registre.reserver({ email, contact_id: c.id, champ, origine: "matrice", statut: "supprimee_brevo",
+        detail: `Une fiche de ce contact (${supprimeeDansBrevo.email}) a été supprimée dans Brevo : nouvelle adresse non créée (« Recréer dans Brevo » pour la créer)` }))
+        await registre.journal(email, c.id, "bloquee", `fiche ${supprimeeDansBrevo.email} supprimée dans Brevo`);
+      deletedInBrevo.push(email); continue;
+    }
     if (held) { skipped.push(email); continue; }
+    // opposition existante (une autre fiche du contact est désabonnée) : nouvelle adresse créée SANS liste — jamais abonnée à une
+    // lettre d'information tant qu'un consentement distinct n'est pas établi (décision du 17/11)
+    const sansListe = await opposition();
     if (!await registre.reserver({ email, contact_id: c.id, champ, origine: "matrice", statut: "creation" })) { done.push(email); continue; }
     let r: Rep;
-    try { r = await client.creer({ email, attributes: aCreer, ...(listIds.length ? { listIds } : {}) }); }
+    try { r = await client.creer({ email, attributes: aCreer, ...(listIds.length && !sansListe ? { listIds } : {}) }); }
     catch (x) { r = { ok: false, status: 0, text: async () => String(x) }; }   // erreur réseau : réservation levée (statut « supprimee »)
     const txt = r.ok ? "" : await r.text();
     if (r.ok) {
       await registre.changer(email, { statut: "creation" }, { statut: "active", detail: null });
-      await registre.journal(email, c.id, "creee");
+      await registre.journal(email, c.id, "creee", sansListe ? "sans liste : une autre adresse du contact est désabonnée (consentement à établir)" : undefined);
       created.push(email); done.push(email);
     } else if (/duplicate/i.test(txt)) {
       // créée au même instant hors de cette synchronisation : préexistante, jamais gérée sans adoption

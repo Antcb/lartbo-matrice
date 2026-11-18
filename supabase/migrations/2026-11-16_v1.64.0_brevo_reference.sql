@@ -152,7 +152,8 @@ language plpgsql security definer set search_path = public as $$
 declare c uuid; e text := lower(btrim(coalesce(p_email, '')));
 begin
   if not public.is_team() then raise exception 'Réservé à l’équipe'; end if;
-  update public.brevo_fiches set statut = 'supprimee', contact_id = null, champ = null, detail = null, maj_at = now()
+  -- marque « Recréation demandée » (= RECREATION dans regles.ts) : cette adresse seule est débloquée, jamais les autres du contact
+  update public.brevo_fiches set statut = 'supprimee', contact_id = null, champ = null, detail = 'Recréation demandée', maj_at = now()
    where email = e and statut = 'supprimee_brevo' returning email into e;
   if e is null then return jsonb_build_object('ok', false, 'error', 'Cette adresse n’est pas notée « supprimée dans Brevo »'); end if;
   insert into public.brevo_journal (email, action, detail) values (e, 'recreation_demandee', coalesce(auth.email(), 'équipe'));
