@@ -255,6 +255,13 @@ Deno.serve(async (req) => {
       const porteurs = await registre.porteurs([...new Set(all.flatMap((c) => emplacements(c).map((m) => m.e)))]);
       const tenues = await toutLeRegistre();
       const seen = new Set<string>();
+      // contacts EN SUSPENS (décisions du 16-17/11) : conflit, fiche supprimée dans Brevo, fiche désabonnée (au registre ou lue dans Brevo) :
+      // aucune de leurs nouvelles adresses n'est importée en masse (gel du cas ambigu, blocage du remplacement d'une désabonnée, pas de
+      // nouvelle fiche après une suppression dans Brevo, jamais d'inscription à une liste malgré une opposition) ; synchronisation une par une
+      const opp = (e: string) => { const b = known.get(e); return !!b && (b.emailBlacklisted === true || (b.listUnsubscribed || []).length > 0); };
+      const enSuspens = new Set<string>();
+      for (const f of tenues.values()) if (f.contact_id && (["conflit", "supprimee_brevo"].includes(f.statut) || (f.statut === "detachee" && f.champ) || (["active", "detachee"].includes(f.statut) && opp(f.email)))) enSuspens.add(f.contact_id);
+      let suspendues = 0;
       // chaque adresse (mail 1 et mail 2) devient une fiche Brevo ; jamais : déjà dans Brevo, protégée, partagée, ou connue du registre
       // (une fiche gérée absente de Brevo a été supprimée à la main dans Brevo : jamais recréée)
       const cand: { c: Contact; email: string; champ: "email" | "email_2" }[] = [];
@@ -262,15 +269,16 @@ Deno.serve(async (req) => {
         if (known.has(e) || seen.has(e) || protegees.has(e) || (porteurs.get(e) || []).length > 1) continue;
         const f = tenues.get(e);
         if (f && f.statut !== "supprimee") continue;
+        if (enSuspens.has(c.id)) { suspendues++; continue; }
         seen.add(e); cand.push({ c, email: e, champ });
       }
-      if (!cand.length) return json({ ok: true, count: 0, skipped_inactive: 0 });
+      if (!cand.length) return json({ ok: true, count: 0, skipped_inactive: 0, en_suspens: suspendues });
       const st = await structuresOf([...new Set(cand.map((x) => x.c.id))]);
       const { list, skipped_inactive } = aAjouter(cand, st);
       // réservation au registre AVANT l'import (origine « matrice », mêmes règles ensuite) ; adresse déjà tenue : écartée
       const pris: typeof list = [];
       for (const x of list) if (await registre.reserver({ email: x.email, contact_id: x.c.id, champ: x.champ, origine: "matrice", statut: "creation" })) pris.push(x);
-      if (!pris.length) return json({ ok: true, count: 0, skipped_inactive });
+      if (!pris.length) return json({ ok: true, count: 0, skipped_inactive, en_suspens: suspendues });
       const r = await bfetch(`${API}/contacts/import`, { method: "POST", headers: { "api-key": key, "content-type": "application/json" },
         body: JSON.stringify({ jsonBody: pris.map(({ c, email }) => ({ email, attributes: attributes(c, st.get(c.id), a) })),
           ...(listIds.length ? { listIds } : {}), updateExistingContacts: false, emptyContactsAttributes: false }) });
@@ -278,7 +286,7 @@ Deno.serve(async (req) => {
       for (const x of pris) await registre.changer(x.email, { statut: "creation" }, fin);
       if (!r.ok) return json({ ok: false, error: `Brevo ${r.status} : ${await r.text()}` });
       for (const x of pris) await registre.journal(x.email, x.c.id, "creee", "import en masse");
-      return json({ ok: true, count: pris.length, skipped_inactive });
+      return json({ ok: true, count: pris.length, skipped_inactive, en_suspens: suspendues });
     }
 
     // Un contact : petite attente pour que les structures rattachées juste après la création soient là
