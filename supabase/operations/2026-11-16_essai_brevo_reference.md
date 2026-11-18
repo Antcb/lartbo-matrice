@@ -45,3 +45,9 @@ Contrôles après chaque scénario : lecture de la fiche Brevo (GET, sans modifi
   (adresse par adresse, « Recréer dans Brevo ») ; import en masse : contacts en suspens écartés.
 - Lever un conflit « désabonnée » : remettre l'ancienne adresse dans MATRICE (le conflit disparaît à l'enregistrement) ; si la
   personne a vraiment changé d'adresse, traiter à la main dans Brevo (son opposition doit suivre), puis mettre la fiche contact à jour.
+- Essai réel du 18/11 (projet de test, fonction identique au commit 4346a03) : reprise d'une fiche désabonnée = champs mis à jour,
+  désabonnement intact ; changement d'adresse d'une désabonnée = conflit, rien renommé ni créé ; conflit répété = 1 ligne au
+  journal ; adresse remise = conflit levé ; vraie 2e adresse avec la liste 2 réglée = créée SANS liste (journal « sans liste ») ;
+  adresse désabonnée retirée = fiche conservée (détachée). Fiche d'essai n° 8676 (+essai2) supprimée sur demande d'Anthony.
+  À noter : contacts_clean remonte le mail 2 en mail 1 quand le mail 1 est vide (le cas « autre emplacement » arrive donc comme
+  un changement du même emplacement, bloqué aussi).
