@@ -52,4 +52,12 @@ do $$ begin
   if right((select body from public.prospect_logs where occurred_at = '2026-11-17 10:16:18+00'), 15) <> 'Merci &#39; <b>' then raise exception 'journal non décodé'; end if;
   if (select body from public.prospect_logs where occurred_at = '2026-11-17 10:21:47+00') not like '%&quot;Hello&quot; (modifié à la main)' then raise exception 'ligne modifiée à la main touchée'; end if;
 end $$;
+-- 6) relancée (relecture v1.65, B1) : refusée par la marque, rien n'est décodé une deuxième fois
+\set ON_ERROR_STOP 0
+\i supabase/operations/2026-11-20_v1.65_extraits_entites.sql
+\set ON_ERROR_STOP 1
+do $$ begin
+  if (select snippet from public.mail_messages where gmail_message_id = 'g02') <> 'Merci &#39; <b>' then raise exception 'second passage : décodé deux fois'; end if;
+  if (select count(*) from public.settings where key = 'reprise_extraits_v165') <> 1 then raise exception 'marque absente'; end if;
+end $$;
 select 'ESSAI v1.65 : tous les contrôles passent' as resultat;
