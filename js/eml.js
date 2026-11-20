@@ -3,6 +3,8 @@
  * Sert à l'ajouter au journal d'un suivi, en plus de la pièce jointe.
  */
 
+import { ownText } from './texte-mail.js';
+
 const isEml = f => /\.eml$/i.test(f?.name || '') || f?.type === 'message/rfc822';
 
 /** Octets (chaîne « binaire ») → texte dans le bon jeu de caractères */
@@ -124,7 +126,7 @@ function attachmentsOf(raw, st = {out: [], skipped: 0}, depth = 0){
 }
 
 /**
- * Lit un fichier .eml : {from, fromName, to, toName, subject, date (AAAA-MM-JJ), at (horodatage ISO de l'en-tête Date, ou null), text, messageId (« <…@…> » ou ''),
+ * Lit un fichier .eml : {from, fromName, to, toName, subject, date (AAAA-MM-JJ), at (horodatage ISO de l'en-tête Date, ou null), text, full (texte intégral sans citation, v1.66), messageId (« <…@…> » ou ''),
  * fromLine, toLine, ccLine (participants lisibles), attachments ([{name, type, bytes}]), attachmentsSkipped (pièces non extraites)}
  */
 export async function readEml(file){
@@ -137,6 +139,8 @@ export function parseEml(raw){
   let att = {out: [], skipped: 0}; try { att = attachmentsOf(raw); } catch { att = {out: [], skipped: 1}; }   // lecture impossible : annoncée
   return {from: addr(h.from), fromName: nameOf(h.from || ''), to: addr(h.to), toName: nameOf(h.to || ''),
     subject: decodeWords(h.subject || '').trim(), date: isoDate(h.date), at: isoAt(h.date), text: cleanBody(t.plain || (t.html ? htmlToText(t.html) : '')),
+    // (v1.66) texte INTÉGRAL du message, sans l'historique cité ni limite de longueur (affiché dans le journal ; « text » reste l'ancien résumé)
+    full: ownText({html: t.html || '', plain: t.plain || '', subject: decodeWords(h.subject || '').trim()}),
     messageId: String(h['message-id'] || '').trim(), fromLine: people(h.from), toLine: people(h.to), ccLine: people(h.cc), attachments: att.out, attachmentsSkipped: att.skipped};
 }
 

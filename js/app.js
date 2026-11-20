@@ -143,7 +143,9 @@ document.addEventListener('click', async e => {
   // un clic dans un champ d'une ligne cliquable ne doit pas ouvrir la ligne
   const ctrl = e.target.closest('input,select,textarea,.ac,.dt,label,a[href]:not([href="#"])');
   if (ctrl && ctrl !== t && t.contains(ctrl) && !ctrl.matches('[data-act]')) return;
-  if (t.id==='logout'){ e.preventDefault(); await sb.auth.signOut(); S.user=null; render(); return; }
+  // (v1.66, relecture B5) déconnexion : page rechargée — rien de la session précédente ne reste en mémoire (textes des mails privés,
+  // titulaire de la boîte, données chargées) pour le compte suivant
+  if (t.id==='logout'){ e.preventDefault(); await sb.auth.signOut(); S.user=null; location.reload(); return; }
   if (t.dataset.view){ e.preventDefault(); go(t.dataset.view); return; }
   const act = ACTIONS[t.dataset.act]; if (act){ if (t.tagName!=='INPUT') e.preventDefault(); await act(t, e); }
 });
@@ -186,8 +188,10 @@ export async function boot(){
   render();
   if (S.user){ startRealtime(render); bootTrace(); }
   sb.auth.onAuthStateChange(async (ev, session) => {
+    // (v1.66, relecture B5) autre compte connecté dans un autre onglet : page rechargée (aucune donnée du compte précédent gardée)
+    if (ev==='SIGNED_IN' && S.user && session?.user?.id && session.user.id !== S.user.id){ location.reload(); return; }
     if (ev==='SIGNED_IN' && !S.user){ S.user=session.user; await loadAll(); render(); startRealtime(render); }
-    if (ev==='SIGNED_OUT'){ S.user=null; render(); }
+    if (ev==='SIGNED_OUT' && S.user){ S.user=null; location.reload(); }
   });
 }
 

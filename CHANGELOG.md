@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.66.0 — 20/11/2026
+- Journal des suivis : texte intégral de chaque mail dans son entrée, sans clic ni limite, sans l'historique cité (mails synchronisés, importés, envoyés depuis MATRICE) ; extrait signalé quand la source est introuvable ; reprise des entrées existantes
+
+
 ## 1.65.2 — 20/11/2026
 - Journal : heure réelle seulement si elle tombe le jour affiché (date changée à la main : horodatage d'origine gardé, repli) ; « Message inaccessible depuis ce compte » quand la boîte n'est pas établie ; reprises sauvegardées dans la base, second passage des apostrophes refusé même sans la ligne de réglage
 

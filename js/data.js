@@ -565,13 +565,15 @@ async function mailToJournal(pid, m, importKey = null, gmailId = null, quiet = f
   const {date} = e.row;
   const base = {...e.row, author: S.user?.email, ...(importKey ? {import_key: importKey} : {})};
   // (v1.65) heure réelle du mail : en-tête Date du .eml (chronologie du journal, selectors.js logWhen)
-  const vals = {...base, ...(m.at ? {occurred_at: m.at} : {}), ...(gmailId ? {gmail_message_id: gmailId} : {})};
+  // (v1.66) texte intégral du message, sans l'historique cité (journal : affiché sans clic ni limite)
+  const vals = {...base, ...(m.at ? {occurred_at: m.at} : {}), ...(m.full ? {mail_text: m.full} : {}), ...(gmailId ? {gmail_message_id: gmailId} : {})};
   let {data: row, error} = await insertRow('prospect_logs', vals);
-  // colonne récente absente (gmail_message_id : migration v1.60.7 ; occurred_at : migration v1.65) : même ligne sans elle (même repli
+  // colonne récente absente (gmail_message_id : v1.60.7 ; occurred_at : v1.65 ; mail_text : v1.66) : même ligne sans elle (même repli
   // que la messagerie) ; la clé « msgid:<Message-ID> » suffit à éviter les doublons. La colonne nommée par l'erreur est retirée, sinon les deux.
-  for (let i = 0; i < 2 && error && (['PGRST204', '42703'].includes(error.code) || /gmail_message_id|occurred_at/.test(error.message || '')); i++){
-    const named = ['occurred_at', 'gmail_message_id'].filter(c => c in vals && (error.message || '').includes(c));
-    const drop = named.length ? named : ['occurred_at', 'gmail_message_id'].filter(c => c in vals);
+  const RECENT = ['mail_text', 'occurred_at', 'gmail_message_id'];   // migrations v1.66, v1.65, v1.60.7
+  for (let i = 0; i < 3 && error && (['PGRST204', '42703'].includes(error.code) || /gmail_message_id|occurred_at|mail_text/.test(error.message || '')); i++){
+    const named = RECENT.filter(c => c in vals && (error.message || '').includes(c));
+    const drop = named.length ? named : RECENT.filter(c => c in vals);
     if (!drop.length) break;
     drop.forEach(c => delete vals[c]);
     ({data: row, error} = await insertRow('prospect_logs', vals));

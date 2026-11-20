@@ -72,7 +72,7 @@ t('fonction serveur : réponses { ok:false, error } (§7.9), 503 si le coffre es
 
 // ── 2. Schéma privé : chaque table créée par une migration est classée ───────────────────────────────────────────────────────
 // EXCLUSIONS DÉCIDÉES (même liste : dépôt lartbo-matrice-backup, outils/prive_classement.sql) : jamais copiées, présence seulement
-const EXCLUES = ['import_secrets'];
+const EXCLUES = ['import_secrets', 'mail_textes'];   // mail_textes : textes des mails privés anthony@ (v1.66, décision d'Anthony du 20/11/2026)
 const migrations = readdirSync(new URL('supabase/migrations/', racine)).filter((f) => f.endsWith('.sql')).sort()
   .map((f) => [f, lire('supabase/migrations/' + f)]);
 const tout = migrations.map(([, s]) => s).join('\n');

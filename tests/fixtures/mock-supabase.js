@@ -136,6 +136,11 @@
     // messagerie : boîte anthony@ réservée à son propriétaire (window.__MAILBOX_OWNER = false : autre membre de l'équipe)
     is_mailbox_owner: () => window.__MAILBOX_OWNER ?? true,
     is_team: () => true,
+    // v1.66 : textes des mails privés (private.mail_textes) — lus / écrits seulement par le titulaire, jamais écrasés
+    mail_texte_lire: ({ p_ids = [] }) => (window.__MAILBOX_OWNER ?? true) ? (window.__DB.mail_textes || []).filter(t => p_ids.includes(t.message_id)) : [],
+    mail_texte_ecrire: ({ p_id, p_text }) => { if (!(window.__MAILBOX_OWNER ?? true) || !p_text) return false;
+      const T = (window.__DB.mail_textes ||= []); if (T.some(t => t.message_id === p_id)) return false;
+      T.push({ message_id: p_id, body_text: p_text }); return true; },
     // messagerie : boîte anthony@ réservée à son propriétaire (window.__MAILBOX_OWNER = false : autre membre de l'équipe)
     is_mailbox_owner: () => window.__MAILBOX_OWNER ?? true,
     show_deletion_state: a => deletionState(a.p_show),
@@ -223,7 +228,7 @@
         removeChannel: async () => 'ok',
         auth: {
           getSession: async () => ({ data: { session: window.__NO_SESSION ? null : { user: { email: USER } } } }),
-          onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+          onAuthStateChange: cb => { window.__AUTH_CB = cb; return { data: { subscription: { unsubscribe() {} } } }; },   // window.__AUTH_CB(ev, session) : événement simulé
           signOut: async () => ({ error: null }), signInWithPassword: async () => ({ data: {}, error: null }), signInWithOtp: async () => ({ error: null }),
         },
       };

@@ -20,6 +20,7 @@ import { $, addDays, addMonths, daysBetween, esc, eur, fmtDate, fmtShort, matche
 import { setMapData } from './booking.js';
 import { isDraftLog, relanceHistory } from '../prospection.js';
 import { logSource } from '../mailbox.js';
+import { ensureTexts, fullTextOf, isMailCopy, manualNote, textState } from '../textes-journal.js';
 
 export function viewProspects(){
   if (S.suiviPage){ const p = byId('prospects', S.suiviPage); if (p) return suiviPage(p); S.suiviPage = null; }
@@ -52,6 +53,7 @@ export function viewProspects(){
  *  Utilisée dans l'espace de prospection (page) et dans l'onglet Suivi d'une structure. */
 export function suiviCard(p, {page=false}={}){
   const logs = logsOf(p.id), files = filesOf(p.id);
+  ensureTexts(p.id);   // (v1.66) textes complets manquants : lus en arrière-plan, puis affichés
   const contacts = linksOfStructure(p.structure_id);
   const summary = `
       <div class="suivi-block summary-block"><h3 class="block-title">Résumé des échanges
@@ -121,7 +123,21 @@ export function suiviCard(p, {page=false}={}){
 
 /** Brouillon des notes d'échange d'un suivi (gardé dans le navigateur jusqu'à l'ajout au journal) */
 /** Texte d'une entrée du journal ; un mail envoyé depuis la Matrice garde sa mise en forme */
+const EXTRAIT = {lecture: 'lecture du texte complet…', reserve: 'texte complet réservé au compte d’Anthony (boîte anthony@)',
+  inaccessible: 'texte complet inaccessible depuis ce compte', introuvable: 'texte complet introuvable'};
 function logBody(l){
+  // (v1.66) copie d'un mail (synchronisé ou importé) : en-tête puis texte INTÉGRAL du message, sans l'historique cité, sans limite ;
+  // source introuvable ou réservée : texte actuel, signalé « Extrait » avec la raison
+  if (isMailCopy(l)){
+    const full = fullTextOf(l), body = String(l.body || '');
+    // note manuelle (texte ajouté ou modifié à la main) : affichée à part, au-dessus du mail (décision d'Anthony du 20/11/2026)
+    const note = full ? manualNote(l, full) : '';
+    if (full) return `<div class="md">${md(l.author === 'Messagerie' ? body.split('\n')[0] : body.split('\n\n')[0])}</div>`
+      + (note ? `<div class="log-note"><p class="muted small log-note-titre">Note</p><div class="md">${md(note)}</div></div>` : '')
+      + `<div class="mail-text">${esc(full)}</div>`;
+    const why = EXTRAIT[textState(l.id)];
+    return `<div class="md">${md(body)}</div>${why ? `<p class="muted small log-extrait">Extrait — ${esc(why)}</p>` : ''}`;
+  }
   if (!l.body_html) return `<div class="md">${md(l.body)}</div>`;
   const head = String(l.body || '').split('\n\n')[0];
   return `<div class="md">${md(head)}</div><div class="log-mail">${safeHtml(l.body_html)}</div>`;
