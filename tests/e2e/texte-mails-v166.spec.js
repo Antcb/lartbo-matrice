@@ -74,6 +74,8 @@ test('v1.66 règle : réponse et signature entières, historique cité retiré (
       ownText({ plain: 'Bonjour,\nInfos ci-dessous.\nCachet 1500\n\nLe lun. 3 nov. 2026 à 10:00, Paul <p@x.fr> a écrit :\n> HISTO_B4\n' }),
       ownText({ ...GQ('Bien reçu, merci.'), subject: 'RE: TR: Contrat' }),
     ];
+    const OL = t => ({ plain: t + '\n\nDe : Paul <p@x.fr>\nEnvoyé : lundi 3 novembre 2026 10:00\nÀ : M\nObjet : RE: Contrat\n\nHISTO_B4' });
+    out.b4.push(ownText(OL('Je vous renvoie le contrat signé.')), ownText(OL('Merci pour vos réponses, voici ci-dessous le planning.')));
     out.trGmail = ownText({ ...GQ('Pour info'), subject: 'TR: Contrat' });
     return out;
   });
