@@ -132,7 +132,7 @@ function logBody(l){
     const full = fullTextOf(l), body = String(l.body || '');
     if (full) return `<div class="md">${md(l.author === 'Messagerie' ? body.split('\n')[0] : body.split('\n\n')[0])}</div><div class="mail-text">${esc(full)}</div>`;
     const why = EXTRAIT[textState(l.id)];
-    return `<div class="md">${md(body)}</div>${why ? `<p class="muted log-extrait">Extrait — ${esc(why)}</p>` : ''}`;
+    return `<div class="md">${md(body)}</div>${why ? `<p class="muted small log-extrait">Extrait — ${esc(why)}</p>` : ''}`;
   }
   if (!l.body_html) return `<div class="md">${md(l.body)}</div>`;
   const head = String(l.body || '').split('\n\n')[0];
