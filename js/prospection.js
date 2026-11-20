@@ -536,15 +536,22 @@ async function mailNotFound(p, tried, attempt = 0){
   form.elements.body.focus();
 }
 
+/** (v1.65) Issue de l'import d'un mail glissé, notée pour diagnostic (client_errors, comme les dépôts) : suivi visé, issue, décomptes.
+ *  Jamais de contenu, d'objet, de nom de fichier ni d'adresse (motifs ramenés à une liste fermée). */
+const noteImport = (pid, issue, extra = {}) => window.dispatchEvent(new CustomEvent('matrice-diag', {detail: {key: `import mail : ${issue}`, data: {suivi: pid, ...extra}}}));
+const IMPORT_MOTIFS = [[/trop lourd/, 'trop lourd'], [/illisible|différent/, 'contenu illisible'], [/non lus?/, 'messages non lus'], [/^lecture dans/, 'lecture impossible'],
+  [/autre suivi|déjà joint à un autre|suivi « /, 'autre suivi'], [/entrée du journal|enregistrement refusé/, 'journal refusé']];
+const motifOf = (n, why) => (IMPORT_MOTIFS.find(([re]) => re.test(why) || re.test(n)) || [, 'autre'])[1];
+
 const keyOfMeta = m => msgIdOk(m.message_id) ? 'msgid:' + m.message_id : 'gmail:' + m.gmail_id;
 const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
 
 /** Un message (Message-ID validé) : sa conversation entière est importée dans le suivi, sans question (décision du 09/11/2026) */
 async function attachOneMailLink(p, id, attempt = 0, resumed = false){
-  if (!msgIdOk(id)) return toast('Lien de Mail refusé : l’identifiant du message n’a pas la forme attendue. Rien n’a été joint.', true);
+  if (!msgIdOk(id)){ noteImport(p.id, 'identifiant refusé'); return toast('Lien de Mail refusé : l’identifiant du message n’a pas la forme attendue. Rien n’a été joint.', true); }
   const key = 'msgid:' + id;
   // un même message n'est traité qu'une fois à la fois ; un nouvel essai programmé garde le verrou (aucune 2e chaîne par un 2e dépôt)
-  if (!resumed){ if (PENDING_MSG.has(key)) return toast('Import déjà en cours pour ce message.'); PENDING_MSG.add(key); }
+  if (!resumed){ if (PENDING_MSG.has(key)){ noteImport(p.id, 'déjà en cours'); return toast('Import déjà en cours pour ce message.'); } PENDING_MSG.add(key); }
   let keepLock = false;
   try {
     // (décision d'Anthony du 08/11/2026 : un message reste rattaché à un seul suivi ; le suivi concerné est nommé et accessible)
@@ -552,13 +559,13 @@ async function attachOneMailLink(p, id, attempt = 0, resumed = false){
     const name = pid => prospectTitle(byId('prospects', pid) || {name: 'autre suivi'});
     toast('Import de la conversation : recherche du message (suivis, puis boîtes Google)…');
     const where = await mailAttachedTo(key);
-    if (where && where !== p.id) return toast(`Ce message est déjà joint au suivi « ${name(where)} » : rien n’a été ajouté.`, true, open(where));
+    if (where && where !== p.id){ noteImport(p.id, 'joint à un autre suivi'); return toast(`Ce message est déjà joint au suivi « ${name(where)} » : rien n’a été ajouté.`, true, open(where)); }
     // joint avant la v1.60.4 (sans clé) : reconnu par le Message-ID du .eml déjà stocké, en lecture seule
     const legacyCheck = where ? {owner: null, incomplete: ''} : await legacyMailOwner(id), old = legacyCheck.owner;
-    if (old && old !== p.id) return toast(`Ce message est déjà joint au suivi « ${name(old)} » (avant la v1.60.4) : rien n’a été ajouté.`, true, open(old));
+    if (old && old !== p.id){ noteImport(p.id, 'joint à un autre suivi'); return toast(`Ce message est déjà joint au suivi « ${name(old)} » (avant la v1.60.4) : rien n’a été ajouté.`, true, open(old)); }
     // anciens .eml pas tous vérifiables : avertissement explicite avant tout rattachement (relecture B2 de la v1.60.4)
     // (déjà acceptée au premier essai : pas redemandée aux nouveaux essais)
-    if (legacyCheck.incomplete && !resumed && !(await legacyUnverifiedOk(legacyCheck.incomplete, 'ce message'))) return toast('Rien n’a été joint.');
+    if (legacyCheck.incomplete && !resumed && !(await legacyUnverifiedOk(legacyCheck.incomplete, 'ce message'))){ noteImport(p.id, 'refusé (vérification incomplète)'); return toast('Rien n’a été joint.'); }
 
     const {thread, tried} = await findThreadByMsgId(id);
     if (!thread){
@@ -568,16 +575,18 @@ async function attachOneMailLink(p, id, attempt = 0, resumed = false){
         const wait = SYNC_RETRIES[attempt];
         toast(`Synchronisation en cours : le message n’est pas encore visible chez Google. Nouvel essai dans ${wait} s (${attempt + 1}/${SYNC_RETRIES.length}). Rien n’est encore importé.`);
         keepLock = true;
+        noteImport(p.id, 'pas encore visible, nouvel essai', {essai: attempt + 1});
         setTimeout(() => attachOneMailLink(p, id, attempt + 1, true), wait * 1000);
         return;
       }
+      noteImport(p.id, 'introuvable', {boites: tried.map(([b, r]) => `${b} ${r === 'absent' ? 'absent' : 'erreur'}`), essais: attempt});
       return mailNotFound(p, tried, attempt);
     }
 
     // ce qui est déjà là, message par message (mêmes identifiants que la messagerie) ; conversation d'un autre suivi : rien
     const metas = thread.messages.map(m => ({...m, key: keyOfMeta(m)}));
     const st = await threadStatus(p.id, metas);
-    if (st.other) return toast(`Cette conversation est déjà rattachée au suivi « ${name(st.other)} » : rien n’a été déplacé ni ajouté.`, true, open(st.other));
+    if (st.other){ noteImport(p.id, 'conversation d’un autre suivi'); return toast(`Cette conversation est déjà rattachée au suivi « ${name(st.other)} » : rien n’a été déplacé ni ajouté.`, true, open(st.other)); }
     // un message déjà joint avant la v1.60.4 dans CE suivi (sans clé) : compté présent, jamais réimporté
     if (old === p.id) st.present.add(metas.find(m => m.message_id === id)?.gmail_id);
     // (relecture de 9e33475) les AUTRES messages de la conversation joints avant la v1.60.4 (sans clé) : reconnus par le Message-ID
@@ -585,13 +594,13 @@ async function attachOneMailLink(p, id, attempt = 0, resumed = false){
     for (const m of metas){
       if (st.present.has(m.gmail_id) || m.message_id === id || !msgIdOk(m.message_id)) continue;
       const lg = await legacyMailOwner(m.message_id);
-      if (lg.owner && lg.owner !== p.id) return toast(`Cette conversation est déjà rattachée au suivi « ${name(lg.owner)} » : rien n’a été déplacé ni ajouté.`, true, open(lg.owner));
+      if (lg.owner && lg.owner !== p.id){ noteImport(p.id, 'conversation d’un autre suivi'); return toast(`Cette conversation est déjà rattachée au suivi « ${name(lg.owner)} » : rien n’a été déplacé ni ajouté.`, true, open(lg.owner)); }
       if (lg.owner === p.id) st.present.add(m.gmail_id);
     }
     const missing = metas.filter(m => !st.present.has(m.gmail_id)).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
     const total = metas.length, already = total - missing.length;
     const longNote = thread.truncated ? `Conversation très longue (${plural(thread.total, 'message')}) : seuls les ${total - 1} plus récents et le message glissé sont lus ; les plus anciens ne sont pas importés.` : '';
-    if (!missing.length) return toast(`Conversation déjà complète dans ce suivi : ${plural(total, 'message')}, rien n’a été ajouté.${longNote ? ' ' + longNote : ''}`);
+    if (!missing.length){ noteImport(p.id, 'déjà complète', {messages: total}); return toast(`Conversation déjà complète dans ce suivi : ${plural(total, 'message')}, rien n’a été ajouté.${longNote ? ' ' + longNote : ''}`); }
 
     // lecture des contenus manquants, en plusieurs passes si la conversation est lourde ; chaque message passe par le même chemin
     // qu'un .eml déposé (original, entrée du journal, pièces jointes, clés anti-doublon)
@@ -632,6 +641,8 @@ async function attachOneMailLink(p, id, attempt = 0, resumed = false){
     if (left.length) errors.push([plural(left.length, 'message'), `non lu${left.length > 1 ? 's' : ''} dans ${thread.box} (dépose de nouveau ce mail pour reprendre : seuls les messages manquants seront ajoutés)`]);
     render();
     const present = already + full;
+    noteImport(p.id, errors.length ? 'incomplet' : 'importé', {ajoutés: added, complétés: completed, présents: present, fichiers: files, erreurs: errors.length,
+      motifs: [...new Set(errors.map(([n, why]) => motifOf(n, why)))], tronquée: !!longNote});
     const head = `${plural(added, 'message')} ajouté${added > 1 ? 's' : ''}${completed ? `, ${plural(completed, 'message')} complété${completed > 1 ? 's' : ''}` : ''}, ${plural(present, 'message')} déjà présent${present > 1 ? 's' : ''}`
       + `${files > added ? ` (${plural(files, 'fichier')} enregistrés, pièces jointes comprises)` : ''} — conversation lue dans ${thread.box}.`;
     if (errors.length || longNote){
@@ -641,7 +652,8 @@ async function attachOneMailLink(p, id, attempt = 0, resumed = false){
       if (elsewhere){ if (await ask({title, text, actions: [{value: true, label: 'Ouvrir le suivi concerné'}], cancel: 'Fermer'})) runAct('openSuivi', elsewhere); }
       else await inform({title, text});
     } else toast(`Conversation importée : ${head}`);
-  } finally { if (!keepLock) PENDING_MSG.delete(key); }
+  } catch (err){ noteImport(p.id, 'erreur', {type: err?.name || 'Error'}); throw err; }
+  finally { if (!keepLock) PENDING_MSG.delete(key); }
 }
 
 /** Dépôt d'un ou plusieurs liens « message: » sur les pièces jointes d'un suivi (events.js) : un message après l'autre, 5 au plus */

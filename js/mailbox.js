@@ -7,19 +7,19 @@
  *   - réponse / réponse à tous / transfert / nouveau : brouillon ou envoi dans le fil ; journal du suivi écrit par la synchronisation,
  *     seulement une fois l'envoi confirmé par Gmail (aucun doublon : identifiant Gmail du message).
  */
-import { render } from './app.js';
-import { insert, sb, uploadFiles } from './data.js';
+import { go, render } from './app.js';
+import { insert, openStored, sb, uploadFiles } from './data.js';
 import { attOk, attSizeHTML, fill, mailVars, todoOk, tplLabel } from './mail.js';
 import { callProspect, prospectVars } from './prospection.js';
-import { byId, contactMails, linksOfStructure, projIds, projName, prospectTitle, prospectsOfStructure, setting, structName, suiviClosed } from './selectors.js';
+import { byId, contactMails, filesOf, linksOfStructure, projIds, projName, projectOptions, prospectTitle, prospectsOfStructure, setting, structName, suiviClosed } from './selectors.js';
 import { S } from './state.js';
 import { ARTIST_DOCS } from './artist-fields.js';
-import { ask, askText, confirmAsk } from './ui/dialog.js';
+import { ask, askText, confirmAsk, inform, readMail } from './ui/dialog.js';
 import { openModal } from './ui/modal.js';
 import { recipientsField, syncChips } from './ui/recipients.js';
 import { rtStyle, rtToolbar, wrapMail } from './ui/richtext.js';
 import { getDraft, setDraft, clearDraft } from './ui/drafts.js';
-import { addDays, esc, fmtDate, toast, today, workDay } from './utils.js';
+import { addDays, esc, fmtDate, fmtTime, toast, today, workDay } from './utils.js';
 
 export const MAILBOX_ADDR = () => String(setting('prospect_from') || 'anthony@lartboristerie.com').toLowerCase();
 const GMAIL_MAX_BYTES = 25 * 1024 * 1024;
@@ -40,7 +40,7 @@ export const linkState = t => t.link_status === 'manuel' && !t.structure_id && !
 export const fwdListed = a => !(a?.inline && /^image\//i.test(a.mime || ''));
 
 /** État de l'espace Mails (mémoire de la page) */
-export const M = {owner: undefined, filter: 'inbox', label: '', labels: null, search: null, open: null, thread: null, loading: false, error: '', images: new Set()};
+export const M = {owner: undefined, filter: 'inbox', label: '', labels: null, search: null, open: null, thread: null, loading: false, error: '', images: new Set(), focus: null};
 
 export const fmtSize = n => !n ? '' : n > 1e6 ? (n / 1048576).toFixed(1).replace('.', ',') + ' Mo' : Math.max(1, Math.round(n / 1024)) + ' Ko';
 export const labelName = id => SYSTEM_LABELS[id] || (M.labels || []).find(l => l.id === id)?.name || id;
@@ -93,14 +93,72 @@ export function threadsShown(){
 }
 
 /** Ouvre une conversation : relue dans Gmail (corps, pièces jointes), marquée lue comme dans Gmail et Apple Mail */
-export async function openThread(id){
+export async function openThread(id, focus = null){
   const row = byId('mail_threads', id); if (!row) return;
-  M.open = id; M.thread = null; M.loading = true; M.error = ''; render();
+  M.open = id; M.thread = null; M.loading = true; M.error = ''; M.focus = focus; render();
   try {
     M.thread = (await callProspect('thread', {thread_id: row.gmail_thread_id})).thread;
     if (row.unread){ await callProspect('modify', {thread_id: row.gmail_thread_id, read: true}); row.unread = false; }
   } catch (e) { M.error = e.message; }
   M.loading = false; render();
+  // (v1.65) ouverte depuis le journal d'un suivi : le message visé est amené à l'écran
+  if (M.focus) document.querySelector(`.mail-msg[data-msg="${CSS.escape(M.focus)}"]`)?.scrollIntoView({block: 'start'});
+}
+
+// ── Lecture complète depuis le journal d'un suivi (v1.65) ─────────────────────────────────────────────────────────────────────
+/** Sources complètes d'une entrée du journal : .eml joint au même suivi (même clé « msgid:<Message-ID> ») et/ou message de la
+ *  messagerie (entrée écrite par la synchronisation, ou mail envoyé depuis MATRICE : identifiant Gmail). Aucune copie du corps n'est
+ *  gardée : la lecture se fait à la source (Gmail, ou le .eml stocké). */
+export function logSource(l){
+  const key = /^msgid:</.test(l?.import_key || '') ? l.import_key : '';
+  const file = key ? filesOf(l.prospect_id).find(f => f.import_key === key) || null : null;
+  const synced = !!(l?.gmail_message_id || l?.author === 'Messagerie');
+  return {file, synced, any: !!file || synced};
+}
+
+/** Message synchronisé d'une entrée : {thread, msg} ou {why} (motif lisible) */
+async function syncedMessage(l){
+  const one = async (col, v) => { const {data, error} = await sb.from('mail_messages').select('thread_id,gmail_message_id').eq(col, v).limit(1);
+    if (error) throw new Error(error.message); return (data || [])[0] || null; };
+  let m = null;
+  try { m = await one('prospect_log_id', l.id) || (l.gmail_message_id ? await one('gmail_message_id', l.gmail_message_id) : null); }
+  catch (e) { return {why: `lecture de la messagerie impossible (${e.message})`}; }
+  if (!m) return {why: 'ce message n’est pas (ou plus) dans la messagerie synchronisée'};
+  if (!byId('mail_threads', m.thread_id)) return {why: 'sa conversation n’est pas chargée dans la messagerie (« Actualiser » dans Mails, puis réessaie)'};
+  return {thread: m.thread_id, msg: m.gmail_message_id};
+}
+
+/** Ouvre le .eml stocké dans une fenêtre de lecture (cadre isolé, comme la messagerie) ; renvoie '' ou le motif d'échec */
+async function readStoredEml(f){
+  const {data, error} = await sb.storage.from('suivi').download(f.path);
+  if (error || !data) return `le fichier « ${f.name} » est introuvable dans le stockage${error?.message ? ` (${error.message})` : ''}`;
+  const {emlView, rawOf} = await import('./eml.js'), {mailFrame} = await import('./views/mails.js');
+  let v; try { v = emlView(await rawOf(data)); } catch { return `le fichier « ${f.name} » est illisible`; }
+  const lines = [v.fromLine && `De : ${v.fromLine}`, v.toLine && `À : ${v.toLine}`, v.ccLine && `Copie : ${v.ccLine}`,
+    v.at && `Date : ${fmtDate(v.at)} ${fmtTime(v.at)}`, v.files.length && `Pièces jointes : ${v.files.join(', ')}`].filter(Boolean);
+  const pick = await readMail({title: v.subject || f.name, lines,
+    frame: v.html ? mailFrame(v.html, `Mail ${v.subject || f.name}`) : '<p class="muted">Ce mail ne contient aucun texte lisible.</p>',
+    actions: [{value: 'eml', label: 'Télécharger le .eml', plain: true}]});
+  if (pick === 'eml') openStored(f.path);
+  return '';
+}
+
+/** « Lire en entier » : conversation de la messagerie (message visé), sinon .eml joint, sinon le motif est dit clairement */
+export async function readLog(id){
+  const l = byId('prospect_logs', id); if (!l) return;
+  const {file, synced} = logSource(l), why = [];
+  if (synced){
+    await checkOwner();
+    if (!M.owner) why.push('ce mail est dans la boîte anthony@ : sa lecture complète est réservée au compte d’Anthony');
+    else {
+      const r = await syncedMessage(l);
+      if (r.thread){ M.filter = M.filter === 'search' ? 'inbox' : M.filter; go('mails'); await openThread(r.thread, r.msg); return; }
+      why.push(r.why);
+    }
+  }
+  if (file){ const w = await readStoredEml(file); if (!w) return; why.push(w); }
+  else if (!synced) why.push('aucun mail complet n’est enregistré pour cette entrée');
+  await inform({title: 'Mail complet inaccessible', text: `Le mail complet ne peut pas être ouvert : ${why.join(' ; ')}.\nLe journal n’en garde que le texte affiché. Rien n’a été modifié.`});
 }
 
 /** Rangement dans Gmail (libellé, archive, corbeille, lu / non lu), puis relecture de la conversation */
@@ -235,7 +293,8 @@ export async function compose(mode, row = null, msg = null){
   const sig = setting('prospect_signature') || '';
   const subjectDefault = !base ? '' : mode === 'forward' ? (/^(tr|fwd?)\s*:/i.test(base.subject) ? base.subject : 'Tr : ' + base.subject) : (/^re\s*:/i.test(base.subject) ? base.subject : 'Re: ' + base.subject);
   const tpls = S.db.mail_templates.slice().sort((a, b) => (a.kind || '').localeCompare(b.kind || '') || (a.name || '').localeCompare(b.name || ''));
-  const projs = S.db.projects.filter(p => p.active || p.id === ctx.project_id);
+  // (v1.65) même ordre que tous les choix d'artiste : actifs d'abord, les plus utilisés en premier (projUsage), puis par nom
+  const projs = projectOptions(true, ctx.project_id ? [ctx.project_id] : []);
   const title = {reply: 'Répondre', reply_all: 'Répondre à tous', forward: 'Transférer', new: 'Nouveau mail'}[mode];
   const extra = `<div class="mail-wrap">
     ${base ? `<p class="mode-note">${mode === 'forward' ? 'Transfert' : 'Réponse dans le fil'} « ${esc(base.subject || '')} » (${esc(base.from?.email || '')}, ${fmtDate(base.date)}) : le message d’origine est cité sous le texte.</p>` : ''}
@@ -415,8 +474,9 @@ export const MAIL_ACTIONS = {
     catch (e) { toast(e.message, true); }
     render(); },
   mailOpen: t => openThread(t.dataset.id),
+  readLog: t => readLog(t.dataset.id),
   mailImages: t => { M.images.add(t.dataset.msg); render(); },   // images distantes : seulement sur demande, pour ce message
-  mailBack: () => { M.open = null; M.thread = null; render(); },
+  mailBack: () => { M.open = null; M.thread = null; M.focus = null; render(); },
   mailCompose: t => t.dataset.mode === 'new' ? compose('new')
     : compose(t.dataset.mode, M.open ? byId('mail_threads', M.open) : null, t.dataset.msg ? M.thread?.messages.find(m => m.id === t.dataset.msg) : null),
   mailLink: t => linkThread(t.dataset.id || M.open),

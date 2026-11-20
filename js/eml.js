@@ -67,6 +67,8 @@ function cleanBody(t){
 
 const addr = v => (decodeWords(v).match(/[^\s<>,"]+@[^\s<>,"]+/) || [])[0]?.toLowerCase() || '';
 const nameOf = v => { const d = decodeWords(v).trim(); const m = d.match(/^"?([^"<]+?)"?\s*</); return (m ? m[1] : d).trim(); };
+/** Horodatage complet (ISO) de l'en-tête Date, ou null (v1.65 : heure réelle du mail au journal) */
+const isoAt = v => { const d = new Date(v); return v && !isNaN(d) ? d.toISOString() : null; };
 const isoDate = v => { const d = new Date(v); return isNaN(d) ? null : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 /** Message-ID lu dans les en-têtes d'un mail brut (début du fichier suffit), ou '' (v1.60.4 : mails joints avant la v1.60.4) */
@@ -122,12 +124,11 @@ function attachmentsOf(raw, st = {out: [], skipped: 0}, depth = 0){
 }
 
 /**
- * Lit un fichier .eml : {from, fromName, to, toName, subject, date (AAAA-MM-JJ), text, messageId (« <…@…> » ou ''),
+ * Lit un fichier .eml : {from, fromName, to, toName, subject, date (AAAA-MM-JJ), at (horodatage ISO de l'en-tête Date, ou null), text, messageId (« <…@…> » ou ''),
  * fromLine, toLine, ccLine (participants lisibles), attachments ([{name, type, bytes}]), attachmentsSkipped (pièces non extraites)}
  */
 export async function readEml(file){
-  const raw = await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = ko; r.readAsBinaryString(file); });
-  return parseEml(raw);
+  return parseEml(await rawOf(file));
 }
 /** Même lecture à partir du contenu brut (chaîne « binaire » : un caractère par octet) */
 export function parseEml(raw){
@@ -135,9 +136,25 @@ export function parseEml(raw){
   const t = textOf(raw);
   let att = {out: [], skipped: 0}; try { att = attachmentsOf(raw); } catch { att = {out: [], skipped: 1}; }   // lecture impossible : annoncée
   return {from: addr(h.from), fromName: nameOf(h.from || ''), to: addr(h.to), toName: nameOf(h.to || ''),
-    subject: decodeWords(h.subject || '').trim(), date: isoDate(h.date), text: cleanBody(t.plain || (t.html ? htmlToText(t.html) : '')),
+    subject: decodeWords(h.subject || '').trim(), date: isoDate(h.date), at: isoAt(h.date), text: cleanBody(t.plain || (t.html ? htmlToText(t.html) : '')),
     messageId: String(h['message-id'] || '').trim(), fromLine: people(h.from), toLine: people(h.to), ccLine: people(h.cc), attachments: att.out, attachmentsSkipped: att.skipped};
 }
+
+/**
+ * Lecture COMPLÈTE d'un mail brut pour l'afficher (v1.65, « Lire en entier ») : rien n'est coupé (ni l'historique cité, ni la longueur).
+ * {subject, fromLine, toLine, ccLine, at, html (HTML du mail, sinon texte brut dans <pre>, à afficher UNIQUEMENT dans le cadre isolé
+ * de la messagerie), files (noms des pièces jointes)}. Aucune écriture : le .eml stocké reste la source.
+ */
+export function emlView(raw){
+  const {h} = splitHead(raw);
+  const t = textOf(raw);
+  let names = []; try { names = attachmentsOf(raw).out.map(a => a.name); } catch {}
+  const pre = String(t.plain || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return {subject: decodeWords(h.subject || '').trim(), fromLine: people(h.from), toLine: people(h.to), ccLine: people(h.cc), at: isoAt(h.date),
+    html: t.html || (t.plain ? `<pre>${pre}</pre>` : ''), files: names};
+}
+/** Contenu brut (« binaire » : un caractère par octet) d'un fichier ou d'un Blob, comme readEml */
+export const rawOf = blob => new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = ko; r.readAsBinaryString(blob); });
 
 /**
  * Message-ID d'un mail (RFC 5322), v1.60.4 — forme stricte « <partie-locale@domaine> », sans espace ni caractère de contrôle,

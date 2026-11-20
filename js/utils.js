@@ -60,6 +60,8 @@ export const badMails = form => mailInputs(form).filter(i => !inputOk(i));
 export const TZ = 'Europe/Paris';
 /** Jour (AAAA-MM-JJ) d'un horodatage, à Paris — jamais .slice(0,10) d'un horodatage (jour UTC : la veille entre 0 h et 2 h) */
 export const dayOf = ts => { if (!ts) return null; const s = String(ts); if (/^\d{4}-\d\d-\d\d$/.test(s)) return s; const d = new Date(s); return isNaN(d) ? null : d.toLocaleDateString('sv-SE', {timeZone: TZ}); };
+/** Heure (HH:MM) d'un horodatage, à Paris (v1.65 : heure réelle d'un mail au journal) ; '' si illisible */
+export const fmtTime = ts => { if (!ts) return ''; const d = new Date(ts); return isNaN(d) ? '' : d.toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit', timeZone: TZ}); };
 /** Date affichée partout en JJ/MM/AAAA (stockage : AAAA-MM-JJ) ; accepte aussi un horodatage complet (jour à Paris) */
 export const fmtDate = d => { if (!d) return ''; const s = String(d); return /^\d{4}-\d\d-\d\d$/.test(s) ? fmtNum(s) : /^\d{4}-\d\d-\d\d[ T]/.test(s) && dayOf(s) ? fmtNum(dayOf(s)) : s; };
 

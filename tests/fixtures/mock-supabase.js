@@ -215,6 +215,9 @@
           createSignedUrl: async (path, expires) => { (window.__signed ||= []).push({ bucket, path, expires }); return { data: { signedUrl: 'about:blank#' + bucket + '/' + path }, error: null }; },
           // window.__STORAGE_LIST = { bucket: [{name, metadata: {size}}] } : contenu simulé d'un dossier (tailles des documents)
           list: async () => ({ data: (window.__STORAGE_LIST && window.__STORAGE_LIST[bucket]) || [], error: null }),
+          // window.__STORED = { 'bucket/chemin': contenu texte } : fichier stocké lisible (v1.65 : .eml lu en entier) ; absent → erreur
+          download: async path => { const t = (window.__STORED || {})[bucket + '/' + path];
+            return t == null ? { data: null, error: { message: 'Object not found' } } : { data: new Blob([Uint8Array.from(t, c => c.charCodeAt(0) & 255)]), error: null }; },
           createSignedUrls: async p => ({ data: p.map(() => ({ signedUrl: 'about:blank' })), error: null }) }) },
         channel: () => { const c = { on: () => c, subscribe: () => c, unsubscribe: async () => 'ok' }; return c; },
         removeChannel: async () => 'ok',

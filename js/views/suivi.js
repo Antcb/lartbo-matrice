@@ -9,16 +9,17 @@
 import { LOG_ICON, LOG_KINDS, PROSPECT, PROSPECT_LABEL, PROSPECT_OPTS, isOff, stColor } from '../constants.js';
 import { lingering, summaryRetryAt } from '../data.js';
 import { distKm, routeCached, route } from '../geo.js';
-import { suiviClosed, projFilterOk, byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, placeOfSuivi, placeText, projIds, projName, projNames, projectOptions, showCoords, showPlace, showPlaceNote, showsOfProject, structName, suiviCoords } from '../selectors.js';
+import { suiviClosed, projFilterOk, byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, logWhen, placeOfSuivi, placeText, projIds, projName, projNames, projectOptions, showCoords, showPlace, showPlaceNote, showsOfProject, structName, suiviCoords } from '../selectors.js';
 import { ENV } from '../config.js';
 import { S, localDel, localGet, localSet } from '../state.js';
 import { inactiveToggle, dropZone, fileRow, fold, projPicker, stSelect, pstBadge, stBadge, tabsBar, curTab, viewHead } from '../ui/bits.js';
 import { cAc, cIn, cSel, projChips } from '../ui/cells.js';
 import { acInput } from '../ui/autocomplete.js';
 import { dateInput } from '../ui/datefield.js';
-import { $, addDays, addMonths, daysBetween, esc, eur, fmtDate, fmtShort, matches, md, period, safeHtml, today, dayOf } from '../utils.js';
+import { $, addDays, addMonths, daysBetween, esc, eur, fmtDate, fmtShort, matches, md, period, safeHtml, today, dayOf, fmtTime } from '../utils.js';
 import { setMapData } from './booking.js';
 import { isDraftLog, relanceHistory } from '../prospection.js';
+import { logSource } from '../mailbox.js';
 
 export function viewProspects(){
   if (S.suiviPage){ const p = byId('prospects', S.suiviPage); if (p) return suiviPage(p); S.suiviPage = null; }
@@ -61,10 +62,18 @@ export function suiviCard(p, {page=false}={}){
         ${(at => at ? `<p class="help m0 mb-sm">⏳ L’IA était saturée : nouvel essai automatique vers ${new Date(at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'})}.</p>` : '')(summaryRetryAt(p.id))}
         <div class="md">${md(p.summary) || '<span class="muted">Pas encore de résumé.</span>'}</div></div>`;
   const d = logDraft(p.id);
-  // Fil de la date : échanges et pièces jointes mêlés, du plus récent au plus ancien
-  const thread = [...logs.map(l => ({log:l, at:l.date || '0000', ts:l.created_at || ''})),
-                  ...files.map(f => ({file:f, at:dayOf(f.created_at) || '0000', ts:f.created_at || ''}))]
-    .sort((a, b) => b.at.localeCompare(a.at) || b.ts.localeCompare(a.ts));
+  // Fil du suivi : échanges et pièces jointes mêlés, du plus récent au plus ancien (v1.65 : heure réelle, ordre stable — selectors.js logOrder).
+  // Un .eml et ses pièces (clé « msgid:<Message-ID> » et « …:pj:<n> » de l'entrée) s'affichent AVEC leur mail, à sa date ; les autres
+  // fichiers gardent leur jour d'enregistrement.
+  const keyOf = f => String(f.import_key || '').replace(/:pj:\d+$/, '');
+  const byKey = new Map(logs.filter(l => /^msgid:</.test(l.import_key || '')).map(l => [l.import_key, l]));
+  const withLog = new Map();
+  for (const f of files){ const l = byKey.get(keyOf(f)); if (l) withLog.set(l.id, [...(withLog.get(l.id) || []), f]); }
+  const loose = files.filter(f => !byKey.has(keyOf(f)));
+  const thread = [...logs.map((l, i) => ({log:l, at:l.date || '0000', t:logWhen(l), i})),
+                  ...loose.map(f => ({file:f, at:dayOf(f.created_at) || '0000', t:Date.parse(f.created_at || '') || null, i:-1}))]
+    .sort((a, b) => b.at.localeCompare(a.at) || (a.t === b.t ? 0 : a.t == null ? -1 : b.t == null ? 1 : b.t - a.t)
+      || (a.i >= 0 && b.i >= 0 ? a.i - b.i : a.i >= 0 ? -1 : b.i >= 0 ? 1 : String(b.file.id).localeCompare(String(a.file.id))));
   const tasks = suiviTasks(p);
   const tasksHTML = `<div class="suivi-block"><h3 class="block-title">Tâches <span class="count">${tasks.filter(t=>!isDone(t)).length}</span><span class="spacer"></span>
       <button type="button" class="btn sm" data-act="wsTask" data-id="${p.id}">Nouvelle tâche</button></h3>
@@ -88,10 +97,10 @@ export function suiviCard(p, {page=false}={}){
         ${thread.map(x => x.file ? `<div class="log log-file">
           <div class="log-head">📎 ${x.at !== '0000' ? `<b>${fmtDate(x.at)}</b> · ` : ''}Pièce jointe<span class="spacer"></span></div>${fileRow(x.file)}</div>`
           : `<div class="log">
-          <div class="log-head">${LOG_ICON[x.log.kind]||'📝'} <b>${x.log.date?fmtDate(x.log.date):'Sans date'}</b>${x.log.contact_name?' · '+esc(x.log.contact_name):''}
-            <span class="spacer"></span>${isDraftLog(x.log) ? `<button type="button" class="btn sm" data-act="markLogSent" data-id="${x.log.id}" title="Le mail est parti depuis Gmail : le noter envoyé aujourd’hui">Marquer envoyé</button>` : ''}<button type="button" class="btn sm ghost" data-act="editLog" data-id="${x.log.id}">Modifier</button>
+          <div class="log-head">${LOG_ICON[x.log.kind]||'📝'} <b>${x.log.date?fmtDate(x.log.date):'Sans date'}</b>${x.log.occurred_at && fmtTime(x.log.occurred_at) ? ` <span class="muted">${fmtTime(x.log.occurred_at)}</span>` : ''}${x.log.contact_name?' · '+esc(x.log.contact_name):''}
+            <span class="spacer"></span>${logSource(x.log).any ? `<button type="button" class="btn sm" data-act="readLog" data-id="${x.log.id}" title="Ouvre le message complet (conversation de la messagerie, ou .eml joint au suivi)">Lire en entier</button>` : ''}${isDraftLog(x.log) ? `<button type="button" class="btn sm" data-act="markLogSent" data-id="${x.log.id}" title="Le mail est parti depuis Gmail : le noter envoyé aujourd’hui">Marquer envoyé</button>` : ''}<button type="button" class="btn sm ghost" data-act="editLog" data-id="${x.log.id}">Modifier</button>
             <button type="button" class="btn icon sm ghost danger" data-act="delLog" data-id="${x.log.id}" aria-label="Supprimer l'entrée">✕</button></div>
-          ${logBody(x.log)}</div>`).join('') || '<div class="muted">Aucun échange enregistré.</div>'}
+          ${logBody(x.log)}${(withLog.get(x.log.id) || []).map(f => fileRow(f)).join('')}</div>`).join('') || '<div class="muted">Aucun échange enregistré.</div>'}
       </div>`;
   const side = `
       <div class="suivi-block"><h3 class="block-title">Autres notes <button class="btn sm ghost" data-act="editText" data-id="${p.id}" data-f="content_md">Modifier</button></h3>

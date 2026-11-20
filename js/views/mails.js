@@ -19,8 +19,17 @@ export function frameDoc(html, remoteImages = false){
   const csp = `default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:${remoteImages ? ' https:' : ''}; form-action 'none'; base-uri 'none'`;
   const clean = String(html || '').replace(/<script\b[\s\S]*?(<\/script\s*>|$)/gi, '')   // en plus du cadre sans script : retirés d'avance
     .replace(/<(a|area)(\s|>)/gi, '<$1 rel="noopener noreferrer"$2');   // liens : ni accès à la page d'origine, ni adresse de provenance
-  return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><base target="_blank">${clean}`;
+  // (v1.65) pas de rechargement ni de redirection par le mail lui-même ; texte brut (<pre>) et images ramenés à la largeur du cadre (iPhone)
+  const quiet = clean.replace(/<meta\b[^>]*http-equiv\s*=\s*["']?\s*refresh[^>]*>/gi, '');
+  return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><base target="_blank">`
+    + `<meta name="viewport" content="width=device-width,initial-scale=1"><style>pre{white-space:pre-wrap;overflow-wrap:anywhere}img{max-width:100%;height:auto}</style>${quiet}`;
 }
+/**
+ * Cadre de lecture d'un mail (v1.65 : partagé par la messagerie et la lecture d'un .eml depuis le journal d'un suivi). Isolé : sandbox sans
+ * allow-scripts ni allow-same-origin (décision de sécurité v1.61). Le cadre a une hauteur fixe à l'écran et défile À L'INTÉRIEUR :
+ * un mail long se lit jusqu'à sa dernière ligne (sur iPhone, le cadre occupe la hauteur de l'écran, voir css .mail-frame).
+ */
+export const mailFrame = (html, title, remoteImages = false) => `<iframe class="mail-frame" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" title="${esc(title)}" srcdoc="${esc(frameDoc(html, remoteImages))}"></iframe>`;
 const hasRemote = html => /<img[^>]+src\s*=\s*["']?\s*(https?:)?\/\//i.test(html || '') || /url\(\s*["']?\s*(https?:)?\/\//i.test(html || '');
 const HIDDEN_LABELS = /^(CATEGORY_|CHAT$|DRAFT$|UNREAD$|IMPORTANT$|STARRED$|SENT$|INBOX$|SPAM$|TRASH$)/;
 
@@ -70,14 +79,15 @@ function reader(){
     ${(row.labels || []).filter(l => !HIDDEN_LABELS.test(l)).map(l => `<span class="badge tag">${esc(labelName(l))}</span>`).join(' ')}</div>`;
   const body = M.loading ? '<div class="empty panel">Lecture de la conversation dans Gmail…</div>'
     : M.error && !th ? `<div class="empty panel mail-err" role="alert">${esc(M.error)}</div>`
-    : (th?.messages || []).map(m => `<article class="panel pad mail-msg">
+    : (M.focus && th && !(th.messages || []).some(m => m.id === M.focus) ? '<div class="panel pad mail-err" role="alert">Le message ouvert depuis le journal n’est plus dans cette conversation Gmail (supprimé ou déplacé) : voici la conversation telle qu’elle est aujourd’hui.</div>' : '')
+    + (th?.messages || []).map(m => `<article class="panel pad mail-msg${m.id === M.focus ? ' focus' : ''}" data-msg="${esc(m.id)}">
         <header class="mail-msg-head"><b>${esc(m.from?.name || m.from?.email || '')}</b> <span class="muted">&lt;${esc(m.from?.email || '')}&gt;</span>
           ${m.auto === 'ndr' ? '<span class="badge mail-auto-tag">Avis de non-remise</span>' : m.auto === 'auto' ? '<span class="badge mail-auto-tag">Réponse automatique · relances maintenues</span>' : ''}
           <span class="spacer"></span><span class="muted">${esc(when(m.date))}</span></header>
         <p class="muted mail-msg-to">À : ${esc((m.to || []).map(a => a.email).join(', '))}${m.cc?.length ? ` · Copie : ${esc(m.cc.map(a => a.email).join(', '))}` : ''}</p>
         ${hasRemote(m.html) ? `<p class="muted mail-img-note">Images distantes bloquées (elles peuvent signaler l’ouverture du mail à l’expéditeur).
           ${M.images.has(m.id) ? '<b>Affichées pour ce message.</b>' : `<button class="btn sm ghost" data-act="mailImages" data-msg="${esc(m.id)}">Afficher les images</button>`}</p>` : ''}
-        <iframe class="mail-frame" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" title="Message de ${esc(m.from?.email || '')}" srcdoc="${esc(frameDoc(m.html, M.images.has(m.id)))}"></iframe>
+        ${mailFrame(m.html, `Message de ${m.from?.email || ''}`, M.images.has(m.id))}
         ${m.attachments?.some(a => !a.inline) ? `<div class="ml-att">${m.attachments.map((a, i) => a.inline ? '' : `<span class="att-chip">📎 ${esc(a.name)} <span class="muted">${fmtSize(a.size)}</span>
           <button class="btn sm ghost" data-act="mailAttPreview" data-msg="${esc(m.id)}" data-i="${i}">Ouvrir</button>
           <button class="btn sm ghost" data-act="mailAttKeep" data-msg="${esc(m.id)}" data-i="${i}">Conserver…</button></span>`).join('')}</div>` : ''}

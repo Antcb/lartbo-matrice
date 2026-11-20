@@ -7,7 +7,7 @@ import { DEFAULT_DEPARTMENTS, PRIORITY_LABEL, TEAM_NAMES, isOff } from './consta
 import { lingering } from './data.js';
 import { ENV } from './config.js';
 import { S } from './state.js';
-import { daysUntil, fmtDate, norm } from './utils.js';
+import { dayOf, daysUntil, fmtDate, norm } from './utils.js';
 
 const CACHE = {};
 /** Index mis en cache tant que les tables listées n'ont pas changé */
@@ -170,7 +170,19 @@ export function taskSort(a,b){
 // --- Index par structure / suivi / projet -----------------------------------
 const byCol = (table, col) => cached(`${table}.${col}`, [table], () => groupBy(S.db[table], col));
 
-export function logsOf(pid){ return (byCol('prospect_logs','prospect_id').get(pid)||[]).filter(l=>!l.hidden).sort((a,b)=>(b.date||'0000').localeCompare(a.date||'0000') || (b.sort||0)-(a.sort||0)); }
+/**
+ * Chronologie du journal d'un suivi (v1.65) — MÊME règle dans supabase/functions/resume-suivi/index.ts (journalOrder).
+ * Heure réelle d'une entrée : occurred_at (envoi / réception du mail : sent_at de la messagerie, en-tête Date du .eml déposé) ;
+ * sinon l'heure d'enregistrement si elle tombe le jour de l'entrée (note saisie, mail envoyé depuis MATRICE) ; sinon inconnue.
+ * Repli explicite : une entrée sans heure connue est placée en FIN de son jour (en tête du jour, du plus récent au plus ancien).
+ */
+export const logWhen = l => { const t = l?.occurred_at ? Date.parse(l.occurred_at) : NaN; if (!isNaN(t)) return t;
+  const c = l?.created_at ? Date.parse(l.created_at) : NaN; return !isNaN(c) && l.date && dayOf(l.created_at) === l.date ? c : null; };
+/** Ordre du journal, du plus récent au plus ancien : jour, heure (inconnue = fin du jour), ordre importé (sort), puis identifiant (stable) */
+export const logOrder = (a, b) => { const ta = logWhen(a), tb = logWhen(b);
+  return (b.date || '0000').localeCompare(a.date || '0000') || (ta === tb ? 0 : ta == null ? -1 : tb == null ? 1 : tb - ta)
+    || (b.sort || 0) - (a.sort || 0) || String(b.id || '').localeCompare(String(a.id || '')); };
+export function logsOf(pid){ return (byCol('prospect_logs','prospect_id').get(pid)||[]).filter(l=>!l.hidden).sort(logOrder); }
 
 export function filesOf(pid){ return (byCol('prospect_files','prospect_id').get(pid)||[]).slice().sort((a,b)=>(a.created_at||'').localeCompare(b.created_at||'')); }
 

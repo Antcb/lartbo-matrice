@@ -1027,7 +1027,10 @@ dialog.mail .mode-note{margin:0}
 .mail-msg{margin-bottom:var(--sp-2)}
 .mail-msg-head{display:flex;gap:var(--sp-1);align-items:baseline;flex-wrap:wrap}
 .mail-msg-to{font-size:12px;margin:0 0 var(--sp-1)}
-.mail-frame{width:100%;min-height:320px;border:1px solid var(--line-2);border-radius:var(--r);background:var(--panel)}
+.mail-frame{width:100%;min-height:320px;height:70vh;height:70dvh;border:1px solid var(--line-2);border-radius:var(--r);background:var(--panel)}   /* v1.65 : hauteur fixe, le mail défile DANS le cadre jusqu'à sa dernière ligne */
+dialog.ask.read{width:min(1000px,96vw)}
+dialog.ask.read .mail-frame{height:60vh;height:60dvh}
+@media (max-width:760px){ .mail-frame{height:calc(100dvh - 120px)} dialog.ask.read .mail-frame{height:calc(100dvh - 200px)} }   /* téléphone : le cadre occupe l'écran */
 @media (max-width:760px){
   .mail-row{grid-template-columns:1fr auto;grid-template-areas:"who date" "subj subj" "meta meta"}
   .mail-who{grid-area:who}.mail-date{grid-area:date}.mail-subj{grid-area:subj;white-space:normal}.mail-meta{grid-area:meta}

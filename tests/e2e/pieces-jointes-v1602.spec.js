@@ -56,8 +56,11 @@ test('v1.60.2 Suivi : glisser depuis Mail sans « Files » annoncé — accepté
   const zone = '.log-attach [data-drop]';
   // pendant le survol : la zone accepte le dépôt (sinon Chrome n'envoie jamais l'événement « drop »)
   expect(await fakeDrag(page, zone, { type: 'dragover', types: ['text/uri-list'] })).toBe(true);
-  // hors d'une zone de pièces jointes, un simple lien n'est pas intercepté
-  expect(await fakeDrag(page, '.suivi-head', { type: 'dragover', types: ['text/uri-list'] })).toBe(false);
+  // (v1.65, remplace la règle v1.60.2) hors d'une zone, un glisser venu d'ailleurs est accepté pour pouvoir dire où déposer un mail ;
+  // un simple lien lâché là ne fait rien (aucun message) — voir lecture-chronologie-v165.spec.js (dépôt hors zone)
+  expect(await fakeDrag(page, '.suivi-head', { type: 'dragover', types: ['text/uri-list'] })).toBe(true);
+  // dans un champ de saisie, le navigateur garde la main (texte déposé normalement)
+  expect(await fakeDrag(page, '.log-form textarea', { type: 'dragover', types: ['text/uri-list'] })).toBe(false);
   // dépôt : fichier présent seulement dans items
   expect(await fakeDrag(page, zone, { type: 'drop', types: ['text/uri-list'], itemFiles: [{ name: 'affiche.jpg', type: 'image/jpeg', body: 'jpg' }] })).toBe(true);
   await expect(page.locator('.toast').last()).toContainText('1 fichier ajouté : affiche.jpg');
