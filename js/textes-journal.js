@@ -70,7 +70,7 @@ async function fromMailbox(logs){
     try { if (row) msgs = (await callProspect('thread', {thread_id: row.gmail_thread_id})).thread?.messages || []; } catch { msgs = null; }
     for (const [l, m] of list){
       const g = (msgs || []).find(x => x.id === m.gmail_message_id);
-      const t = g ? ownText({html: g.html}) : '';
+      const t = g ? ownText({html: g.html, subject: g.subject || ''}) : '';
       if (!t){ STATE.set(l.id, 'introuvable'); continue; }
       BODY.set(l.id, t); STATE.delete(l.id);
       await sb.from('mail_messages').update({body_text: t}).eq('id', m.id).is('body_text', null);
@@ -95,7 +95,7 @@ export async function ensureTexts(pid, {rerender = true, retry = false} = {}){
     const synced = rest.filter(l => logSource(l).synced);
     if (synced.length){
       await checkOwner();
-      if (M.owner) await fromMailbox(synced);
+      if (M.owner){ try { await fromMailbox(synced); } catch (e) { console.info('[Matrice] lecture des textes dans la boîte impossible', e?.name || ''); } }
       // boîte nommée seulement si elle est établie (entrée écrite par la synchronisation de anthony@)
       else synced.forEach(l => STATE.set(l.id, l.author === 'Messagerie' && !logSource(l).file ? 'reserve' : 'inaccessible'));
     }
@@ -105,7 +105,13 @@ export async function ensureTexts(pid, {rerender = true, retry = false} = {}){
 }
 
 /** Reprise d'un coup (compte titulaire) : tous les suivis dont une entrée mail n'a pas encore son texte complet */
+let RUNNING = false;   // une seule reprise à la fois (double clic)
 export async function completeAll(){
+  if (RUNNING) return toast('Reprise des textes déjà en cours…');
+  RUNNING = true;
+  try { await completeAllRun(); } finally { RUNNING = false; }
+}
+async function completeAllRun(){
   await checkOwner();
   if (!M.owner) return toast('Réservé au compte d’Anthony (boîte anthony@).', true);
   const pids = [...new Set(S.db.prospect_logs.filter(l => isMailCopy(l) && !fullTextOf(l)).map(l => l.prospect_id))];

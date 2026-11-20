@@ -6,16 +6,22 @@
  * Principe : on ne retire QUE ce qui est clairement une citation ; en cas de doute, le passage est GARDÉ (rien du message n'est coupé).
  *  - HTML : blocs cités marqués par le logiciel de mail — Gmail (.gmail_quote dont l'attribution dit « a écrit / wrote »), Apple Mail
  *    et Thunderbird (blockquote type="cite"), Outlook web (#divRplyFwdMsg et ce qui suit), Yahoo (.yahoo_quoted) ;
- *  - texte : attribution « Le … a écrit : » / « On … wrote: » suivie UNIQUEMENT de lignes « > » ; en-tête Outlook complet
- *    (« De : », « Envoyé : » ou « Date : », « À : », « Objet : », en lignes consécutives) ; « -----Original Message----- » ;
- *    bloc final de lignes toutes « > » ; attribution restée seule en fin de message (son bloc cité vient d'être retiré).
- *  - jamais retirés : messages transférés (« Message transféré », « Forwarded message »), réponses intercalées (texte après
- *    des lignes « > »), signature, texte propre au message, sans limite de longueur.
+ *  - texte : attribution datée « Le … a écrit : » / « On … wrote: » (date ou adresse dans la ligne) suivie UNIQUEMENT de lignes « > » ;
+ *    en-tête Outlook complet (« De : », « Envoyé : » ou « Date : », « À : », « Objet : » en lignes consécutives) dont l'objet n'est
+ *    pas un transfert ; « -----Original Message----- » ; attribution restée seule en fin de message (son bloc cité vient d'être retiré).
+ *  - jamais retirés (relecture v1.66) : messages transférés (« Message transféré », « Forwarded message », objet « TR: » / « Fwd: »),
+ *    réponses intercalées (texte entre les blocs cités : Gmail, lignes « > »), lignes « > » sans attribution, réponses annoncées
+ *    « ci-dessous », « en rouge », « dans le texte » (alors tout est gardé), signature, texte propre au message, sans limite de longueur.
  * Résultat vide (le message n'était qu'une citation ?) : le texte entier est rendu, jamais rien.
  * Aucun réseau, aucune écriture : DOMParser (document inerte, aucun script exécuté, aucune image chargée).
  */
 
-const ATTRIB = /^(?:Le|On)\s.{3,400}?(?:a\s+écrit|wrote)\s*:\s*$/i;
+// attribution d'un logiciel de mail : date (chiffre) ou adresse dans la ligne — « Le directeur a écrit : » n'en est pas une
+const ATTRIB = /^(?:Le|On)\s(?=.*(?:\d|@|<)).{3,400}?(?:a\s+écrit|wrote)\s*:\s*$/i;
+const FWD_SUBJECT = /^(?:Objet|Subject)\s*:\s*(?:TR|Tr|Fwd?|FW|Fw|WG)\s*:/i;
+/** Réponse écrite DANS le message d'origine (« voir mes réponses en rouge ci-dessous ») : rien n'est retiré */
+const FWD_WORDS = /(transf[eèé]r|fais suivre|faire suivre|forward)/i;
+const INLINE = /(ci-dessous|ci-après|en rouge|en bleu|en vert|en couleur|dans le texte|dans votre (?:message|mail)|réponses? (?:dans|au fil)|below|inline|in red)/i;
 const FORWARD = /(?:message\s+transféré|forwarded\s+message|message\s+d['’]origine\s+transféré|début\s+du\s+message\s+réexpédié|begin\s+forwarded\s+message)/i;
 const ORIGINAL = /^-{2,}\s*(?:original\s+message|message\s+d['’]origine)\s*-{2,}\s*$/i;
 const HEAD = [/^(?:De|From)\s*:/i, /^(?:Envoyé|Sent|Date)\s*:/i, /^(?:À|A|To)\s*:/i, /^(?:Objet|Subject)\s*:/i];
@@ -46,17 +52,22 @@ function htmlText(root){
 /** Retire du document les blocs cités clairement marqués (jamais un transfert) */
 function dropQuotedHtml(doc){
   const isForward = el => FORWARD.test((el.textContent || '').slice(0, 400));
-  // Gmail : .gmail_quote = attribution (.gmail_attr « a écrit / wrote ») + blockquote ; un transfert utilise le même bloc : gardé
-  for (const q of [...doc.querySelectorAll('.gmail_quote, .gmail_quote_container')]){
+  // Gmail : .gmail_quote = attribution (.gmail_attr « a écrit / wrote ») + blockquote(s) ; seuls l'attribution et les blocs cités
+  // sont retirés — une réponse intercalée entre deux blocs cités reste (relecture v1.66, B1) ; un transfert utilise le même bloc : gardé
+  for (const q of [...doc.querySelectorAll('div.gmail_quote, div.gmail_quote_container')]){
     if (!q.isConnected || isForward(q)) continue;
     const attr = q.querySelector('.gmail_attr');
-    if ((attr && /(a\s+écrit|wrote)\s*:/i.test(attr.textContent || '')) || q.querySelector('blockquote')) q.remove();
+    if (!attr || !/(a\s+écrit|wrote)\s*:/i.test(attr.textContent || '')) continue;
+    attr.remove();
+    for (const b of [...q.querySelectorAll('blockquote')]) if (b.isConnected) b.remove();
   }
   // Apple Mail, Thunderbird : blockquote type="cite" ; Yahoo
   for (const q of [...doc.querySelectorAll('blockquote[type="cite"], .yahoo_quoted, .moz-cite-prefix')]) if (q.isConnected && !isForward(q)) q.remove();
   // Outlook web / mobile : #divRplyFwdMsg (en-tête du message d'origine) et tout ce qui le suit ; la ligne de séparation juste avant
-  const rp = doc.querySelector('#divRplyFwdMsg, #appendonsend');
-  if (rp && !isForward(rp)){
+  // (relecture v1.66, B2) l'en-tête sert aussi au transfert (« TR: ») : alors tout est gardé
+  const rp = doc.querySelector('#divRplyFwdMsg') || doc.querySelector('#appendonsend');
+  const fwdHead = el => (el.textContent || '').split(/\n|(?=(?:Objet|Subject)\s*:)/).some(t => FWD_SUBJECT.test(t.trim()));
+  if (rp && !isForward(rp) && !fwdHead(rp)){
     let n = rp;
     while (n && n !== doc.body){
       const parent = n.parentNode;
@@ -82,7 +93,10 @@ function dropQuotedText(text){
     // en-tête Outlook complet : « De : » puis, en lignes consécutives (vides tolérées), Envoyé/Date, À, Objet
     if (HEAD[0].test(l)){
       const block = []; for (let j = i; j < lines.length && block.length < 8; j++){ const t = lines[j].trim(); if (!t) continue; if (!HEAD_ANY.test(t)) break; block.push(t); }
-      if (HEAD.every(re => block.some(t => re.test(t)))){ cut = i; break; }
+      // en-tête d'un VRAI message : adresse dans « De : », ou année dans « Envoyé / Date : » (une feuille de route « De : Paris,
+      // Date : 12/03, À : Lyon, Objet : … » n'en est pas un) ; objet « TR: / Fwd: » = transfert : gardé
+      const real = block.some(t => /^(?:De|From)\s*:.*[@<]/i.test(t)) || block.some(t => /^(?:Envoyé|Sent|Date)\s*:.*\b(19|20)\d\d\b/i.test(t));
+      if (real && HEAD.every(re => block.some(t => re.test(t)))){ if (block.some(t => FWD_SUBJECT.test(t))) break; cut = i; break; }
     }
     // attribution (éventuellement sur deux lignes) suivie UNIQUEMENT de lignes « > » ou de rien
     const two = l + ' ' + (lines[i + 1] || '').trim();
@@ -92,19 +106,16 @@ function dropQuotedText(text){
       if (after.every(t => /^\s*>/.test(t))){ cut = i; break; }
     }
   }
-  let keep = lines.slice(0, cut);
-  // bloc final de lignes toutes « > » (citation en bas de message, sans attribution)
-  let k = keep.length; while (k > 0 && !keep[k - 1].trim()) k--;
-  let q = k; while (q > 0 && (/^\s*>/.test(keep[q - 1]) || !keep[q - 1].trim())) q--;
-  if (q < k && keep.slice(q, k).some(t => /^\s*>/.test(t)) && keep.slice(0, q).some(t => t.trim())) keep = keep.slice(0, q);
+  // (relecture v1.66, B3) des lignes « > » sans attribution reconnue ne sont jamais retirées (doute : gardées)
+  const keep = lines.slice(0, cut);
   return keep.join('\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /**
- * Texte propre d'un mail : {html, plain} (l'un ou l'autre) → texte sans l'historique cité, ou '' si le mail n'a aucun texte.
+ * Texte propre d'un mail : {html, plain} (l'un ou l'autre), subject (objet du mail : « TR: » = transfert, tout gardé) → texte sans l'historique cité, ou '' si le mail n'a aucun texte.
  * Le HTML est préféré (les blocs cités y sont marqués) ; sinon le texte brut.
  */
-export function ownText({html = '', plain = ''} = {}){
+export function ownText({html = '', plain = '', subject = ''} = {}){
   let full = '', own = '';
   if (html && String(html).trim()){
     const doc = new DOMParser().parseFromString(String(html), 'text/html');
@@ -116,5 +127,8 @@ export function ownText({html = '', plain = ''} = {}){
     own = dropQuotedText(full);
   }
   const clean = s => s.replace(/\r/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  // transfert (objet « TR: / Fwd: », ou annoncé : « je te transfère », « je te fais suivre ») : le contenu transféré EST le message ;
+  // réponse annoncée dans le message d'origine (« mes réponses en rouge ci-dessous ») : la citation EST la réponse → tout est gardé
+  if (own && own !== clean(full) && (/^\s*(?:TR|Tr|Fwd?|FW|Fw|WG)\s*:/.test(subject) || INLINE.test(own) || FWD_WORDS.test(own))) return clean(full);
   return own || clean(full);
 }

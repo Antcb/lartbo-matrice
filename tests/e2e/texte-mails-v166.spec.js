@@ -52,14 +52,31 @@ test('v1.66 règle : réponse et signature entières, historique cité retiré (
     out.horaires = ownText({ plain: 'Ouverture des portes\nDe : 14h à 18h\nÀ : la salle B\nMerci' });
     out.blockquote = ownText({ html: '<p>Comme disait l’affiche :</p><blockquote>CITATION VOLONTAIRE</blockquote><p>Fin</p>' });
     out.vide = ownText({ plain: '> seulement une citation' });
+    // relecture v1.66 : réponses intercalées Gmail, transferts Outlook, lignes « > » sans attribution, réponses « en rouge ci-dessous »
+    out.gmailInter = ownText({ html: '<div>Voir mes réponses :</div><div class="gmail_quote"><div class="gmail_attr">Le lun. 16 nov. 2026 à 10:00, X &lt;x@example.com&gt; a écrit :</div><blockquote class="gmail_quote">Question 1 ?</blockquote><div>REPONSE1</div><blockquote class="gmail_quote">Question 2 ?</blockquote><div>REPONSE2</div></div>' });
+    out.owaTr = ownText({ html: '<div>Pour info</div><hr><div id="divRplyFwdMsg"><b>De :</b> X<br><b>Envoyé :</b> lundi<br><b>À :</b> Y<br><b>Objet :</b> TR: Devis</div><div>CONTENU TRANSFERE OWA</div>' });
+    out.outlookTr = ownText({ plain: 'Pour info.\n\nDe : X <x@example.com>\nEnvoyé : lundi 16 novembre 2026 10:00\nÀ : Y\nObjet : TR: Devis\n\nCONTENU TRANSFERE OUTLOOK' });
+    out.puces = ownText({ plain: 'Programme :\n> 14h arrivée\n> 21h concert' });
+    out.directeur = ownText({ plain: 'Pour info, voici sa réponse.\nLe directeur a écrit :\n> on valide le 12' });
+    out.rouge = ownText({ plain: 'Voir mes réponses en rouge ci-dessous.\n\nDe : X\nEnvoyé : lundi\nÀ : Y\nObjet : RE: Devis\n\nQuestion ? ROUGE1' });
+    // relecture v1.66 (2e passage) : transfert annoncé sans « TR: », #appendonsend vide avant #divRplyFwdMsg, feuille de route, objet « TR: »
+    out.annonce = ownText({ plain: 'Je te transfère la demande.\n\nDe : Paul <p@x.fr>\nEnvoyé : lundi 16 novembre 2026 10:00\nÀ : Anthony\nObjet : Demande de date\n\nCONTENU ANNONCE' });
+    out.append = ownText({ html: '<div>Pour info</div><div id="appendonsend"></div><hr><div id="divRplyFwdMsg"><b>De :</b> X<br><b>Envoyé :</b> lundi<br><b>À :</b> Y<br><b>Objet :</b> TR: Contrat</div><div>CONTENU APPEND</div>' });
+    out.route = ownText({ plain: 'Bonjour,\nTrajet :\nDe : Paris\nDate : 12/03\nÀ : Lyon\nObjet : transport matériel\nBonne route\nAnthony' });
+    out.sujetTr = ownText({ subject: 'TR: Fiche technique', plain: 'Ci-joint.\n\nDe : Paul <p@x.fr>\nEnvoyé : lundi 16 novembre 2026 10:00\nÀ : Anthony\nObjet : Fiche technique\n\nCONTENU SUJET' });
     return out;
   });
+  expect(r.annonce).toContain('CONTENU ANNONCE'); expect(r.append).toContain('CONTENU APPEND'); expect(r.sujetTr).toContain('CONTENU SUJET');
+  expect(r.route).toBe('Bonjour,\nTrajet :\nDe : Paris\nDate : 12/03\nÀ : Lyon\nObjet : transport matériel\nBonne route\nAnthony');
   expect(r.apple).toBe('Réponse Apple\n--\nSignature A');
   expect(r.outlook).toBe('Réponse Outlook\n\nCordialement,\nSignature O');
   expect(r.owa).toBe('Réponse OWA');
   expect(r.brut).toBe('Réponse brute\n\nSignature B');
   expect(r.original).toBe('Réponse');
-  expect(r.finale).toBe('Réponse en haut');
+  expect(r.finale).toBe('Réponse en haut\n\n> CITÉ EN BAS\n> encore');            // « > » sans attribution : gardé (doute)
+  expect(r.gmailInter).toContain('REPONSE1'); expect(r.gmailInter).toContain('REPONSE2'); expect(r.gmailInter).not.toContain('Question 1');
+  expect(r.owaTr).toContain('CONTENU TRANSFERE OWA'); expect(r.outlookTr).toContain('CONTENU TRANSFERE OUTLOOK');
+  expect(r.puces).toContain('21h concert'); expect(r.directeur).toContain('on valide le 12'); expect(r.rouge).toContain('ROUGE1');
   expect(r.intercale).toContain('Réponse INTERCALÉE gardée'); expect(r.intercale).toContain('Autre réponse');
   expect(r.transfert).toContain('CONTENU TRANSFÉRÉ');
   expect(r.horaires).toBe('Ouverture des portes\nDe : 14h à 18h\nÀ : la salle B\nMerci');

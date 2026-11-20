@@ -140,7 +140,7 @@ export function parseEml(raw){
   return {from: addr(h.from), fromName: nameOf(h.from || ''), to: addr(h.to), toName: nameOf(h.to || ''),
     subject: decodeWords(h.subject || '').trim(), date: isoDate(h.date), at: isoAt(h.date), text: cleanBody(t.plain || (t.html ? htmlToText(t.html) : '')),
     // (v1.66) texte INTÉGRAL du message, sans l'historique cité ni limite de longueur (affiché dans le journal ; « text » reste l'ancien résumé)
-    full: ownText({html: t.html || '', plain: t.plain || ''}),
+    full: ownText({html: t.html || '', plain: t.plain || '', subject: decodeWords(h.subject || '').trim()}),
     messageId: String(h['message-id'] || '').trim(), fromLine: people(h.from), toLine: people(h.to), ccLine: people(h.cc), attachments: att.out, attachmentsSkipped: att.skipped};
 }
 
