@@ -8,6 +8,17 @@ const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-region',
 };
+/**
+ * Chronologie du journal (v1.65) — MÊME règle que js/selectors.js (logWhen, logOrder), ici du plus ancien au plus récent : jour, heure
+ * réelle (occurred_at ; sinon heure d'enregistrement si elle tombe le jour de l'entrée ; sinon inconnue = fin du jour), sort, identifiant.
+ * Colonnes lues avec « * » : fonctionne avant comme après la migration v1.65 (occurred_at absente = heure inconnue ou d'enregistrement).
+ */
+const parisDay = (ts: string) => { const d = new Date(ts); return isNaN(d.getTime()) ? null : d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' }); };
+const logWhen = (l: any): number | null => { const t = l?.occurred_at ? Date.parse(l.occurred_at) : NaN; if (!isNaN(t)) return t;
+  const c = l?.created_at ? Date.parse(l.created_at) : NaN; return !isNaN(c) && l.date && parisDay(l.created_at) === l.date ? c : null; };
+export const journalOrder = (a: any, b: any) => { const ta = logWhen(a), tb = logWhen(b);
+  return (a.date || '0000').localeCompare(b.date || '0000') || (ta === tb ? 0 : ta == null ? 1 : tb == null ? -1 : ta - tb)
+    || (a.sort || 0) - (b.sort || 0) || String(a.id || '').localeCompare(String(b.id || '')); };
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 
 const PROMPT = `Tu mets à jour la fiche de suivi d'une structure (salle, festival…) pour L'ArtBoristerie, agence de booking et de production de concerts.
@@ -93,12 +104,12 @@ Deno.serve(async (req) => {
     const [{ data: st }, { data: pr }, { data: logs }, { data: files }] = await Promise.all([
       user.from('structures').select('name,city,country').eq('id', p.structure_id).maybeSingle(),
       user.from('projects').select('name').in('id', (p.project_ids && p.project_ids.length) ? p.project_ids : [p.project_id].filter(Boolean)),
-      user.from('prospect_logs').select('date,kind,contact_name,body').eq('prospect_id', p.id).eq('hidden', false).order('date', { ascending: true }),
+      user.from('prospect_logs').select('*').eq('prospect_id', p.id).eq('hidden', false).order('date', { ascending: true }),
       user.from('prospect_files').select('name,path,mime,size,created_at').eq('prospect_id', p.id).order('created_at', { ascending: false }),
     ]);
 
     const today = new Date().toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' });
-    const journal = (logs || []).map((l: any) => `[${l.date || 'sans date'}] ${l.kind}${l.contact_name ? ' — ' + l.contact_name : ''}\n${l.body || ''}`).join('\n\n');
+    const journal = (logs || []).slice().sort(journalOrder).map((l: any) => `[${l.date || 'sans date'}] ${l.kind}${l.contact_name ? ' — ' + l.contact_name : ''}\n${l.body || ''}`).join('\n\n');
     const text = [
       `Structure : ${st?.name || '?'}${st?.city ? ' (' + st.city + ')' : ''}`,
       `Artiste(s) : ${(pr || []).map((x: any) => x.name).join(', ') || '?'}`,

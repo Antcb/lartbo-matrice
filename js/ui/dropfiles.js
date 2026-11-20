@@ -126,6 +126,28 @@ document.addEventListener('drop', e => {
     f.inp.dispatchEvent(new Event('change', {bubbles: true}));
   });
 });
-// Un fichier lâché ailleurs ne doit pas ouvrir le fichier dans l'onglet
-document.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
-document.addEventListener('drop', e => { if (hasFiles(e) && !e.defaultPrevented) e.preventDefault(); });
+/** Dépôt hors zone (v1.65) : un fichier ou un mail lâché là où rien ne le reçoit est dit clairement (et noté pour diagnostic) */
+export const OUTSIDE_DROP = 'Rien n’a été joint : dépose le mail (ou le fichier) sur la zone « Pièces jointes » d’un suivi, ou à côté d’un bouton « Ajouter un fichier ».';
+// glisser commencé DANS la page (texte, lien, carte…) : jamais traité comme un dépôt de fichier ou de mail
+let innerDrag = false;
+document.addEventListener('dragstart', () => { innerDrag = true; });
+document.addEventListener('dragend', () => { innerDrag = false; });
+const EDITABLE = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
+/** Glisser venu d'ailleurs (Mail, Finder…) au-dessus d'un endroit qui ne reçoit rien : ni zone de pièces jointes, ni zone qui a son
+ *  propre dépôt, ni fenêtre de mail, ni bouton « Ajouter un fichier » proche, ni champ de saisie (le texte s'y dépose normalement) */
+const outsideDrag = e => !innerDrag && !!e.target?.closest && [...(e.dataTransfer?.types || [])].some(t => t === 'Files' || t === 'text/uri-list')
+  && !e.target.closest(`${OWN},${MAILBOX},${EDITABLE}`) && !(hasFiles(e) && inputFor(e.target));   // fichier près d'un bouton : envoyé à ce bouton
+// Un fichier lâché ailleurs ne doit pas ouvrir le fichier dans l'onglet ; un mail ou un fichier venu d'ailleurs est accepté partout
+// pour pouvoir dire, au dépôt, où le déposer (sinon le navigateur ne signale rien et il ne se passe rien)
+document.addEventListener('dragover', e => { if (hasFiles(e) || outsideDrag(e)) e.preventDefault(); });
+document.addEventListener('drop', e => {
+  if (outsideDrag(e)){
+    e.preventDefault();
+    const raw = droppedFiles(e), ids = dropMailIds(e);
+    if (!raw.length && !ids.length) return;   // lien ordinaire (page web…) : rien à joindre, rien à dire
+    noteDrop(dropInfo(e, raw, ids), 'hors zone');
+    import('../utils.js').then(u => u.toast(OUTSIDE_DROP, true));
+    return;
+  }
+  if (hasFiles(e) && !e.defaultPrevented) e.preventDefault();
+});

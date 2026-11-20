@@ -6,6 +6,7 @@
  *   askText({title, text, label, value, type, placeholder, ok, required, check}) → texte saisi, ou null
  *   inform({title, text, value})                                     → fermée par « Fermer » (value : texte à copier, sélectionné)
  *   copyText(texte, message, titre)                                  → copie ; si le navigateur refuse, le texte est montré à copier
+ *   readMail({title, lines, frame, actions})                         → lecture d'un mail (cadre isolé), v1.65
  *
  * « Annuler », Échap et clic hors de la fenêtre ne déclenchent jamais l'action (null / false). Texte : l'action ET ses conséquences.
  * Boutons nommés (.btn.danger pour détruire, .btn.primary sinon) ; question à deux issues = deux boutons nommés + « Annuler ».
@@ -18,9 +19,9 @@ let SEQ = 0;
 const paras = text => String(text || '').split('\n').filter(l => l.trim()).map(l => `<p>${esc(l)}</p>`).join('');
 
 /** Ouvre la fenêtre ; done(bouton, fenêtre) donne la valeur renvoyée (undefined = la fenêtre reste ouverte) */
-function open({title, text, extra = '', buttons, cancel, focus, done}){
+function open({title, text, extra = '', buttons, cancel, focus, done, cls = ''}){
   const dlg = document.createElement('dialog'), id = 'ask-text-' + (++SEQ);
-  dlg.className = 'ask';
+  dlg.className = cls ? 'ask ' + cls : 'ask';
   dlg.setAttribute('aria-label', title);
   dlg.setAttribute('aria-describedby', id);
   dlg.innerHTML = `<form method="dialog" class="mform">
@@ -73,6 +74,13 @@ export async function inform({title, text = '', value = null}){
   const p = open({title, text, extra, cancel: '', focus: value == null ? '[data-ask]' : '#ask-input', buttons: [{label: 'Fermer', plain: true}], done: () => true});
   document.querySelector('dialog.ask:last-of-type #ask-input')?.select();
   await p;
+}
+
+/** Lecture d'un mail (v1.65) : lignes d'en-tête (texte échappé ici) et cadre de lecture déjà construit (views/mails.js mailFrame) ;
+ *  actions facultatives ([{value, label, plain}]) ; renvoie la valeur choisie, ou null (« Fermer », Échap) */
+export function readMail({title, lines = [], frame, actions = []}){
+  const extra = `<div class="mail-read">${lines.map(l => `<p class="muted mail-msg-to">${esc(l)}</p>`).join('')}${frame}</div>`;
+  return open({title, text: '', extra, cancel: 'Fermer', buttons: actions, cls: 'read', done: a => a.value});
 }
 
 /** Copie dans le presse-papiers ; si le navigateur la refuse, le texte est présenté sélectionné dans une fenêtre (remplace prompt) */

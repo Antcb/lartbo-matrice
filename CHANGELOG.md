@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.65.0 — 20/11/2026
+- Journal des suivis : « Lire en entier » (mail complet à sa source), chronologie à l'heure réelle avec .eml rangés avec leur mail, apostrophes des extraits Gmail, dépôt hors zone signalé et issue des imports notée, champ Artiste des mails classé par utilisation
+
+
 ## 1.64.0 — 16/11/2026
 - Brevo : MATRICE fait référence (registre des fiches gérées, changement d'adresse sans doublon, suppression contrôlée, adresses protégées et partagées, fiches supprimées dans Brevo jamais recréées d'elles-mêmes, import en masse aux mêmes règles)
 

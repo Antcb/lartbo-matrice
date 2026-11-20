@@ -35,9 +35,26 @@ export const threadIds = (ids: unknown) => (Array.isArray(ids) ? ids : []).map(S
 const low = (e: unknown) => String(e || '').trim().toLowerCase();
 const rfcOk = (s: unknown) => /^<[^<>\s]{1,250}>$/.test(String(s || '').trim());
 
+/**
+ * Extrait Gmail (« snippet ») en texte (v1.65) : Gmail le renvoie avec les caractères spéciaux en entités HTML (&#39; &quot; &lt; &gt; &amp;).
+ * Décodage en UNE seule passe (« &amp;#39; » donne « &#39; », jamais « ' »), liste fermée d'entités nommées, entités numériques
+ * seulement pour un caractère affichable ; tout le reste est gardé tel quel. Le texte obtenu est du TEXTE : il est toujours échappé à
+ * l'affichage (esc). Même liste que l'opération de reprise supabase/operations/2026-11-20_v1.65_extraits_entites.sql.
+ */
+const NAMED: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0' };
+const printable = (n: number) => n === 9 || n === 10 || n === 13 || (n >= 0x20 && n !== 0x7f && !(n >= 0x80 && n <= 0x9f) && !(n >= 0xd800 && n <= 0xdfff) && n <= 0x10ffff);
+export function decodeEntities(s: string | null | undefined) {
+  if (s == null) return s ?? null;
+  return String(s).replace(/&(#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-z]{2,4});/g, (all, e: string) => {
+    if (e[0] !== '#') return Object.hasOwn(NAMED, e) ? NAMED[e] : all;
+    const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+    return printable(n) ? String.fromCodePoint(n) : all;
+  });
+}
+
 /** Ligne mail_threads (le rattachement n'en fait jamais partie : il n'est jamais modifié par la synchronisation) */
 export function threadRow(mailbox: string, t: Thread) {
-  return { mailbox, gmail_thread_id: t.id, subject: t.subject || null, snippet: t.snippet || null,
+  return { mailbox, gmail_thread_id: t.id, subject: t.subject || null, snippet: decodeEntities(t.snippet) || null,
     participants: [...new Set((t.participants || []).map((p) => low(p.email)).filter(Boolean))],
     last_message_at: t.last_at, message_count: t.count || 0, unread: !!t.unread, labels: t.labels || [] };
 }
@@ -53,7 +70,7 @@ export function messageRows(mailbox: string, threadId: string, t: Thread) {
     auto_kind: m.direction === 'out' ? null : m.auto === 'ndr' || m.auto === 'auto' ? m.auto : null,
     from_addr: low(m.from?.email) || null, from_name: m.from?.name || null,
     to_addrs: (m.to || []).map((a) => low(a.email)).filter(Boolean), cc_addrs: (m.cc || []).map((a) => low(a.email)).filter(Boolean),
-    subject: m.subject || null, snippet: m.snippet || null, sent_at: m.date || null,
+    subject: m.subject || null, snippet: decodeEntities(m.snippet) || null, sent_at: m.date || null,
     attachments: (m.attachments || []).map((a) => ({ name: a.name, size: a.size, mime: a.mime, ...(a.inline ? { inline: true } : {}) })) }));
 }
 

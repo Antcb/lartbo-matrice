@@ -90,7 +90,7 @@ const zoneOf = e => e.target.closest?.('[data-drop],[data-drop-form]');
 }));
 document.addEventListener('dragleave', e => { const z = zoneOf(e); if (z && !z.contains(e.relatedTarget)) z.classList.remove('over'); });
 document.addEventListener('drop', async e => {
-  const z = zoneOf(e); if (!z) { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); return; }
+  const z = zoneOf(e); if (!z) { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); return; }   // hors zone : message et diagnostic dans ui/dropfiles.js (v1.65)
   e.preventDefault(); z.classList.remove('over');
   // (v1.60.3) lecture et copie en mémoire DANS l'événement : un message glissé depuis Apple Mail est un .eml temporaire
   // que Mail efface ou réécrit ensuite (l'envoi répondait alors « Failed to fetch ») ; message clair si rien n'est lisible

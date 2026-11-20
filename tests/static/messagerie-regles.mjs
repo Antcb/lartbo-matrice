@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { createHash, createHmac } from 'node:crypto';
-import { acces, compteOk, essaiOk, horsEssai, messageRows, same, scriptUrlOk, threadIds, threadRow, threadsEssai } from '../../supabase/functions/mail-sync/regles.ts';
+import { acces, compteOk, decodeEntities, essaiOk, horsEssai, messageRows, same, scriptUrlOk, threadIds, threadRow, threadsEssai } from '../../supabase/functions/mail-sync/regles.ts';
 import { RESERVED, callerSig, canon, identOf, outgoingBody, signedText } from '../../supabase/functions/script-google/identite.ts';
 
 const cas = [];
@@ -77,6 +77,21 @@ t('messages : brouillon jamais enregistré (un brouillon n’est pas un envoi), 
   assert.ok(!('id' in rows[0].attachments[0]), 'identifiant de pièce Gmail non stocké');
   const auto = messageRows('anthony', 'u', { ...TH, messages: [{ ...TH.messages[0], id: 'n1', auto: 'ndr' }, { ...TH.messages[0], id: 'n2', auto: 'auto' }, { ...TH.messages[1], id: 'n3', auto: 'ndr' }, { ...TH.messages[0], id: 'n4', auto: 'pirate' }] });
   assert.deepEqual(auto.map((r) => r.auto_kind), ['ndr', 'auto', null, null]);   // message envoyé ou valeur inconnue : jamais « automatique »
+});
+t('v1.65 extraits Gmail : entités décodées UNE fois (apostrophes lisibles), liste fermée, caractères de contrôle refusés', () => {
+  assert.equal(decodeEntities('l&#39;été, &quot;oui&quot; &lt;b&gt; &amp; co'), 'l\'été, "oui" <b> & co');
+  assert.equal(decodeEntities('&amp;#39; &amp;lt;'), '&#39; &lt;');                 // une seule passe : jamais décodé deux fois
+  assert.equal(decodeEntities('&#x1F600; &#233; &apos; &nbsp;'), '😀 é \' \u00a0');
+  assert.equal(decodeEntities('&#0; &#8; &#x7f; &#xD800; &#1114112; &foo; &AMP; & seul ;'), '&#0; &#8; &#x7f; &#xD800; &#1114112; &foo; &AMP; & seul ;');
+  assert.equal(decodeEntities(null), null); assert.equal(decodeEntities(''), '');
+  const th = { ...TH, snippet: 'Merci l&#39;équipe', messages: [{ ...TH.messages[0], snippet: 'C&#39;est &lt;script&gt;' }] };
+  assert.equal(threadRow('anthony', th).snippet, 'Merci l\'équipe');
+  assert.equal(messageRows('anthony', 'u', th)[0].snippet, 'C\'est <script>');   // du TEXTE : échappé à l'affichage (esc), jamais interprété
+  assert.equal(messageRows('anthony', 'u', { ...TH, messages: [{ ...TH.messages[0], snippet: '' }] })[0].snippet, null);
+  // même liste que l'opération de reprise des extraits déjà enregistrés
+  const op = readFileSync(new URL('../../supabase/operations/2026-11-20_v1.65_extraits_entites.sql', import.meta.url), 'utf8');
+  for (const e of ['&#39;', '&quot;', '&lt;', '&gt;', '&amp;']) assert.ok(op.includes(`'${e}'`), e);
+  assert.ok(/'&gt;', '>'\), '&amp;', '&'\)/.test(op), '« &amp; » décodé en dernier (une seule passe)');
 });
 
 // ── 2. Script Google simulé ──────────────────────────────────────────────────────────────────────────────────────────
