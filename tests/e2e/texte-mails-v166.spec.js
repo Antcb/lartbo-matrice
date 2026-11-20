@@ -64,8 +64,21 @@ test('v1.66 règle : réponse et signature entières, historique cité retiré (
     out.append = ownText({ html: '<div>Pour info</div><div id="appendonsend"></div><hr><div id="divRplyFwdMsg"><b>De :</b> X<br><b>Envoyé :</b> lundi<br><b>À :</b> Y<br><b>Objet :</b> TR: Contrat</div><div>CONTENU APPEND</div>' });
     out.route = ownText({ plain: 'Bonjour,\nTrajet :\nDe : Paris\nDate : 12/03\nÀ : Lyon\nObjet : transport matériel\nBonne route\nAnthony' });
     out.sujetTr = ownText({ subject: 'TR: Fiche technique', plain: 'Ci-joint.\n\nDe : Paul <p@x.fr>\nEnvoyé : lundi 16 novembre 2026 10:00\nÀ : Anthony\nObjet : Fiche technique\n\nCONTENU SUJET' });
+    // relecture v1.66 (B4) : mots courants (« transfert » aéroport, « ci-dessous », « ne pas transférer », « below ») → citation marquée retirée
+    const GQ = t => ({ html: '<div>' + t + '</div><div class="gmail_quote"><div class="gmail_attr">Le lun. 3 nov. 2026 à 10:00, Paul &lt;p@x.fr&gt; a écrit :</div><blockquote class="gmail_quote">HISTO_B4</blockquote></div>' });
+    const AQ = t => ({ html: '<div>' + t + '</div><blockquote type="cite"><div>Le 3 nov. 2026 à 10:00, Paul &lt;p@x.fr&gt; a écrit :</div><div>HISTO_B4</div></blockquote>' });
+    out.b4 = [
+      ownText(GQ('OK pour le transfert aéroport-hôtel à 14h')), ownText(GQ('Vous trouverez ci-dessous le planning')),
+      ownText(GQ('Merci<br>Ce message est confidentiel, merci de ne pas le transférer.')), ownText(AQ('Le virement (transfert) est parti')),
+      ownText(AQ('Merci<br>See our tour dates below')),
+      ownText({ plain: 'Bonjour,\nInfos ci-dessous.\nCachet 1500\n\nLe lun. 3 nov. 2026 à 10:00, Paul <p@x.fr> a écrit :\n> HISTO_B4\n' }),
+      ownText({ ...GQ('Bien reçu, merci.'), subject: 'RE: TR: Contrat' }),
+    ];
+    out.trGmail = ownText({ ...GQ('Pour info'), subject: 'TR: Contrat' });
     return out;
   });
+  for (const t of r.b4) expect(t).not.toContain('HISTO_B4');
+  expect(r.b4[5]).toContain('Cachet 1500'); expect(r.trGmail).toContain('HISTO_B4');
   expect(r.annonce).toContain('CONTENU ANNONCE'); expect(r.append).toContain('CONTENU APPEND'); expect(r.sujetTr).toContain('CONTENU SUJET');
   expect(r.route).toBe('Bonjour,\nTrajet :\nDe : Paris\nDate : 12/03\nÀ : Lyon\nObjet : transport matériel\nBonne route\nAnthony');
   expect(r.apple).toBe('Réponse Apple\n--\nSignature A');

@@ -9,9 +9,10 @@
  *  - texte : attribution datée « Le … a écrit : » / « On … wrote: » (date ou adresse dans la ligne) suivie UNIQUEMENT de lignes « > » ;
  *    en-tête Outlook complet (« De : », « Envoyé : » ou « Date : », « À : », « Objet : » en lignes consécutives) dont l'objet n'est
  *    pas un transfert ; « -----Original Message----- » ; attribution restée seule en fin de message (son bloc cité vient d'être retiré).
+ *  - objet « TR: / Fwd: » : rien n'est retiré ; coupe Outlook annulée si les premières lignes annoncent explicitement un transfert
+ *    (« je te transfère ») ou des réponses dans le texte (« mes réponses en rouge ci-dessous ») ;
  *  - jamais retirés (relecture v1.66) : messages transférés (« Message transféré », « Forwarded message », objet « TR: » / « Fwd: »),
- *    réponses intercalées (texte entre les blocs cités : Gmail, lignes « > »), lignes « > » sans attribution, réponses annoncées
- *    « ci-dessous », « en rouge », « dans le texte » (alors tout est gardé), signature, texte propre au message, sans limite de longueur.
+ *    réponses intercalées (texte entre les blocs cités : Gmail, lignes « > »), lignes « > » sans attribution, signature, texte propre au message, sans limite de longueur.
  * Résultat vide (le message n'était qu'une citation ?) : le texte entier est rendu, jamais rien.
  * Aucun réseau, aucune écriture : DOMParser (document inerte, aucun script exécuté, aucune image chargée).
  */
@@ -19,9 +20,16 @@
 // attribution d'un logiciel de mail : date (chiffre) ou adresse dans la ligne — « Le directeur a écrit : » n'en est pas une
 const ATTRIB = /^(?:Le|On)\s(?=.*(?:\d|@|<)).{3,400}?(?:a\s+écrit|wrote)\s*:\s*$/i;
 const FWD_SUBJECT = /^(?:Objet|Subject)\s*:\s*(?:TR|Tr|Fwd?|FW|Fw|WG)\s*:/i;
-/** Réponse écrite DANS le message d'origine (« voir mes réponses en rouge ci-dessous ») : rien n'est retiré */
-const FWD_WORDS = /(transf[eèé]r|fais suivre|faire suivre|forward)/i;
-const INLINE = /(ci-dessous|ci-après|en rouge|en bleu|en vert|en couleur|dans le texte|dans votre (?:message|mail)|réponses? (?:dans|au fil)|below|inline|in red)/i;
+/** Annonce explicite, dans les premières lignes, d'un transfert (« je te transfère ») ou de réponses écrites DANS le message d'origine
+ *  (« voir mes réponses en rouge ci-dessous ») : seule une coupe Outlook (en-tête identique pour réponse et transfert) est alors annulée.
+ *  Tournures précises seulement (relecture v1.66, B4 : « transfert aéroport », « ci-dessous », « ne pas transférer » ne comptent pas) */
+const ANNONCE = new RegExp([
+  String.raw`\bje\s+(?:te|vous)\s+(?:transf[eè]re|fais\s+suivre|renvoie)\b`,
+  String.raw`\bréponses?\b.{0,40}(?:ci-dessous|ci-après|en\s+(?:rouge|bleu|vert|couleur|gras)|dans\s+(?:le\s+texte|votre\s+(?:message|mail))|au\s+fil)`,
+  String.raw`\b(?:see|find)\s+(?:my|our)\s+(?:answers|replies|comments)\b.{0,20}(?:below|inline|in\s+red)`,
+  String.raw`\bforwarding\s+(?:you|this)\b`,
+].join('|'), 'i');
+const TR_SUBJECT = /^\s*(?:TR|Tr|Fwd?|FW|Fw|WG)\s*:/;
 const FORWARD = /(?:message\s+transféré|forwarded\s+message|message\s+d['’]origine\s+transféré|début\s+du\s+message\s+réexpédié|begin\s+forwarded\s+message)/i;
 const ORIGINAL = /^-{2,}\s*(?:original\s+message|message\s+d['’]origine)\s*-{2,}\s*$/i;
 const HEAD = [/^(?:De|From)\s*:/i, /^(?:Envoyé|Sent|Date)\s*:/i, /^(?:À|A|To)\s*:/i, /^(?:Objet|Subject)\s*:/i];
@@ -50,7 +58,7 @@ function htmlText(root){
 }
 
 /** Retire du document les blocs cités clairement marqués (jamais un transfert) */
-function dropQuotedHtml(doc){
+function dropQuotedHtml(doc, outlook = true){
   const isForward = el => FORWARD.test((el.textContent || '').slice(0, 400));
   // Gmail : .gmail_quote = attribution (.gmail_attr « a écrit / wrote ») + blockquote(s) ; seuls l'attribution et les blocs cités
   // sont retirés — une réponse intercalée entre deux blocs cités reste (relecture v1.66, B1) ; un transfert utilise le même bloc : gardé
@@ -65,6 +73,7 @@ function dropQuotedHtml(doc){
   for (const q of [...doc.querySelectorAll('blockquote[type="cite"], .yahoo_quoted, .moz-cite-prefix')]) if (q.isConnected && !isForward(q)) q.remove();
   // Outlook web / mobile : #divRplyFwdMsg (en-tête du message d'origine) et tout ce qui le suit ; la ligne de séparation juste avant
   // (relecture v1.66, B2) l'en-tête sert aussi au transfert (« TR: ») : alors tout est gardé
+  if (!outlook) return;
   const rp = doc.querySelector('#divRplyFwdMsg') || doc.querySelector('#appendonsend');
   const fwdHead = el => (el.textContent || '').split(/\n|(?=(?:Objet|Subject)\s*:)/).some(t => FWD_SUBJECT.test(t.trim()));
   if (rp && !isForward(rp) && !fwdHead(rp)){
@@ -81,7 +90,7 @@ function dropQuotedHtml(doc){
 }
 
 /** Règles sur le texte (aussi pour un mail en texte brut) ; renvoie le texte propre au message */
-function dropQuotedText(text){
+function dropQuotedText(text, outlook = true){
   const lines = text.replace(/\r/g, '').replace(/ /g, ' ').split('\n');
   const rest = i => lines.slice(i).filter(l => l.trim());
   let cut = lines.length;
@@ -89,9 +98,9 @@ function dropQuotedText(text){
     const l = lines[i].trim();
     if (!l) continue;
     if (FORWARD.test(l) && /^[-–—\s]*/.test(l)) break;                     // transfert : tout est gardé à partir d'ici
-    if (ORIGINAL.test(l)){ cut = i; break; }
+    if (outlook && ORIGINAL.test(l)){ cut = i; break; }
     // en-tête Outlook complet : « De : » puis, en lignes consécutives (vides tolérées), Envoyé/Date, À, Objet
-    if (HEAD[0].test(l)){
+    if (outlook && HEAD[0].test(l)){
       const block = []; for (let j = i; j < lines.length && block.length < 8; j++){ const t = lines[j].trim(); if (!t) continue; if (!HEAD_ANY.test(t)) break; block.push(t); }
       // en-tête d'un VRAI message : adresse dans « De : », ou année dans « Envoyé / Date : » (une feuille de route « De : Paris,
       // Date : 12/03, À : Lyon, Objet : … » n'en est pas un) ; objet « TR: / Fwd: » = transfert : gardé
@@ -116,19 +125,25 @@ function dropQuotedText(text){
  * Le HTML est préféré (les blocs cités y sont marqués) ; sinon le texte brut.
  */
 export function ownText({html = '', plain = '', subject = ''} = {}){
-  let full = '', own = '';
+  // own : toutes les règles ; base : sans les coupes Outlook (blocs cités Gmail, Apple Mail, Thunderbird, Yahoo, lignes « > » seulement)
+  let full = '', own = '', base = '';
   if (html && String(html).trim()){
-    const doc = new DOMParser().parseFromString(String(html), 'text/html');
-    full = htmlText(doc.body || doc.documentElement);
-    dropQuotedHtml(doc);
-    own = dropQuotedText(htmlText(doc.body || doc.documentElement));
+    const parse = () => new DOMParser().parseFromString(String(html), 'text/html');
+    const d1 = parse(), d2 = parse();
+    full = htmlText(d1.body || d1.documentElement);
+    dropQuotedHtml(d1, true);  own = dropQuotedText(htmlText(d1.body || d1.documentElement), true);
+    dropQuotedHtml(d2, false); base = dropQuotedText(htmlText(d2.body || d2.documentElement), false);
   } else if (plain && String(plain).trim()){
     full = String(plain);
-    own = dropQuotedText(full);
+    own = dropQuotedText(full, true); base = dropQuotedText(full, false);
   }
   const clean = s => s.replace(/\r/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-  // transfert (objet « TR: / Fwd: », ou annoncé : « je te transfère », « je te fais suivre ») : le contenu transféré EST le message ;
-  // réponse annoncée dans le message d'origine (« mes réponses en rouge ci-dessous ») : la citation EST la réponse → tout est gardé
-  if (own && own !== clean(full) && (/^\s*(?:TR|Tr|Fwd?|FW|Fw|WG)\s*:/.test(subject) || INLINE.test(own) || FWD_WORDS.test(own))) return clean(full);
-  return own || clean(full);
+  // coupe Outlook (en-tête identique pour une réponse et un transfert) annulée si le mail est un transfert (objet « TR: / Fwd: ») ou
+  // l'annonce explicitement dans ses premières lignes (« je te transfère », « mes réponses en rouge ci-dessous ») : le contenu suivant
+  // EST le message. Les blocs cités marqués par Gmail / Apple Mail restent retirés (relecture v1.66, B4).
+  const head = own.split('\n').filter(t => t.trim()).slice(0, 5).join('\n');
+  // objet « TR: / Fwd: » (pas « RE: TR: ») : le mail EST un transfert, tout ce qu'il contient est gardé, quel que soit le logiciel
+  if (own && TR_SUBJECT.test(subject) && own !== clean(full)) return clean(full);
+  if (own && base && own !== base && ANNONCE.test(head)) return base;
+  return own || base || clean(full);
 }
