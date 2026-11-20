@@ -9,7 +9,7 @@
 import { LOG_ICON, LOG_KINDS, PROSPECT, PROSPECT_LABEL, PROSPECT_OPTS, isOff, stColor } from '../constants.js';
 import { lingering, summaryRetryAt } from '../data.js';
 import { distKm, routeCached, route } from '../geo.js';
-import { suiviClosed, projFilterOk, byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, logWhen, placeOfSuivi, placeText, projIds, projName, projNames, projectOptions, showCoords, showPlace, showPlaceNote, showsOfProject, structName, suiviCoords } from '../selectors.js';
+import { suiviClosed, projFilterOk, byId, isDone, tasksOfStructure, urgency, filesOf, lastExchange, linksOfStructure, logsOf, logRealAt, logWhen, placeOfSuivi, placeText, projIds, projName, projNames, projectOptions, showCoords, showPlace, showPlaceNote, showsOfProject, structName, suiviCoords } from '../selectors.js';
 import { ENV } from '../config.js';
 import { S, localDel, localGet, localSet } from '../state.js';
 import { inactiveToggle, dropZone, fileRow, fold, projPicker, stSelect, pstBadge, stBadge, tabsBar, curTab, viewHead } from '../ui/bits.js';
@@ -97,7 +97,7 @@ export function suiviCard(p, {page=false}={}){
         ${thread.map(x => x.file ? `<div class="log log-file">
           <div class="log-head">📎 ${x.at !== '0000' ? `<b>${fmtDate(x.at)}</b> · ` : ''}Pièce jointe<span class="spacer"></span></div>${fileRow(x.file)}</div>`
           : `<div class="log">
-          <div class="log-head">${LOG_ICON[x.log.kind]||'📝'} <b>${x.log.date?fmtDate(x.log.date):'Sans date'}</b>${x.log.occurred_at && fmtTime(x.log.occurred_at) ? ` <span class="muted">${fmtTime(x.log.occurred_at)}</span>` : ''}${x.log.contact_name?' · '+esc(x.log.contact_name):''}
+          <div class="log-head">${LOG_ICON[x.log.kind]||'📝'} <b>${x.log.date?fmtDate(x.log.date):'Sans date'}</b>${logRealAt(x.log) ? ` <span class="muted">${fmtTime(logRealAt(x.log))}</span>` : ''}${x.log.contact_name?' · '+esc(x.log.contact_name):''}
             <span class="spacer"></span>${logSource(x.log).any ? `<button type="button" class="btn sm" data-act="readLog" data-id="${x.log.id}" title="Ouvre le message complet (conversation de la messagerie, ou .eml joint au suivi)">Lire en entier</button>` : ''}${isDraftLog(x.log) ? `<button type="button" class="btn sm" data-act="markLogSent" data-id="${x.log.id}" title="Le mail est parti depuis Gmail : le noter envoyé aujourd’hui">Marquer envoyé</button>` : ''}<button type="button" class="btn sm ghost" data-act="editLog" data-id="${x.log.id}">Modifier</button>
             <button type="button" class="btn icon sm ghost danger" data-act="delLog" data-id="${x.log.id}" aria-label="Supprimer l'entrée">✕</button></div>
           ${logBody(x.log)}${(withLog.get(x.log.id) || []).map(f => fileRow(f)).join('')}</div>`).join('') || '<div class="muted">Aucun échange enregistré.</div>'}

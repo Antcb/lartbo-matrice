@@ -10,11 +10,12 @@ const cors = {
 };
 /**
  * Chronologie du journal (v1.65) — MÊME règle que js/selectors.js (logWhen, logOrder), ici du plus ancien au plus récent : jour, heure
- * réelle (occurred_at ; sinon heure d'enregistrement si elle tombe le jour de l'entrée ; sinon inconnue = fin du jour), sort, identifiant.
+ * réelle (occurred_at s'il tombe le jour de l'entrée ; sinon heure d'enregistrement si elle tombe le jour de l'entrée ; sinon inconnue = fin du jour), sort, identifiant.
  * Colonnes lues avec « * » : fonctionne avant comme après la migration v1.65 (occurred_at absente = heure inconnue ou d'enregistrement).
  */
 const parisDay = (ts: string) => { const d = new Date(ts); return isNaN(d.getTime()) ? null : d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' }); };
-const logWhen = (l: any): number | null => { const t = l?.occurred_at ? Date.parse(l.occurred_at) : NaN; if (!isNaN(t)) return t;
+// occurred_at seulement s'il tombe le jour de l'entrée (date changée à la main : historique gardé, non utilisé — v1.65.2)
+const logWhen = (l: any): number | null => { const t = l?.occurred_at ? Date.parse(l.occurred_at) : NaN; if (!isNaN(t) && l.date && parisDay(l.occurred_at) === l.date) return t;
   const c = l?.created_at ? Date.parse(l.created_at) : NaN; return !isNaN(c) && l.date && parisDay(l.created_at) === l.date ? c : null; };
 export const journalOrder = (a: any, b: any) => { const ta = logWhen(a), tb = logWhen(b);
   return (a.date || '0000').localeCompare(b.date || '0000') || (ta === tb ? 0 : ta == null ? 1 : tb == null ? -1 : ta - tb)

@@ -172,12 +172,17 @@ const byCol = (table, col) => cached(`${table}.${col}`, [table], () => groupBy(S
 
 /**
  * Chronologie du journal d'un suivi (v1.65) — MÊME règle dans supabase/functions/resume-suivi/index.ts (journalOrder).
- * Heure réelle d'une entrée : occurred_at (envoi / réception du mail : sent_at de la messagerie, en-tête Date du .eml déposé) ;
- * sinon l'heure d'enregistrement si elle tombe le jour de l'entrée (note saisie, mail envoyé depuis MATRICE) ; sinon inconnue.
- * Repli explicite : une entrée sans heure connue est placée en FIN de son jour (en tête du jour, du plus récent au plus ancien).
+ * Heure réelle d'une entrée : occurred_at (envoi / réception du mail : sent_at de la messagerie, en-tête Date du .eml déposé),
+ * SEULEMENT si elle tombe le jour affiché (date de l'entrée, à Paris) ; date changée à la main : occurred_at reste en base comme
+ * historique, jamais modifié, mais n'est ni affiché ni utilisé (v1.65.2). Sinon l'heure d'enregistrement si elle tombe le jour de
+ * l'entrée (note saisie, mail envoyé depuis MATRICE) ; sinon inconnue. Repli explicite : une entrée sans heure connue est placée en
+ * FIN de son jour (en tête du jour, du plus récent au plus ancien).
  */
-export const logWhen = l => { const t = l?.occurred_at ? Date.parse(l.occurred_at) : NaN; if (!isNaN(t)) return t;
-  const c = l?.created_at ? Date.parse(l.created_at) : NaN; return !isNaN(c) && l.date && dayOf(l.created_at) === l.date ? c : null; };
+const sameDay = (ts, date) => !!date && dayOf(ts) === date;
+/** Heure réelle affichable d'une entrée (horodatage ISO) : occurred_at du jour affiché, sinon null */
+export const logRealAt = l => l?.occurred_at && !isNaN(Date.parse(l.occurred_at)) && sameDay(l.occurred_at, l.date) ? l.occurred_at : null;
+export const logWhen = l => { const r = logRealAt(l); if (r) return Date.parse(r);
+  const c = l?.created_at ? Date.parse(l.created_at) : NaN; return !isNaN(c) && sameDay(l.created_at, l.date) ? c : null; };
 /** Ordre du journal, du plus récent au plus ancien : jour, heure (inconnue = fin du jour), ordre importé (sort), puis identifiant (stable) */
 export const logOrder = (a, b) => { const ta = logWhen(a), tb = logWhen(b);
   return (b.date || '0000').localeCompare(a.date || '0000') || (ta === tb ? 0 : ta == null ? -1 : tb == null ? 1 : tb - ta)

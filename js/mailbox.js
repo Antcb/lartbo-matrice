@@ -149,7 +149,10 @@ export async function readLog(id){
   const {file, synced} = logSource(l), why = [];
   if (synced){
     await checkOwner();
-    if (!M.owner) why.push('ce mail est dans la boîte anthony@ : sa lecture complète est réservée au compte d’Anthony');
+    // (v1.65.2) boîte nommée seulement si elle est établie : une entrée écrite par la synchronisation vient de anthony@ (seule boîte
+    // synchronisée) ; un identifiant Gmail seul (envoi depuis MATRICE, lien « message: » déposé) peut venir d'une autre boîte
+    if (!M.owner) why.push(l.author === 'Messagerie' ? 'Ce mail est dans la boîte anthony@ : sa lecture complète est réservée au compte d’Anthony'
+      : 'Message inaccessible depuis ce compte');
     else {
       const r = await syncedMessage(l);
       if (r.thread){ M.filter = M.filter === 'search' ? 'inbox' : M.filter; go('mails'); await openThread(r.thread, r.msg); return; }
@@ -157,8 +160,9 @@ export async function readLog(id){
     }
   }
   if (file){ const w = await readStoredEml(file); if (!w) return; why.push(w); }
-  else if (!synced) why.push('aucun mail complet n’est enregistré pour cette entrée');
-  await inform({title: 'Mail complet inaccessible', text: `Le mail complet ne peut pas être ouvert : ${why.join(' ; ')}.\nLe journal n’en garde que le texte affiché. Rien n’a été modifié.`});
+  else if (!synced) why.push('Aucun mail complet n’est enregistré pour cette entrée');
+  const up = w => w.charAt(0).toUpperCase() + w.slice(1);
+  await inform({title: 'Mail complet inaccessible', text: `${why.map(w => up(w) + '.').join('\n')}\nLe journal n’en garde que le texte affiché. Rien n’a été modifié.`});
 }
 
 /** Rangement dans Gmail (libellé, archive, corbeille, lu / non lu), puis relecture de la conversation */
