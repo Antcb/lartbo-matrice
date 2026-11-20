@@ -191,7 +191,7 @@ export async function boot(){
     // (v1.66, relecture B5) autre compte connecté dans un autre onglet : page rechargée (aucune donnée du compte précédent gardée)
     if (ev==='SIGNED_IN' && S.user && session?.user?.id && session.user.id !== S.user.id){ location.reload(); return; }
     if (ev==='SIGNED_IN' && !S.user){ S.user=session.user; await loadAll(); render(); startRealtime(render); }
-    if (ev==='SIGNED_OUT'){ S.user=null; location.reload(); }
+    if (ev==='SIGNED_OUT' && S.user){ S.user=null; location.reload(); }
   });
 }
 

@@ -228,9 +228,11 @@ test('v1.66 note manuelle courte (relecture B6) : « OK », « lundi », « 12 �
     const imp = n => manualNote({ author: 'Anthony', body: 'Reçu — **Booking**\n**De :** Marie\n\nBonjour,\nOK pour le booking du 12 mars, cachet confirmé.' + (n ? '\n' + n : '') }, full);
     const syn = n => manualNote({ author: 'Messagerie', body: 'Mail reçu de m@example.com — « Booking »\nBonjour, OK pour le booking du 12 mars, cachet confirmé. On se…' + (n ? '\n' + n : '') }, full);
     return { vide: imp(''), ok: imp('OK'), lundi: imp('lundi'), douze: imp('12'), marie: imp('Marie'), confirme: imp('Confirmé'), synVide: syn(''), synOk: syn('OK'),
-      remplace: manualNote({ author: 'Messagerie', body: 'Mail reçu — « Booking »\nlundi' }, full) };
+      remplace: manualNote({ author: 'Messagerie', body: 'Mail reçu — « Booking »\nlundi' }, full),
+      // puces : « - balances 16h » dans le texte intégral, « balances 16h » dans l'ancien résumé → pas de note fantôme
+      puces: manualNote({ author: 'Anthony', body: 'Reçu — **Planning**\n\nProgramme :\nbalances 16h\nconcert 21h\nBien à toi,\nMarie' }, 'Programme :\n- balances 16h\n- concert 21h\nBien à toi,\nMarie') };
   });
-  expect(r).toEqual({ vide: '', ok: 'OK', lundi: 'lundi', douze: '12', marie: 'Marie', confirme: 'Confirmé', synVide: '', synOk: 'OK', remplace: 'lundi' });
+  expect(r).toEqual({ vide: '', ok: 'OK', lundi: 'lundi', douze: '12', marie: 'Marie', confirme: 'Confirmé', synVide: '', synOk: 'OK', remplace: 'lundi', puces: '' });
   expectClean(ctx);
 });
 
