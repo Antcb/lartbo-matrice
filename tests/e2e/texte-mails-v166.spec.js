@@ -199,6 +199,41 @@ test('v1.66 note manuelle : affichée à part du texte intégral, jamais écras�
   expectClean(ctx);
 });
 
+test('v1.66 changement de compte (relecture B5) : déconnexion ou autre compte connecté → page rechargée, aucun texte privé gardé en mémoire', async ({ page }) => {
+  const ctx = await openApp(page);
+  await ouvrir(page, { logs: [LOG('lg-b', { body: 'Mail reçu de prog@example.com — « Re: Proposition »\nBonjour…' })],
+    msgs: [{ id: 'mm-b', thread_id: 'mt-1', gmail_message_id: 'g02', prospect_log_id: 'lg-b', body_text: 'TEXTE PRIVÉ DU TITULAIRE' }], gmail: [] });
+  await expect(page.getByText('TEXTE PRIVÉ DU TITULAIRE')).toBeVisible();
+  // 1. bouton Déconnexion : la page est rechargée (marque posée avant : disparue)
+  await page.evaluate(() => { window.__marque = 1; });
+  // bouton du menu du compte (créé ici si le menu est fermé : même gestionnaire de clic, js/app.js)
+  await Promise.all([page.waitForEvent('load'), page.evaluate(() => {
+    const b = document.querySelector('#logout') || Object.assign(document.body.appendChild(document.createElement('button')), { id: 'logout' }); b.click(); })]);
+  expect(await page.evaluate(() => window.__marque)).toBeUndefined();
+  // 2. autre compte connecté (autre onglet) : SIGNED_IN d'un autre utilisateur → page rechargée ; SIGNED_OUT → page rechargée
+  for (const ev of [['SIGNED_IN', { user: { id: 'autre-compte', email: 'autre@example.com' } }], ['SIGNED_OUT', null]]){
+    await page.waitForFunction(() => typeof window.__AUTH_CB === 'function');
+    await page.evaluate(() => { window.__marque = 2; });
+    await Promise.all([page.waitForEvent('load'), page.evaluate(([e, s]) => window.__AUTH_CB(e, s), ev)]);
+    expect(await page.evaluate(() => window.__marque)).toBeUndefined();
+  }
+  void ctx;
+});
+
+test('v1.66 note manuelle courte (relecture B6) : « OK », « lundi », « 12 », « Marie » jamais cachés, même présents dans le mail', async ({ page }) => {
+  const ctx = await openApp(page);
+  const r = await page.evaluate(async () => {
+    const { manualNote } = await import('./js/textes-journal.js');
+    const full = 'Bonjour,\nOK pour le booking du 12 mars, cachet confirmé.\nOn se rappelle lundi.\nMarie';
+    const imp = n => manualNote({ author: 'Anthony', body: 'Reçu — **Booking**\n**De :** Marie\n\nBonjour,\nOK pour le booking du 12 mars, cachet confirmé.' + (n ? '\n' + n : '') }, full);
+    const syn = n => manualNote({ author: 'Messagerie', body: 'Mail reçu de m@example.com — « Booking »\nBonjour, OK pour le booking du 12 mars, cachet confirmé. On se…' + (n ? '\n' + n : '') }, full);
+    return { vide: imp(''), ok: imp('OK'), lundi: imp('lundi'), douze: imp('12'), marie: imp('Marie'), confirme: imp('Confirmé'), synVide: syn(''), synOk: syn('OK'),
+      remplace: manualNote({ author: 'Messagerie', body: 'Mail reçu — « Booking »\nlundi' }, full) };
+  });
+  expect(r).toEqual({ vide: '', ok: 'OK', lundi: 'lundi', douze: '12', marie: 'Marie', confirme: 'Confirmé', synVide: '', synOk: 'OK', remplace: 'lundi' });
+  expectClean(ctx);
+});
+
 test('v1.66 iPhone (390 px) : mail long lisible jusqu’à la dernière ligne, sans défilement horizontal', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const ctx = await openApp(page);

@@ -228,7 +228,7 @@
         removeChannel: async () => 'ok',
         auth: {
           getSession: async () => ({ data: { session: window.__NO_SESSION ? null : { user: { email: USER } } } }),
-          onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+          onAuthStateChange: cb => { window.__AUTH_CB = cb; return { data: { subscription: { unsubscribe() {} } } }; },   // window.__AUTH_CB(ev, session) : événement simulé
           signOut: async () => ({ error: null }), signInWithPassword: async () => ({ data: {}, error: null }), signInWithOtp: async () => ({ error: null }),
         },
       };

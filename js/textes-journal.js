@@ -18,7 +18,8 @@ import { byId, logsOf } from './selectors.js';
 import { S } from './state.js';
 import { toast } from './utils.js';
 
-const BODY = new Map();    // id de l'entrée → texte complet lu dans la boîte anthony@ (compte titulaire seulement, en mémoire)
+const BODY = new Map();    // id de l'entrée → texte complet lu dans la boîte anthony@ (compte titulaire seulement, en mémoire ; vidé par le
+                           // rechargement de la page à la déconnexion ou au changement de compte : js/app.js)
 const STATE = new Map();   // id de l'entrée → 'lecture' | 'reserve' | 'inaccessible' | 'introuvable'
 const BUSY = new Set();    // suivis en cours de lecture
 
@@ -29,8 +30,8 @@ export const textState = id => STATE.get(id) || '';
 
 /**
  * Note manuelle d'une entrée mail (v1.66, décision d'Anthony du 20/11/2026 : affichée À PART du texte intégral, jamais écrasée).
- * Le texte de l'entrée (body) n'est jamais modifié ; on retire seulement de l'affichage l'extrait écrit automatiquement (lignes déjà
- * présentes dans le texte intégral). En cas de doute, la ligne est montrée dans la note : rien de ce qu'a écrit l'équipe n'est caché.
+ * Le texte de l'entrée (body) n'est jamais modifié ; on retire seulement de l'affichage l'extrait écrit automatiquement (début du
+ * texte intégral, lignes consécutives). En cas de doute, la ligne est montrée dans la note : rien de ce qu'a écrit l'équipe n'est caché.
  *  - mail synchronisé (auteur « Messagerie ») : 1re ligne = en-tête, 2e = extrait Gmail (peut déborder sur l'historique cité : il suffit
  *    que son début soit dans le texte intégral) ;
  *  - mail importé : 1er paragraphe = en-tête (objet, De, À), puis l'ancien résumé du message.
@@ -41,15 +42,21 @@ export function manualNote(l, full){
   const body = String(l.body || '').replace(/\r/g, '');
   const synced = l.author === 'Messagerie';
   const rest = synced ? body.split('\n').slice(1) : body.split('\n\n').slice(1).join('\n\n').split('\n');
-  let first = true;
-  const keep = rest.filter(line => {
-    const n = norm(line);
-    if (!n) return true;
-    const auto = n === '(mail sans texte)' || F.includes(n) || (synced && first && n.length >= 30 && F.includes(n.slice(0, 30)));
-    first = false;
-    return !auto;
-  });
-  return keep.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  // (relecture v1.66, B6) l'extrait automatique est le DÉBUT du mail, dans l'ordre : on avance dans le texte intégral ligne après ligne ;
+  // une ligne courte n'est automatique que si elle suit EXACTEMENT la précédente (jamais « OK », « lundi », « 12 » trouvés au hasard) ;
+  // à la première ligne qui ne suit pas, tout le reste est la note (rien de ce qu'a écrit l'équipe n'est caché)
+  let off = 0, i = 0;
+  for (; i < rest.length; i++){
+    const n = norm(rest[i]);
+    if (!n) continue;
+    if (n === '(mail sans texte)'){ continue; }
+    // extrait Gmail d'un mail synchronisé (une ligne, peut déborder sur l'historique cité) : son début est le début du mail
+    if (synced && off === 0 && n.length >= 30){ const k = F.indexOf(n.slice(0, 30)); if (k >= 0 && k < 40){ off = F.length; continue; } }
+    const k = F.indexOf(n, off);
+    if (k >= 0 && !F.slice(off, k).trim() && (k === 0 || F[k - 1] === ' ') && (n.length >= 30 || k + n.length === F.length || F[k + n.length] === ' ')){ off = k + n.length; continue; }
+    break;
+  }
+  return rest.slice(i).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /** Texte propre d'un .eml stocké, ou '' (fichier absent ou illisible) */
