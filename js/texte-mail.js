@@ -22,10 +22,10 @@ const ATTRIB = /^(?:Le|On)\s(?=.*(?:\d|@|<)).{3,400}?(?:a\s+écrit|wrote)\s*:\s*
 const FWD_SUBJECT = /^(?:Objet|Subject)\s*:\s*(?:TR|Tr|Fwd?|FW|Fw|WG)\s*:/i;
 /** Annonce explicite, dans les premières lignes, d'un transfert (« je te transfère ») ou de réponses écrites DANS le message d'origine
  *  (« voir mes réponses en rouge ci-dessous ») : seule une coupe Outlook (en-tête identique pour réponse et transfert) est alors annulée.
- *  Tournures précises seulement (relecture v1.66, B4 : « transfert aéroport », « ci-dessous », « ne pas transférer » ne comptent pas) */
+ *  Tournures précises seulement (relecture v1.66, B4 : « transfert aéroport », « ci-dessous », « ne pas transférer », « je vous renvoie », « vos réponses … ci-dessous » ne comptent pas) */
 const ANNONCE = new RegExp([
-  String.raw`\bje\s+(?:te|vous)\s+(?:transf[eè]re|fais\s+suivre|renvoie)\b`,
-  String.raw`\bréponses?\b.{0,40}(?:ci-dessous|ci-après|en\s+(?:rouge|bleu|vert|couleur|gras)|dans\s+(?:le\s+texte|votre\s+(?:message|mail))|au\s+fil)`,
+  String.raw`\bje\s+(?:te|vous)\s+(?:transf[eè]re|fais\s+suivre)\b`,
+  String.raw`\b(?:mes|nos)\s+réponses?\b.{0,40}(?:ci-dessous|ci-après|en\s+(?:rouge|bleu|vert|couleur|gras)|dans\s+(?:le\s+texte|votre\s+(?:message|mail))|au\s+fil)`,
   String.raw`\b(?:see|find)\s+(?:my|our)\s+(?:answers|replies|comments)\b.{0,20}(?:below|inline|in\s+red)`,
   String.raw`\bforwarding\s+(?:you|this)\b`,
 ].join('|'), 'i');
