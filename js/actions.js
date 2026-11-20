@@ -4,6 +4,7 @@
  */
 import { CAL_ACTIONS, calCheckBeforeSave } from './calendars.js';
 import { MAIL_ACTIONS } from './mailbox.js';
+import { TEXT_ACTIONS } from './textes-journal.js';
 import { afterFeeChange, askConfirmation, becameConfirmed, sendConfirmation, validateTerms } from './confirm-flow.js';
 import { go, render } from './app.js';
 import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
@@ -76,6 +77,7 @@ export const ACTIONS = {
   ...EMP_ACTIONS,
   ...CAL_ACTIONS,
   ...MAIL_ACTIONS,
+  ...TEXT_ACTIONS,
   ...BUDGET_ACTIONS,
   employeeCard: t => editEmployee(t.dataset.id),
   closeModal: t => (t.dataset.level==='2' ? $('#modal2') : $('#modal')).close(),
