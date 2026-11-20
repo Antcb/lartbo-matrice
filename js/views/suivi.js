@@ -20,7 +20,7 @@ import { $, addDays, addMonths, daysBetween, esc, eur, fmtDate, fmtShort, matche
 import { setMapData } from './booking.js';
 import { isDraftLog, relanceHistory } from '../prospection.js';
 import { logSource } from '../mailbox.js';
-import { ensureTexts, fullTextOf, isMailCopy, textState } from '../textes-journal.js';
+import { ensureTexts, fullTextOf, isMailCopy, manualNote, textState } from '../textes-journal.js';
 
 export function viewProspects(){
   if (S.suiviPage){ const p = byId('prospects', S.suiviPage); if (p) return suiviPage(p); S.suiviPage = null; }
@@ -130,7 +130,11 @@ function logBody(l){
   // source introuvable ou réservée : texte actuel, signalé « Extrait » avec la raison
   if (isMailCopy(l)){
     const full = fullTextOf(l), body = String(l.body || '');
-    if (full) return `<div class="md">${md(l.author === 'Messagerie' ? body.split('\n')[0] : body.split('\n\n')[0])}</div><div class="mail-text">${esc(full)}</div>`;
+    // note manuelle (texte ajouté ou modifié à la main) : affichée à part, au-dessus du mail (décision d'Anthony du 20/11/2026)
+    const note = full ? manualNote(l, full) : '';
+    if (full) return `<div class="md">${md(l.author === 'Messagerie' ? body.split('\n')[0] : body.split('\n\n')[0])}</div>`
+      + (note ? `<div class="log-note"><p class="muted small log-note-titre">Note</p><div class="md">${md(note)}</div></div>` : '')
+      + `<div class="mail-text">${esc(full)}</div>`;
     const why = EXTRAIT[textState(l.id)];
     return `<div class="md">${md(body)}</div>${why ? `<p class="muted small log-extrait">Extrait — ${esc(why)}</p>` : ''}`;
   }
