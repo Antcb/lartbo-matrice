@@ -130,8 +130,9 @@ document.addEventListener('drop', e => {
 export const OUTSIDE_DROP = 'Rien n’a été joint : dépose le mail (ou le fichier) sur la zone « Pièces jointes » d’un suivi, ou à côté d’un bouton « Ajouter un fichier ».';
 // glisser commencé DANS la page (texte, lien, carte…) : jamais traité comme un dépôt de fichier ou de mail
 let innerDrag = false;
-document.addEventListener('dragstart', () => { innerDrag = true; });
-document.addEventListener('dragend', () => { innerDrag = false; });
+// (relecture v1.65) écoute en capture, et remise à zéro aussi au dépôt : un élément retiré de la page pendant le glisser ne laisse pas l'état bloqué
+document.addEventListener('dragstart', () => { innerDrag = true; }, true);
+document.addEventListener('dragend', () => { innerDrag = false; }, true);
 const EDITABLE = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
 /** Glisser venu d'ailleurs (Mail, Finder…) au-dessus d'un endroit qui ne reçoit rien : ni zone de pièces jointes, ni zone qui a son
  *  propre dépôt, ni fenêtre de mail, ni bouton « Ajouter un fichier » proche, ni champ de saisie (le texte s'y dépose normalement) */
@@ -151,3 +152,4 @@ document.addEventListener('drop', e => {
   }
   if (hasFiles(e) && !e.defaultPrevented) e.preventDefault();
 });
+document.addEventListener('drop', () => { setTimeout(() => { innerDrag = false; }); }, true);

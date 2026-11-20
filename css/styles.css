@@ -510,7 +510,7 @@ td input.invalid,td input.invalid:hover,td input.invalid.invalid:focus,td :is(in
   .link-row{grid-template-columns:1fr auto} .link-row input:first-child{grid-column:1/-1}
   .log-form{grid-template-columns:1fr 1fr}
   .log-form .inp[name=who]{grid-column:1/-1}
-  dialog,dialog.wide{position:fixed;inset:0;width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;margin:0}
+  dialog,dialog.wide,dialog.ask.read{position:fixed;inset:0;width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;margin:0}   /* lecture d'un mail (v1.65) : plein écran aussi */
   dialog form{display:flex;flex-direction:column;height:100%}
   .modal-body{max-height:none;flex:1}
   .modal-foot{position:sticky;bottom:0;background:var(--panel)}
@@ -1028,7 +1028,7 @@ dialog.mail .mode-note{margin:0}
 .mail-msg-head{display:flex;gap:var(--sp-1);align-items:baseline;flex-wrap:wrap}
 .mail-msg-to{font-size:12px;margin:0 0 var(--sp-1)}
 .mail-frame{width:100%;min-height:320px;height:70vh;height:70dvh;border:1px solid var(--line-2);border-radius:var(--r);background:var(--panel)}   /* v1.65 : hauteur fixe, le mail défile DANS le cadre jusqu'à sa dernière ligne */
-dialog.ask.read{width:min(1000px,96vw)}
+@media (min-width:761px){ dialog.ask.read{width:min(1000px,96vw)} }   /* téléphone : plein écran (règle des fenêtres) */
 dialog.ask.read .mail-frame{height:60vh;height:60dvh}
 @media (max-width:760px){ .mail-frame{height:calc(100dvh - 120px)} dialog.ask.read .mail-frame{height:calc(100dvh - 200px)} }   /* téléphone : le cadre occupe l'écran */
 @media (max-width:760px){

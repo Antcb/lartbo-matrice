@@ -6,6 +6,7 @@
 -- Reproduit seulement ce dont la migration dépend (colonnes lues ou écrites par mail_journal, à l'identique de la migration v1.61).
 create extension if not exists pgcrypto;
 create table public.prospects (id uuid primary key default gen_random_uuid(), name text);
+create table public.settings (key text primary key, value jsonb not null);   -- marque « une seule fois » de la reprise des extraits
 create table public.prospect_logs (
   id uuid primary key default gen_random_uuid(), prospect_id uuid references public.prospects(id) on delete cascade, date date, kind text,
   contact_name text, contact_id uuid, body text, author text, sort int, import_key text unique, created_at timestamptz not null default now(),

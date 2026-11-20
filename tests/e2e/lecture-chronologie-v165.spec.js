@@ -275,3 +275,21 @@ test('v1.65 champ « Artiste » de Nouveau mail et Répondre : les plus utilisé
   await expect(page.locator('#mc-proj')).toHaveValue('art-c');
   expectClean(ctx);
 });
+
+test('v1.65 « Lire en entier » d’un .eml sur iPhone (390 px) : fenêtre plein écran, dernière ligne atteinte (relecture v1.65)', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const ctx = await openApp(page);
+  const logs = [{ ...LOGS[1], author: 'testeur@example.com', gmail_message_id: null, body: 'Reçu — **RE: Proposition 2028**\n\nDEUXIÈME message reçu' }];
+  await ouvrir(page, { logs, files: [FILES[1]], stored: { 'suivi/pr-1/2_RE.eml': bin(EML) } });
+  await journal(page).locator(':scope > .log', { hasText: 'DEUXIÈME' }).locator('[data-act=readLog]').click();
+  const d = page.locator('dialog.ask.read[open]');
+  const box = await d.boundingBox();
+  expect(Math.round(box.width)).toBe(390); expect(Math.round(box.x)).toBe(0);
+  const frame = await d.locator('iframe.mail-frame').boundingBox();
+  expect(frame.y + frame.height).toBeLessThanOrEqual(844);
+  const fin = d.frameLocator('iframe.mail-frame').locator('text=FIN DU MAIL CITÉ');
+  await fin.scrollIntoViewIfNeeded();
+  await expect(fin).toBeInViewport();
+  await expect(d.locator('button', { hasText: 'Fermer' })).toBeInViewport();
+  expectClean(ctx);
+});
