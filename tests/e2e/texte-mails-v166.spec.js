@@ -19,7 +19,9 @@ async function ouvrir(page, { logs = [], files = [], msgs = [], gmail = [], stor
     const thread = { id: 'mt-1', mailbox: 'anthony', gmail_thread_id: 'thr1', subject: 'Re: Proposition', participants: ['prog@example.com'], labels: ['INBOX'], prospect_id: 'pr-1' };
     for (const db of [S.db, window.__DB]){
       db.prospect_logs.push(...JSON.parse(JSON.stringify(logs))); db.prospect_files.push(...JSON.parse(JSON.stringify(files)));
-      db.mail_threads = [JSON.parse(JSON.stringify(thread))]; db.mail_messages = JSON.parse(JSON.stringify(msgs));
+      // texte déjà enregistré (body_text du jeu d'essai) : dans private.mail_textes simulée, jamais dans mail_messages
+      db.mail_threads = [JSON.parse(JSON.stringify(thread))]; db.mail_messages = msgs.map(({ body_text, ...m }) => ({ ...m }));
+      if (db === window.__DB) db.mail_textes = msgs.filter(m => m.body_text).map(m => ({ message_id: m.id, body_text: m.body_text }));
       db.settings.push({ key: 'prospect_script_url', value: 'https://script.google.com/macros/s/FICTIF/exec' });
     }
     for (const t of ['prospect_logs', 'prospect_files', 'mail_threads', 'settings']) touch(t);
@@ -121,7 +123,8 @@ test('v1.66 mail synchronisé (compte titulaire) : texte intégral sans clic jus
   // dernière ligne atteignable à l'écran ; texte enregistré dans la boîte (mêmes droits que les messages), une seule lecture Gmail
   await b.locator('.mail-text').evaluate(el => el.scrollIntoView({ block: 'end' }));
   await expect(b.getByText('06 00 00 00 00')).toBeInViewport();
-  expect(await page.evaluate(() => window.__DB.mail_messages.map(m => [m.id, (m.body_text || '').slice(-14)]))).toEqual([['mm-a', 'Seconde ligne citée'.slice(-14)], ['mm-b', '06 00 00 00 00']]);
+  expect(await page.evaluate(() => window.__DB.mail_textes.map(t => [t.message_id, t.body_text.slice(-14)]).sort())).toEqual([['mm-a', 'Seconde ligne citée'.slice(-14)], ['mm-b', '06 00 00 00 00']]);
+  expect(await page.evaluate(() => window.__DB.mail_messages.every(m => !('body_text' in m)))).toBe(true);   // jamais dans mail_messages
   expect(await page.evaluate(() => window.__DB.prospect_logs.filter(l => l.id.startsWith('lg-')).map(l => l.mail_text || null))).toEqual([null, null, null, null]);
   expect(await page.evaluate(() => window.__script.filter(s => s.action === 'thread').length)).toBe(1);
   expectClean(ctx);
@@ -134,7 +137,7 @@ test('v1.66 mail synchronisé, autre compte que le titulaire : aucun accès à l
   await expect(entree(page, 'Mail reçu de').locator('.log-extrait')).toHaveText('Extrait — texte complet réservé au compte d’Anthony (boîte anthony@)');
   await expect(entree(page, 'Mail reçu de')).toContainText('Bonjour Anthony, Ligne 1…');
   await expect(journal(page)).not.toContainText('TEXTE DE LA BOÎTE');
-  expect(await page.evaluate(() => window.__calls.filter(c => c.table === 'mail_messages').length)).toBe(0);
+  expect(await page.evaluate(() => window.__calls.filter(c => c.table === 'mail_messages' || /^mail_texte/.test(c.rpc || '')).length)).toBe(0);
   expect(await page.evaluate(() => window.__script.length)).toBe(0);
   expectClean(ctx);
 });
@@ -177,6 +180,25 @@ test('v1.66 nouveau mail importé (.eml déposé) : texte intégral enregistré 
   expectClean(ctx);
 });
 
+test('v1.66 note manuelle : affichée à part du texte intégral, jamais écrasée ; l’extrait automatique n’est pas répété', async ({ page }) => {
+  const ctx = await openApp(page);
+  await ouvrir(page, { logs: [
+      LOG('lg-b', { body: 'Mail reçu de prog@example.com — « Re: Proposition »\nBonjour Anthony, Ligne 1 de la réponse, propre à ce message…\nNOTE : rappeler mardi pour le cachet' }),
+      LOG('lg-c', { body: 'Mail reçu de prog@example.com — « Re: Devis »\nBonjour Anthony, Ligne 1 de la réponse, propre à ce message…', created_at: '2026-11-17T11:00:00Z' })],
+    msgs: [{ id: 'mm-b', thread_id: 'mt-1', gmail_message_id: 'g02', prospect_log_id: 'lg-b', body_text: null },
+           { id: 'mm-c', thread_id: 'mt-1', gmail_message_id: 'g03', prospect_log_id: 'lg-c', body_text: null }],
+    gmail: [{ id: 'g02', html: GMAIL }, { id: 'g03', html: GMAIL }] });
+  const b = entree(page, 'Re: Proposition');
+  await expect(b.locator('.mail-text')).toContainText('DERNIÈRE LIGNE DU MESSAGE');
+  await expect(b.locator('.log-note')).toContainText('NOTE : rappeler mardi pour le cachet');
+  await expect(b.locator('.log-note')).not.toContainText('Ligne 1');                      // extrait automatique : pas répété
+  await expect(b.locator('.mail-text')).not.toContainText('NOTE : rappeler');             // note jamais mêlée au mail
+  await expect(entree(page, 'Re: Devis').locator('.log-note')).toHaveCount(0);           // pas de note : rien en plus
+  expect(await page.evaluate(() => window.__DB.prospect_logs.find(l => l.id === 'lg-b').body)).toContain('NOTE : rappeler mardi');   // jamais écrasée
+  expect(await page.evaluate(() => window.__calls.filter(c => c.table === 'prospect_logs' && c.op !== 'select').length)).toBe(0);
+  expectClean(ctx);
+});
+
 test('v1.66 iPhone (390 px) : mail long lisible jusqu’à la dernière ligne, sans défilement horizontal', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const ctx = await openApp(page);
@@ -203,6 +225,6 @@ test('v1.66 reprise d’un coup (« Compléter les textes du journal », compte 
     touch('prospects'); touch('prospect_logs'); const app = await import('./js/app.js'); app.go('mails'); app.render(); });
   await page.locator('[data-act=mailTexts]').click();
   await expect(page.locator('.toast').last()).toContainText('Textes des mails complétés');
-  expect(await page.evaluate(() => window.__DB.mail_messages.map(m => [m.id, m.body_text.slice(-14)]))).toEqual([['mm-b', '06 00 00 00 00'], ['mm-z', 'DÉJÀ LU, GARDÉ'.slice(-14)]]);
+  expect(await page.evaluate(() => window.__DB.mail_textes.map(t => [t.message_id, t.body_text.slice(-14)]).sort())).toEqual([['mm-b', '06 00 00 00 00'], ['mm-z', 'DÉJÀ LU, GARDÉ'.slice(-14)]]);
   expectClean(ctx);
 });

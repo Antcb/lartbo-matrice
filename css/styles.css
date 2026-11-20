@@ -806,6 +806,8 @@ dialog.mail .mode-note{margin:0}
 .log-mail img{max-width:100%;height:auto}
 .mail-text{margin-top:var(--sp-1);white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.45}   /* v1.66 : texte intégral d'un mail au journal, sans limite */
 .log-extrait{margin:var(--sp-1) 0 0}
+.log-note{margin-top:var(--sp-1);padding-left:var(--sp-2);border-left:2px solid var(--line-2)}   /* v1.66 : note manuelle, à part du texte du mail */
+.log-note-titre{margin:0}
 .draft-bar{grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--r);background:#FFF1D6;color:#8A5A00;font-size:13px;font-weight:600}
 .draft-bar span{flex:1}
 .fsel{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}

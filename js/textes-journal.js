@@ -4,7 +4,8 @@
  * Sources, dans cet ordre, en gardant les droits d'accès existants :
  *  1. .eml joint au suivi (même clé « msgid:<Message-ID> ») : lisible par l'équipe comme le fichier → prospect_logs.mail_text ;
  *  2. message de la boîte anthony@ (synchronisé) : lisible SEULEMENT par le titulaire, comme les messages eux-mêmes →
- *     mail_messages.body_text (même règle d'accès que mail_messages : is_mailbox_owner) ; jamais recopié dans le journal.
+ *     private.mail_textes, par les fonctions mail_texte_lire / mail_texte_ecrire (titulaire vérifié dans la base : is_mailbox_owner) ;
+ *     jamais recopié dans le journal, jamais sauvegardé ni exporté (décision d'Anthony du 20/11/2026).
  * Rien n'est remplacé : body (texte actuel) reste tel quel ; seules les colonnes nouvelles, vides, sont complétées (migration v1.66).
  * Source introuvable ou réservée : le texte actuel est affiché, signalé « Extrait » avec la raison.
  * Reprise des entrées existantes : à l'affichage d'un suivi, ou d'un coup (« Compléter les textes du journal », compte titulaire).
@@ -26,6 +27,31 @@ export const isMailCopy = l => !!l && l.kind === 'Mail' && !l.body_html && (l.au
 export const fullTextOf = l => (l && (l.mail_text || BODY.get(l.id))) || null;
 export const textState = id => STATE.get(id) || '';
 
+/**
+ * Note manuelle d'une entrée mail (v1.66, décision d'Anthony du 20/11/2026 : affichée À PART du texte intégral, jamais écrasée).
+ * Le texte de l'entrée (body) n'est jamais modifié ; on retire seulement de l'affichage l'extrait écrit automatiquement (lignes déjà
+ * présentes dans le texte intégral). En cas de doute, la ligne est montrée dans la note : rien de ce qu'a écrit l'équipe n'est caché.
+ *  - mail synchronisé (auteur « Messagerie ») : 1re ligne = en-tête, 2e = extrait Gmail (peut déborder sur l'historique cité : il suffit
+ *    que son début soit dans le texte intégral) ;
+ *  - mail importé : 1er paragraphe = en-tête (objet, De, À), puis l'ancien résumé du message.
+ */
+export function manualNote(l, full){
+  const norm = s => String(s || '').replace(/\u00a0/g, ' ').replace(/(?:…|\.\.\.)\s*$/, '').replace(/[*_`>•·]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  const F = norm(full);
+  const body = String(l.body || '').replace(/\r/g, '');
+  const synced = l.author === 'Messagerie';
+  const rest = synced ? body.split('\n').slice(1) : body.split('\n\n').slice(1).join('\n\n').split('\n');
+  let first = true;
+  const keep = rest.filter(line => {
+    const n = norm(line);
+    if (!n) return true;
+    const auto = n === '(mail sans texte)' || F.includes(n) || (synced && first && n.length >= 30 && F.includes(n.slice(0, 30)));
+    first = false;
+    return !auto;
+  });
+  return keep.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 /** Texte propre d'un .eml stocké, ou '' (fichier absent ou illisible) */
 async function emlText(f){
   try {
@@ -46,7 +72,7 @@ async function saveMailText(l, t){
 /** Messages de la boîte anthony@ des entrées (compte titulaire) : texte déjà lu, sinon conversation relue dans Gmail */
 async function fromMailbox(logs){
   const byLog = new Map();
-  const pick = 'id,prospect_log_id,gmail_message_id,thread_id,body_text';
+  const pick = 'id,prospect_log_id,gmail_message_id,thread_id';
   const ids = logs.map(l => l.id), gids = logs.map(l => l.gmail_message_id).filter(Boolean);
   const q1 = await sb.from('mail_messages').select(pick).in('prospect_log_id', ids);
   for (const m of q1.data || []) if (m.prospect_log_id) byLog.set(m.prospect_log_id, m);
@@ -55,11 +81,19 @@ async function fromMailbox(logs){
     const q2 = await sb.from('mail_messages').select(pick).in('gmail_message_id', gids);
     for (const l of lost){ const m = (q2.data || []).find(x => x.gmail_message_id === l.gmail_message_id); if (m) byLog.set(l.id, m); }
   }
+  // textes déjà enregistrés (fonction de la base : seulement les messages dont ce compte est titulaire)
+  const mids = [...new Set([...byLog.values()].map(m => m.id))];
+  const saved = new Map();
+  if (mids.length){
+    const {data, error} = await sb.rpc('mail_texte_lire', {p_ids: mids});
+    if (error) console.info('[Matrice] textes enregistrés illisibles (migration v1.66 pas encore appliquée ?)', error.code || '');
+    for (const r of data || []) saved.set(r.message_id, r.body_text);
+  }
   const need = new Map();   // conversation → entrées à lire
   for (const l of logs){
     const m = byLog.get(l.id);
     if (!m){ STATE.set(l.id, 'introuvable'); continue; }
-    if (m.body_text){ BODY.set(l.id, m.body_text); STATE.delete(l.id); continue; }
+    if (saved.get(m.id)){ BODY.set(l.id, saved.get(m.id)); STATE.delete(l.id); continue; }
     if (!need.has(m.thread_id)) need.set(m.thread_id, []);
     need.get(m.thread_id).push([l, m]);
   }
@@ -73,7 +107,8 @@ async function fromMailbox(logs){
       const t = g ? ownText({html: g.html, subject: g.subject || ''}) : '';
       if (!t){ STATE.set(l.id, 'introuvable'); continue; }
       BODY.set(l.id, t); STATE.delete(l.id);
-      await sb.from('mail_messages').update({body_text: t}).eq('id', m.id).is('body_text', null);
+      const {error} = await sb.rpc('mail_texte_ecrire', {p_id: m.id, p_text: t});   // jamais d'écrasement (vérifié dans la base)
+      if (error) console.info('[Matrice] texte du message non enregistré', error.code || '');
     }
   }
 }
