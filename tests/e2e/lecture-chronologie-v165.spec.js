@@ -293,3 +293,32 @@ test('v1.65 « Lire en entier » d’un .eml sur iPhone (390 px) : fenêtre plei
   await expect(d.locator('button', { hasText: 'Fermer' })).toBeInViewport();
   expectClean(ctx);
 });
+
+test('v1.65.2 date changée à la main : heure d’origine gardée en historique, ni affichée ni utilisée hors de son jour (repli)', async ({ page }) => {
+  const ctx = await openApp(page);
+  // le reçu de 11:16 (17/11) est daté à la main du 18/11 ; une note du 18/11 saisie à 09:00 ce jour-là
+  const logs = LOGS.map(l => l.id === 'lr-b' ? { ...l, date: '2026-11-18' } : l)
+    .concat({ id: 'lr-n', prospect_id: 'pr-1', date: '2026-11-18', kind: 'Note', author: 'testeur@example.com', created_at: '2026-11-18T08:00:00Z', body: 'NOTE du 18' });
+  await ouvrir(page, { logs });
+  const e = (await entrees(page)).filter(t => /message|NOTE/.test(t));
+  // 18/11 : le reçu sans heure valable passe en fin de jour (en tête), avant la note de 09:00 ; puis le 17/11 dans l'ordre réel
+  expect(e.map(t => (t.match(/PREMIER|DEUXIÈME|TROISIÈME|NOTE/) || [])[0])).toEqual(['DEUXIÈME', 'NOTE', 'TROISIÈME', 'PREMIER']);
+  expect(e[0]).toContain('18/11/2026'); expect(e[0]).not.toMatch(/18\/11\/2026 \d\d:\d\d/); expect(e[0]).not.toContain('11:16');
+  // modifier l'entrée (date, texte) n'efface pas l'horodatage d'origine
+  await journal(page).locator(':scope > .log', { hasText: 'DEUXIÈME' }).locator('[data-act=editLog]').click();
+  await page.locator('#modal textarea[name=body]').fill('DEUXIÈME message reçu (corrigé)');
+  await page.locator('#modal button[type=submit]').click();
+  await expect(page.locator('#modal[open]')).toHaveCount(0);
+  expect(await page.evaluate(() => window.__DB.prospect_logs.find(l => l.id === 'lr-b').occurred_at)).toBe('2026-11-17T10:16:18+00:00');
+  expectClean(ctx);
+});
+
+test('v1.65.2 source dont la boîte n’est pas établie (identifiant Gmail seul), hors du compte titulaire : « Message inaccessible depuis ce compte »', async ({ page }) => {
+  const ctx = await openApp(page);
+  const logs = [{ ...LOGS[1], author: 'testeur@example.com', import_key: null, body: 'Reçu — **RE: Proposition 2028**\n\nDEUXIÈME message reçu' }];
+  await ouvrir(page, { owner: false, logs, files: [] });
+  await journal(page).locator(':scope > .log', { hasText: 'DEUXIÈME' }).locator('[data-act=readLog]').click();
+  await expect(dlg(page)).toContainText('Message inaccessible depuis ce compte.');
+  await expect(dlg(page)).not.toContainText('anthony@');
+  expectClean(ctx);
+});

@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.65.2 — 20/11/2026
+- Journal : heure réelle seulement si elle tombe le jour affiché (date changée à la main : horodatage d'origine gardé, repli) ; « Message inaccessible depuis ce compte » quand la boîte n'est pas établie ; reprises sauvegardées dans la base, second passage des apostrophes refusé même sans la ligne de réglage
+
+
 ## 1.65.1 — 20/11/2026
 - Relecture v1.65 : reprise des extraits limitée à une seule fois (marque), fenêtre de lecture plein écran sur téléphone, état du glisser remis à zéro au dépôt
 

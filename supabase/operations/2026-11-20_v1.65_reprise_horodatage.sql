@@ -24,8 +24,13 @@ with src as (
   where l.occurred_at is null and (l.author = 'Messagerie' or l.gmail_message_id is not null or l.import_key like 'msgid:%'))
 select count(*) filter (where at is not null) as completees, count(*) filter (where at is null) as sans_source from src;
 
--- 2. Reprise (une transaction)
+-- 2. Reprise (une transaction). SAUVEGARDE dans la base, avant modification : private.v165_sauvegarde_horodatage (identifiant de chaque
+--    ligne complétée et sa valeur d'avant, toujours vide) — schéma privé, invisible depuis l'application, copié par la sauvegarde de la nuit.
+--    Rejouable sans effet : seules les lignes encore sans heure sont complétées (et ajoutées à la sauvegarde).
 begin;
+create table if not exists private.v165_sauvegarde_horodatage (id uuid primary key, occurred_at_avant timestamptz, sauvegarde_at timestamptz not null default now());
+revoke all on private.v165_sauvegarde_horodatage from public, anon, authenticated;
+grant select on private.v165_sauvegarde_horodatage to sauvegarde;   -- aucune donnée secrète : copiée par la sauvegarde de la nuit
 with src as (
   select l.id,
     coalesce((select m.sent_at from public.mail_messages m where m.prospect_log_id = l.id and m.sent_at is not null order by m.sent_at limit 1),
@@ -33,6 +38,8 @@ with src as (
              (select m.sent_at from public.mail_messages m where l.import_key like 'msgid:%' and 'msgid:' || m.rfc_message_id = l.import_key and m.sent_at is not null order by m.sent_at limit 1)) as at
   from public.prospect_logs l
   where l.occurred_at is null and (l.author = 'Messagerie' or l.gmail_message_id is not null or l.import_key like 'msgid:%'))
+, sauv as (insert into private.v165_sauvegarde_horodatage (id, occurred_at_avant)
+  select src.id, null from src where src.at is not null on conflict (id) do nothing returning id)
 update public.prospect_logs l set occurred_at = src.at from src where src.id = l.id and src.at is not null and l.occurred_at is null;
 commit;
 
@@ -41,5 +48,5 @@ select to_char(l.occurred_at at time zone 'Europe/Paris', 'DD/MM HH24:MI:SS') as
 from public.prospect_logs l where l.prospect_id = 'f8f539d0-f5ea-4d9e-b85e-5a6f32dfe4e4' and not l.hidden
 order by l.date desc, l.occurred_at desc nulls first;
 
--- Retour arrière (si demandé) : remettre à vide les seules lignes complétées par cette reprise, à partir de l'export de l'étape 0
--- update public.prospect_logs set occurred_at = null where id in (<identifiants exportés à l'étape 0>);
+-- Retour arrière (si demandé) : remettre à vide les seules lignes complétées par cette reprise (sauvegarde de l'étape 2)
+-- update public.prospect_logs l set occurred_at = s.occurred_at_avant from private.v165_sauvegarde_horodatage s where s.id = l.id;

@@ -5,6 +5,12 @@
 --         (deux fois : rejouable) ; psql -d essai165 -f supabase/repetitions/2026-11-20_v1.65_journal_essai.sql
 -- Reproduit seulement ce dont la migration dépend (colonnes lues ou écrites par mail_journal, à l'identique de la migration v1.61).
 create extension if not exists pgcrypto;
+create schema if not exists private;
+do $$ declare r text; begin
+  foreach r in array array['anon', 'authenticated', 'sauvegarde'] loop
+    if not exists (select 1 from pg_roles where rolname = r) then execute format('create role %I nologin', r); end if;
+  end loop;
+end $$;
 create table public.prospects (id uuid primary key default gen_random_uuid(), name text);
 create table public.settings (key text primary key, value jsonb not null);   -- marque « une seule fois » de la reprise des extraits
 create table public.prospect_logs (

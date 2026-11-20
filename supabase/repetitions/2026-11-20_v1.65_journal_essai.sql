@@ -60,4 +60,21 @@ do $$ begin
   if (select snippet from public.mail_messages where gmail_message_id = 'g02') <> 'Merci &#39; <b>' then raise exception 'second passage : décodé deux fois'; end if;
   if (select count(*) from public.settings where key = 'reprise_extraits_v165') <> 1 then raise exception 'marque absente'; end if;
 end $$;
+-- 7) ligne de réglage effacée (possible depuis l'application) : la sauvegarde privée refuse encore un second passage
+delete from public.settings where key = 'reprise_extraits_v165';
+\set ON_ERROR_STOP 0
+\i supabase/operations/2026-11-20_v1.65_extraits_entites.sql
+\set ON_ERROR_STOP 1
+do $$ begin
+  if (select snippet from public.mail_messages where gmail_message_id = 'g02') <> 'Merci &#39; <b>' then raise exception 'marque effacée : décodé deux fois'; end if;
+  if (select valeur from private.v165_sauvegarde_extraits where tbl = 'mail_messages' and id = (select id from public.mail_messages where gmail_message_id = 'g02'))
+     <> 'Merci &amp;#39; &lt;b&gt;' then raise exception 'sauvegarde des extraits incorrecte'; end if;
+  if (select count(*) from private.v165_sauvegarde_horodatage) <> 5 then raise exception 'sauvegarde des heures incomplète'; end if;
+  if has_table_privilege('authenticated', 'private.v165_sauvegarde_extraits', 'delete') then raise exception 'sauvegarde effaçable par l''équipe'; end if;
+end $$;
+-- 8) retour arrière des extraits depuis la sauvegarde
+update public.mail_messages m set snippet = s.valeur from private.v165_sauvegarde_extraits s where s.tbl = 'mail_messages' and s.id = m.id;
+do $$ begin
+  if (select snippet from public.mail_messages where gmail_message_id = 'g02') <> 'Merci &amp;#39; &lt;b&gt;' then raise exception 'retour arrière impossible'; end if;
+end $$;
 select 'ESSAI v1.65 : tous les contrôles passent' as resultat;
