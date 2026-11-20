@@ -1,3 +1,4 @@
+// (v1.66 : le texte intégral remplace l'extrait affiché : boutons « Lire en entier » visés par l'identifiant de l'entrée)
 // v1.65 — journal d'un suivi : « Lire en entier » (message de la messagerie ou .eml joint, jamais de copie du corps), chronologie réelle
 // (occurred_at, ordre stable, repli explicite), .eml affichés avec leur mail (cas de référence : suivi Ressins Folies du 17/11/2026,
 // données FICTIVES de même forme) ; dépôt hors zone dit et noté ; issue de l'import d'un mail notée sans contenu ni adresse ;
@@ -103,11 +104,13 @@ test('v1.65 « Lire en entier » d’un mail synchronisé : conversation ouverte
     gmail: [GMSG('g01', '<p>premier</p>'), GMSG('g02', LONG), GMSG('g03', '<p>troisième</p>')] });
   // entrée sans source complète (note) : pas de bouton
   await expect(journal(page).locator(':scope > .log', { hasText: 'Note de test' }).locator('[data-act=readLog]')).toHaveCount(0);
-  await journal(page).locator(':scope > .log', { hasText: 'DEUXIÈME' }).locator('[data-act=readLog]').click();
+  await page.locator('[data-act=readLog][data-id="lr-b"]').click();
   const msg = page.locator('.mail-msg.focus[data-msg="g02"]');
   await expect(msg).toBeVisible();
   await expect(page.locator('.mail-msg')).toHaveCount(3);
-  expect(await page.evaluate(() => (window.__script || []).filter(b => b.action === 'thread').map(b => b.payload.thread_id))).toEqual(['thr1']);
+  // (v1.66) le journal lit aussi la conversation pour le texte intégral : toutes les lectures visent cette conversation
+  const lus = await page.evaluate(() => (window.__script || []).filter(b => b.action === 'thread').map(b => b.payload.thread_id));
+  expect(lus.length).toBeGreaterThan(0); expect([...new Set(lus)]).toEqual(['thr1']);
   const fin = msg.frameLocator('iframe.mail-frame').locator('#fin');
   await fin.scrollIntoViewIfNeeded();
   await expect(fin).toBeInViewport();
@@ -118,7 +121,7 @@ test('v1.65 « Lire en entier » sur iPhone (390 px) : le cadre tient dans l’�
   await page.setViewportSize({ width: 390, height: 844 });
   const ctx = await openApp(page);
   await ouvrir(page, { msgs: [{ id: 'mm-2', thread_id: 'mt-r', gmail_message_id: 'g02', prospect_log_id: 'lr-b' }], gmail: [GMSG('g02', LONG)] });
-  await journal(page).locator(':scope > .log', { hasText: 'DEUXIÈME' }).locator('[data-act=readLog]').click();
+  await page.locator('[data-act=readLog][data-id="lr-b"]').click();
   const frame = page.locator('.mail-msg.focus iframe.mail-frame');
   await frame.scrollIntoViewIfNeeded();
   const box = await frame.boundingBox();
@@ -134,11 +137,11 @@ test('v1.65 « Lire en entier » sur iPhone (390 px) : le cadre tient dans l’�
 test('v1.65 « Lire en entier » : message retiré de la conversation, ou introuvable dans la messagerie → dit clairement', async ({ page }) => {
   const ctx = await openApp(page);
   await ouvrir(page, { msgs: [{ id: 'mm-2', thread_id: 'mt-r', gmail_message_id: 'g02', prospect_log_id: 'lr-b' }], gmail: [GMSG('g01', '<p>premier</p>')], files: [] });
-  await journal(page).locator(':scope > .log', { hasText: 'DEUXIÈME' }).locator('[data-act=readLog]').click();
+  await page.locator('[data-act=readLog][data-id="lr-b"]').click();
   await expect(page.locator('main .mail-err[role=alert]')).toContainText('n’est plus dans cette conversation Gmail');
   // entrée dont le message n'est pas dans la messagerie synchronisée, sans .eml : fenêtre d'explication, rien d'autre
   await page.evaluate(async () => { const app = await import('./js/app.js'); const { S } = await import('./js/state.js'); app.go('prospects'); S.suiviPage = 'pr-1'; app.render(); });
-  await journal(page).locator(':scope > .log', { hasText: 'PREMIER' }).locator('[data-act=readLog]').click();
+  await page.locator('[data-act=readLog][data-id="lr-a"]').click();
   await expect(dlg(page)).toContainText('Mail complet inaccessible');
   await expect(dlg(page)).toContainText('n’est pas (ou plus) dans la messagerie synchronisée');
   await dlg(page).locator('button', { hasText: 'Fermer' }).click();
@@ -149,7 +152,7 @@ test('v1.65 « Lire en entier » d’un mail importé : le .eml complet (au-del�
   const ctx = await openApp(page);
   const logs = [{ ...LOGS[1], author: 'testeur@example.com', gmail_message_id: null, body: 'Reçu — **RE: Proposition 2028**\n\nDEUXIÈME message reçu (texte coupé)' }];
   await ouvrir(page, { logs, files: [FILES[1]], stored: { 'suivi/pr-1/2_RE.eml': bin(EML) } });
-  await journal(page).locator(':scope > .log', { hasText: 'DEUXIÈME' }).locator('[data-act=readLog]').click();
+  await page.locator('[data-act=readLog][data-id="lr-b"]').click();
   const d = page.locator('dialog.ask.read[open]');
   await expect(d).toContainText('De : Prog Fictive <prog@example.com>');
   await expect(d).toContainText('Date : 17/11/2026 11:16');
@@ -160,7 +163,7 @@ test('v1.65 « Lire en entier » d’un mail importé : le .eml complet (au-del�
   await d.locator('button', { hasText: 'Fermer' }).click();
   // fichier absent du stockage
   await page.evaluate(() => { window.__STORED = {}; });
-  await journal(page).locator(':scope > .log', { hasText: 'DEUXIÈME' }).locator('[data-act=readLog]').click();
+  await page.locator('[data-act=readLog][data-id="lr-b"]').click();
   await expect(dlg(page)).toContainText('introuvable dans le stockage');
   await expect(dlg(page)).toContainText('Rien n’a été modifié');
   expectClean(ctx);
@@ -169,10 +172,10 @@ test('v1.65 « Lire en entier » d’un mail importé : le .eml complet (au-del�
 test('v1.65 « Lire en entier » hors du compte d’Anthony : .eml joint lu ; sans .eml, la raison est donnée (boîte réservée)', async ({ page }) => {
   const ctx = await openApp(page);
   await ouvrir(page, { owner: false, files: [FILES[1]], stored: { 'suivi/pr-1/2_RE.eml': bin(EML) } });
-  await journal(page).locator(':scope > .log', { hasText: 'DEUXIÈME' }).locator('[data-act=readLog]').click();
+  await page.locator('[data-act=readLog][data-id="lr-b"]').click();
   await expect(page.locator('dialog.ask.read[open]')).toContainText('RE: Proposition 2028');
   await page.locator('dialog.ask.read[open] button', { hasText: 'Fermer' }).click();
-  await journal(page).locator(':scope > .log', { hasText: 'TROISIÈME' }).locator('[data-act=readLog]').click();
+  await page.locator('[data-act=readLog][data-id="lr-0"]').click();
   await expect(dlg(page)).toContainText('réservée au compte d’Anthony');
   expect(await page.evaluate(() => window.__calls.filter(c => c.table === 'mail_messages').length)).toBe(0);   // aucune lecture de la boîte
   expectClean(ctx);
@@ -281,7 +284,7 @@ test('v1.65 « Lire en entier » d’un .eml sur iPhone (390 px) : fenêtre plei
   const ctx = await openApp(page);
   const logs = [{ ...LOGS[1], author: 'testeur@example.com', gmail_message_id: null, body: 'Reçu — **RE: Proposition 2028**\n\nDEUXIÈME message reçu' }];
   await ouvrir(page, { logs, files: [FILES[1]], stored: { 'suivi/pr-1/2_RE.eml': bin(EML) } });
-  await journal(page).locator(':scope > .log', { hasText: 'DEUXIÈME' }).locator('[data-act=readLog]').click();
+  await page.locator('[data-act=readLog][data-id="lr-b"]').click();
   const d = page.locator('dialog.ask.read[open]');
   const box = await d.boundingBox();
   expect(Math.round(box.width)).toBe(390); expect(Math.round(box.x)).toBe(0);
@@ -317,7 +320,7 @@ test('v1.65.2 source dont la boîte n’est pas établie (identifiant Gmail seul
   const ctx = await openApp(page);
   const logs = [{ ...LOGS[1], author: 'testeur@example.com', import_key: null, body: 'Reçu — **RE: Proposition 2028**\n\nDEUXIÈME message reçu' }];
   await ouvrir(page, { owner: false, logs, files: [] });
-  await journal(page).locator(':scope > .log', { hasText: 'DEUXIÈME' }).locator('[data-act=readLog]').click();
+  await page.locator('[data-act=readLog][data-id="lr-b"]').click();
   await expect(dlg(page)).toContainText('Message inaccessible depuis ce compte.');
   await expect(dlg(page)).not.toContainText('anthony@');
   expectClean(ctx);
