@@ -246,6 +246,14 @@ test('v1.66.1 mail importé réel : liens « <https://…> » de l’ancien rés
     return { sans: manualNote({ author: 'anthony@lartboristerie.com', body }, full), avec: manualNote({ author: 'anthony@lartboristerie.com', body: body + '\nNote de test v1.66' }, full) };
   });
   expect(r.sans).toBe(''); expect(r.avec).toBe('Note de test v1.66');
+  // liste numérotée (« 1. » dans la partie texte, « - » dans le texte intégral) ; résumé coupé à 6 000 caractères au milieu d'un mot
+  const r2 = await page.evaluate(async () => {
+    const { manualNote } = await import('./js/textes-journal.js');
+    const long = Array.from({ length: 300 }, (_, i) => `Phrase ${i} du mail.`).join('\n');
+    return { liste: manualNote({ author: 'a', body: 'Reçu — x\n\nProgramme :\n1. Balances\n2. Concert\nMarie' }, 'Programme :\n- Balances\n- Concert\nMarie'),
+      coupe: manualNote({ author: 'a', body: 'Reçu — x\n\n' + long.slice(0, 6000) }, long) };
+  });
+  expect(r2).toEqual({ liste: '', coupe: '' });
   // bouton : absent sur une entrée dont le texte intégral est affiché, présent sur un extrait
   await ouvrir(page, { logs: [LOG('lg-b', { body: 'Mail reçu de prog@example.com — « Re: Proposition »\nBonjour…' }),
       LOG('lg-c', { body: 'Mail reçu de prog@example.com — « Re: Devis »\nBonjour…', created_at: '2026-11-17T11:00:00Z' })],

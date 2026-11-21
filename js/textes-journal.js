@@ -44,7 +44,7 @@ export function manualNote(l, full){
   const norm = s => String(s || '')
     .replace(/\s*<(?:https?:|mailto:|tel:)[^>\s]*>/gi, '').replace(/\s*<\+?\d[\d .()-]*>/g, '').replace(/\[(?:image|cid):[^\]]*\]/gi, '')
     .replace(/[\u00a0\u202f\u2009]/g, ' ').replace(/[«»“”„"]/g, '"').replace(/[’‘`´]/g, "'").replace(/[–—‐]/g, '-')
-    .replace(/(?:…|\.\.\.)\s*$/, '').replace(/(^|\n)\s*[-•·*]\s+/g, '$1').replace(/[*_>•·]/g, ' ')
+    .replace(/(?:…|\.\.\.)\s*$/, '').replace(/(^|\n)\s*(?:[-•·*]|\d{1,2}[.)])\s+/g, '$1').replace(/[*_>•·]/g, ' ')
     .replace(/\s*(["':;!?,.()\[\]])\s*/g, '$1').replace(/\s+/g, ' ').trim().toLowerCase();
   const F = norm(full);
   const body = String(l.body || '').replace(/\r/g, '');
@@ -55,6 +55,8 @@ export function manualNote(l, full){
   // à la première ligne qui ne suit pas, tout le reste est la note (rien de ce qu'a écrit l'équipe n'est caché)
   // (relecture v1.66.1, B7) une ligne qui n'est vide qu'APRÈS normalisation (« <https://…> » seul, « [image: …] ») n'est automatique
   // que si une ligne reconnue la suit ; sinon elle appartient à la note (un lien noté à la main n'est jamais caché)
+  // ancien résumé coupé à 6 000 caractères (js/eml.js) : sa dernière ligne peut finir au milieu d'un mot (relecture v1.66.1)
+  const coupe = rest.join('\n').length >= 5900, last = rest.map(x => x.trim()).lastIndexOf(rest.filter(x => x.trim()).pop()?.trim());
   let off = 0, i = 0, pending = -1;
   for (; i < rest.length; i++){
     const n = norm(rest[i]);
@@ -64,7 +66,7 @@ export function manualNote(l, full){
     if (synced && off === 0 && n.length >= 30){ const k = F.indexOf(n.slice(0, 30)); if (k >= 0 && k < 40){ off = F.length; pending = -1; continue; } }
     const k = F.indexOf(n, off);
     const sep = c => c === undefined || /[ "'.,;:!?()\[\]-]/.test(c);
-    if (k >= 0 && !F.slice(off, k).trim() && (k === 0 || sep(F[k - 1]) || sep(n[0])) && (n.length >= 30 || sep(F[k + n.length]) || sep(n[n.length - 1]))){ off = k + n.length; pending = -1; continue; }
+    if (k >= 0 && !F.slice(off, k).trim() && (k === 0 || sep(F[k - 1]) || sep(n[0])) && (n.length >= 30 || sep(F[k + n.length]) || sep(n[n.length - 1]) || (coupe && i === last))){ off = k + n.length; pending = -1; continue; }
     break;
   }
   if (pending >= 0){
