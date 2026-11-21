@@ -100,7 +100,7 @@ export function suiviCard(p, {page=false}={}){
           <div class="log-head">📎 ${x.at !== '0000' ? `<b>${fmtDate(x.at)}</b> · ` : ''}Pièce jointe<span class="spacer"></span></div>${fileRow(x.file)}</div>`
           : `<div class="log">
           <div class="log-head">${LOG_ICON[x.log.kind]||'📝'} <b>${x.log.date?fmtDate(x.log.date):'Sans date'}</b>${logRealAt(x.log) ? ` <span class="muted">${fmtTime(logRealAt(x.log))}</span>` : ''}${x.log.contact_name?' · '+esc(x.log.contact_name):''}
-            <span class="spacer"></span>${logSource(x.log).any && !(isMailCopy(x.log) && fullTextOf(x.log)) ? `<button type="button" class="btn sm" data-act="readLog" data-id="${x.log.id}" title="Ouvre le message complet (conversation de la messagerie, ou .eml joint au suivi)">Lire en entier</button>` : ''}${isDraftLog(x.log) ? `<button type="button" class="btn sm" data-act="markLogSent" data-id="${x.log.id}" title="Le mail est parti depuis Gmail : le noter envoyé aujourd’hui">Marquer envoyé</button>` : ''}<button type="button" class="btn sm ghost" data-act="editLog" data-id="${x.log.id}">Modifier</button>
+            <span class="spacer"></span>${readBtn(x.log)}${isDraftLog(x.log) ? `<button type="button" class="btn sm" data-act="markLogSent" data-id="${x.log.id}" title="Le mail est parti depuis Gmail : le noter envoyé aujourd’hui">Marquer envoyé</button>` : ''}<button type="button" class="btn sm ghost" data-act="editLog" data-id="${x.log.id}">Modifier</button>
             <button type="button" class="btn icon sm ghost danger" data-act="delLog" data-id="${x.log.id}" aria-label="Supprimer l'entrée">✕</button></div>
           ${logBody(x.log)}${(withLog.get(x.log.id) || []).map(f => fileRow(f)).join('')}</div>`).join('') || '<div class="muted">Aucun échange enregistré.</div>'}
       </div>`;
@@ -125,6 +125,21 @@ export function suiviCard(p, {page=false}={}){
 /** Texte d'une entrée du journal ; un mail envoyé depuis la Matrice garde sa mise en forme */
 const EXTRAIT = {lecture: 'lecture du texte complet…', reserve: 'texte complet réservé au compte d’Anthony (boîte anthony@)',
   inaccessible: 'texte complet inaccessible depuis ce compte', introuvable: 'texte complet introuvable'};
+/**
+ * Accès à la source d'une entrée mail (v1.66.1, décision d'Anthony du 21/11/2026) :
+ *  - texte intégral affiché + mail synchronisé : lien discret « Ouvrir le mail d'origine » (message exact dans la messagerie : pièces
+ *    jointes, images, adresses des liens) ;
+ *  - texte intégral affiché + mail importé seul : rien (le .eml et ses pièces jointes restent affichés dans l'entrée) ;
+ *  - entrée marquée « Extrait » : « Lire en entier » (v1.65).
+ */
+function readBtn(l){
+  const src = logSource(l);
+  if (!src.any) return '';
+  if (isMailCopy(l) && fullTextOf(l)) return src.synced
+    ? `<button type="button" class="btn sm ghost" data-act="readLog" data-id="${l.id}" title="Ouvre ce message dans la messagerie : pièces jointes, images et liens">Ouvrir le mail d’origine</button>` : '';
+  return `<button type="button" class="btn sm" data-act="readLog" data-id="${l.id}" title="Ouvre le message complet (conversation de la messagerie, ou .eml joint au suivi)">Lire en entier</button>`;
+}
+
 function logBody(l){
   // (v1.66) copie d'un mail (synchronisé ou importé) : en-tête puis texte INTÉGRAL du message, sans l'historique cité, sans limite ;
   // source introuvable ou réservée : texte actuel, signalé « Extrait » avec la raison
