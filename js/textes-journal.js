@@ -37,9 +37,15 @@ export const textState = id => STATE.get(id) || '';
  *  - mail importé : 1er paragraphe = en-tête (objet, De, À), puis l'ancien résumé du message.
  */
 export function manualNote(l, full){
-  // (v1.66.1) liens écrits « texte <https://…> », « <mailto:…> », « <tel:…> » dans l'ancien résumé (partie texte du mail), absents du
-  // texte intégral (lu dans la partie HTML) : retirés des deux côtés avant comparaison, sinon l'extrait réapparaît en « Note »
-  const norm = s => String(s || '').replace(/\s*<(?:https?:|mailto:|tel:)[^>\s]*>/gi, '').replace(/\u00a0/g, ' ').replace(/(?:…|\.\.\.)\s*$/, '').replace(/^\s*[-–]\s+/, '').replace(/(^|\n)\s*[-–]\s+/g, '$1').replace(/[*_`>•·]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  // (v1.66.1) l'ancien résumé vient de la partie TEXTE du mail, le texte intégral de la partie HTML : ce qui ne diffère que par la
+  // forme est ramené au même texte des deux côtés avant comparaison (sinon l'extrait réapparaît en « Note », relecture v1.66.1) :
+  // liens « <https://…> », « <mailto:…> », « <tel:…> », téléphones Gmail « <+33…> », images « [image: …] » et « [cid:…] »,
+  // guillemets et apostrophes typographiques ou droits, tirets, espaces autour de la ponctuation, puces, points de suspension
+  const norm = s => String(s || '')
+    .replace(/\s*<(?:https?:|mailto:|tel:)[^>\s]*>/gi, '').replace(/\s*<\+?\d[\d .()-]*>/g, '').replace(/\[(?:image|cid):[^\]]*\]/gi, '')
+    .replace(/[\u00a0\u202f\u2009]/g, ' ').replace(/[«»“”„"]/g, '"').replace(/[’‘`´]/g, "'").replace(/[–—‐]/g, '-')
+    .replace(/(?:…|\.\.\.)\s*$/, '').replace(/(^|\n)\s*[-•·*]\s+/g, '$1').replace(/[*_>•·]/g, ' ')
+    .replace(/\s*(["':;!?,.()\[\]])\s*/g, '$1').replace(/\s+/g, ' ').trim().toLowerCase();
   const F = norm(full);
   const body = String(l.body || '').replace(/\r/g, '');
   const synced = l.author === 'Messagerie';
@@ -47,16 +53,31 @@ export function manualNote(l, full){
   // (relecture v1.66, B6) l'extrait automatique est le DÉBUT du mail, dans l'ordre : on avance dans le texte intégral ligne après ligne ;
   // une ligne courte n'est automatique que si elle suit EXACTEMENT la précédente (jamais « OK », « lundi », « 12 » trouvés au hasard) ;
   // à la première ligne qui ne suit pas, tout le reste est la note (rien de ce qu'a écrit l'équipe n'est caché)
-  let off = 0, i = 0;
+  // (relecture v1.66.1, B7) une ligne qui n'est vide qu'APRÈS normalisation (« <https://…> » seul, « [image: …] ») n'est automatique
+  // que si une ligne reconnue la suit ; sinon elle appartient à la note (un lien noté à la main n'est jamais caché)
+  let off = 0, i = 0, pending = -1;
   for (; i < rest.length; i++){
     const n = norm(rest[i]);
-    if (!n) continue;
+    if (!n){ if (rest[i].trim() && pending < 0) pending = i; continue; }
     if (n === '(mail sans texte)'){ continue; }
     // extrait Gmail d'un mail synchronisé (une ligne, peut déborder sur l'historique cité) : son début est le début du mail
-    if (synced && off === 0 && n.length >= 30){ const k = F.indexOf(n.slice(0, 30)); if (k >= 0 && k < 40){ off = F.length; continue; } }
+    if (synced && off === 0 && n.length >= 30){ const k = F.indexOf(n.slice(0, 30)); if (k >= 0 && k < 40){ off = F.length; pending = -1; continue; } }
     const k = F.indexOf(n, off);
-    if (k >= 0 && !F.slice(off, k).trim() && (k === 0 || F[k - 1] === ' ') && (n.length >= 30 || k + n.length === F.length || F[k + n.length] === ' ')){ off = k + n.length; continue; }
+    const sep = c => c === undefined || /[ "'.,;:!?()\[\]-]/.test(c);
+    if (k >= 0 && !F.slice(off, k).trim() && (k === 0 || sep(F[k - 1]) || sep(n[0])) && (n.length >= 30 || sep(F[k + n.length]) || sep(n[n.length - 1]))){ off = k + n.length; pending = -1; continue; }
     break;
+  }
+  if (pending >= 0){
+    // ligne « <https://…> » seule, collée à l'extrait (pas de ligne vide avant) et dont l'adresse figure déjà dans l'extrait : c'est
+    // le lien d'une signature (partie texte du mail, cas du suivi pilote du 21/11/2026) ; tout autre lien seul reste dans la note
+    const auto = rest.slice(0, pending).join('\n');
+    let j = pending;
+    while (j < i && rest[j].trim() && !norm(rest[j]) && rest[j - 1]?.trim()){
+      const u = (rest[j].match(/<([^>\s]+)>/) || [])[1];
+      if (!u || !auto.includes(u)) break;
+      j++;
+    }
+    i = Math.min(i, j < i ? j : i);
   }
   return rest.slice(i).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
