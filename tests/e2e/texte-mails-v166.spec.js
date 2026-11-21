@@ -154,6 +154,9 @@ test('v1.66 mail importé existant (reprise) : texte intégral lu dans le .eml, 
     stored: { 'suivi/pr-1/re.eml': bin(EML(LONG)) } });
   const e = entree(page, 'RE: Proposition');
   await expect(e.locator('.mail-text')).toContainText('DERNIÈRE LIGNE DU MESSAGE');
+  // mail importé seul, texte intégral affiché : ni « Lire en entier » ni lien d'origine ; le .eml reste dans l'entrée (v1.66.1)
+  await expect(e.locator('[data-act=readLog]')).toHaveCount(0);
+  await expect(e.getByText('RE Proposition.eml')).toBeVisible();
   const texte = await e.locator('.mail-text').innerText();
   expect(texte.length).toBeGreaterThan(6000);
   expect(texte.endsWith('06 00 00 00 00')).toBe(true);
@@ -258,11 +261,18 @@ test('v1.66.1 mail importé réel : liens « <https://…> » de l’ancien rés
   await ouvrir(page, { logs: [LOG('lg-b', { body: 'Mail reçu de prog@example.com — « Re: Proposition »\nBonjour…' }),
       LOG('lg-c', { body: 'Mail reçu de prog@example.com — « Re: Devis »\nBonjour…', created_at: '2026-11-17T11:00:00Z' })],
     msgs: [{ id: 'mm-b', thread_id: 'mt-1', gmail_message_id: 'g02', prospect_log_id: 'lg-b', body_text: 'TEXTE COMPLET DU MESSAGE' },
-           { id: 'mm-c', thread_id: 'mt-1', gmail_message_id: 'g03', prospect_log_id: 'lg-c', body_text: null }], gmail: [] });
+           { id: 'mm-c', thread_id: 'mt-1', gmail_message_id: 'g03', prospect_log_id: 'lg-c', body_text: null }], gmail: [{ id: 'g02', html: GMAIL }] });
   await expect(entree(page, 'Re: Proposition').locator('.mail-text')).toContainText('TEXTE COMPLET DU MESSAGE');
-  await expect(entree(page, 'Re: Proposition').locator('[data-act=readLog]')).toHaveCount(0);
+  // texte intégral d'un mail synchronisé : seulement le lien discret « Ouvrir le mail d'origine » (décision d'Anthony du 21/11/2026)
+  await expect(entree(page, 'Re: Proposition').getByRole('button', { name: 'Lire en entier' })).toHaveCount(0);
+  const orig = entree(page, 'Re: Proposition').getByRole('button', { name: 'Ouvrir le mail d’origine' });
+  await expect(orig).toHaveCount(1); await expect(orig).toHaveClass(/ghost/);
+  // entrée marquée « Extrait » : « Lire en entier »
   await expect(entree(page, 'Re: Devis').locator('.log-extrait')).toBeVisible();
-  await expect(entree(page, 'Re: Devis').locator('[data-act=readLog]')).toHaveCount(1);
+  await expect(entree(page, 'Re: Devis').getByRole('button', { name: 'Lire en entier' })).toHaveCount(1);
+  // le lien ouvre le message exact dans la messagerie (même lecture à la source que v1.65)
+  await orig.click();
+  await expect(page.locator('.mail-msg.focus')).toHaveCount(1);
   void ctx;
 });
 
