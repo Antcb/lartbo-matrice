@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.66.1 — 21/11/2026
+- Journal : « Lire en entier » masqué quand le texte intégral est affiché ; l'extrait d'un mail importé ne réapparaît plus en « Note » (liens <…> ignorés)
+
+
 ## 1.66.0 — 20/11/2026
 - Journal des suivis : texte intégral de chaque mail dans son entrée, sans clic ni limite, sans l'historique cité (mails synchronisés, importés, envoyés depuis MATRICE) ; extrait signalé quand la source est introuvable ; reprise des entrées existantes
 

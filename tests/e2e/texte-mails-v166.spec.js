@@ -236,6 +236,28 @@ test('v1.66 note manuelle courte (relecture B6) : « OK », « lundi », « 12 �
   expectClean(ctx);
 });
 
+test('v1.66.1 mail importé réel : liens « <https://…> » de l’ancien résumé → aucune note fantôme ; « Lire en entier » masqué avec le texte intégral', async ({ page }) => {
+  const ctx = await openApp(page);
+  const r = await page.evaluate(async () => {
+    const { manualNote } = await import('./js/textes-journal.js');
+    // cas du suivi pilote (21/11/2026) : ancien résumé tiré de la partie texte (liens entre < >), texte intégral tiré du HTML
+    const full = 'Hello Colin,\n\nÇa me semble un peu court 7000€ HT. Je sais pas si tu as vu passer le projet : [Voir le live]\n\nDis-moi,\n\n Antho\n Anthony Combe\n +33 (0)6 02 25 69 78 | anthony@lartboristerie.com\n lartboristerie.com | Instagram\n SAS L’ArtBoristerie - 48Bis rue Pajol, 75018 Paris';
+    const body = 'Envoyé — **Re: Invitation**\n**De :** Anthony · **À :** Colin\n\nHello Colin,\nÇa me semble un peu court 7000€ HT. Je sais pas si tu as vu passer le projet : [Voir le live <https://www.example.com/pro/>]\nDis-moi,\nAntho\nAnthony Combe\n+33 (0)6 02 25 69 78 <tel:+33602256978> | anthony@lartboristerie.com <mailto:anthony@lartboristerie.com>\nlartboristerie.com <https://www.example.com/> | Instagram <https://www.instagram.com/x/>\nSAS L’ArtBoristerie - 48Bis rue Pajol, 75018 Paris\n<https://www.example.com/>';
+    return { sans: manualNote({ author: 'anthony@lartboristerie.com', body }, full), avec: manualNote({ author: 'anthony@lartboristerie.com', body: body + '\nNote de test v1.66' }, full) };
+  });
+  expect(r.sans).toBe(''); expect(r.avec).toBe('Note de test v1.66');
+  // bouton : absent sur une entrée dont le texte intégral est affiché, présent sur un extrait
+  await ouvrir(page, { logs: [LOG('lg-b', { body: 'Mail reçu de prog@example.com — « Re: Proposition »\nBonjour…' }),
+      LOG('lg-c', { body: 'Mail reçu de prog@example.com — « Re: Devis »\nBonjour…', created_at: '2026-11-17T11:00:00Z' })],
+    msgs: [{ id: 'mm-b', thread_id: 'mt-1', gmail_message_id: 'g02', prospect_log_id: 'lg-b', body_text: 'TEXTE COMPLET DU MESSAGE' },
+           { id: 'mm-c', thread_id: 'mt-1', gmail_message_id: 'g03', prospect_log_id: 'lg-c', body_text: null }], gmail: [] });
+  await expect(entree(page, 'Re: Proposition').locator('.mail-text')).toContainText('TEXTE COMPLET DU MESSAGE');
+  await expect(entree(page, 'Re: Proposition').locator('[data-act=readLog]')).toHaveCount(0);
+  await expect(entree(page, 'Re: Devis').locator('.log-extrait')).toBeVisible();
+  await expect(entree(page, 'Re: Devis').locator('[data-act=readLog]')).toHaveCount(1);
+  void ctx;
+});
+
 test('v1.66 iPhone (390 px) : mail long lisible jusqu’à la dernière ligne, sans défilement horizontal', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const ctx = await openApp(page);

@@ -37,7 +37,9 @@ export const textState = id => STATE.get(id) || '';
  *  - mail importé : 1er paragraphe = en-tête (objet, De, À), puis l'ancien résumé du message.
  */
 export function manualNote(l, full){
-  const norm = s => String(s || '').replace(/\u00a0/g, ' ').replace(/(?:…|\.\.\.)\s*$/, '').replace(/^\s*[-–]\s+/, '').replace(/(^|\n)\s*[-–]\s+/g, '$1').replace(/[*_`>•·]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  // (v1.66.1) liens écrits « texte <https://…> », « <mailto:…> », « <tel:…> » dans l'ancien résumé (partie texte du mail), absents du
+  // texte intégral (lu dans la partie HTML) : retirés des deux côtés avant comparaison, sinon l'extrait réapparaît en « Note »
+  const norm = s => String(s || '').replace(/\s*<(?:https?:|mailto:|tel:)[^>\s]*>/gi, '').replace(/\u00a0/g, ' ').replace(/(?:…|\.\.\.)\s*$/, '').replace(/^\s*[-–]\s+/, '').replace(/(^|\n)\s*[-–]\s+/g, '$1').replace(/[*_`>•·]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
   const F = norm(full);
   const body = String(l.body || '').replace(/\r/g, '');
   const synced = l.author === 'Messagerie';
