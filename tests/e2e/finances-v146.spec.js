@@ -76,7 +76,8 @@ test('v1.46a onglet Factures : case « Relances suspendues » sur une facture en
     { id: 'f4-a', show_id: 'f-4', kind: 'acompte', label: 'Acompte', pct: 30, invoice_number: 'F-20', sent_at: iso(-20), sort: 1 },
     { id: 'f4-s', show_id: 'f-4', kind: 'solde', label: 'Solde', pct: 70, sort: 2 },
   ] });
-  await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.openProd.add('f-4'); S.tab['prod:f-4'] = 'factures'; (await import('./js/app.js')).go('production'); });
+  // année affichée = celle de la date (à 40 jours : l'année suivante dès le 22 novembre) ; même méthode que coproduction.spec.js
+  await page.evaluate(async () => { const { S } = await import('./js/state.js'); S.year = Number(S.db.shows.find(x => x.id === 'f-4').date.slice(0, 4)); S.openProd.add('f-4'); S.tab['prod:f-4'] = 'factures'; (await import('./js/app.js')).go('production'); });
   const box = page.locator('input[type=checkbox][data-id="f4-a"][data-f="reminders_paused"]');
   await expect(box).toBeVisible();
   await expect(page.locator('input[data-id="f4-s"][data-f="reminders_paused"]'), 'solde pas envoyé : pas de case').toHaveCount(0);
