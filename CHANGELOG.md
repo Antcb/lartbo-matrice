@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.66.2 — 22/11/2026
+- Pièces jointes d'un suivi : une conversation entière glissée depuis Apple Mail est acceptée au survol et un message dit de glisser l'un de ses mails
+
+
 ## 1.66.1 — 21/11/2026
 - Journal : « Lire en entier » masqué quand le texte intégral est affiché ; l'extrait d'un mail importé ne réapparaît plus en « Note » (liens <…> ignorés)
 

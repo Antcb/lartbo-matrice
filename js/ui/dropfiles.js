@@ -17,6 +17,14 @@ const ATTACH = '[data-drop],[data-drop-form]';
 /** Glisser qui peut contenir un fichier : « Files » annoncé, ou, dans une zone de pièces jointes, autre chose que du simple texte */
 export const fileDrag = e => e.dataTransfer?.types?.includes('Files') || !!e.target?.closest?.(`${MAILBOX},${ATTACH}`) && [...(e.dataTransfer?.types || [])].some(t => !/^text\/(plain|html)$/.test(t));
 const hasFiles = fileDrag;
+/** (v1.66.2) Glisser venu d'ailleurs qui n'annonce QUE du texte (ni fichier ni lien) au-dessus d'une zone de pièces jointes : c'est ce
+ *  qu'envoie Apple Mail quand on glisse la LIGNE d'une conversation entière (demande d'Anthony du 22/11/2026, suivi Alti'Fest). Accepté
+ *  pour pouvoir expliquer quoi faire au dépôt, au lieu d'un refus silencieux du navigateur ; jamais pour un glisser commencé dans la
+ *  page ni au-dessus d'un champ de saisie (le texte s'y dépose normalement) */
+export const textOnlyDrag = e => !innerDrag && !!e.target?.closest?.(ATTACH) && (!e.target.closest(EDITABLE) || !!e.target.matches?.('input[type=file]'))
+  && [...(e.dataTransfer?.types || [])].every(t => /^text\/(plain|html)$/.test(t));
+/** Rien de joignable dans un glisser de texte seul : le cas d'une conversation entière glissée depuis Apple Mail */
+export const CONVERSATION_DROP = 'Rien n’a été joint : ce glisser ne contient ni fichier ni mail. Depuis Apple Mail, ouvre la conversation et glisse l’un de ses mails (la ligne d’une conversation entière n’envoie pas le mail).';
 /** Fichiers lâchés : la liste « files », sinon les éléments de type fichier (certains glisser depuis Mail ne remplissent que ceux-ci) */
 export const droppedFiles = e => { const f = [...(e.dataTransfer?.files || [])]; if (f.length) return f;
   return [...(e.dataTransfer?.items || [])].filter(i => i.kind === 'file').map(i => i.getAsFile()).filter(Boolean); };
@@ -76,7 +84,8 @@ export function takeDropped(e, {mailLinks = false} = {}){
     noteDrop(info, 'aucun fichier');
     // (v1.60.4) zone qui sait retrouver le message dans les boîtes Google (pièces jointes d'un suivi) : identifiants rendus, sans message ici
     if (mailLinks && ids.length) return Promise.resolve({files: [], unreadable: [], msgIds: ids});
-    import('../utils.js').then(u => u.toast(info.liens.includes('message') ? ONLY_MAIL_LINK : NOTHING_DROPPED, true));
+    const textOnly = info.types.every(t => /^text\/(plain|html)$/.test(t));   // (v1.66.2) conversation entière glissée depuis Apple Mail
+    import('../utils.js').then(u => u.toast(info.liens.includes('message') ? ONLY_MAIL_LINK : textOnly ? CONVERSATION_DROP : NOTHING_DROPPED, true));
     return Promise.resolve({files: [], unreadable: [], msgIds: []});
   }
   return keepDropped(raw).then(async r => {

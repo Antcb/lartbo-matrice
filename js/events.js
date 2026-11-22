@@ -12,7 +12,7 @@ import { S, localSet, setProjects, touch } from './state.js';
 import { MAIL_MSG, fieldError, mailOk, parseCSV, toast, today } from './utils.js';
 import { setLogDraft } from './views/suivi.js';
 import { clearDraft } from './ui/drafts.js';
-import { fileDrag, takeDropped } from './ui/dropfiles.js';
+import { fileDrag, takeDropped, textOnlyDrag } from './ui/dropfiles.js';
 
 // + Projet sur un suivi / une tâche
 document.addEventListener('change', async e => {
@@ -85,7 +85,7 @@ const zoneOf = e => e.target.closest?.('[data-drop],[data-drop-form]');
 // (v1.60.2) même lecture que la fenêtre des mails : glisser depuis Mail (Mac) accepté même sans « Files » annoncé,
 // fichiers lus aussi dans les éléments du dépôt, et un message quand rien n'est exploitable au lieu de ne rien faire
 ['dragenter','dragover'].forEach(ev => document.addEventListener(ev, e => {
-  const z = zoneOf(e); if (!z || !fileDrag(e)) return;
+  const z = zoneOf(e); if (!z || !(fileDrag(e) || textOnlyDrag(e))) return;   // (v1.66.2) texte seul : accepté pour dire quoi faire au dépôt
   e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; z.classList.add('over');
 }));
 document.addEventListener('dragleave', e => { const z = zoneOf(e); if (z && !z.contains(e.relatedTarget)) z.classList.remove('over'); });
