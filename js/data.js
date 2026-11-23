@@ -396,21 +396,43 @@ export async function legacyUnverifiedOk(why, name){
  * même entrée d'avant la v1.60.4), pièces extraites (msgid:<id>:pj:<n>). {other: suivi qui en porte déjà une partie | null,
  * original, log : à ajouter (booléens), pj : numéros des pièces à ajouter}. Un import partiel se COMPLÈTE au dépôt suivant.
  */
-export async function mailParts(pid, key, m){
+export async function mailParts(pid, key, m, gmailId = null){
   const orig = await keyOwner('prospect_files', key), log = await keyOwner('prospect_logs', key);
   const pjOwners = [];
   for (let i = 1; i <= m.attachments.length; i++) pjOwners.push(await keyOwner('prospect_files', `${key}:pj:${i}`));
-  let other = [orig, log, ...pjOwners].find(x => x && x !== pid) || null;
-  const inLog = !!emlEntry(pid, m)?.exists;
+  // (v1.66.4, n°15) entrée déjà au journal avec le même identifiant Gmail (prospection ou relance envoyée depuis la Matrice : identifiant
+  // Gmail, mais aucune clé « msgid:… ») : c'est CE mail — l'entrée est réutilisée (reuse), jamais recréée ; seul le .eml manquant est joint
+  const same = !log && gmailId ? await gmailLog(gmailId) : null;
+  let other = [orig, log, same?.prospect_id, ...pjOwners].find(x => x && x !== pid) || null;
+  const reuse = same?.prospect_id === pid ? same : null;
+  const inLog = !!reuse || !!emlEntry(pid, m)?.exists;
   // joint avant la v1.60.4 (aucune clé) : reconnu par la même entrée au journal de ce suivi, ou par le Message-ID du .eml déjà
   // stocké (dans ce suivi ou un autre, lecture seule) — refusé comme doublon, rien n'est rajouté ni modifié
-  let legacy = false, unverified = '';
+  let legacy = false, unverified = '', fileThere = !!orig;
   if (!orig && !log && !pjOwners.some(Boolean)){
-    const r = inLog ? {owner: pid, incomplete: ''} : await legacyMailOwner(key.replace(/^msgid:/, ''));
-    if (r.owner && r.owner !== pid) other = r.owner; else if (r.owner) legacy = true;
+    const r = inLog && !reuse ? {owner: pid, incomplete: ''} : await legacyMailOwner(key.replace(/^msgid:/, ''));
+    if (r.owner && r.owner !== pid) other = r.owner;
+    else if (r.owner && reuse) fileThere = true;   // entrée réutilisée et .eml déjà joint (avant la v1.60.4) : rien à ajouter
+    else if (r.owner) legacy = true;
     unverified = r.owner ? '' : r.incomplete;
   }
-  return {other, legacy, unverified, original: !orig, log: !log && !inLog, pj: pjOwners.map((o, i) => o ? 0 : i + 1).filter(Boolean)};
+  return {other, legacy, unverified, reuse: reuse ? {id: reuse.id, keyed: !!reuse.import_key} : null,
+    original: !fileThere, log: !log && !inLog, pj: pjOwners.map((o, i) => o ? 0 : i + 1).filter(Boolean)};
+}
+/** Entrée du journal qui porte cet identifiant Gmail (S.db puis la base, la plus ancienne), ou null (v1.66.4) */
+async function gmailLog(gmailId){
+  const local = S.db.prospect_logs.filter(l => l.gmail_message_id === gmailId).sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))[0];
+  if (local) return local;
+  const {data} = await sb.from('prospect_logs').select('id, prospect_id, import_key, created_at').eq('gmail_message_id', gmailId).order('created_at').limit(1);
+  return data?.[0] || null;
+}
+/** Clé « msgid:… » posée sur l'entrée réutilisée si elle n'en a pas (jamais d'écrasement) : '' ou le motif d'échec (v1.66.4) */
+async function keyReused(id, key){
+  const {data, error} = await sb.from('prospect_logs').update({import_key: key}).eq('id', id).is('import_key', null).select('id, import_key');
+  if (error) return error.code === '23505' ? DUP_NOW : `clé non enregistrée sur l’entrée du journal : ${dbErrorText(error)}`;
+  const row = byId('prospect_logs', id);
+  if (row && data?.length){ row.import_key = key; touch('prospect_logs'); }
+  return '';
 }
 export const mailPartsMissing = st => st.original || st.log || st.pj.length > 0;
 
@@ -512,7 +534,7 @@ export async function uploadDetail(owner, files, {quiet = false} = {}){
     const key = givenKey || (mail && eml.msgIdOk(mail.messageId) ? 'msgid:' + mail.messageId : null);
     let plan = {original: true, log: true, pj: (mail?.attachments || []).map((_, i) => i + 1)};
     if (key && mail){
-      plan = await mailParts(pid, key, mail);
+      plan = await mailParts(pid, key, mail, gmailId);
       if (plan.other){ failed.push([file.name, otherText(plan.other)]); elsewhere = elsewhere || plan.other; continue; }
       if (plan.legacy){ failed.push([file.name, 'déjà au journal de ce suivi (joint avant la v1.60.4) : rien n’a été ajouté']); continue; }
       // anciens .eml pas tous vérifiables : jamais de rattachement sans avertissement explicite
@@ -526,6 +548,8 @@ export async function uploadDetail(owner, files, {quiet = false} = {}){
     } else done.push(`${file.name} : déjà joint, complété`);
     if (!mail) continue;
     if (plan.log){ const why = await mailToJournal(pid, mail, key, gmailId, quiet); if (why) failed.push([`${file.name} (entrée du journal)`, why]); }
+    // (v1.66.4) entrée existante réutilisée : elle reçoit la clé du mail (reconnue ensuite par tous les imports), sans autre changement
+    if (plan.reuse && !plan.reuse.keyed){ const why = await keyReused(plan.reuse.id, key); if (why) failed.push([`${file.name} (entrée du journal)`, why]); }
     for (const i of plan.pj){
       const a = mail.attachments[i - 1], f = new File([a.bytes], a.name, {type: a.type});
       const [aok, awhy] = await storeOne(table, folder, base, f, key ? {import_key: `${key}:pj:${i}`} : {});
