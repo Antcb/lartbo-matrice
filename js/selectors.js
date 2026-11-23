@@ -340,8 +340,11 @@ export const projUsage = () => cached('proj.usage', ['shows', 'tasks', 'prospect
  *  - journal des suivis, tous types d'entrées : à leur date réelle (logRealAt, sinon le jour de l'entrée : un ancien mail importé
  *    garde sa date), un point au plus par suivi et par jour, pour chaque artiste du suivi.
  */
-export const projActivity = () => cached('proj.activity.' + today(), ['shows', 'tasks', 'prospects', 'prospect_logs'], () => {
-  const from = addDays(today(), -29), to = today(), inside = d => !!d && d >= from && d <= to;
+// jour courant mémorisé une minute : le tri compare souvent (relecture v1.66.3 : today() coûte ~60 µs par appel)
+let DAY = {t: 0, v: ''};
+const dayNow = () => { const t = Date.now(); if (t - DAY.t > 60000){ DAY = {t, v: today()}; } return DAY.v; };
+export const projActivity = () => cached('proj.activity.' + dayNow(), ['shows', 'tasks', 'prospects', 'prospect_logs'], () => {
+  const to = dayNow(), from = addDays(to, -29), inside = d => !!d && d >= from && d <= to;
   const m = new Map(), add = ids => { for (const id of ids) m.set(id, (m.get(id) || 0) + 1); };
   for (const r of S.db.shows || []) if (inside(dayOf(r.created_at))) add(projIds(r));
   for (const r of S.db.tasks || []) if (!r.auto_kind && inside(dayOf(r.created_at))) add(projIds(r));
