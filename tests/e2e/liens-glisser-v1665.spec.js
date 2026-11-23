@@ -137,6 +137,10 @@ test('v1.66.5 « Retrouver un mail » depuis le suivi ; Annuler ne fait rien ; t
   await dlg.getByRole('button', { name: 'Annuler' }).click();
   await expect(dlg).toHaveCount(0);
   expect(await page.evaluate(() => window.__google.length)).toBe(0);
+  // lien web glissé (ni mail ni objet) : « Rien à joindre », aucune fenêtre
+  await textDrop(page, 'https://exemple-fictif.fr/page', ['text/uri-list']);
+  await expect(page.locator('.toast').last()).toContainText('Rien à joindre');
+  expect(await page.locator('dialog.ask').count()).toBe(0);
   // lien « message: » glissé : toujours importé directement, sans fenêtre
   await drop(page, 1);
   await expect.poll(() => page.evaluate(() => window.__google.length)).toBeGreaterThan(0);

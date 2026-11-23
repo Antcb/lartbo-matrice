@@ -88,10 +88,10 @@ export function takeDropped(e, {mailLinks = false} = {}){
     // (v1.66.5, suivi Lit et Mixe) pièces jointes d'un suivi, glisser de TEXTE seulement (aucun fichier annoncé, aucun lien « message: ») :
     // ce que Safari transmet parfois depuis la liste d'Apple Mail (l'objet du mail). Le texte (1re ligne, lu ici, jamais noté ni envoyé)
     // sert à proposer de retrouver le mail dans la messagerie (prospection.js findMail) — jamais de rattachement sur l'objet seul
-    if (mailLinks && !info.types.includes('Files') && !info.liens.includes('message')){
-      let hint = ''; try { hint = (e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text/uri-list') || '').slice(0, 2000); } catch {}
+    // (un vrai lien web ou de fichier, ou un glisser vide, garde le message « Rien à joindre »)
+    let hint = ''; try { hint = (e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text/uri-list') || '').slice(0, 2000); } catch {}
+    if (mailLinks && !info.types.includes('Files') && !info.liens.includes('message') && hint.trim() && !/^\s*(?:https?|file|ftp):/i.test(hint))
       return Promise.resolve({files: [], unreadable: [], msgIds: [], noRef: true, hint});
-    }
     import('../utils.js').then(u => u.toast(info.liens.includes('message') ? ONLY_MAIL_LINK : textOnly ? CONVERSATION_DROP : NOTHING_DROPPED, true));
     return Promise.resolve({files: [], unreadable: [], msgIds: []});
   }
