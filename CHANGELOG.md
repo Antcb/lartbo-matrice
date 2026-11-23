@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.66.3 — 23/11/2026
+- Choix d'artistes et de projets : classés par activité des 30 derniers jours (dates, tâches à la main, suivis, journal), puis historique, puis nom
+
+
 ## 1.66.2 — 22/11/2026
 - Pièces jointes d'un suivi : une conversation entière glissée depuis Apple Mail est acceptée au survol et un message dit de glisser l'un de ses mails
 
