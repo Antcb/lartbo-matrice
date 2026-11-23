@@ -36,6 +36,11 @@ test('v1.66.3 activité des 30 derniers jours d’abord, puis historique, puis n
   // 10 relances GÉNÉRÉES pour Alpha (auto_kind) : ne comptent pas
   await seed(page, { tasks: Array.from({ length: 10 }, (_, i) => ({ id: 'ra' + i, title: 'Relance', status: 'To Do', project_ids: ['art-a'], tags: [], created_at: ago(1), auto_kind: 'relance_mail' })) });
   expect((await act(page))['art-a']).toBeUndefined();
+  // « Programmer une relance » (messagerie) : créée à la main → compte ; suivi importé (notion_id) : ne compte pas
+  await seed(page, { tasks: [{ id: 'pr1', title: 'Relance — X', status: 'To Do', project_ids: ['art-a'], tags: [], created_at: ago(1), auto_kind: 'relance_mail',
+      notes: 'Relance de la conversation « Proposition » (messagerie). Suspendue automatiquement si une réponse arrive avant.' }],
+    prospects: [{ id: 'imp', name: 'Suivi', project_ids: ['art-a'], status: 'Mailed', created_at: ago(1), notion_id: 'n-1' }] });
+  expect((await act(page))['art-a']).toBe(1);
   // 4 tâches à la main pour Alpha cette semaine : Alpha (4) passe devant Bêta (3)
   await seed(page, { tasks: Array.from({ length: 4 }, (_, i) => ({ id: 'ma' + i, title: 'Main', status: 'To Do', project_ids: ['art-a'], tags: [], created_at: ago(2) })) });
   expect(await order(page)).toEqual(['art-a', 'art-b', 'art-g', 'art-z']);

@@ -436,6 +436,7 @@ async function scheduleRelance(row){
   const [d, mo, y] = v.split('/'), deadline = workDay(`${y}-${mo}-${d}`);
   await insert('tasks', {title: `Relance — ${st?.name || prospectTitle(p)}`, department: 'Booking', status: 'To Do', assigned_to: S.user.email, deadline,
     structure_id: p.structure_id, prospect_id: p.id, project_ids: projIds(p), project_id: projIds(p)[0] || null, auto_kind: 'relance_mail',
+    // début de note = marqueur « programmée à la main » (compté dans l'activité des artistes, js/selectors.js HAND_RELANCE, v1.66.3)
     notes: `Relance de la conversation « ${row.subject || ''} » (messagerie). Suspendue automatiquement si une réponse arrive avant.`});
   toast('Relance programmée le ' + fmtDate(deadline)); render();
 }

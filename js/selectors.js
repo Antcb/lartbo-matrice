@@ -335,11 +335,16 @@ export const projUsage = () => cached('proj.usage', ['shows', 'tasks', 'prospect
 });
 /**
  * Activité récente de chaque artiste (v1.66.3, règle d'Anthony du 23/11/2026) : 30 derniers jours glissants (aujourd'hui compris),
- *  - dates, tâches créées À LA MAIN (pas les relances générées : auto_kind) et suivis CRÉÉS dans la période (created_at : une
- *    modification groupée ne compte pas) ;
+ *  - dates, tâches créées À LA MAIN et suivis CRÉÉS dans la période (created_at : une modification groupée ne compte pas) ;
+ *    tâches : les relances générées après un envoi (auto_kind) sont exclues, mais « Programmer une relance » (messagerie) compte
+ *    (décision d'Anthony du 23/11/2026 ; reconnue à sa note d'origine, js/mailbox.js scheduleRelance) ;
+ *    suivis : ceux importés en lot sont exclus (marqueur d'import : notion_id, seule importation en lot existante) ;
  *  - journal des suivis, tous types d'entrées : à leur date réelle (logRealAt, sinon le jour de l'entrée : un ancien mail importé
  *    garde sa date), un point au plus par suivi et par jour, pour chaque artiste du suivi.
  */
+/** Tâche créée à la main : pas une relance générée après un envoi ; « Programmer une relance » de la messagerie en est une (v1.66.3) */
+export const HAND_RELANCE = /^Relance de la conversation «/;
+const handTask = t => !t.auto_kind || HAND_RELANCE.test(t.notes || '');
 // jour courant mémorisé une minute : le tri compare souvent (relecture v1.66.3 : today() coûte ~60 µs par appel)
 let DAY = {t: 0, v: ''};
 const dayNow = () => { const t = Date.now(); if (t - DAY.t > 60000){ DAY = {t, v: today()}; } return DAY.v; };
@@ -347,8 +352,8 @@ export const projActivity = () => cached('proj.activity.' + dayNow(), ['shows', 
   const to = dayNow(), from = addDays(to, -29), inside = d => !!d && d >= from && d <= to;
   const m = new Map(), add = ids => { for (const id of ids) m.set(id, (m.get(id) || 0) + 1); };
   for (const r of S.db.shows || []) if (inside(dayOf(r.created_at))) add(projIds(r));
-  for (const r of S.db.tasks || []) if (!r.auto_kind && inside(dayOf(r.created_at))) add(projIds(r));
-  for (const r of S.db.prospects || []) if (inside(dayOf(r.created_at))) add(projIds(r));
+  for (const r of S.db.tasks || []) if (handTask(r) && inside(dayOf(r.created_at))) add(projIds(r));
+  for (const r of S.db.prospects || []) if (!r.notion_id && inside(dayOf(r.created_at))) add(projIds(r));
   const seen = new Set();
   for (const l of S.db.prospect_logs || []){
     const d = dayOf(logRealAt(l) || l.date); if (!inside(d) || !l.prospect_id) continue;
