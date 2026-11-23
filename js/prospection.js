@@ -679,9 +679,14 @@ export async function findMail(pid, hint = '', why = ''){
       sub: `${fmtDate(m.sent_at)} · ${m.direction === 'out' ? 'À ' + (m.to_addrs || []).join(', ') : 'De ' + (m.from_name ? `${m.from_name} <${m.from_addr}>` : m.from_addr || '')}`,
       note: !m.prospect_log_id ? '' : mine.has(m.prospect_log_id) ? 'déjà dans ce suivi' : 'dans un autre suivi'}));
   };
+  // compte qui n'est pas titulaire de la boîte : la recherche ne trouverait rien (RLS) — on le dit au lieu d'un « aucun mail » trompeur
+  const {checkOwner, M} = await import('./mailbox.js');
+  await checkOwner().catch(() => {});
+  const empty = M.owner ? 'Aucun mail de la messagerie avec cet objet (« Actualiser » dans Mails si le mail est récent).'
+    : 'La messagerie est réservée au compte d’Anthony (boîte anthony@) : depuis ce compte, glisse le mail lui-même ou son fichier .eml.';
   const id = await pickOne({title: 'Retrouver un mail dans la messagerie',
     text: (why ? why + '\n' : '') + 'Cherche le mail par son objet et choisis-le : sa conversation est jointe à ce suivi (.eml et journal) ; les mails déjà présents ne sont pas recréés.',
-    label: 'Objet du mail', value: subjectQuery(hint), search, ok: 'Joindre ce mail', empty: 'Aucun mail de la messagerie avec cet objet (« Actualiser » dans Mails si le mail est récent).'});
+    label: 'Objet du mail', value: subjectQuery(hint), search, ok: 'Joindre ce mail', empty});
   if (id) await attachMailLinks(pid, [id]);
 }
 

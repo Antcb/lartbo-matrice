@@ -142,11 +142,11 @@
       const T = (window.__DB.mail_textes ||= []); if (T.some(t => t.message_id === p_id)) return false;
       T.push({ message_id: p_id, body_text: p_text }); return true; },
     // v1.66.5 : liens des textes déjà enregistrés — remplacés seulement si le nouveau texte, sans ses adresses de liens, est l'ancien
-    mail_texte_liens: ({ p_log, p_old, p_new }) => { const sans = String(p_new).replace(/\[([^\[\]\n]+)\]\(((?:https?:\/\/|mailto:|tel:)[^()\s<>]+)\)/gi, '$1');
+    mail_texte_liens: ({ p_log, p_old, p_new }) => { const sans = String(p_new).replace(/\[([^\[\]\n]+)\]\(((?:https?:\/\/|mailto:|tel:)[^() \t\n\r\f\v<>]+)\)/gi, '$1');
       if (p_new === p_old) return false; if (sans !== p_old) throw Object.assign(new Error('texte différent'), { code: '22023' });
       const l = window.__DB.prospect_logs.find(x => x.id === p_log && x.mail_text === p_old); if (!l) return false; l.mail_text = p_new; return true; },
     mail_texte_liens_prive: ({ p_id, p_old, p_new }) => { if (!(window.__MAILBOX_OWNER ?? true)) throw Object.assign(new Error('réservé au titulaire'), { code: '42501' });
-      const sans = String(p_new).replace(/\[([^\[\]\n]+)\]\(((?:https?:\/\/|mailto:|tel:)[^()\s<>]+)\)/gi, '$1');
+      const sans = String(p_new).replace(/\[([^\[\]\n]+)\]\(((?:https?:\/\/|mailto:|tel:)[^() \t\n\r\f\v<>]+)\)/gi, '$1');
       if (p_new === p_old) return false; if (sans !== p_old) throw Object.assign(new Error('texte différent'), { code: '22023' });
       const t = (window.__DB.mail_textes || []).find(x => x.message_id === p_id && x.body_text === p_old); if (!t) return false; t.body_text = p_new; return true; },
     // messagerie : boîte anthony@ réservée à son propriétaire (window.__MAILBOX_OWNER = false : autre membre de l'équipe)

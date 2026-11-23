@@ -441,7 +441,7 @@ dialog.ask .modal-foot{flex-wrap:wrap}
 dialog.ask textarea.ask-copy{width:100%;font-family:inherit}
 /* (v1.66.5) recherche puis choix d'une ligne (ui/dialog.js pickOne) : liste défilante, une ligne par résultat, toute la ligne cliquable */
 dialog.ask .pick-list{max-height:min(50vh,420px);overflow:auto;display:flex;flex-direction:column;gap:var(--sp-1);margin-top:var(--sp-1)}
-dialog.ask .pick-row{display:flex;align-items:flex-start;gap:var(--sp-1);padding:var(--sp-1);border:1px solid var(--line-2);border-radius:8px;cursor:pointer;overflow-wrap:anywhere}
+dialog.ask .pick-row{display:flex;align-items:flex-start;gap:var(--sp-1);padding:var(--sp-1);border:1px solid var(--line-2);border-radius:var(--r);cursor:pointer;overflow-wrap:anywhere}
 dialog.ask .pick-row:has(input:checked){border-color:var(--brand);background:var(--brand-tint)}
 dialog.ask .pick-row input{margin-top:3px;flex:none}
 /* message d'erreur sous un champ (§9.1, Q23) : texte et bordure en --danger */
