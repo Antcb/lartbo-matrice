@@ -46,7 +46,8 @@ const sameAddress = (label, href) => { const a = s => decodeSafe(String(s).trim(
   return a(label) === a(href); };
 const decodeSafe = s => { try { return decodeURI(s); } catch { return s; } };
 /** Marqueur de lien d'un texte de mail (v1.66.5) : « [mots](adresse) » ; label = 1, adresse = 2 */
-export const LINK_MARK = /\[([^\[\]\n]+)\]\(((?:https?:\/\/|mailto:|tel:)[^()\s<>]+)\)/gi;
+// espaces : exactement celles de [:space:] dans la base (mail_texte_sans_liens), jamais les espaces Unicode (relecture v1.66.5)
+export const LINK_MARK = /\[([^\[\]\n]+)\]\(((?:https?:\/\/|mailto:|tel:)[^() \t\n\r\f\v<>]+)\)/gi;
 /** Texte sans les adresses des liens : exactement le texte extrait avant la v1.66.5 (contrôle de la mise à jour des textes existants) */
 export const unlinked = t => String(t || '').replace(LINK_MARK, '$1');
 

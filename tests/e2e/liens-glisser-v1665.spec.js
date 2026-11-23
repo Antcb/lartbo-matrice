@@ -262,3 +262,14 @@ test('v1.66.5 textes déjà enregistrés : essai à blanc sans écriture, puis m
   expect(refus).toBe('22023');
   expectClean(ctx);
 });
+
+test('v1.66.5 compte non titulaire : la fenêtre dit que la messagerie est réservée (pas un « aucun mail » trompeur)', async ({ page }) => {
+  const ctx = await openSuivi(page, { prospect: { threads: {} }, main: { threads: {} } });
+  await page.evaluate(async () => { const { M, checkOwner } = await import('./js/mailbox.js'); await checkOwner(); M.owner = false; });   // compte de l'équipe, pas titulaire
+  await page.locator('.log-attach [data-act="findMail"]').click();
+  const dlg = page.locator('dialog.ask', { hasText: 'Retrouver un mail dans la messagerie' });
+  await dlg.locator('#ask-input').fill('devis');
+  await expect(dlg.locator('.pick-list')).toContainText('La messagerie est réservée au compte d’Anthony');
+  await dlg.getByRole('button', { name: 'Annuler' }).click();
+  expectClean(ctx);
+});
