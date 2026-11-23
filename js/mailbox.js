@@ -297,7 +297,7 @@ export async function compose(mode, row = null, msg = null){
   const sig = setting('prospect_signature') || '';
   const subjectDefault = !base ? '' : mode === 'forward' ? (/^(tr|fwd?)\s*:/i.test(base.subject) ? base.subject : 'Tr : ' + base.subject) : (/^re\s*:/i.test(base.subject) ? base.subject : 'Re: ' + base.subject);
   const tpls = S.db.mail_templates.slice().sort((a, b) => (a.kind || '').localeCompare(b.kind || '') || (a.name || '').localeCompare(b.name || ''));
-  // (v1.65) même ordre que tous les choix d'artiste : actifs d'abord, les plus utilisés en premier (projUsage), puis par nom
+  // même ordre que tous les choix d'artiste (v1.66.3) : activité des 30 derniers jours, score historique, puis par nom
   const projs = projectOptions(true, ctx.project_id ? [ctx.project_id] : []);
   const title = {reply: 'Répondre', reply_all: 'Répondre à tous', forward: 'Transférer', new: 'Nouveau mail'}[mode];
   const extra = `<div class="mail-wrap">

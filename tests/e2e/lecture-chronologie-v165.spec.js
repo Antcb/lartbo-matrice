@@ -274,7 +274,7 @@ test('v1.65 champ « Artiste » de Nouveau mail et Répondre : les plus utilisé
   await ouvrir(page, { gmail: [GMSG('g02', '<p>x</p>')] });
   // Artiste Bêta devient le plus utilisé (ordre différent de l'ordre alphabétique et de l'ordre de la base)
   await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
-    for (let i = 0; i < 8; i++) S.db.tasks.push({ id: 'tb-' + i, title: 'Tâche Bêta ' + i, status: 'To Do', project_id: 'art-b', tags: [] });
+    for (let i = 0; i < 8; i++) S.db.tasks.push({ id: 'tb-' + i, title: 'Tâche Bêta ' + i, status: 'To Do', project_id: 'art-b', tags: [], created_at: new Date().toISOString() });   // (v1.66.3) activité récente
     touch('tasks'); const app = await import('./js/app.js'); app.go('mails'); app.render(); });
   const options = () => page.locator('#mc-proj option').evaluateAll(o => o.map(x => x.value));
   await page.locator('[data-act=mailCompose][data-mode=new]').click();

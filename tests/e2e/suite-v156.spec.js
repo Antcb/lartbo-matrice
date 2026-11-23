@@ -139,7 +139,7 @@ test('v1.56 textes saisis jamais perdus : objet de prospection retouché gardé 
 test('v1.56 projets les plus utilisés en premier : filtre, champ « Artiste », menu « + Artistes », cases à cocher, prospection', async ({ page }) => {
   const ctx = await openApp(page);
   // Artiste Bêta : beaucoup plus de tâches que Artiste Alpha → doit passer devant partout
-  await seed(page, { tasks: Array.from({ length: 30 }, (_, i) => ({ id: 'tu-' + i, title: 'T' + i, status: 'To Do', project_id: 'art-b', project_ids: ['art-b'], tags: [] })) });
+  await seed(page, { tasks: Array.from({ length: 30 }, (_, i) => ({ id: 'tu-' + i, title: 'T' + i, status: 'To Do', project_id: 'art-b', project_ids: ['art-b'], tags: [], created_at: new Date().toISOString() })) });   // (v1.66.3) créées aujourd'hui : activité récente
   const usage = await page.evaluate(async () => Object.fromEntries((await import('./js/selectors.js')).projUsage()));
   expect(usage['art-b']).toBeGreaterThan(usage['art-a'] || 0);
   const first = ['Artiste Bêta', 'Artiste Alpha'];

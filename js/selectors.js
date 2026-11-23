@@ -7,7 +7,7 @@ import { DEFAULT_DEPARTMENTS, PRIORITY_LABEL, TEAM_NAMES, isOff } from './consta
 import { lingering } from './data.js';
 import { ENV } from './config.js';
 import { S } from './state.js';
-import { dayOf, daysUntil, fmtDate, norm } from './utils.js';
+import { addDays, dayOf, daysUntil, fmtDate, norm, today } from './utils.js';
 
 const CACHE = {};
 /** Index mis en cache tant que les tables listées n'ont pas changé */
@@ -333,13 +333,36 @@ export const projUsage = () => cached('proj.usage', ['shows', 'tasks', 'prospect
   for (const t of ['shows', 'tasks', 'prospects']) for (const r of S.db[t] || []) for (const id of projIds(r)) m.set(id, (m.get(id) || 0) + 1);
   return m;
 });
-/** Tri des artistes : les plus utilisés d'abord, puis par nom */
-export const byUsage = (a, b) => { const u = projUsage(); return ((u.get(b.id) || 0) - (u.get(a.id) || 0)) || a.name.localeCompare(b.name); };
+/**
+ * Activité récente de chaque artiste (v1.66.3, règle d'Anthony du 23/11/2026) : 30 derniers jours glissants (aujourd'hui compris),
+ *  - dates, tâches créées À LA MAIN (pas les relances générées : auto_kind) et suivis CRÉÉS dans la période (created_at : une
+ *    modification groupée ne compte pas) ;
+ *  - journal des suivis, tous types d'entrées : à leur date réelle (logRealAt, sinon le jour de l'entrée : un ancien mail importé
+ *    garde sa date), un point au plus par suivi et par jour, pour chaque artiste du suivi.
+ */
+export const projActivity = () => cached('proj.activity.' + today(), ['shows', 'tasks', 'prospects', 'prospect_logs'], () => {
+  const from = addDays(today(), -29), to = today(), inside = d => !!d && d >= from && d <= to;
+  const m = new Map(), add = ids => { for (const id of ids) m.set(id, (m.get(id) || 0) + 1); };
+  for (const r of S.db.shows || []) if (inside(dayOf(r.created_at))) add(projIds(r));
+  for (const r of S.db.tasks || []) if (!r.auto_kind && inside(dayOf(r.created_at))) add(projIds(r));
+  for (const r of S.db.prospects || []) if (inside(dayOf(r.created_at))) add(projIds(r));
+  const seen = new Set();
+  for (const l of S.db.prospect_logs || []){
+    const d = dayOf(logRealAt(l) || l.date); if (!inside(d) || !l.prospect_id) continue;
+    const key = l.prospect_id + '|' + d; if (seen.has(key)) continue; seen.add(key);
+    add(projIds(byId('prospects', l.prospect_id) || {}));
+  }
+  return m;
+});
+/** Tri des artistes (v1.66.3) : activité des 30 derniers jours, puis score historique (projUsage), puis par nom ; actif / inactif n'entre
+ *  pas dans le classement (les inactifs restent masqués par défaut là où ils l'étaient) */
+export const byUsage = (a, b) => { const r = projActivity(), u = projUsage();
+  return ((r.get(b.id) || 0) - (r.get(a.id) || 0)) || ((u.get(b.id) || 0) - (u.get(a.id) || 0)) || a.name.localeCompare(b.name); };
 
-/** Projets triés : actifs d'abord, puis les plus utilisés. onlyActive : seulement les actifs (+ ceux déjà choisis) */
+/** Projets triés par activité (byUsage). onlyActive : seulement les actifs (+ ceux déjà choisis) ; actif / inactif hors classement (v1.66.3) */
 export function projectOptions(onlyActive=false, keep=[]){
   return S.db.projects.slice().filter(p => !onlyActive || p.active || keep.includes(p.id))
-    .sort((a,b)=>(b.active-a.active)||byUsage(a, b));
+    .sort(byUsage);
 }
 
 /** Nombre de notifications non lues pour l'utilisateur connecté */
