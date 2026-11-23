@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.66.5 — 23/11/2026
+- Liens cliquables dans le texte des mails du journal (mots liés et adresses en clair) ; « Retrouver un mail dans la messagerie » quand Safari ne transmet que l'objet du mail (n°15)
+
+
 ## 1.66.4 — 23/11/2026
 - Import d'une conversation : un mail déjà au journal (même identifiant Gmail, ex. prospection envoyée depuis la Matrice) est réutilisé au lieu d'être recréé ; seul le .eml manquant est joint (n°15)
 

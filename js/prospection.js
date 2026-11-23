@@ -6,7 +6,7 @@
  * « Relance » : réponse dans le même fil Gmail (l'historique reste), journal, nouvelle tâche de relance.
  */
 import { calCheckBeforeSave } from './calendars.js';
-import { ask, confirmAsk } from './ui/dialog.js';
+import { ask, confirmAsk, pickOne } from './ui/dialog.js';
 import { render } from './app.js';
 import { contentTypeOf, insert, insertRow, legacyMailOwner, legacyUnverifiedOk, mailAttachedTo, purgeStored, remove, save, sb, signedUrl, threadStatus, typedFile, uploadDetail } from './data.js';
 import { showPrefillFromStructure } from './forms.js';
@@ -654,6 +654,35 @@ async function attachOneMailLink(p, id, attempt = 0, resumed = false){
     } else toast(`Conversation importée : ${head}`);
   } catch (err){ noteImport(p.id, 'erreur', {type: err?.name || 'Error'}); throw err; }
   finally { if (!keepLock) PENDING_MSG.delete(key); }
+}
+
+/**
+ * Retrouver un mail dans la messagerie MATRICE et le joindre au suivi (v1.66.5, demande d'Anthony du 23/11/2026, suivi Lit et Mixe) :
+ * quand Safari ne transmet de la liste d'Apple Mail que l'OBJET du mail (ni fichier ni lien « message: »), ou depuis le bouton
+ * « Retrouver un mail » du suivi. Recherche sur l'objet dans les messages que ce compte peut lire (RLS : titulaire de la boîte) ;
+ * rien n'est rattaché sur le seul objet : la personne CHOISIT le mail (aucune présélection), puis il suit le chemin d'un lien
+ * « message: » glissé (attachOneMailLink : conversation, anti-doublon, mails déjà présents réutilisés).
+ */
+const MAIL_PREFIX = /^\s*(?:(?:re|tr|fwd?|fw|réf|aw|wg)\s*(?:\[\d+\])?\s*:\s*)+/i;
+export const subjectQuery = t => String(t || '').split(/\r?\n/).map(x => x.trim()).find(Boolean)?.replace(MAIL_PREFIX, '').slice(0, 120).trim() || '';
+export async function findMail(pid, hint = '', why = ''){
+  const p = byId('prospects', pid); if (!p) return;
+  const mine = new Set(logsOf(pid).map(l => l.id));
+  const search = async q => {
+    const like = '%' + q.replace(/[%_\\]/g, m => '\\' + m) + '%';
+    const {data, error} = await sb.from('mail_messages').select('id,rfc_message_id,subject,from_name,from_addr,to_addrs,sent_at,direction,prospect_log_id')
+      .ilike('subject', like).order('sent_at', {ascending: false}).limit(30);
+    if (error) throw error;
+    const k = q.toLowerCase();
+    return (data || []).filter(m => msgIdOk(m.rfc_message_id || '') && String(m.subject || '').toLowerCase().includes(k)).map(m => ({value: m.rfc_message_id,
+      label: m.subject || '(sans objet)',
+      sub: `${fmtDate(m.sent_at)} · ${m.direction === 'out' ? 'À ' + (m.to_addrs || []).join(', ') : 'De ' + (m.from_name ? `${m.from_name} <${m.from_addr}>` : m.from_addr || '')}`,
+      note: !m.prospect_log_id ? '' : mine.has(m.prospect_log_id) ? 'déjà dans ce suivi' : 'dans un autre suivi'}));
+  };
+  const id = await pickOne({title: 'Retrouver un mail dans la messagerie',
+    text: (why ? why + '\n' : '') + 'Cherche le mail par son objet et choisis-le : sa conversation est jointe à ce suivi (.eml et journal) ; les mails déjà présents ne sont pas recréés.',
+    label: 'Objet du mail', value: subjectQuery(hint), search, ok: 'Joindre ce mail', empty: 'Aucun mail de la messagerie avec cet objet (« Actualiser » dans Mails si le mail est récent).'});
+  if (id) await attachMailLinks(pid, [id]);
 }
 
 /** Dépôt d'un ou plusieurs liens « message: » sur les pièces jointes d'un suivi (events.js) : un message après l'autre, 5 au plus */

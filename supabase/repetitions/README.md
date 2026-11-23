@@ -30,6 +30,11 @@ ailleurs que sur le projet de test (contrôle de l'adresse des fonctions, absenc
   structure différente de `artist_calendars`, autre `cal_sync_tick`, dépendance absente → arrêt sans rien appliquer ; `private.sync_urls`
   déjà créée par la messagerie → acceptée. Données fictives uniquement (essai du 08/11/2026 : réussi).
 
+- Base locale de la v1.66 (`2026-11-20_v1.66_texte_mails_base_locale.sql`), migration v1.66, migration v1.66.5 (deux fois : rejouable),
+  puis `2026-11-23_v1.66.5_liens_textes_essai.sql` : mise à jour ciblée des liens des textes — motif identique au navigateur, contenu
+  différent refusé, texte changé entre-temps ignoré, body intact, collègue / hors équipe / anon refusés pour le texte privé, RLS pour le
+  texte importé, table privée toujours sans accès direct, aucune ligne créée ni supprimée (essai du 23/11/2026 : réussi).
+
 ## Cas d'essai isolé « ESSAI promo » (v1.60.4) — hors production uniquement
 
 Décision d'Anthony du 08/11/2026 : aucune donnée fictive dans les comptes opérationnels ; essai exécuté hors production.

@@ -27,7 +27,7 @@ import { rtStyle, rtToolbar } from './ui/richtext.js';
 import { callScript, editTemplate, prepareMail } from './mail.js';
 import { exportContractPdf, generateContract, validateFiche } from './contract.js';
 import { exportShows } from './exports.js';
-import { callProspect, cancelAutoRelances, closeNoAnswer, deleteProspect, markLogSent, openProspection, prospectDeleteAsk, restoreRelances, setSuiviPlace, detachShowFromSuivi } from './prospection.js';
+import { callProspect, cancelAutoRelances, closeNoAnswer, deleteProspect, detachShowFromSuivi, findMail, markLogSent, openProspection, prospectDeleteAsk, restoreRelances, setSuiviPlace } from './prospection.js';
 import { EMP_ACTIONS, editEmployee } from './views/employees.js';
 import { BUDGET_ACTIONS, confirmProvisionalCommission } from './budget-actions.js';
 
@@ -487,6 +487,7 @@ ${p.content_md||'(aucune)'}`;
       fields:[{k:'date', label:'Date', type:'date'}, {k:'kind', label:'Type', type:'select', options:['Note','Mail','Appel','Lien','Fichier'], blank:false},
         {k:'url', label:'Lien envoyé', full:true}, {k:'body', label:'Notes', type:'textarea', full:true, rows:10}],
       onSave: async v => { await save('project_logs', l.id, v, {rerender:false}); } }); },
+  findMail: t => findMail(t.dataset.id),   // (v1.66.5) mail non transmis par Safari : retrouvé dans la messagerie et choisi
   delLog: async t => { const l = byId('prospect_logs', t.dataset.id);
     if (await confirmAsk('Supprimer l’entrée du journal ?', `Supprimer l’entrée « ${l?.kind || 'Note'}${l?.date ? ' du ' + fmtDate(l.date) : ''} » du journal du suivi ?`, 'Supprimer l’entrée', {danger: true}) && await remove('prospect_logs', t.dataset.id)) render(); },
   editText: t => { const p=byId('prospects',t.dataset.id), f=t.dataset.f;

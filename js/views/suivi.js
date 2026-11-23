@@ -20,7 +20,7 @@ import { $, addDays, addMonths, daysBetween, esc, eur, fmtDate, fmtShort, matche
 import { setMapData } from './booking.js';
 import { isDraftLog, relanceHistory } from '../prospection.js';
 import { logSource } from '../mailbox.js';
-import { ensureTexts, fullTextOf, isMailCopy, manualNote, textState } from '../textes-journal.js';
+import { ensureTexts, fullTextOf, isMailCopy, mailTextHtml, manualNote, textState } from '../textes-journal.js';
 
 export function viewProspects(){
   if (S.suiviPage){ const p = byId('prospects', S.suiviPage); if (p) return suiviPage(p); S.suiviPage = null; }
@@ -95,7 +95,7 @@ export function suiviCard(p, {page=false}={}){
           <textarea name="body" placeholder="Notes de l'échange… (gardées en brouillon tant que tu ne les ajoutes pas)" aria-label="Notes">${esc(d.body||'')}</textarea>
           <div class="log-actions"><button class="btn primary sm">Ajouter au journal</button>${d.body||d.who?'<span class="draft-note">Brouillon enregistré</span><button type="button" class="btn sm ghost" data-act="clearLogDraft" data-id="'+p.id+'">Effacer le brouillon</button>':''}</div>
         </form>
-        <div class="log-attach">${dropZone({prospect_id:p.id})}</div>
+        <div class="log-attach">${dropZone({prospect_id:p.id})}<button type="button" class="btn sm ghost" data-act="findMail" data-id="${p.id}" title="Si le glisser depuis Apple Mail ne transmet pas le mail : le retrouver par son objet et le choisir">Retrouver un mail dans la messagerie</button></div>
         ${thread.map(x => x.file ? `<div class="log log-file">
           <div class="log-head">📎 ${x.at !== '0000' ? `<b>${fmtDate(x.at)}</b> · ` : ''}Pièce jointe<span class="spacer"></span></div>${fileRow(x.file)}</div>`
           : `<div class="log">
@@ -149,7 +149,7 @@ function logBody(l){
     const note = full ? manualNote(l, full) : '';
     if (full) return `<div class="md">${md(l.author === 'Messagerie' ? body.split('\n')[0] : body.split('\n\n')[0])}</div>`
       + (note ? `<div class="log-note"><p class="muted small log-note-titre">Note</p><div class="md">${md(note)}</div></div>` : '')
-      + `<div class="mail-text">${esc(full)}</div>`;
+      + `<div class="mail-text">${mailTextHtml(full)}</div>`;
     const why = EXTRAIT[textState(l.id)];
     return `<div class="md">${md(body)}</div>${why ? `<p class="muted small log-extrait">Extrait — ${esc(why)}</p>` : ''}`;
   }

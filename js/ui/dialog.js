@@ -7,6 +7,7 @@
  *   inform({title, text, value})                                     → fermée par « Fermer » (value : texte à copier, sélectionné)
  *   copyText(texte, message, titre)                                  → copie ; si le navigateur refuse, le texte est montré à copier
  *   readMail({title, lines, frame, actions})                         → lecture d'un mail (cadre isolé), v1.65
+ *   pickOne({title, text, label, value, search, ok, empty})          → recherche puis choix d'UNE ligne (v1.66.5) : sa valeur, ou null
  *
  * « Annuler », Échap et clic hors de la fenêtre ne déclenchent jamais l'action (null / false). Texte : l'action ET ses conséquences.
  * Boutons nommés (.btn.danger pour détruire, .btn.primary sinon) ; question à deux issues = deux boutons nommés + « Annuler ».
@@ -87,4 +88,35 @@ export function readMail({title, lines = [], frame, actions = []}){
 export async function copyText(text, okMsg, title = 'Texte à copier'){
   try { await navigator.clipboard.writeText(text); if (okMsg) toast(okMsg); return true; }
   catch { await inform({title, text: 'La copie automatique est bloquée par le navigateur : le texte ci-dessous est sélectionné, copie-le (Cmd+C ou Ctrl+C).', value: text}); return false; }
+}
+
+/**
+ * Recherche puis choix d'une seule ligne (v1.66.5) : search(texte) → Promise de [{value, label, sub, note}] ; rien n'est choisi tout seul
+ * (aucune présélection, même avec un seul résultat). Renvoie la valeur de la ligne choisie, ou null (« Annuler », Échap).
+ */
+export function pickOne({title, text = '', label = 'Rechercher', value = '', search, ok = 'Choisir', empty = 'Aucun résultat.'}){
+  const extra = `<div class="field full"><label for="ask-input">${esc(label)}</label><input id="ask-input" type="search" value="${esc(value)}" autocomplete="off"></div>
+    <div class="pick-list" role="radiogroup" aria-label="${esc(title)}"></div><p class="help err" hidden></p>`;
+  let seq = 0, timer = 0, rows = [];
+  const p = open({title, text, extra, cancel: 'Annuler', focus: '#ask-input', buttons: [{label: ok, submit: true}], done: (_, dlg) => {
+    const c = dlg.querySelector('.pick-list input:checked'), msg = dlg.querySelector('.help.err');
+    if (!c){ msg.textContent = rows.length ? 'Choisis une ligne.' : 'Lance d’abord une recherche.'; msg.hidden = false; return undefined; }
+    return rows[Number(c.value)]?.value ?? null;
+  }});
+  const dlg = [...document.querySelectorAll('dialog.ask')].pop(), input = dlg.querySelector('#ask-input'), list = dlg.querySelector('.pick-list');
+  const run = async () => {
+    const q = input.value.trim(), my = ++seq;
+    if (!q){ rows = []; list.innerHTML = ''; return; }
+    list.innerHTML = '<p class="muted small">Recherche…</p>';
+    let r = []; try { r = await search(q); } catch { r = null; }
+    if (my !== seq) return;
+    rows = r || [];
+    list.innerHTML = r === null ? '<p class="muted small">Recherche impossible pour le moment.</p>' : !rows.length ? `<p class="muted small">${esc(empty)}</p>`
+      : rows.map((x, i) => `<label class="pick-row"><input type="radio" name="pick-one" value="${i}"><span><b>${esc(x.label)}</b>${x.sub ? `<br><span class="muted small">${esc(x.sub)}</span>` : ''}${x.note ? ` <span class="badge">${esc(x.note)}</span>` : ''}</span></label>`).join('');
+  };
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 300); });
+  // Entrée dans le champ : relance la recherche (jamais un choix automatique)
+  input.addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); e.stopPropagation(); clearTimeout(timer); run(); } });
+  run();
+  return p;
 }

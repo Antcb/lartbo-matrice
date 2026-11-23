@@ -141,6 +141,14 @@
     mail_texte_ecrire: ({ p_id, p_text }) => { if (!(window.__MAILBOX_OWNER ?? true) || !p_text) return false;
       const T = (window.__DB.mail_textes ||= []); if (T.some(t => t.message_id === p_id)) return false;
       T.push({ message_id: p_id, body_text: p_text }); return true; },
+    // v1.66.5 : liens des textes déjà enregistrés — remplacés seulement si le nouveau texte, sans ses adresses de liens, est l'ancien
+    mail_texte_liens: ({ p_log, p_old, p_new }) => { const sans = String(p_new).replace(/\[([^\[\]\n]+)\]\(((?:https?:\/\/|mailto:|tel:)[^()\s<>]+)\)/gi, '$1');
+      if (p_new === p_old) return false; if (sans !== p_old) throw Object.assign(new Error('texte différent'), { code: '22023' });
+      const l = window.__DB.prospect_logs.find(x => x.id === p_log && x.mail_text === p_old); if (!l) return false; l.mail_text = p_new; return true; },
+    mail_texte_liens_prive: ({ p_id, p_old, p_new }) => { if (!(window.__MAILBOX_OWNER ?? true)) throw Object.assign(new Error('réservé au titulaire'), { code: '42501' });
+      const sans = String(p_new).replace(/\[([^\[\]\n]+)\]\(((?:https?:\/\/|mailto:|tel:)[^()\s<>]+)\)/gi, '$1');
+      if (p_new === p_old) return false; if (sans !== p_old) throw Object.assign(new Error('texte différent'), { code: '22023' });
+      const t = (window.__DB.mail_textes || []).find(x => x.message_id === p_id && x.body_text === p_old); if (!t) return false; t.body_text = p_new; return true; },
     // messagerie : boîte anthony@ réservée à son propriétaire (window.__MAILBOX_OWNER = false : autre membre de l'équipe)
     is_mailbox_owner: () => window.__MAILBOX_OWNER ?? true,
     show_deletion_state: a => deletionState(a.p_show),
@@ -203,7 +211,8 @@
         // window.__RPC_ERROR = { nom: {code, message} } : la fonction de la base répond par cette erreur (fonction absente, refus…)
         rpc: async (name, args) => { window.__calls.push({ rpc: name, args, url: String(url) }); const e = window.__RPC_ERROR && window.__RPC_ERROR[name];
           if (e) return { data: null, error: e };
-          const f = RPC[name]; return { data: f ? clone(f(args || {})) : null, error: null }; },
+          // (v1.66.5) refus d'une fonction (exception levée par sa garde) : rendu comme la base, en erreur avec son code
+          const f = RPC[name]; try { return { data: f ? clone(f(args || {})) : null, error: null }; } catch (err) { if (!err?.code) throw err; return { data: null, error: { code: err.code, message: err.message } }; } },
         // window.__FN_ERROR = { nom: 'message' } : la fonction serveur répond par cette erreur (essais de la file des résumés IA)
         functions: { invoke: async (name, o) => { window.__calls.push({ fn: name, body: o && o.body, url: String(url) });
           const err = window.__FN_ERROR && window.__FN_ERROR[name];
