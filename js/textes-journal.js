@@ -16,7 +16,8 @@ import { M, checkOwner, logSource } from './mailbox.js';
 import { callProspect } from './prospection.js';
 import { byId, logsOf } from './selectors.js';
 import { S } from './state.js';
-import { toast } from './utils.js';
+import { esc, toast } from './utils.js';
+import { LINK_MARK, unlinked } from './texte-mail.js';
 
 const BODY = new Map();    // id de l'entrée → texte complet lu dans la boîte anthony@ (compte titulaire seulement, en mémoire ; vidé par le
                            // rechargement de la page à la déconnexion ou au changement de compte : js/app.js)
@@ -41,7 +42,7 @@ export function manualNote(l, full){
   // forme est ramené au même texte des deux côtés avant comparaison (sinon l'extrait réapparaît en « Note », relecture v1.66.1) :
   // liens « <https://…> », « <mailto:…> », « <tel:…> », téléphones Gmail « <+33…> », images « [image: …] » et « [cid:…] »,
   // guillemets et apostrophes typographiques ou droits, tirets, espaces autour de la ponctuation, puces, points de suspension
-  const norm = s => String(s || '')
+  const norm = s => unlinked(s)
     .replace(/\s*<(?:https?:|mailto:|tel:)[^>\s]*>/gi, '').replace(/\s*<\+?\d[\d .()-]*>/g, '').replace(/\[(?:image|cid):[^\]]*\]/gi, '')
     .replace(/[\u00a0\u202f\u2009]/g, ' ').replace(/[«»“”„"]/g, '"').replace(/[’‘`´]/g, "'").replace(/[–—‐]/g, '-')
     .replace(/(?:…|\.\.\.)\s*$/, '').replace(/(^|\n)\s*(?:[-•·*]|\d{1,2}[.)])\s+/g, '$1').replace(/[*_>•·]/g, ' ')
@@ -145,6 +146,32 @@ async function fromMailbox(logs){
   }
 }
 
+/**
+ * Texte intégral d'un mail affiché dans le journal (v1.66.5, demande d'Anthony du 23/11/2026) : texte échappé, avec liens cliquables —
+ * mots qui étaient un lien dans le mail (« [mots](adresse) », js/texte-mail.js), adresses en clair (« https://… », « www.… »,
+ * « <https://…> » des versions texte de Gmail) et adresses mail. Web, mail et téléphone seulement ; ouverts dans un autre onglet.
+ */
+const BARE = /(<)?((?:https?:\/\/|www\.)[^\s<>"]+|mailto:[^\s<>"]+|[\w.+-]{1,64}@[\w-]+(?:\.[\w-]+)+)(>)?/gi;
+const A = (href, label) => `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
+function bareLinks(t){
+  let out = '', i = 0;
+  for (const m of t.matchAll(BARE)){
+    let [all, lt, addr, gt] = m, end = m.index + all.length;
+    if (gt && !lt){ gt = undefined; end -= 1; }   // « > » sans « < » : laissé dans le texte
+    // ponctuation finale (« voir https://x.fr. ») et parenthèse fermante non ouverte : hors du lien
+    if (!gt){ const tail = addr.match(/[.,;:!?'"»)\]]+$/); if (tail && !(tail[0].startsWith(')') && addr.includes('('))){ addr = addr.slice(0, -tail[0].length); end -= tail[0].length; } }
+    const href = /^www\./i.test(addr) ? 'https://' + addr : /^(?:https?:|mailto:)/i.test(addr) ? addr : 'mailto:' + addr;
+    out += esc(t.slice(i, m.index)) + (lt && gt ? esc('<') + A(href, addr) + esc('>') : (lt ? esc('<') : '') + A(href, addr));
+    i = end;
+  }
+  return out + esc(t.slice(i));
+}
+export function mailTextHtml(t){
+  const s = String(t || ''); let out = '', i = 0;
+  for (const m of s.matchAll(LINK_MARK)){ out += bareLinks(s.slice(i, m.index)) + A(m[2], m[1]); i = m.index + m[0].length; }
+  return out + bareLinks(s.slice(i));
+}
+
 /** Complète les textes manquants d'un suivi (à l'affichage) ; retry : nouvel essai des entrées déjà marquées introuvables */
 export async function ensureTexts(pid, {rerender = true, retry = false} = {}){
   if (BUSY.has(pid)) return;
@@ -194,4 +221,74 @@ async function completeAllRun(){
   toast(`Textes des mails complétés${left ? ` ; ${left} entrée${left > 1 ? 's' : ''} sans source complète (extrait conservé)` : ''}.`);
 }
 
-export const TEXT_ACTIONS = { mailTexts: () => completeAll() };
+/**
+ * Liens des textes déjà enregistrés (v1.66.5, demande d'Anthony du 23/11/2026) — compte titulaire seulement.
+ * Chaque texte est relu dans SA source (.eml joint au suivi ; message de la boîte anthony@ relu dans Gmail) et classé :
+ *  - « récupérable » : le texte relu, sans ses adresses de liens, est EXACTEMENT le texte enregistré → remplacé (contrôle refait par la
+ *    base : mail_texte_liens / mail_texte_liens_prive), sauf essai à blanc ;
+ *  - « sans lien » : rien à ajouter ; « source indisponible » ; « contenu différent » : laissé tel quel (le contenu ne serait pas préservé).
+ * Rien d'autre n'est touché (texte et notes de l'entrée, pièces jointes, visibilité). Bilan chiffré, sans contenu, noté pour diagnostic.
+ */
+export async function relinkTexts({dry = true} = {}){
+  await checkOwner();
+  if (!M.owner) return toast('Réservé au compte d’Anthony (boîte anthony@).', true);
+  const {ownText, unlinked} = await import('./texte-mail.js');
+  const n = {récupérables: 0, misÀJour: 0, sansLien: 0, indisponibles: 0, différents: 0, refusés: 0};
+  const sort = (old, t) => !t ? 'indisponibles' : t === old ? 'sansLien' : unlinked(t) === old ? 'récupérables' : 'différents';
+  // 1. mails importés : prospect_logs.mail_text, source = .eml joint au suivi
+  const imported = S.db.prospect_logs.filter(l => isMailCopy(l) && l.mail_text);
+  toast(`Liens des textes : ${imported.length} mail${imported.length > 1 ? 's' : ''} importé${imported.length > 1 ? 's' : ''} à relire…`);
+  for (const l of imported){
+    const {file} = logSource(l), old = l.mail_text, t = file ? await emlText(file) : '';
+    const k = sort(old, t); n[k]++;
+    if (k !== 'récupérables' || dry) continue;
+    const {data, error} = await sb.rpc('mail_texte_liens', {p_log: l.id, p_old: old, p_new: t});
+    if (error || !data){ n.refusés++; continue; }
+    l.mail_text = t; n.misÀJour++;
+  }
+  // 2. boîte anthony@ : private.mail_textes, source = message relu dans Gmail (une lecture par conversation)
+  const synced = S.db.prospect_logs.filter(l => isMailCopy(l) && !l.mail_text && logSource(l).synced);
+  const pick = 'id,prospect_log_id,gmail_message_id,thread_id', msgs = [];
+  for (let i = 0; i < synced.length; i += 200){
+    const {data} = await sb.from('mail_messages').select(pick).in('prospect_log_id', synced.slice(i, i + 200).map(l => l.id));
+    msgs.push(...(data || []));
+  }
+  const saved = new Map();
+  for (let i = 0; i < msgs.length; i += 200){
+    const {data} = await sb.rpc('mail_texte_lire', {p_ids: msgs.slice(i, i + 200).map(m => m.id)});
+    for (const r of data || []) saved.set(r.message_id, r.body_text);
+  }
+  const threads = new Map();
+  for (const m of msgs) if (saved.get(m.id)){ if (!threads.has(m.thread_id)) threads.set(m.thread_id, []); threads.get(m.thread_id).push(m); }
+  let c = 0;
+  for (const [tid, list] of threads){
+    if (++c % 10 === 0) toast(`Liens des textes : conversation ${c}/${threads.size}…`);
+    const row = byId('mail_threads', tid);
+    let g = null;
+    try { if (row) g = (await callProspect('thread', {thread_id: row.gmail_thread_id})).thread?.messages || []; } catch { g = null; }
+    for (const m of list){
+      const old = saved.get(m.id), x = (g || []).find(y => y.id === m.gmail_message_id);
+      const t = x ? ownText({html: x.html, subject: x.subject || ''}) : '';
+      const k = sort(old, t); n[k]++;
+      if (k !== 'récupérables' || dry) continue;
+      const {data, error} = await sb.rpc('mail_texte_liens_prive', {p_id: m.id, p_old: old, p_new: t});
+      if (error || !data){ n.refusés++; continue; }
+      if (m.prospect_log_id) BODY.set(m.prospect_log_id, t); n.misÀJour++;
+    }
+  }
+  window.dispatchEvent(new CustomEvent('matrice-diag', {detail: {key: `liens des textes : ${dry ? 'essai à blanc' : 'mise à jour'}`, data: n}}));
+  render();
+  const txt = `${n.récupérables} récupérable${n.récupérables > 1 ? 's' : ''}${dry ? '' : ` (${n.misÀJour} mis à jour${n.refusés ? `, ${n.refusés} refusé${n.refusés > 1 ? 's' : ''}` : ''})`} · `
+    + `${n.sansLien} sans lien · ${n.indisponibles} source indisponible · ${n.différents} contenu différent (laissés tels quels)`;
+  const {inform} = await import('./ui/dialog.js');
+  await inform({title: dry ? 'Liens des textes : essai à blanc (rien modifié)' : 'Liens des textes : mise à jour faite', text: txt});
+  return n;
+}
+
+export const TEXT_ACTIONS = { mailTexts: () => completeAll(),
+  mailLinks: async () => {
+    const {ask} = await import('./ui/dialog.js');
+    const v = await ask({title: 'Liens des textes du journal', text: 'Relit chaque texte de mail déjà enregistré dans sa source (.eml joint, ou Gmail) pour rendre ses liens cliquables.\nL’essai à blanc compte seulement, sans rien modifier. La mise à jour remplace uniquement les textes identiques, liens en plus ; les autres restent tels quels. Rien d’autre n’est modifié (texte et notes de l’entrée, pièces jointes, visibilité).',
+      actions: [{value: 'dry', label: 'Essai à blanc', plain: true}, {value: 'run', label: 'Mettre à jour'}]});
+    if (v) relinkTexts({dry: v === 'dry'});
+  } };

@@ -36,7 +36,11 @@ test('v1.66.2 conversation entière glissée depuis Apple Mail : zone acceptée 
   // dépôt : message qui dit quoi faire ; rien envoyé au stockage, rien ajouté au suivi ; dépôt noté pour diagnostic
   const avant = await page.evaluate(() => [window.__DB.prospect_files.length, window.__DB.prospect_logs.length]);
   expect((await fakeDrag(page, zone, { type: 'drop', types: ['text/plain'] })).accepte).toBe(true);
-  await expect(page.locator('.toast').last()).toContainText('Depuis Apple Mail, ouvre la conversation et glisse l’un de ses mails');
+  // (v1.66.5, Lit et Mixe) au lieu du seul message : fenêtre « Retrouver un mail dans la messagerie », rien n'est joint sans choix
+  const dlg = page.locator('dialog.ask', { hasText: 'Retrouver un mail dans la messagerie' });
+  await expect(dlg).toContainText('Safari n’a transmis que du texte');
+  await expect(dlg.locator('#ask-input')).toHaveValue('Altifest • FAV 2027');
+  await dlg.getByRole('button', { name: 'Annuler' }).click();
   expect(await page.evaluate(() => [window.__DB.prospect_files.length, window.__DB.prospect_logs.length])).toEqual(avant);
   await expect.poll(() => page.evaluate(() => window.__DB.client_errors.filter(r => r.message === 'dépôt : aucun fichier').length)).toBeGreaterThan(0);
   expectClean(ctx);

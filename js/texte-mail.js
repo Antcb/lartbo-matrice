@@ -35,6 +35,21 @@ const ORIGINAL = /^-{2,}\s*(?:original\s+message|message\s+d['’]origine)\s*-{2
 const HEAD = [/^(?:De|From)\s*:/i, /^(?:Envoyé|Sent|Date)\s*:/i, /^(?:À|A|To)\s*:/i, /^(?:Objet|Subject)\s*:/i];
 const HEAD_ANY = /^(?:De|From|Envoyé|Sent|Date|À|A|To|Cc|Objet|Subject)\s*:/i;
 
+/** Adresse d'un lien gardée dans le texte (v1.66.5) : web, mail ou téléphone seulement ; espaces et parenthèses encodés (marqueur sûr) */
+const LINK_SCHEME = /^(?:https?:\/\/|mailto:|tel:)/i;
+export function linkTarget(href){
+  const v = String(href || '').trim().replace(/[\u0000-\u001f\u007f]/g, '');
+  if (!LINK_SCHEME.test(v) || v.length > 2000) return '';
+  return v.replace(/\s/g, '%20').replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/</g, '%3C').replace(/>/g, '%3E');
+}
+const sameAddress = (label, href) => { const a = s => decodeSafe(String(s).trim()).replace(/^(?:mailto:|tel:|https?:\/\/)/i, '').replace(/^www\./i, '').replace(/\/$/, '').toLowerCase();
+  return a(label) === a(href); };
+const decodeSafe = s => { try { return decodeURI(s); } catch { return s; } };
+/** Marqueur de lien d'un texte de mail (v1.66.5) : « [mots](adresse) » ; label = 1, adresse = 2 */
+export const LINK_MARK = /\[([^\[\]\n]+)\]\(((?:https?:\/\/|mailto:|tel:)[^()\s<>]+)\)/gi;
+/** Texte sans les adresses des liens : exactement le texte extrait avant la v1.66.5 (contrôle de la mise à jour des textes existants) */
+export const unlinked = t => String(t || '').replace(LINK_MARK, '$1');
+
 /** HTML → texte lisible (blocs et retours à la ligne conservés) */
 function htmlText(root){
   const BLOCK = /^(P|DIV|LI|TR|H[1-6]|BLOCKQUOTE|PRE|TABLE|UL|OL|SECTION|ARTICLE|HEADER|FOOTER|ADDRESS)$/;
@@ -49,7 +64,16 @@ function htmlText(root){
     const block = BLOCK.test(tag);
     if (block) out += '\n';
     if (tag === 'LI') out += '- ';
+    // (v1.66.5) lien : son adresse est gardée sous la forme « [mots](adresse) » (unlinked() rend exactement le texte d'avant)
+    const href = tag === 'A' ? linkTarget(n.getAttribute('href')) : '';
+    const at = out.length;
     for (const c of n.childNodes) walk(c);
+    if (href){
+      const label = out.slice(at);
+      // mots du lien sur une ligne, sans crochet, et différents de l'adresse elle-même (une adresse en clair reste telle quelle)
+      // espaces autour des mots laissés hors du lien (« le [lien](…) fin », pas « le[ lien ](…)fin »)
+      if (label.trim() && !/[\n\[\]]/.test(label) && !sameAddress(label, href)){ const [, a, w, z] = label.match(/^(\s*)([\s\S]*?)(\s*)$/); out = out.slice(0, at) + `${a}[${w}](${href})${z}`; }
+    }
     if (block) out += '\n';
     if (tag === 'TD' || tag === 'TH') out += ' ';
   };
@@ -91,7 +115,10 @@ function dropQuotedHtml(doc, outlook = true){
 
 /** Règles sur le texte (aussi pour un mail en texte brut) ; renvoie le texte propre au message */
 function dropQuotedText(text, outlook = true){
-  const lines = text.replace(/\r/g, '').replace(/ /g, ' ').split('\n');
+  const kept = text.replace(/\r/g, '').replace(/ /g, ' ').split('\n');
+  // (v1.66.5) les règles lisent le texte SANS les adresses de liens (une adresse mail ou des chiffres dans un lien ne font pas d'une
+  // ligne un en-tête ou une attribution) ; le texte rendu garde les liens
+  const lines = kept.map(unlinked);
   const rest = i => lines.slice(i).filter(l => l.trim());
   let cut = lines.length;
   for (let i = 0; i < lines.length && cut === lines.length; i++){
@@ -116,7 +143,7 @@ function dropQuotedText(text, outlook = true){
     }
   }
   // (relecture v1.66, B3) des lignes « > » sans attribution reconnue ne sont jamais retirées (doute : gardées)
-  const keep = lines.slice(0, cut);
+  const keep = kept.slice(0, cut);
   return keep.join('\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
@@ -144,6 +171,6 @@ export function ownText({html = '', plain = '', subject = ''} = {}){
   const head = own.split('\n').filter(t => t.trim()).slice(0, 5).join('\n');
   // objet « TR: / Fwd: » (pas « RE: TR: ») : le mail EST un transfert, tout ce qu'il contient est gardé, quel que soit le logiciel
   if (own && TR_SUBJECT.test(subject) && own !== clean(full)) return clean(full);
-  if (own && base && own !== base && ANNONCE.test(head)) return base;
+  if (own && base && own !== base && ANNONCE.test(unlinked(head))) return base;
   return own || base || clean(full);
 }

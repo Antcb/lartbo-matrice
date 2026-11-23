@@ -85,6 +85,13 @@ export function takeDropped(e, {mailLinks = false} = {}){
     // (v1.60.4) zone qui sait retrouver le message dans les boîtes Google (pièces jointes d'un suivi) : identifiants rendus, sans message ici
     if (mailLinks && ids.length) return Promise.resolve({files: [], unreadable: [], msgIds: ids});
     const textOnly = info.types.every(t => /^text\/(plain|html)$/.test(t));   // (v1.66.2) conversation entière glissée depuis Apple Mail
+    // (v1.66.5, suivi Lit et Mixe) pièces jointes d'un suivi, glisser de TEXTE seulement (aucun fichier annoncé, aucun lien « message: ») :
+    // ce que Safari transmet parfois depuis la liste d'Apple Mail (l'objet du mail). Le texte (1re ligne, lu ici, jamais noté ni envoyé)
+    // sert à proposer de retrouver le mail dans la messagerie (prospection.js findMail) — jamais de rattachement sur l'objet seul
+    if (mailLinks && !info.types.includes('Files') && !info.liens.includes('message')){
+      let hint = ''; try { hint = (e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text/uri-list') || '').slice(0, 2000); } catch {}
+      return Promise.resolve({files: [], unreadable: [], msgIds: [], noRef: true, hint});
+    }
     import('../utils.js').then(u => u.toast(info.liens.includes('message') ? ONLY_MAIL_LINK : textOnly ? CONVERSATION_DROP : NOTHING_DROPPED, true));
     return Promise.resolve({files: [], unreadable: [], msgIds: []});
   }

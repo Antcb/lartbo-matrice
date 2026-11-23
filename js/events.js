@@ -6,7 +6,7 @@ import { importMovinmotion } from './views/employees.js';
 import { render } from './app.js';
 import { insert, save, sb, syncLinks, uploadFiles } from './data.js';
 import { geocode } from './geo.js';
-import { attachMailLinks, setSuiviPlace } from './prospection.js';
+import { attachMailLinks, findMail, setSuiviPlace } from './prospection.js';
 import { byId, linksOfContact, projIds } from './selectors.js';
 import { S, localSet, setProjects, touch } from './state.js';
 import { MAIL_MSG, fieldError, mailOk, parseCSV, toast, today } from './utils.js';
@@ -97,8 +97,13 @@ document.addEventListener('drop', async e => {
   // (v1.60.4, v1.60.7) pièces jointes d'un suivi : un message d'Apple Mail arrivé sans fichier (seul le lien « message:%3C<Message-ID>%3E »)
   // est cherché dans les boîtes Google, puis toute sa conversation est importée dans CE suivi, sans question (prospection.js attachMailLinks)
   let owner = null; try { owner = z.dataset.drop ? JSON.parse(z.dataset.drop) : null; } catch { owner = null; }
-  const {files, msgIds} = await takeDropped(e, {mailLinks: !!owner?.prospect_id});
-  if (!files.length){ if (msgIds?.length && owner?.prospect_id) await attachMailLinks(owner.prospect_id, msgIds); return; }
+  const {files, msgIds, noRef, hint} = await takeDropped(e, {mailLinks: !!owner?.prospect_id});
+  if (!files.length){
+    if (msgIds?.length && owner?.prospect_id) await attachMailLinks(owner.prospect_id, msgIds);
+    // (v1.66.5) texte seul (objet du mail depuis la liste d'Apple Mail, ligne d'une conversation) : retrouver le mail dans la messagerie
+    else if (noRef && owner?.prospect_id) await findMail(owner.prospect_id, hint, 'Safari n’a transmis que du texte (l’objet du mail), pas le mail lui-même : rien n’a été joint.');
+    return;
+  }
   if (z.dataset.dropForm){
     // dans un formulaire : on ajoute les fichiers au champ, envoyés à l'enregistrement
     const input = z.querySelector('input[type=file]'); const dt = new DataTransfer();
