@@ -19,7 +19,11 @@ function insert(el, text, start, end){
 document.addEventListener('beforeinput', e => {
   const el = e.target;
   if (!el.matches?.(CAP) || e.isComposing || e.inputType !== 'insertText' || !e.data) return;
-  const [a, b] = [el.selectionStart, el.selectionEnd], t = capInserted(el.value, a, e.data);
+  const [a, b] = [el.selectionStart, el.selectionEnd];
+  // (décision d'Anthony du 24/11/2026) première lettre d'un mot déjà saisi, sélectionnée puis remplacée par une lettre : correction
+  // volontaire, respectée telle quelle (« IBoat » → « iBoat ») — à la frappe comme à l'enregistrement (aucune mise en forme ensuite)
+  if (b - a === 1 && [...e.data].length === 1 && (a === 0 || /\s/u.test(el.value[a - 1])) && !/\s/u.test(el.value[a])) return;
+  const t = capInserted(el.value, a, e.data);
   if (t === e.data) return;
   e.preventDefault(); insert(el, t, a, b);
 });

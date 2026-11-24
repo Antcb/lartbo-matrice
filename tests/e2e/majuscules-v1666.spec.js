@@ -136,3 +136,44 @@ test('v1.66.6 (relecture) fiche RH dans la Matrice : Prénom(s) et Nom de famill
   expect(await page.locator('#modal [name=birth_city]').getAttribute('data-cap')).toBeNull();
   expectClean(ctx);
 });
+
+test('v1.66.6 (décision du 24/11) « être » → « Être » (frappe directe et touche morte) ; « IBoat » corrigé en « iBoat », gardé à l’enregistrement', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.evaluate(async () => { (await import('./js/forms.js')).editStructure(null); });
+  const nomS = page.locator('#modal [name=name]');
+  await nomS.click(); await expect(nomS).toBeFocused();
+  // frappe directe d'une lettre accentuée (clavier français)
+  await nomS.pressSequentially('être là');
+  await expect(nomS).toHaveValue('Être Là');
+  // touche morte : composition « ^ » puis « ê » (comme sur Mac)
+  await nomS.evaluate(el => { el.value = ''; });
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.imeSetComposition', { text: '^', selectionStart: 1, selectionEnd: 1 });
+  await cdp.send('Input.insertText', { text: 'ê' });
+  await nomS.pressSequentially('tre');
+  await expect(nomS).toHaveValue('Être');
+  // « IBoat » : sélection de la 1re lettre, remplacée par « i » → respecté ; le mot suivant tapé ensuite garde la règle
+  await nomS.evaluate(el => { el.value = ''; });
+  await nomS.pressSequentially('iBoat club');
+  await expect(nomS).toHaveValue('IBoat Club');
+  await nomS.evaluate(el => el.setSelectionRange(0, 1));
+  await nomS.pressSequentially('i');
+  await expect(nomS).toHaveValue('iBoat Club');
+  await nomS.press('End'); await nomS.pressSequentially(' paris');
+  await expect(nomS).toHaveValue('iBoat Club Paris');
+  // enregistrement : la correction est gardée telle quelle
+  await page.locator('#modal').getByRole('button', { name: 'Enregistrer' }).click();
+  await expect.poll(() => page.evaluate(() => window.__DB.structures.some(s => s.name === 'iBoat Club Paris'))).toBe(true);
+  expectClean(ctx);
+});
+
+test('v1.66.6 fiche RH interne : Nom de famille toujours en MAJUSCULES à l’enregistrement (règle existante)', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.evaluate(async () => { const app = await import('./js/app.js'); app.go('employees'); app.render(); });
+  await page.locator('[data-act="newEmployee"]').first().click();
+  await page.locator('#modal [name=first_name]').pressSequentially('anne');
+  await page.locator('#modal [name=last_name]').pressSequentially('le goff');
+  await page.locator('#modal').getByRole('button', { name: 'Enregistrer' }).click();
+  await expect.poll(() => page.evaluate(() => window.__DB.employees.map(e => [e.first_name, e.last_name]))).toContainEqual(['Anne', 'LE GOFF']);
+  expectClean(ctx);
+});
