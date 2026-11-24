@@ -16,13 +16,19 @@ function insert(el, text, start, end){
   // execCommand garde l'historique d'annulation (Safari, Chrome) ; sinon remplacement direct, curseur après le texte
   if (!document.execCommand?.('insertText', false, text)){ el.setRangeText(text, start, end, 'end'); el.dispatchEvent(new Event('input', {bubbles: true})); }
 }
+/** Sélection d'exactement la première lettre d'un mot déjà saisi : la remplacer est une correction volontaire, respectée */
+const firstLetterSelected = (el, a, b) => b - a === 1 && (a === 0 || /\s/u.test(el.value[a - 1])) && !/\s/u.test(el.value[a]);
+// composition (touche morte) qui remplace cette première lettre : même correction volontaire (« É » → « é » respecté)
+const deliberate = new WeakSet();
+document.addEventListener('compositionstart', e => { const el = e.target;
+  if (el.matches?.(CAP) && firstLetterSelected(el, el.selectionStart, el.selectionEnd)) deliberate.add(el); else if (el.matches?.(CAP)) deliberate.delete(el); });
 document.addEventListener('beforeinput', e => {
   const el = e.target;
   if (!el.matches?.(CAP) || e.isComposing || e.inputType !== 'insertText' || !e.data) return;
   const [a, b] = [el.selectionStart, el.selectionEnd];
   // (décision d'Anthony du 24/11/2026) première lettre d'un mot déjà saisi, sélectionnée puis remplacée par une lettre : correction
   // volontaire, respectée telle quelle (« IBoat » → « iBoat ») — à la frappe comme à l'enregistrement (aucune mise en forme ensuite)
-  if (b - a === 1 && [...e.data].length === 1 && (a === 0 || /\s/u.test(el.value[a - 1])) && !/\s/u.test(el.value[a])) return;
+  if (firstLetterSelected(el, a, b) && [...e.data].length === 1) return;
   const t = capInserted(el.value, a, e.data);
   if (t === e.data) return;
   e.preventDefault(); insert(el, t, a, b);
@@ -38,6 +44,7 @@ document.addEventListener('paste', e => {
 document.addEventListener('compositionend', e => {
   const el = e.target;
   if (!el.matches?.(CAP) || !e.data) return;
+  if (deliberate.has(el)){ deliberate.delete(el); if ([...e.data].length === 1) return; }
   const end = el.selectionStart, start = end - e.data.length;
   if (start < 0 || el.value.slice(start, end) !== e.data) return;
   const t = capInserted(el.value, start, e.data);

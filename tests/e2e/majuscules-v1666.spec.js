@@ -131,6 +131,7 @@ test('v1.66.6 (relecture) fiche RH dans la Matrice : Prénom(s) et Nom de famill
   await page.locator('[data-act="newEmployee"]').first().click();
   const p = page.locator('#modal [name=first_name]'), n = page.locator('#modal [name=last_name]');
   await expect(p).toHaveAttribute('data-cap', '');
+  await p.click(); await expect(p).toBeFocused();
   await p.pressSequentially('jean pierre'); await expect(p).toHaveValue('Jean Pierre');
   await n.pressSequentially('le goff'); await expect(n).toHaveValue('Le Goff');
   expect(await page.locator('#modal [name=birth_city]').getAttribute('data-cap')).toBeNull();
@@ -161,6 +162,16 @@ test('v1.66.6 (décision du 24/11) « être » → « Être » (frappe directe e
   await expect(nomS).toHaveValue('iBoat Club');
   await nomS.press('End'); await nomS.pressSequentially(' paris');
   await expect(nomS).toHaveValue('iBoat Club Paris');
+  // même correction par touche morte : « Émile » → « émile » respecté ; une composition ailleurs garde la règle
+  await nomS.evaluate(el => { el.value = 'Émile'; el.setSelectionRange(0, 1); });
+  await cdp.send('Input.imeSetComposition', { text: '´', selectionStart: 1, selectionEnd: 1 });
+  await cdp.send('Input.insertText', { text: 'é' });
+  await expect(nomS).toHaveValue('émile');
+  await nomS.press('End'); await nomS.pressSequentially(' ');
+  await cdp.send('Input.imeSetComposition', { text: '^', selectionStart: 1, selectionEnd: 1 });
+  await cdp.send('Input.insertText', { text: 'ê' });
+  await expect(nomS).toHaveValue('émile Ê');
+  await nomS.evaluate(el => { el.value = 'iBoat Club Paris'; el.dispatchEvent(new Event('input', { bubbles: true })); });
   // enregistrement : la correction est gardée telle quelle
   await page.locator('#modal').getByRole('button', { name: 'Enregistrer' }).click();
   await expect.poll(() => page.evaluate(() => window.__DB.structures.some(s => s.name === 'iBoat Club Paris'))).toBe(true);
@@ -171,8 +182,9 @@ test('v1.66.6 fiche RH interne : Nom de famille toujours en MAJUSCULES à l’en
   const ctx = await openApp(page);
   await page.evaluate(async () => { const app = await import('./js/app.js'); app.go('employees'); app.render(); });
   await page.locator('[data-act="newEmployee"]').first().click();
-  await page.locator('#modal [name=first_name]').pressSequentially('anne');
-  await page.locator('#modal [name=last_name]').pressSequentially('le goff');
+  const fp = page.locator('#modal [name=first_name]'), fn = page.locator('#modal [name=last_name]');
+  await fp.click(); await expect(fp).toBeFocused(); await fp.pressSequentially('anne'); await expect(fp).toHaveValue('Anne');
+  await fn.click(); await expect(fn).toBeFocused(); await fn.pressSequentially('le goff'); await expect(fn).toHaveValue('Le Goff');
   await page.locator('#modal').getByRole('button', { name: 'Enregistrer' }).click();
   await expect.poll(() => page.evaluate(() => window.__DB.employees.map(e => [e.first_name, e.last_name]))).toContainEqual(['Anne', 'LE GOFF']);
   expectClean(ctx);
