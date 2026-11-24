@@ -335,7 +335,7 @@ export const ACTIONS = {
   addMember: async t => { await insert('project_members', {project_id:t.dataset.id, sort:999}); render(); },
   memberCard: t => { const m = byId('project_members', t.dataset.id); const keys = Object.keys(m.data||{});
     openModal({ title: [m.first_name, m.last_name].filter(Boolean).join(' ') || 'Membre', values:{...m, ...Object.fromEntries(keys.map((k,i)=>['_d'+i, m.data[k]]))},
-      fields:[{k:'first_name', label:'Prénom'}, {k:'last_name', label:'Nom'}, {k:'role', label:'Poste'}, {k:'email', label:'Mail', type:'email'}, {k:'phone', label:'Téléphone'},
+      fields:[{k:'first_name', label:'Prénom', cap:true}, {k:'last_name', label:'Nom', cap:true}, {k:'role', label:'Poste'}, {k:'email', label:'Mail', type:'email'}, {k:'phone', label:'Téléphone'},
         {k:'birth_date', label:'Date de naissance', type:'date'}, {k:'address', label:'Adresse', type:'fulladdr', full:true},
         ...(keys.length ? [{k:'_sep', type:'html', cls:'sep', html:'<h3>Autres informations (import Movinmotion)</h3>'}] : []),
         ...keys.map((k,i)=>({k:'_d'+i, label:k}))],

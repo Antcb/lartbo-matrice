@@ -10,6 +10,7 @@ import './ui/testbanner.js';
 import './ui/dropfiles.js';
 import './ui/filepick.js';
 import './ui/autogrow.js';
+import './ui/capwords.js';   // (v1.66.6) majuscule à chaque mot : Prénom(s), Nom de famille
 import { RH_DOCS, RH_PARTS, RH_SECTIONS, partOf } from './rh-fields.js';
 
 const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {auth:{persistSession:false}});
@@ -37,7 +38,7 @@ function input(f, v, values){
   const wrap = inner => `<div class="field${f.full ? ' full' : ''}"${cond(f.if, values)}>${inner}</div>`;
   if (f.type === 'choice') return wrap(`<fieldset class="choice"${req ? ' data-req="1"' : ''}><legend>${lab}</legend>${f.options.map(o => `<label><input type="radio" name="${f.k}" value="${esc(o)}" ${o === v ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</fieldset>`);
   const ph = known ? 'Déjà renseigné — laisse vide pour garder' : (f.placeholder || '');
-  return wrap(`<label for="${id}">${lab}</label><input id="${id}" name="${f.k}" type="${f.type || 'text'}" value="${known ? '' : esc(v)}"${ph ? ` placeholder="${esc(ph)}"` : ''}${f.secret ? ' autocomplete="off"' : ''}${req}>`);
+  return wrap(`<label for="${id}">${lab}</label><input id="${id}" name="${f.k}" type="${f.type || 'text'}" value="${known ? '' : esc(v)}"${f.cap ? ' data-cap' : ''}${ph ? ` placeholder="${esc(ph)}"` : ''}${f.secret ? ' autocomplete="off"' : ''}${req}>`);
 }
 
 function draw(d){

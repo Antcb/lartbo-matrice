@@ -11,10 +11,10 @@ const labTxt = f => `${esc(f.label || '')}${f.req ? ' <span class="req" aria-hid
 export function listRow(f, row = {}){
   // wrap : une fiche par personne, champs sur plusieurs lignes avec leur intitulé
   if (f.wrap) return `<div class="al-row al-card">${f.cols.map(c => `<label class="al-cell"><span>${esc(c.label)}</span>
-      <input data-col="${c.k}" value="${esc(row[c.k])}" placeholder="${esc(c.placeholder || '')}"${c.k === 'email' ? ' type="email"' : c.k === 'phone' ? ' type="tel"' : ''}></label>`).join('')}
+      <input data-col="${c.k}"${c.cap ? ' data-cap' : ''} value="${esc(row[c.k])}" placeholder="${esc(c.placeholder || '')}"${c.k === 'email' ? ' type="email"' : c.k === 'phone' ? ' type="tel"' : ''}></label>`).join('')}
     <button type="button" class="btn icon sm ghost" data-al-del aria-label="Retirer">✕</button></div>`;
   return `<div class="al-row" style="grid-template-columns:${f.cols.map(c => c.w || '1fr').join(' ')} auto">${f.cols.map(c =>
-    `<input data-col="${c.k}" value="${esc(row[c.k])}" placeholder="${esc(c.placeholder || c.label)}" aria-label="${esc(c.label)}">`).join('')}
+    `<input data-col="${c.k}"${c.cap ? ' data-cap' : ''} value="${esc(row[c.k])}" placeholder="${esc(c.placeholder || c.label)}" aria-label="${esc(c.label)}">`).join('')}
     <button type="button" class="btn icon sm ghost" data-al-del aria-label="Retirer la ligne">✕</button></div>`;
 }
 export function input(f, v, {copy = false, prefix = 'f-'} = {}){

@@ -6,6 +6,12 @@ export const $ = (sel, root=document) => root.querySelector(sel);
 
 export const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 
+/**
+ * Majuscule à la première lettre de chaque mot séparé par une espace (v1.66.6, point n°1 d'Anthony du 24/11/2026) : le reste du mot garde
+ * sa casse (« mcCartney » → « McCartney », « de la tour » → « De La Tour ») ; seul l'espace sépare les mots (« jean-pierre » → « Jean-pierre »).
+ * Une lettre dont la majuscule changerait la longueur (« ß ») reste telle quelle : la position du curseur ne bouge jamais.
+ */
+export const capWords = v => String(v ?? '').replace(/(^|\s)(\S)/gu, (m, a, c) => { const u = c.toLocaleUpperCase('fr'); return a + (u.length === c.length ? u : c); });
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 /** Montant au centime (budgets) */
