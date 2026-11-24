@@ -89,3 +89,50 @@ test('v1.66.6 pages publiques : Prénom / Nom de l’équipe (artiste) et Préno
   expect(await page.locator('[data-col=email][data-cap]').count()).toBe(0);
   expectClean(ctx);
 });
+
+test('v1.66.6 (relecture) seul le texte tapé est mis en forme : effacer puis retaper, mot existant, collage, annulation', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.evaluate(async () => { (await import('./js/forms.js')).editContact(null); });
+  const nom = page.locator('#modal [name=last_name]');
+  await nom.click(); await expect(nom).toBeFocused();
+  // « Jean Van » : effacer le V puis retaper v → « Jean Van », jamais « Jean VAn » ; « Bupont » corrigé en « Dupont », jamais « DUpont »
+  await nom.pressSequentially('jean van');
+  await expect(nom).toHaveValue('Jean Van');
+  for (let i = 0; i < 2; i++) await nom.press('ArrowLeft');
+  await nom.press('Backspace');
+  await expect(nom).toHaveValue('Jean an');
+  await nom.pressSequentially('v');
+  await expect(nom).toHaveValue('Jean Van');
+  await nom.fill(''); await nom.pressSequentially('bupont');
+  await nom.press('Home'); await nom.press('Delete'); await nom.pressSequentially('d');
+  await expect(nom).toHaveValue('Dupont');
+  // texte déjà là (fiche existante) : taper à la fin ne touche pas les autres mots
+  const set = v => nom.evaluate((el, v) => { el.value = v; }, v);   // valeur déjà enregistrée (pas une frappe)
+  await set('iBoat de la tour'); await nom.press('End'); await nom.pressSequentially('s');
+  await expect(nom).toHaveValue('iBoat de la tours');
+  await nom.pressSequentially(' x');
+  await expect(nom).toHaveValue('iBoat de la tours X');
+  // collage : mis en forme, le reste intact
+  await set('le '); await nom.press('End');
+  await page.evaluate(() => { const el = document.querySelector('#modal [name=last_name]'); const dt = new DataTransfer(); dt.setData('text/plain', 'goff du bois');
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); });
+  await expect(nom).toHaveValue('le Goff Du Bois');
+  // annulation : la dernière frappe disparaît, rien d'autre
+  await nom.fill(''); await nom.pressSequentially('abc def');
+  await expect(nom).toHaveValue('Abc Def');
+  await nom.press('ControlOrMeta+z');
+  expect(['Abc De', 'Abc D', 'Abc ', 'Abc']).toContain(await nom.inputValue());
+  expectClean(ctx);
+});
+
+test('v1.66.6 (relecture) fiche RH dans la Matrice : Prénom(s) et Nom de famille en majuscules pendant la frappe', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.evaluate(async () => { const app = await import('./js/app.js'); app.go('employees'); app.render(); });
+  await page.locator('[data-act="newEmployee"]').first().click();
+  const p = page.locator('#modal [name=first_name]'), n = page.locator('#modal [name=last_name]');
+  await expect(p).toHaveAttribute('data-cap', '');
+  await p.pressSequentially('jean pierre'); await expect(p).toHaveValue('Jean Pierre');
+  await n.pressSequentially('le goff'); await expect(n).toHaveValue('Le Goff');
+  expect(await page.locator('#modal [name=birth_city]').getAttribute('data-cap')).toBeNull();
+  expectClean(ctx);
+});

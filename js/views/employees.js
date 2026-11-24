@@ -51,7 +51,7 @@ export function editEmployee(id){
   const fields = [];
   RH_SECTIONS.forEach(sec => {
     fields.push({k:'_h_' + sec.title, type:'html', full:true, html:`<h3 class="block-title mt-sm">${esc(sec.title)}</h3>`});
-    sec.fields.forEach(f => fields.push({k:f.k, label:f.label, full:f.full, type: f.type === 'choice' ? 'select' : f.type === 'tel' ? 'text' : f.type, options:f.options}));
+    sec.fields.forEach(f => fields.push({k:f.k, label:f.label, full:f.full, type: f.type === 'choice' ? 'select' : f.type === 'tel' ? 'text' : f.type, options:f.options, cap:f.cap}));   // cap : majuscule à chaque mot (v1.66.6)
   });
   fields.push({k:'_h_team', type:'html', full:true, html:'<h3 class="block-title mt-sm">Équipe</h3>'});
   RH_TEAM_FIELDS.forEach(f => fields.push({k:f.k, label:f.label, full:f.full, type:f.type, placeholder:f.placeholder}));
