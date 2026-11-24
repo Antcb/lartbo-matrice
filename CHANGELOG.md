@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.66.6 — 24/11/2026
+- Prénom, Nom et nom de structure : majuscule à chaque mot pendant la frappe (contacts, structures, équipe d'un artiste, fiche RH ; point n°1)
+
+
 ## 1.66.5 — 23/11/2026
 - Liens cliquables dans le texte des mails du journal (mots liés et adresses en clair) ; « Retrouver un mail dans la messagerie » quand Safari ne transmet que l'objet du mail (n°15)
 

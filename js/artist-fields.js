@@ -54,7 +54,7 @@ export const ARTIST_SECTIONS = [
     {k: 'techs', label: 'Nombre de techniciens', ...NB}, {k: 'techs_w', label: 'dont femmes', ...NB}, {k: 'techs_m', label: 'dont hommes', ...NB}, {k: 'techs_x', label: 'dont personnes non-genrées', ...NB},
     {k: 'lead', label: 'Lead', type: 'choice', options: ['Féminin', 'Masculin', 'Mixte', 'Non-genré'], full: true},
     {k: 'members', label: 'Musiciens et techniciens', type: 'list', wrap: true, full: true, add: 'Ajouter une personne',
-      cols: [{k: 'role', label: 'Poste', placeholder: 'ex. Chant, guitare, son…'}, {k: 'first_name', label: 'Prénom'}, {k: 'last_name', label: 'Nom'},
+      cols: [{k: 'role', label: 'Poste', placeholder: 'ex. Chant, guitare, son…'}, {k: 'first_name', label: 'Prénom', cap: true}, {k: 'last_name', label: 'Nom', cap: true},
         {k: 'birth_date', label: 'Date de naissance', placeholder: 'JJ/MM/AAAA'}, {k: 'email', label: 'Mail'}, {k: 'phone', label: 'Téléphone'}, {k: 'city', label: 'Ville de résidence'}, {k: 'country', label: 'Pays de résidence'}]},
   ]},
   {title: '9. Musicien référent', help: 'La personne du groupe à contacter.', fields: [

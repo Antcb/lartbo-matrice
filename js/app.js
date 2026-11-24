@@ -6,6 +6,7 @@ import './views/auth.js';
 import './ui/datefield.js';
 import './ui/numfield.js';
 import './ui/autocomplete.js';
+import './ui/capwords.js';   // (v1.66.6) majuscule à chaque mot : Prénom, Nom, nom de structure
 import { ACTIONS, cleanupDraft } from './actions.js';
 import { activeNotifs, byId, teamName, unreadNotifs } from './selectors.js';
 import { netArtbo, payAmount, paymentsOf } from './calc.js';

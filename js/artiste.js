@@ -8,6 +8,7 @@ import { CFG } from './config.js';
 import { MAIL_MSG, checkMails, esc, fmtDate } from './utils.js';
 import { localDel, localGet, localSet } from './storage.js';
 import './ui/testbanner.js';
+import './ui/capwords.js';   // (v1.66.6) majuscule à chaque mot : Prénom, Nom de l'équipe
 import './ui/dropfiles.js';
 import './ui/filepick.js';
 import './ui/autogrow.js';

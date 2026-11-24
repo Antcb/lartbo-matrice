@@ -12,8 +12,8 @@
 export const RH_SECTIONS = [
   {title: 'Identité', fields: [
     {k:'civility', ph:'Genre', label:'Civilité', type:'choice', options:['Madame','Monsieur','Autre'], mm:/^civilit/i},
-    {k:'first_name', ph:'Prénom(s)', col:true, label:'Prénom(s)', req:true, mm:/^pr[eé]nom$/i},
-    {k:'last_name', ph:'Nom de Famille', col:true, label:'Nom de famille', req:true, mm:/^nom de famille$|^nom$/i},
+    {k:'first_name', ph:'Prénom(s)', col:true, cap:true, label:'Prénom(s)', req:true, mm:/^pr[eé]nom$/i},
+    {k:'last_name', ph:'Nom de Famille', col:true, cap:true, label:'Nom de famille', req:true, mm:/^nom de famille$|^nom$/i},
     {k:'birth_name', label:'Nom de naissance (si différent)', mm:/^nom de naissance$/i},
     {k:'birth_date', ph:'Date de Naissance', label:'Date de naissance', type:'date', req:true, mm:/^date de naissance$/i},
     {k:'birth_city', ph:'Ville de Naissance', label:'Ville de naissance', req:true, mm:/^ville de naissance$/i},

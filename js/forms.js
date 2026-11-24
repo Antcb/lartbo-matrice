@@ -18,7 +18,7 @@ import { CREATORS } from './ui/autocomplete.js';
 import { fileRow, remindersSuspendedNote } from './ui/bits.js';
 import { remindersOf, taskDelay } from './reminders.js';
 import { hiddenFields, openModal } from './ui/modal.js';
-import { $, downloadCSV, esc, fmtDate, norm, toast, today, workDay, addDays, pct } from './utils.js';
+import { $, capWords, downloadCSV, esc, fmtDate, norm, toast, today, workDay, addDays, pct } from './utils.js';
 import { driveHTML } from './views/production.js';
 import { cancelAutoRelances, closeNoAnswer, deleteProspect, prospectDeleteAsk } from './prospection.js';
 import { afterFeeChange, askConfirmation, becameConfirmed } from './confirm-flow.js';
@@ -456,7 +456,7 @@ export function editContact(id, prefill={}){
     : c.brevo_at ? `<p class="help full">Dans Brevo (mis à jour le ${fmtDate(c.brevo_at)}).</p>` : '';
   const out = openModal({ title: id ? c.display_name : 'Nouveau contact', values: {...c, _structures: links}, extra: brevo + brevoBlockHTML(c) + prospectionBlock(c),
     fields: [
-      {k:'first_name', label:'Prénom'}, {k:'last_name', label:'Nom'},
+      {k:'first_name', label:'Prénom', cap:true}, {k:'last_name', label:'Nom', cap:true},
       {k:'_structures', label:'Structures', type:'links', source:'structures', create:true, full:true},
       {k:'roles', label:'Poste(s)', type:'tags', full:true, suggest: () => [...CONTACT_ROLES, ...S.db.contacts.flatMap(x => x.roles || [])]},
       ...CONTACT_COORDS,
@@ -487,7 +487,7 @@ export function editContact(id, prefill={}){
 
 /* ------------------------------------------------------------------ Structures */
 const structFields = () => [
-  {k:'name', label:'Nom', full:true},
+  {k:'name', label:'Nom', full:true, cap:true},
   {k:'tags', label:'Types (tags)', type:'tags', full:true, suggest: () => [...STRUCT_TAGS, ...S.db.structures.flatMap(x => x.tags || [])]},
   {k:'address', label:'Adresse — tape une adresse ou une ville, les champs se remplissent', type:'place', full:true},
   {k:'postal_code', label:'Code postal'}, {k:'city', label:'Ville'},
@@ -583,7 +583,7 @@ function takeEvent(v, pre){
 /** Création rapide d'une structure depuis un champ de recherche (fenêtre par-dessus le formulaire) */
 CREATORS.structures = async name => {
   // mêmes cases que « Nouvelle structure » dans l'onglet Structures
-  const row = await openModal({ level:2, wide:true, title:'Nouvelle structure', values:{name, country:'France', _contacts:[]}, extra: structHidden({}), fields: structFormFields(true, true), saveLabel:'Créer la structure',
+  const row = await openModal({ level:2, wide:true, title:'Nouvelle structure', values:{name: capWords(name), country:'France', _contacts:[]}, extra: structHidden({}), fields: structFormFields(true, true), saveLabel:'Créer la structure',
     onSave: v => saveStructure(null, {}, v) });
   if (!row) return null;
   toast(`Structure « ${row.name} » créée`);
@@ -592,8 +592,8 @@ CREATORS.structures = async name => {
 
 CREATORS.contacts = async name => {
   const [first, ...rest] = String(name).trim().split(/\s+/);
-  const row = await openModal({ level:2, title:'Nouveau contact', values:{first_name:first, last_name:rest.join(' ')}, saveLabel:'Créer le contact',
-    fields:[{k:'first_name', label:'Prénom'}, {k:'last_name', label:'Nom'}, {k:'roles', label:'Poste(s)', type:'tags', full:true, suggest: () => [...CONTACT_ROLES, ...S.db.contacts.flatMap(x => x.roles || [])]}, ...CONTACT_COORDS],
+  const row = await openModal({ level:2, title:'Nouveau contact', values:{first_name:capWords(first), last_name:capWords(rest.join(' '))}, saveLabel:'Créer le contact',
+    fields:[{k:'first_name', label:'Prénom', cap:true}, {k:'last_name', label:'Nom', cap:true}, {k:'roles', label:'Poste(s)', type:'tags', full:true, suggest: () => [...CONTACT_ROLES, ...S.db.contacts.flatMap(x => x.roles || [])]}, ...CONTACT_COORDS],
     onSave: async v => { v.display_name = [v.first_name, v.last_name].filter(Boolean).join(' ') || v.email || v.email_2; if (!v.display_name){ toast('Indique au moins un nom', true); return false; }
       // doublon par mail : on peut reprendre le contact existant au lieu d'en créer un second (aucune fusion automatique)
       const dup = await askDuplicate(v, null, 'Utiliser ce contact');

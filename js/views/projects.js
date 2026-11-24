@@ -192,7 +192,7 @@ function adminTab(p){
 function membersTab(p, {members}){
   return `<div class="vh-actions mb"><button class="btn primary" data-act="addMember" data-id="${p.id}">Ajouter un membre</button></div>
   <div class="tbl-wrap"><table><thead><tr><th>Prénom</th><th>Nom</th><th>Poste</th><th>Mail</th><th>Téléphone</th><th>Adresse</th><th>Naissance</th><th></th></tr></thead><tbody>
-    ${members.map(m=>`<tr><td>${cIn('project_members',m.id,'first_name',m.first_name)}</td><td>${cIn('project_members',m.id,'last_name',m.last_name)}</td>
+    ${members.map(m=>`<tr><td>${cIn('project_members',m.id,'first_name',m.first_name,'text','data-cap')}</td><td>${cIn('project_members',m.id,'last_name',m.last_name,'text','data-cap')}</td>
       <td>${cIn('project_members',m.id,'role',m.role,'text','placeholder="Chant, régie…"')}</td><td>${cIn('project_members',m.id,'email',m.email)}</td><td>${cIn('project_members',m.id,'phone',m.phone)}</td>
       <td style="min-width:240px">${cAc('fulladdr','project_members',m.id,'address',m.address,{text:m.address||'', placeholder:'Adresse'})}</td><td>${cIn('project_members',m.id,'birth_date',m.birth_date,'date')}</td>
       <td class="nowrap">${m.employee_id ? `<button type="button" class="btn sm" data-act="employeeCard" data-id="${m.employee_id}">Fiche salarié</button>` : `<button type="button" class="btn sm" data-act="memberCard" data-id="${m.id}">Fiche complète${Object.keys(m.data||{}).length?` (${Object.keys(m.data).length})`:''}</button>`}
