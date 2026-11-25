@@ -251,3 +251,68 @@ test('v1.67 (relecture B1) Réglages passés aux rôles : un artiste resté sur 
   expectClean(ctx);
 });
 
+
+test('v1.67 (demande du 25/11) CNM incalculable : cession payante supportée par L’ArtBo → « CNM à renseigner », budget incomplet, jamais 0 € présenté comme calculé', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [{ id: 'sh-ces', project_id: 'art-a', venue: 'Cession payante', status: 'Confirmée Salle', contract_type: 'Cession', prod_mode: 'production', date: '2027-06-02',
+      fee_ht: 2000, ticketing_type: 'Payant/Prix Libre', cnm_bearer: 'artbo' }],
+    budget_lines: [{ id: 'bl-c', show_id: 'sh-ces', project_id: 'art-a', category: 'Technique', label: 'Son', forecast: 100, sort: 1 },
+      { id: 'bl-cnm', show_id: 'sh-ces', project_id: 'art-a', category: 'Taxes', label: 'Taxe CNM (billetterie)', supplier: 'CNM', auto: 'cnm', payer: 'compte', sort: 2 }] });
+  const st = () => page.evaluate(async () => { const b = await import('./js/budget.js'); const l = b.linesOf('sh-ces').find(x => x.auto === 'cnm');
+    return { todo: b.isCnmToFill(l), missing: b.missingCostLines('sh-ces').map(b.missingCostName), text: b.missingCostText(b.missingCostLines('sh-ces')) }; });
+  let r = await st();
+  expect(r.todo).toBe(true);
+  expect(r.missing).toEqual(['CNM à renseigner']);
+  expect(r.text).toBe('Budget incomplet — coûts à renseigner : CNM à renseigner');
+  // écran : ligne et bloc CNM disent « CNM à renseigner », synthèse « Budget incomplet »
+  await page.evaluate(async () => { const { S } = await import('./js/state.js'); const app = await import('./js/app.js');
+    S.year = 2027; app.go('production'); S.openProd.add('sh-ces'); S.tab['prod:sh-ces'] = 'budget'; app.render(); });
+  const card = page.locator('#prod-sh-ces');
+  await expect(card.locator('tr[data-budget-line="bl-cnm"]')).toContainText('CNM à renseigner');
+  await expect(card.locator('tr[data-budget-line="bl-cnm"] [data-f="forecast"]')).toHaveAttribute('placeholder', 'à renseigner');
+  await expect(card.locator('.cnm-block')).toContainText('CNM à renseigner');
+  await expect(card.locator('.budget-incomplete')).toContainText('CNM à renseigner');
+  // montant prévu saisi sur la ligne : plus à renseigner
+  await page.evaluate(async () => { const { save } = await import('./js/data.js'); await save('budget_lines', 'bl-cnm', { forecast: 80 }); });
+  r = await st();
+  expect(r.todo).toBe(false);
+  expect(r.missing).toEqual([]);
+  // entrée gratuite (base = cachet) : calculée, jamais « à renseigner » ; organisateur redevable : rien
+  await page.evaluate(async () => { const { save } = await import('./js/data.js'); await save('budget_lines', 'bl-cnm', { forecast: null }); await save('shows', 'sh-ces', { ticketing_type: 'Gratuit' }); });
+  r = await st();
+  expect(r.todo).toBe(false);
+  expectClean(ctx);
+});
+
+test('v1.67 (demande du 25/11) ancien budget sans ligne CNM : une dépense ajoutée ne change pas le calcul ; modifier les paramètres CNM ajoute la ligne ; nouveau budget : ligne posée', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, { shows: [
+      { id: 'sh-old', project_id: 'art-a', venue: 'Ancien budget', status: 'Confirmée Salle', contract_type: 'Cession', prod_mode: 'production', date: '2027-06-03', fee_ht: 1500, ticketing_type: 'Gratuit' },
+      { id: 'sh-new', project_id: 'art-a', venue: 'Nouveau budget', status: 'Confirmée Salle', contract_type: 'Cession', prod_mode: 'production', date: '2027-06-04', fee_ht: 1500, ticketing_type: 'Gratuit' }],
+    budget_lines: [{ id: 'bl-o', show_id: 'sh-old', project_id: 'art-a', category: 'Technique', label: 'Son', forecast: 100, sort: 1 }] });
+  const tot = id => page.evaluate(async id => { const b = await import('./js/budget.js'); const { byId } = await import('./js/selectors.js');
+    return { cnm: b.linesOf(id).some(l => l.auto === 'cnm'), exp: b.showBudget(byId('shows', id)).expenses, n: b.linesOf(id).length }; }, id);
+  const before = await tot('sh-old');
+  expect(before.cnm).toBe(false);
+  const open = id => page.evaluate(async id => { const { S } = await import('./js/state.js'); const app = await import('./js/app.js');
+    S.year = 2027; app.go('production'); S.openProd.add(id); S.tab['prod:' + id] = 'budget'; app.render(); }, id);
+  await open('sh-old');
+  // ajout d'une dépense sans rapport : pas de ligne CNM, dépenses = avant + nouvelle ligne (vide : 0)
+  await page.evaluate(async () => { const { ACTIONS } = await import('./js/actions.js');
+    const b = document.createElement('button'); b.dataset.show = 'sh-old'; b.dataset.cat = 'Technique'; await (ACTIONS.addBudgetLine)(b); });
+  await expect.poll(async () => (await tot('sh-old')).n).toBe(2);
+  let after = await tot('sh-old');
+  expect(after.cnm).toBe(false);
+  expect(after.exp).toBe(before.exp);
+  // modification sans changement réel (même valeur) : rien
+  await page.evaluate(async () => { const { save } = await import('./js/data.js'); await save('shows', 'sh-old', { ticketing_type: 'Gratuit' }); });
+  expect((await tot('sh-old')).cnm).toBe(false);
+  // modification volontaire d'un paramètre CNM de la date (taux) : la ligne est ajoutée
+  await page.evaluate(async () => { const { save } = await import('./js/data.js'); await save('shows', 'sh-old', { cnm_pct: 3.5 }); });
+  await expect.poll(async () => (await tot('sh-old')).cnm).toBe(true);
+  // nouveau budget (aucune ligne) : la première ligne ajoutée pose aussi la ligne CNM
+  await page.evaluate(async () => { const { ACTIONS } = await import('./js/actions.js');
+    const b = document.createElement('button'); b.dataset.show = 'sh-new'; b.dataset.cat = 'Technique'; await (ACTIONS.addBudgetLine)(b); });
+  await expect.poll(async () => (await tot('sh-new')).cnm).toBe(true);
+  expectClean(ctx);
+});

@@ -16,7 +16,7 @@
  * Le modèle n'est copié que dans un budget VIDE : le modifier ne change jamais les budgets existants.
  */
 import { render } from './app.js';
-import { cnmDue, isFree, isMissingCost, linesOf, missingCostLines, payslipCost } from './budget.js';
+import { CNM_TODO, cnmDue, isCnmToFill, isFree, isMissingCost, linesOf, missingCostLines, payslipCost } from './budget.js';
 import { confirmAsk } from './ui/dialog.js';
 import { save, sb, mergeRows } from './data.js';
 import { isProductionShow } from './production-budget.js';
@@ -205,6 +205,7 @@ export function costGaps(s){
   const out = [], sp = s.spectacle_id ? byId('spectacles', s.spectacle_id) : null, rows = templateLines(s).filter(r => r.category === 'Staff');
   if (jaugeOf(s) == null && rows.some(r => /jauge à renseigner/.test(r.label))) out.push('jauge ouverte de la date');
   for (const l of miss){
+    if (isCnmToFill(l)){ out.push(`${CNM_TODO} : recettes de billetterie inconnues, montant prévu à saisir sur la ligne CNM`); continue; }
     const r = rows.find(x => costKey(x.label) === costKey(l.label));
     if (r && r.unit_cost == null && !/jauge à renseigner/.test(r.label)) out.push(`${costKey(l.label).replace(/^./, c => c.toUpperCase())} : coût absent du modèle ${sp ? `du spectacle « ${sp.name || 'sans nom'} »` : 'de l’artiste'}${/jauge/.test(r.label) ? ` (${r.label.match(/\((.*?)\)/)?.[1] || ''})` : ''}`);
     else if (!r) out.push(`${l.label || 'ligne sans libellé'} : absente du budget type ${templateSource(s)}, coût à saisir sur la ligne`);

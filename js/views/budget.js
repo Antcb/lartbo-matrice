@@ -2,7 +2,7 @@
  * Budget dans l'onglet Production : le budget de chaque date (prévu / réel, pièces, qui paie)
  * et la vue d'ensemble d'un artiste (compte dédié, toutes les dates, frais hors date).
  */
-import { INCOMPLETE, bulletinsProposed, cnmViaShare, isFacture, accountMoves, accountOf, availableForArtist, coreaCommissionCheck, cnmPct, commissionAmount, commissionOf, isFree, isSolde, lineForecast, lineStatus, lineValue, linesOf, missingCostLines, offLinesOf, payerLabel, payslipCost, prodShowsOf, showBudget } from '../budget.js';
+import { CNM_TODO, INCOMPLETE, bulletinsProposed, isCnmToFill, missingCostName, cnmViaShare, isFacture, accountMoves, accountOf, availableForArtist, coreaCommissionCheck, cnmPct, commissionAmount, commissionOf, isFree, isSolde, lineForecast, lineStatus, lineValue, linesOf, missingCostLines, offLinesOf, payerLabel, payslipCost, prodShowsOf, showBudget } from '../budget.js';
 import { costFillPlan, costGaps, templateSource } from '../budget-template.js';
 import { BUDGET_CATS, PAYERS, TICKETING } from '../constants.js';
 import { commissionState, payAmount, paymentsOf } from '../calc.js';
@@ -28,13 +28,13 @@ function lineRow(l, project, {qtyAll = false} = {}){
   const hasQty = staff && l.forecast == null;
   const prev = staff && hasQty
     ? `<span class="qty-line"><span class="qty-mul">${cIn('budget_lines', l.id, 'qty', l.qty, 'number', `class="narrow" title="${qtyAll ? 'Quantité' : isFacture(l) ? 'Nombre de factures' : 'Nombre de bulletins'}" placeholder="${qtyAll ? 'qté' : 'nb'}"`)}<span class="x">×</span>${cIn('budget_lines', l.id, 'unit_cost', l.unit_cost, 'number', `class="narrow2" title="${qtyAll ? 'Prix unitaire HT' : isFacture(l) ? 'Montant HT d’une facture' : 'Coût employeur d’un bulletin'}" placeholder="${qtyAll ? 'P.U.' : 'coût'}"`)}</span><b>${eur2(fc ?? 0)}</b></span>`
-    : `<input type="number" step="any" data-t="budget_lines" data-id="${l.id}" data-f="forecast" value="${l.forecast??''}" placeholder="${fc==null?'à saisir':fc}" class="${auto && l.forecast!=null?'override':''}" title="${auto ? (l.forecast!=null ? 'Montant saisi à la main à la place du calcul automatique (efface-le pour revenir au calcul)' : 'Vide = calcul automatique') : 'Montant prévu HT'}">`;
+    : `<input type="number" step="any" data-t="budget_lines" data-id="${l.id}" data-f="forecast" value="${l.forecast??''}" placeholder="${fc==null?'à saisir':isCnmToFill(l)?'à renseigner':fc}" class="${auto && l.forecast!=null?'override':''}" title="${auto ? (l.forecast!=null ? 'Montant saisi à la main à la place du calcul automatique (efface-le pour revenir au calcul)' : 'Vide = calcul automatique') : 'Montant prévu HT'}">`;
   // (v1.67, point n°10) nombre de bulletins de la date : proposé d'après les lignes AU CACHET, ajustable (0 compris) ; une ligne sur
   // facture n'en génère aucun
   const mmQty = () => { const prop = bulletinsProposed(l.show_id);
     return `<span class="mm-qty">${cIn('budget_lines', l.id, 'qty', l.qty, 'number', `class="narrow" min="0" step="1" aria-label="Nombre de bulletins de la date" placeholder="${prop}" title="Vide : ${prop} proposé${prop > 1 ? 's' : ''} d’après les lignes au cachet ; 0 accepté"`)} bulletin${(l.qty ?? prop) > 1 ? 's' : ''}${l.qty == null || l.qty === '' ? ` <span class="muted">(proposé${prop > 1 ? 's' : ''} : lignes au cachet)</span>` : ` <span class="muted">(saisi${Number(l.qty) > 1 ? 's' : ''} ; ${prop} d’après les lignes au cachet)</span>`}</span>`; };
   const calc = cnmViaShare(l) ? 'CNM aussi déduite du résultat partagé : comptée ici en dépense de la date, rapprochement à faire (non corrigé)'
-    : l.auto==='movinmotion' ? `${mmQty()} × ${l.unit_cost != null ? eur2(Number(l.unit_cost)) + ' (coût figé)' : 'coût Movinmotion des Réglages'}` : l.auto==='cnm' ? '% du cachet (entrée gratuite)' : '';
+    : l.auto==='movinmotion' ? `${mmQty()} × ${l.unit_cost != null ? eur2(Number(l.unit_cost)) + ' (coût figé)' : 'coût Movinmotion des Réglages'}` : isCnmToFill(l) ? `<span class="warn-txt">${CNM_TODO}</span> : recettes de billetterie inconnues, montant prévu à saisir` : l.auto==='cnm' ? '% du cachet (entrée gratuite)' : '';
   const mode = l.category === 'Staff' ? `<div class="pay-mode">${cSelText('budget_lines', l.id, 'pay_mode', isFacture(l) ? 'facture' : 'cachet', [['cachet', 'Au cachet (bulletin)'], ['facture', 'Sur facture (HT)']], {name: 'Mode de rémunération'})}</div>` : '';
   return `<tr data-budget-line="${l.id}" class="${st==='paid'?'is-paid':st==='doc'?'has-doc':''}" title="${st==='paid'?'Payé':st==='doc'?'Pièce reçue, pas encore payée':'Prévu'}">
     <td>${cSel('budget_lines', l.id, 'category', l.category, BUDGET_CATS)}</td>
@@ -77,7 +77,7 @@ function dropZone(attrs, text){
 function incompleteNote(s){
   const ls = missingCostLines(s.id); if (!ls.length) return '';
   const n = costFillPlan(s).length, gaps = costGaps(s);
-  return `<p class="mode-note warn-txt budget-incomplete"><b>${INCOMPLETE}</b> : ${esc(ls.map(l => l.label || l.category || 'ligne sans libellé').join(' ; '))} — compté${ls.length > 1 ? 's' : ''} 0 € tant que le coût n’est pas saisi : totaux, reste et points d’équilibre non fiables.${gaps.length ? ` Informations manquantes : ${esc(gaps.join(' ; '))}.` : ''}${n ? ` <button class="btn sm" data-act="fillMissingCosts" data-id="${s.id}">Compléter depuis le budget type ${esc(templateSource(s))} (${n} ligne${n > 1 ? 's' : ''})</button>` : ''}</p>`;
+  return `<p class="mode-note warn-txt budget-incomplete"><b>${INCOMPLETE}</b> : ${esc(ls.map(missingCostName).join(' ; '))} — compté${ls.length > 1 ? 's' : ''} 0 € tant que le coût n’est pas saisi : totaux, reste et points d’équilibre non fiables.${gaps.length ? ` Informations manquantes : ${esc(gaps.join(' ; '))}.` : ''}${n ? ` <button class="btn sm" data-act="fillMissingCosts" data-id="${s.id}">Compléter depuis le budget type ${esc(templateSource(s))} (${n} ligne${n > 1 ? 's' : ''})</button>` : ''}</p>`;
 }
 
 /**
@@ -274,7 +274,7 @@ const holderOpts = HOLDERS;
 function cnmBlock(s){
   const c = cnmOf(s), habit = cnmBearer({...s, cnm_bearer: null});
   return `<div class="steps prod-params cnm-block">
-    <label>Taxe CNM</label><span>${c.abroad ? 'Date à l’étranger : pas de taxe CNM' : `${c.free ? 'Spectacle gratuit : sur le prix de cession HT' : 'Spectacle payant : sur la totalité des recettes de billetterie HT'}${c.real != null ? ` · <b>${eur2(c.real)}</b> (dépense CNM saisie)` : c.amount != null ? ` · <b>${eur2(c.amount)}</b>` : ' · <span class="muted">recettes de billetterie non saisies</span>'}`}</span>
+    <label>Taxe CNM</label><span>${c.abroad ? 'Date à l’étranger : pas de taxe CNM' : `${c.free ? 'Spectacle gratuit : sur le prix de cession HT' : 'Spectacle payant : sur la totalité des recettes de billetterie HT'}${c.real != null ? ` · <b>${eur2(c.real)}</b> (dépense CNM saisie)` : c.amount != null ? ` · <b>${eur2(c.amount)}</b>` : linesOf(s.id).some(isCnmToFill) ? ` · <b class="warn-txt">${CNM_TODO}</b> (recettes de billetterie inconnues : montant prévu à saisir sur la ligne CNM)` : ' · <span class="muted">recettes de billetterie non saisies</span>'}`}</span>
     <label>Taux de la date (%)</label><span>${cIn('shows', s.id, 'cnm_pct', s.cnm_pct, 'number', `class="narrow" placeholder="${esc(String(cnmPct()))}" title="Vide : taux des Réglages"`)} <span class="muted">${s.cnm_pct == null || s.cnm_pct === '' ? 'taux des Réglages' : ''}</span></span>
     <label>Entrée</label><span>${cSel('shows', s.id, 'ticketing_type', s.ticketing_type, TICKETING.map(x => [x, x === 'Gratuit' ? 'Gratuite' : 'Payante / prix libre']))} <span class="muted">gratuite ou payante : distinct de qui supporte la taxe (ci-dessous)</span></span>
     <label>Billetterie encaissée par</label>${cSel('shows', s.id, 'ticket_holder', s.ticket_holder, holderOpts)}
