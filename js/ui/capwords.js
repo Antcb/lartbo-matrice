@@ -23,12 +23,22 @@ const firstLetterSelected = (el, a, b) => b - a === 1 && (a === 0 || /\s/u.test(
 // sélection), ou avec une sélection déjà réduite. Position mémorisée → aucune mise en forme du caractère inséré à cet endroit,
 // quel que soit le chemin (beforeinput, compositionend) ; oubliée à la touche suivante.
 const deliberate = new WeakMap();
-const isDeliberate = (el, pos, data) => deliberate.get(el) === pos && [...data].length === 1;
+// (25/11, Safari : la lettre passait directement en majuscule) la position que Safari donne pendant la saisie n'est pas fiable : seul
+// compte le repère posé par la touche qui produit ce caractère (effacé par toute autre touche)
+const isDeliberate = (el, pos, data) => deliberate.has(el) && [...data].length === 1;
+// dernière sélection connue, relevée à la fin du geste qui l'a faite (souris, Maj+flèches, événement « select ») : repli si le
+// navigateur donne une sélection déjà modifiée à l'appui de la touche suivante
+const lastSel = new WeakMap();
+const snap = e => { const el = e.target; if (el?.matches?.(CAP)) lastSel.set(el, [el.selectionStart, el.selectionEnd, el.value]); };
+['select', 'mouseup', 'keyup'].forEach(t => document.addEventListener(t, snap, true));
+const selectedFirst = el => { if (firstLetterSelected(el, el.selectionStart, el.selectionEnd)) return el.selectionStart;
+  const l = lastSel.get(el); return l && l[2] === el.value && firstLetterSelected(el, l[0], l[1]) ? l[0] : -1; };
 document.addEventListener('keydown', e => {
   const el = e.target;
   if (!el.matches?.(CAP) || e.isComposing || e.metaKey || e.ctrlKey || e.altKey && e.key !== 'Dead') return;
-  if (firstLetterSelected(el, el.selectionStart, el.selectionEnd)){ deliberate.set(el, el.selectionStart);
-    if ([...e.key].length === 1) trace = {el, pos: el.selectionStart, key: e.key, seq: [['keydown', e.key === 'Dead' ? 'dead' : '', false, el.selectionStart, el.selectionEnd]]}; }
+  const at = [...e.key].length === 1 || e.key === 'Dead' ? selectedFirst(el) : (firstLetterSelected(el, el.selectionStart, el.selectionEnd) ? el.selectionStart : -1);
+  if (at >= 0){ deliberate.set(el, at);
+    if ([...e.key].length === 1) trace = {el, pos: at, key: e.key, seq: [['keydown', e.key === 'Dead' ? 'dead' : '', false, el.selectionStart, el.selectionEnd, at]]}; }
   else deliberate.delete(el);
 }, true);
 // trace de diagnostic (sans contenu : types d'événements, positions) si la correction n'est pas respectée malgré tout
