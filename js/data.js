@@ -54,12 +54,13 @@ export async function save(table, id, patch, {rerender=true}={}){
   summaryAfter(table, row || data);
   if (table==='shows' && (patch.status || patch.project_id)) await refreshShowSide(id);
   if (table==='shows'){
-    // ligne CNM (v1.67, demande d'Anthony du 25/11/2026) : seule une modification VOLONTAIRE des paramètres CNM de la date ajoute la
-    // ligne à un budget qui n'en a pas ; les autres changements (lieu, structure, contrat) peuvent seulement la retirer
+    // ligne CNM (v1.67, décisions d'Anthony du 25/11/2026) : une modification RÉELLE des paramètres CNM de la date peut l'ajouter à
+    // tout budget ; un changement de lieu, de structure ou de contrat l'ajoute ou la retire sur un budget créé avec la v1.67
+    // (isNewBudget), mais peut seulement la retirer d'un budget enregistré avant
     const changed = k => k in patch && String(before?.[k] ?? '') !== String((data || row)?.[k] ?? '');
     const cnmEdit = ['ticketing_type', 'ticket_holder', 'cnm_bearer', 'cnm_pct', 'cnm_in_result'].some(changed);
     if (cnmEdit || ['department', 'structure_id', 'contract_type'].some(changed))
-      await (await import('./budget-actions.js')).syncCnmLine(id, {add: cnmEdit});
+      await (await import('./budget-actions.js')).syncCnmLine(id, {add: cnmEdit || isNewBudget(row || data)});
   }
   if (rerender) render();
   return before || {};   // réussi (même si la ligne n'était pas encore en mémoire)
@@ -115,6 +116,22 @@ export function mergeRows(table, rows){
   touch(table);
 }
 
+/**
+ * (v1.67, décision d'Anthony du 25/11/2026) Marqueur PERSISTANT « budget créé avec la v1.67 » : shows.budget_created_at, posé une
+ * seule fois par la base (déclencheur budget_lines_mark_created) quand la première ligne d'une date SANS budget est créée ; jamais
+ * recalculé d'après les lignes présentes (supprimer la première ligne ne le change pas). Vide = budget enregistré avant (ou pas de
+ * budget). Relu ici après un ajout de lignes ; colonne absente (migration non appliquée) : budget traité comme ancien.
+ */
+export async function refreshBudgetMarker(rows){
+  const ids = [...new Set([].concat(rows || []).map(r => r?.show_id).filter(Boolean))].filter(id => { const s = byId('shows', id); return s && !s.budget_created_at; });
+  if (!ids.length) return;
+  const {data, error} = await sb.from('shows').select('id, budget_created_at, updated_at').in('id', ids);
+  if (error || !data) return;
+  for (const r of data){ const s = byId('shows', r.id); if (s && r.budget_created_at){ s.budget_created_at = r.budget_created_at; if (r.updated_at) s.updated_at = r.updated_at; } }
+  touch('shows');
+}
+export const isNewBudget = s => !!s?.budget_created_at;
+
 export async function insert(table, values){
   const {data, error} = await insertRow(table, values);
   if (error){ toast('Création impossible : '+error.message, true); return null; }
@@ -130,6 +147,7 @@ export async function insertRow(table, values){
   touch(table);
   summaryAfter(table, data);
   if (table==='shows') await refreshShowSide(data.id);
+  if (table==='budget_lines') await refreshBudgetMarker(data);
   return {data, error: null};
 }
 

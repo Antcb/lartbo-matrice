@@ -316,3 +316,45 @@ test('v1.67 (demande du 25/11) ancien budget sans ligne CNM : une dépense ajout
   await expect.poll(async () => (await tot('sh-new')).cnm).toBe(true);
   expectClean(ctx);
 });
+
+test('v1.67 (décision du 25/11) marqueur de budget : lieu / structure changés → ligne CNM ajoutée ou retirée sur un budget créé avec la v1.67 (même après suppression de sa première ligne), jamais ajoutée à un budget enregistré avant', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page, {
+    structures: [{ id: 'st-be', name: 'Salle belge', country: 'Belgique' }, { id: 'st-fr', name: 'Salle française', country: 'France' }],
+    shows: [
+      { id: 'sh-av', project_id: 'art-a', venue: 'Avant', status: 'Confirmée Salle', contract_type: 'Cession', prod_mode: 'production', date: '2027-07-01', fee_ht: 1500, ticketing_type: 'Gratuit', department: 'BE' },
+      { id: 'sh-ap', project_id: 'art-a', venue: 'Après', status: 'Confirmée Salle', contract_type: 'Cession', prod_mode: 'production', date: '2027-07-02', fee_ht: 1500, ticketing_type: 'Gratuit', department: 'BE' },
+      { id: 'sh-st', project_id: 'art-a', venue: 'Structure', status: 'Confirmée Salle', contract_type: 'Cession', prod_mode: 'production', date: '2027-07-03', fee_ht: 1500, ticketing_type: 'Gratuit', structure_id: 'st-be' }],
+    budget_lines: [{ id: 'bl-av', show_id: 'sh-av', project_id: 'art-a', category: 'Technique', label: 'Son', forecast: 100, sort: 1 }] });
+  const st = id => page.evaluate(async id => { const b = await import('./js/budget.js'); const { byId } = await import('./js/selectors.js'); const d = await import('./js/data.js');
+    return { cnm: b.linesOf(id).some(l => l.auto === 'cnm'), marker: d.isNewBudget(byId('shows', id)), n: b.linesOf(id).length }; }, id);
+  const save = (id, patch) => page.evaluate(async ({ id, patch }) => { const { save } = await import('./js/data.js'); await save('shows', id, patch); }, { id, patch });
+  const add = id => page.evaluate(async id => { const { ACTIONS } = await import('./js/actions.js');
+    const b = document.createElement('button'); b.dataset.show = id; b.dataset.cat = 'Technique'; await ACTIONS.addBudgetLine(b); }, id);
+  // budget enregistré avant (aucun marqueur) : passer en France ne pose pas la taxe
+  expect((await st('sh-av')).marker).toBe(false);
+  await save('sh-av', { department: '75' });
+  expect((await st('sh-av')).cnm).toBe(false);
+  await save('sh-av', { contract_type: 'Co-Réalisation' });
+  expect((await st('sh-av')).cnm).toBe(false);
+  // budget créé avec la v1.67 (à l'étranger : pas de CNM) : marqueur posé à la première ligne
+  await add('sh-ap'); await add('sh-ap');
+  let r = await st('sh-ap');
+  expect(r).toEqual({ cnm: false, marker: true, n: 2 });
+  // suppression de la PREMIÈRE ligne : le marqueur reste
+  await page.evaluate(async () => { const b = await import('./js/budget.js'); const { remove } = await import('./js/data.js');
+    const first = b.linesOf('sh-ap').sort((x, y) => (x.sort ?? 0) - (y.sort ?? 0))[0]; await remove('budget_lines', first.id); });
+  r = await st('sh-ap');
+  expect(r.n).toBe(1); expect(r.marker).toBe(true);
+  // lieu changé : la CNM devient applicable → ligne ajoutée ; retour à l'étranger → retirée
+  await save('sh-ap', { department: '75' });
+  await expect.poll(async () => (await st('sh-ap')).cnm).toBe(true);
+  await save('sh-ap', { department: 'BE' });
+  await expect.poll(async () => (await st('sh-ap')).cnm).toBe(false);
+  // structure changée (budget créé avec la v1.67) : même règle
+  await add('sh-st');
+  expect((await st('sh-st'))).toEqual({ cnm: false, marker: true, n: 1 });
+  await save('sh-st', { structure_id: 'st-fr' });
+  await expect.poll(async () => (await st('sh-st')).cnm).toBe(true);
+  expectClean(ctx);
+});
