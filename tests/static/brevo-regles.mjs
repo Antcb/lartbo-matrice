@@ -390,7 +390,7 @@ t('relecture B3 : réglages lus PAR APPEL — appels simultanés, l’un en éch
 });
 t('sauvegarde JSON : la liste d’opposition est exportée (lecture seule du rôle serveur)', () => {
   const bk = readFileSync(new URL('../../supabase/functions/backup-export/index.ts', import.meta.url), 'utf8');
-  assert.match(bk, /'prospection_memoire',/); assert.match(bk, /'brevo_fiches', 'brevo_journal'\]/); assert.match(bk, /brevo_fiches: \['email'\]/); assert.match(bk, /prospection_memoire: \['email'\]/);
+  assert.match(bk, /'prospection_memoire',/); assert.match(bk, /'brevo_fiches', 'brevo_journal'[,\]]/); assert.match(bk, /brevo_fiches: \['email'\]/); assert.match(bk, /prospection_memoire: \['email'\]/);
   const sql = readFileSync(new URL('../../supabase/migrations/2026-11-08_brevo_rattachements.sql', import.meta.url), 'utf8');
   assert.match(sql, /grant select on public\.prospection_memoire to service_role;/);
   assert.doesNotMatch(sql, /grant (insert|update|delete|all)[^;]*prospection_memoire/i);
