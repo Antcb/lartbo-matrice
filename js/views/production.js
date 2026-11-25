@@ -3,7 +3,7 @@
  * Chaque date se déplie : suivi admin, commissions, dossier Drive, facturation.
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
-import { vatConflict, BILL_KINDS, acompteRetire, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
+import { vatConflict, BILL_KINDS, canFixInvoice, correctionsOf, acompteRetire, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, OPTION_PROD, PROD_STEPS } from '../constants.js';
 import { byId, isArchived, projName, setting, showsFiltered, spectacleName, structName } from '../selectors.js';
 import { followedInvoice, lateSteps, remindersOf, staleOf } from '../reminders.js';
@@ -269,8 +269,9 @@ function billingTab(s, booking, pays, late){
           const why = billLockReason(p), lock = why ? `disabled title="${esc(why)}"` : '';   // facture émise : montants verrouillés (§6.4)
           const st = acompteState(p), soldeCalc = p.kind === 'solde' && !isInvoiced(p) && !ov;   // solde calculé : cession − acomptes de la date (10/11/2026)
           const pctLock = lock || (soldeCalc ? 'disabled title="Calculé : cession − acomptes de la date, prévus et facturés (saisis un montant HT pour le fixer)"' : '');
+          const fixes = correctionsOf(p.id);   // (v1.68) facture émise corrigée dans MATRICE : signalée, motif au survol
           return `<tr>
-          <td>${cIn('show_payments',p.id,'label',p.label)}${soldeCalc && !booking ? ` <span class="badge" title="Montant calculé (cession − acomptes de la date, prévus et facturés) : aucune facture de solde n’est encore émise">calculé, non facturé</span>` : ''}${st === 'prevu' && !acompteRetire(p) ? ` <span class="badge" title="Prévu au contrat (${pct(billPct(p))}), pas encore facturé : déjà déduit du solde, il reste dû (mets 0 % pour le retirer)">prévu, non facturé</span>` : ''}</td>
+          <td>${cIn('show_payments',p.id,'label',p.label)}${fixes.length ? ` <span class="badge" title="${esc(`Corrigée dans MATRICE le ${fmtDate(String(fixes[0].at).slice(0, 10))}${fixes[0].actor ? ' par ' + fixes[0].actor : ''} : ${fixes[0].motif}`)}">corrigée</span>` : ''}${soldeCalc && !booking ? ` <span class="badge" title="Montant calculé (cession − acomptes de la date, prévus et facturés) : aucune facture de solde n’est encore émise">calculé, non facturé</span>` : ''}${st === 'prevu' && !acompteRetire(p) ? ` <span class="badge" title="Prévu au contrat (${pct(billPct(p))}), pas encore facturé : déjà déduit du solde, il reste dû (mets 0 % pour le retirer)">prévu, non facturé</span>` : ''}</td>
           <td class="num">${BILL_KINDS.includes(p.kind) ? `<input type="number" step="any" inputmode="decimal" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="pct" value="${pctVal(billedPct(p))}" aria-label="% du cachet" ${pctLock}>`
             : ['cnm','autre'].includes(p.kind) ? cIn('show_payments',p.id,'pct',p.pct,'number','class="narrow"') : `<span class="muted">${payPct(p)??'—'}</span>`}</td>
           <td class="num"><input type="number" step="any" data-t="show_payments" data-id="${p.id}" data-f="amount" value="${ov?p.amount:''}" placeholder="${a==null?'à saisir':a}" ${lock || 'title="Laisse vide pour le calcul automatique"'} class="${ov?'override':''}"></td>
@@ -284,7 +285,7 @@ function billingTab(s, booking, pays, late){
           <td title="Date de la dernière relance">${cIn('show_payments',p.id,'reminded_at',p.reminded_at,'date')}${p.sent_at && !p.paid_at && followedInvoice(p, booking) ? `<div class="small" title="Plus de rappel « Paiement à vérifier » pour cette facture tant que la case est cochée (elle reste impayée et comptée)">${cChk('show_payments', p.id, 'reminders_paused', p.reminders_paused, 'Relances suspendues')}</div>` : ''}</td>
           <td class="${p.paid_at?'done-cell':''}">${cIn('show_payments',p.id,'paid_at',p.paid_at,'date')}</td>
           <td>${pennylaneCell(p, s)}</td>`}
-          <td>${why ? `<span class="muted" role="img" aria-label="Ligne verrouillée" title="${esc(why)}">🔒</span>` : `<button class="btn icon sm ghost danger" data-act="delPay" data-id="${p.id}" aria-label="Supprimer la ligne">✕</button>`}</td></tr>`;}).join('')}
+          <td>${why ? `<span class="muted" role="img" aria-label="Ligne verrouillée" title="${esc(why)}">🔒</span>${canFixInvoice(p) ? ` <button type="button" class="btn sm ghost" data-act="fixInvoice" data-id="${p.id}" title="Corriger le suivi de cette facture dans MATRICE (montant, %, TVA, type), avec un motif ; rien n’est fait dans Pennylane">Déverrouiller pour corriger</button>` : ''}` : `<button class="btn icon sm ghost danger" data-act="delPay" data-id="${p.id}" aria-label="Supprimer la ligne">✕</button>`}</td></tr>`;}).join('')}
         </tbody>${booking || isCoproduction(s) ? '' : billFoot(s)}</table></div>
       ${isCoproduction(s) ? `<p class="help mt-sm">Coproduction : aucune facture de cession, aucun acompte ni solde, aucune commission L’ArtBo ni part partenaire générés. Ajoute une ligne seulement pour une opération réelle.</p>` : ''}
       ${horsCalculHTML(s)}

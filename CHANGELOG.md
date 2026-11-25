@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.68.0 — 26/11/2026
+- Point n°23 : « Déverrouiller pour corriger » une facture émise dans MATRICE (montant, %, TVA, type), motif obligatoire, reverrouillage et historique ; Pennylane jamais touché
+
+
 ## 1.67.0 — 25/11/2026
 - Budgets : personnes au cachet ou sur facture (spectacle nominatif, rôles musicien / multi-instrumentiste / technicien, tarif unique ou selon la jauge), bulletins Movinmotion ajustables, CNM dans le budget, net après commission, options dans Production (point n°10)
 
