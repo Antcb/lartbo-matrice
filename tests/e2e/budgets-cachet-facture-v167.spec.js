@@ -236,3 +236,18 @@ test('v1.67 option → confirmée : le budget prévisionnel préparé est conser
   expect(after).toBe(before);
   expectClean(ctx);
 });
+
+test('v1.67 (relecture B1) Réglages passés aux rôles : un artiste resté sur l’ancien modèle garde ses lignes ; Réglages avec seulement des tarifs → anciens nombres', async ({ page }) => {
+  const ctx = await openApp(page);
+  await setSetting(page, 'budget_template', { t1: 220, t1max: 500, t2: 270, t2max: 2000, t3: 315, techs: 1, payslip: 250, mus_rate_mode: 'single', mus_cachet: 350, tech_cachet: 280 });
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js');
+    for (const db of [S.db, window.__DB]){ db.projects.find(x => x.id === 'art-a').budget_template = { artists: 3 }; db.projects.find(x => x.id === 'art-b').budget_template = {}; } touch('projects'); });
+  // art-a : ancien modèle propre → inchangé (3 × 220 à 400 places, technicien 1 × 250)
+  expect(await rowsFor(page, { project_id: 'art-a', capacity: 400 })).toEqual([['Cachets artistes', 220], ['Cachets techniciens', 250]]);
+  // art-b : aucune valeur propre → modèle des Réglages ; sans nombre par rôle, les anciens nombres servent, au tarif du rôle
+  expect(await rowsFor(page, { project_id: 'art-b', capacity: 400 })).toEqual([['Cachets techniciens', 280]]);   // artists = 0 dans les Réglages
+  await setSetting(page, 'budget_template', { artists: 2, techs: 1, payslip: 250, t1: 220, t1max: 500, t2: 270, t2max: 2000, t3: 315, mus_rate_mode: 'single', mus_cachet: 350 });
+  expect(await rowsFor(page, { project_id: 'art-b', capacity: 400 })).toEqual([['Cachets musiciens', 350], ['Cachets techniciens', 250]]);   // tech : pas de tarif par rôle → ancien
+  expectClean(ctx);
+});
+
