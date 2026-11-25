@@ -53,7 +53,14 @@ export async function save(table, id, patch, {rerender=true}={}){
   touch(table);
   summaryAfter(table, row || data);
   if (table==='shows' && (patch.status || patch.project_id)) await refreshShowSide(id);
-  if (table==='shows' && ('ticketing_type' in patch || 'ticket_holder' in patch || 'department' in patch || 'structure_id' in patch || 'cnm_bearer' in patch || 'contract_type' in patch)) await (await import('./budget-actions.js')).syncCnmLine(id);
+  if (table==='shows'){
+    // ligne CNM (v1.67, demande d'Anthony du 25/11/2026) : seule une modification VOLONTAIRE des paramètres CNM de la date ajoute la
+    // ligne à un budget qui n'en a pas ; les autres changements (lieu, structure, contrat) peuvent seulement la retirer
+    const changed = k => k in patch && String(before?.[k] ?? '') !== String((data || row)?.[k] ?? '');
+    const cnmEdit = ['ticketing_type', 'ticket_holder', 'cnm_bearer', 'cnm_pct', 'cnm_in_result'].some(changed);
+    if (cnmEdit || ['department', 'structure_id', 'contract_type'].some(changed))
+      await (await import('./budget-actions.js')).syncCnmLine(id, {add: cnmEdit});
+  }
   if (rerender) render();
   return before || {};   // réussi (même si la ligne n'était pas encore en mémoire)
 }

@@ -26,11 +26,13 @@ const simil = (a, b) => { a = norm(a||''); b = norm(b||''); if (!a || !b) return
   return wb.length ? wb.filter(w => wa.has(w)).length / Math.max(wa.size, wb.length) : 0; };
 
 /** Taxe CNM : la ligne n'existe que quand L'ArtBo en supporte le coût (v1.51 : gratuit par usage, ou attribuée sur la date), en France.
- *  Appelé quand la billetterie, la structure qui supporte la taxe ou le contrat changent. */
-export async function syncCnmLine(showId){
+ *  Appelé quand la billetterie, la structure qui supporte la taxe ou le contrat changent.
+ *  add = false : retrait seulement (v1.67, demande d'Anthony du 25/11/2026 : un ancien budget sans ligne CNM n'en reçoit une que si
+ *  les paramètres CNM de la date sont modifiés, ou à la création du budget — jamais par l'ajout d'une dépense sans rapport). */
+export async function syncCnmLine(showId, {add = true} = {}){
   const s = byId('shows', showId); if (!s || !linesOf(s.id).length) return;
   const cnm = linesOf(s.id).filter(l => l.auto === 'cnm');
-  if (cnmDue(s) && !cnm.length)
+  if (add && cnmDue(s) && !cnm.length)
     await insert('budget_lines', {project_id:s.project_id, show_id:s.id, category:'Taxes', label: isFree(s) ? 'Taxe CNM (entrée gratuite)' : 'Taxe CNM (billetterie)', supplier:'CNM', auto:'cnm', payer:'compte', sort: nextSort(s.id)});
   if (!cnmDue(s)) for (const l of cnm) if (l.amount == null && l.forecast == null && !l.file_path && !l.doc_number && !l.paid_at) await remove('budget_lines', l.id);
 }
@@ -201,9 +203,12 @@ export const BUDGET_ACTIONS = {
         payer: 'compte', auto: first ? 'solde_artiste' : null, sort: nextSort(s.id)});
       return render();
     }
+    const fresh = !!s && !linesOf(s.id).length;   // budget créé par cette ligne (nouveau budget)
     const row = await insert('budget_lines', {project_id, show_id: s?.id || null, category: cat, label: cat === 'Staff' ? 'Cachet' : null, payer: isProductionShow(s) ? 'artbo' : 'compte', sort: s ? nextSort(s.id) : 0, doc_date: s ? null : today()});
     if (s && cat === 'Staff') await syncMovinmotionLine(s.id);
-    if (s) await syncCnmLine(s.id);   // (v1.67) CNM due par L'ArtBo : ligne posée dès que le budget existe
+    // (v1.67) CNM due par L'ArtBo : ligne posée à la création du budget ; un budget existant sans ligne CNM garde son calcul
+    // (demande d'Anthony du 25/11/2026 : seule une modification des paramètres CNM de la date l'ajoute)
+    if (fresh) await syncCnmLine(s.id);
     render();
     // la nouvelle ligne est rangée dans sa catégorie : on l'amène à l'écran, curseur dans le libellé
     const tr = row && document.querySelector(`tr[data-budget-line="${row.id}"]`);

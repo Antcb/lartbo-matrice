@@ -13,6 +13,7 @@ import { CONFIRMED_PROD } from './constants.js';
 import { byId, setting, showCommissionPct, showsOfProject } from './selectors.js';
 import { cnmBearer, cnmOf, commissionBase, commissionPctOf, coreaShareOf, isAbroad, isCnmLine, isCorea } from './corea.js';
 import { S } from './state.js';
+import { isProductionShow } from './production-budget.js';
 
 const num = v => v==null || v==='' ? null : Number(v);
 
@@ -93,11 +94,26 @@ export function lineForecast(l){
 const filledN = v => v != null && v !== '';
 export const isMissingCost = l => !!l && !l.auto && !isSolde(l) && !filledN(l.amount) && !filledN(l.forecast)
   && filledN(l.qty) && Number(l.qty) > 0 && !filledN(l.unit_cost);
-/** Lignes d'une date dont le coût reste à renseigner */
-export const missingCostLines = showId => linesOf(showId).filter(isMissingCost);
+/**
+ * (v1.67, demande d'Anthony du 25/11/2026) CNM supportée par L'ArtBo mais incalculable : ligne CNM automatique sans prévu ni réel,
+ * aucune ligne CNM saisie à la main, et base inconnue (cession payante : recettes de billetterie non connues). Elle compte 0 € dans
+ * les totaux mais n'est jamais présentée comme calculée : « CNM à renseigner », budget incomplet. Hors budgets de production (la CNM
+ * y est calculée par le tableau de billetterie, production-budget.js) et hors coréalisation (base = recettes du partage).
+ */
+export const CNM_TODO = 'CNM à renseigner';
+export function isCnmToFill(l){
+  if (l?.auto !== 'cnm' || filledN(l.forecast) || filledN(l.amount)) return false;
+  const s = byId('shows', l.show_id); if (!s || !cnmDue(s) || isProductionShow(s)) return false;
+  if (linesOf(s.id).some(x => x.id !== l.id && !x.auto && isCnmLine(x) && (filledN(x.amount) || filledN(x.forecast)))) return false;
+  return cnmOf(s).amount == null;
+}
+/** Lignes d'une date dont le coût reste à renseigner (coûts vides du budget type, CNM incalculable) */
+export const missingCostLines = showId => linesOf(showId).filter(l => isMissingCost(l) || isCnmToFill(l));
+/** Nom d'une ligne à renseigner dans les messages */
+export const missingCostName = l => isCnmToFill(l) ? CNM_TODO : (l.label || l.category || 'ligne sans libellé');
 /** Texte commun « Budget incomplet — coûts à renseigner » (synthèse, reste artiste, points d'équilibre, export) */
 export const INCOMPLETE = 'Budget incomplet — coûts à renseigner';
-export const missingCostText = ls => `${INCOMPLETE} : ${ls.map(l => l.label || l.category || 'ligne sans libellé').join(' ; ')}`;
+export const missingCostText = ls => `${INCOMPLETE} : ${ls.map(missingCostName).join(' ; ')}`;
 /** Montant retenu : le réel s'il est connu, sinon le prévu */
 export const lineValue = l => l.amount != null ? Number(l.amount) : (lineForecast(l) || 0);
 export const lineStatus = l => l.paid_at || l.reimbursed_at ? 'paid' : (l.doc_number || l.file_path || l.amount != null) ? 'doc' : 'planned';
