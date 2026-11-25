@@ -24,7 +24,7 @@ export function field(f, v){
   let input;
   if (f.type==='select') input = `<select id="${id}" name="${f.k}">${f.blank===false?'':'<option value="">—</option>'}${f.options.map(o=>{const [val,lab]=Array.isArray(o)?o:[o,o];return `<option value="${esc(val)}" ${String(val)===String(v??'')?'selected':''}>${esc(lab)}</option>`;}).join('')}</select>`;
   else if (f.type==='project') input = projPicker(v, {attrs:`name="${f.k}" id="${id}"`, allLabel: f.allLabel||'', cls:'sel pp-field'});
-  else if (f.type==='textarea') input = `<textarea id="${id}" name="${f.k}" ${f.rows?`rows="${f.rows}"`:''}>${esc(v??'')}</textarea>`;
+  else if (f.type==='textarea') input = `<textarea id="${id}" name="${f.k}" ${f.rows?`rows="${f.rows}"`:''}${f.placeholder?` placeholder="${esc(f.placeholder)}"`:''}${f.max?` maxlength="${f.max}"`:''}>${esc(v??'')}</textarea>`;
   else if (f.type==='date') input = dateInput(v, `name="${f.k}" id="${id}"`);
   else if (f.type==='ac') input = acInput(f.kind, {value:v, attrs:`name="${f.k}"`, create:f.create, activeOnly:f.activeOnly, placeholder:f.placeholder||'Taper pour chercher…'});
   else if (f.type==='fulladdr') input = acInput('fulladdr', {value:v, text:v||'', attrs:`name="${f.k}"`, placeholder:f.placeholder||'Taper une adresse…'});

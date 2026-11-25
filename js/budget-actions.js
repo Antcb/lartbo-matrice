@@ -288,7 +288,7 @@ export const BUDGET_ACTIONS = {
       {k: 'amount', label: 'Montant HT (€)', type: 'number'},
       {k: 'pct', label: '% du cachet', type: 'number', placeholder: 'vide = non renseigné'},
       {k: 'vat_rate', label: 'TVA de la ligne (%)', type: 'number', placeholder: `vide = TVA par défaut (${String(payVat({...p, vat_rate: null})).replace(".", ",")} %)`},
-      {k: 'motif', label: 'Motif de la correction (obligatoire)', type: 'textarea', full: true, rows: 2, placeholder: 'ex. facture Pennylane émise à 35 %, et non 30 %'}];
+      {k: 'motif', label: 'Motif de la correction (obligatoire)', type: 'textarea', full: true, rows: 2, max: 500, placeholder: 'ex. facture Pennylane émise à 35 %, et non 30 %'}];
     await openModal({title: 'Déverrouiller pour corriger', saveLabel: 'Enregistrer la correction', fields,
       values: {kind: p.kind, amount: cur ?? '', pct: p.pct ?? '', vat_rate: p.vat_rate ?? ''},
       extraTop: `<div class="help full">
@@ -300,17 +300,18 @@ export const BUDGET_ACTIONS = {
           ${hist ? `<p class="m0 mt-sm">Corrections précédentes :</p><ul class="warn-list">${hist}</ul>` : ''}</div>`,
       onSave: async v => {
         const amount = num(v.amount), pctv = num(v.pct), vat = num(v.vat_rate), kind = swap ? v.kind : p.kind, motif = String(v.motif || '').trim();
-        if (amount == null || !Number.isFinite(amount) || amount < 0){ toast('Montant HT à saisir (0 ou plus)', true); return false; }
+        if (amount == null || !Number.isFinite(amount) || amount < 0 || amount >= 1e8){ toast('Montant HT à saisir (0 ou plus, moins de 100 millions)', true); return false; }
         if (pctv != null && !(pctv >= 0 && pctv <= 100)){ toast('% du cachet entre 0 et 100', true); return false; }
         if (vat != null && !(vat >= 0 && vat <= 100)){ toast('TVA entre 0 et 100 %', true); return false; }
         if (!motif){ toast('Indique le motif de la correction', true); return false; }
+        if (motif.length > 500){ toast('Motif trop long (500 caractères au plus)', true); return false; }
         const same = (a, b) => (a == null || a === '' ? null : Number(a)) === (b == null || b === '' ? null : Number(b));
         const diffs = [!same(Math.round(amount * 100) / 100, p.amount) && `montant ${p.amount == null ? `${eur2(cur ?? 0)} (calculé)` : eur2(p.amount)} → ${eur2(amount)} HT`,
           !same(pctv, p.pct) && `% du cachet ${p.pct ?? "—"} → ${pctv ?? "—"}`, !same(vat, p.vat_rate) && `TVA ${p.vat_rate ?? 'par défaut'} → ${vat ?? 'par défaut'}`,
           kind !== p.kind && `type ${KIND[p.kind]} → ${KIND[kind]}`].filter(Boolean);
         if (!diffs.length){ toast('Aucun changement à enregistrer', true); return false; }
         const tt = ttc(amount, vat ?? payVat({...p, vat_rate: null, kind}));
-        if (!(await confirmAsk('Enregistrer la correction ?', `${p.invoice_number || p.label || KIND[p.kind]} : ${diffs.join(' ; ')} (TTC ${eur2(tt)}). Motif : « ${motif} ». La facture se reverrouille aussitôt ; Pennylane n’est pas modifié.`, 'Enregistrer la correction'))) return false;
+        if (!(await confirmAsk('Enregistrer la correction ?', `${p.invoice_number || p.label || KIND[p.kind]} : ${diffs.join(' ; ')} (TTC ${eur2(tt)}). Motif : « ${motif} ».${kind !== p.kind ? ` Changer le type modifie aussi son suivi : rappels de paiement de la ligne « ${KIND[kind]} »${p.kind === 'solde' ? ', et un nouveau solde calculé (cession − acomptes) peut être recréé pour la date s’il n’en reste aucun' : ''} ; le libellé ne change pas.` : ''} La facture se reverrouille aussitôt ; Pennylane n’est pas modifié.`, 'Enregistrer la correction'))) return false;
         const {data, error} = await sb.rpc('facture_corriger', {p_payment: p.id, p_amount: amount, p_pct: pctv, p_vat: vat, p_kind: kind, p_motif: motif});
         if (error){ toast(error.message, true); return false; }
         if (data?.row) mergeRows('show_payments', [data.row]); else await refreshFor('show_payments', 'show_id', [p.show_id]);

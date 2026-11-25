@@ -151,14 +151,16 @@
     // (essayée sur une vraie base PostgreSQL : supabase/repetitions/2026-11-26_v1.68_correction_facture_essai.sql)
     facture_corriger: ({ p_payment, p_amount, p_pct, p_vat, p_kind, p_motif }) => {
       const D = window.__DB, err = (m, code = 'P0001') => { throw Object.assign(new Error(m), { code }); };
-      const m = String(p_motif ?? '').trim(); if (!m) err('Motif obligatoire pour corriger une facture émise', '22023');
+      const m = String(p_motif ?? '').replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, ''); if (!m) err('Motif obligatoire pour corriger une facture émise', '22023');
+      if (m.length > 500) err('Motif trop long (500 caractères au plus)', '22023');
       const r = D.show_payments.find(x => x.id === p_payment); if (!r) err('Ligne de facturation introuvable');
       const sh = D.shows.find(x => x.id === r.show_id), selfPaid = r.kind === 'artbo' && (sh?.prod_mode ?? 'production') !== 'booking';
       if (r.hors_calcul != null) err('Ligne hors calcul (gardée pour la traçabilité) : elle ne se corrige pas');
       if (selfPaid) err('Commission de production : ce n’est pas une facture, ses règles de versement restent inchangées');
+      if (['acompte', 'solde', 'autre'].includes(r.kind) && sh?.prod_mode === 'booking') err('Date en booking : les factures d’acompte et de solde sont celles de l’artiste, elles ne se corrigent pas ici');
       const f = v => v != null && String(v).trim() !== '';
       if (!['sent_at', 'paid_at', 'invoice_number', 'pennylane_id'].some(k => f(r[k]))) err('Facture pas encore émise : elle se modifie directement dans le tableau');
-      if (p_amount == null || p_amount < 0) err('Montant HT à saisir (0 ou plus)', '22023');
+      if (p_amount == null || !Number.isFinite(Number(p_amount)) || p_amount < 0 || p_amount >= 1e8) err('Montant HT à saisir (0 ou plus, moins de 100 millions)', '22023');
       const k = p_kind || r.kind, three = ['acompte', 'solde', 'autre'];
       if (k !== r.kind && (!three.includes(r.kind) || !three.includes(k))) err('Type : seuls acompte, solde et autre ligne s’échangent', '22023');
       const amount = Math.round(p_amount * 100) / 100, n = v => v == null ? null : Number(v);

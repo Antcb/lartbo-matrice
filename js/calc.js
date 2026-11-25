@@ -133,7 +133,7 @@ export const soldeInvoiced = showId => paymentsOf(showId).some(p => p.kind === '
  *  solde, autre ligne, commission en booking, part partenaire — payée ou non ; jamais une commission de production (pas une facture)
  *  ni une ligne hors calcul. Même règle côté base : facture_corriger. Le document Pennylane n'est jamais touché. */
 export const FIXABLE_KINDS = ['acompte', 'solde', 'autre', 'artbo', 'partner'];
-export const canFixInvoice = p => !!p && counted(p) && FIXABLE_KINDS.includes(p.kind) && !selfPaidCommission(p) && isInvoiced(p);
+export const canFixInvoice = p => !!p && counted(p) && tracked(p) && FIXABLE_KINDS.includes(p.kind) && !selfPaidCommission(p) && isInvoiced(p);
 /** Types échangeables lors d'une correction (la commission et la part partenaire gardent le leur) */
 export const SWAP_KINDS = ['acompte', 'solde', 'autre'];
 /** Corrections enregistrées d'une ligne, la plus récente d'abord */
