@@ -189,3 +189,48 @@ test('v1.66.6 fiche RH interne : Nom de famille toujours en MAJUSCULES à l’en
   await expect.poll(() => page.evaluate(() => window.__DB.employees.map(e => [e.first_name, e.last_name]))).toContainEqual(['Anne', 'LE GOFF']);
   expectClean(ctx);
 });
+
+test('v1.66.7 Safari : « IBoat » → « iBoat » respecté quel que soit l’ordre des événements ; champs de noms sans correction automatique du système', async ({ page }) => {
+  const ctx = await openApp(page);
+  await page.evaluate(async () => { (await import('./js/forms.js')).editStructure(null); });
+  const nomS = page.locator('#modal [name=name]');
+  await nomS.click(); await expect(nomS).toBeFocused();
+  expect(await nomS.evaluate(el => [el.getAttribute('autocorrect'), el.getAttribute('autocapitalize'), el.getAttribute('spellcheck')])).toEqual(['off', 'none', 'false']);
+  // ordre WebKit 1 : touche, sélection remplacée, puis composition (compositionstart APRÈS le remplacement)
+  const r1 = await nomS.evaluate(el => {
+    el.value = 'IBoat Club'; el.setSelectionRange(0, 1);
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', bubbles: true }));
+    el.setRangeText('i', 0, 1, 'end');
+    el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }));
+    el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: 'i' }));
+    return el.value; });
+  expect(r1).toBe('iBoat Club');
+  // ordre WebKit 2 : touche, sélection déjà réduite au moment de beforeinput
+  const r2 = await nomS.evaluate(el => {
+    el.value = 'IBoat Club'; el.setSelectionRange(0, 1);
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', bubbles: true }));
+    el.setRangeText('', 0, 1, 'start');
+    const ev = new InputEvent('beforeinput', { inputType: 'insertText', data: 'i', bubbles: true, cancelable: true });
+    el.dispatchEvent(ev); if (!ev.defaultPrevented) el.setRangeText('i', 0, 0, 'end');
+    return el.value; });
+  expect(r2).toBe('iBoat Club');
+  // correction réelle au clavier (Chromium) : respectée, aucune trace de diagnostic
+  await nomS.evaluate(el => { el.value = 'IBoat Club'; el.setSelectionRange(0, 1); });
+  await nomS.press('i');
+  await expect(nomS).toHaveValue('iBoat Club');
+  // si quelque chose (système, navigateur) remettait la majuscule malgré tout : trace de diagnostic sans contenu
+  await nomS.evaluate(el => { el.setSelectionRange(0, 1);
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', bubbles: true })); el.value = 'IBoat Club';
+    el.dispatchEvent(new KeyboardEvent('keyup', { key: 'i', bubbles: true })); });
+  await expect.poll(() => page.evaluate(() => window.__DB.client_errors.filter(r => r.message === 'majuscule : correction non respectée').length)).toBe(1);
+  expect(await page.evaluate(() => window.__DB.client_errors.find(r => r.message === 'majuscule : correction non respectée').stack)).not.toContain('Boat');
+  await nomS.evaluate(el => { el.value = 'iBoat Club'; });
+  // la majuscule d'un NOUVEAU mot fonctionne toujours juste après
+  await nomS.press('End'); await nomS.pressSequentially(' paris');
+  await expect(nomS).toHaveValue('iBoat Club Paris');
+  // une touche ordinaire ailleurs efface le repère : un mot tapé au début d'un champ vide reprend sa majuscule
+  await nomS.evaluate(el => { el.value = ''; });
+  await nomS.pressSequentially('être');
+  await expect(nomS).toHaveValue('Être');
+  expectClean(ctx);
+});
