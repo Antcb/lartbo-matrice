@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.67.0 — 25/11/2026
+- Budgets : personnes au cachet ou sur facture (spectacle nominatif, rôles musicien / multi-instrumentiste / technicien, tarif unique ou selon la jauge), bulletins Movinmotion ajustables, CNM dans le budget, net après commission, options dans Production (point n°10)
+
+
 ## 1.66.8 — 25/11/2026
 - Majuscule automatique seulement au début d'un nouveau mot : une lettre tapée au début d'un mot existant est respectée (« IBoat » → « iBoat » par Retour arrière ; point n°1)
 

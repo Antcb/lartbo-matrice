@@ -371,6 +371,9 @@ test('v1.60.3 CNM déduite du partage : dépenses, reste artiste et synthèse id
   const got = await cnmMatrix(page);
   const brk = Object.fromEntries(Object.entries(got).map(([k, v]) => [k, v.brk]));
   for (const v of Object.values(got)) delete v.brk;
+  // (v1.67, point n°10) synthèse : libellé « avant commission » et ligne « net après commission » ajoutés ; montants inchangés
+  for (const v of Object.values(got)) v.synthese = v.synthese.replace(/Cachet HT( \(MG\))? avant commission/, 'Cachet HT')
+    .replace(/ (Rémunération nette|Cachet net) après commission .*? (?=Dépenses )/, ' ');
   expect(got).toEqual(REF_A7BC55D);   // dépenses, reste artiste, écart, synthèse, bloc « reste » : identiques à a7bc55d
   // break prévisionnel : CNM déduite une seule fois (via le partage) — avant : {"P1": 237, "P2": 242, "P3": 208, "P4": 242, "P5": 242, "P6": 237}
   expect(brk).toEqual({ P1: 208, P2: 214, P3: 208, P4: 214, P5: 214, P6: 208 });

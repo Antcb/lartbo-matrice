@@ -4,7 +4,7 @@
  */
 import { render } from './app.js';
 import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
-import { cnmDue, commissionOf, coreaCommissionCheck, isFree, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
+import { cnmDue, commissionOf, coreaCommissionCheck, isFacture, isFree, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
 import { breakFromText, commissionPctOf, coreaCalc, isCorea } from './corea.js';
 import { acompteState, isCoproduction, isInvoiced, paymentsOf, payAmount } from './calc.js';
 import { contentTypeOf, insert, mergeRows, openStored, refreshFor, remove, save, sb, typedFile, uploadFailure } from './data.js';
@@ -39,7 +39,8 @@ export async function syncCnmLine(showId){
 export async function syncMovinmotionLine(showId){
   const s = byId('shows', showId); if (!s || s.prod_mode === 'booking') return;
   const ls = linesOf(s.id);
-  if (!ls.some(l => l.category === 'Staff') || ls.some(l => l.auto === 'movinmotion')) return;
+  // (v1.67) seulement une ligne de salaire AU CACHET : une ligne sur facture ne génère aucun bulletin (même règle : ensure_movinmotion)
+  if (!ls.some(l => l.category === 'Staff' && !isFacture(l)) || ls.some(l => l.auto === 'movinmotion')) return;
   // ajout fait par la base : une seule ligne Movinmotion par date, même si deux personnes ajoutent un salarié en même temps
   const {error} = await sb.rpc('ensure_movinmotion', {p_show: s.id});
   if (error) return toast('Ligne Movinmotion : ' + error.message, true);
@@ -110,6 +111,14 @@ export const BUDGET_ACTIONS = {
     if (!(await save('shows', t.dataset.id, {capacity: v}))) return;
     if (v != null && Number(v) !== Number(old)) await offerCostFill(t.dataset.id); },
   fillMissingCosts: t => offerCostFill(t.dataset.id, {manual: true}),
+  // (v1.67, point n°10) mode de rémunération d'une ligne de salaire : au cachet → bulletin Movinmotion (ligne posée si besoin) ;
+  // sur facture → aucun bulletin (le nombre proposé baisse ; un nombre saisi pour la date reste celui saisi)
+  'change:budget_lines.pay_mode': async (t, v) => { const l = byId('budget_lines', t.dataset.id);
+    if (!(await save('budget_lines', t.dataset.id, {pay_mode: v === 'facture' ? 'facture' : 'cachet'}))) return;
+    if (l?.show_id) await syncMovinmotionLine(l.show_id); render(); },
+  'change:budget_lines.category': async (t, v) => { const l = byId('budget_lines', t.dataset.id);
+    if (!(await save('budget_lines', t.dataset.id, {category: v}))) return;
+    if (l?.show_id && v === 'Staff') await syncMovinmotionLine(l.show_id); render(); },
   // prorata des ventes : jamais appliqué sans validation explicite, pour cette date seulement
   coreaValidateProrata: async t => { const s = byId('shows', t.dataset.id), k = coreaCalc(s);
     if (!(await confirmAsk('Valider le prorata ?', `Les ventes après le break ne sont pas connues par tarif. Retenir pour cette date les recettes au prorata des ventes de chaque tarif : ${eur2(k.range.prorata)} HT (fourchette ${eur2(k.range.min)} à ${eur2(k.range.max)}) ?`, 'Valider le prorata'))) return;
@@ -194,6 +203,7 @@ export const BUDGET_ACTIONS = {
     }
     const row = await insert('budget_lines', {project_id, show_id: s?.id || null, category: cat, label: cat === 'Staff' ? 'Cachet' : null, payer: isProductionShow(s) ? 'artbo' : 'compte', sort: s ? nextSort(s.id) : 0, doc_date: s ? null : today()});
     if (s && cat === 'Staff') await syncMovinmotionLine(s.id);
+    if (s) await syncCnmLine(s.id);   // (v1.67) CNM due par L'ArtBo : ligne posée dès que le budget existe
     render();
     // la nouvelle ligne est rangée dans sa catégorie : on l'amène à l'écran, curseur dans le libellé
     const tr = row && document.querySelector(`tr[data-budget-line="${row.id}"]`);
@@ -218,7 +228,7 @@ export const BUDGET_ACTIONS = {
           .filter(l => !l.auto || !linesOf(s.id).some(x => x.auto === l.auto))
           .filter(l => l.auto !== 'cnm' || cnmDue(s));
         let sort = nextSort(s.id);
-        const rows = src.map(l => ({project_id:s.project_id, show_id:s.id, category:l.category, label:l.label, supplier:l.supplier, auto:l.auto, qty:l.qty, unit_cost:l.unit_cost,
+        const rows = src.map(l => ({project_id:s.project_id, show_id:s.id, category:l.category, label:l.label, supplier:l.supplier, auto:l.auto, qty:l.qty, unit_cost:l.unit_cost, pay_mode:l.pay_mode ?? null,
           forecast: l.auto || l.category === 'Staff' ? l.forecast : (l.forecast ?? l.amount), payer:l.payer, payer_name:l.payer_name, employee_id:l.employee_id, sort: sort++}));
         if (!rows.length) return toast('Rien à copier', true);
         const {data, error} = await sb.from('budget_lines').insert(rows).select();

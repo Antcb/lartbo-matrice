@@ -58,7 +58,12 @@ export const isSolde = l => l.auto === 'solde_artiste' || l.category === 'Solde 
 export const cnmViaShare = l => { if (!l || !isCnmLine(l) || !l.show_id) return false; const s = byId('shows', l.show_id);
   return !!s && isCorea(s) && !!s.cnm_in_result; };
 
-const staffQty = showId => linesOf(showId).filter(l => l.category === 'Staff').reduce((t,l) => t + (Number(l.qty)||0), 0);
+/** (v1.67, point n°10) ligne de salaire payée sur facture : montant HT, aucun bulletin de paie ; vide = au cachet (calcul d'avant) */
+export const isFacture = l => l?.pay_mode === 'facture';
+/** Nombre de bulletins PROPOSÉ pour la date : quantités des lignes de salaire au cachet (les lignes sur facture n'en génèrent aucun) */
+export const bulletinsProposed = showId => linesOf(showId).filter(l => l.category === 'Staff' && !isFacture(l)).reduce((t,l) => t + (Number(l.qty)||0), 0);
+/** Nombre de bulletins compté sur la ligne Movinmotion : celui saisi pour la date (0 compris), sinon le nombre proposé */
+export const bulletinsOf = l => l.qty != null && l.qty !== '' ? Number(l.qty) : bulletinsProposed(l.show_id);
 
 /** Montant prévu HT d'une ligne (saisi, ou calculé pour les lignes automatiques) */
 export function lineForecast(l){
@@ -66,7 +71,8 @@ export function lineForecast(l){
   if (!l.auto && l.qty != null && l.unit_cost != null) return r2(Number(l.qty) * Number(l.unit_cost));   // quantité × prix unitaire (salariés, salle, promoteur…)
   const s = byId('shows', l.show_id);
   // coût par bulletin figé sur la ligne (v1.57) ; ancienne ligne sans coût figé : le réglage du moment, comme avant
-  if (l.auto === 'movinmotion' && s) return r2((l.unit_cost != null ? Number(l.unit_cost) : payslipCost()) * staffQty(s.id));
+  // (v1.67) nombre de bulletins : saisi pour la date (0 compris), sinon proposé d'après les lignes au cachet
+  if (l.auto === 'movinmotion' && s) return r2((l.unit_cost != null ? Number(l.unit_cost) : payslipCost()) * bulletinsOf(l));
   if (l.auto === 'cnm' && s){
     // une dépense CNM réelle saisie à part remplace le calcul (jamais les deux)
     // (B6) une ligne CNM saisie à la main, même seulement prévue, remplace aussi le calcul (copie d'une autre date…)

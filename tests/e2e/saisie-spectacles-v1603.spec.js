@@ -173,17 +173,17 @@ test('v1.60.3 fiche projet : une date confirmée s’ouvre directement dans Prod
   expectClean(ctx);
 });
 
-test('v1.60.3 aperçu projet : budget type de l’artiste retiré dès qu’il a un spectacle, donnée gardée et utilisée sans spectacle', async ({ page }) => {
+test('v1.60.3 → v1.67 aperçu projet : budget type de l’artiste toujours visible (valeurs par défaut par rôle, point n°10), ancienne donnée gardée et utilisée sans spectacle', async ({ page }) => {
   const ctx = await openApp(page);
   await patch(page, 'projects', 'art-a', { budget_template: { artists: 3, t1max: 400, t1: 200, t2max: 800, t2: 300, t3: 400 } });
   await ficheProjet(page);
   // aucun spectacle : budget historique gardé temporairement, clairement identifié
   await expect(page.locator('h3.block-title', { hasText: /^Budget type/ })).toHaveCount(1);
-  await expect(page.locator('h3.block-title', { hasText: /^Budget type/ })).toContainText('Budget type historique de l’artiste');
-  await expect(page.locator('h3.block-title', { hasText: /^Budget type/ })).toContainText('temporaire');
+  await expect(page.locator('h3.block-title', { hasText: /^Budget type/ })).toContainText('Budget type de l’artiste');
   await seed(page, { spectacles: [{ id: 'sp-x', project_id: 'art-a', name: 'Classique', active: true, budget_template: T, sort: 1 }] });
   await ficheProjet(page);
-  await expect(page.locator('h3.block-title', { hasText: /^Budget type/ })).toHaveCount(0);
+  // (v1.67, décision du 25/11) gardé avec un spectacle : ses tarifs par rôle servent aux personnes sans tarif propre
+  await expect(page.locator('h3.block-title', { hasText: /^Budget type/ })).toHaveCount(1);
   await expect(page.locator('h3.block-title', { hasText: /^Spectacles/ })).toHaveCount(1);
   // la donnée historique reste et sert toujours à une date sans spectacle
   const rows = await page.evaluate(async () => { const t = await import('./js/budget-template.js'); const { S } = await import('./js/state.js');

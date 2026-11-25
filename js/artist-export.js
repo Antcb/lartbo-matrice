@@ -17,7 +17,7 @@ export function exportArtistBudget(showId){
   const artist = (p?.name || '').replace(/\s*•.*$/, ''), who = p?.artist_payee || artist;
   const exp = b.lines.filter(l => !isSolde(l) && Math.abs(lineValue(l)) >= 0.005), unknown = missingCostLines(s.id);
   const CAT = {Staff: 'Salaires', Movinmotion: 'Frais de paie (Movinmotion)', Taxes: 'Taxes'};
-  const row = l => `<tr><td>${esc(CAT[l.category] || l.category || '')}</td><td>${esc(l.label || '')}${l.supplier ? ` <span class="m">· ${esc(l.supplier)}</span>` : ''}</td>
+  const row = l => `<tr><td>${esc(CAT[l.category] || l.category || '')}</td><td>${esc(l.label || '')}${l.supplier ? ` <span class="m">· ${esc(l.supplier)}</span>` : ''}${l.category === 'Staff' && l.pay_mode === 'facture' ? ' <span class="m">· sur facture</span>' : ''}</td>
     <td class="n">${eur2(lineValue(l))}${l.amount == null ? ' <span class="m">(prévu)</span>' : ''}</td></tr>`;
   const paid = r.lines.filter(l => l.amount != null && l.paid_at), todo = r.lines.filter(l => l.amount != null && !l.paid_at);
   const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -42,12 +42,13 @@ export function exportArtistBudget(showId){
 
   <h2>Le cachet</h2>
   <table><tbody>
-    <tr><td>${b.share ? 'Minimum garanti HT' : 'Cachet HT'}</td><td class="n">${eur2(b.fee)}</td></tr>
+    <tr><td>${b.share ? 'Minimum garanti HT (avant commission)' : 'Cachet HT avant commission'}</td><td class="n">${eur2(b.fee)}</td></tr>
     ${b.share ? `<tr><td>Part du résultat (coréalisation)</td><td class="n">${eur2(b.share)}</td></tr><tr class="t"><td>Rémunération brute</td><td class="n">${eur2(b.gross)}</td></tr>` : ''}
     <tr><td>Commission L’ArtBoristerie${comPct ? ` (${esc(pct(comPct))})` : ''}</td><td class="n">− ${eur2(commissionAmount(s))}</td></tr>
     ${cst ? cst.transfers.map(t => `<tr><td class="m">dont transféré le ${esc(fmtDate(t.transferred_at))}${t.note ? ' · ' + esc(t.note) : ''}</td><td class="n m">${eur2(Number(t.amount))}</td></tr>`).join('')
       + (cst.legacy ? `<tr><td class="m">transférée le ${esc(fmtDate(com.paid_at))}</td><td class="n m">${eur2(cst.total)}</td></tr>` : '')
       + (cst.remaining >= 0.005 && !cst.legacy ? `<tr><td class="m">reste à transférer (pas encore prélevé sur ton compte)</td><td class="n m">${eur2(cst.remaining)}</td></tr>` : '') : ''}
+    <tr class="t"><td>${b.share ? 'Rémunération nette après commission' : 'Cachet net après commission'}</td><td class="n">${eur2(Math.round((b.gross - commissionAmount(s)) * 100) / 100)}</td></tr>
   </tbody></table>
 
   <h2>Les dépenses de la date</h2>

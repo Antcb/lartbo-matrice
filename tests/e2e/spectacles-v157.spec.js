@@ -91,6 +91,7 @@ test('v1.57 fiche de l’artiste : créer un spectacle avec son budget type ; mo
   await expect.poll(() => page.evaluate(() => window.__DB.spectacles.find(x => x.name === 'Jeune public')?.budget_template)).toEqual({ mus_n: 3, mus_small: 250.5 });
   // modification depuis la fiche (dépliée après création)
   const inp = page.locator('[data-spt="mus_large"]');
+  await inp.locator('xpath=ancestor::details').locator('summary').click();   // (v1.67) ancien modèle par effectifs : replié
   await inp.fill('330'); await inp.blur();
   await expect.poll(() => page.evaluate(() => window.__DB.spectacles.find(x => x.name === 'Jeune public').budget_template.mus_large)).toBe(330);
   expectClean(ctx);
