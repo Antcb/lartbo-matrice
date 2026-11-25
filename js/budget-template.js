@@ -71,9 +71,13 @@ export function roleDefaults(project, r){
   for (const k of ROLE_KEYS(r)){ const key = k.slice(r.length + 1); out[key] = filled(own[k]) ? own[k] : filled(g[k]) ? g[k] : null; }
   return out;
 }
-/** Le nouveau modèle par rôle est-il renseigné (artiste ou Réglages) ? Sinon l'ancien (3 tranches) sert encore, comme avant */
+/** Modèle par rôle pour CET artiste (relecture v1.67, B1 : décidé artiste par artiste) : s'il a lui-même des valeurs par rôle, ou s'il n'a
+ *  aucune ancienne valeur et que les Réglages en ont. Un artiste resté sur l'ancien modèle (nombres, 3 tranches) le garde tel quel, même
+ *  si les Réglages passent aux rôles */
+const OLD_KEYS = ['artists', 'techs', 'payslip', 't1max', 't1', 't2max', 't2', 't3'];
 export const usesRoles = project => { const g = setting('budget_template') || {}, own = project?.budget_template || {};
-  return ALL_ROLE_KEYS.some(k => filled(own[k]) || filled(g[k])); };
+  if (ALL_ROLE_KEYS.some(k => filled(own[k]))) return true;
+  return !OLD_KEYS.some(k => filled(own[k])) && ALL_ROLE_KEYS.some(k => filled(g[k])); };
 /** Tarif de cachet d'une source {rate_mode, cachet, cachet_small, cachet_large} pour une jauge : {cost, tier} — cost null = à renseigner */
 export function cachetRate(src, r, jauge){
   if (r === 'tech') return {cost: num(src?.cachet), tier: ''};
@@ -101,8 +105,15 @@ export function peopleRows(sp, s){
 /** Lignes de salaire d'une date sans spectacle, d'après les valeurs par rôle (nombre au cachet, nombre sur facture) */
 function roleRows(p, s){
   const jauge = jaugeOf(s), rows = [];
+  // aucun nombre par rôle (Réglages avec seulement des tarifs) : les anciens nombres servent (artistes → musiciens, techniciens), au
+  // tarif du rôle s'il existe, sinon à l'ancien tarif — jamais de budget sans ses salaires (relecture v1.67, B1)
+  const old = templateOf(p), noCounts = ROLES.every(([r]) => !(num(roleDefaults(p, r).n) > 0) && !(num(roleDefaults(p, r).nf) > 0));
   for (const [r, , plural] of ROLES){
-    const d = roleDefaults(p, r), n = num(d.n), nf = num(d.nf);
+    const d = roleDefaults(p, r), n = noCounts ? ({mus: old.artists, tech: old.techs}[r] || 0) : num(d.n), nf = noCounts ? 0 : num(d.nf);
+    if (noCounts && n > 0){ let {cost, tier} = cachetRate(d, r, jauge);
+      if (cost == null && !tier) cost = r === 'tech' ? old.payslip : cachetFor(old, jaugeOf(s));
+      rows.push({category: 'Staff', label: `Cachets ${plural}${tier ? ` (${tier})` : r === 'mus' && jaugeOf(s) ? ` (jauge ${jaugeOf(s)})` : ''}${cost == null ? ' — coût à renseigner' : ''}`, qty: n, unit_cost: cost, pay_mode: 'cachet'});
+      continue; }
     if (n > 0){ const {cost, tier} = cachetRate(d, r, jauge);
       rows.push({category: 'Staff', label: `Cachets ${plural}${tier ? ` (${tier})` : ''}${cost == null ? ' — coût à renseigner' : ''}`, qty: n, unit_cost: cost, pay_mode: 'cachet'}); }
     if (nf > 0){ const cost = num(d.facture);
