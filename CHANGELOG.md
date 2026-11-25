@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.66.7 — 25/11/2026
+- Safari : la correction volontaire de la première lettre d'un nom (« IBoat » → « iBoat ») est respectée ; champs de noms sans correction automatique du système (point n°1)
+
+
 ## 1.66.6 — 24/11/2026
 - Prénom, Nom et nom de structure : majuscule à chaque mot pendant la frappe (contacts, structures, équipe d'un artiste, fiche RH ; point n°1)
 
