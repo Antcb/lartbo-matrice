@@ -113,8 +113,8 @@ function overview(p, {shows, tasks, suivis}){
       <label>Commission L'ArtBo (%)</label>${cIn('projects', p.id, 'default_artbo_pct', p.default_artbo_pct, 'number', `class="narrow" placeholder="${defaultCommission(p.mode)}"`)}
     </div></div>
   ${spectaclesPanel(p)}
-  ${p.mode === 'booking' || spectaclesOf(p.id).length ? '' : `<div class="panel pad mt-lg"><h3 class="block-title">Budget type historique de l’artiste <span class="badge">temporaire</span> <span class="muted title-note">· posé sur les nouvelles dates confirmées sans spectacle</span></h3>
-    <p class="help mb">Ancien budget type, gardé tant que l’artiste n’a pas de spectacle. Le parcours principal est le budget type par spectacle : crée un spectacle ci-dessus ; ce bloc disparaît alors de l’aperçu (ses valeurs restent pour les dates sans spectacle).</p>${templateForm(p.id)}</div>`}
+  ${p.mode === 'booking' ? '' : `<div class="panel pad mt-lg"><h3 class="block-title">Budget type de l’artiste <span class="muted title-note">· valeurs par défaut par rôle : dates sans spectacle, et personnes d’un spectacle sans tarif propre</span></h3>
+    ${templateForm(p.id)}</div>`}
   <div class="struct-hero mt-lg">
     <div class="panel pad"><h3 class="block-title">Prochaines dates</h3>${next.map(s=>`<div class="plan-row click" ${showRowAttrs(s)}><span class="d">${showRowDate(s)}</span><span><b>${esc(s.venue)}</b> <span class="muted">${esc(s.city||'')}</span></span><span class="plan-acts">${showEditBtn(s)}${stSelect(s)}</span></div>`).join('') || '<p class="muted m0">Aucune date à venir.</p>'}</div>
     <div class="panel pad"><h3 class="block-title">En cours</h3>

@@ -4,7 +4,7 @@
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
 import { vatConflict, BILL_KINDS, acompteRetire, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
-import { BOOKING_STEPS, CONFIRMED_PROD, PROD_STEPS } from '../constants.js';
+import { BOOKING_STEPS, CONFIRMED_PROD, OPTION_PROD, PROD_STEPS } from '../constants.js';
 import { byId, isArchived, projName, setting, showsFiltered, spectacleName, structName } from '../selectors.js';
 import { followedInvoice, lateSteps, remindersOf, staleOf } from '../reminders.js';
 import { S } from '../state.js';
@@ -24,6 +24,9 @@ export function viewProduction(){
   const all = showsFiltered().filter(s => CONFIRMED_PROD.includes(s.status));
   const hit = s => matches([s.venue, s.city, s.department, structName(s.structure_id), projName(s.project_id), fmtDate(s.date), s.date, s.contract_type].join(' '), q);
   const shows = all.filter(hit);
+  // (v1.67) options salle / festival : listées avec leur statut pour préparer le budget prévisionnel ; jamais dans les montants, le
+  // nombre de dates confirmées, les relances ni les anciens éléments
+  const options = showsFiltered().filter(s => OPTION_PROD.includes(s.status) && hit(s));
   // indicateurs FINANCIERS : dates archivées comprises (v1.60.3, réponse d'Anthony du 07/11) — un archivage ne change aucun montant ;
   // la liste de travail et les relances ne les montrent pas
   const archivedFin = showsFiltered({archived: true}).filter(s => isArchived(s) && CONFIRMED_PROD.includes(s.status) && hit(s));
@@ -37,10 +40,10 @@ export function viewProduction(){
   const fin = financeOf(finShows);
   const late = shows.reduce((n,s)=>n+remindersOf(s).filter(r=>r.late).length, 0);
   const groups = {};
-  shows.forEach(s => (groups[s.project_id||''] ||= []).push(s));
+  shows.concat(options).sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).forEach(s => (groups[s.project_id||''] ||= []).push(s));
   const order = Object.keys(groups).sort((a,b)=>projName(a).localeCompare(projName(b)));
   const head = viewHead('Production', {
-    sub: `${shows.length} date${shows.length>1?'s':''} confirmée${shows.length>1?'s':''}`,
+    sub: `${shows.length} date${shows.length>1?'s':''} confirmée${shows.length>1?'s':''}${options.length ? ` · ${options.length} en option (hors montants)` : ''}`,
     filters: filterBar() + `<input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-prod" placeholder="Artiste, ville, salle, festival, date…" data-search="production" value="${esc(q)}">`,
     actions: `<button class="btn" data-act="syncPennylane" title="Coche « Payée » les acomptes et soldes réglés dans Pennylane">Synchroniser Pennylane</button><button class="btn" data-act="expandAll">${shows.length && shows.every(s=>S.openProd.has(s.id)) ? 'Tout replier' : 'Tout déplier'}</button>`});
   // pièces à rattacher d'une date absente de cette liste (supprimée, annulée, autre année, filtrée) : listées ici
@@ -57,7 +60,7 @@ export function viewProduction(){
     .sort((a, b) => String(a.s.date).localeCompare(String(b.s.date)));
   const staleHTML = stale.length ? `<div class="panel pad mb" id="stale-items"><p class="help full"><b>Anciens éléments à traiter</b> (${stale.length}) : obligations encore ouvertes sur des concerts passés. Plus de notification quotidienne au-delà de la limite (120 jours après le concert, 30 jours pour la facture de solde à faire) ; elles restent ici jusqu’à ce que l’étape soit faite.</p>
     ${stale.map(({s, r}) => `<div class="file-row"><a href="#" data-act="editShow" data-id="${s.id}">${esc([fmtDate(s.date), s.venue, projName(s.project_id)].filter(Boolean).join(' · '))}</a> <span class="warn-txt small">${esc(r.title)}</span> <span class="muted small">— ${esc(r.staleWhy)}, échéance du ${esc(fmtDate(r.due))}</span></div>`).join('')}</div>` : '';
-  if (!all.length && !archivedFin.length) return head + awayHTML + staleHTML + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
+  if (!all.length && !archivedFin.length && !options.length) return head + awayHTML + staleHTML + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
   return head + awayHTML + staleHTML + `
     <div class="stat-row">
       <div class="stat"><b>${eur2(artbo)}</b><span>Commissions L'ArtBo</span></div>
@@ -69,12 +72,13 @@ export function viewProduction(){
       <div class="stat"><b style="${late?'color:var(--danger)':''}">${late}</b><span>Relance${late>1?'s':''} en retard</span></div>
     </div>
     ${archHTML}
-    ${shows.length ? order.map(pid => `<section class="group"><div class="group-head"><h2>${esc(projName(pid)||'Sans projet')}</h2><span class="count">${groups[pid].length}</span></div>
+    ${shows.length || options.length ? order.map(pid => `<section class="group"><div class="group-head"><h2>${esc(projName(pid)||'Sans projet')}</h2><span class="count">${groups[pid].length}</span></div>
       ${pid ? projectBudgetHTML(pid) : ''}
       <div class="prod-list">${groups[pid].map(prodRow).join('')}</div></section>`).join('') : '<div class="empty panel">Aucune date ne correspond à la recherche.</div>'}`;
 }
 
 function prodRow(s){
+  if (OPTION_PROD.includes(s.status)) return optionRow(s);
   const d = s.date ? new Date(s.date+'T12:00:00') : null;
   const booking = s.prod_mode === 'booking';
   // date en booking : seulement la commission de L'ArtBo et la part partenaire (les factures de l'artiste ne sont pas suivies, lot C1)
@@ -92,6 +96,24 @@ function prodRow(s){
       <span class="chev" aria-hidden="true">▸</span>
     </div>
     ${open ? prodBody(s, booking, steps, pays, late) : ''}
+  </div>`;
+}
+
+/** (v1.67) date en option : statut visible, budget prévisionnel préparable avant confirmation ; ni étapes, ni factures, ni relances */
+function optionRow(s){
+  const d = s.date ? new Date(s.date+'T12:00:00') : null, booking = s.prod_mode === 'booking', open = S.openProd.has(s.id);
+  const key = 'prod:' + s.id, tabs = [['conditions', 'Conditions'], ...(booking ? [] : [['budget', 'Budget prévisionnel']]), ['notes', 'Notes', s.notes ? '•' : '']];
+  const cur = tabs.some(([k]) => k === S.tab[key]) ? S.tab[key] : (booking ? 'conditions' : 'budget');
+  const body = open ? {conditions: () => conditionsTab(s, booking), budget: () => isProductionShow(s) ? productionBudgetHTML(s) : showBudgetHTML(s), notes: () => notesTab(s)}[cur]() : '';
+  return `<div class="prod-row prod-option ${open?'open':''}" id="prod-${s.id}">
+    <div class="prod-head" data-act="toggleProd" data-id="${s.id}" aria-expanded="${open}">
+      <div class="day"><b>${d?String(d.getDate()).padStart(2,'0'):'—'}</b><span>${d?d.toLocaleDateString('fr-FR',{month:'short', year:'2-digit'}):''}</span></div>
+      <div class="what"><b>${esc(s.venue)}</b> <span class="badge tag">${esc(s.status)} · pas encore confirmée</span>${booking?' <span class="badge tag">Booking seul</span>':''}<span class="muted"> ${esc([s.city, structName(s.structure_id)].filter(Boolean).join(' · '))}</span></div>
+      ${stSelect(s)}
+      <span class="chev" aria-hidden="true">▸</span>
+    </div>
+    ${open ? `<div class="prod-body"><p class="mode-note">Date en option : budget prévisionnel préparable dès maintenant ; elle n’entre dans aucun montant ni dans les dates confirmées tant qu’elle n’est pas confirmée.</p>
+      ${tabsBar(key, tabs.map(([k, l, n]) => [k, l, n]))}<div class="prod-tab">${body}</div></div>` : ''}
   </div>`;
 }
 

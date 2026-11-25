@@ -141,6 +141,13 @@
     mail_texte_ecrire: ({ p_id, p_text }) => { if (!(window.__MAILBOX_OWNER ?? true) || !p_text) return false;
       const T = (window.__DB.mail_textes ||= []); if (T.some(t => t.message_id === p_id)) return false;
       T.push({ message_id: p_id, body_text: p_text }); return true; },
+    // v1.67 : ligne Movinmotion posée seulement s'il y a une ligne de salaire AU CACHET (même règle que la fonction SQL)
+    ensure_movinmotion: ({ p_show }) => { const D = window.__DB, sh = (D.shows || []).find(x => x.id === p_show); if (!sh || sh.prod_mode === 'booking') return null;
+      const ls = (D.budget_lines || []).filter(l => l.show_id === p_show);
+      if (!ls.some(l => l.category === 'Staff' && (l.pay_mode ?? 'cachet') === 'cachet') || ls.some(l => l.auto === 'movinmotion')) return null;
+      const cost = (D.settings || []).find(x => x.key === 'movinmotion_payslip_cost')?.value ?? 20.3;
+      D.budget_lines.push({ id: 'mm-' + p_show, project_id: sh.project_id, show_id: p_show, category: 'Movinmotion', label: 'Commission bulletins de paie', supplier: 'Movinmotion', auto: 'movinmotion', payer: 'compte', unit_cost: Number(cost), sort: 99 });
+      return null; },
     // v1.66.5 : liens des textes déjà enregistrés — remplacés seulement si le nouveau texte, sans ses adresses de liens, est l'ancien
     mail_texte_liens: ({ p_log, p_old, p_new }) => { const sans = String(p_new).replace(/\[([^\[\]\n]+)\]\(((?:https?:\/\/|mailto:|tel:)[^() \t\n\r\f\v<>]+)\)/gi, '$1');
       if (p_new === p_old) return false; if (sans !== p_old) throw Object.assign(new Error('texte différent'), { code: '22023' });
