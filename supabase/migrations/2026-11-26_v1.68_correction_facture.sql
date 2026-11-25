@@ -72,8 +72,9 @@ end $m$;
 
 /** Corriger une facture émise dans MATRICE (déverrouillage explicite) : montant HT, %, TVA, type ; motif obligatoire ; historique */
 create or replace function public.facture_corriger(p_payment uuid, p_amount numeric, p_pct numeric, p_vat numeric, p_kind text, p_motif text)
-returns jsonb language plpgsql security definer set search_path = public as $$
-declare me text := coalesce(auth.jwt() ->> 'email', ''); r public.show_payments; a public.show_payments; k text; m text := btrim(coalesce(p_motif, ''));
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare me text := coalesce(auth.jwt() ->> 'email', ''); r public.show_payments; a public.show_payments; k text;
+        m text := btrim(coalesce(p_motif, ''), E' \t\r\n');   -- espaces, tabulations et retours à la ligne
 begin
   if not public.is_team() then raise exception 'Réservé à l''équipe' using errcode = '42501'; end if;
   if m = '' then raise exception 'Motif obligatoire pour corriger une facture émise' using errcode = '22023'; end if;
@@ -84,11 +85,15 @@ begin
   if r.kind = 'artbo' and exists (select 1 from public.shows s where s.id = r.show_id and coalesce(s.prod_mode, 'production') <> 'booking') then
     raise exception 'Commission de production : ce n''est pas une facture, ses règles de versement restent inchangées' using errcode = 'P0001';
   end if;
+  if r.kind in ('acompte', 'solde', 'autre') and exists (select 1 from public.shows s where s.id = r.show_id and s.prod_mode = 'booking') then
+    raise exception 'Date en booking : les factures d''acompte et de solde sont celles de l''artiste, elles ne se corrigent pas ici' using errcode = 'P0001';
+  end if;
   if r.kind not in ('acompte', 'solde', 'autre', 'artbo', 'partner') then raise exception 'Cette ligne ne se corrige pas ici' using errcode = 'P0001'; end if;
   if not public.payment_is_emitted(r) then raise exception 'Facture pas encore émise : elle se modifie directement dans le tableau' using errcode = 'P0001'; end if;
-  if p_amount is null or p_amount < 0 then raise exception 'Montant HT à saisir (0 ou plus)' using errcode = '22023'; end if;
-  if p_pct is not null and (p_pct < 0 or p_pct > 100) then raise exception '%% du cachet entre 0 et 100' using errcode = '22023'; end if;
-  if p_vat is not null and (p_vat < 0 or p_vat > 100) then raise exception 'TVA entre 0 et 100 %%' using errcode = '22023'; end if;
+  if p_amount is null or p_amount < 0 or p_amount = 'NaN'::numeric or p_amount >= 100000000 then
+    raise exception 'Montant HT à saisir (0 ou plus, moins de 100 millions)' using errcode = '22023'; end if;
+  if p_pct is not null and (p_pct < 0 or p_pct > 100 or p_pct = 'NaN'::numeric) then raise exception '%% du cachet entre 0 et 100' using errcode = '22023'; end if;
+  if p_vat is not null and (p_vat < 0 or p_vat > 100 or p_vat = 'NaN'::numeric) then raise exception 'TVA entre 0 et 100 %%' using errcode = '22023'; end if;
   k := coalesce(nullif(btrim(p_kind), ''), r.kind);
   if k is distinct from r.kind and (r.kind not in ('acompte', 'solde', 'autre') or k not in ('acompte', 'solde', 'autre')) then
     raise exception 'Type : seuls acompte, solde et autre ligne s''échangent (la commission et la part partenaire gardent leur type)' using errcode = '22023';

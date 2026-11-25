@@ -30,7 +30,8 @@ insert into public.show_payments (id, show_id, kind, label, pct, amount, invoice
  ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000a1', 'solde', 'Solde', null, 7000, 'F-2026-102', '2026-10-05', '2026-10-20', 5.5, 'compte', 'pl-102', null),
  ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-0000000000a1', 'artbo', 'Commission', 15, 1500, null, null, '2026-10-21', null, null, null, null),
  ('00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-0000000000b1', 'artbo', 'Commission booking', 15, 750, 'F-2026-103', '2026-10-02', null, null, null, null, null),
- ('00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-0000000000a1', 'autre', 'Non émise', null, 100, null, null, null, null, null, null, null);
+ ('00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-0000000000a1', 'autre', 'Non émise', null, 100, null, null, null, null, null, null, null),
+ ('00000000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-0000000000b1', 'acompte', 'Acompte de l''artiste (booking)', 20, 1000, 'A-1', '2026-10-01', null, null, null, null, null);
 
 \i supabase/migrations/2026-11-26_v1.68_correction_facture.sql
 \i supabase/migrations/2026-11-26_v1.68_correction_facture.sql
@@ -68,6 +69,12 @@ select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-0
 select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3500, 35, 5.5, 'acompte', 'x')$$, 'Aucun changement');
 select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', -1, 35, 5.5, null, 'x')$$, 'Montant HT');
 select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3500, 35, 150, null, 'x')$$, 'TVA entre');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 'NaN'::numeric, 35, 5.5, null, 'x')$$, 'Montant HT');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 'Infinity'::numeric, 35, 5.5, null, 'x')$$, 'Montant HT');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 1e30, 35, 5.5, null, 'x')$$, 'Montant HT');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3600, 'NaN'::numeric, 5.5, null, 'x')$$, 'du cachet entre');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3600, 35, 5.5, null, E'\n\t \r')$$, 'Motif obligatoire');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000006', 1000, 20, null, null, 'x')$$, 'Date en booking');
 set essai.team = 'off';
 select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3700, 35, 5.5, null, 'x')$$, 'Réservé');
 set essai.team = 'on';

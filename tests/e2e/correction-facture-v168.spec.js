@@ -144,7 +144,8 @@ test('v1.68 refus de la base affiché, ligne inchangée ; commission en booking 
   const r = await page.evaluate(async () => { const c = await import('./js/calc.js');
     const { S, touch } = await import('./js/state.js'); S.db.shows.push({ id: 'v-b', project_id: 'art-b', prod_mode: 'booking', fee_ht: 2000, status: 'Confirmée Salle' }); touch('shows');
     const p = { id: 'f-b', show_id: 'v-b', kind: 'artbo', invoice_number: 'F-2026-300', amount: 300 };
-    return { booking: c.canFixInvoice(p), prod: c.canFixInvoice({ ...p, show_id: 'v-1', paid_at: '2026-10-01' }), horsCalcul: c.canFixInvoice({ ...p, hors_calcul: 'import' }) }; });
-  expect(r).toEqual({ booking: true, prod: false, horsCalcul: false });
+    return { booking: c.canFixInvoice(p), prod: c.canFixInvoice({ ...p, show_id: 'v-1', paid_at: '2026-10-01' }), horsCalcul: c.canFixInvoice({ ...p, hors_calcul: 'import' }),
+      acompteArtiste: c.canFixInvoice({ ...p, kind: 'acompte' }) }; });
+  expect(r).toEqual({ booking: true, prod: false, horsCalcul: false, acompteArtiste: false });   // acompte / solde en booking : factures de l'artiste
   expectClean(ctx);
 });
