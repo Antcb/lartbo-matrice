@@ -6,7 +6,7 @@ import { render } from './app.js';
 import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
 import { cnmDue, commissionOf, coreaCommissionCheck, isFacture, isFree, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
 import { breakFromText, commissionPctOf, coreaCalc, isCorea } from './corea.js';
-import { acompteState, isCoproduction, isInvoiced, paymentsOf, payAmount } from './calc.js';
+import { SWAP_KINDS, acompteState, canFixInvoice, correctionsOf, isCoproduction, isInvoiced, paymentsOf, payAmount, payVat, ttc } from './calc.js';
 import { contentTypeOf, insert, mergeRows, openStored, refreshBudgetMarker, refreshFor, remove, save, sb, typedFile, uploadFailure } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
 import { callScript } from './mail.js';
@@ -267,6 +267,57 @@ export const BUDGET_ACTIONS = {
       await inform({title: 'Synchronisation Pennylane', text: lines.join('\n')});
     } catch (err) { toast(err.message, true); }
     t.disabled = false;
+  },
+  /**
+   * (v1.68, point n°23, décisions d'Anthony du 26/11/2026) « Déverrouiller pour corriger » une facture émise : la ligne reste
+   * verrouillée tant que la correction n'est pas enregistrée ; montant HT, % du cachet, TVA de la ligne et type (acompte / solde /
+   * autre) alignés sur la facture réellement émise ; motif obligatoire ; écriture et historique côté serveur (facture_corriger) ;
+   * reverrouillée aussitôt. Le document Pennylane n'est ni modifié, ni annulé, ni réémis (aucun appel à Pennylane ici).
+   */
+  fixInvoice: async t => {
+    const p = byId('show_payments', t.dataset.id); if (!p) return;
+    if (!canFixInvoice(p)) return toast('Cette ligne ne se corrige pas ici (facture pas encore émise, commission de production ou ligne hors calcul).', true);
+    const s = byId('shows', p.show_id), swap = SWAP_KINDS.includes(p.kind), cur = payAmount(p);
+    const KIND = {acompte: 'Acompte', solde: 'Solde', autre: 'Autre ligne', artbo: 'Commission L’ArtBo', partner: 'Part partenaire'};
+    const num = v => v == null || v === '' ? null : Number(String(v).replace(',', '.'));
+    const hist = correctionsOf(p.id).map(c => `<li>${fmtDate(String(c.at).slice(0, 10))}${c.actor ? ' · ' + esc(c.actor) : ''} · ${eur2(c.before?.amount ?? 0)} → ${eur2(c.after?.amount ?? 0)} HT · « ${esc(c.motif)} »</li>`).join('');
+    const facts = [p.invoice_number ? `n° <b>${esc(p.invoice_number)}</b>` : 'sans n°', p.sent_at ? `envoyée le ${fmtDate(p.sent_at)}` : '', p.paid_at ? `payée le ${fmtDate(p.paid_at)}` : 'non payée',
+      p.pennylane_id ? 'liée à Pennylane' : ''].filter(Boolean).join(' · ');
+    const fields = [
+      ...(swap ? [{k: 'kind', label: 'Type de ligne', type: 'select', blank: false, options: SWAP_KINDS.map(k => [k, KIND[k]])}] : []),
+      {k: 'amount', label: 'Montant HT (€)', type: 'number'},
+      {k: 'pct', label: '% du cachet', type: 'number', placeholder: 'vide = non renseigné'},
+      {k: 'vat_rate', label: 'TVA de la ligne (%)', type: 'number', placeholder: `vide = TVA par défaut (${String(payVat({...p, vat_rate: null})).replace(".", ",")} %)`},
+      {k: 'motif', label: 'Motif de la correction (obligatoire)', type: 'textarea', full: true, rows: 2, placeholder: 'ex. facture Pennylane émise à 35 %, et non 30 %'}];
+    await openModal({title: 'Déverrouiller pour corriger', saveLabel: 'Enregistrer la correction', fields,
+      values: {kind: p.kind, amount: cur ?? '', pct: p.pct ?? '', vat_rate: p.vat_rate ?? ''},
+      extraTop: `<div class="help full">
+          <p class="m0"><b>${esc(p.label || KIND[p.kind] || p.kind)}</b> · ${facts}${s?.fee_ht ? ` · cachet ${eur2(s.fee_ht)} HT` : ''}</p>
+          <p class="m0 mt-sm">La facture reste verrouillée tant que tu n’enregistres pas, et se reverrouille dès que la correction est enregistrée.</p>
+          <p class="m0 mt-sm"><b>Modifiable ici (suivi MATRICE)</b> : montant HT, % du cachet, TVA de la ligne${swap ? ', type (acompte, solde, autre ligne)' : ''}.</p>
+          <p class="m0"><b>Inchangé</b> : date du concert, n° de facture, date d’envoi, date et statut de paiement, identifiant et lien Pennylane, « Arrive sur »${swap ? '' : ', type de ligne'}.</p>
+          <p class="m0"><b>À corriger dans Pennylane si le document est faux</b> (toi-même) : n°, montant et TVA facturés, client, date de facture, statut payé — avoir puis nouvelle facture. Rien n’est envoyé, modifié, annulé ni réémis dans Pennylane depuis ici.</p>
+          ${hist ? `<p class="m0 mt-sm">Corrections précédentes :</p><ul class="warn-list">${hist}</ul>` : ''}</div>`,
+      onSave: async v => {
+        const amount = num(v.amount), pctv = num(v.pct), vat = num(v.vat_rate), kind = swap ? v.kind : p.kind, motif = String(v.motif || '').trim();
+        if (amount == null || !Number.isFinite(amount) || amount < 0){ toast('Montant HT à saisir (0 ou plus)', true); return false; }
+        if (pctv != null && !(pctv >= 0 && pctv <= 100)){ toast('% du cachet entre 0 et 100', true); return false; }
+        if (vat != null && !(vat >= 0 && vat <= 100)){ toast('TVA entre 0 et 100 %', true); return false; }
+        if (!motif){ toast('Indique le motif de la correction', true); return false; }
+        const same = (a, b) => (a == null || a === '' ? null : Number(a)) === (b == null || b === '' ? null : Number(b));
+        const diffs = [!same(Math.round(amount * 100) / 100, p.amount) && `montant ${p.amount == null ? `${eur2(cur ?? 0)} (calculé)` : eur2(p.amount)} → ${eur2(amount)} HT`,
+          !same(pctv, p.pct) && `% du cachet ${p.pct ?? "—"} → ${pctv ?? "—"}`, !same(vat, p.vat_rate) && `TVA ${p.vat_rate ?? 'par défaut'} → ${vat ?? 'par défaut'}`,
+          kind !== p.kind && `type ${KIND[p.kind]} → ${KIND[kind]}`].filter(Boolean);
+        if (!diffs.length){ toast('Aucun changement à enregistrer', true); return false; }
+        const tt = ttc(amount, vat ?? payVat({...p, vat_rate: null, kind}));
+        if (!(await confirmAsk('Enregistrer la correction ?', `${p.invoice_number || p.label || KIND[p.kind]} : ${diffs.join(' ; ')} (TTC ${eur2(tt)}). Motif : « ${motif} ». La facture se reverrouille aussitôt ; Pennylane n’est pas modifié.`, 'Enregistrer la correction'))) return false;
+        const {data, error} = await sb.rpc('facture_corriger', {p_payment: p.id, p_amount: amount, p_pct: pctv, p_vat: vat, p_kind: kind, p_motif: motif});
+        if (error){ toast(error.message, true); return false; }
+        if (data?.row) mergeRows('show_payments', [data.row]); else await refreshFor('show_payments', 'show_id', [p.show_id]);
+        const {fetchAll} = await import('./data.js'); S.db.facture_corrections = await fetchAll('facture_corrections'); touch('facture_corrections');
+        toast('Correction enregistrée : la facture est de nouveau verrouillée (Pennylane inchangé).'); render();
+        return true;
+      }});
   },
   /**
    * Rattacher (ou corriger le rattachement d') une facture Pennylane du devis à une ligne d'acompte ou de solde de la date (v1.56.9).
