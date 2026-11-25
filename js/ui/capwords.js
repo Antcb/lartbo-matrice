@@ -52,6 +52,8 @@ document.addEventListener('keyup', e => {
     if (tr.key !== tr.key.toUpperCase() && c === tr.key.toUpperCase())
       window.dispatchEvent(new CustomEvent('matrice-diag', {detail: {key: 'majuscule : correction non respectée', data: {seq: tr.seq}}})); }, 0);
 }, true);
+// clic ailleurs ou sortie du champ : le repère tombe (une insertion sans touche — dictée, émojis — garde la règle)
+['mousedown', 'blur'].forEach(t => document.addEventListener(t, e => { if (e.target?.matches?.(CAP)) deliberate.delete(e.target); }, true));
 document.addEventListener('compositionstart', e => { const el = e.target;
   if (el.matches?.(CAP) && firstLetterSelected(el, el.selectionStart, el.selectionEnd)) deliberate.set(el, el.selectionStart); });
 // champs de noms : pas de correction ni de majuscule automatiques du système (Safari / macOS / iOS), qui défaisaient la correction

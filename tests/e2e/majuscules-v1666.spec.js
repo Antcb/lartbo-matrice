@@ -241,6 +241,17 @@ test('v1.66.7 Safari : « IBoat » → « iBoat » respecté quel que soit l’o
     el.dispatchEvent(ev); if (!ev.defaultPrevented) el.setRangeText('p', 11, 11, 'end');
     return el.value; });
   expect(r5).toBe('IBoat club P');
+  // repère posé puis clic ailleurs : une insertion sans touche (dictée) garde la règle
+  const r6 = await nomS.evaluate(el => {
+    el.value = 'IBoat'; el.setSelectionRange(0, 1);
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }));
+    el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); el.setSelectionRange(5, 5); el.value += ' ';
+    el.setSelectionRange(6, 6);
+    const ev = new InputEvent('beforeinput', { inputType: 'insertText', data: 'x', bubbles: true, cancelable: true });
+    el.dispatchEvent(ev); if (!ev.defaultPrevented) el.setRangeText('x', 6, 6, 'end');
+    return el.value; });
+  expect(r6).toBe('IBoat X');
   // correction réelle au clavier (Chromium) : respectée, aucune trace de diagnostic
   await nomS.evaluate(el => { el.value = 'IBoat Club'; el.setSelectionRange(0, 1); });
   await nomS.press('i');
