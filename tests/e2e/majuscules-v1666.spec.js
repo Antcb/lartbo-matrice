@@ -214,6 +214,33 @@ test('v1.66.7 Safari : « IBoat » → « iBoat » respecté quel que soit l’o
     el.dispatchEvent(ev); if (!ev.defaultPrevented) el.setRangeText('i', 0, 0, 'end');
     return el.value; });
   expect(r2).toBe('iBoat Club');
+  // ordre WebKit 3 (cas d'Anthony, 25/11 : majuscule immédiate) : au beforeinput, la sélection est déjà réduite APRÈS la lettre
+  const r3 = await nomS.evaluate(el => {
+    el.value = 'IBoat Club'; el.setSelectionRange(0, 1);
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', bubbles: true }));
+    el.setSelectionRange(1, 1);
+    const ev = new InputEvent('beforeinput', { inputType: 'insertText', data: 'i', bubbles: true, cancelable: true });
+    el.dispatchEvent(ev); if (!ev.defaultPrevented) el.setRangeText('i', 0, 1, 'end');
+    return el.value; });
+  expect(r3).toBe('iBoat Club');
+  // ordre WebKit 4 : même à l'appui de la touche la sélection est déjà réduite → repli sur la sélection faite juste avant (« select »)
+  const r4 = await nomS.evaluate(el => {
+    el.value = 'IBoat Club'; el.setSelectionRange(0, 1); el.dispatchEvent(new Event('select', { bubbles: true }));
+    el.setSelectionRange(1, 1);
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', bubbles: true }));
+    const ev = new InputEvent('beforeinput', { inputType: 'insertText', data: 'i', bubbles: true, cancelable: true });
+    el.dispatchEvent(ev); if (!ev.defaultPrevented) el.setRangeText('i', 0, 1, 'end');
+    return el.value; });
+  expect(r4).toBe('iBoat Club');
+  // une frappe ordinaire n'est jamais prise pour une correction : texte modifié depuis la sélection → majuscule appliquée
+  const r5 = await nomS.evaluate(el => {
+    el.value = 'IBoat'; el.setSelectionRange(0, 1); el.dispatchEvent(new Event('select', { bubbles: true }));
+    el.value = 'IBoat club '; el.setSelectionRange(11, 11);
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true }));
+    const ev = new InputEvent('beforeinput', { inputType: 'insertText', data: 'p', bubbles: true, cancelable: true });
+    el.dispatchEvent(ev); if (!ev.defaultPrevented) el.setRangeText('p', 11, 11, 'end');
+    return el.value; });
+  expect(r5).toBe('IBoat club P');
   // correction réelle au clavier (Chromium) : respectée, aucune trace de diagnostic
   await nomS.evaluate(el => { el.value = 'IBoat Club'; el.setSelectionRange(0, 1); });
   await nomS.press('i');
