@@ -7,7 +7,7 @@ create table public.budget_lines (id uuid primary key default gen_random_uuid(),
   auto text, payer text, sort int, unit_cost numeric, qty numeric);
 create unique index budget_lines_show_auto_key on public.budget_lines (show_id, auto) where auto in ('movinmotion', 'cnm') and show_id is not null;
 insert into public.settings values ('movinmotion_payslip_cost', '20');
-insert into public.shows values ('00000000-0000-0000-0000-00000000000a', null, 'production'), ('00000000-0000-0000-0000-00000000000b', null, 'production');
+insert into public.shows values ('00000000-0000-0000-0000-00000000000a', null, 'production'), ('00000000-0000-0000-0000-00000000000b', null, 'production'), ('00000000-0000-0000-0000-00000000000c', null, 'production');
 -- ligne ancienne (avant la migration) : sera vide (= au cachet)
 insert into public.budget_lines (show_id, category, label, qty, unit_cost) values ('00000000-0000-0000-0000-00000000000a', 'Staff', 'Cachets', 3, 250);
 \i supabase/migrations/2026-11-25_v1.67_cachet_facture.sql
@@ -28,4 +28,15 @@ select pg_temp.ok((select count(*) from public.budget_lines where show_id = '000
 insert into public.budget_lines (show_id, category, label, qty, unit_cost, pay_mode) values ('00000000-0000-0000-0000-00000000000b', 'Staff', 'Alice', 1, 250, 'cachet');
 select public.ensure_movinmotion('00000000-0000-0000-0000-00000000000b');
 select pg_temp.ok((select count(*) from public.budget_lines where show_id = '00000000-0000-0000-0000-00000000000b' and auto = 'movinmotion') = 1, 'cachet ajouté : ligne Movinmotion posée');
+-- marqueur « budget créé avec la v1.67 »
+select pg_temp.ok((select budget_created_at from public.shows where id = '00000000-0000-0000-0000-00000000000a') is null, 'budget enregistré avant (date A) : marqueur vide, même après ajouts');
+select pg_temp.ok((select budget_created_at from public.shows where id = '00000000-0000-0000-0000-00000000000b') is not null, 'budget créé après (date B) : marqueur posé à la première ligne');
+insert into public.budget_lines (show_id, category, label, sort) values ('00000000-0000-0000-0000-00000000000c', 'Technique', 'Son', 1), ('00000000-0000-0000-0000-00000000000c', 'Technique', 'Lumière', 2), ('00000000-0000-0000-0000-00000000000c', 'Taxes', 'Autre', 3);
+select pg_temp.ok((select budget_created_at from public.shows where id = '00000000-0000-0000-0000-00000000000c') is not null, 'ajout en lot (date C) : marqueur posé');
+create temp table m as select budget_created_at v from public.shows where id = '00000000-0000-0000-0000-00000000000c';
+delete from public.budget_lines where show_id = '00000000-0000-0000-0000-00000000000c' and label = 'Son';
+insert into public.budget_lines (show_id, category, label) values ('00000000-0000-0000-0000-00000000000c', 'Technique', 'Retour');
+select pg_temp.ok((select budget_created_at from public.shows where id = '00000000-0000-0000-0000-00000000000c') = (select v from m), 'première ligne supprimée puis ajout : marqueur inchangé');
+update public.shows set budget_created_at = null where id = '00000000-0000-0000-0000-00000000000c';
+select pg_temp.ok((select budget_created_at from public.shows where id = '00000000-0000-0000-0000-00000000000c') = (select v from m), 'marqueur ni effacé ni modifié');
 \echo BILAN v1.67 : tous les contrôles sont passés

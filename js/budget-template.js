@@ -18,7 +18,7 @@
 import { render } from './app.js';
 import { CNM_TODO, cnmDue, isCnmToFill, isFree, isMissingCost, linesOf, missingCostLines, payslipCost } from './budget.js';
 import { confirmAsk } from './ui/dialog.js';
-import { save, sb, mergeRows } from './data.js';
+import { save, sb, mergeRows, refreshBudgetMarker } from './data.js';
 import { isProductionShow } from './production-budget.js';
 import { byId, setting } from './selectors.js';
 import { S, touch } from './state.js';
@@ -244,7 +244,7 @@ export async function applyTemplate(s, {quiet = false} = {}){
   const rows = templateLines(s).map(r => ({payer: 'compte', ...r, project_id: s.project_id, show_id: s.id, sort: sort++}));
   const {data, error} = await sb.from('budget_lines').insert(rows).select();
   if (error){ toast('Budget type impossible : ' + error.message, true); return false; }
-  mergeRows('budget_lines', data);
+  mergeRows('budget_lines', data); await refreshBudgetMarker(data);
   if (!quiet) toast('Budget prévisionnel prérempli (budget type) : ajoute ou retire des lignes si besoin');
   return true;
 }

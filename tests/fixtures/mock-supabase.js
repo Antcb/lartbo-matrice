@@ -93,7 +93,13 @@
       // window.__MISSING_COL = { table: 'colonne' } : colonne absente de la base (migration pas encore appliquée), comme PostgREST (PGRST204)
       if ((st.op === 'insert' || st.op === 'update') && window.__MISSING_COL && window.__MISSING_COL[table] && [].concat(st.patch).some(r => r && window.__MISSING_COL[table] in r))
         return { data: null, error: { code: 'PGRST204', message: `Could not find the '${window.__MISSING_COL[table]}' column of '${table}' in the schema cache` } };
-      if (st.op === 'insert') { const arr = (Array.isArray(st.patch) ? st.patch : [st.patch]).map(r => ({ id: uid(), ...r })); rows.push(...arr); return { data: clone(st.single ? arr[0] : arr), error: null }; }
+      if (st.op === 'insert') { const arr = (Array.isArray(st.patch) ? st.patch : [st.patch]).map(r => ({ id: uid(), ...r }));
+        // imitation du déclencheur budget_lines_mark_created (v1.67) : première ligne d'une date sans budget → shows.budget_created_at
+        if (table === 'budget_lines') for (const r of arr){ const sh = r.show_id && DB.shows.find(x => x.id === r.show_id);
+          if (sh && !sh.budget_created_at && !rows.some(x => x.show_id === r.show_id)) sh.budget_created_at = window.__SERVER_NOW || new Date().toISOString();
+          rows.push(r); }
+        else rows.push(...arr);
+        return { data: clone(st.single ? arr[0] : arr), error: null }; }
       // imitation du déclencheur settings_delais_instant (v1.64) : marqueur « @enregistrement » des versions ajoutées → instant du serveur
       if (st.op === 'upsert' && table === 'settings') { const now = window.__SERVER_NOW || new Date().toISOString(), arr = Array.isArray(st.patch) ? st.patch : [st.patch];
         st.patch = arr.map(p => p.key !== 'delais' || !p.value || typeof p.value !== 'object' ? p : { ...p, value: Object.fromEntries(Object.entries(p.value).map(([k, l]) =>

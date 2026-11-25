@@ -7,7 +7,7 @@ import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
 import { cnmDue, commissionOf, coreaCommissionCheck, isFacture, isFree, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
 import { breakFromText, commissionPctOf, coreaCalc, isCorea } from './corea.js';
 import { acompteState, isCoproduction, isInvoiced, paymentsOf, payAmount } from './calc.js';
-import { contentTypeOf, insert, mergeRows, openStored, refreshFor, remove, save, sb, typedFile, uploadFailure } from './data.js';
+import { contentTypeOf, insert, mergeRows, openStored, refreshBudgetMarker, refreshFor, remove, save, sb, typedFile, uploadFailure } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
 import { callScript } from './mail.js';
 import { applyTemplate, offerCostFill, spectacleStaffRows } from './budget-template.js';
@@ -178,7 +178,7 @@ export const BUDGET_ACTIONS = {
       .map(r => ({...r, project_id: s.project_id, show_id: s.id, payer: 'artbo', sort: sort++}));
     const {data, error} = await sb.from('budget_lines').insert(rows).select();
     if (error) return toast('Préremplissage impossible : ' + error.message, true);
-    mergeRows('budget_lines', data);
+    mergeRows('budget_lines', data); await refreshBudgetMarker(data);
     if (staff.length) await syncMovinmotionLine(s.id);   // frais Movinmotion des bulletins (coût figé, v1.57)
     if (!s.production) await saveProd(s.id, () => {});
     render(); toast('Budget de production prérempli : indique les quantités et prix unitaires');
@@ -238,7 +238,7 @@ export const BUDGET_ACTIONS = {
         if (!rows.length) return toast('Rien à copier', true);
         const {data, error} = await sb.from('budget_lines').insert(rows).select();
         if (error){ toast(error.message, true); return false; }
-        mergeRows('budget_lines', data); await syncMovinmotionLine(s.id); toast(`${data.length} ligne(s) copiée(s)`); render();
+        mergeRows('budget_lines', data); await refreshBudgetMarker(data); await syncMovinmotionLine(s.id); toast(`${data.length} ligne(s) copiée(s)`); render();
       }});
   },
   openBudgetFile: t => { const l = byId('budget_lines', t.dataset.id); if (l?.file_path) openStored(l.file_path); },
