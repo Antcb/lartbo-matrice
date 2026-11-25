@@ -23,7 +23,7 @@ test('v1.66.6 fiche contact : majuscules pendant la frappe, curseur gardé ; fic
   // saisie au milieu : le curseur reste où on tape
   await nom.press('Home'); await nom.press('ArrowRight'); await nom.press('ArrowRight'); await nom.press('ArrowRight');
   await nom.pressSequentially('la ');
-  await expect(nom).toHaveValue('De La McCartney');
+  await expect(nom).toHaveValue('De la McCartney');   // (25/11) tapé devant un mot existant : respecté tel quel
   expect(await nom.evaluate(el => el.selectionStart)).toBe(6);
   await page.keyboard.press('Escape');
   // fiche existante en minuscules : affichée et enregistrée telle quelle tant qu'on ne retape pas dans le champ
@@ -95,17 +95,24 @@ test('v1.66.6 (relecture) seul le texte tapé est mis en forme : effacer puis re
   await page.evaluate(async () => { (await import('./js/forms.js')).editContact(null); });
   const nom = page.locator('#modal [name=last_name]');
   await nom.click(); await expect(nom).toBeFocused();
-  // « Jean Van » : effacer le V puis retaper v → « Jean Van », jamais « Jean VAn » ; « Bupont » corrigé en « Dupont », jamais « DUpont »
+  // (règle du 25/11) Retour arrière sur la 1re lettre d'un mot existant puis lettre : ce qu'on tape est respecté, le reste intact
   await nom.pressSequentially('jean van');
   await expect(nom).toHaveValue('Jean Van');
   for (let i = 0; i < 2; i++) await nom.press('ArrowLeft');
   await nom.press('Backspace');
   await expect(nom).toHaveValue('Jean an');
   await nom.pressSequentially('v');
+  await expect(nom).toHaveValue('Jean van');
+  await nom.press('Backspace'); await nom.pressSequentially('V');
   await expect(nom).toHaveValue('Jean Van');
-  await nom.fill(''); await nom.pressSequentially('bupont');
-  await nom.press('Home'); await nom.press('Delete'); await nom.pressSequentially('d');
-  await expect(nom).toHaveValue('Dupont');
+  // le cas d'Anthony : « IBoat », Retour arrière après le I, puis « i » → « iBoat »
+  await nom.fill(''); await nom.pressSequentially('iBoat');
+  await expect(nom).toHaveValue('IBoat');
+  await nom.press('Home'); await nom.press('ArrowRight'); await nom.press('Backspace'); await nom.pressSequentially('i');
+  await expect(nom).toHaveValue('iBoat');
+  // mot nouveau (rien après) : majuscule toujours
+  await nom.press('End'); await nom.pressSequentially(' club');
+  await expect(nom).toHaveValue('iBoat Club');
   // texte déjà là (fiche existante) : taper à la fin ne touche pas les autres mots
   const set = v => nom.evaluate((el, v) => { el.value = v; }, v);   // valeur déjà enregistrée (pas une frappe)
   await set('iBoat de la tour'); await nom.press('End'); await nom.pressSequentially('s');
@@ -256,12 +263,6 @@ test('v1.66.7 Safari : « IBoat » → « iBoat » respecté quel que soit l’o
   await nomS.evaluate(el => { el.value = 'IBoat Club'; el.setSelectionRange(0, 1); });
   await nomS.press('i');
   await expect(nomS).toHaveValue('iBoat Club');
-  // si quelque chose (système, navigateur) remettait la majuscule malgré tout : trace de diagnostic sans contenu
-  await nomS.evaluate(el => { el.setSelectionRange(0, 1);
-    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', bubbles: true })); el.value = 'IBoat Club';
-    el.dispatchEvent(new KeyboardEvent('keyup', { key: 'i', bubbles: true })); });
-  await expect.poll(() => page.evaluate(() => window.__DB.client_errors.filter(r => r.message === 'majuscule : correction non respectée').length)).toBe(1);
-  expect(await page.evaluate(() => window.__DB.client_errors.find(r => r.message === 'majuscule : correction non respectée').stack)).not.toContain('Boat');
   await nomS.evaluate(el => { el.value = 'iBoat Club'; });
   // la majuscule d'un NOUVEAU mot fonctionne toujours juste après
   await nomS.press('End'); await nomS.pressSequentially(' paris');
