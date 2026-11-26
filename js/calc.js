@@ -154,10 +154,14 @@ export function avoirCouvert(p){
   const c = avoirsOf(p.id).reduce((t, a) => t + (Number(a.amount_ht) || 0), 0);
   return Math.round(Math.min(c, Math.max(0, payAmount(p) || 0)) * 100) / 100;
 }
-/** Facture émise entièrement couverte par ses avoirs (montant figé) : plus due, ni « à envoyer » ni « paiement à vérifier »,
- *  hors des impayés. Même règle que la base (soldee : amount non nul et avoir_couvert ≥ amount). */
-export const soldeeParAvoir = p => !!p && isInvoiced(p) && filled(p.amount) && avoirsOf(p.id).length > 0
-  && avoirsOf(p.id).reduce((t, a) => t + (Number(a.amount_ht) || 0), 0) >= Number(p.amount) - 0.005;
+/** Facture émise entièrement couverte par ses avoirs (montant figé > 0, au moins un avoir) : plus due, ni « à envoyer » ni
+ *  « paiement à vérifier », hors des impayés. Même règle que la base (reminder_candidates, colonne soldee : amount > 0,
+ *  avoir_couvert > 0 et ≥ amount ; relecture v1.69, B1). */
+export function soldeeParAvoir(p){
+  if (!p || !isInvoiced(p) || !filled(p.amount) || !(Number(p.amount) > 0)) return false;
+  const c = avoirsOf(p.id).reduce((t, a) => t + (Number(a.amount_ht) || 0), 0);
+  return c > 0 && c >= Number(p.amount) - 0.005;
+}
 /** Reste dû HT d'une facture émise : rien si un paiement est noté (il est conservé tel quel) ; sinon montant − avoirs */
 export const resteDu = p => p.paid_at ? 0 : Math.max(0, Math.round(((payAmount(p) || 0) - avoirCouvert(p)) * 100) / 100);
 

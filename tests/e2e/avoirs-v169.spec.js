@@ -129,5 +129,8 @@ test('v1.69 avoir « À rattacher » et avoir disparu de Pennylane : listé / af
   const e = await etat(page, ['av-d5']);
   expect(e.fin.impayesProd).toBe(1000);   // ni l'avoir à rattacher ni l'avoir disparu ne réduisent ce qui est dû
   await expect(page.locator('tr.avoir-row')).toHaveCount(0);
+  // relecture v1.69 (B1) : montant nul sans avoir → jamais « soldée » (même règle que la base)
+  expect(await page.evaluate(async () => { const c = await import('./js/calc.js');
+    return [c.soldeeParAvoir({ id: 'x0', kind: 'autre', amount: 0, sent_at: '2026-01-01', invoice_number: 'F-0' }), c.soldeeParAvoir({ id: 'x1', kind: 'autre', amount: -100, sent_at: '2026-01-01' })]; })).toEqual([false, false]);
   expectClean(ctx);
 });

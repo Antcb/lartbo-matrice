@@ -14,12 +14,16 @@ t('facture d’origine lue par son identifiant Pennylane (objet API v2, nombre, 
   assert.equal(origineAvoir({ credited_invoice_id: 303 }), '303');
   assert.equal(origineAvoir({ credited_invoice: null }), null);
   assert.equal(origineAvoir({}), null);
+  assert.equal(origineAvoir({ credited_invoice: false }), null);   // relecture v1.69 : un booléen n'est pas un identifiant
+  assert.equal(origineAvoir({ credited_invoice: true }), null);
+  assert.equal(origineAvoir({ credited_invoice: {} }), null);
 });
 t('avoir reconnu : marqué, lié à une origine, ou montant négatif ; une facture ordinaire n’en est pas un', () => {
   assert.equal(estAvoir({ credit_note: true }), true);
   assert.equal(estAvoir({ credited_invoice: { id: 1 } }), true);
   assert.equal(estAvoir({ currency_amount_before_tax: '-900.0' }), true);
   assert.equal(estAvoir({ currency_amount_before_tax: '900.0', credited_invoice: null }), false);
+  assert.equal(estAvoir({ currency_amount_before_tax: '900.0', credited_invoice: false }), false);
   assert.equal(montantAvoir({ currency_amount_before_tax: '-1750.0' }), 1750);
   assert.equal(montantAvoir({ currency_amount_before_tax: '1750' }), 1750);   // signe ignoré
 });
@@ -47,6 +51,11 @@ t('sans doublon : la clé est l’identifiant Pennylane ; un avoir rattaché le 
   // déjà rattaché : même si les lignes ont changé, il reste où il est
   const garde = planAvoir(x, { etat: 'rattache', payment_id: 'l-1', show_id: 'd-1' }, [], VU);
   assert.equal(garde.payment_id, 'l-1'); assert.equal(garde.nouveau_rattachement, false);
+  assert.equal(garde.origine_changee, false);   // origine précédente inconnue : rien à signaler
+  // Pennylane indique maintenant une autre facture d'origine : laissé sur sa ligne, signalé
+  const change = planAvoir({ ...x, credited_invoice: { id: 202 } }, { etat: 'rattache', payment_id: 'l-1', show_id: 'd-1', credited_pennylane_id: '101' }, lignes, VU);
+  assert.equal(change.payment_id, 'l-1'); assert.equal(change.origine_changee, true);
+  assert.equal(planAvoir(x, { etat: 'rattache', payment_id: 'l-1', show_id: 'd-1', credited_pennylane_id: '101' }, lignes, VU).origine_changee, false);
   // « À rattacher » puis facture d'origine reliée à une ligne : rattaché à la synchronisation suivante
   const avant = planAvoir({ ...x, credited_invoice: { id: 555 } }, null, lignes, VU);
   assert.equal(avant.etat, 'a_rattacher');
