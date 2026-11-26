@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.68.2 — 26/11/2026
+- Brouillons des fenêtres propres à leur objet : rattachement d'une facture Pennylane, rattacher une pièce, copier les lignes d'une autre date, pièce déjà dans le Drive
+
+
 ## 1.68.1 — 26/11/2026
 - Point n°9 : cadre de lecture des mails — texte sans police déclarée en Helvetica Neue (au lieu de Times sur Safari) ; polices des messages et signatures gardées
 
