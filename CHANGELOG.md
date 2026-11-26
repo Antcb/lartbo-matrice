@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.70.2 — 26/11/2026
+- Relecture L2a (B1-bis) : la facture n'est rouverte que si l'annulation d'un encaissement génère un reste dû ; l'annulation d'un remboursement ne la rouvre jamais
+
+
 ## 1.70.1 — 26/11/2026
 - Relecture L2a : annuler un encaissement qui avait soldé une facture la rouvre si un reste dû apparaît (paiement historique jamais rouvert) ; ligne payée : plus d'encaissement, refusé aussi par la base
 

@@ -244,12 +244,15 @@ begin
   update public.reglements set annule_at = now(), annule_par = auth.jwt() ->> 'email', annule_motif = btrim(p_motif)
    where id = p_id and source = 'manuel' and transaction_id is null and annule_at is null returning * into r;
   if not found then raise exception 'Seule une saisie manuelle non rapprochée de Pennylane, pas encore annulée, peut être annulée'; end if;
-  -- (décision d'Anthony du 26/11/2026, relecture B1) ligne payée PAR SES ENCAISSEMENTS ENREGISTRÉS : statut recalculé dans la même
-  -- opération — reste dû (TTC facture − TTC avoirs − encaissé net) → la ligne est rouverte (date « Payée » vidée : facture due,
-  -- relancée) ; sinon elle reste soldée, à la date du dernier encaissement restant. Une annulation n'est jamais un remboursement.
-  -- Paiement historique (ligne payée sans aucun encaissement enregistré, E1) : jamais touché. Même règle : js/calc.js resteDuTtc.
+  -- (décision d'Anthony du 26/11/2026, relecture B1) annulation d'un ENCAISSEMENT sur une ligne payée par ses encaissements
+  -- enregistrés : statut recalculé dans la même opération. Rouverte (date « Payée » vidée : facture due, relancée) SEULEMENT si
+  -- l'annulation génère effectivement un reste dû : couverte avant (TTC facture − TTC avoirs ≤ encaissé net), plus après ; si les
+  -- autres encaissements ou avoirs suffisent, elle reste soldée (date « Payée » ramenée au dernier encaissement restant si elle était
+  -- celle de l'encaissement annulé, sinon inchangée). Annulation d'un remboursement, ligne déjà non couverte (payée à la main) :
+  -- rien ne change (relecture B1-bis). Une annulation n'est jamais un remboursement. Paiement historique (aucun encaissement
+  -- enregistré, E1) : jamais touché. Même calcul TTC : js/calc.js factureNetTtc / encaisseTtc.
   select * into p from public.show_payments where id = r.payment_id for update;
-  if p.paid_at is not null and exists (select 1 from public.reglements x where x.payment_id = p.id and x.sens = 'encaissement') then
+  if r.sens = 'encaissement' and r.etat = 'fait' and p.paid_at is not null then
     vat := coalesce(p.vat_rate, case when p.kind in ('artbo', 'partner') then 20 end, (select s.vat_rate from public.shows s where s.id = p.show_id), 5.5);
     net := greatest(0, round(coalesce(p.amount, public.payment_amount_now(p), 0) * (1 + vat / 100), 2)
       - coalesce((select sum(coalesce(a.amount_ttc, round(a.amount_ht * (1 + vat / 100), 2))) from public.pennylane_avoirs a
@@ -257,7 +260,10 @@ begin
     select coalesce(sum(case when x.sens = 'encaissement' then x.montant_ttc else -x.montant_ttc end), 0),
            max(x.date) filter (where x.sens = 'encaissement')
       into enc, dernier from public.reglements x where x.payment_id = p.id and x.etat = 'fait' and x.annule_at is null;
-    paye := case when dernier is not null and enc >= net - 0.01 then dernier end;
+    if enc + r.montant_ttc < net - 0.01 then paye := p.paid_at;                   -- pas couverte avant : l'annulation ne génère rien
+    elsif dernier is not null and enc >= net - 0.01 then paye := case when p.paid_at = r.date then dernier else p.paid_at end;   -- reste soldée
+    else paye := null;                                                         -- reste dû généré par l'annulation : rouverte
+    end if;
     if paye is distinct from p.paid_at then
       perform set_config('matrice.regularisation', 'reouverture_encaissement', true);
       update public.show_payments set paid_at = paye where id = p.id;
