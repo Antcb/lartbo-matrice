@@ -377,15 +377,25 @@ test('v1.68.1 police du cadre (relecture) : une police déclarée par le mail su
   expectClean(ctx);
 });
 
-test('v1.68.1 police du cadre de lecture (.eml ouvert depuis un suivi, iPhone 390 px) : texte brut en Helvetica Neue', async ({ page }) => {
+test('v1.68.1 cadre de lecture (.eml en texte brut ouvert depuis un suivi, iPhone 390 px) : police à largeur fixe, colonnes alignées', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const ctx = await openApp(page);
+  const TABLE = ['Poste       Montant', 'Son            1200', 'Lumiere         850', 'Total          2050'];
+  const eml = ['From: Prog Fictive <prog@example.com>', 'To: anthony-fictif@example.com', 'Subject: RE: Proposition 2028', 'Message-ID: <a2@exemple.test>',
+    'Date: Tue, 17 Nov 2026 11:16:18 +0100', 'MIME-Version: 1.0', 'Content-Type: text/plain; charset=utf-8', '', ...TABLE, ''].join('\r\n');
   const logs = [{ ...LOGS[1], author: 'testeur@example.com', gmail_message_id: null, body: 'Reçu — **RE: Proposition 2028**\n\nDEUXIÈME message reçu (texte coupé)' }];
-  await ouvrir(page, { logs, files: [FILES[1]], stored: { 'suivi/pr-1/2_RE.eml': bin(EML) } });
+  await ouvrir(page, { logs, files: [FILES[1]], stored: { 'suivi/pr-1/2_RE.eml': bin(eml) } });
   await lire(page, 'lr-b');
   const f = page.locator('dialog.ask.read[open]').frameLocator('iframe.mail-frame');
-  await expect(f.locator('pre')).toBeVisible();
-  expect(await fontOf(f, 'pre')).toMatch(DEFAUT);
+  await expect(f.locator('pre')).toContainText('Lumiere');
+  expect(await fontOf(f, 'pre')).toBe('monospace');
   expect(await f.locator('pre').evaluate(e => getComputedStyle(e).whiteSpace)).toBe('pre-wrap');   // retours à la ligne gardés
+  // colonnes : le dernier caractère de chaque ligne (« t » de « Montant », dernier chiffre des montants) tombe à la même position
+  const xs = await f.locator('pre').evaluate((pre, lines) => {
+    const txt = pre.firstChild, all = txt.textContent;
+    return lines.map(l => { const at = all.indexOf(l) + l.length - 1, r = document.createRange(); r.setStart(txt, at); r.setEnd(txt, at + 1);
+      return Math.round(r.getBoundingClientRect().right * 10) / 10; });
+  }, TABLE);
+  expect(new Set(xs).size).toBe(1);
   expectClean(ctx);
 });
