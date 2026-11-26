@@ -35,6 +35,7 @@ create table if not exists public.pennylane_avoirs (
   gone_at timestamptz,                               -- plus dans Pennylane : gardé, hors calcul
   constraint pennylane_avoirs_etat_ligne check ((etat = 'rattache') = (payment_id is not null))
 );
+alter table public.pennylane_avoirs add column if not exists rattache_origine text;   -- rejouable sur une base qui aurait déjà la v1.69.0
 create index if not exists pennylane_avoirs_payment on public.pennylane_avoirs (payment_id);
 create index if not exists pennylane_avoirs_show on public.pennylane_avoirs (show_id);
 comment on table public.pennylane_avoirs is 'v1.69 (L1, point 02) : avoirs importés de Pennylane, rattachés à la facture d''origine ; aucun encaissement ni remboursement';
