@@ -249,12 +249,34 @@ insert into public.show_payments (id, show_id, kind, label, amount, vat_rate, in
  ('00000000-0000-0000-0000-000000000009', '00000000-0000-0000-0000-0000000000a1', 'autre', 'Payée à la main', 1000, 5.5, 'F-T-9', current_date - 30, 9);
 select * from public.reglement_saisir('00000000-0000-0000-0000-000000000009', 'encaissement', 'fait', 500, current_date - 8, 'compte', null, null) \gset m1_
 select * from public.reglement_saisir('00000000-0000-0000-0000-000000000009', 'encaissement', 'fait', 100, current_date - 7, 'compte', null, null) \gset m2_
-update public.show_payments set paid_at = current_date - 6 where id = '00000000-0000-0000-0000-000000000009';   -- reste réglé hors MATRICE, date tapée
+-- décision du 26/11/2026, 20 h 54 : la date « Payée » d'une ligne qui a des encaissements enregistrés découle des mouvements réels
+do $$ begin
+  begin update public.show_payments set paid_at = current_date - 6 where id = '00000000-0000-0000-0000-000000000009'; raise exception 'payée à la main sans couverture';
+  exception when raise_exception then if sqlerrm not like 'Encaissements enregistrés insuffisants (reste dû 455,00 € TTC)%' then raise; end if; raise notice 'ok : payée à la main malgré un reste dû — refusé (%)', sqlerrm; end;
+end $$;
+-- état ANTÉRIEUR à cette règle simulé (déclencheur coupé le temps de la mise en place) pour les cas B1-bis
+alter table public.show_payments disable trigger show_payments_paye_par_reglements;
+update public.show_payments set paid_at = current_date - 6 where id = '00000000-0000-0000-0000-000000000009';
+alter table public.show_payments enable trigger show_payments_paye_par_reglements;
 select * from public.reglement_saisir('00000000-0000-0000-0000-000000000009', 'remboursement', 'fait', 50, current_date - 3, 'compte', null, 'essai') \gset m3_
 select public.reglement_annuler(:'m3_id', 'Saisie en double') is not null as x \gset
 select pg_temp.ok((select paid_at from public.show_payments where id = '00000000-0000-0000-0000-000000000009') = current_date - 6, 'B1-bis : annulation d''un remboursement — date « Payée » tapée à la main conservée');
 select public.reglement_annuler(:'m2_id', 'Saisie en double') is not null as x \gset
 select pg_temp.ok((select paid_at from public.show_payments where id = '00000000-0000-0000-0000-000000000009') = current_date - 6, 'B1-bis : pas couverte avant l''annulation — aucun reste dû généré, date conservée');
+-- couverture complète : date « Payée » = dernier encaissement, toute autre date refusée ; paiement historique (sans encaissement) libre
+insert into public.show_payments (id, show_id, kind, label, amount, vat_rate, invoice_number, sent_at, sort) values
+ ('00000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-0000000000a1', 'autre', 'Couverte', 1000, 5.5, 'F-T-10', current_date - 30, 10),
+ ('00000000-0000-0000-0000-000000000011', '00000000-0000-0000-0000-0000000000a1', 'autre', 'Sans encaissement', 1000, 5.5, 'F-T-11', current_date - 30, 11);
+select * from public.reglement_saisir('00000000-0000-0000-0000-000000000010', 'encaissement', 'fait', 1055, current_date - 3, 'compte', null, null) \gset c1_
+do $$ begin
+  begin update public.show_payments set paid_at = current_date where id = '00000000-0000-0000-0000-000000000010'; raise exception 'autre date acceptée';
+  exception when raise_exception then if sqlerrm not like 'Date « Payée » d''une facture suivie par ses encaissements%' then raise; end if; raise notice 'ok : date autre que le dernier encaissement — refusée'; end;
+end $$;
+update public.show_payments set paid_at = current_date - 3 where id = '00000000-0000-0000-0000-000000000010';
+select pg_temp.ok((select paid_at from public.show_payments where id = '00000000-0000-0000-0000-000000000010') = current_date - 3, 'couverte : payée à la date du dernier encaissement');
+update public.show_payments set paid_at = current_date - 1 where id = '00000000-0000-0000-0000-000000000011';
+select pg_temp.ok((select paid_at from public.show_payments where id = '00000000-0000-0000-0000-000000000011') = current_date - 1, 'sans encaissement enregistré (fonctionnement historique) : date « Payée » libre, inchangé');
+select pg_temp.ok(has_function_privilege('authenticated', 'public.reglement_couverture(public.show_payments)', 'execute') is false, 'reglement_couverture : aucun appel direct');
 -- paiement historique : remboursement saisi puis annulé → paiement intact (E1)
 select * from public.reglement_saisir('00000000-0000-0000-0000-000000000008', 'remboursement', 'fait', 200, current_date - 1, 'compte', null, 'essai') \gset h1_
 select public.reglement_annuler(:'h1_id', 'Erreur') is not null as x \gset
@@ -270,7 +292,7 @@ do $$ begin
   exception when raise_exception then if sqlerrm not like 'Facture déjà émise%' then raise; end if; raise notice 'ok : réouverture — rien d''autre ne change'; end;
   perform set_config('matrice.regularisation', '', true);
 end $$;
-delete from public.reglements where payment_id in ('00000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000000009');   -- essai local
+delete from public.reglements where payment_id in ('00000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000000009', '00000000-0000-0000-0000-000000000010');   -- essai local
 -- E1 : aucune ligne de facturation modifiée
 select pg_temp.ok(not exists (select * from public.show_payments where id in (select id from avant) except select * from avant) and not exists (select * from avant except select * from public.show_payments), 'show_payments inchangée (lignes initiales)');
 \echo ESSAI v1.70 : tout est conforme

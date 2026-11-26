@@ -8,7 +8,7 @@
 //   { action: 'status' } · { action: 'quote', show_id } · { action: 'invoice', payment_id } · { action: 'sync' }
 //   { action: 'lire_avoir', invoice_number? } (v1.69 : lecture seule du format réel d'un avoir)
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { acomptesDeLaDate, baseCommission, describe, emise, estAvoir, factureIsolee, figerMontant, frDate, isBooking, montantAcompte, montantAttendu, origineAvoir, payable, pctCommission, planAvoir, planEncaissement, planRemboursement, rangeeDansLeDrive, relieAuDevis, soldeDouteux, texteCommission, delaiDocument } from './regles.ts';
+import { acomptesDeLaDate, baseCommission, describe, emise, estAvoir, factureIsolee, figerMontant, frDate, isBooking, montantAcompte, montantAttendu, origineAvoir, payable, pctCommission, planAvoir, planEncaissement, planRemboursement, rangeeDansLeDrive, remboursementsAutoActifs, relieAuDevis, soldeDouteux, texteCommission, delaiDocument } from './regles.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -415,12 +415,16 @@ Deno.serve(async (req) => {
         if (e3) { erreurs.push(`${num} : encaissements enregistrés, mais date « Payée » non notée (${e3.message})`); return; }
         if (up?.length) updated.push({ id: p.id, paid_at: plan.paid_at, label: `${p.label || p.kind} ${num} · ${where}` });
       };
+      const { data: rembCfg } = await admin.from('settings').select('value').eq('key', 'pennylane_remboursements_auto').maybeSingle();
+      const rembAuto = remboursementsAutoActifs(rembCfg?.value);
       const rembourserAvoir = async (a: any) => {
         const pid = String(a.payment_id), rs = reglementsParLigne.get(pid) || [];
         let vs: any[] = [];
         try { vs = (await pl('GET', `/customer_invoices/${a.pennylane_id}/matched_transactions`)).items || []; }
         catch (e) { erreurs.push(`Avoir ${a.invoice_number || a.pennylane_id} : virements illisibles (${String(e).replace(/^Error: /, '')})`); return; }
         const plan = planRemboursement(vs, autresQue(pid), rs);
+        // format réel des remboursements non confirmé → rien n'est enregistré ni réservé, seulement signalé
+        if (!rembAuto) { if (plan.creer.length || plan.rapprocher.length || plan.signal) aVerifier.push(`Avoir ${a.invoice_number || a.pennylane_id} : virement sortant rapproché — remboursement NON enregistré (remboursements automatiques désactivés tant que le format Pennylane n’est pas confirmé) ; à saisir à la main si besoin`); return; }
         if (plan.signal === 'a_verifier') { aVerifier.push(`Avoir ${a.invoice_number || a.pennylane_id} : remboursement saisi à la main et virement Pennylane de montant différent — rien de fait, à vérifier`); return; }
         if (!plan.creer.length && !plan.rapprocher.length) return;
         const vm = new Map(vs.map((v: any) => [String(v.id), v]));

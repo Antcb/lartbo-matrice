@@ -2,7 +2,7 @@
 // d'après les virements Pennylane, sur de FAUSSES données (aucun appel à Pennylane ni à la base). Module : pennylane/regles.ts
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { encaisseNet, planEncaissement, planRemboursement } from '../../supabase/functions/pennylane/regles.ts';
+import { encaisseNet, planEncaissement, planRemboursement, remboursementsAutoActifs } from '../../supabase/functions/pennylane/regles.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -92,6 +92,15 @@ t('synchronisation : compte de la ligne lu (encaissement Pennylane sur le bon co
   assert.ok(f.indexOf("from('reglements')") < f.indexOf("from('show_payments')"), 'mouvements avant la date « Payée »');
   assert.match(f, /\.eq\('id', p\.id\)\.is\('paid_at', null\)/);
   assert.match(src, /if \(!p\.paid_at && x\.status !== 'cancelled'\) \{ await encaisserLigne/);
+});
+
+t('remboursements automatiques : désactivés sauf réglage explicite « oui » (format Pennylane confirmé) ; sinon rien enregistré ni réservé', () => {
+  for (const v of [undefined, null, '', 'non', false, 'false', 0, '1', { on: true }]) assert.equal(remboursementsAutoActifs(v), false, String(v));
+  for (const v of ['oui', '"oui"', 'Oui', true, 'true']) assert.equal(remboursementsAutoActifs(v), true, String(v));
+  const src = readFileSync(new URL('../../supabase/functions/pennylane/index.ts', import.meta.url), 'utf8');
+  const f = src.slice(src.indexOf('const rembourserAvoir'), src.indexOf('// paiements repris'));
+  const garde = f.indexOf('if (!rembAuto)');
+  assert.ok(garde > 0 && garde < f.indexOf('await reserver(') && garde < f.indexOf("from('reglements')"), 'garde avant toute réservation ou écriture');
 });
 
 let ok = 0;
