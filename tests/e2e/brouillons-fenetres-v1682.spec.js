@@ -102,5 +102,5 @@ test('v1.68.2 « Pièce déjà dans le dossier Drive » : brouillon propre au fi
   // fenêtre interne au rangement Drive (askDuplicate, appelée par le script Google) : contrôle du code, la même clé que les autres
   const src = readFileSync(new URL('../../js/budget-actions.js', import.meta.url), 'utf8');
   const ask = src.slice(src.indexOf('function askDuplicate'), src.indexOf('function askDuplicate') + 1200);
-  expect(ask).toMatch(/values: \{id: 'drive:' \+ \(dup\.url \|\| dup\.name \|\| name\), decision:/);
+  expect(ask).toMatch(/values: \{id: 'drive:' \+ \(dup\.url \|\| dup\.name\) \+ ':' \+ name, decision:/);
 });
