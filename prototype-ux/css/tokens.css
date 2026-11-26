@@ -1,7 +1,8 @@
 /* =====================================================================
-   MATRICE — jetons du design system (prototype UX/UI V2, cahier des charges v1.0)
-   Source unique des couleurs, tailles, rayons, ombres, durées. Aucune valeur en dur ailleurs.
-   Thème : data-appearance="light|dark" sur <html> (posé par js/app.js selon le mode choisi).
+   MATRICE — jetons du design system (prototype UX/UI V4 « Creative Engineering × Backstage Studio »)
+   Source unique : neutres (ivoire / graphite), identités chromatiques (Electric Lagoon, Opal),
+   couleurs fonctionnelles, tailles, rayons, ombres, durées. Aucune valeur en dur ailleurs.
+   Attributs posés sur <html> par js/app.js : data-appearance (light|dark), data-palette (lagoon|opal).
    ===================================================================== */
 
 @font-face{font-family:"Space Grotesk";src:url("../assets/fonts/space-grotesk-latin-var.woff2") format("woff2");font-weight:300 700;font-style:normal;font-display:swap}
@@ -11,126 +12,152 @@
 
 :root{
   color-scheme: light;
-  /* Polices (étape 1) */
   --font-display: "Space Grotesk", "Geist", system-ui, sans-serif;
   --font-ui: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* Palette Minéral & Sauge — mode clair (étape 2) */
-  --c-bg: #F3F3F1;          /* minéral neutre et lumineux (V3 : sans dominante verte) */
+  /* Neutres — mode clair : ivoire */
+  --c-bg: #F5F2ED;          /* ivoire de référence */
   --c-surface: #FFFFFF;     /* surfaces métier, toujours opaques */
-  --c-line: #E1E5DF;        /* séparateurs */
-  --c-ink: #29332E;         /* graphite */
-  --c-ink-2: #5E6862;       /* texte secondaire (5,3:1 sur minéral, à valider) */
-  --c-ink-3: #626B66;       /* texte tertiaire : unités, jours, repères d'axes (≥ 4,5:1 sur survol et sélection) */
-  --c-sage: #718579;        /* accent : marques, traits, états actifs */
-  --c-sage-ink: #5C6E63;    /* variante foncée pour le texte (5,4:1 sur blanc) */
-  --c-sage-tint: #E6ECE8;
-  --c-row-alt: #F9F9F8;
-  --c-hover: #F1F2F0;
-  --c-primary: #29332E; --c-on-primary: #FFFFFF;
-  --hair: rgb(28 32 30 / .085);       /* filet fin des surfaces */
-  --hair-strong: rgb(28 32 30 / .15);
-  --plan: rgb(41 51 46 / .11);        /* prévisionnel dans les graphiques */
+  --c-surface-2: #F8F6F2;   /* faits clés, encarts */
+  --c-line: #E6E1D9;
+  --c-ink: #1E1F22;         /* graphite de référence */
+  --c-ink-2: #5F6065;       /* 5,6:1 sur ivoire */
+  --c-ink-3: #62636A;       /* ≥ 4,5:1 sur survol */
+  --c-row-alt: #FAF8F5;
+  --c-hover: #EFEBE4;
+  --c-primary: #1E1F22; --c-on-primary: #FFFFFF;
+  --hair: rgb(30 31 34 / .08);
+  --hair-strong: rgb(30 31 34 / .14);
 
-  /* Couleurs fonctionnelles — mode clair (étape 8), petits marqueurs uniquement */
+  /* Identité chromatique — Electric Lagoon (défaut) */
+  --p1: #247E91; --p2: #72C9B4; --p3: #72C9B4;              /* bleu pétrole → menthe */
+  --accent: #247E91;        /* marques, traits */
+  --accent-ink: #1E6F80;    /* texte et icônes actives (5,2:1 sur ivoire) */
+  --accent-tint: rgb(36 126 145 / .11);
+  --accent-ring: rgb(36 126 145 / .38);
+  --grad: linear-gradient(110deg, var(--p1), var(--p2) 70%, var(--p3));
+  --grad-soft: linear-gradient(110deg, rgb(36 126 145 / .16), rgb(114 201 180 / .16));
+  --tile: radial-gradient(120% 90% at 100% 100%, rgb(114 201 180 / .42), rgb(114 201 180 / 0) 55%), linear-gradient(135deg, #1F6F80 0%, #247E91 100%);   /* indicateur mis en avant : texte blanc ≥ 4,7:1 sur la zone de texte */
+  --on-tile: #FFFFFF; --on-tile-2: rgb(255 255 255 / .86);
+  --tile-glow: 0 10px 24px -10px rgb(36 126 145 / .55);
+  --chart-fill-top: rgb(114 201 180 / .38); --chart-fill-bot: rgb(36 126 145 / 0);
+  --glow: rgb(114 201 180 / .55);
+
+  /* Couleurs fonctionnelles (étape 8) — indépendantes de la palette */
   --c-ok: #52755D; --c-warn: #B59A3B; --c-warn-ink: #8B6F1E; --c-err: #A55353; --c-info: #56758C; --c-off: #737873;
 
-  /* Profondeur : trois niveaux d'ombre diffuse */
-  --shadow-card: 0 0 0 .5px rgb(0 0 0 / .08), 0 1px 2px rgb(0 0 0 / .04), 0 6px 16px -8px rgb(28 32 30 / .10);
-  --shadow-raise: 0 0 0 1px var(--hair), 0 2px 6px -1px rgb(41 51 46 / .06), 0 14px 32px -10px rgb(41 51 46 / .16);
-  --shadow-float: 0 0 0 1px var(--hair), 0 4px 10px -2px rgb(41 51 46 / .08), 0 28px 60px -16px rgb(41 51 46 / .26);
-  --scrim: rgb(41 51 46 / .22);
+  /* Profondeur */
+  --shadow-card: 0 0 0 .5px rgb(30 31 34 / .07), 0 1px 2px rgb(30 31 34 / .04), 0 8px 24px -14px rgb(30 31 34 / .16);
+  --shadow-raise: 0 0 0 .5px rgb(30 31 34 / .08), 0 2px 6px -1px rgb(30 31 34 / .06), 0 18px 40px -16px rgb(30 31 34 / .24);
+  --shadow-float: 0 0 0 .5px rgb(30 31 34 / .10), 0 6px 14px -4px rgb(30 31 34 / .10), 0 30px 64px -20px rgb(30 31 34 / .32);
+  --scrim: rgb(30 31 34 / .26);
+  --plan: rgb(30 31 34 / .10);
 
-  /* Verre (étape 6, V3) — navigation uniquement : translucidité, reflet supérieur, liserés fins, ombre de séparation */
-  --glass-bg: rgb(255 255 255 / .62);
-  --glass-strong: rgb(255 255 255 / .74);
+  /* Verre (navigation uniquement) */
+  --glass-bg: rgb(255 255 255 / .66); --glass-strong: rgb(255 255 255 / .80);
   --glass-blur: 24px; --glass-sat: 1.8;
-  --glass-sheen: linear-gradient(180deg, rgb(255 255 255 / .70) 0, rgb(255 255 255 / .18) 36%, rgb(255 255 255 / 0) 62%);
-  --glass-rim: inset 0 1px 0 rgb(255 255 255 / 1), inset 0 0 0 .5px rgb(255 255 255 / .75), inset 0 -.5px 0 rgb(0 0 0 / .06);
-  --glass-shadow: 0 0 0 .5px rgb(0 0 0 / .09), 0 1px 2px rgb(0 0 0 / .05), 0 12px 32px -10px rgb(28 32 30 / .20), 0 36px 70px -34px rgb(28 32 30 / .26);
-  /* Sélection posée sur le verre : lentille sauge fine (V3) */
-  --lens: rgb(113 133 121 / .20);
-  --lens-shadow: inset 0 0 0 .5px rgb(113 133 121 / .50), inset 0 1px 0 rgb(255 255 255 / .55);
-  /* Curseur des contrôles segmentés */
+  --glass-sheen: linear-gradient(180deg, rgb(255 255 255 / .75) 0, rgb(255 255 255 / .2) 34%, rgb(255 255 255 / 0) 60%);
+  --glass-rim: inset 0 1px 0 rgb(255 255 255 / 1), inset 0 0 0 .5px rgb(255 255 255 / .8), inset 0 -.5px 0 rgb(0 0 0 / .06);
+  --glass-shadow: 0 0 0 .5px rgb(0 0 0 / .08), 0 1px 2px rgb(0 0 0 / .05), 0 14px 34px -12px rgb(30 31 34 / .22), 0 36px 70px -34px rgb(30 31 34 / .26);
+  --lens: var(--accent-tint);
+  --lens-shadow: inset 0 0 0 .5px var(--accent-ring);
   --thumb: #FFFFFF;
   --thumb-shadow: 0 0 0 .5px rgb(0 0 0 / .08), 0 1px 2px rgb(0 0 0 / .08), 0 2px 6px -2px rgb(0 0 0 / .10);
 
-  /* Rayons (étape 3) — panneaux adoucis à 16 px (V2) */
-  --r-btn: 6px; --r-field: 6px; --r-table: 6px; --r-card: 8px; --r-menu: 10px; --r-modal: 14px; --r-panel: 16px; --r-nav: 14px;
+  /* Rayons — V4 : plus généreux (identité « studio ») */
+  --r-btn: 8px; --r-field: 8px; --r-table: 8px; --r-card: 14px; --r-menu: 12px; --r-modal: 16px; --r-panel: 18px; --r-nav: 18px; --r-tile: 12px;
 
-  /* Typographie (étape 1) — rem × réglage « taille du texte » (--ts) */
+  /* Typographie */
   --ts: 1;
-  --fs-page: calc(1.5rem * var(--ts));
+  --fs-page: calc(1.75rem * var(--ts));
   --fs-section: calc(.9375rem * var(--ts));
   --fs-body: calc(.875rem * var(--ts));
   --fs-list: calc(.8125rem * var(--ts));
   --fs-nav: calc(.875rem * var(--ts));
   --fs-small: calc(.75rem * var(--ts));
   --fs-kpi: calc(1.875rem * var(--ts));
-  --fw-body: 400; --fw-strong: 550; --fw-title: 600;
+  --fw-body: 400; --fw-strong: 560; --fw-title: 650;
   --lh: 1.45; --ls: 0;
 
-  /* Densité (étapes 5, 9, 10) */
-  --row-h: 28px; --btn-h: 32px; --touch: 24px;
-  --gap: 12px; --pad: 16px; --pad-main: 24px;
+  /* Densité */
+  --row-h: 30px; --btn-h: 32px; --touch: 24px;
+  --gap: 14px; --pad: 16px; --pad-main: 28px;
 
-  /* Durées (étape 12) */
+  /* Durées */
   --d-panel: 180ms; --d-menu: 150ms; --d-modal: 160ms; --d-hover: 100ms; --d-toast: 150ms;
   --ease: cubic-bezier(.2, 0, 0, 1);
 
-  /* Navigation et panneau */
-  --side-w: 244px; --side-w-mini: 60px; --top-h: 52px; --dock-w: clamp(340px, 28vw, 440px); --frame: 8px;
+  --side-w: 248px; --side-w-mini: 64px; --top-h: 56px; --dock-w: clamp(340px, 28vw, 440px); --frame: 10px;
 }
 
-/* Mode sombre — Graphite doux (étapes 7 et 8) */
+/* Opal — palette alternative */
+:root[data-palette="opal"]{
+  --p1: #78B9AD; --p2: #A6B5E8; --p3: #D8A4C5;
+  --accent: #8C9FDB; --accent-ink: #4F6AA8;
+  --accent-tint: rgb(166 181 232 / .26); --accent-ring: rgb(120 140 210 / .45);
+  --grad: linear-gradient(110deg, var(--p1), var(--p2) 50%, var(--p3));
+  --grad-soft: linear-gradient(110deg, rgb(120 185 173 / .18), rgb(166 181 232 / .18) 50%, rgb(216 164 197 / .18));
+  --tile: linear-gradient(135deg, #78B9AD 0%, #A6B5E8 55%, #D8A4C5 100%);
+  --on-tile: #1E1F22; --on-tile-2: rgb(30 31 34 / .78);
+  --tile-glow: 0 10px 24px -10px rgb(166 181 232 / .7);
+  --chart-fill-top: rgb(166 181 232 / .42); --chart-fill-bot: rgb(216 164 197 / 0);
+  --glow: rgb(166 181 232 / .65);
+}
+
+/* Mode sombre — graphite de référence */
 :root[data-appearance="dark"]{
   color-scheme: dark;
-  --c-bg: #303330; --c-surface: #393D39; --c-line: #484D48;
-  --c-ink: #DADDD8; --c-ink-2: #C0C6BF; --c-ink-3: #B6BCB5;
-  --c-sage: #9BAFA0; --c-sage-ink: #9BAFA0; --c-sage-tint: #424A44;
-  --c-row-alt: #3C403C; --c-hover: #424742;
-  --c-primary: #DADDD8; --c-on-primary: #303330;
-  --hair: rgb(255 255 255 / .08); --hair-strong: rgb(255 255 255 / .14); --plan: rgb(218 221 216 / .14);
-  --c-ok: #82A08A; --c-warn: #C2A64E; --c-warn-ink: #C2A64E; --c-err: #BC7777; --c-info: #829EB4; --c-off: #959B95;
-  --shadow-card: 0 0 0 .5px rgb(255 255 255 / .09), 0 1px 2px rgb(0 0 0 / .20), 0 6px 16px -8px rgb(0 0 0 / .30);
-  --shadow-raise: 0 0 0 1px var(--hair), 0 2px 6px -1px rgb(0 0 0 / .22), 0 14px 32px -10px rgb(0 0 0 / .40);
-  --shadow-float: 0 0 0 1px var(--hair-strong), 0 4px 10px -2px rgb(0 0 0 / .28), 0 28px 60px -16px rgb(0 0 0 / .55);
-  --scrim: rgb(0 0 0 / .36);
-  --glass-bg: rgb(62 66 62 / .58); --glass-strong: rgb(58 62 58 / .80);
-  --glass-sheen: linear-gradient(180deg, rgb(255 255 255 / .10) 0, rgb(255 255 255 / .03) 38%, rgb(255 255 255 / 0) 64%);
-  --glass-rim: inset 0 1px 0 rgb(255 255 255 / .16), inset 0 0 0 .5px rgb(255 255 255 / .10), inset 0 -1px 0 rgb(0 0 0 / .28);
-  --glass-shadow: 0 0 0 .5px rgb(0 0 0 / .55), 0 2px 4px rgb(0 0 0 / .20), 0 16px 40px -10px rgb(0 0 0 / .55);
-  --lens: rgb(155 175 160 / .22);
-  --lens-shadow: inset 0 0 0 .5px rgb(155 175 160 / .50), inset 0 1px 0 rgb(255 255 255 / .08);
-  --thumb: #4A4F4A; --thumb-shadow: 0 0 0 .5px rgb(255 255 255 / .10), inset 0 1px 0 rgb(255 255 255 / .08), 0 1px 3px rgb(0 0 0 / .35);
+  --c-bg: #1E1F22; --c-surface: #27282C; --c-surface-2: #2E2F34; --c-line: #3A3B40;
+  --c-ink: #ECECEE; --c-ink-2: #B4B5BA; --c-ink-3: #AEAFB5;
+  --c-row-alt: #2B2C30; --c-hover: #303136;
+  --c-primary: #ECECEE; --c-on-primary: #1E1F22;
+  --hair: rgb(255 255 255 / .07); --hair-strong: rgb(255 255 255 / .13);
+  --accent: #72C9B4; --accent-ink: #72C9B4; --accent-tint: rgb(114 201 180 / .15); --accent-ring: rgb(114 201 180 / .45);
+  --chart-fill-top: rgb(114 201 180 / .34); --chart-fill-bot: rgb(36 126 145 / 0);
+  --c-ok: #82A08A; --c-warn: #C2A64E; --c-warn-ink: #C2A64E; --c-err: #C98585; --c-info: #829EB4; --c-off: #959B95;
+  --shadow-card: 0 0 0 .5px rgb(255 255 255 / .07), 0 1px 2px rgb(0 0 0 / .3), 0 10px 26px -14px rgb(0 0 0 / .6);
+  --shadow-raise: 0 0 0 .5px rgb(255 255 255 / .08), 0 2px 6px -1px rgb(0 0 0 / .3), 0 18px 40px -14px rgb(0 0 0 / .6);
+  --shadow-float: 0 0 0 .5px rgb(255 255 255 / .10), 0 6px 14px -4px rgb(0 0 0 / .4), 0 30px 64px -20px rgb(0 0 0 / .7);
+  --scrim: rgb(0 0 0 / .5); --plan: rgb(236 236 238 / .12);
+  --glass-bg: rgb(46 47 52 / .62); --glass-strong: rgb(40 41 46 / .84);
+  --glass-sheen: linear-gradient(180deg, rgb(255 255 255 / .10) 0, rgb(255 255 255 / .03) 36%, rgb(255 255 255 / 0) 62%);
+  --glass-rim: inset 0 1px 0 rgb(255 255 255 / .14), inset 0 0 0 .5px rgb(255 255 255 / .09), inset 0 -1px 0 rgb(0 0 0 / .35);
+  --glass-shadow: 0 0 0 .5px rgb(0 0 0 / .6), 0 2px 4px rgb(0 0 0 / .25), 0 18px 44px -12px rgb(0 0 0 / .65);
+  --thumb: #3A3B41; --thumb-shadow: 0 0 0 .5px rgb(255 255 255 / .10), inset 0 1px 0 rgb(255 255 255 / .07), 0 1px 3px rgb(0 0 0 / .4);
+  --glow: rgb(114 201 180 / .6);
+}
+:root[data-appearance="dark"][data-palette="opal"]{
+  --accent: #A6B5E8; --accent-ink: #A6B5E8; --accent-tint: rgb(166 181 232 / .16); --accent-ring: rgb(166 181 232 / .45);
+  --chart-fill-top: rgb(166 181 232 / .34); --chart-fill-bot: rgb(216 164 197 / 0);
+  --glow: rgb(166 181 232 / .65);
 }
 @media (prefers-color-scheme: dark){
-  :root:not([data-appearance]){ color-scheme: dark; --c-bg: #303330; --c-surface: #393D39; --c-ink: #DADDD8; --c-ink-2: #C0C6BF; }
+  :root:not([data-appearance]){ color-scheme: dark; --c-bg: #1E1F22; --c-surface: #27282C; --c-ink: #ECECEE; --c-ink-2: #B4B5BA; }
 }
 
-/* Réglages de confort (étape 7) */
-:root[data-contrast="high"]{ --c-ink-2: var(--c-ink); --c-ink-3: var(--c-ink-2); --hair: rgb(41 51 46 / .22); --hair-strong: rgb(41 51 46 / .30); --c-line: #C9CFC7; }
-:root[data-appearance="dark"][data-contrast="high"]{ --c-ink-3: #C0C6BF; --hair: rgb(255 255 255 / .18); --hair-strong: rgb(255 255 255 / .26); --c-line: #5D635D; }
-:root[data-weight="strong"]{ --fw-body: 470; --fw-strong: 620; --fw-title: 660; }
+/* Réglages de confort */
+:root[data-contrast="high"]{ --c-ink-2: var(--c-ink); --c-ink-3: var(--c-ink-2); --hair: rgb(30 31 34 / .22); --hair-strong: rgb(30 31 34 / .32); --c-line: #CFC8BD; }
+:root[data-appearance="dark"][data-contrast="high"]{ --c-ink-3: #B4B5BA; --hair: rgb(255 255 255 / .18); --hair-strong: rgb(255 255 255 / .28); --c-line: #55565C; }
+:root[data-weight="strong"]{ --fw-body: 470; --fw-strong: 640; --fw-title: 700; }
 :root[data-leading="airy"]{ --lh: 1.65; }
 :root[data-tracking="wide"]{ --ls: .015em; }
 
 /* Densité — ordinateur */
-:root[data-density="standard"]{ --row-h: 34px; --gap: 14px; --pad: 18px; }
-:root[data-density="confort"]{ --row-h: 42px; --gap: 16px; --pad: 20px; }
+:root[data-density="standard"]{ --row-h: 36px; --gap: 16px; --pad: 18px; }
+:root[data-density="confort"]{ --row-h: 44px; --gap: 18px; --pad: 20px; }
 @media (max-width: 1023px){
-  :root{ --fs-page: calc(1.375rem * var(--ts)); --row-h: 32px; --btn-h: 36px; --pad-main: 20px; }
+  :root{ --fs-page: calc(1.5rem * var(--ts)); --row-h: 32px; --btn-h: 36px; --pad-main: 20px; }
   :root[data-density="standard"]{ --row-h: 38px; }
   :root[data-density="confort"]{ --row-h: 44px; }
 }
 /* Téléphone */
 @media (max-width: 760px){
-  :root{ --fs-page: calc(1.25rem * var(--ts)); --fs-section: calc(.9375rem * var(--ts)); --fs-nav: calc(.6875rem * var(--ts));
-    --fs-kpi: calc(1.125rem * var(--ts)); --pad-main: 12px; --pad: 12px; --gap: 8px; --frame: 10px; }
+  :root{ --fs-page: calc(1.5rem * var(--ts)); --fs-section: calc(.9375rem * var(--ts)); --fs-nav: calc(.6875rem * var(--ts));
+    --fs-kpi: calc(1.25rem * var(--ts)); --pad-main: 14px; --pad: 12px; --gap: 10px; --frame: 10px; --r-card: 14px; }
 }
 @media (pointer: coarse){ :root{ --touch: 44px; } }
 
-/* Animations coupées (étape 12) */
+/* Animations coupées */
 :root[data-motion="off"]{ --d-panel: 0ms; --d-menu: 0ms; --d-modal: 0ms; --d-hover: 0ms; --d-toast: 0ms; }
 @media (prefers-reduced-motion: reduce){ :root{ --d-panel: 0ms; --d-menu: 0ms; --d-modal: 0ms; --d-hover: 0ms; --d-toast: 0ms; } }

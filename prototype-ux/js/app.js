@@ -34,7 +34,7 @@
   const DEFAULTS = () => ({
     ...fromProfile('booking'), hidden: [], folded: [], blocks: ['dates', 'taches', 'cachets', 'billetterie', 'suivis', 'messages'], hiddenBlocks: [],
     appearance: 'system', darkFrom: '19:00', darkTo: '07:30', density: { desktop: 'compacte', tablet: 'compacte', phone: 'compacte' },
-    textSize: 1, weight: 'normal', leading: 'normal', tracking: 'normal', contrast: 'normal', zebra: true, glass: true, motion: true, mini: false, owner: true,
+    palette: 'lagoon', hot: 1, textSize: 1, weight: 'normal', leading: 'normal', tracking: 'normal', contrast: 'normal', zebra: true, glass: true, motion: true, mini: false, owner: true,
   });
   function load(){
     try { const raw = localStorage.getItem(KEY); if (raw){ const v = JSON.parse(raw); return { ...DEFAULTS(), ...v, density: { ...DEFAULTS().density, ...(v.density || {}) } }; } }
@@ -68,7 +68,7 @@
     const a = {
       'data-appearance': darkNow() ? 'dark' : 'light', 'data-density': P.density[device()] || 'compacte', 'data-weight': P.weight, 'data-leading': P.leading,
       'data-tracking': P.tracking, 'data-contrast': P.contrast, 'data-motion': P.motion ? 'on' : 'off', 'data-glass': P.glass ? 'on' : 'off',
-      'data-zebra': P.zebra ? 'on' : 'off', 'data-tsl': P.textSize >= 1.125 ? 'l' : 'n',
+      'data-zebra': P.zebra ? 'on' : 'off', 'data-palette': P.palette === 'opal' ? 'opal' : 'lagoon', 'data-tsl': P.textSize >= 1.125 ? 'l' : 'n',
     };
     Object.entries(a).forEach(([k, v]) => root.setAttribute(k, v));
     root.style.setProperty('--ts', String(P.textSize));
@@ -87,7 +87,9 @@
     const dot = x.stage === 'opt' ? '<circle cx="6" cy="6" r="1.7" fill="currentColor"/>' : '';
     return `<svg class="mk ${tone} ${x.stage === 'conf' ? 'fill' : ''}" width="${size}" height="${size}" viewBox="0 0 12 12" aria-hidden="true">${shape}${dot}</svg>`;
   }
-  const statusPill = s => `<span class="st">${marker(s)}<span>${esc(s)}</span></span>`;
+  const STAGE = { int: 'Intérêt', opt: 'Option', conf: 'Confirmée' };
+  const shortStatus = s => { const x = ST[s]; if (!x) return s; return x.type === 'ann' ? 'Annulée' : x.type === 'ss' ? 'Sans suite' : x.type === 'none' ? '—' : STAGE[x.stage]; };
+  const statusPill = s => `<span class="st">${marker(s)}<span class="st-full">${esc(s)}</span><span class="st-short" aria-hidden="true">${esc(shortStatus(s))}</span></span>`;
 
   // ───────────────────────── Coque
   function shell(){
@@ -125,7 +127,7 @@
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
   function renderSide(){
     $('#side').innerHTML = `<div class="side-head">
-        <a class="brand" href="#tableau-de-bord" data-go="tableau-de-bord" aria-label="MATRICE — tableau de bord"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand-name">MATRICE</span></a>
+        <a class="brand" href="#tableau-de-bord" data-go="tableau-de-bord" aria-label="MATRICE — tableau de bord"><span class="brand-name">MATRICE</span><span class="slashes" aria-hidden="true"><i></i><i></i><i></i></span></a>
         <button class="btn ghost icon sm collapse-btn" type="button" data-act="mini" aria-label="${P.mini ? 'Déplier la barre latérale' : 'Réduire la barre latérale'}" title="${P.mini ? 'Déplier' : 'Réduire'}">${icon(P.mini ? 'panel-left-open' : 'panel-left-close', 'sm')}</button>
         <button class="btn ghost icon sm only-tablet" type="button" data-act="closeDrawer" aria-label="Fermer le menu">${icon('x', 'sm')}</button>
       </div>
@@ -136,7 +138,7 @@
   }
   function renderTop(){
     const t = tabById(S.tab);
-    $('#top').innerHTML = `<button class="btn ghost icon only-tablet" type="button" data-act="drawer" aria-label="Ouvrir le menu" aria-controls="side">${icon('menu')}</button>
+    $('#top').innerHTML = `<a class="brand brand-top" href="#tableau-de-bord" data-go="tableau-de-bord" aria-label="MATRICE — tableau de bord"><span>MATRICE</span><span class="slashes" aria-hidden="true"><i></i><i></i><i></i></span></a><button class="btn ghost icon only-tablet" type="button" data-act="drawer" aria-label="Ouvrir le menu" aria-controls="side">${icon('menu')}</button>
       <div class="crumb"><span>${esc(t.module.label)}</span>${t.module.tabs.length > 1 ? `${icon('chevron-right', 'sm')}<b>${esc(t.label)}</b>` : ''}</div>
       <span class="proto-flag">Prototype</span>
       <button class="btn ghost icon" type="button" data-act="search" aria-label="Rechercher" title="Rechercher (${isMac ? '⌘' : 'Ctrl'} + K)">${icon('search')}</button>
@@ -150,9 +152,11 @@
   }
 
   // ───────────────────────── Pages
-  function pageHead(t, { sub = '', acts = '' } = {}){
+  const SWOOSH = `<svg class="swoosh" viewBox="0 0 600 160" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="sw" class="sw-a" x1="0" x2="1" y1="0" y2="0"><stop offset="0"/><stop offset=".35"/><stop offset=".75"/><stop offset="1"/></linearGradient></defs>
+    <path d="M10 150 C 220 150, 330 60, 590 18" stroke="url(#sw)" stroke-width="30"/><path d="M60 158 C 260 156, 380 84, 600 46" stroke="url(#sw)" stroke-width="6" opacity=".45"/></svg>`;
+  function pageHead(t, { sub = '', acts = '', hero = false } = {}){
     const pinned = P.shortcuts.includes(t.id);
-    return `<div class="page-head"><div class="grow"><h1>${esc(t.label)}</h1><p class="sub">${sub}<span class="chip">Données fictives</span></p></div>
+    return `<div class="page-head">${hero ? SWOOSH : ''}<div class="grow"><h1>${esc(t.label)}</h1><p class="sub">${sub}<span class="chip">Données fictives</span></p></div>
       <div class="acts">${acts}<button class="btn" type="button" data-act="pin" data-id="${t.id}" aria-pressed="${pinned}" title="${pinned ? 'Retirer des raccourcis' : 'Ajouter aux raccourcis'}">${icon('star', 'sm')}<span class="bt">Raccourci</span><span class="sr">${pinned ? ' : présent dans les raccourcis' : ' : ajouter aux raccourcis'}</span></button></div></div>`;
   }
 
@@ -181,11 +185,11 @@
     const kpis = P.kpis.map(k => D.KPIS[k]).filter(Boolean);
     const blocks = P.blocks.filter(b => !P.hiddenBlocks.includes(b));
     const SPAN = { dates: 7, taches: 5, cachets: 7, billetterie: 5, suivis: 6, messages: 6 };
-    return pageHead(t, { sub: `<span>${esc(dLong(D.TODAY))}</span>`,
+    return pageHead(t, { hero: true, sub: `<span>${esc(dLong(D.TODAY))}</span>`,
         acts: `<button class="btn" type="button" data-act="customize" title="Personnaliser le tableau de bord">${icon('sliders-horizontal', 'sm')}<span class="bt">Personnaliser</span></button>` })
-      + `<section class="card kpis-wrap" aria-label="Indicateurs principaux"><div class="kpis ${S.exact ? 'exact' : ''}">${kpis.map(k => `<div class="kpi ${k.warn ? 'k-warn' : ''}">
+      + `<section class="card kpis-wrap" aria-label="Indicateurs principaux"><div class="kpis ${S.exact ? 'exact' : ''}">${kpis.map((k, i) => `<button type="button" class="kpi ${k.warn ? 'k-warn' : ''} ${i === P.hot ? 'hot' : ''}" data-act="hot" data-i="${i}" aria-pressed="${i === P.hot}" title="Mettre en avant">
           <span class="k-label" title="${esc(k.label)}"><span class="k-l-full">${esc(k.label)}</span><span class="k-l-short" aria-hidden="true">${esc(k.m || k.label)}</span></span><span class="k-value">${kpiValue(k)}</span>
-          <span class="k-note">${k.warn ? icon('triangle-alert') : ''}${esc(k.note)}</span></div>`).join('')}</div>
+          <span class="k-note">${k.warn ? icon('triangle-alert') : ''}${esc(k.note)}</span></button>`).join('')}</div>
         ${kpis.some(k => k.eur && k.value >= 10000) ? `<button class="kpi-hint" type="button" data-act="exact" aria-pressed="${S.exact}">${icon(S.exact ? 'eye-off' : 'eye', 'sm')}${S.exact ? 'Montants abrégés' : 'Afficher les montants exacts'}</button>` : ''}</section>`
       + `<div class="grid">${blocks.map(b => `<section class="card span-${SPAN[b]}" aria-labelledby="h-${b}">${BLOCK[b]()}</section>`).join('')}</div>`;
   }
@@ -199,7 +203,7 @@
     dates: () => cardHead('dates', 'Prochaines dates', D.DATES.length, goBtn('booking', 'Booking'))
       + `<div class="list">${D.DATES.map(d => `<div class="row click r-date" tabindex="0" role="button" data-act="date" data-id="${d.id}" ${S.openDate === d.id ? 'aria-current="true"' : ''} aria-label="${esc(`${dLong(d.date)}, ${d.artist}, ${d.venue}, ${d.status}`)}">
           <span class="dt">${esc(dShort(d.date))} <span class="muted">${esc(dWeek(d.date))}</span></span>
-          <span class="t"><b>${esc(d.artist)}</b> <span class="sub">· ${esc(d.venue)}<span class="c-in"> · ${esc(d.city)}</span></span></span>
+          <span class="t"><b>${esc(d.artist)}</b> <span class="sub v">${esc(d.venue)}<span class="c-in"> · ${esc(d.city)}</span></span></span>
           <span class="t sub c-col">${esc(d.city)}</span>${statusPill(d.status)}</div>`).join('')}</div>`,
     taches: () => cardHead('taches', 'Tâches', D.TASKS.length, goBtn('todo', 'To Do'))
       + `<ul class="list">${D.TASKS.map(x => `<li class="row r-task">
@@ -234,30 +238,44 @@
     },
   };
 
-  // Graphique : prévisionnel en aplat léger, réalisé en graphite, sauge pour le seul mois choisi
+  // Graphique V4 : courbes lissées monotones (aucun dépassement des valeurs réelles), aire en dégradé, point choisi lumineux
+  function smooth(pts){   // interpolation cubique monotone (Fritsch–Carlson) : passe exactement par chaque point, sans creux ni bosse inventés
+    if (pts.length < 2) return '';
+    if (pts.length === 2) return `M${pts[0][0]},${pts[0][1]} L${pts[1][0]},${pts[1][1]}`;
+    const n = pts.length, dx = [], dy = [], m = [], t = [];
+    for (let i = 0; i < n - 1; i++){ dx[i] = pts[i + 1][0] - pts[i][0]; dy[i] = pts[i + 1][1] - pts[i][1]; m[i] = dy[i] / dx[i]; }
+    t[0] = m[0]; t[n - 1] = m[n - 2];
+    for (let i = 1; i < n - 1; i++) t[i] = m[i - 1] * m[i] <= 0 ? 0 : 3 * (dx[i - 1] + dx[i]) / ((2 * dx[i] + dx[i - 1]) / m[i - 1] + (dx[i] + 2 * dx[i - 1]) / m[i]);
+    let d = `M${pts[0][0]},${pts[0][1]}`;
+    for (let i = 0; i < n - 1; i++){ const h = dx[i] / 3; d += ` C${pts[i][0] + h},${pts[i][1] + t[i] * h} ${pts[i + 1][0] - h},${pts[i + 1][1] - t[i + 1] * h} ${pts[i + 1][0]},${pts[i + 1][1]}`; }
+    return d;
+  }
   let barsObserver = null, barsDraw = () => {};
   function mountBars(fig){
     if (barsObserver) barsObserver.disconnect();
     const draw = barsDraw = () => {
       const W = fig.clientWidth, H = fig.clientHeight; if (!W || !H) return;
-      const narrow = W < 520, ml = narrow ? 30 : 44, mb = 22, mt = 14;
+      const narrow = W < 520, ml = narrow ? 26 : 40, mr = 10, mb = 22, mt = 16;
       const max = Math.ceil(Math.max(...D.CACHETS.map(c => Math.max(c.plan, c.real || 0))) * 1.1 / 5000) * 5000;
-      const y = v => mt + (H - mt - mb) * (1 - v / max), band = (W - ml) / 12;
-      const ticks = [0, max / 4, max / 2, max * 3 / 4, max];
+      const y = v => mt + (H - mt - mb) * (1 - v / max), step = (W - ml - mr) / 11, x = m => ml + step * m;
+      const ticks = [0, max / 2, max];
       const k = v => `${Math.round(v / 1000)}${narrow ? '' : ' k€'}`;
-      let s = ticks.map((v, i) => `<line class="${i ? 'grid-l' : 'base-l'}" x1="${ml}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text class="axis-t" x="${ml - 8}" y="${y(v) + 3.5}" text-anchor="end">${k(v)}</text>`).join('');
-      const everyOther = band < 30;
-      s += D.CACHETS.map(c => {
-        const x = ml + band * c.m, pw = Math.min(band * .64, 34), rw = Math.min(band * .34, 16), label = MONTHS[c.m];
-        const aria = `${D.MONTHS[c.m]} : ${c.real == null ? 'pas encore réalisé' : 'réalisé ' + eur(c.real)}, prévisionnel ${eur(c.plan)}`;
-        return `<g class="${S.sel === c.m ? 'sel' : ''}">
-          <rect class="bar-plan" x="${x + (band - pw) / 2}" y="${y(c.plan)}" width="${pw}" height="${Math.max(0, y(0) - y(c.plan))}" rx="2"/>
-          ${c.real == null ? '' : `<rect class="bar-real" x="${x + (band - rw) / 2}" y="${y(c.real)}" width="${rw}" height="${Math.max(0, y(0) - y(c.real))}" rx="2"/>`}
-          ${!everyOther || c.m % 2 === 0 ? `<text class="axis-t" x="${x + band / 2}" y="${H - 6}" text-anchor="middle">${esc(label)}</text>` : ''}
-          <rect class="hit" x="${x}" y="${mt}" width="${band}" height="${H - mt - mb}" tabindex="0" role="button" data-m="${c.m}" aria-label="${esc(aria)}" aria-pressed="${S.sel === c.m}"/></g>`;
-      }).join('');
-      const tx = ml + band * (1 + 26 / 30);   // aujourd'hui : 26 novembre
-      s += `<line class="today" x1="${tx}" x2="${tx}" y1="${mt - 4}" y2="${y(0)}"/><text class="today-t" x="${tx + 4}" y="${mt + 4}">auj.</text>`;
+      const plan = D.CACHETS.map(c => [x(c.m), y(c.plan)]), real = D.CACHETS.filter(c => c.real != null).map(c => [x(c.m), y(c.real)]);
+      const dPlan = smooth(plan), dReal = smooth(real);
+      let s = `<defs><linearGradient id="g-line" class="g-line" x1="0" x2="1" y1="0" y2="0"><stop offset="0"/><stop offset=".55"/><stop offset="1"/></linearGradient>
+        <linearGradient id="g-fill" class="g-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0"/><stop offset="1"/></linearGradient>
+        <filter id="g-blur" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="5"/></filter></defs>`;
+      s += ticks.map((v, i) => `<line class="${i ? 'grid-l' : 'base-l'}" x1="${ml}" x2="${W - mr}" y1="${y(v)}" y2="${y(v)}"/><text class="axis-t" x="${ml - 6}" y="${y(v) + 3.5}" text-anchor="end">${k(v)}</text>`).join('');
+      s += `<path class="area-plan" d="${dPlan} L${x(11)},${y(0)} L${x(0)},${y(0)} Z"/><path class="line-plan" d="${dPlan}"/>`;
+      if (real.length > 1) s += `<path class="area-real" d="${dReal} L${real[real.length - 1][0]},${y(0)} L${real[0][0]},${y(0)} Z"/><path class="line-real" d="${dReal}"/>`;
+      const tx = x(1 + 26 / 30);
+      s += `<line class="today" x1="${tx}" x2="${tx}" y1="${mt - 6}" y2="${y(0)}"/><text class="today-t" x="${tx + 4}" y="${mt}">auj.</text>`;
+      s += D.CACHETS.map(c => `${c.real != null ? `<circle class="dot-real" cx="${x(c.m)}" cy="${y(c.real)}" r="3.5"/>` : `<circle class="dot-plan" cx="${x(c.m)}" cy="${y(c.plan)}" r="2.5"/>`}
+        ${!narrow || c.m % 2 === 0 ? `<text class="axis-t" x="${x(c.m)}" y="${H - 6}" text-anchor="middle">${esc(MONTHS[c.m])}</text>` : ''}`).join('');
+      if (S.sel != null){ const c = D.CACHETS[S.sel], v = c.real ?? c.plan, cx = x(c.m), cy = y(v);
+        s += `<line class="sel-line" x1="${cx}" x2="${cx}" y1="${cy}" y2="${y(0)}"/><circle class="sel-glow" cx="${cx}" cy="${cy}" r="10"/><circle class="sel-dot" cx="${cx}" cy="${cy}" r="5.5"/>`; }
+      s += D.CACHETS.map(c => { const aria = `${D.MONTHS[c.m]} : ${c.real == null ? 'pas encore réalisé' : 'réalisé ' + eur(c.real)}, prévisionnel ${eur(c.plan)}`;
+        return `<rect class="hit" x="${x(c.m) - step / 2}" y="${mt}" width="${step}" height="${H - mt - mb}" tabindex="0" role="button" data-m="${c.m}" aria-label="${esc(aria)}" aria-pressed="${S.sel === c.m}"/>`; }).join('');
       fig.innerHTML = `<svg>${s}</svg>`;
       if (S.sel != null) showTip(fig, S.sel);
     };
@@ -304,9 +322,14 @@
       <button class="btn ghost sm icon" type="button" data-act="move" data-kind="${kind}" data-i="${i}" data-d="1" ${i === n - 1 ? 'disabled' : ''} aria-label="Descendre ${esc(label)}">${icon('arrow-down', 'sm')}</button>`;
     const card = (id, title, body) => `<section class="card" aria-labelledby="${id}"><div class="pref-card"><h2 id="${id}">${title}</h2>${body}</div></section>`;
     return pageHead(t, { sub: '<span>Propres à ce compte et à ce navigateur</span>' }) + `<div class="prefs">
-      ${card('p-look', 'Apparence', `${seg('appearance', P.appearance, [['light', 'Clair'], ['dark', 'Sombre'], ['system', 'Système'], ['schedule', 'Horaires']], 'Apparence')}
+      ${card('p-look', 'Apparence', `<div class="pref-row"><span class="l">Identité chromatique</span>
+        <div class="palettes" role="radiogroup" aria-label="Identité chromatique">
+          <label class="pal pal-lagoon"><input type="radio" name="palette" value="lagoon" data-pref="palette" ${P.palette !== 'opal' ? 'checked' : ''}><span class="bar"></span><b>Electric Lagoon</b><span class="hexes"><span><i class="sw-lag1"></i>#247E91</span><span><i class="sw-lag2"></i>#72C9B4</span></span><span class="check" aria-hidden="true">${icon('check')}</span></label>
+          <label class="pal pal-opal"><input type="radio" name="palette" value="opal" data-pref="palette" ${P.palette === 'opal' ? 'checked' : ''}><span class="bar"></span><b>Opal</b><span class="hexes"><span><i class="sw-op1"></i>#78B9AD</span><span><i class="sw-op2"></i>#A6B5E8</span><span><i class="sw-op3"></i>#D8A4C5</span></span><span class="check" aria-hidden="true">${icon('check')}</span></label>
+        </div><p class="hint">Indépendante du mode clair, sombre ou automatique. Les couleurs des statuts ne changent pas.</p></div>
+        <div class="pref-row"><span class="l">Mode</span>${seg('appearance', P.appearance, [['light', 'Clair'], ['dark', 'Sombre'], ['system', 'Système'], ['schedule', 'Horaires']], 'Apparence')}
         ${P.appearance === 'schedule' ? `<div class="inline"><label class="field"><span>Sombre à partir de</span><input class="input" type="time" id="pf-from" data-pref="darkFrom" value="${esc(P.darkFrom)}"></label>
-          <label class="field"><span>jusqu’à</span><input class="input" type="time" id="pf-to" data-pref="darkTo" value="${esc(P.darkTo)}"></label></div>` : ''}`)}
+          <label class="field"><span>jusqu’à</span><input class="input" type="time" id="pf-to" data-pref="darkTo" value="${esc(P.darkTo)}"></label></div>` : ''}</div>`)}
       ${card('p-dens', 'Densité', `${seg('density', P.density[dev], [['compacte', 'Compacte'], ['standard', 'Standard'], ['confort', 'Confort']], 'Densité')}
         <p class="hint">Réglage propre à ce type d’appareil (${DEVICE_LABEL[dev]}).</p>`)}
       ${card('p-fx', 'Effets', `${sw('glass', 'Effets de verre', P.glass, 'Navigation et menus seulement, jamais sur les données')}
@@ -549,6 +572,7 @@
     closeSheet: () => animatedClose($('#sheet')),
     closePanel: () => closePanel(),
     customize: () => openCustomize(),
+    hot: b => { P.hot = Number(b.dataset.i); save(); renderMain(); $(`.kpi[data-i="${b.dataset.i}"]`)?.focus(); },
     exact: () => { S.exact = !S.exact; renderMain(); $('[data-act="exact"]')?.focus(); },
     date: b => openDate(b.dataset.id),
     view: b => { S.views[b.dataset.k] = b.dataset.v; renderMain(); $(`[data-act="view"][data-k="${b.dataset.k}"][data-v="${b.dataset.v}"]`)?.focus(); },
@@ -581,7 +605,7 @@
     const g = e.target.closest('[data-go]');
     if (g){ e.preventDefault(); ['#sheet', '#psheet'].forEach(s => { if ($(s).open) $(s).close(); }); go(g.dataset.go); return; }
     const hit = e.target.closest('.hit[data-m]');
-    if (hit){ const m = Number(hit.dataset.m); S.sel = S.sel === m ? null : m; barsDraw(); $(`#fig-cachets .hit[data-m="${m}"]`)?.focus(); return; }
+    if (hit){ const m = Number(hit.dataset.m); S.sel = S.sel === m ? null : m; barsDraw(); if (e.detail === 0) $(`#fig-cachets .hit[data-m="${m}"]`)?.focus(); return; }   // focus rendu seulement au clavier
     if (e.target.tagName === 'DIALOG'){   // clic sur le fond d'une fenêtre
       if (e.target.id === 'psheet') closePanel(); else if (e.target.id === 'search') closeSearch(); else if (e.target.id === 'sheet') animatedClose(e.target);
       return;
@@ -628,7 +652,7 @@
     const row = e.target.closest?.('.row[role="button"]');
     if (row && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); row.click(); }
     const hit = e.target.closest?.('.hit[data-m]');
-    if (hit && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); hit.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
+    if (hit && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); hit.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 })); }
   });
   document.addEventListener('input', e => { if (e.target.id === 'q') renderResults(e.target.value); });
   document.addEventListener('cancel', e => { if (e.target.id === 'psheet'){ e.preventDefault(); closePanel(); } }, true);

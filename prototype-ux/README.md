@@ -1,4 +1,4 @@
-# MATRICE — prototype UX/UI V3 (tableau de bord, navigation modulaire, préférences, panneau latéral)
+# MATRICE — prototype UX/UI V4 « Creative Engineering × Backstage Studio »
 
 Branche `ux/refonte-uxui`, créée depuis `main` au commit `ee1f806` (v1.68.3, 26/11/2026). `main` inchangée depuis.
 Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (arbitrage A2). `DESIGN_SYSTEM.md` reste celui de `main`.
@@ -10,6 +10,14 @@ Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (a
 - Aucune connexion : ni Supabase, ni Google, ni Pennylane, ni Brevo. Aucun appel réseau.
 - Préférences gardées dans le stockage local du navigateur, sous une clé propre (`matrice-proto.prefs.v1`), conformément à l'arbitrage A12.
 - GitHub Pages ne publie que `main` : ce dossier n'est pas en ligne depuis le dépôt. La démonstration est hébergée à part (lien transmis dans le compte rendu).
+
+## V4 (27/11/2026) — rupture artistique
+
+- Surfaces de référence : ivoire `#F5F2ED` (clair) et graphite `#1E1F22` (sombre).
+- Deux identités chromatiques, centralisées dans `css/tokens.css` (une seule interface) : **Electric Lagoon** (défaut, `#247E91` → `#72C9B4`) et **Opal** (`#78B9AD` → `#A6B5E8` → `#D8A4C5`), chacune en clair et en sombre. Choix dans Préférences › Apparence › Identité chromatique, appliqué immédiatement, mémorisé localement, indépendant du mode.
+- Marqueurs identitaires : MATRICE `///` en dégradé, courbe en dégradé dans l'en-tête du tableau de bord (jamais derrière des données), tuile d'indicateur mise en avant en dégradé (au choix : toucher une tuile), filet dégradé de l'élément actif, interrupteurs et jauges en dégradé.
+- Graphique : courbes lissées par interpolation monotone (passent exactement par chaque valeur, sans bosse ni creux inventés), aire en dégradé, réalisé en trait plein, prévisionnel en pointillés, point choisi lumineux, vue tableau conservée.
+- Statuts : couleurs fonctionnelles inchangées ; sur téléphone, libellé court (étape) visible, libellé complet lu par les lecteurs d'écran.
 
 ## V3 (26/11/2026) — direction artistique
 
