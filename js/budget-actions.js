@@ -309,15 +309,17 @@ export const BUDGET_ACTIONS = {
         const {data, error} = await sb.rpc('reglement_saisir', {p_payment: p.id, p_sens: 'encaissement', p_etat: 'fait', p_montant: montant, p_date: v.date, p_compte: v.compte || null, p_reference: v.reference || null, p_motif: null});
         if (error){ toast(error.message, true); return false; }
         await reloadReglements(data);
-        // ligne couverte : payée à la date de l'encaissement le plus récent (paiement non écrasé s'il a été noté entre-temps)
-        const cur = byId('show_payments', p.id);
-        if (cur && !cur.paid_at && resteDuTtc(cur) <= 0.01){
-          const last = reglementsOf(p.id).filter(r => r.sens === 'encaissement' && r.etat === 'fait').map(r => r.date).sort().pop();
-          const comptes = [...new Set(reglementsOf(p.id).filter(r => r.sens === 'encaissement').map(r => r.compte).filter(Boolean))];
-          await save('show_payments', p.id, {paid_at: last, ...(!cur.payee && comptes.length === 1 ? {payee: comptes[0]} : {})}, {rerender: false});
-        }
+        await payeeDapresMouvements(p.id);
         toast('Encaissement enregistré.'); render(); return true;
       }});
+  },
+  /** (v1.70, reprise demandée par Anthony le 26/11/2026, 23 h 15) Facture entièrement couverte par ses encaissements enregistrés mais
+   *  sans date « Payée » (écriture précédente en échec, facture sans lien Pennylane) : la pose d'après les mouvements, sans ressaisie */
+  async reglementPayee(t){
+    const p = byId('show_payments', t.dataset.id); if (!p || p.paid_at) return;
+    if (resteDuTtc(p) > 0.01) return toast('Encaissements enregistrés insuffisants : enregistre l’encaissement manquant.', true);
+    if (await payeeDapresMouvements(p.id)) toast('Facture notée payée d’après ses encaissements.');
+    render();
   },
   /** (v1.70, L2a, D10) Remboursement à faire (montant, motif) ou fait (date, montant, compte, référence), saisi à la main : non rapproché
    *  jusqu'à son rapprochement Pennylane, qui ne le compte jamais une seconde fois. Un remboursement n'est jamais un avoir (E3). */
@@ -509,6 +511,16 @@ export const BUDGET_ACTIONS = {
   },
 };
 
+/** Ligne couverte par ses encaissements enregistrés (non annulés) et pas encore payée : date « Payée » = date du dernier encaissement,
+ *  compte posé s'il est unique (même règle que le déclencheur show_payments_paye_par_reglements). Renvoie vrai si la date a été écrite. */
+async function payeeDapresMouvements(id){
+  const cur = byId('show_payments', id);
+  if (!cur || cur.paid_at || resteDuTtc(cur) > 0.01) return false;
+  const enc = reglementsOf(id).filter(r => r.sens === 'encaissement' && r.etat === 'fait');
+  const last = enc.map(r => r.date).sort().pop(); if (!last) return false;
+  const comptes = [...new Set(enc.map(r => r.compte).filter(Boolean))];
+  return !!(await save('show_payments', id, {paid_at: last, ...(!cur.payee && comptes.length === 1 ? {payee: comptes[0]} : {})}, {rerender: false}));
+}
 /** Niveau de fenêtre : au-dessus d'une fenêtre déjà ouverte */
 const MODALS_LEVEL = () => document.querySelector('#modal[open]') ? 2 : 1;
 /** Mouvements relus après une écriture côté serveur (lecture seule dans l'application) */

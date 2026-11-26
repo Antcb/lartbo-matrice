@@ -250,3 +250,29 @@ test('v1.70 point 3 — facture avec encaissements enregistrés : jamais marqué
   await expect.poll(async () => (await etat(page, 'en-d9')).paid['en-p10']).toBe(iso(-1));
   expectClean(ctx);
 });
+
+test('v1.70 reprise — facture sans lien Pennylane entièrement encaissée, date « Payée » non écrite : « Noter payée » la pose sans ressaisie', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page, {
+    shows: [show('en-d11', 'Salle Reprise', { fee_ht: 1000 })],
+    payments: [
+      { id: 'en-p11', show_id: 'en-d11', kind: 'solde', label: 'Solde', amount: 1000, vat_rate: 5.5, sort: 2, invoice_number: 'F-FICT-11', sent_at: iso(-20) },
+      { id: 'en-p12', show_id: 'en-d11', kind: 'autre', label: 'Partielle', amount: 100, vat_rate: 5.5, sort: 3, invoice_number: 'F-FICT-12', sent_at: iso(-20) }],
+    // encaissements complets enregistrés (1 055 € TTC), mais l'écriture de la date « Payée » a échoué
+    reglements: [
+      { id: 'rg-11a', payment_id: 'en-p11', show_id: 'en-d11', sens: 'encaissement', etat: 'fait', montant_ttc: 555, date: iso(-6), compte: 'compte', source: 'manuel', transaction_id: null, created_at: iso(-6) },
+      { id: 'rg-11b', payment_id: 'en-p11', show_id: 'en-d11', sens: 'encaissement', etat: 'fait', montant_ttc: 500, date: iso(-4), compte: 'compte', source: 'manuel', transaction_id: null, created_at: iso(-4) },
+      { id: 'rg-12', payment_id: 'en-p12', show_id: 'en-d11', sens: 'encaissement', etat: 'fait', montant_ttc: 50, date: iso(-4), compte: 'compte', source: 'manuel', transaction_id: null, created_at: iso(-4) }],
+  });
+  await expect(page.locator('[data-act="reglementPayee"][data-id="en-p12"]')).toHaveCount(0);   // pas couverte : jamais proposé
+  await page.locator('[data-act="reglementPayee"][data-id="en-p11"]').click();
+  await expect(page.locator('body')).toContainText('Facture notée payée d’après ses encaissements');
+  const e = await etat(page, 'en-d11');
+  expect(e.paid['en-p11']).toBe(iso(-4));                 // date du dernier encaissement
+  expect(e.payee['en-p11']).toBe('compte');               // compte unique
+  expect(e.reglements).toHaveLength(3);                   // aucune ressaisie
+  expect(await rpcs(page)).toEqual([]);
+  expect((await ecritures(page, 'show_payments')).length).toBe(1);
+  await expect(page.locator('[data-act="reglementPayee"][data-id="en-p11"]')).toHaveCount(0);
+  expectClean(ctx);
+});
