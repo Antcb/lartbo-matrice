@@ -336,3 +336,41 @@ test('v1.65.2 source dont la boîte n’est pas établie (identifiant Gmail seul
   await expect(dlg(page)).not.toContainText('anthony@');
   expectClean(ctx);
 });
+
+// v1.68.1 — point n°9 (décision d'Anthony du 26/11/2026) : dans le cadre de lecture, le texte SANS police déclarée s'affiche en
+// Helvetica Neue (puis Helvetica, Arial, sans-serif) au lieu de la police par défaut du navigateur (Times sur Safari iPhone) ;
+// les polices écrites dans le message ou la signature sont gardées. Cas de référence : réponse citée sans police + signature
+// Helvetica Neue (mail de Rienzo, capture d'Anthony du 26/11/2026).
+const fontOf = (frame, sel) => frame.locator(sel).evaluate(e => getComputedStyle(e).fontFamily);
+const DEFAUT = /^"?Helvetica Neue"?, Helvetica, Arial, sans-serif$/;
+const RIENZO = '<div dir="ltr"><div id="plain">Hello Rienzo,</div><div>Tout est bon.</div></div>'
+  + '<div id="sig" style="font-family:&quot;Helvetica Neue&quot;, sans-serif">Antho</div>'
+  + '<blockquote><p id="geo" style="font-family:Georgia, serif">Message cité en Georgia</p><font id="ff" face="Courier New">ancienne balise</font><p id="cite">cité sans police</p></blockquote>';
+
+test('v1.68.1 police du cadre de lecture (Mails) : texte sans police en Helvetica Neue, polices explicites gardées', async ({ page }) => {
+  const ctx = await openApp(page);
+  await ouvrir(page, { msgs: [{ id: 'mm-2', thread_id: 'mt-r', gmail_message_id: 'g02', prospect_log_id: 'lr-b', sent_at: '2026-11-17T10:16:18Z' }],
+    gmail: [GMSG('g01', '<p>premier</p>'), GMSG('g02', RIENZO), GMSG('g03', '<p>troisième</p>')] });
+  await lire(page, 'lr-b');
+  const f = page.locator('.mail-msg.focus[data-msg="g02"]').frameLocator('iframe.mail-frame');
+  await expect(f.locator('#plain')).toBeVisible();
+  expect(await fontOf(f, '#plain')).toMatch(DEFAUT);
+  expect(await fontOf(f, '#cite')).toMatch(DEFAUT);
+  expect(await fontOf(f, '#sig')).toMatch(/^"?Helvetica Neue"?, sans-serif$/);   // signature : sa propre déclaration
+  expect(await fontOf(f, '#geo')).toMatch(/^Georgia, serif$/);
+  expect(await fontOf(f, '#ff')).toMatch(/Courier New/);
+  expectClean(ctx);
+});
+
+test('v1.68.1 police du cadre de lecture (.eml ouvert depuis un suivi, iPhone 390 px) : texte brut en Helvetica Neue', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const ctx = await openApp(page);
+  const logs = [{ ...LOGS[1], author: 'testeur@example.com', gmail_message_id: null, body: 'Reçu — **RE: Proposition 2028**\n\nDEUXIÈME message reçu (texte coupé)' }];
+  await ouvrir(page, { logs, files: [FILES[1]], stored: { 'suivi/pr-1/2_RE.eml': bin(EML) } });
+  await lire(page, 'lr-b');
+  const f = page.locator('dialog.ask.read[open]').frameLocator('iframe.mail-frame');
+  await expect(f.locator('pre')).toBeVisible();
+  expect(await fontOf(f, 'pre')).toMatch(DEFAUT);
+  expect(await f.locator('pre').evaluate(e => getComputedStyle(e).whiteSpace)).toBe('pre-wrap');   // retours à la ligne gardés
+  expectClean(ctx);
+});
