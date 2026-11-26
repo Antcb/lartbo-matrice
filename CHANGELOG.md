@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.68.1 — 26/11/2026
+- Point n°9 : cadre de lecture des mails — texte sans police déclarée en Helvetica Neue (au lieu de Times sur Safari) ; polices des messages et signatures gardées
+
+
 ## 1.68.0 — 26/11/2026
 - Point n°23 : « Déverrouiller pour corriger » une facture émise dans MATRICE (montant, %, TVA, type), motif obligatoire, reverrouillage et historique ; Pennylane jamais touché
 
