@@ -465,8 +465,8 @@ function askDuplicate(dup, name){
     extraTop: `<p class="help full">${dup.same ? 'Le même fichier' : 'Un fichier du même nom'} est déjà dans le dossier de la date : <a href="${dup.url}" target="_blank" rel="noopener">${esc(dup.name)} ↗</a><br>Nouvelle pièce : <b>${esc(name)}</b></p>`,
     fields: [{k: 'decision', label: 'Que faire ?', type: 'select', blank: false, full: true, options: [
       ['skip', 'Garder l’ancien (ne pas ajouter le nouveau)'], ['replace', 'Remplacer l’ancien par le nouveau (l’ancien va à la corbeille)'], ['keep_both', 'Garder les deux']]}],
-    // (v1.68.2) id : brouillon propre à CE fichier du Drive (sinon le choix fait pour un autre fichier, ex. « Remplacer », revenait ici)
-    values: {id: 'drive:' + (dup.url || dup.name || name), decision: dup.same ? 'skip' : 'replace'}, onSave: v => v.decision});
+    // (v1.68.2) id : brouillon propre à CE conflit, fichier du Drive + pièce ajoutée (sinon un choix fait ailleurs, ex. « Remplacer », revenait ici)
+    values: {id: 'drive:' + (dup.url || dup.name) + ':' + name, decision: dup.same ? 'skip' : 'replace'}, onSave: v => v.decision});
 }
 
 const isOurs = n => /artboristerie/i.test(n || '');
