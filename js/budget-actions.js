@@ -227,7 +227,8 @@ export const BUDGET_ACTIONS = {
     openModal({title:'Copier les lignes d’une autre date', saveLabel:'Copier',
       fields:[{k:'from', label:'Date à copier', type:'select', options:opts, blank:false},
         {k:'what', label:'Lignes', type:'select', blank:false, options:[['all','Toutes les lignes (montants prévus, sans pièces)'],['staff','Seulement les salariés']]}],
-      values:{from: opts[0][0], what:'all'},
+      // (v1.68.2) id : brouillon propre à la date de destination (sinon une saisie abandonnée revenait sur une autre date)
+      values:{id: 'copie:' + s.id, from: opts[0][0], what:'all'},
       onSave: async v => {
         const src = linesOf(v.from).filter(l => v.what === 'all' || l.category === 'Staff')
           .filter(l => !l.auto || !linesOf(s.id).some(x => x.auto === l.auto))
@@ -347,6 +348,8 @@ export const BUDGET_ACTIONS = {
         <p class="m0 mt-sm">Lignes de la date :</p><ul class="warn-list">${assoc}</ul>
         ${hist ? `<p class="m0">Historique de cette facture :</p><ul class="warn-list">${hist}</ul>` : ''}
         <p class="m0">Le document Pennylane n’est pas modifié. Le numéro, le lien, la date de facture et la date d’envoi suivent la facture.</p></div>`,
+      // (v1.68.2) id : brouillon propre à CETTE facture Pennylane (sinon un motif ou une ligne choisie pour une facture revenait sur une autre)
+      values: {id: 'pennylane:' + pid},
       fields: [{k: 'to', label: 'Ligne de cette facture', type: 'select', full: true, options: targets.map(p => [p.id, `${p.label || p.kind} · ${eur2(payAmount(p) || 0)} HT${p.invoice_number ? ` · n° ${p.invoice_number} noté à la main` : acompteState(p) === 'prevu' ? ' (prévu)' : ''}`])},
         {k: 'motif', label: cur ? 'Motif de la correction (obligatoire)' : 'Motif (facultatif)', type: 'textarea', full: true, rows: 2}],
       onSave: async v => {
@@ -379,6 +382,7 @@ export const BUDGET_ACTIONS = {
     if (!lines.length) return toast(s.prod_mode === 'booking' ? 'Date en booking : les factures d’acompte et de solde sont celles de l’artiste, aucune ne se rattache ici (seule la commission de L’ArtBo est suivie).' : 'Aucune ligne d’acompte, de solde ou autre sans pièce sur cette date : ajoute la ligne d’abord.', true);
     await openModal({title: 'Rattacher la pièce', saveLabel: 'Rattacher',
       extraTop: `<p class="help full">Pièce : <b>${esc(a.name)}</b><br>Le montant, le % et la date de paiement de la ligne ne changent pas.</p>`,
+      values: {id: 'piece:' + a.id},   // (v1.68.2) brouillon propre à cette pièce (ligne et n° de facture d'une pièce ne reviennent pas sur une autre)
       fields: [{k: 'pay', label: 'Ligne', type: 'select', full: true, options: lines.map(p => [p.id, `${p.label || p.kind} · ${eur2(payAmount(p) || 0)} HT${p.invoice_number ? ' · ' + p.invoice_number : ''}`])},
         {k: 'invoice_number', label: 'N° de facture (si la ligne n’en a pas)', type: 'text'}],
       onSave: async v => {
@@ -461,7 +465,8 @@ function askDuplicate(dup, name){
     extraTop: `<p class="help full">${dup.same ? 'Le même fichier' : 'Un fichier du même nom'} est déjà dans le dossier de la date : <a href="${dup.url}" target="_blank" rel="noopener">${esc(dup.name)} ↗</a><br>Nouvelle pièce : <b>${esc(name)}</b></p>`,
     fields: [{k: 'decision', label: 'Que faire ?', type: 'select', blank: false, full: true, options: [
       ['skip', 'Garder l’ancien (ne pas ajouter le nouveau)'], ['replace', 'Remplacer l’ancien par le nouveau (l’ancien va à la corbeille)'], ['keep_both', 'Garder les deux']]}],
-    values: {decision: dup.same ? 'skip' : 'replace'}, onSave: v => v.decision});
+    // (v1.68.2) id : brouillon propre à CE fichier du Drive (sinon le choix fait pour un autre fichier, ex. « Remplacer », revenait ici)
+    values: {id: 'drive:' + (dup.url || dup.name || name), decision: dup.same ? 'skip' : 'replace'}, onSave: v => v.decision});
 }
 
 const isOurs = n => /artboristerie/i.test(n || '');
