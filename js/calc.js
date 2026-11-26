@@ -166,17 +166,61 @@ export function soldeeParAvoir(p){
   const c = avoirsOf(p.id).reduce((t, a) => t + (Number(a.amount_ht) || 0), 0);
   return c > 0 && c >= Number(p.amount) - 0.005;
 }
-/** (décision d'Anthony du 26/11/2026, point 2) Deux restes distincts sur une date qui a des avoirs : reste à encaisser du CONTRAT
- *  (cession − encaissé, inchangé par les avoirs, §6.11 ①) et reste dû sur les FACTURES émises après avoirs (Σ resteDu). */
-export function restesAvecAvoirs(s){
-  const bill = paymentsOf(s.id).filter(p => BILL_KINDS.includes(p.kind));
-  const cashed = bill.filter(p => p.paid_at).reduce((t, p) => t + (payAmount(p) || 0), 0);
-  return {contrat: Math.round(Math.max(0, (Number(s.fee_ht) || 0) - cashed) * 100) / 100,
-    factures: Math.round(bill.filter(p => isInvoiced(p) && !p.paid_at).reduce((t, p) => t + resteDu(p), 0) * 100) / 100,
-    avoirs: bill.some(p => avoirsOf(p.id).length > 0)};
+/**
+ * (v1.70, L2a du point 02 — décisions d'Anthony du 26/11/2026, 18 h 47 : D10, E1 à E4, R1, R2) Encaissements et remboursements RÉELS,
+ * un par mouvement (table reglements), en TTC : base du rapprochement bancaire (E2). Un avoir n'est jamais un encaissement (E3).
+ * Paiement historique (date « Payée » notée sans mouvement enregistré) : lu tel quel — sa date, le montant de la ligne — sans aucune
+ * écriture ni reconstitution (E1). Même règle côté serveur : supabase/functions/pennylane/regles.ts (planEncaissement, encaisseNet).
+ */
+export const reglementsOf = payId => (S.db.reglements || []).filter(r => r.payment_id === payId && !r.annule_at)
+  .sort((a, b) => String(a.date || a.created_at || '').localeCompare(String(b.date || b.created_at || '')));
+/** Toutes les saisies d'une ligne, annulées comprises (traçabilité, R2) */
+export const reglementsTousOf = payId => (S.db.reglements || []).filter(r => r.payment_id === payId)
+  .sort((a, b) => String(a.date || a.created_at || '').localeCompare(String(b.date || b.created_at || '')));
+/** TTC de la facture d'une ligne et TTC de ses avoirs (montant TTC de Pennylane, sinon calculé avec la TVA de la ligne) */
+export const factureTtc = p => ttc(payAmount(p) || 0, payVat(p)) || 0;
+export const avoirsTtc = p => Math.round(avoirsOf(p.id).reduce((t, a) => t + (a.amount_ttc != null && a.amount_ttc !== '' ? Number(a.amount_ttc) : ttc(Number(a.amount_ht) || 0, payVat(p))), 0) * 100) / 100;
+/** Équivalent HT d'un montant TTC de la ligne : affiché seulement s'il est fiable (TVA de la ligne connue, pas de doute de TVA sur la
+ *  structure de l'artiste, E2) ; les calculs en HT (indicateurs, comptes) l'utilisent toujours, signalé « ≈ » s'il n'est pas fiable */
+export const htFiable = p => !vatConflict(byId('shows', p.show_id));
+const versHt = (p, v) => Math.round(v / (1 + (Number(payVat(p)) || 0) / 100) * 100) / 100;
+/**
+ * Mouvements réels d'une ligne, dans l'ordre : ceux enregistrés (faits) et, pour un paiement historique sans encaissement enregistré,
+ * le paiement noté tel quel. sens +1 encaissement / −1 remboursement ; ttc et ht signés.
+ */
+export function mouvementsOf(p){
+  const out = reglementsOf(p.id).filter(r => r.etat === 'fait').map(r => { const v = (r.sens === 'remboursement' ? -1 : 1) * Number(r.montant_ttc);
+    return {date: r.date, ttc: v, ht: versHt(p, v), compte: r.compte || null, sens: r.sens, source: r.source, rapproche: !!r.transaction_id, historique: false, id: r.id}; });
+  if (p.paid_at && !out.some(m => m.sens === 'encaissement'))
+    out.unshift({date: p.paid_at, ttc: factureTtc(p), ht: payAmount(p) || 0, compte: p.payee || null, sens: 'encaissement', source: 'historique', rapproche: false, historique: true});
+  return out;
 }
-/** Reste dû HT d'une facture émise : rien si un paiement est noté (il est conservé tel quel) ; sinon montant − avoirs */
-export const resteDu = p => p.paid_at ? 0 : Math.max(0, Math.round(((payAmount(p) || 0) - avoirCouvert(p)) * 100) / 100);
+const somme = (ms, k) => Math.round(ms.reduce((t, m) => t + (Number(m[k]) || 0), 0) * 100) / 100;
+/** Encaissé réel net (encaissements − remboursements faits), TTC et équivalent HT */
+export const encaisseTtc = p => somme(mouvementsOf(p), 'ttc');
+export const encaisseHt = p => somme(mouvementsOf(p), 'ht');
+/** Remboursements décidés pas encore faits (TTC) */
+export const aRembourserTtc = p => Math.round(reglementsOf(p.id).filter(r => r.sens === 'remboursement' && r.etat === 'a_faire').reduce((t, r) => t + Number(r.montant_ttc), 0) * 100) / 100;
+/** Facturé net après avoirs (TTC) d'une facture émise */
+export const factureNetTtc = p => isInvoiced(p) ? Math.max(0, Math.round((factureTtc(p) - avoirsTtc(p)) * 100) / 100) : 0;
+/** Reste dû TTC : rien si la ligne est notée payée (paiement conservé, E1) ; sinon facturé net − encaissé net */
+export const resteDuTtc = p => !isInvoiced(p) || p.paid_at ? 0 : Math.max(0, Math.round((factureNetTtc(p) - encaisseTtc(p)) * 100) / 100);
+/** Encaissé au-delà du net facturé (trop-perçu, ou facture réémise pas encore rattachée) : signalé, jamais remboursé d'office */
+export const tropPercuTtc = p => isInvoiced(p) ? Math.max(0, Math.round((encaisseTtc(p) - factureNetTtc(p) - aRembourserTtc(p)) * 100) / 100) : 0;
+/** Reste dû HT d'une facture émise (indicateurs) : ligne notée payée → 0 ; sans mouvement enregistré → montant − avoirs (v1.69) ;
+ *  avec mouvements → équivalent HT du reste dû TTC */
+export const resteDu = p => p.paid_at ? 0 : !reglementsOf(p.id).length ? Math.max(0, Math.round(((payAmount(p) || 0) - avoirCouvert(p)) * 100) / 100)
+  : versHt(p, resteDuTtc(p));
+/** (décision E3) Les cinq montants d'une date, toujours distincts : reste contractuel (cession − encaissé sur acomptes / soldes),
+ *  facturé net après avoirs, encaissé réel, reste dû, reste à rembourser — en TTC, HT fiable à côté quand il l'est */
+export function restesDate(s){
+  const suivies = paymentsOf(s.id).filter(p => ['acompte', 'solde', 'autre'].includes(p.kind)), bill = suivies.filter(p => BILL_KINDS.includes(p.kind));
+  const tot = (ls, f) => Math.round(ls.reduce((t, p) => t + f(p), 0) * 100) / 100;
+  const fee = Number(s.fee_ht) || 0, feeTtc = ttc(fee, showVat(s)) || 0;
+  return {contratHt: Math.max(0, Math.round((fee - tot(bill, encaisseHt)) * 100) / 100), contratTtc: Math.max(0, Math.round((feeTtc - tot(bill, encaisseTtc)) * 100) / 100),
+    factureNet: tot(suivies, factureNetTtc), encaisse: tot(suivies, encaisseTtc), resteDu: tot(suivies, resteDuTtc), aRembourser: tot(suivies, aRembourserTtc),
+    trop: tot(suivies, tropPercuTtc), fiable: !vatConflict(s), emis: suivies.some(isInvoiced)};
+}
 
 /** Pourquoi une ligne de facturation ne peut plus changer ('' = modifiable) */
 export function billLockReason(p){
@@ -347,7 +391,7 @@ export function billingOf(s){
   const ht = sum(lines, payAmount), fee = Number(s.fee_ht) || 0;
   return {lines, ht, ttc: sum(lines, p => ttc(payAmount(p), payVat(p))), fee, feeTtc: ttc(fee, showVat(s)) || 0,
     pct: fee ? r2(ht / fee * 100) : 0, gap: r2(fee - ht),
-    sentHt: sum(lines.filter(p => p.sent_at), payAmount), paidHt: sum(lines.filter(p => p.paid_at), payAmount),
+    sentHt: sum(lines.filter(p => p.sent_at), payAmount), paidHt: sum(lines, encaisseHt),   // (v1.70) encaissé réel, historique lu tel quel
     otherHt: sum(paymentsOf(s.id).filter(p => p.kind === 'autre'), payAmount),
     planned, plannedHt: sum(planned, payAmount)};
 }
@@ -370,9 +414,10 @@ export function financeOf(shows){
       continue;
     }
     const bill = pays.filter(p => BILL_KINDS.includes(p.kind));
-    const cashed = bill.filter(p => p.paid_at).reduce((t, p) => t + (payAmount(p) || 0), 0);
-    // coproduction : pas de cession à encaisser ; seules ses factures réelles (s'il y en a) restent à encaisser (27/10/2026)
-    out.resteProd += isCoproduction(s) ? bill.filter(p => !p.paid_at).reduce((t, p) => t + (payAmount(p) || 0), 0) : Math.max(0, (Number(s.fee_ht) || 0) - cashed); out.datesProd++;
+    const cashed = bill.reduce((t, p) => t + encaisseHt(p), 0);   // (v1.70, E3) encaissé réel ; paiement historique lu tel quel (E1)
+    // coproduction : pas de cession à encaisser ; seules ses factures réelles (s'il y en a) restent à encaisser (27/10/2026), moins
+    // leurs encaissements partiels (v1.70, réponse d'Anthony du 26/11 : un encaissement partiel compte partout, en équivalent HT)
+    out.resteProd += isCoproduction(s) ? bill.filter(p => !p.paid_at).reduce((t, p) => t + Math.max(0, (payAmount(p) || 0) - encaisseHt(p)), 0) : Math.max(0, (Number(s.fee_ht) || 0) - cashed); out.datesProd++;
     const due = bill.filter(p => isInvoiced(p) && !p.paid_at && resteDu(p) > 0);   // (v1.69) avoirs déduits
     out.impayesProd += due.reduce((t, p) => t + resteDu(p), 0); out.factures += due.length;
   }

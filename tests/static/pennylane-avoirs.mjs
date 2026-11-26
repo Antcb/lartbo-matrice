@@ -131,36 +131,33 @@ t('avoir créé par erreur puis facture réémise (forme Champs des Notes) : l�
   // la réémission n'est pas un avoir : jamais importée comme tel
   assert.equal(estAvoir({ id: 120, currency_amount_before_tax: '1750.0', credited_invoice: null }), false);
 });
-t('code de la synchronisation : plus de date du jour comme date de paiement, encaissement seulement via encaissementPennylane', () => {
+t('code de la synchronisation (L1 + L2a) : jamais la date du jour ; virements réservés AVANT toute écriture ; reprise sur la même ligne ; historique ; lecture seule', () => {
   const src = readFileSync(new URL('../../supabase/functions/pennylane/index.ts', import.meta.url), 'utf8');
-  const bloc = src.slice(src.indexOf('const isPaid ='), src.indexOf('pennylaneLate.push'));
-  assert.match(bloc, /av \? encaissementAvecAvoir\(x, av, vs, dejaAilleurs\) : encaissementPennylane\(x, vs, dejaAilleurs\)/);
-  // (17 h 42, cas 1) reprise : un virement réservé pour CETTE ligne n'est pas « déjà compté » pour elle, ni réinséré ; retrait signalé s'il échoue
-  assert.match(src, /const autresQue = \(pid: string\) => new Set\(\[\.\.\.comptes\]\.filter\(\(\[, l\]\) => l !== pid\)/);
-  assert.match(bloc, /const dejaAilleurs = autresQue\(String\(p\.id\)\)/);
-  assert.match(bloc, /const nouveaux = enc\.ids\.filter\(id => comptes\.get\(id\) !== String\(p\.id\)\)/);
-  assert.match(bloc, /réservation du virement non retirée/);
-  assert.match(bloc, /\.neq\('origine', 'historique'\)/);
-  // (17 h 42, cas 2) historique : virements des lignes déjà payées de la même date réservés AVANT de compter ; doute → à vérifier
-  assert.ok(bloc.indexOf('await reserverHistorique(') > 0 && bloc.indexOf('await reserverHistorique(') < bloc.indexOf('const enc = av ?'));
-  assert.match(bloc, /if \(enc\.paid_at && doute\.length\) \{ aVerifier\.push/);
-  assert.match(bloc, /if \(enc\.signal === 'a_verifier'\) \{ aVerifier\.push/);
-  assert.match(src, /origine: 'historique'/);
+  const bloc = src.slice(src.indexOf('const encaisserLigne = async'), src.indexOf('const rembourserAvoir = async'));
   assert.doesNotMatch(bloc, /today\(\)/);
-  assert.match(bloc, /const date = enc\.paid_at;/);
-  // paiement existant jamais écrasé : écriture conditionnée à une date vide ; virements mémorisés (jamais deux fois)
-  assert.match(bloc, /update\(\{ paid_at: date \}\)\.eq\('id', p\.id\)\.is\('paid_at', null\)/);
-  assert.match(bloc, /if \(!p\.paid_at && x\.status !== 'cancelled'/);
-  // virements mémorisés AVANT d'écrire le paiement (deux synchronisations simultanées : le second insert échoue, rien n'est noté)
-  const ins = bloc.indexOf("from('pennylane_virements').insert("), upd = bloc.indexOf("update({ paid_at: date })");
-  assert.ok(ins > 0 && upd > ins, 'insert des virements avant le paiement');
-  assert.doesNotMatch(bloc, /pennylane_virements'\)\.upsert/);
+  assert.match(bloc, /const plan = planEncaissement\(x, av, vs, autresQue\(pid\), rs\)/);
+  // paiement existant jamais écrasé ; virements réservés avant les mouvements et la date « Payée »
+  assert.match(bloc, /update\(\{ paid_at: plan\.paid_at \}\)\.eq\('id', p\.id\)\.is\('paid_at', null\)/);
+  const res = bloc.indexOf('await reserver(ids'), mvt = bloc.indexOf("from('reglements').insert("), pay = bloc.indexOf('update({ paid_at: plan.paid_at })');
+  assert.ok(res > 0 && mvt > res && pay > mvt, 'réservation, puis mouvements, puis date « Payée »');
+  assert.ok(bloc.indexOf('await reserverHistorique(') > 0 && bloc.indexOf('await reserverHistorique(') < bloc.indexOf('const plan = planEncaissement'));
+  assert.match(bloc, /if \(doute\.length\) \{ aVerifier\.push/);
+  // reprise : un virement réservé pour CETTE ligne n'est pas « déjà compté » pour elle ni réinséré ; retrait jamais d'une réservation historique
+  assert.match(src, /const autresQue = \(pid: string\) => new Set\(\[\.\.\.comptes\]\.filter\(\(\[, l\]\) => l !== pid\)/);
+  assert.match(src, /const nouveaux = ids\.filter\(id => comptes\.get\(id\) !== pid\)/);
+  assert.match(src, /\.neq\('origine', 'historique'\)/);
+  assert.match(src, /réservation du virement non retirée/);
+  assert.match(src, /origine: 'historique'/);
+  // ligne déjà payée : jamais examinée (paiement historique, E1)
+  assert.match(src, /if \(!p\.paid_at && x\.status !== 'cancelled'\) \{ await encaisserLigne\(p, x, isPaid, where\); continue; \}/);
+  // avoirs : upsert sur l'identifiant Pennylane, jamais supprimés ; mouvements jamais supprimés
+  assert.match(src, /from\('pennylane_avoirs'\)\.upsert\(.*\{ onConflict: 'pennylane_id' \}\)/);
+  assert.doesNotMatch(src, /from\('pennylane_avoirs'\)\.delete|from\('reglements'\)\.delete/);
+  // rapprochement d'une saisie manuelle : seulement si elle n'est pas déjà rapprochée ni annulée (jamais de doublon, R1)
+  assert.match(src, /from\('reglements'\)\.update\(\{ transaction_id: r\.transaction_id, rapproche_at: new Date\(\)\.toISOString\(\) \}\)\s*\.eq\('id', r\.reglement_id\)\.is\('transaction_id', null\)\.is\('annule_at', null\)/);
   assert.match(src, /action === 'lire_avoir'/);
   const lecture = src.slice(src.indexOf("action === 'lire_avoir'"), src.indexOf("action === 'sync'"));
   assert.doesNotMatch(lecture, /admin\.from|'POST'|'PUT'|'PATCH'|'DELETE'/);   // lecture seule
-  // les avoirs sont importés avec un upsert sur l'identifiant Pennylane (aucun doublon) et jamais supprimés
-  assert.match(src, /from\('pennylane_avoirs'\)\.upsert\(.*\{ onConflict: 'pennylane_id' \}\)/);
-  assert.doesNotMatch(src, /from\('pennylane_avoirs'\)\.delete/);
 });
 
 let ok = 0;

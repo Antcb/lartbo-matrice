@@ -76,6 +76,8 @@ test('v1.69 cas 2 — avoir créé par erreur sur un acompte encaissé : avoir v
   const e = await etat(page, ['av-d2']);
   await expect(page.locator('tr.avoir-row').first()).toContainText('AV-FICT-117');
   await expect(page.locator('tr.avoir-row', { hasText: 'conservé tel quel' })).toContainText('Paiement noté le');
+  // (v1.70) paiement historique lu tel quel sous la facture (E1)
+  await expect(page.locator('tr.reglement-row', { hasText: 'conservé tel quel' })).toContainText('avant les encaissements détaillés');
   // un seul encaissement : celui d'octobre, inchangé ; aucun remboursement, aucune nouvelle ligne (la réémission n'est pas importée en L1)
   expect(e.paid).toEqual({ 'av-p2': oct, 'av-p2s': null });
   expect(e.lignes).toBe(2);
@@ -102,9 +104,12 @@ test('v1.69 cas 3 — avoir partiel : seul le montant couvert est déduit du res
   await expect(page.locator('tr.avoir-row', { hasText: 'Reste dû sur cette facture après avoir' })).toContainText('2 700,00');
   // deux restes distincts (décision du 26/11/2026, point 2) : contrat inchangé par l'avoir, factures après avoir
   const pied = page.locator('.prod-bill', { hasText: 'AV-FICT-301' }).locator('tfoot');
-  await expect(pied).toContainText('Reste à encaisser du contrat : 6 000,00');
-  await expect(pied).toContainText('inchangé par les avoirs');
-  await expect(pied).toContainText('Reste dû sur les factures après avoirs : 2 700,00');
+  // (v1.70, E3) cinq montants distincts, en TTC (5,5 %) : contrat inchangé par l'avoir (6 330 TTC = 6 000 HT), facturé net après avoir
+  // et reste dû 2 848,50 TTC (= 2 700 HT)
+  await expect(pied).toContainText('Reste contractuel : 6 330,00');
+  await expect(pied).toContainText('(6 000,00 € HT)');
+  await expect(pied).toContainText('Facturé net après avoirs : 2 848,50');
+  await expect(pied).toContainText('Reste dû : 2 848,50');
   expect(partiel.fin.impayesProd).toBe(2700);
   expect(partiel.fin.factures).toBe(1);
   expect(partiel.relances.some(t => /Paiement à vérifier : Solde \(F-FICT-300\)/.test(t))).toBe(true);

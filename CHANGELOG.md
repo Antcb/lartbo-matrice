@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.70.0 — 26/11/2026
+- Encaissements et remboursements réels (L2a du point 02) : un mouvement par encaissement ou remboursement, en TTC, saisi à la main ou repris des virements Pennylane sans jamais de doublon ; paiements partiels ; remboursements à faire puis faits ; cinq montants distincts par date ; paiements historiques lus tels quels
+
+
 ## 1.69.1 — 26/11/2026
 - Avoirs (L1) : un virement entrant rapproché, de montant et d'affectation établis, est compté même avec un avoir (base TTC Pennylane) ; virement partiel signalé pour L2 ; un virement jamais compté deux fois ; écart persistant si Pennylane change la facture d'origine d'un avoir ; reste du contrat et reste dû après avoir affichés séparément ; lecture seule du format d'un avoir
 
