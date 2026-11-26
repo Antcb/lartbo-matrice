@@ -1,6 +1,6 @@
 // v1.68 — point n°23 (décisions d'Anthony du 26/11/2026) : « Déverrouiller pour corriger » une facture émise. Données FICTIVES.
 //  - par défaut la facture reste verrouillée (montant, %, TVA désactivés ; fermer la fenêtre ne change rien) ;
-//  - correction : montant HT, % du cachet, TVA de la ligne, type (acompte / solde / autre) ; motif obligatoire ; confirmation ;
+//  - correction : montant HT, % du cachet, TVA de la ligne (type figé) ; motif obligatoire ; confirmation ;
 //  - après l'enregistrement : reverrouillée, signalée « corrigée », tracée (auteur, motif, avant / après) ;
 //  - n°, envoi, paiement, Pennylane, « Arrive sur » et date du concert inchangés ; factures payées comprises ;
 //  - jamais une commission de production ; aucun appel à Pennylane.
@@ -103,26 +103,54 @@ test('v1.68 correction enregistrée : motif obligatoire, champs MATRICE corrigé
   expectClean(ctx);
 });
 
-test('v1.68 facture payée : type corrigé (solde → autre ligne), paiement conservé ; historique visible à la correction suivante', async ({ page }) => {
+test('v1.68 solde de 2 800 € déjà payé : type figé ; correction autorisée = paiement conservé, aucun nouveau solde, aucun rappel indu ; reste réel visible', async ({ page }) => {
   const ctx = await openApp(page);
   await seed(page);
   await openBilling(page);
+  const state = () => page.evaluate(async () => { const c = await import('./js/calc.js'); const rem = await import('./js/reminders.js'); const { byId } = await import('./js/selectors.js');
+    const s = byId('shows', 'v-1');
+    return { soldes: c.paymentsOf('v-1').filter(p => p.kind === 'solde').map(p => ({ id: p.id, amount: p.amount, paid_at: p.paid_at })),
+      rappels: rem.remindersOf(s).map(r => r.title).filter(t => /solde|Solde|Paiement à vérifier/.test(t)) }; });
+  const before = await state();
+  // type absent de la fenêtre : figé
   await row(page, 'f-s').locator('[data-act="fixInvoice"]').click();
   const m = page.locator('#modal');
-  await m.locator('[name=kind]').selectOption('autre');
-  await m.locator('[name=motif]').fill('Ligne mal typée à l’import');
+  await expect(m.locator('[name=kind]')).toHaveCount(0);
+  await expect(m).toContainText('Inchangé : type de ligne');
+  // correction autorisée sans changement de montant (TVA de la ligne) : rien d'autre ne bouge
+  await m.locator('[name=vat_rate]').fill('5.5');
+  await m.locator('[name=motif]').fill('TVA de la ligne alignée sur la facture');
   await m.locator('button[type=submit]').click();
   await page.locator('dialog.ask button', { hasText: 'Enregistrer la correction' }).click();
   await expect(m).not.toBeVisible();
-  expect(await dbPay(page, 'f-s')).toMatchObject({ kind: 'autre', amount: 2800, paid_at: `${Y}-10-20`, invoice_number: 'F-2026-202', sent_at: `${Y}-10-02` });
-  // nouvelle ouverture : la correction précédente est listée ; « aucun changement » refusé sans appel
+  expect(await dbPay(page, 'f-s')).toMatchObject({ kind: 'solde', amount: 2800, vat_rate: 5.5, paid_at: `${Y}-10-20`, invoice_number: 'F-2026-202', sent_at: `${Y}-10-02` });
+  let after = await state();
+  expect(after).toEqual(before);                                                        // un seul solde, mêmes rappels
+  expect(after.soldes).toEqual([{ id: 'f-s', amount: 2800, paid_at: `${Y}-10-20` }]);
+  expect(after.rappels.some(t => /Facture de solde à faire/.test(t))).toBe(false);
+  // le parcours de confirmation des conditions (qui recrée un solde manquant) n'en ajoute aucun : le solde existe toujours
+  const n = await page.evaluate(async () => { const c = await import('./js/calc.js'); return c.paymentsOf('v-1').filter(p => p.kind === 'solde').length; });
+  expect(n).toBe(1);
+  await expect(row(page, 'f-s').locator('input[data-f="amount"]')).toBeDisabled();
+  await expect(page.locator('.bill-total')).toContainText('= cachet');
+  // montant réellement facturé plus bas (2 600 €) : le reste (200 €) reste visible, sans second solde ni rappel « solde à faire »
   await row(page, 'f-s').locator('[data-act="fixInvoice"]').click();
   await expect(m).toContainText('Corrections précédentes');
-  await expect(m).toContainText('Ligne mal typée à l’import');
+  await m.locator('[name=amount]').fill('2600');
+  await m.locator('[name=motif]').fill('Solde facturé 2 600 € dans Pennylane');
+  await m.locator('button[type=submit]').click();
+  await page.locator('dialog.ask button', { hasText: 'Enregistrer la correction' }).click();
+  await expect(m).not.toBeVisible();
+  after = await state();
+  expect(after.soldes).toEqual([{ id: 'f-s', amount: 2600, paid_at: `${Y}-10-20` }]);
+  expect(after.rappels.some(t => /Facture de solde à faire/.test(t))).toBe(false);
+  await expect(page.locator('.bill-total')).toContainText('Il manque 200,00 € HT par rapport au cachet');
+  // « aucun changement » refusé sans appel à la base
+  await row(page, 'f-s').locator('[data-act="fixInvoice"]').click();
   await m.locator('[name=motif]').fill('rien');
   await m.locator('button[type=submit]').click();
   await expect(page.locator('body')).toContainText('Aucun changement à enregistrer');
-  expect(await rpcCalls(page)).toBe(1);
+  expect(await rpcCalls(page)).toBe(2);
   expectClean(ctx);
 });
 
