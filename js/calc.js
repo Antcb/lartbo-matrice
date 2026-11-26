@@ -147,6 +147,10 @@ export const correctionsOf = id => (S.db.facture_corrections || []).filter(c => 
  */
 export const avoirsOf = payId => (S.db.pennylane_avoirs || []).filter(a => a.payment_id === payId && a.etat === 'rattache' && !a.gone_at)
   .sort((a, b) => String(a.invoice_date || '').localeCompare(String(b.invoice_date || '')));
+/** (décision d'Anthony du 26/11/2026, point 3) Avoir rattaché dont Pennylane indique maintenant une AUTRE facture d'origine (ou
+ *  plus aucune) : écart persistant, à vérifier, jamais de nouveau rattachement automatique. Même règle : regles.ts origineEcart. */
+export const origineEcart = a => !!a && a.etat === 'rattache' && filled(a.rattache_origine) && String(a.rattache_origine) !== String(a.credited_pennylane_id ?? '');
+export const avoirsAVerifier = () => (S.db.pennylane_avoirs || []).filter(a => !a.gone_at && origineEcart(a));
 /** Avoirs que la synchronisation n'a pas pu rattacher seule (origine inconnue, absente de MATRICE ou ambiguë) */
 export const avoirsARattacher = () => (S.db.pennylane_avoirs || []).filter(a => a.etat === 'a_rattacher' && !a.gone_at);
 /** Montant HT couvert par les avoirs d'une ligne, plafonné au montant de la ligne */
@@ -161,6 +165,15 @@ export function soldeeParAvoir(p){
   if (!p || !isInvoiced(p) || !filled(p.amount) || !(Number(p.amount) > 0)) return false;
   const c = avoirsOf(p.id).reduce((t, a) => t + (Number(a.amount_ht) || 0), 0);
   return c > 0 && c >= Number(p.amount) - 0.005;
+}
+/** (décision d'Anthony du 26/11/2026, point 2) Deux restes distincts sur une date qui a des avoirs : reste à encaisser du CONTRAT
+ *  (cession − encaissé, inchangé par les avoirs, §6.11 ①) et reste dû sur les FACTURES émises après avoirs (Σ resteDu). */
+export function restesAvecAvoirs(s){
+  const bill = paymentsOf(s.id).filter(p => BILL_KINDS.includes(p.kind));
+  const cashed = bill.filter(p => p.paid_at).reduce((t, p) => t + (payAmount(p) || 0), 0);
+  return {contrat: Math.round(Math.max(0, (Number(s.fee_ht) || 0) - cashed) * 100) / 100,
+    factures: Math.round(bill.filter(p => isInvoiced(p) && !p.paid_at).reduce((t, p) => t + resteDu(p), 0) * 100) / 100,
+    avoirs: bill.some(p => avoirsOf(p.id).length > 0)};
 }
 /** Reste dû HT d'une facture émise : rien si un paiement est noté (il est conservé tel quel) ; sinon montant − avoirs */
 export const resteDu = p => p.paid_at ? 0 : Math.max(0, Math.round(((payAmount(p) || 0) - avoirCouvert(p)) * 100) / 100);

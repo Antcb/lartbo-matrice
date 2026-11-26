@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.69.1 — 26/11/2026
+- Avoirs (L1) : un virement entrant rapproché, de montant et d'affectation établis, est compté même avec un avoir (base TTC Pennylane) ; virement partiel signalé pour L2 ; un virement jamais compté deux fois ; écart persistant si Pennylane change la facture d'origine d'un avoir ; reste du contrat et reste dû après avoir affichés séparément ; lecture seule du format d'un avoir
+
+
 ## 1.69.0 — 26/11/2026
 - Avoirs Pennylane (L1 du point 02) : import sans doublon, rattachement à la facture d'origine par son identifiant Pennylane, « À rattacher » si ambigu ; facture soldée par avoir hors impayés et relances ; avoir partiel déduit du reste dû ; plus aucun encaissement repris de Pennylane sans virement rapproché ni sur une ligne couverte par un avoir
 

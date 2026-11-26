@@ -4,6 +4,7 @@
 -- production (empreinte b713325bb648651b08d35b402795a39f, relevée le 26/11/2026). Données FICTIVES.
 -- Contrôle : migration appliquée DEUX fois ; table (unicité, état ↔ ligne, montant positif, droits) ; avoir_couvert ; relances :
 -- facture soldée par avoir → plus de « Paiement à vérifier » ni de « Facture à envoyer » ; avoir partiel → toujours suivie ;
+-- virements comptés une seule fois (pennylane_virements) ;
 -- avoir disparu de Pennylane ou « À rattacher » → ne compte pas ; aucune ligne show_payments modifiée.
 \set ON_ERROR_STOP 1
 create extension if not exists pgcrypto;
@@ -89,6 +90,15 @@ do $$ begin
   begin delete from public.show_payments where id = '00000000-0000-0000-0000-000000000001'; raise exception 'ligne avec avoir supprimée';
   exception when foreign_key_violation then raise notice 'ok : ligne avec avoir non supprimable'; end;
 end $$;
+-- virements comptés (décision du 26/11/2026, 17 h 21) : un même virement jamais compté deux fois
+insert into public.pennylane_virements (transaction_id, payment_id, amount, tx_date) values ('vir-1', '00000000-0000-0000-0000-000000000002', 2848.5, current_date);
+do $$ begin
+  begin insert into public.pennylane_virements (transaction_id, payment_id) values ('vir-1', '00000000-0000-0000-0000-000000000001'); raise exception 'virement compté deux fois';
+  exception when unique_violation then raise notice 'ok : un virement n''est compté qu''une fois'; end;
+end $$;
+select pg_temp.ok(has_table_privilege('authenticated', 'public.pennylane_virements', 'select') and not has_table_privilege('authenticated', 'public.pennylane_virements', 'insert')
+  and not has_table_privilege('anon', 'public.pennylane_virements', 'select'), 'virements : équipe lecture seule, anonyme aucun');
+select pg_temp.ok(exists (select 1 from information_schema.columns where table_name = 'pennylane_avoirs' and column_name = 'rattache_origine'), 'colonne rattache_origine');
 -- droits : équipe en lecture seule, anonyme rien
 select pg_temp.ok(has_table_privilege('authenticated', 'public.pennylane_avoirs', 'select') and not has_table_privilege('authenticated', 'public.pennylane_avoirs', 'insert')
   and not has_table_privilege('authenticated', 'public.pennylane_avoirs', 'update') and not has_table_privilege('anon', 'public.pennylane_avoirs', 'select'), 'droits : équipe lecture seule, anonyme aucun');
