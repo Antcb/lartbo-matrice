@@ -149,7 +149,7 @@
       T.push({ message_id: p_id, body_text: p_text }); return true; },
     // v1.68 : correction d'une facture émise (déverrouillage explicite) — mêmes contrôles que la fonction SQL facture_corriger
     // (essayée sur une vraie base PostgreSQL : supabase/repetitions/2026-11-26_v1.68_correction_facture_essai.sql)
-    facture_corriger: ({ p_payment, p_amount, p_pct, p_vat, p_kind, p_motif }) => {
+    facture_corriger: ({ p_payment, p_amount, p_pct, p_vat, p_motif }) => {
       const D = window.__DB, err = (m, code = 'P0001') => { throw Object.assign(new Error(m), { code }); };
       const m = String(p_motif ?? '').replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, ''); if (!m) err('Motif obligatoire pour corriger une facture émise', '22023');
       if (m.length > 500) err('Motif trop long (500 caractères au plus)', '22023');
@@ -161,14 +161,12 @@
       const f = v => v != null && String(v).trim() !== '';
       if (!['sent_at', 'paid_at', 'invoice_number', 'pennylane_id'].some(k => f(r[k]))) err('Facture pas encore émise : elle se modifie directement dans le tableau');
       if (p_amount == null || !Number.isFinite(Number(p_amount)) || p_amount < 0 || p_amount >= 1e8) err('Montant HT à saisir (0 ou plus, moins de 100 millions)', '22023');
-      const k = p_kind || r.kind, three = ['acompte', 'solde', 'autre'];
-      if (k !== r.kind && (!three.includes(r.kind) || !three.includes(k))) err('Type : seuls acompte, solde et autre ligne s’échangent', '22023');
       const amount = Math.round(p_amount * 100) / 100, n = v => v == null ? null : Number(v);
-      if (amount === n(r.amount) && n(p_pct) === n(r.pct) && n(p_vat) === n(r.vat_rate) && k === r.kind) err('Aucun changement à enregistrer', '22023');
-      const before = { amount: n(r.amount), pct: n(r.pct), vat_rate: n(r.vat_rate), kind: r.kind };
-      Object.assign(r, { amount, pct: n(p_pct), vat_rate: n(p_vat), kind: k });
+      if (amount === n(r.amount) && n(p_pct) === n(r.pct) && n(p_vat) === n(r.vat_rate)) err('Aucun changement à enregistrer', '22023');
+      const before = { amount: n(r.amount), pct: n(r.pct), vat_rate: n(r.vat_rate) };
+      Object.assign(r, { amount, pct: n(p_pct), vat_rate: n(p_vat) });
       D.facture_corrections.push({ id: D.facture_corrections.length + 1, at: new Date().toISOString(), actor: USER, payment_id: r.id, show_id: r.show_id,
-        invoice_number: r.invoice_number ?? null, motif: m, before, after: { amount, pct: n(p_pct), vat_rate: n(p_vat), kind: k } });
+        invoice_number: r.invoice_number ?? null, motif: m, before, after: { amount, pct: n(p_pct), vat_rate: n(p_vat) } });
       return { ok: true, row: r }; },
     // v1.67 : ligne Movinmotion posée seulement s'il y a une ligne de salaire AU CACHET (même règle que la fonction SQL)
     ensure_movinmotion: ({ p_show }) => { const D = window.__DB, sh = (D.shows || []).find(x => x.id === p_show); if (!sh || sh.prod_mode === 'booking') return null;

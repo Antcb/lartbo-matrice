@@ -48,9 +48,9 @@ select pg_temp.ok((select count(*) from regexp_matches(pg_get_functiondef('publi
 -- verrou par défaut : modification directe toujours refusée
 select pg_temp.refus($$update public.show_payments set amount = 3500 where id = '00000000-0000-0000-0000-000000000001'$$, 'ne se modifient plus');
 -- motif obligatoire
-select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3500, 35, null, null, '   ')$$, 'Motif obligatoire');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3500, 35, null, '   ')$$, 'Motif obligatoire');
 -- correction d'une facture émise non payée : montant, %, TVA, type
-select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3500, 35, 5.5, 'acompte', 'Facture Pennylane émise à 35 %');
+select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3500, 35, 5.5, 'Facture Pennylane émise à 35 %');
 select pg_temp.ok((select amount = 3500 and pct = 35 and vat_rate = 5.5 and invoice_number = 'F-2026-101' and sent_at = '2026-10-01' and pennylane_id = 'pl-101'
   and pennylane_url = 'https://pl/101' and payee = 'compte' from public.show_payments where id = '00000000-0000-0000-0000-000000000001'), 'corrigée ; n°, envoi, Pennylane et destinataire inchangés');
 select pg_temp.ok((select count(*) = 1 and bool_and(motif = 'Facture Pennylane émise à 35 %' and actor = 'anthony@essai.test' and (before ->> 'amount')::numeric = 3000
@@ -58,29 +58,30 @@ select pg_temp.ok((select count(*) = 1 and bool_and(motif = 'Facture Pennylane �
 -- reverrouillée : nouvelle modification directe refusée
 select pg_temp.refus($$update public.show_payments set amount = 3600 where id = '00000000-0000-0000-0000-000000000001'$$, 'ne se modifient plus');
 -- facture payée : correction permise, statut et date de paiement gardés ; changement de type solde → autre
-select public.facture_corriger('00000000-0000-0000-0000-000000000002', 6900, null, 5.5, 'autre', 'Ligne mal typée');
-select pg_temp.ok((select kind = 'autre' and amount = 6900 and paid_at = '2026-10-20' from public.show_payments where id = '00000000-0000-0000-0000-000000000002'), 'payée : corrigée, paiement conservé');
+select public.facture_corriger('00000000-0000-0000-0000-000000000002', 6900, null, 5.5, 'Montant facturé 6 900 €');
+select pg_temp.ok((select kind = 'solde' and amount = 6900 and paid_at = '2026-10-20' and invoice_number = 'F-2026-102' from public.show_payments where id = '00000000-0000-0000-0000-000000000002'), 'payée : corrigée, type et paiement conservés');
 -- commission en booking : montant oui, type non
-select public.facture_corriger('00000000-0000-0000-0000-000000000004', 800, 16, 20, null, 'Facture de commission à 16 %');
-select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000004', 800, 16, 20, 'autre', 'x')$$, 'seuls acompte, solde et autre');
+select public.facture_corriger('00000000-0000-0000-0000-000000000004', 800, 16, 20, 'Facture de commission à 16 %');
 -- refus : commission de production, ligne non émise, aucun changement, valeurs hors bornes, hors équipe
-select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000003', 1600, 16, null, null, 'x')$$, 'Commission de production');
-select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000005', 200, null, null, null, 'x')$$, 'pas encore émise');
-select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3500, 35, 5.5, 'acompte', 'x')$$, 'Aucun changement');
-select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', -1, 35, 5.5, null, 'x')$$, 'Montant HT');
-select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3500, 35, 150, null, 'x')$$, 'TVA entre');
-select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 'NaN'::numeric, 35, 5.5, null, 'x')$$, 'Montant HT');
-select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 'Infinity'::numeric, 35, 5.5, null, 'x')$$, 'Montant HT');
-select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 1e30, 35, 5.5, null, 'x')$$, 'Montant HT');
-select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3600, 'NaN'::numeric, 5.5, null, 'x')$$, 'du cachet entre');
-select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3600, 35, 5.5, null, E'\n\t \r')$$, 'Motif obligatoire');
-select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000006', 1000, 20, null, null, 'x')$$, 'Date en booking');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000003', 1600, 16, null, 'x')$$, 'Commission de production');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000005', 200, null, null, 'x')$$, 'pas encore émise');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3500, 35, 5.5, 'x')$$, 'Aucun changement');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', -1, 35, 5.5, 'x')$$, 'Montant HT');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3500, 35, 150, 'x')$$, 'TVA entre');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 'NaN'::numeric, 35, 5.5, 'x')$$, 'Montant HT');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 'Infinity'::numeric, 35, 5.5, 'x')$$, 'Montant HT');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 1e30, 35, 5.5, 'x')$$, 'Montant HT');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3600, 'NaN'::numeric, 5.5, 'x')$$, 'du cachet entre');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3600, 35, 5.5, E'\n\t \r')$$, 'Motif obligatoire');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000006', 1000, 20, null, 'x')$$, 'Date en booking');
 set essai.team = 'off';
-select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3700, 35, 5.5, null, 'x')$$, 'Réservé');
+select pg_temp.refus($$select public.facture_corriger('00000000-0000-0000-0000-000000000001', 3700, 35, 5.5, 'x')$$, 'Réservé');
 set essai.team = 'on';
 -- l'annonce seule ne permet pas d'effacer le n°, l'envoi, le paiement, Pennylane, ni de changer la date
 begin;
 select set_config('matrice.regularisation', 'correction_facture', true);
+select pg_temp.refus($$update public.show_payments set amount = 1, kind = 'autre' where id = '00000000-0000-0000-0000-000000000002'$$, 'ne se modifient plus');
+select pg_temp.refus($$update public.show_payments set amount = 1, kind = 'solde' where id = '00000000-0000-0000-0000-000000000001'$$, 'ne se modifient plus');
 select pg_temp.refus($$update public.show_payments set amount = 1, invoice_number = null where id = '00000000-0000-0000-0000-000000000001'$$, 'ne s’effacent pas');
 select pg_temp.refus($$update public.show_payments set amount = 1, show_id = '00000000-0000-0000-0000-0000000000b1' where id = '00000000-0000-0000-0000-000000000001'$$, 'ne se modifient plus');
 select pg_temp.refus($$update public.show_payments set amount = 1, payee = 'autre compte' where id = '00000000-0000-0000-0000-000000000001'$$, 'ne se modifient plus');

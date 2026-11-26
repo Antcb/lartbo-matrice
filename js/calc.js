@@ -131,11 +131,10 @@ export const multiSolde = showId => paymentsOf(showId).filter(p => p.kind === 's
 export const soldeInvoiced = showId => paymentsOf(showId).some(p => p.kind === 'solde' && isInvoiced(p));
 /** (v1.68, décisions d'Anthony du 26/11/2026) Facture émise que l'on peut « Déverrouiller pour corriger » dans MATRICE : acompte,
  *  solde, autre ligne, commission en booking, part partenaire — payée ou non ; jamais une commission de production (pas une facture)
- *  ni une ligne hors calcul. Même règle côté base : facture_corriger. Le document Pennylane n'est jamais touché. */
+ *  ni une ligne hors calcul, ni un acompte / solde d'une date en booking (factures de l'artiste). Type de la ligne figé.
+ *  Même règle côté base : facture_corriger. Le document Pennylane n'est jamais touché. */
 export const FIXABLE_KINDS = ['acompte', 'solde', 'autre', 'artbo', 'partner'];
 export const canFixInvoice = p => !!p && counted(p) && tracked(p) && FIXABLE_KINDS.includes(p.kind) && !selfPaidCommission(p) && isInvoiced(p);
-/** Types échangeables lors d'une correction (la commission et la part partenaire gardent le leur) */
-export const SWAP_KINDS = ['acompte', 'solde', 'autre'];
 /** Corrections enregistrées d'une ligne, la plus récente d'abord */
 export const correctionsOf = id => (S.db.facture_corrections || []).filter(c => c.payment_id === id).sort((a, b) => String(b.at).localeCompare(String(a.at)));
 
