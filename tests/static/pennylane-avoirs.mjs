@@ -87,6 +87,16 @@ t('4 200 € facturés, 1 500 € d’avoir, 2 700 € HT réellement encaissés
   // deux virements qui couvrent ensemble le reste : date du plus récent
   assert.equal(encaissementAvecAvoir(F, [1582.5], [{ id: 'a', date: '2026-11-01', amount: 1000 }, { id: 'b', date: '2026-11-15', amount: 1848.5 }]).paid_at, '2026-11-15');
 });
+t('affectation non établie (relecture B2) : virement groupé plus grand que le reste dû → rien de noté', () => {
+  const G = { currency_amount: '5040', status: 'upcoming' };
+  assert.deepEqual(encaissementAvecAvoir(G, [1800], [{ id: '9', date: '2026-11-20', amount: 5000 }]), { paid_at: null, ids: [], encaisse: 0, reste: 3240, signal: 'non_etabli' });
+  assert.equal(encaissementAvecAvoir(G, [1800], [{ id: 'a', date: '2026-11-20', amount: 2000 }, { id: 'b', date: '2026-11-21', amount: 2000 }]).signal, 'non_etabli');
+  assert.equal(encaissementAvecAvoir(G, [1800], [{ id: 'c', date: '2026-11-20', amount: 3240.01 }]).paid_at, '2026-11-20');   // à 1 centime près
+});
+t('sans avoir : un virement sortant n’est jamais un encaissement (relecture v1.69.1)', () => {
+  assert.equal(encaissementPennylane({ paid: true, status: 'paid' }, [{ id: '5', date: '2026-11-20', amount: -100 }]).signal, 'sans_transaction');
+  assert.equal(encaissementPennylane({ paid: true, status: 'paid' }, [{ id: '6', date: '2026-11-20', amount: '100' }]).paid_at, '2026-11-20');
+});
 t('virement partiel après avoir : rien de noté, signalé pour L2 (montants TTC)', () => {
   assert.deepEqual(encaissementAvecAvoir(F, [1582.5], [{ id: 'vir-2', date: '2026-11-20', amount: '2000' }]), { paid_at: null, ids: [], encaisse: 2000, reste: 2848.5, signal: 'partiel' });
 });
@@ -123,7 +133,10 @@ t('code de la synchronisation : plus de date du jour comme date de paiement, enc
   // paiement existant jamais écrasé : écriture conditionnée à une date vide ; virements mémorisés (jamais deux fois)
   assert.match(bloc, /update\(\{ paid_at: date \}\)\.eq\('id', p\.id\)\.is\('paid_at', null\)/);
   assert.match(bloc, /if \(!p\.paid_at && x\.status !== 'cancelled'/);
-  assert.match(bloc, /from\('pennylane_virements'\)\.upsert\(/);
+  // virements mémorisés AVANT d'écrire le paiement (deux synchronisations simultanées : le second insert échoue, rien n'est noté)
+  const ins = bloc.indexOf("from('pennylane_virements').insert("), upd = bloc.indexOf("update({ paid_at: date })");
+  assert.ok(ins > 0 && upd > ins, 'insert des virements avant le paiement');
+  assert.doesNotMatch(bloc, /pennylane_virements'\)\.upsert/);
   assert.match(src, /action === 'lire_avoir'/);
   const lecture = src.slice(src.indexOf("action === 'lire_avoir'"), src.indexOf("action === 'sync'"));
   assert.doesNotMatch(lecture, /admin\.from|'POST'|'PUT'|'PATCH'|'DELETE'/);   // lecture seule

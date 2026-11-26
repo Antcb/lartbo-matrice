@@ -37,6 +37,9 @@ select 1/0;
 
 \i supabase/migrations/2026-11-26_v1.69_avoirs.sql
 \i supabase/migrations/2026-11-26_v1.69_avoirs.sql
+-- rejouable même sur une table créée sans rattache_origine (relecture v1.69.1, B3)
+alter table public.pennylane_avoirs drop column rattache_origine;
+\i supabase/migrations/2026-11-26_v1.69_avoirs.sql
 
 create or replace function pg_temp.ok(c boolean, msg text) returns void language plpgsql as $$
 begin if c is not true then raise exception 'ÉCHEC : %', msg; end if; raise notice 'ok : %', msg; end $$;

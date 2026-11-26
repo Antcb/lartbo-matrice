@@ -366,18 +366,18 @@ Deno.serve(async (req) => {
             continue;
           }
           const date = enc.paid_at;
-          const { data: up, error: e3 } = await admin.from('show_payments').update({ paid_at: date }).eq('id', p.id).is('paid_at', null).select('id');
-          if (e3) { erreurs.push(`${p.invoice_number} : ${e3.message}`); continue; }
-          if (!up?.length) continue;   // paiement noté entre-temps (à la main) : conservé, rien de compté
-          // virements comptés pour cette ligne : gardés, pour ne jamais les compter deux fois
+          // virements mémorisés AVANT le paiement (relecture v1.69.1) : si un autre passage les a déjà comptés, rien n'est noté
           const vm = new Map(vs.map((v: any) => [String(v.id), v]));
           if (enc.ids.length) {
-            const { error: e4 } = await admin.from('pennylane_virements').upsert(enc.ids.map(id => ({ transaction_id: id, payment_id: p.id, pennylane_invoice_id: String(x.id),
-              amount: Number.isFinite(Number(vm.get(id)?.amount)) ? Number(vm.get(id)?.amount) : null, tx_date: vm.get(id)?.date ? String(vm.get(id).date).slice(0, 10) : null })),
-              { onConflict: 'transaction_id', ignoreDuplicates: true });
-            if (e4) erreurs.push(`${p.invoice_number} : payée, mais virement(s) non mémorisé(s) (${e4.message})`);
+            const { error: e4 } = await admin.from('pennylane_virements').insert(enc.ids.map(id => ({ transaction_id: id, payment_id: p.id, pennylane_invoice_id: String(x.id),
+              amount: Number.isFinite(Number(vm.get(id)?.amount)) ? Number(vm.get(id)?.amount) : null, tx_date: vm.get(id)?.date ? String(vm.get(id).date).slice(0, 10) : null })));
+            if (e4) { (av ? payeesAvecAvoir : payeesSansTransaction).push(`${nom} : ${e4.code === '23505' ? 'virement déjà compté pour une autre ligne' : 'virement non mémorisé (' + e4.message + ')'} — paiement non repris`); continue; }
             enc.ids.forEach(id => comptes.add(id));
           }
+          const { data: up, error: e3 } = await admin.from('show_payments').update({ paid_at: date }).eq('id', p.id).is('paid_at', null).select('id');
+          const rendre = async () => { if (enc.ids.length) await admin.from('pennylane_virements').delete().eq('payment_id', p.id).in('transaction_id', enc.ids); };
+          if (e3) { await rendre(); erreurs.push(`${p.invoice_number} : ${e3.message}`); continue; }
+          if (!up?.length) { await rendre(); continue; }   // paiement noté entre-temps (à la main) : conservé, virements rendus
           updated.push({ id: p.id, paid_at: date, label: `${p.label || p.kind} ${p.invoice_number} · ${where}` });
         } else if (!isPaid && p.paid_at && x.status !== 'cancelled') {
           pennylaneLate.push(`${p.invoice_number} · ${where} (payée le ${frDate(p.paid_at)} dans la Matrice)`);

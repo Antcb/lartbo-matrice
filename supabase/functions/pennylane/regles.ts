@@ -184,7 +184,8 @@ const plusRecente = (vs: Virement[]) => vs.map(v => String(v.date).slice(0, 10))
 export function encaissementPennylane(x: DocPl, virements: Virement[], dejaComptes: Set<string> = new Set()):
   { paid_at: string | null; ids: string[]; signal: null | 'sans_transaction' | 'deja_compte' } {
   if (x?.paid !== true || x?.status === 'cancelled') return { paid_at: null, ids: [], signal: null };
-  const vs = (virements || []).filter(v => plein(v?.date));
+  // virement daté ; montant connu → entrant seulement (relecture v1.69.1 : un virement sortant n'est jamais un encaissement)
+  const vs = (virements || []).filter(v => plein(v?.date) && !(Number.isFinite(montantVirement(v)) && montantVirement(v) <= 0));
   if (!vs.length) return { paid_at: null, ids: [], signal: 'sans_transaction' };
   const libres = vs.filter(v => { const i = idVirement(v); return !i || !dejaComptes.has(i); });
   if (!libres.length) return { paid_at: null, ids: [], signal: 'deja_compte' };
@@ -192,8 +193,8 @@ export function encaissementPennylane(x: DocPl, virements: Virement[], dejaCompt
 }
 
 /** Ligne AVEC avoir(s) : comparaison sur la MÊME base (TTC Pennylane) — reste dû = TTC de la facture − TTC des avoirs ; virements
- *  ENTRANTS établis (identifiant, date, montant > 0) et pas encore comptés. Couvrent le reste (à 1 centime près) → payée à la date
- *  du plus récent ; une partie seulement → « partiel » (paiement partiel : enregistrable en L2, rien n'est noté) ; aucun →
+ *  ENTRANTS établis (identifiant, date, montant > 0) et pas encore comptés. Égaux au reste (à 1 centime près) → payée à la date
+ *  du plus récent ; plus grands que le reste → affectation non établie (« non_etabli ») ; une partie seulement → « partiel » (paiement partiel : enregistrable en L2, rien n'est noté) ; aucun →
  *  « sans_virement » ; virement sans montant ou sans identifiant → « non_etabli » ; TTC de la facture ou d'un avoir inconnu →
  *  « non_etabli » ; reste nul → « soldee » (rien à encaisser). Facture annulée dans Pennylane : rien. */
 export function encaissementAvecAvoir(x: DocPl, avoirsTtc: (number | null | undefined)[], virements: Virement[], dejaComptes: Set<string> = new Set()):
@@ -208,6 +209,9 @@ export function encaissementAvecAvoir(x: DocPl, avoirsTtc: (number | null | unde
   const etablis = vs.filter(v => idVirement(v) && plein(v?.date) && montantVirement(v) > 0);
   const libres = etablis.filter(v => !dejaComptes.has(idVirement(v)!));
   const encaisse = r2(libres.reduce((t, v) => t + montantVirement(v), 0));
+  // affectation non établie (relecture v1.69.1, B2) : virements PLUS grands que le reste dû (au-delà d'1 centime) — virement groupé
+  // ou rapproché de plusieurs factures, dont la part pour CETTE facture est inconnue : jamais compté, rien n'est noté
+  if (libres.length && encaisse > reste + 0.01) return { paid_at: null, ids: [], encaisse: 0, reste, signal: 'non_etabli' };
   if (libres.length && encaisse >= reste - 0.01) return { paid_at: plusRecente(libres), ids: libres.map(v => idVirement(v)!), encaisse, reste, signal: null };
   if (encaisse > 0) return { paid_at: null, ids: [], encaisse, reste, signal: 'partiel' };
   if (etablis.length) return { paid_at: null, ids: [], encaisse: 0, reste, signal: 'deja_compte' };
