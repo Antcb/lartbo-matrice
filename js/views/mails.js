@@ -6,6 +6,7 @@ import { ARCHIVED, LINK_LABEL, M, MAILBOX_ADDR, checkOwner, linkState, candidate
 import { byId, projName, prospectTitle, setting, structName } from '../selectors.js';
 import { S } from '../state.js';
 import { viewHead } from '../ui/bits.js';
+import { FONTS } from '../ui/richtext.js';
 import { esc, fmtDate } from '../utils.js';
 
 const when = iso => { if (!iso) return ''; const d = new Date(iso);
@@ -21,10 +22,11 @@ export function frameDoc(html, remoteImages = false){
     .replace(/<(a|area)(\s|>)/gi, '<$1 rel="noopener noreferrer"$2');   // liens : ni accès à la page d'origine, ni adresse de provenance
   // (v1.65) pas de rechargement ni de redirection par le mail lui-même ; texte brut (<pre>) et images ramenés à la largeur du cadre (iPhone)
   // (v1.68.1, point n°9, décision d'Anthony du 26/11/2026) police par défaut du cadre = celle des mails de MATRICE, pour le seul texte
-  // SANS police déclarée (sinon Safari prend Times) ; une police écrite dans le message ou la signature (style, <font face>) l'emporte
+  // SANS police déclarée (sinon Safari prend Times) ; posée sur html (relecture : une police du mail sur html, :root ou body l'emporte),
+  // une police écrite dans le message ou la signature (style, <font face>) l'emporte aussi
   const quiet = clean.replace(/<meta\b[^>]*http-equiv\s*=\s*["']?\s*refresh[^>]*>/gi, '');
   return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><base target="_blank">`
-    + `<meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif}pre{font-family:inherit;white-space:pre-wrap;overflow-wrap:anywhere}img{max-width:100%;height:auto}</style>${quiet}`;
+    + `<meta name="viewport" content="width=device-width,initial-scale=1"><style>html{font-family:${FONTS[0][0]}}pre{font-family:inherit;white-space:pre-wrap;overflow-wrap:anywhere}img{max-width:100%;height:auto}</style>${quiet}`;
 }
 /**
  * Cadre de lecture d'un mail (v1.65 : partagé par la messagerie et la lecture d'un .eml depuis le journal d'un suivi). Isolé : sandbox sans

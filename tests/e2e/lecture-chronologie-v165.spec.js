@@ -362,6 +362,21 @@ test('v1.68.1 police du cadre de lecture (Mails) : texte sans police en Helvetic
   expectClean(ctx);
 });
 
+test('v1.68.1 police du cadre (relecture) : une police déclarée par le mail sur html, :root ou body l’emporte', async ({ page }) => {
+  const ctx = await openApp(page);
+  const cas = ['<style>html{font-family:Georgia}</style><p id="t">x</p>', '<style>:root{font-family:Georgia}</style><p id="t">x</p>',
+    '<html style="font-family:Georgia"><body><p id="t">x</p></body></html>', '<style>body{font-family:Georgia}</style><p id="t">x</p>'];
+  for (const html of cas){
+    await page.evaluate(async h => { const { mailFrame } = await import('./js/views/mails.js');
+      document.querySelector('#zz-cadre')?.remove(); const d = Object.assign(document.createElement('div'), { id: 'zz-cadre' });
+      d.innerHTML = mailFrame(h, 'essai'); document.body.appendChild(d); }, html);
+    const f = page.frameLocator('#zz-cadre iframe.mail-frame');
+    await expect(f.locator('#t')).toBeAttached();
+    expect(await fontOf(f, '#t'), html).toBe('Georgia');
+  }
+  expectClean(ctx);
+});
+
 test('v1.68.1 police du cadre de lecture (.eml ouvert depuis un suivi, iPhone 390 px) : texte brut en Helvetica Neue', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const ctx = await openApp(page);
