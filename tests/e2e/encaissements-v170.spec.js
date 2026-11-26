@@ -168,3 +168,36 @@ test('v1.70 — paiement historique (E1) : lu tel quel, aucune écriture ; mouve
   expect(await rpcs(page)).toEqual([]);
   expectClean(ctx);
 });
+
+test('v1.70 relecture B1 — annuler un encaissement qui avait soldé la facture : facture rouverte (due, relancée), trace gardée, pas un remboursement', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page, {
+    shows: [show('en-d6', 'Salle Rouverte')],
+    payments: [{ id: 'en-p6', show_id: 'en-d6', kind: 'acompte', label: 'Acompte', pct: 100, amount: 4200, vat_rate: 5.5, sort: 1, invoice_number: 'F-FICT-6', pennylane_id: 'pl-fict-6', sent_at: iso(-30), invoiced_on: iso(-31) },
+      { id: 'en-p7', show_id: 'en-d6', kind: 'autre', label: 'Payée', amount: 100, vat_rate: 5.5, sort: 2, invoice_number: 'F-FICT-7', sent_at: iso(-30), paid_at: iso(-20), payee: 'compte' }],
+    avoirs: [{ id: 'a-6', pennylane_id: 'pl-fict-av6', invoice_number: 'AV-FICT-6', amount_ht: 1500, amount_ttc: 1582.5, credited_pennylane_id: 'pl-fict-6', etat: 'rattache', payment_id: 'en-p6', show_id: 'en-d6' }],
+  });
+  await encaisser(page, 'en-p6', { montant: '2000', date: iso(-9) });
+  await encaisser(page, 'en-p6', { montant: '848.50', date: iso(-5) });
+  expect((await etat(page, 'en-d6')).paid['en-p6']).toBe(iso(-5));
+  // la saisie de 848,50 était une erreur : annulée → reste dû 848,50, la facture redevient due
+  await page.locator('tr.reglement-row', { hasText: '848,50' }).locator('[data-act="reglementAnnuler"]').click();
+  await page.locator('dialog.ask #ask-input').fill('Saisie en double (essai)');
+  await page.locator('dialog.ask button', { hasText: 'Annuler la saisie' }).click();
+  await expect(page.locator('body')).toContainText('la facture redevient due');
+  const e = await etat(page, 'en-d6');
+  expect(e.paid['en-p6']).toBeNull();
+  expect(e.restes).toMatchObject({ encaisse: 2105.5, resteDu: 848.5, aRembourser: 0 });   // 2 000 + paiement historique de la ligne « Payée » (105,50)
+  expect(e.reglements).toHaveLength(2);                                            // trace gardée
+  expect(e.reglements.some(r => r.sens === 'remboursement')).toBe(false);         // une annulation n'est pas un remboursement
+  const relances = await page.evaluate(async () => { const rem = await import('./js/reminders.js'); const { S } = await import('./js/state.js');
+    return rem.remindersOf(S.db.shows.find(s => s.id === 'en-d6')).map(r => r.title); });
+  expect(relances.some(t => /Paiement à vérifier : Acompte \(F-FICT-6\)/.test(t))).toBe(true);
+  await expect(page.locator('[data-act="reglementEncaisser"][data-id="en-p6"]')).toHaveCount(1);
+  // ligne notée payée : la fonction serveur refuse tout encaissement (appel direct, relecture point 1)
+  const refus = await page.evaluate(async () => { const { sb } = await import('./js/data.js');
+    const { error } = await sb.rpc('reglement_saisir', { p_payment: 'en-p7', p_sens: 'encaissement', p_etat: 'fait', p_montant: 10, p_date: '2026-11-01', p_compte: null, p_reference: null, p_motif: null });
+    return error && error.message; });
+  expect(refus).toMatch(/Facture déjà notée payée/);
+  expectClean(ctx);
+});

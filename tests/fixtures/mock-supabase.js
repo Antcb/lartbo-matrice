@@ -158,6 +158,7 @@
       const t = v => String(v ?? '').trim();
       if (!(p.sent_at || p.paid_at || t(p.invoice_number) || t(p.pennylane_id))) err('Facture pas encore émise : rien à encaisser ni à rembourser');
       if (!['encaissement', 'remboursement'].includes(p_sens) || !['a_faire', 'fait'].includes(p_etat) || (p_etat === 'a_faire' && p_sens !== 'remboursement')) err('Type de mouvement invalide');
+      if (p_sens === 'encaissement' && p.paid_at) err('Facture déjà notée payée : son paiement est conservé tel quel');
       const m = Number(p_montant); if (!(m > 0 && m < 1e8)) err('Montant TTC à saisir (positif)');
       if (p_etat === 'fait' && !p_date) err('Date du mouvement à saisir');
       if (p_compte != null && !['compte', 'artbo', 'artiste', 'autre'].includes(p_compte)) err('Compte inconnu');
@@ -179,7 +180,18 @@
       const m = String(p_motif ?? '').trim(); if (!m || m.length > 500) err('Motif obligatoire (500 caractères au plus)');
       const r = (window.__DB.reglements || []).find(x => x.id === p_id && x.source === 'manuel' && !x.transaction_id && !x.annule_at);
       if (!r) err('Seule une saisie manuelle non rapprochée de Pennylane, pas encore annulée, peut être annulée');
-      Object.assign(r, { annule_at: new Date().toISOString(), annule_par: USER, annule_motif: m }); return r;
+      Object.assign(r, { annule_at: new Date().toISOString(), annule_par: USER, annule_motif: m });
+      // statut de la ligne recalculé (décision du 26/11/2026, relecture B1) — même calcul que le SQL : ligne payée PAR SES ENCAISSEMENTS
+      const D = window.__DB, p = (D.show_payments || []).find(x => x.id === r.payment_id), rs = (D.reglements || []).filter(x => x.payment_id === r.payment_id);
+      if (p && p.paid_at && rs.some(x => x.sens === 'encaissement')) {
+        const sh = (D.shows || []).find(x => x.id === p.show_id) || {};
+        const vat = Number(p.vat_rate ?? (['artbo', 'partner'].includes(p.kind) ? 20 : sh.vat_rate ?? 5.5)), c = v => Math.round(v * 100) / 100;
+        const av = (D.pennylane_avoirs || []).filter(a => a.payment_id === p.id && a.etat === 'rattache' && !a.gone_at).reduce((t, a) => t + (a.amount_ttc != null ? Number(a.amount_ttc) : c(Number(a.amount_ht) * (1 + vat / 100))), 0);
+        const net = Math.max(0, c(Number(p.amount) * (1 + vat / 100)) - av), ok = rs.filter(x => x.etat === 'fait' && !x.annule_at);
+        const enc = ok.reduce((t, x) => t + (x.sens === 'encaissement' ? 1 : -1) * Number(x.montant_ttc), 0), dernier = ok.filter(x => x.sens === 'encaissement').map(x => x.date).sort().pop() || null;
+        p.paid_at = dernier && enc >= net - 0.01 ? dernier : null;
+      }
+      return r;
     },
     // v1.68 : correction d'une facture émise (déverrouillage explicite) — mêmes contrôles que la fonction SQL facture_corriger
     // (essayée sur une vraie base PostgreSQL : supabase/repetitions/2026-11-26_v1.68_correction_facture_essai.sql)

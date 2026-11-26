@@ -9,8 +9,12 @@
 --  3. reminder_candidates : RÉÉCRITE ENTIÈREMENT (CONVENTIONS §7.5) = texte de production v1.69 (empreinte du corps
 --     37b36adf92cc516bfe3dc751216d170a) + le premier encaissement (commission à virer, Q14) tient compte d'un encaissement partiel
 --     enregistré (même règle : js/reminders.js).
+--  4. show_payments_emitted_guard : RÉÉCRITE ENTIÈREMENT = texte de production v1.68 + une exception : réouverture (date « Payée »
+--     seule) d'une ligne payée par ses encaissements enregistrés, par reglement_annuler (décision d'Anthony du 26/11/2026,
+--     relecture B1). Jamais un paiement historique.
 -- Aucune donnée existante n'est modifiée ; aucun appel à Pennylane.
--- Retour arrière : réappliquer reminder_candidates de la v1.69 ; drop des trois fonctions ; la table est gardée (historique).
+-- Retour arrière : réappliquer reminder_candidates de la v1.69 et show_payments_emitted_guard de la v1.68 ; drop des trois fonctions ;
+-- la table est gardée (historique).
 -- Rejouable (if not exists / create or replace).
 begin;
 
@@ -52,6 +56,133 @@ do $$ begin
   end if;
 end $$;
 
+-- show_payments_emitted_guard : RÉÉCRITE ENTIÈREMENT (CONVENTIONS §7.5) = texte de production v1.68 (empreinte de la définition
+-- 71493f414718dab4a5a77a2f15f85fac, relevée en lecture seule le 26/11/2026 et identique au texte de la migration v1.68) + une
+-- seule exception ajoutée (bloc « v1.70 »). Garde : ni cette version de production ni la nouvelle → arrêt, rien n'est appliqué.
+do $m$
+declare n text := pg_get_functiondef('public.show_payments_emitted_guard'::regproc);
+begin
+  if md5(n) <> '71493f414718dab4a5a77a2f15f85fac' and position('v1.70 (L2a, décision d''Anthony du 26/11/2026, relecture B1)' in n) = 0 then
+    raise exception 'v1.70 : show_payments_emitted_guard n''est pas la version attendue (empreinte %) : migration arrêtée, rien n''est appliqué', md5(n);
+  end if;
+end $m$;
+CREATE OR REPLACE FUNCTION public.show_payments_emitted_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$   -- §7.3
+declare
+  -- commission de production : la date doit exister et ne pas être en booking. Date introuvable (suppression en chaîne : la date
+  -- est déjà effacée quand ce déclencheur passe) → définition complète, comme pour toute autre ligne (relecture C1, B1)
+  self_paid boolean := old.kind = 'artbo' and exists (select 1 from public.shows where id = old.show_id and coalesce(prod_mode, 'production') <> 'booking');
+  emitted boolean := case when self_paid then old.paid_at is not null
+                     else old.sent_at is not null or old.paid_at is not null
+                          or nullif(btrim(old.invoice_number), '') is not null or nullif(btrim(old.pennylane_id), '') is not null end;
+begin
+  if not emitted then
+    return case when tg_op = 'DELETE' then old else new end;
+  end if;
+  if tg_op = 'DELETE' then
+    raise exception 'Facture déjà émise : elle ne se supprime pas (ni seule, ni avec sa date).' using errcode = 'P0001';
+  end if;
+  if self_paid and coalesce(current_setting('matrice.regularisation', true), '') = 'commission_partielle'
+     and new.paid_at is null and new.amount is not null
+     and public.commission_transferred(old.id) > 0 and public.commission_transferred(old.id) < new.amount
+     and new.amount >= coalesce(old.amount, 0)
+     and new.pct is not distinct from old.pct and new.vat_rate is not distinct from old.vat_rate
+     and new.show_id is not distinct from old.show_id and new.kind is not distinct from old.kind
+     and new.sent_at is not distinct from old.sent_at and new.invoice_number is not distinct from old.invoice_number
+     and new.pennylane_id is not distinct from old.pennylane_id then
+    return new;
+  end if;
+  -- v1.68 : CORRECTION D'UNE FACTURE ÉMISE déverrouillée à la main (facture_corriger, transaction annoncée « correction_facture »,
+  -- décisions d'Anthony du 26/11/2026) : montant, % et TVA alignés sur la facture réellement émise ; rien d'autre ne change (type,
+  -- date, n°, envoi, paiement, Pennylane, destinataire, hors calcul). Jamais une commission de production.
+  if not self_paid and coalesce(current_setting('matrice.regularisation', true), '') = 'correction_facture'
+     and new.amount is not null
+     and new.show_id is not distinct from old.show_id and new.sent_at is not distinct from old.sent_at
+     and new.paid_at is not distinct from old.paid_at and new.invoice_number is not distinct from old.invoice_number
+     and new.pennylane_id is not distinct from old.pennylane_id and new.pennylane_url is not distinct from old.pennylane_url
+     and new.payee is not distinct from old.payee and new.hors_calcul is not distinct from old.hors_calcul
+     and new.kind is not distinct from old.kind then
+    return new;
+  end if;
+  -- v1.70 (L2a, décision d'Anthony du 26/11/2026, relecture B1) : RÉOUVERTURE d'une ligne PAYÉE PAR SES ENCAISSEMENTS ENREGISTRÉS
+  -- (reglements), faite par reglement_annuler (transaction annoncée « reouverture_encaissement ») quand l'annulation d'une saisie
+  -- laisse un reste dû : seule la date « Payée » change (vidée, ou date du dernier encaissement restant) ; rien d'autre. Jamais un
+  -- paiement historique (ligne sans aucun encaissement enregistré), jamais une commission de production.
+  if not self_paid and coalesce(current_setting('matrice.regularisation', true), '') = 'reouverture_encaissement'
+     and old.paid_at is not null and new.paid_at is distinct from old.paid_at
+     and (to_jsonb(new) - 'paid_at') = (to_jsonb(old) - 'paid_at')
+     and exists (select 1 from public.reglements r where r.payment_id = old.id and r.sens = 'encaissement') then
+    return new;
+  end if;
+  -- v1.56.9 : CORRECTION d'un rattachement Pennylane faite par pennylane_rattacher (transaction annoncée « rattachement_pennylane ») :
+  -- une ligne d'acompte / de solde NON payée peut être libérée de sa facture (n°, lien, envoi) ; rien d'autre ne change
+  -- (%, TVA, date, nature) et le montant ne peut que revenir au calcul automatique. Jamais une ligne payée.
+  if not self_paid and coalesce(current_setting('matrice.regularisation', true), '') = 'rattachement_pennylane'
+     and old.kind in ('acompte', 'solde') and old.paid_at is null and new.paid_at is null
+     and new.pennylane_id is null and new.invoice_number is null and new.sent_at is null
+     and new.pct is not distinct from old.pct and new.vat_rate is not distinct from old.vat_rate
+     and new.show_id is not distinct from old.show_id and new.kind is not distinct from old.kind
+     and (new.amount is not distinct from old.amount or new.amount is null) then
+    return new;
+  end if;
+  if (old.paid_at is not null and new.paid_at is null)
+     or (not self_paid and ((old.sent_at is not null and new.sent_at is null)
+       or (nullif(btrim(old.invoice_number), '') is not null and nullif(btrim(new.invoice_number), '') is null)
+       or (nullif(btrim(old.pennylane_id), '') is not null and nullif(btrim(new.pennylane_id), '') is null))) then
+    raise exception 'Facture déjà émise : son numéro, sa date d’envoi, sa date de paiement et son identifiant Pennylane ne s’effacent pas.' using errcode = 'P0001';
+  end if;
+  if new.amount is distinct from old.amount or new.pct is distinct from old.pct or new.vat_rate is distinct from old.vat_rate
+     or new.show_id is distinct from old.show_id or new.kind is distinct from old.kind then
+    -- seule exception (lot D1) : FIGER un montant encore vide, sans rien changer d'autre, dans une transaction de régularisation
+    -- annoncée explicitement (script validé par Anthony). Un montant déjà rempli ne change jamais.
+    if old.amount is null and new.amount is not null
+       and new.pct is not distinct from old.pct and new.vat_rate is not distinct from old.vat_rate
+       and new.show_id is not distinct from old.show_id and new.kind is not distinct from old.kind
+       and coalesce(current_setting('matrice.regularisation', true), '') = 'gel' then
+      return new;
+    end if;
+    -- acompte ou solde FACTURÉ à un autre % que celui de la Matrice (décision d'Anthony du 27/10 : La Puce à l'Oreille, La MOBA,
+    -- 50 % facturés, 20 % posés par l'import Notion) : dans une transaction qui l'annonce (« acompte_facture »), le montant encore
+    -- vide est FIGÉ au montant de la facture et le % aligné dessus, ensemble et seulement si les deux concordent
+    -- (montant = cachet × % arrondi au centime). Rien d'autre ne change ; un montant déjà rempli ne change jamais.
+    if not self_paid and old.kind in ('acompte', 'solde') and old.amount is null and new.amount is not null and new.pct is not null
+       and new.amount = round(coalesce((select fee_ht from public.shows where id = old.show_id), 0) * new.pct) / 100
+       and new.vat_rate is not distinct from old.vat_rate
+       and new.show_id is not distinct from old.show_id and new.kind is not distinct from old.kind
+       and new.sent_at is not distinct from old.sent_at and new.paid_at is not distinct from old.paid_at
+       and new.invoice_number is not distinct from old.invoice_number and new.pennylane_id is not distinct from old.pennylane_id
+       and new.payee is not distinct from old.payee
+       and coalesce(current_setting('matrice.regularisation', true), '') = 'acompte_facture' then
+      return new;
+    end if;
+    -- retour arrière d'une régularisation (décision d'Anthony du 26/10, point 8) : REVIDER un montant dans une transaction qui
+    -- l'annonce (« degel »), et SEULEMENT si ce montant a été posé par une régularisation contrôlée (dernière écriture du montant
+    -- au journal : vide → cette valeur, source « régularisation contrôlée… »). Le % ne revient en arrière QUE s'il a été changé
+    -- par cette même régularisation (dernière écriture du % au journal : son ancienne valeur → le % actuel, même source).
+    -- Un montant figé à l'émission, au versement ou saisi à la main ne se vide jamais.
+    if old.amount is not null and new.amount is null
+       and new.vat_rate is not distinct from old.vat_rate
+       and new.show_id is not distinct from old.show_id and new.kind is not distinct from old.kind
+       and coalesce(current_setting('matrice.regularisation', true), '') = 'degel'
+       and exists (select 1 from public.finance_log l where l.id = (select max(m.id) from public.finance_log m where m.row_id = old.id and m.field = 'amount')
+                     and l.row_id = old.id and l.field = 'amount'
+                     and l.source in ('régularisation contrôlée', 'régularisation contrôlée (facture émise)') and l.old_value is null
+                     and (case when l.field = 'amount' then l.new_value::numeric end) = old.amount)
+       and (new.pct is not distinct from old.pct
+            or exists (select 1 from public.finance_log l where l.id = (select max(m.id) from public.finance_log m where m.row_id = old.id and m.field = 'pct')
+                         and l.row_id = old.id and l.field = 'pct' and l.source = 'régularisation contrôlée (facture émise)'
+                         and l.new_value is not distinct from old.pct::text and l.old_value is not distinct from new.pct::text)) then
+      return new;
+    end if;
+    raise exception 'Facture déjà émise : son montant, son %%, sa TVA, sa date et son type ne se modifient plus.' using errcode = 'P0001';
+  end if;
+  return new;
+end $function$;
+
+
 -- saisie manuelle (équipe) : encaissement fait, remboursement à faire ou fait ; ligne émise, suivie, non hors calcul ;
 -- jamais une commission de production (pas une facture)
 create or replace function public.reglement_saisir(p_payment uuid, p_sens text, p_etat text, p_montant numeric, p_date date,
@@ -71,6 +202,8 @@ begin
   if not public.payment_is_emitted(p) then raise exception 'Facture pas encore émise : rien à encaisser ni à rembourser'; end if;
   if p_sens not in ('encaissement', 'remboursement') or p_etat not in ('a_faire', 'fait') or (p_etat = 'a_faire' and p_sens <> 'remboursement') then
     raise exception 'Type de mouvement invalide'; end if;
+  -- ligne notée payée : son paiement est conservé tel quel (E1) — plus d'encaissement (même règle : js/budget-actions.js)
+  if p_sens = 'encaissement' and p.paid_at is not null then raise exception 'Facture déjà notée payée : son paiement est conservé tel quel'; end if;
   if p_montant is null or p_montant = 'NaN'::numeric or p_montant <= 0 or p_montant >= 100000000 then raise exception 'Montant TTC à saisir (positif)'; end if;
   if p_etat = 'fait' and p_date is null then raise exception 'Date du mouvement à saisir'; end if;
   if p_compte is not null and p_compte not in ('compte', 'artbo', 'artiste', 'autre') then raise exception 'Compte inconnu'; end if;
@@ -104,13 +237,33 @@ grant execute on function public.reglement_effectuer(uuid, date, text, text) to 
 create or replace function public.reglement_annuler(p_id uuid, p_motif text) returns public.reglements
  language plpgsql security definer set search_path = public, pg_temp
 as $$
-declare r public.reglements;
+declare r public.reglements; p public.show_payments; vat numeric; net numeric; enc numeric; dernier date; paye date;
 begin
   if not public.is_team() then raise exception 'Accès refusé'; end if;
   if nullif(btrim(p_motif), '') is null or length(btrim(p_motif)) > 500 then raise exception 'Motif obligatoire (500 caractères au plus)'; end if;
   update public.reglements set annule_at = now(), annule_par = auth.jwt() ->> 'email', annule_motif = btrim(p_motif)
    where id = p_id and source = 'manuel' and transaction_id is null and annule_at is null returning * into r;
   if not found then raise exception 'Seule une saisie manuelle non rapprochée de Pennylane, pas encore annulée, peut être annulée'; end if;
+  -- (décision d'Anthony du 26/11/2026, relecture B1) ligne payée PAR SES ENCAISSEMENTS ENREGISTRÉS : statut recalculé dans la même
+  -- opération — reste dû (TTC facture − TTC avoirs − encaissé net) → la ligne est rouverte (date « Payée » vidée : facture due,
+  -- relancée) ; sinon elle reste soldée, à la date du dernier encaissement restant. Une annulation n'est jamais un remboursement.
+  -- Paiement historique (ligne payée sans aucun encaissement enregistré, E1) : jamais touché. Même règle : js/calc.js resteDuTtc.
+  select * into p from public.show_payments where id = r.payment_id for update;
+  if p.paid_at is not null and exists (select 1 from public.reglements x where x.payment_id = p.id and x.sens = 'encaissement') then
+    vat := coalesce(p.vat_rate, case when p.kind in ('artbo', 'partner') then 20 end, (select s.vat_rate from public.shows s where s.id = p.show_id), 5.5);
+    net := greatest(0, round(coalesce(p.amount, public.payment_amount_now(p), 0) * (1 + vat / 100), 2)
+      - coalesce((select sum(coalesce(a.amount_ttc, round(a.amount_ht * (1 + vat / 100), 2))) from public.pennylane_avoirs a
+                   where a.payment_id = p.id and a.etat = 'rattache' and a.gone_at is null), 0));
+    select coalesce(sum(case when x.sens = 'encaissement' then x.montant_ttc else -x.montant_ttc end), 0),
+           max(x.date) filter (where x.sens = 'encaissement')
+      into enc, dernier from public.reglements x where x.payment_id = p.id and x.etat = 'fait' and x.annule_at is null;
+    paye := case when dernier is not null and enc >= net - 0.01 then dernier end;
+    if paye is distinct from p.paid_at then
+      perform set_config('matrice.regularisation', 'reouverture_encaissement', true);
+      update public.show_payments set paid_at = paye where id = p.id;
+      perform set_config('matrice.regularisation', '', true);
+    end if;
+  end if;
   return r;
 end $$;
 revoke all on function public.reglement_annuler(uuid, text) from public, anon;
