@@ -146,10 +146,18 @@ test('v1.68 solde de 2 800 € déjà payé : type figé ; correction autorisée
   expect(after.rappels.some(t => /Facture de solde à faire/.test(t))).toBe(false);
   await expect(page.locator('.bill-total')).toContainText('Il manque 200,00 € HT par rapport au cachet');
   // « aucun changement » refusé sans appel à la base
+  await expect(row(page, 'f-s').locator('input[data-f="amount"]')).toHaveValue('2600');   // rendu après la correction terminé
   await row(page, 'f-s').locator('[data-act="fixInvoice"]').click();
+  await expect(m.locator('[name=amount]')).toHaveValue('2600');
   await m.locator('[name=motif]').fill('rien');
+  const toasts = [];
+  page.on('console', () => {});
+  await page.exposeFunction('__toastSeen', t => toasts.push(t)).catch(() => {});
+  await page.evaluate(() => new MutationObserver(() => { const t = document.body.innerText; if (/Aucun changement à enregistrer/.test(t)) window.__toastSeen?.(t); })
+    .observe(document.body, { childList: true, subtree: true, characterData: true }));
   await m.locator('button[type=submit]').click();
-  await expect(page.locator('body')).toContainText('Aucun changement à enregistrer');
+  await expect.poll(() => toasts.length, { timeout: 8000 }).toBeGreaterThan(0);
+  await expect(m).toBeVisible();                                                         // la fenêtre reste ouverte
   expect(await rpcCalls(page)).toBe(2);
   expectClean(ctx);
 });
