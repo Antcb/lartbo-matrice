@@ -263,6 +263,7 @@ export const BUDGET_ACTIONS = {
         // (v1.69, L1 du point 02) avoirs : importés et affichés, jamais un encaissement ni un remboursement
         out.avoirs?.importes ? `\n${out.avoirs.importes} avoir(s) Pennylane lu(s)${out.avoirs.nouveaux ? ` dont ${out.avoirs.nouveaux} nouveau(x)` : ''}${out.avoirs.rattaches?.length ? ` ; rattaché(s) à leur facture d’origine : ${out.avoirs.rattaches.join(', ')}` : ''}.` : '',
         out.avoirs?.aRattacher ? `\n${out.avoirs.aRattacher} avoir(s) à rattacher (facture d’origine inconnue, absente de MATRICE ou ambiguë) : liste en tête de Production. Rien n’est compté.` : '',
+        out.avoirs?.origineChangee?.length ? `\nAvoir(s) dont Pennylane indique maintenant une AUTRE facture d’origine : laissés sur leur facture actuelle, à vérifier :\n- ` + out.avoirs.origineChangee.join('\n- ') : '',
         out.avoirs?.disparus ? `\n${out.avoirs.disparus} avoir(s) qui ne sont plus dans Pennylane : gardés dans MATRICE, plus comptés.` : '',
         out.payeesAvecAvoir?.length ? `\nPayées dans Pennylane, mais couvertes par un avoir : AUCUN encaissement noté (un avoir n’est pas un paiement ; un encaissement réel se note à la main) :\n- ` + out.payeesAvecAvoir.join('\n- ') : '',
         out.payeesSansTransaction?.length ? `\nPayées dans Pennylane sans virement rapproché : AUCUN encaissement noté (à vérifier dans Pennylane) :\n- ` + out.payeesSansTransaction.join('\n- ') : '',

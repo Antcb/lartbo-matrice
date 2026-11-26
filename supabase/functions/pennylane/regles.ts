@@ -125,7 +125,8 @@ type DocPl = { id?: unknown; credit_note?: unknown; document_type?: unknown; cre
 export function origineAvoir(x: DocPl): string | null {
   const c = x?.credited_invoice as any;
   const id = c && typeof c === 'object' ? c.id : c ?? x?.credited_invoice_id;
-  return plein(id) ? String(id) : null;
+  // seulement un identifiant (texte ou nombre) : true / false / objet sans id → origine inconnue (relecture v1.69)
+  return (typeof id === 'string' || typeof id === 'number') && plein(id) ? String(id) : null;
 }
 /** Document Pennylane qui est un avoir : marqué comme tel, lié à une facture d'origine, ou de montant HT négatif */
 export const estAvoir = (x: DocPl) => !!x && (x.credit_note === true || x.document_type === 'credit_note' || origineAvoir(x) != null
@@ -148,7 +149,7 @@ export function rattacherAvoir(origine: string | null, lignes: LigneAvoir[], num
   return { etat: 'a_rattacher', payment_id: null, show_id: dates.length === 1 ? dates[0] : null, reason: `Facture d’origine${ref} reliée à ${ls.length} lignes : à choisir` };
 }
 
-export type AvoirExistant = { etat: string; payment_id: string | null; show_id: string | null } | null | undefined;
+export type AvoirExistant = { etat: string; payment_id: string | null; show_id: string | null; credited_pennylane_id?: string | null } | null | undefined;
 /** Ligne à enregistrer pour un avoir vu dans Pennylane. Champs Pennylane toujours mis à jour ; rattachement : un avoir déjà
  *  rattaché le reste (jamais déplacé en silence) ; un avoir « À rattacher » est réexaminé à chaque synchronisation. */
 export function planAvoir(x: DocPl & { invoice_number?: unknown; date?: unknown; credited_invoice?: any }, existant: AvoirExistant, lignes: LigneAvoir[], vuLe: string) {
@@ -157,9 +158,11 @@ export function planAvoir(x: DocPl & { invoice_number?: unknown; date?: unknown;
   const pl = { pennylane_id: String(x.id), invoice_number: plein(x.invoice_number) ? String(x.invoice_number) : null, invoice_date: plein(x.date) ? String(x.date).slice(0, 10) : null,
     amount_ht: montantAvoir(x), amount_ttc: plein(x.currency_amount ?? x.amount) ? r2(Math.abs(Number(x.currency_amount ?? x.amount))) : null,
     credited_pennylane_id: origine, credited_invoice_number: numeroOrigine, pl_status: plein(x.status) ? String(x.status) : null, last_seen_at: vuLe, gone_at: null };
-  if (existant?.etat === 'rattache') return { ...pl, etat: 'rattache', payment_id: existant.payment_id, show_id: existant.show_id, reason: null, nouveau_rattachement: false };
+  // déjà rattaché : gardé ; si Pennylane indique maintenant une AUTRE facture d'origine, c'est signalé (jamais déplacé en silence)
+  if (existant?.etat === 'rattache') return { ...pl, etat: 'rattache', payment_id: existant.payment_id, show_id: existant.show_id, reason: null, nouveau_rattachement: false,
+    origine_changee: plein(existant.credited_pennylane_id) && String(existant.credited_pennylane_id) !== String(origine ?? '') };
   const r = rattacherAvoir(origine, lignes, numeroOrigine);
-  return { ...pl, ...r, nouveau_rattachement: r.etat === 'rattache' };
+  return { ...pl, ...r, nouveau_rattachement: r.etat === 'rattache', origine_changee: false };
 }
 
 /** Encaissement repris de Pennylane (L1) : JAMAIS sur la seule base de « paid = true ». Seulement si au moins une transaction

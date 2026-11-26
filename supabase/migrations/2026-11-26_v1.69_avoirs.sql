@@ -6,7 +6,8 @@
 --  2. avoir_couvert(paiement) : montant HT couvert par les avoirs rattachés (même règle : js/calc.js avoirCouvert).
 --  3. reminder_candidates : RÉÉCRITE ENTIÈREMENT (CONVENTIONS §7.5) = texte de production relevé le 26/11/2026 (corps identique à
 --     supabase/migrations/2026-11-10_v1.61.1_solde_prevu.sql, empreinte du corps b713325bb648651b08d35b402795a39f) + la colonne
---     « soldee » : une facture soldée par ses avoirs ne donne plus « Facture à envoyer » ni « Paiement à vérifier ».
+--     « soldee » : une facture soldée par ses avoirs (montant > 0, au moins un avoir, entièrement couvert) ne donne plus
+--     « Facture à envoyer » ni « Paiement à vérifier ».
 -- Aucun encaissement, aucun remboursement n'est créé ; aucune donnée existante n'est modifiée ; aucun appel à Pennylane.
 -- Retour arrière : réappliquer reminder_candidates de la v1.61.1 ; drop function public.avoir_couvert(uuid) ; la table est gardée.
 -- Rejouable (if not exists / create or replace).
@@ -54,8 +55,8 @@ as $$
   select coalesce(sum(a.amount_ht), 0) from public.pennylane_avoirs a
    where a.payment_id = p_payment and a.etat = 'rattache' and a.gone_at is null
 $$;
-revoke all on function public.avoir_couvert(uuid) from public, anon;
-grant execute on function public.avoir_couvert(uuid) to authenticated;
+-- utilisée seulement à l'intérieur de reminder_candidates (security definer) : aucun appel direct (relecture v1.69)
+revoke all on function public.avoir_couvert(uuid) from public, anon, authenticated;
 
 -- reminder_candidates : garde — corps de production attendu (ou déjà la v1.69), sinon arrêt sans rien appliquer
 do $m$
@@ -126,8 +127,9 @@ as $function$
       coalesce(x.invoiced_on, (x.created_at at time zone 'Europe/Paris')::date) faite_le,
       row_number() over (partition by x.show_id, x.kind order by x.sort, x.id) rn,
       -- v1.69 (L1, point 02) : facture SOLDÉE par ses avoirs Pennylane (montant figé entièrement couvert) : ni « à envoyer » ni
-      -- « paiement à vérifier » ; avoir partiel : la facture reste suivie (même règle : js/calc.js soldeeParAvoir)
-      coalesce(x.amount is not null and public.avoir_couvert(x.id) >= x.amount - 0.005, false) soldee
+      -- « paiement à vérifier » ; avoir partiel : la facture reste suivie ; sans avoir, ou montant nul / négatif : jamais soldée
+      -- (relecture v1.69, B1) — même règle : js/calc.js soldeeParAvoir
+      coalesce(x.amount > 0 and public.avoir_couvert(x.id) > 0 and public.avoir_couvert(x.id) >= x.amount - 0.005, false) soldee
     from show_payments x join d on d.id = x.show_id
     where x.hors_calcul is null and ((d.mode <> 'booking' and x.kind in ('acompte', 'solde', 'autre')) or (d.mode = 'booking' and x.kind = 'artbo'))
   ), cand as (

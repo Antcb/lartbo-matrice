@@ -48,11 +48,15 @@ insert into public.show_payments (id, show_id, kind, label, amount, invoice_numb
  ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000a1', 'acompte', 'Acompte total', 900, 'F-T-1', current_date - 30, 'pl-1', 1, current_date - 31),
  ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000a1', 'autre', 'Partiel', 4200, 'F-T-2', current_date - 30, 'pl-2', 2, current_date - 31),
  ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-0000000000a1', 'autre', 'Disparu', 500, 'F-T-3', current_date - 30, 'pl-3', 3, current_date - 31),
- ('00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-0000000000a1', 'autre', 'Faite non envoyée', 300, 'F-T-4', null, 'pl-4', 4, current_date - 20);
+ ('00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-0000000000a1', 'autre', 'Faite non envoyée', 300, 'F-T-4', null, 'pl-4', 4, current_date - 20),
+ -- relecture v1.69 (B1) : montant nul ou négatif SANS avoir → jamais « soldée », rappels inchangés
+ ('00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-0000000000a1', 'autre', 'Zero', 0, 'F-T-5', current_date - 30, 'pl-5', 5, current_date - 31),
+ ('00000000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-0000000000a1', 'autre', 'Negatif', -100, 'F-T-6', current_date - 30, 'pl-6', 6, current_date - 31),
+ ('00000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-0000000000a1', 'autre', 'ZeroNonEnv', 0, 'F-T-7', null, 'pl-7', 7, current_date - 20);
 create temp table avant as select * from public.show_payments;
 create temp view paie as select t from public.reminder_candidates() where r in ('acompte_paye', 'autre_payee', 'facture_envoi');
 
-select pg_temp.ok((select count(*) from paie) = 4, 'avant les avoirs : 3 « Paiement à vérifier » + 1 « Facture à envoyer »');
+select pg_temp.ok((select count(*) from paie) = 7, 'avant les avoirs : 5 « Paiement à vérifier » + 2 « Facture à envoyer »');
 
 insert into public.pennylane_avoirs (pennylane_id, invoice_number, amount_ht, credited_pennylane_id, etat, payment_id, show_id) values
  ('av-1', 'AV-1', 900, 'pl-1', 'rattache', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000a1'),
@@ -70,7 +74,9 @@ select pg_temp.ok(not exists (select 1 from paie where t like '%Acompte total%')
 select pg_temp.ok(exists (select 1 from paie where t like '%Partiel%'), 'avoir partiel : « Paiement à vérifier » maintenu');
 select pg_temp.ok(exists (select 1 from paie where t like '%Disparu%'), 'avoir disparu : « Paiement à vérifier » maintenu');
 select pg_temp.ok(not exists (select 1 from paie where t like '%Faite non envoyée%'), 'facture soldée par avoir : plus de « Facture à envoyer »');
-select pg_temp.ok((select count(*) from paie) = 2, 'après les avoirs : 2 rappels restants');
+select pg_temp.ok((select count(*) from paie) = 5, 'après les avoirs : 5 rappels restants');
+select pg_temp.ok(exists (select 1 from paie where t like '%: Zero %') and exists (select 1 from paie where t like '%Negatif%') and exists (select 1 from paie where t like '%ZeroNonEnv%'),
+  'montant nul ou négatif sans avoir : jamais « soldée », rappels maintenus (relecture B1)');
 
 -- contraintes : pas de doublon, état ↔ ligne, montant positif
 do $$ begin
@@ -86,6 +92,7 @@ end $$;
 -- droits : équipe en lecture seule, anonyme rien
 select pg_temp.ok(has_table_privilege('authenticated', 'public.pennylane_avoirs', 'select') and not has_table_privilege('authenticated', 'public.pennylane_avoirs', 'insert')
   and not has_table_privilege('authenticated', 'public.pennylane_avoirs', 'update') and not has_table_privilege('anon', 'public.pennylane_avoirs', 'select'), 'droits : équipe lecture seule, anonyme aucun');
+select pg_temp.ok(not has_function_privilege('authenticated', 'public.avoir_couvert(uuid)', 'execute') and not has_function_privilege('anon', 'public.avoir_couvert(uuid)', 'execute'), 'avoir_couvert : aucun appel direct');
 select pg_temp.ok((select relrowsecurity from pg_class where oid = 'public.pennylane_avoirs'::regclass), 'RLS active');
 -- aucune ligne de facturation modifiée (aucun encaissement, aucun remboursement)
 select pg_temp.ok(not exists (select * from public.show_payments except select * from avant) and not exists (select * from avant except select * from public.show_payments), 'show_payments inchangée');

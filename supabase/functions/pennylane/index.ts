@@ -268,11 +268,11 @@ Deno.serve(async (req) => {
       // avoirs (L1, point 02, décisions d'Anthony du 26/11/2026) : importés sans doublon (clé = identifiant Pennylane de l'avoir),
       // rattachés à la ligne dont la facture d'ORIGINE a cet identifiant Pennylane ; sinon « À rattacher ». Aucun document Pennylane
       // modifié, aucun encaissement ni remboursement créé. Règles : regles.ts (planAvoir) ; application : js/calc.js (avoirsOf).
-      const avoirs = { importes: 0, nouveaux: 0, rattaches: [] as string[], aRattacher: 0, disparus: 0 };
+      const avoirs = { importes: 0, nouveaux: 0, rattaches: [] as string[], aRattacher: 0, disparus: 0, origineChangee: [] as string[] };
       {
         const vuLe = new Date().toISOString();
         const avoirsPl = Object.values(byId).filter(estAvoir);
-        const deja = (await readAll(() => admin.from('pennylane_avoirs').select('id, pennylane_id, etat, payment_id, show_id, gone_at'))) || [];
+        const deja = (await readAll(() => admin.from('pennylane_avoirs').select('id, pennylane_id, etat, payment_id, show_id, gone_at, credited_pennylane_id'))) || [];
         const parId = new Map(deja.map((a: any) => [String(a.pennylane_id), a]));
         const origines = [...new Set(avoirsPl.map(origineAvoir).filter(Boolean))] as string[];
         const lignes: any[] = [];
@@ -282,12 +282,13 @@ Deno.serve(async (req) => {
           lignes.push(...(data || []));
         }
         for (const x of avoirsPl) {
-          const { nouveau_rattachement, ...rec } = planAvoir(x, parId.get(String(x.id)), lignes, vuLe) as any;
+          const { nouveau_rattachement, origine_changee, ...rec } = planAvoir(x, parId.get(String(x.id)), lignes, vuLe) as any;
           const { error: ea } = await admin.from('pennylane_avoirs').upsert({ ...rec, url: await invoicePage(x.id) || linkOf(x) }, { onConflict: 'pennylane_id' });
           if (ea) { erreurs.push(`Avoir ${x.invoice_number || x.id} : ${ea.message}`); continue; }
           avoirs.importes++; if (!parId.has(String(x.id))) avoirs.nouveaux++;
           if (nouveau_rattachement) avoirs.rattaches.push(x.invoice_number || String(x.id));
           if (rec.etat === 'a_rattacher') avoirs.aRattacher++;
+          if (origine_changee) avoirs.origineChangee.push(x.invoice_number || String(x.id));
         }
         // avoir qui n'est plus dans Pennylane : gardé et marqué disparu (jamais effacé) — seulement si toute la liste a été lue
         if (complet) for (const a of deja) if (!a.gone_at && !byId[String(a.pennylane_id)]) {
