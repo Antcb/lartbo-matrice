@@ -158,7 +158,9 @@ export async function prepareMail(showId, kind){
     <p class="help">Le texte est modifiable ici. Les zones jaunes sont à compléter. « Envoyer maintenant » l’envoie tout de suite depuis production@ et note la date d’envoi dans le suivi de la date${SENT_FIELD[kind] ? ` (${esc(stepLabel(kind))})` : ''} ; « Enregistrer en brouillon » le met dans les brouillons Gmail.</p>
     </div>`;
   let wantDraft = false;
-  const dlgP = openModal({title: `${MAIL_KINDS[kind]} · ${s.venue}`, fields: [], extra, mail: true,
+  // (v1.68.3) id : brouillon propre à CE mail de CETTE date (le titre ne contient que le type et la salle : destinataires, objet et texte
+  // d'un mail abandonné revenaient sur une autre date de la même salle) ; les anciens brouillons partagés (clé « .new ») ne sont plus lus
+  const dlgP = openModal({title: `${MAIL_KINDS[kind]} · ${s.venue}`, fields: [], extra, mail: true, values: {id: 'mail:' + kind + ':' + s.id},
     saveLabel: 'Envoyer maintenant', footExtra: '<button type="button" class="btn" id="ml-draft">Enregistrer en brouillon</button>',
     onSave: async () => {
       const send = !wantDraft; wantDraft = false;

@@ -657,6 +657,9 @@ ACTIONS['change:show_payments.paid_at'] = async (t, v) => {
     await openModal({title: 'Sur quel compte ce paiement est-il arrivé ?', saveLabel: 'Enregistrer le compte',
       extraTop: `<p class="help full">${esc(pay.label || pay.kind)} · ${esc(s.venue || '')} : payé le ${fmtDate(v)}. Sur quel compte l’argent est-il arrivé ?<br>Sans choix, il reste « Non renseigné » : compté dans la date et l’artiste, mais dans aucun compte (« Annuler »).</p>`,
       fields: [{k: 'payee', label: 'Arrive sur', type: 'select', options: ['compte','artbo','artiste','autre'].map(c => [c, payerLabel(c, proj)])}],
+      // (v1.68.3) id : brouillon propre à CE paiement (un compte choisi puis abandonné revenait présélectionné sur un autre paiement,
+      // contraire à « jamais de compte supposé ») ; les anciens brouillons partagés (clé « .new ») ne sont plus lus
+      values: {id: 'compte:' + pay.id},
       // aucun compte présélectionné (jamais de compte supposé) ; « — » enregistré = reste « Non renseigné »
       onSave: async x => x.payee ? ((await save('show_payments', pay.id, {payee: x.payee}, {rerender: false})) ? true : false) : true});
   }

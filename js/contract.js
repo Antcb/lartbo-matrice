@@ -60,7 +60,9 @@ export function validateFiche(showId){
     <div class="tbl-wrap"><table class="vf-table"><thead><tr><th>Champ</th><th>Réponse de l’organisateur</th><th>Valeur retenue</th></tr></thead><tbody>${rows}</tbody></table></div>
     <label class="check-line"><input type="checkbox" id="vf-struct" checked> Mettre à jour les coordonnées de la structure${st ? ` « ${esc(st.name)} »` : ''} avec ces valeurs</label>
   </div>`;
-  return openModal({title: `Fiche de renseignements · ${venueName(s.venue)}`, wide: true, fields: [], extra,
+  // (v1.68.3) id : brouillon propre à CETTE date (le titre ne contient que la salle : deux dates de la même salle partageaient le
+  // brouillon, et ces « valeurs retenues » partent dans le contrat) ; les anciens brouillons partagés (clé « .new ») ne sont plus lus
+  return openModal({title: `Fiche de renseignements · ${venueName(s.venue)}`, wide: true, fields: [], extra, values: {id: 'fiche:' + s.id},
     saveLabel: s.fiche_validated_at ? 'Enregistrer' : 'Valider la fiche',
     onSave: async () => {
       const form = document.querySelector('#modal form');
