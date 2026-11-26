@@ -220,3 +220,33 @@ test('v1.70 relecture B1-bis — ligne payée à la main malgré un encaissement
   await expect(page.locator('body')).not.toContainText('la facture redevient due');
   expectClean(ctx);
 });
+
+test('v1.70 point 3 — facture avec encaissements enregistrés : jamais marquée payée à la main ; l’encaissement manquant s’enregistre ; paiement historique inchangé', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page, {
+    shows: [show('en-d9', 'Salle Point Trois', { fee_ht: 2000 })],
+    payments: [
+      { id: 'en-p9', show_id: 'en-d9', kind: 'acompte', label: 'Acompte', pct: 50, amount: 1000, vat_rate: 5.5, sort: 1, invoice_number: 'F-FICT-9', sent_at: iso(-20) },
+      { id: 'en-p10', show_id: 'en-d9', kind: 'solde', label: 'Solde', pct: 50, amount: 1000, vat_rate: 5.5, sort: 2, invoice_number: 'F-FICT-10', sent_at: iso(-20), payee: 'compte' }],
+    reglements: [{ id: 'rg-9', payment_id: 'en-p9', show_id: 'en-d9', sens: 'encaissement', etat: 'fait', montant_ttc: 500, date: iso(-8), compte: 'compte', source: 'manuel', transaction_id: null, created_at: iso(-8) }],
+  });
+  const saisie = id => page.locator(`input[data-t="show_payments"][data-id="${id}"][data-f="paid_at"]`);
+  const lecture = id => page.locator(`[data-paye-mouvements="${id}"]`);
+  // ligne partiellement encaissée : date « Payée » affichée, pas de champ de saisie
+  await expect(saisie('en-p9')).toHaveCount(0);
+  await expect(lecture('en-p9')).toHaveAttribute('title', /d’après les encaissements enregistrés/);
+  // même par un changement forcé (ancien écran, clavier) : refusé, rien n'est écrit
+  await page.evaluate(async () => { const { ACTIONS } = await import('./js/actions.js'); await ACTIONS['change:show_payments.paid_at']({ dataset: { id: 'en-p9' } }, '2026-11-20'); });
+  await expect(page.locator('body')).toContainText('Enregistre l’encaissement manquant');
+  expect((await etat(page, 'en-d9')).paid['en-p9']).toBeNull();
+  expect((await ecritures(page, 'show_payments')).length).toBe(0);
+  // l'encaissement manquant s'enregistre : la ligne devient payée, à la date du dernier encaissement
+  await encaisser(page, 'en-p9', { montant: '555', date: iso(-2) });
+  expect((await etat(page, 'en-d9')).paid['en-p9']).toBe(iso(-2));
+  await expect(lecture('en-p9')).toContainText(iso(-2).split('-').reverse().join('/'));
+  // ligne sans encaissement enregistré : fonctionnement historique inchangé (date « Payée » saisie à la main)
+  await expect(saisie('en-p10')).toHaveCount(1);
+  await page.evaluate(async d => { const { ACTIONS } = await import('./js/actions.js'); await ACTIONS['change:show_payments.paid_at']({ dataset: { id: 'en-p10' } }, d); }, iso(-1));
+  await expect.poll(async () => (await etat(page, 'en-d9')).paid['en-p10']).toBe(iso(-1));
+  expectClean(ctx);
+});

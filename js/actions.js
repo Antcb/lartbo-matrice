@@ -7,7 +7,7 @@ import { MAIL_ACTIONS } from './mailbox.js';
 import { TEXT_ACTIONS } from './textes-journal.js';
 import { afterFeeChange, askConfirmation, becameConfirmed, sendConfirmation, validateTerms } from './confirm-flow.js';
 import { go, render } from './app.js';
-import { BILL_KINDS, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
+import { BILL_KINDS, payeeParMouvements, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, FOLLOW_DATES, INVOICE_DATES, PAY_KINDS, isOff } from './constants.js';
 import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, restoreShow, save, saveLinger, sb, setProspection, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
 import { reactivateRemindersWindow, createArtistFolder, editContact, prospectionBlock, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure, showPrefillFromSuivi } from './forms.js';
@@ -649,6 +649,9 @@ ACTIONS['change:show_payments.amount_ttc'] = async (t, v) => {
 // « Non renseigné » (compté dans la date et l'artiste, dans aucun compte), il réintègre le bon compte dès qu'il est choisi.
 ACTIONS['change:show_payments.paid_at'] = async (t, v) => {
   const pay = byId('show_payments', t.dataset.id);
+  // (décision d'Anthony du 26/11/2026, 20 h 54) facture suivie par ses encaissements enregistrés : statut et date découlent des
+  // mouvements réels — jamais forcés ici ; l'encaissement manquant s'enregistre (« Ajouter un encaissement »). Paiement historique inchangé.
+  if (payeeParMouvements(pay)){ toast('Cette facture a des encaissements enregistrés : sa date « Payée » en découle. Enregistre l’encaissement manquant (« Ajouter un encaissement ») plutôt que de la marquer payée.', true); render(); return; }
   if (!(await dateChangeOk(t, 'show_payments', 'paid_at', v, INVOICE_DATES.paid_at, payContext(pay)))) return;
   if (!(await save('show_payments', pay.id, {paid_at: v}, {rerender: false}))) { render(); return; }
   render();

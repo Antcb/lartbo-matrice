@@ -295,3 +295,11 @@ export function planRemboursement(virementsAvoir: Virement[], dejaAilleurs: Set<
   }
   return { creer, rapprocher, signal: null };
 }
+
+/** (v1.70, décision d'Anthony du 26/11/2026, 20 h 54) Remboursements automatiques d'après les virements sortants des avoirs :
+ *  désactivés tant que le format réel n'est pas confirmé en lecture seule (réglage pennylane_remboursements_auto = « oui » posé
+ *  sur sa décision). Absent, illisible ou toute autre valeur → désactivés : aucun remboursement automatique enregistré. */
+export function remboursementsAutoActifs(v: unknown): boolean {
+  const t = typeof v === 'string' ? v : v == null ? '' : JSON.stringify(v);
+  return ['oui', 'true'].includes(t.replace(/"/g, '').trim().toLowerCase());
+}

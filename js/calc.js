@@ -196,6 +196,9 @@ export function mouvementsOf(p){
   return out;
 }
 const somme = (ms, k) => Math.round(ms.reduce((t, m) => t + (Number(m[k]) || 0), 0) * 100) / 100;
+/** (décision d'Anthony du 26/11/2026, 20 h 54) Ligne qui a des encaissements enregistrés (non annulés) : sa date « Payée » découle
+ *  des mouvements réels, jamais forcée à la main (même règle : déclencheur show_payments_paye_par_reglements) */
+export const payeeParMouvements = p => reglementsOf(p.id).some(r => r.sens === 'encaissement' && r.etat === 'fait');
 /** Encaissé réel net (encaissements − remboursements faits), TTC et équivalent HT */
 export const encaisseTtc = p => somme(mouvementsOf(p), 'ttc');
 export const encaisseHt = p => somme(mouvementsOf(p), 'ht');

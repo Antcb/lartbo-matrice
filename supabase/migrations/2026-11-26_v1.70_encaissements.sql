@@ -12,8 +12,11 @@
 --  4. show_payments_emitted_guard : RÉÉCRITE ENTIÈREMENT = texte de production v1.68 + une exception : réouverture (date « Payée »
 --     seule) d'une ligne payée par ses encaissements enregistrés, par reglement_annuler (décision d'Anthony du 26/11/2026,
 --     relecture B1). Jamais un paiement historique.
+--  5. show_payments_paye_par_reglements (déclencheur NOUVEAU, décision d'Anthony du 26/11/2026, 20 h 54) : une ligne qui a des
+--     encaissements enregistrés n'est notée payée que s'ils couvrent son reste dû, à la date du dernier ; paiements historiques inchangés.
 -- Aucune donnée existante n'est modifiée ; aucun appel à Pennylane.
--- Retour arrière : réappliquer reminder_candidates de la v1.69 et show_payments_emitted_guard de la v1.68 ; drop des trois fonctions ;
+-- Retour arrière : réappliquer reminder_candidates de la v1.69 et show_payments_emitted_guard de la v1.68 ; drop du déclencheur
+-- show_payments_paye_par_reglements et des fonctions reglement_* ;
 -- la table est gardée (historique).
 -- Rejouable (if not exists / create or replace).
 begin;
@@ -233,11 +236,53 @@ end $$;
 revoke all on function public.reglement_effectuer(uuid, date, text, text) from public, anon;
 grant execute on function public.reglement_effectuer(uuid, date, text, text) to authenticated;
 
+-- couverture d'une ligne par ses mouvements enregistrés (TTC) : net facturé (TTC facture − TTC avoirs rattachés), encaissé net
+-- (encaissements − remboursements faits, non annulés), date du dernier encaissement. Même calcul : js/calc.js factureNetTtc / encaisseTtc
+create or replace function public.reglement_couverture(p public.show_payments, out net numeric, out enc numeric, out dernier date, out nb int)
+ language plpgsql stable security definer set search_path = public, pg_temp
+as $$
+declare vat numeric := coalesce(p.vat_rate, case when p.kind in ('artbo', 'partner') then 20 end, (select s.vat_rate from public.shows s where s.id = p.show_id), 5.5);
+begin
+  net := greatest(0, round(coalesce(p.amount, public.payment_amount_now(p), 0) * (1 + vat / 100), 2)
+    - coalesce((select sum(coalesce(a.amount_ttc, round(a.amount_ht * (1 + vat / 100), 2))) from public.pennylane_avoirs a
+                 where a.payment_id = p.id and a.etat = 'rattache' and a.gone_at is null), 0));
+  select coalesce(sum(case when x.sens = 'encaissement' then x.montant_ttc else -x.montant_ttc end), 0),
+         max(x.date) filter (where x.sens = 'encaissement'), count(*) filter (where x.sens = 'encaissement')
+    into enc, dernier, nb from public.reglements x where x.payment_id = p.id and x.etat = 'fait' and x.annule_at is null;
+end $$;
+revoke all on function public.reglement_couverture(public.show_payments) from public, anon, authenticated;
+
+-- (décision d'Anthony du 26/11/2026, 20 h 54) ligne qui a des ENCAISSEMENTS ENREGISTRÉS (non annulés) : sa date « Payée » découle des
+-- mouvements réels — posée seulement si ses encaissements couvrent le reste dû, et à la date du dernier ; jamais forcée à la main
+-- (l'encaissement manquant s'enregistre). Paiement historique (aucun encaissement enregistré) : inchangé (E1). Vider la date reste
+-- régi par show_payments_emitted_guard. Même règle : js/actions.js change:show_payments.paid_at, js/views/production.js
+create or replace function public.show_payments_paye_par_reglements() returns trigger
+ language plpgsql security definer set search_path = public, pg_temp
+as $$
+declare c record;
+begin
+  if new.paid_at is null or new.paid_at is not distinct from old.paid_at then return new; end if;
+  select * into c from public.reglement_couverture(new);
+  if c.nb = 0 then return new; end if;
+  if c.enc < c.net - 0.01 then
+    raise exception 'Encaissements enregistrés insuffisants (reste dû % € TTC) : enregistre l''encaissement manquant plutôt que de marquer la facture payée',
+      replace(to_char(c.net - c.enc, 'FM999999990.00'), '.', ',') using errcode = 'P0001';
+  end if;
+  if new.paid_at <> c.dernier then
+    raise exception 'Date « Payée » d''une facture suivie par ses encaissements : celle du dernier encaissement (%)', to_char(c.dernier, 'DD/MM/YYYY') using errcode = 'P0001';
+  end if;
+  return new;
+end $$;
+revoke all on function public.show_payments_paye_par_reglements() from public, anon, authenticated;   -- §7.3
+drop trigger if exists show_payments_paye_par_reglements on public.show_payments;
+create trigger show_payments_paye_par_reglements before update of paid_at on public.show_payments
+  for each row execute function public.show_payments_paye_par_reglements();
+
 -- annulation d'une saisie MANUELLE non rapprochée, avec motif ; jamais effacée (R2)
 create or replace function public.reglement_annuler(p_id uuid, p_motif text) returns public.reglements
  language plpgsql security definer set search_path = public, pg_temp
 as $$
-declare r public.reglements; p public.show_payments; vat numeric; net numeric; enc numeric; dernier date; paye date;
+declare r public.reglements; p public.show_payments; net numeric; enc numeric; dernier date; paye date;
 begin
   if not public.is_team() then raise exception 'Accès refusé'; end if;
   if nullif(btrim(p_motif), '') is null or length(btrim(p_motif)) > 500 then raise exception 'Motif obligatoire (500 caractères au plus)'; end if;
@@ -253,13 +298,7 @@ begin
   -- enregistré, E1) : jamais touché. Même calcul TTC : js/calc.js factureNetTtc / encaisseTtc.
   select * into p from public.show_payments where id = r.payment_id for update;
   if r.sens = 'encaissement' and r.etat = 'fait' and p.paid_at is not null then
-    vat := coalesce(p.vat_rate, case when p.kind in ('artbo', 'partner') then 20 end, (select s.vat_rate from public.shows s where s.id = p.show_id), 5.5);
-    net := greatest(0, round(coalesce(p.amount, public.payment_amount_now(p), 0) * (1 + vat / 100), 2)
-      - coalesce((select sum(coalesce(a.amount_ttc, round(a.amount_ht * (1 + vat / 100), 2))) from public.pennylane_avoirs a
-                   where a.payment_id = p.id and a.etat = 'rattache' and a.gone_at is null), 0));
-    select coalesce(sum(case when x.sens = 'encaissement' then x.montant_ttc else -x.montant_ttc end), 0),
-           max(x.date) filter (where x.sens = 'encaissement')
-      into enc, dernier from public.reglements x where x.payment_id = p.id and x.etat = 'fait' and x.annule_at is null;
+    select c.net, c.enc, c.dernier into net, enc, dernier from public.reglement_couverture(p) c;
     if enc + r.montant_ttc < net - 0.01 then paye := p.paid_at;                   -- pas couverte avant : l'annulation ne génère rien
     elsif dernier is not null and enc >= net - 0.01 then paye := case when p.paid_at = r.date then dernier else p.paid_at end;   -- reste soldée
     else paye := null;                                                         -- reste dû généré par l'annulation : rouverte
