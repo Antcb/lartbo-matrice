@@ -1,6 +1,6 @@
-# MATRICE — prototype UX/UI n° 1 (tableau de bord et navigation modulaire)
+# MATRICE — prototype UX/UI V2 (tableau de bord, navigation modulaire, préférences, panneau latéral)
 
-Branche `ux/refonte-uxui`, créée depuis `main` au commit `ee1f806` (v1.68.3, 26/11/2026).
+Branche `ux/refonte-uxui`, créée depuis `main` au commit `ee1f806` (v1.68.3, 26/11/2026). `main` inchangée depuis.
 Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (arbitrage A2). `DESIGN_SYSTEM.md` reste celui de `main`.
 
 ## Isolation
@@ -10,6 +10,14 @@ Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (a
 - Aucune connexion : ni Supabase, ni Google, ni Pennylane, ni Brevo. Aucun appel réseau.
 - Préférences gardées dans le stockage local du navigateur, sous une clé propre (`matrice-proto.prefs.v1`), conformément à l'arbitrage A12.
 - GitHub Pages ne publie que `main` : ce dossier n'est pas en ligne depuis le dépôt. La démonstration est hébergée à part (lien transmis dans le compte rendu).
+
+## V2 (26/11/2026) — après consultation sur Mac et iPhone
+
+- **Couches** : socle minéral avec trame de points de précision (sans dégradé) · surfaces métier opaques · navigation en verre · panneaux et menus.
+- **Verre** : barre latérale flottante, barre du bas, menus, recherche et feuille « Modules » en verre (flou + saturation, liseré lumineux, ombre diffuse). La trame du socle rend le flou perceptible **sans qu'aucune donnée ne passe derrière**. Désactivable (Préférences › Effets).
+- **Mac** : barre latérale détachée ; mode réduit = rail de 60 px avec sous-onglets en menu flottant et contenu élargi ; panneau de consultation **ancré et non bloquant** (l'espace de travail se resserre, Échap ferme) ; préférences en colonnes fluides ; indicateurs en IBM Plex Mono 30 px avec libellés techniques ; graphique : prévisionnel en aplat léger, réalisé en graphite, repère « aujourd'hui ».
+- **iPhone** : navigation unique (barre du bas en verre + feuille « Modules », plus de menu hamburger) ; 4 indicateurs sur une ligne (2 × 2 si texte ≥ 112 % ou écran trop étroit), montants abrégés avec bouton « Afficher les montants exacts » ; actions d'en-tête réduites à leur icône ; les listes passent à la ligne au lieu de couper (aucune information masquée) ; panneau en feuille haute.
+- **Accessibilité** : textes des statuts et priorités en couleur neutre (couleur sur l'icône seulement) ; teinte tertiaire assombrie ; lien « Aller au contenu » ; contrastes vérifiés automatiquement (axe-core).
 
 ## Contenu
 

@@ -1,7 +1,7 @@
 /* =====================================================================
-   MATRICE — jetons du design system (prototype UX/UI, cahier des charges v1.0)
-   Source unique des couleurs, tailles, rayons, durées. Aucune valeur en dur ailleurs.
-   Thème : attribut data-appearance="light|dark" sur <html> (posé par js/app.js selon le mode choisi).
+   MATRICE — jetons du design system (prototype UX/UI V2, cahier des charges v1.0)
+   Source unique des couleurs, tailles, rayons, ombres, durées. Aucune valeur en dur ailleurs.
+   Thème : data-appearance="light|dark" sur <html> (posé par js/app.js selon le mode choisi).
    ===================================================================== */
 
 @font-face{font-family:"Space Grotesk";src:url("../assets/fonts/space-grotesk-latin-var.woff2") format("woff2");font-weight:300 700;font-style:normal;font-display:swap}
@@ -17,115 +17,116 @@
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* Palette Minéral & Sauge — mode clair (étape 2) */
-  --c-bg: #F4F5F2;          /* minéral */
-  --c-surface: #FFFFFF;
+  --c-bg: #F4F5F2;          /* minéral : socle */
+  --c-surface: #FFFFFF;     /* surfaces métier, toujours opaques */
   --c-line: #E1E5DF;        /* séparateurs */
   --c-ink: #29332E;         /* graphite */
-  --c-ink-2: #5E6862;       /* texte secondaire — 5,3:1 sur minéral (mesuré) */
-  --c-sage: #718579;        /* accent sauge : marques, traits, états actifs (3,9:1 sur blanc : pas pour du petit texte) */
-  --c-sage-ink: #5C6E63;    /* variante plus foncée autorisée pour le texte (5,4:1 sur blanc) */
-  --c-sage-tint: #E9EEEA;   /* fond d'un élément actif */
-  --c-row-alt: #F8F9F6;     /* alternance très subtile des lignes */
-  --c-hover: #EEF0EC;
-  --c-primary: #29332E;     /* action principale : fond graphite */
-  --c-on-primary: #FFFFFF;
+  --c-ink-2: #5E6862;       /* texte secondaire (5,3:1 sur minéral, à valider) */
+  --c-ink-3: #626B66;       /* texte tertiaire : unités, jours, repères d'axes (≥ 4,5:1 sur survol et sélection) */
+  --c-sage: #718579;        /* accent : marques, traits, états actifs */
+  --c-sage-ink: #5C6E63;    /* variante foncée pour le texte (5,4:1 sur blanc) */
+  --c-sage-tint: #E9EEEA;
+  --c-row-alt: #F8F9F6;
+  --c-hover: #F0F2EE;
+  --c-primary: #29332E; --c-on-primary: #FFFFFF;
+  --hair: rgb(41 51 46 / .10);        /* filet fin des surfaces */
+  --hair-strong: rgb(41 51 46 / .16);
+  --plan: rgb(41 51 46 / .11);        /* prévisionnel dans les graphiques */
 
   /* Couleurs fonctionnelles — mode clair (étape 8), petits marqueurs uniquement */
-  --c-ok: #52755D;
-  --c-warn: #B59A3B;
-  --c-warn-ink: #8B6F1E;    /* variante texte de la vigilance (#B59A3B = 2,75:1 sur blanc, insuffisant pour du texte) */
-  --c-err: #A55353;
-  --c-info: #56758C;
-  --c-off: #737873;
+  --c-ok: #52755D; --c-warn: #B59A3B; --c-warn-ink: #8B6F1E; --c-err: #A55353; --c-info: #56758C; --c-off: #737873;
 
-  /* Verre (étape 6) : navigation seulement, jamais sur les données */
-  --glass-bg: rgb(255 255 255 / .72);
-  --glass-edge: rgb(255 255 255 / .9);
-  --glass-blur: 14px;
-  --shadow-soft: 0 1px 2px rgb(41 51 46 / .05), 0 4px 16px rgb(41 51 46 / .06);
-  --shadow-float: 0 8px 28px rgb(41 51 46 / .14), 0 1px 3px rgb(41 51 46 / .08);
-  --scrim: rgb(41 51 46 / .28);
+  /* Profondeur : trois niveaux d'ombre diffuse */
+  --shadow-card: 0 0 0 1px var(--hair), 0 1px 2px rgb(41 51 46 / .04), 0 3px 10px -4px rgb(41 51 46 / .06);
+  --shadow-raise: 0 0 0 1px var(--hair), 0 2px 6px -1px rgb(41 51 46 / .06), 0 14px 32px -10px rgb(41 51 46 / .16);
+  --shadow-float: 0 0 0 1px var(--hair), 0 4px 10px -2px rgb(41 51 46 / .08), 0 28px 60px -16px rgb(41 51 46 / .26);
+  --scrim: rgb(41 51 46 / .22);
 
-  /* Rayons (étape 3) */
-  --r-btn: 6px; --r-field: 6px; --r-table: 6px; --r-card: 8px; --r-menu: 8px; --r-modal: 12px; --r-panel: 12px;
+  /* Verre (étape 6) — navigation uniquement, jamais sur les données */
+  --glass-bg: rgb(252 253 251 / .40);
+  --glass-strong: rgb(252 253 251 / .64);
+  --glass-blur: 22px; --glass-sat: 1.7;
+  --glass-rim: inset 0 1px 0 rgb(255 255 255 / .95), inset 0 0 0 1px rgb(255 255 255 / .55), inset 0 -1px 0 rgb(41 51 46 / .05);
+  --glass-shadow: 0 0 0 1px rgb(41 51 46 / .07), 0 2px 4px rgb(41 51 46 / .04), 0 18px 40px -12px rgb(41 51 46 / .20);
+  --lens: rgb(255 255 255 / .92);     /* élément actif posé sur le verre */
+  --lens-shadow: 0 0 0 1px rgb(41 51 46 / .07), 0 1px 2px rgb(41 51 46 / .08), 0 4px 10px -3px rgb(41 51 46 / .12);
+  /* Trame de précision du socle : rend le verre perceptible sans rien faire passer derrière (aucun dégradé) */
+  --substrate: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Ccircle cx='1' cy='1' r='.9' fill='%2329332E' fill-opacity='.10'/%3E%3C/svg%3E");
 
-  /* Typographie (étape 1) — tailles en rem, multipliées par le réglage « taille du texte » (--ts) */
+  /* Rayons (étape 3) — panneaux adoucis à 16 px (V2) */
+  --r-btn: 6px; --r-field: 6px; --r-table: 6px; --r-card: 8px; --r-menu: 10px; --r-modal: 14px; --r-panel: 16px; --r-nav: 14px;
+
+  /* Typographie (étape 1) — rem × réglage « taille du texte » (--ts) */
   --ts: 1;
-  --fs-page: calc(1.5rem * var(--ts));       /* 24 px ordinateur */
-  --fs-section: calc(1rem * var(--ts));      /* 16 px */
-  --fs-body: calc(.875rem * var(--ts));      /* 14 px */
-  --fs-list: calc(.8125rem * var(--ts));     /* 13 px */
-  --fs-nav: calc(.875rem * var(--ts));       /* 14 px */
-  --fs-small: calc(.75rem * var(--ts));      /* 12 px */
-  --fs-kpi: calc(1.375rem * var(--ts));      /* valeurs des indicateurs */
-  --fw-body: 400; --fw-strong: 560; --fw-title: 600;
+  --fs-page: calc(1.5rem * var(--ts));
+  --fs-section: calc(.9375rem * var(--ts));
+  --fs-body: calc(.875rem * var(--ts));
+  --fs-list: calc(.8125rem * var(--ts));
+  --fs-nav: calc(.875rem * var(--ts));
+  --fs-small: calc(.75rem * var(--ts));
+  --fs-kpi: calc(1.875rem * var(--ts));
+  --fw-body: 400; --fw-strong: 550; --fw-title: 600;
   --lh: 1.45; --ls: 0;
 
-  /* Densité (étapes 5, 9, 10) : ordinateur par défaut, tablette et téléphone plus bas */
-  --row-h: 28px;            /* compacte */
-  --btn-h: 32px;
-  --touch: 24px;            /* cible minimale ; 44 px au doigt */
+  /* Densité (étapes 5, 9, 10) */
+  --row-h: 28px; --btn-h: 32px; --touch: 24px;
   --gap: 12px; --pad: 16px; --pad-main: 24px;
 
-  /* Durées (étape 12) — ramenées à 0 si les animations sont coupées */
+  /* Durées (étape 12) */
   --d-panel: 180ms; --d-menu: 150ms; --d-modal: 160ms; --d-hover: 100ms; --d-toast: 150ms;
   --ease: cubic-bezier(.2, 0, 0, 1);
 
-  /* Navigation */
-  --side-w: 248px; --side-w-mini: 64px; --top-h: 52px; --bottom-h: 64px;
+  /* Navigation et panneau */
+  --side-w: 244px; --side-w-mini: 60px; --top-h: 52px; --dock-w: clamp(340px, 28vw, 440px); --frame: 8px;
 }
 
-/* Mode sombre — palette provisoire Graphite doux (étapes 7 et 8) */
+/* Mode sombre — Graphite doux (étapes 7 et 8) */
 :root[data-appearance="dark"]{
   color-scheme: dark;
   --c-bg: #303330; --c-surface: #393D39; --c-line: #484D48;
-  --c-ink: #DADDD8; --c-ink-2: #C0C6BF;
+  --c-ink: #DADDD8; --c-ink-2: #C0C6BF; --c-ink-3: #B6BCB5;
   --c-sage: #9BAFA0; --c-sage-ink: #9BAFA0; --c-sage-tint: #424A44;
-  --c-row-alt: #3D413D; --c-hover: #424742;
+  --c-row-alt: #3C403C; --c-hover: #424742;
   --c-primary: #DADDD8; --c-on-primary: #303330;
+  --hair: rgb(255 255 255 / .08); --hair-strong: rgb(255 255 255 / .14); --plan: rgb(218 221 216 / .14);
   --c-ok: #82A08A; --c-warn: #C2A64E; --c-warn-ink: #C2A64E; --c-err: #BC7777; --c-info: #829EB4; --c-off: #959B95;
-  --glass-bg: rgb(57 61 57 / .72); --glass-edge: rgb(255 255 255 / .07);
-  --shadow-soft: 0 1px 2px rgb(0 0 0 / .18), 0 4px 16px rgb(0 0 0 / .14);
-  --shadow-float: 0 10px 30px rgb(0 0 0 / .32), 0 1px 3px rgb(0 0 0 / .2);
-  --scrim: rgb(0 0 0 / .38);
+  --shadow-card: 0 0 0 1px var(--hair), 0 1px 2px rgb(0 0 0 / .18), 0 3px 10px -4px rgb(0 0 0 / .22);
+  --shadow-raise: 0 0 0 1px var(--hair), 0 2px 6px -1px rgb(0 0 0 / .22), 0 14px 32px -10px rgb(0 0 0 / .40);
+  --shadow-float: 0 0 0 1px var(--hair-strong), 0 4px 10px -2px rgb(0 0 0 / .28), 0 28px 60px -16px rgb(0 0 0 / .55);
+  --scrim: rgb(0 0 0 / .36);
+  --glass-bg: rgb(66 71 66 / .40); --glass-strong: rgb(60 65 60 / .66);
+  --glass-rim: inset 0 1px 0 rgb(255 255 255 / .13), inset 0 0 0 1px rgb(255 255 255 / .07), inset 0 -1px 0 rgb(0 0 0 / .18);
+  --glass-shadow: 0 0 0 1px rgb(0 0 0 / .22), 0 2px 4px rgb(0 0 0 / .16), 0 18px 44px -12px rgb(0 0 0 / .50);
+  --lens: rgb(255 255 255 / .12);
+  --lens-shadow: 0 0 0 1px rgb(255 255 255 / .10), inset 0 1px 0 rgb(255 255 255 / .10), 0 4px 10px -3px rgb(0 0 0 / .35);
+  --substrate: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Ccircle cx='1' cy='1' r='.9' fill='%23FFFFFF' fill-opacity='.07'/%3E%3C/svg%3E");
 }
-/* Sans JavaScript : suit le système */
 @media (prefers-color-scheme: dark){
-  :root:not([data-appearance]){
-    color-scheme: dark;
-    --c-bg: #303330; --c-surface: #393D39; --c-line: #484D48; --c-ink: #DADDD8; --c-ink-2: #C0C6BF;
-    --c-sage: #9BAFA0; --c-sage-ink: #9BAFA0; --c-sage-tint: #424A44; --c-row-alt: #3D413D; --c-hover: #424742;
-    --c-primary: #DADDD8; --c-on-primary: #303330;
-  }
+  :root:not([data-appearance]){ color-scheme: dark; --c-bg: #303330; --c-surface: #393D39; --c-ink: #DADDD8; --c-ink-2: #C0C6BF; }
 }
 
 /* Réglages de confort (étape 7) */
-:root[data-contrast="high"]{ --c-ink-2: var(--c-ink); --c-line: #C9CFC7; }
-:root[data-appearance="dark"][data-contrast="high"]{ --c-line: #5D635D; }
-:root[data-weight="strong"]{ --fw-body: 470; --fw-strong: 620; --fw-title: 650; }
+:root[data-contrast="high"]{ --c-ink-2: var(--c-ink); --c-ink-3: var(--c-ink-2); --hair: rgb(41 51 46 / .22); --hair-strong: rgb(41 51 46 / .30); --c-line: #C9CFC7; }
+:root[data-appearance="dark"][data-contrast="high"]{ --c-ink-3: #C0C6BF; --hair: rgb(255 255 255 / .18); --hair-strong: rgb(255 255 255 / .26); --c-line: #5D635D; }
+:root[data-weight="strong"]{ --fw-body: 470; --fw-strong: 620; --fw-title: 660; }
 :root[data-leading="airy"]{ --lh: 1.65; }
 :root[data-tracking="wide"]{ --ls: .015em; }
 
-/* Densité (étape 9) — ordinateur */
+/* Densité — ordinateur */
 :root[data-density="standard"]{ --row-h: 34px; --gap: 14px; --pad: 18px; }
 :root[data-density="confort"]{ --row-h: 42px; --gap: 16px; --pad: 20px; }
-
-/* Tablette (761–1023 px) : lignes et boutons un peu plus hauts */
 @media (max-width: 1023px){
   :root{ --fs-page: calc(1.375rem * var(--ts)); --row-h: 32px; --btn-h: 36px; --pad-main: 20px; }
   :root[data-density="standard"]{ --row-h: 38px; }
   :root[data-density="confort"]{ --row-h: 44px; }
 }
-/* Téléphone (≤ 760 px) */
+/* Téléphone */
 @media (max-width: 760px){
-  :root{ --fs-page: calc(1.125rem * var(--ts)); --fs-section: calc(.9375rem * var(--ts)); --fs-nav: calc(.75rem * var(--ts));
-    --fs-kpi: calc(1.0625rem * var(--ts)); --pad-main: 12px; --pad: 14px; --gap: 10px; }
+  :root{ --fs-page: calc(1.25rem * var(--ts)); --fs-section: calc(.9375rem * var(--ts)); --fs-nav: calc(.6875rem * var(--ts));
+    --fs-kpi: calc(1.125rem * var(--ts)); --pad-main: 14px; --pad: 14px; --gap: 10px; --frame: 10px; }
 }
-/* Écran tactile : cibles de 44 px minimum (étape 10) */
 @media (pointer: coarse){ :root{ --touch: 44px; } }
 
-/* Animations coupées : réglage ou préférence système (étape 12) */
+/* Animations coupées (étape 12) */
 :root[data-motion="off"]{ --d-panel: 0ms; --d-menu: 0ms; --d-modal: 0ms; --d-hover: 0ms; --d-toast: 0ms; }
-@media (prefers-reduced-motion: reduce){
-  :root{ --d-panel: 0ms; --d-menu: 0ms; --d-modal: 0ms; --d-hover: 0ms; --d-toast: 0ms; }
-}
+@media (prefers-reduced-motion: reduce){ :root{ --d-panel: 0ms; --d-menu: 0ms; --d-modal: 0ms; --d-hover: 0ms; --d-toast: 0ms; } }
