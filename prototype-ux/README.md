@@ -1,4 +1,4 @@
-# MATRICE — prototype UX/UI V2 (tableau de bord, navigation modulaire, préférences, panneau latéral)
+# MATRICE — prototype UX/UI V3 (tableau de bord, navigation modulaire, préférences, panneau latéral)
 
 Branche `ux/refonte-uxui`, créée depuis `main` au commit `ee1f806` (v1.68.3, 26/11/2026). `main` inchangée depuis.
 Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (arbitrage A2). `DESIGN_SYSTEM.md` reste celui de `main`.
@@ -10,6 +10,14 @@ Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (a
 - Aucune connexion : ni Supabase, ni Google, ni Pennylane, ni Brevo. Aucun appel réseau.
 - Préférences gardées dans le stockage local du navigateur, sous une clé propre (`matrice-proto.prefs.v1`), conformément à l'arbitrage A12.
 - GitHub Pages ne publie que `main` : ce dossier n'est pas en ligne depuis le dépôt. La démonstration est hébergée à part (lien transmis dans le compte rendu).
+
+## V3 (26/11/2026) — direction artistique
+
+- Trame de points supprimée ; fond clair neutralisé (`#F3F3F1`, sans dominante verte) ; palette sombre inchangée ; teintes tertiaires V2 conservées.
+- Verre sans motif de fond : translucidité, reflet supérieur (sur l'élément vitré seulement), liserés de 0,5 px, ombre de séparation en deux plans. Désactivable.
+- Sauge renforcée sur les éléments actifs : lentille sauge fine dans la navigation et la barre du bas, ligne sélectionnée avec filet sauge.
+- Mac : cartes à la hauteur de leur contenu (plus de vides dans Tâches et Billetterie) ; panneau : statut et lieu dans l'en-tête, faits clés, listes à filets, note distincte.
+- iPhone : barre du bas affinée (50 px), libellés courts des indicateurs sans coupure de mot (libellé complet lu par les lecteurs d'écran), en-têtes de cartes et lignes plus compacts, feuille « Modules » en deux colonnes par module sans répéter la barre du bas, contrôles segmentés affinés (zone tactile de 44 px conservée), interrupteur Animations verrouillé et décoché quand le système impose la réduction.
 
 ## V2 (26/11/2026) — après consultation sur Mac et iPhone
 

@@ -17,7 +17,7 @@
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* Palette Minéral & Sauge — mode clair (étape 2) */
-  --c-bg: #F4F5F2;          /* minéral : socle */
+  --c-bg: #F3F3F1;          /* minéral neutre et lumineux (V3 : sans dominante verte) */
   --c-surface: #FFFFFF;     /* surfaces métier, toujours opaques */
   --c-line: #E1E5DF;        /* séparateurs */
   --c-ink: #29332E;         /* graphite */
@@ -25,33 +25,36 @@
   --c-ink-3: #626B66;       /* texte tertiaire : unités, jours, repères d'axes (≥ 4,5:1 sur survol et sélection) */
   --c-sage: #718579;        /* accent : marques, traits, états actifs */
   --c-sage-ink: #5C6E63;    /* variante foncée pour le texte (5,4:1 sur blanc) */
-  --c-sage-tint: #E9EEEA;
-  --c-row-alt: #F8F9F6;
-  --c-hover: #F0F2EE;
+  --c-sage-tint: #E6ECE8;
+  --c-row-alt: #F9F9F8;
+  --c-hover: #F1F2F0;
   --c-primary: #29332E; --c-on-primary: #FFFFFF;
-  --hair: rgb(41 51 46 / .10);        /* filet fin des surfaces */
-  --hair-strong: rgb(41 51 46 / .16);
+  --hair: rgb(28 32 30 / .085);       /* filet fin des surfaces */
+  --hair-strong: rgb(28 32 30 / .15);
   --plan: rgb(41 51 46 / .11);        /* prévisionnel dans les graphiques */
 
   /* Couleurs fonctionnelles — mode clair (étape 8), petits marqueurs uniquement */
   --c-ok: #52755D; --c-warn: #B59A3B; --c-warn-ink: #8B6F1E; --c-err: #A55353; --c-info: #56758C; --c-off: #737873;
 
   /* Profondeur : trois niveaux d'ombre diffuse */
-  --shadow-card: 0 0 0 1px var(--hair), 0 1px 2px rgb(41 51 46 / .04), 0 3px 10px -4px rgb(41 51 46 / .06);
+  --shadow-card: 0 0 0 .5px rgb(0 0 0 / .08), 0 1px 2px rgb(0 0 0 / .04), 0 6px 16px -8px rgb(28 32 30 / .10);
   --shadow-raise: 0 0 0 1px var(--hair), 0 2px 6px -1px rgb(41 51 46 / .06), 0 14px 32px -10px rgb(41 51 46 / .16);
   --shadow-float: 0 0 0 1px var(--hair), 0 4px 10px -2px rgb(41 51 46 / .08), 0 28px 60px -16px rgb(41 51 46 / .26);
   --scrim: rgb(41 51 46 / .22);
 
-  /* Verre (étape 6) — navigation uniquement, jamais sur les données */
-  --glass-bg: rgb(252 253 251 / .40);
-  --glass-strong: rgb(252 253 251 / .64);
-  --glass-blur: 22px; --glass-sat: 1.7;
-  --glass-rim: inset 0 1px 0 rgb(255 255 255 / .95), inset 0 0 0 1px rgb(255 255 255 / .55), inset 0 -1px 0 rgb(41 51 46 / .05);
-  --glass-shadow: 0 0 0 1px rgb(41 51 46 / .07), 0 2px 4px rgb(41 51 46 / .04), 0 18px 40px -12px rgb(41 51 46 / .20);
-  --lens: rgb(255 255 255 / .92);     /* élément actif posé sur le verre */
-  --lens-shadow: 0 0 0 1px rgb(41 51 46 / .07), 0 1px 2px rgb(41 51 46 / .08), 0 4px 10px -3px rgb(41 51 46 / .12);
-  /* Trame de précision du socle : rend le verre perceptible sans rien faire passer derrière (aucun dégradé) */
-  --substrate: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Ccircle cx='1' cy='1' r='.9' fill='%2329332E' fill-opacity='.10'/%3E%3C/svg%3E");
+  /* Verre (étape 6, V3) — navigation uniquement : translucidité, reflet supérieur, liserés fins, ombre de séparation */
+  --glass-bg: rgb(255 255 255 / .62);
+  --glass-strong: rgb(255 255 255 / .74);
+  --glass-blur: 24px; --glass-sat: 1.8;
+  --glass-sheen: linear-gradient(180deg, rgb(255 255 255 / .70) 0, rgb(255 255 255 / .18) 36%, rgb(255 255 255 / 0) 62%);
+  --glass-rim: inset 0 1px 0 rgb(255 255 255 / 1), inset 0 0 0 .5px rgb(255 255 255 / .75), inset 0 -.5px 0 rgb(0 0 0 / .06);
+  --glass-shadow: 0 0 0 .5px rgb(0 0 0 / .09), 0 1px 2px rgb(0 0 0 / .05), 0 12px 32px -10px rgb(28 32 30 / .20), 0 36px 70px -34px rgb(28 32 30 / .26);
+  /* Sélection posée sur le verre : lentille sauge fine (V3) */
+  --lens: rgb(113 133 121 / .20);
+  --lens-shadow: inset 0 0 0 .5px rgb(113 133 121 / .50), inset 0 1px 0 rgb(255 255 255 / .55);
+  /* Curseur des contrôles segmentés */
+  --thumb: #FFFFFF;
+  --thumb-shadow: 0 0 0 .5px rgb(0 0 0 / .08), 0 1px 2px rgb(0 0 0 / .08), 0 2px 6px -2px rgb(0 0 0 / .10);
 
   /* Rayons (étape 3) — panneaux adoucis à 16 px (V2) */
   --r-btn: 6px; --r-field: 6px; --r-table: 6px; --r-card: 8px; --r-menu: 10px; --r-modal: 14px; --r-panel: 16px; --r-nav: 14px;
@@ -90,16 +93,17 @@
   --c-primary: #DADDD8; --c-on-primary: #303330;
   --hair: rgb(255 255 255 / .08); --hair-strong: rgb(255 255 255 / .14); --plan: rgb(218 221 216 / .14);
   --c-ok: #82A08A; --c-warn: #C2A64E; --c-warn-ink: #C2A64E; --c-err: #BC7777; --c-info: #829EB4; --c-off: #959B95;
-  --shadow-card: 0 0 0 1px var(--hair), 0 1px 2px rgb(0 0 0 / .18), 0 3px 10px -4px rgb(0 0 0 / .22);
+  --shadow-card: 0 0 0 .5px rgb(255 255 255 / .09), 0 1px 2px rgb(0 0 0 / .20), 0 6px 16px -8px rgb(0 0 0 / .30);
   --shadow-raise: 0 0 0 1px var(--hair), 0 2px 6px -1px rgb(0 0 0 / .22), 0 14px 32px -10px rgb(0 0 0 / .40);
   --shadow-float: 0 0 0 1px var(--hair-strong), 0 4px 10px -2px rgb(0 0 0 / .28), 0 28px 60px -16px rgb(0 0 0 / .55);
   --scrim: rgb(0 0 0 / .36);
-  --glass-bg: rgb(66 71 66 / .40); --glass-strong: rgb(60 65 60 / .66);
-  --glass-rim: inset 0 1px 0 rgb(255 255 255 / .13), inset 0 0 0 1px rgb(255 255 255 / .07), inset 0 -1px 0 rgb(0 0 0 / .18);
-  --glass-shadow: 0 0 0 1px rgb(0 0 0 / .22), 0 2px 4px rgb(0 0 0 / .16), 0 18px 44px -12px rgb(0 0 0 / .50);
-  --lens: rgb(255 255 255 / .12);
-  --lens-shadow: 0 0 0 1px rgb(255 255 255 / .10), inset 0 1px 0 rgb(255 255 255 / .10), 0 4px 10px -3px rgb(0 0 0 / .35);
-  --substrate: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Ccircle cx='1' cy='1' r='.9' fill='%23FFFFFF' fill-opacity='.07'/%3E%3C/svg%3E");
+  --glass-bg: rgb(62 66 62 / .58); --glass-strong: rgb(58 62 58 / .80);
+  --glass-sheen: linear-gradient(180deg, rgb(255 255 255 / .10) 0, rgb(255 255 255 / .03) 38%, rgb(255 255 255 / 0) 64%);
+  --glass-rim: inset 0 1px 0 rgb(255 255 255 / .16), inset 0 0 0 .5px rgb(255 255 255 / .10), inset 0 -1px 0 rgb(0 0 0 / .28);
+  --glass-shadow: 0 0 0 .5px rgb(0 0 0 / .55), 0 2px 4px rgb(0 0 0 / .20), 0 16px 40px -10px rgb(0 0 0 / .55);
+  --lens: rgb(155 175 160 / .22);
+  --lens-shadow: inset 0 0 0 .5px rgb(155 175 160 / .50), inset 0 1px 0 rgb(255 255 255 / .08);
+  --thumb: #4A4F4A; --thumb-shadow: 0 0 0 .5px rgb(255 255 255 / .10), inset 0 1px 0 rgb(255 255 255 / .08), 0 1px 3px rgb(0 0 0 / .35);
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-appearance]){ color-scheme: dark; --c-bg: #303330; --c-surface: #393D39; --c-ink: #DADDD8; --c-ink-2: #C0C6BF; }
@@ -123,7 +127,7 @@
 /* Téléphone */
 @media (max-width: 760px){
   :root{ --fs-page: calc(1.25rem * var(--ts)); --fs-section: calc(.9375rem * var(--ts)); --fs-nav: calc(.6875rem * var(--ts));
-    --fs-kpi: calc(1.125rem * var(--ts)); --pad-main: 14px; --pad: 14px; --gap: 10px; --frame: 10px; }
+    --fs-kpi: calc(1.125rem * var(--ts)); --pad-main: 12px; --pad: 12px; --gap: 8px; --frame: 10px; }
 }
 @media (pointer: coarse){ :root{ --touch: 44px; } }
 

@@ -43,17 +43,18 @@ window.MATRICE_DATA = (() => {
   };
 
   // Indicateurs proposés (libellés repris de MATRICE quand ils existent) — valeurs fictives
+  // m : libellé court pour la ligne de 4 indicateurs sur téléphone (le libellé complet reste lu par les lecteurs d'écran)
   const KPIS = {
-    confirmees: { label: 'Dates confirmées', value: '18', note: 'saison 2026-2027' },
-    options: { label: 'Options en cours', value: '7', note: 'dont 2 à relancer' },
-    cachets: { label: 'Cachets confirmés', value: 64350, eur: true, note: 'HT, saison en cours' },
-    commissions: { label: 'Commissions nettes', value: 8912, eur: true, note: 'après part partenaires' },
-    reste: { label: 'Reste à encaisser', value: 21480, eur: true, note: 'production' },
-    impayes: { label: 'Factures impayées', value: 6240, eur: true, note: '3 factures émises' },
-    relances: { label: 'Relances en retard', value: '4', note: 'à traiter', warn: true },
-    suivis: { label: 'Suivis à relancer', value: '9', note: 'sans réponse > 10 j' },
-    taches: { label: 'Tâches urgentes', value: '5', note: 'échéance ≤ 7 j' },
-    remplissage: { label: 'Remplissage moyen', value: '72 %', note: 'dates en billetterie' },
+    confirmees: { m: 'Confirmées', label: 'Dates confirmées', value: '18', note: 'saison 2026-2027' },
+    options: { m: 'Options', label: 'Options en cours', value: '7', note: 'dont 2 à relancer' },
+    cachets: { m: 'Cachets', label: 'Cachets confirmés', value: 64350, eur: true, note: 'HT, saison en cours' },
+    commissions: { m: 'Commissions', label: 'Commissions nettes', value: 8912, eur: true, note: 'après part partenaires' },
+    reste: { m: 'À encaisser', label: 'Reste à encaisser', value: 21480, eur: true, note: 'production' },
+    impayes: { m: 'Impayés', label: 'Factures impayées', value: 6240, eur: true, note: '3 factures émises' },
+    relances: { m: 'Retards', label: 'Relances en retard', value: '4', note: 'à traiter', warn: true },
+    suivis: { m: 'À relancer', label: 'Suivis à relancer', value: '9', note: 'sans réponse > 10 j' },
+    taches: { m: 'Urgentes', label: 'Tâches urgentes', value: '5', note: 'échéance ≤ 7 j' },
+    remplissage: { m: 'Remplissage', label: 'Remplissage moyen', value: '72 %', note: 'dates en billetterie' },
   };
 
   const BLOCKS = {

@@ -184,7 +184,7 @@
     return pageHead(t, { sub: `<span>${esc(dLong(D.TODAY))}</span>`,
         acts: `<button class="btn" type="button" data-act="customize" title="Personnaliser le tableau de bord">${icon('sliders-horizontal', 'sm')}<span class="bt">Personnaliser</span></button>` })
       + `<section class="card kpis-wrap" aria-label="Indicateurs principaux"><div class="kpis ${S.exact ? 'exact' : ''}">${kpis.map(k => `<div class="kpi ${k.warn ? 'k-warn' : ''}">
-          <span class="k-label">${esc(k.label)}</span><span class="k-value">${kpiValue(k)}</span>
+          <span class="k-label" title="${esc(k.label)}"><span class="k-l-full">${esc(k.label)}</span><span class="k-l-short" aria-hidden="true">${esc(k.m || k.label)}</span></span><span class="k-value">${kpiValue(k)}</span>
           <span class="k-note">${k.warn ? icon('triangle-alert') : ''}${esc(k.note)}</span></div>`).join('')}</div>
         ${kpis.some(k => k.eur && k.value >= 10000) ? `<button class="kpi-hint" type="button" data-act="exact" aria-pressed="${S.exact}">${icon(S.exact ? 'eye-off' : 'eye', 'sm')}${S.exact ? 'Montants abrégés' : 'Afficher les montants exacts'}</button>` : ''}</section>`
       + `<div class="grid">${blocks.map(b => `<section class="card span-${SPAN[b]}" aria-labelledby="h-${b}">${BLOCK[b]()}</section>`).join('')}</div>`;
@@ -294,7 +294,7 @@
 
   // Préférences personnelles (colonnes fluides)
   const seg = (name, cur, opts, label) => `<div class="seg" role="radiogroup" aria-label="${esc(label || name)}">${opts.map(([v, l]) => `<label><input type="radio" name="${esc(name)}" value="${esc(v)}" data-pref="${esc(name)}" ${String(cur) === String(v) ? 'checked' : ''}><span>${esc(l)}</span></label>`).join('')}</div>`;
-  const sw = (id, label, on, hint = '') => `<label class="switch" for="${id}"><span class="txt">${esc(label)}${hint ? `<br><span class="hint">${esc(hint)}</span>` : ''}</span><input type="checkbox" role="switch" id="${id}" data-pref="${id}" ${on ? 'checked' : ''}></label>`;
+  const sw = (id, label, on, hint = '', disabled = false) => `<label class="switch" for="${id}"><span class="txt">${esc(label)}${hint ? `<br><span class="hint">${esc(hint)}</span>` : ''}</span><input type="checkbox" role="switch" id="${id}" data-pref="${id}" ${on ? 'checked' : ''} ${disabled ? 'disabled aria-disabled="true"' : ''}></label>`;
   function prefsPage(){
     const t = tabById('preferences'), dev = device();
     const mods = P.order.map(modById).filter(Boolean);
@@ -310,7 +310,7 @@
       ${card('p-dens', 'Densité', `${seg('density', P.density[dev], [['compacte', 'Compacte'], ['standard', 'Standard'], ['confort', 'Confort']], 'Densité')}
         <p class="hint">Réglage propre à ce type d’appareil (${DEVICE_LABEL[dev]}).</p>`)}
       ${card('p-fx', 'Effets', `${sw('glass', 'Effets de verre', P.glass, 'Navigation et menus seulement, jamais sur les données')}
-        ${sw('motion', 'Animations', P.motion, MQ.still.matches ? 'Votre système demande de réduire les animations : elles restent coupées.' : 'Panneaux, menus et fenêtres')}`)}
+        ${MQ.still.matches ? sw('motion', 'Animations', false, 'Désactivées par votre système (réduction des animations) : réglage indisponible ici.', true) : sw('motion', 'Animations', P.motion, 'Panneaux, menus et fenêtres')}`)}
       ${card('p-read', 'Confort de lecture', `<div class="pref-row"><span class="l">Taille du texte</span>${seg('textSize', P.textSize, [['0.9', '90 %'], ['1', '100 %'], ['1.125', '112 %'], ['1.25', '125 %']], 'Taille du texte')}</div>
         <div class="pref-row"><span class="l">Graisse</span>${seg('weight', P.weight, [['normal', 'Normale'], ['strong', 'Renforcée']], 'Graisse')}</div>
         <div class="pref-row"><span class="l">Interligne</span>${seg('leading', P.leading, [['normal', 'Standard'], ['airy', 'Aéré']], 'Interligne')}</div>
@@ -339,9 +339,9 @@
   }
 
   // ───────────────────────── Panneau latéral : ancré et non bloquant sur Mac, feuille sur iPhone
-  function panelShell(title, eyebrow, body, foot){
+  function panelShell(title, eyebrow, body, foot, meta = ''){
     return `<div class="pnl"><div class="pnl-head"><div class="ttl">${eyebrow ? `<span class="eyebrow">${eyebrow}</span>` : ''}<h2 id="pnl-title" tabindex="-1">${esc(title)}</h2></div>
-        <button class="btn ghost icon" type="button" data-act="closePanel" aria-label="Fermer le panneau">${icon('x')}</button></div>
+        <button class="btn ghost icon" type="button" data-act="closePanel" aria-label="Fermer le panneau">${icon('x')}</button>${meta ? `<div class="meta">${meta}</div>` : ''}</div>
       <div class="pnl-body">${body}</div>${foot ? `<div class="pnl-foot">${foot}</div>` : ''}</div>`;
   }
   function openPanel(kind, html){
@@ -378,15 +378,15 @@
     S.openDate = id;
     $$('.r-date').forEach(r => { if (r.dataset.id === id) r.setAttribute('aria-current', 'true'); else r.removeAttribute('aria-current'); });
     const pct = d.capacity ? Math.round(d.sold / d.capacity * 100) : 0;
-    const body = `<div>${statusPill(d.status)}</div>
-      <div class="facts"><div class="fact"><span class="eyebrow">Date</span><span class="v">${esc(dShort(d.date))}</span><span class="hint">${esc(dLong(d.date))}</span></div>
+    const body = `<div class="facts"><div class="fact"><span class="eyebrow">Date</span><span class="v">${esc(dShort(d.date))}</span><span class="hint">${esc(dLong(d.date))}</span></div>
         <div class="fact"><span class="eyebrow">Cachet HT</span><span class="v">${d.fee ? esc(eur(d.fee)) : '—'}</span><span class="hint">Contrat : ${esc(d.contract)}</span></div></div>
       <div class="pnl-sec"><h3>Lieu</h3><dl class="kv"><dt>Structure</dt><dd>${esc(d.venue)}</dd><dt>Ville</dt><dd>${esc(d.city)}</dd><dt>Artiste</dt><dd>${esc(d.artist)}</dd></dl></div>
       ${d.capacity ? `<div class="pnl-sec"><h3>Billetterie</h3><div class="meter"><span class="m-name">${NUM.format(d.sold)} vendus sur ${NUM.format(d.capacity)}</span><span class="m-val">${pct} %</span>
         <span class="m-track" role="img" aria-label="${esc(`${d.sold} billets vendus sur ${d.capacity}, seuil ${d.seuil}`)}"><span class="m-fill" data-w="${pct}%"></span><span class="m-seuil" data-s="${(d.seuil / d.capacity * 100).toFixed(1)}%"></span></span>
         <span class="m-state ${d.sold >= d.seuil ? 'ok' : ''}">${d.sold >= d.seuil ? icon('circle-check') + 'Seuil atteint' : `Seuil : ${NUM.format(d.seuil)} billets`}</span></div></div>` : ''}
-      <p class="hint">Consultation seule dans le prototype. Sur ordinateur, le panneau ne bloque pas l’espace de travail : cliquez sur une autre date pour l’afficher ici.</p>`;
-    openPanel('date', panelShell(d.artist, 'Date', body, `<button class="btn" type="button" data-act="closePanel">Fermer</button><a class="btn primary" href="#production" data-go="production">Ouvrir dans Production</a>`));
+      <p class="pnl-note">Consultation seule dans le prototype. Sur ordinateur, le panneau ne bloque pas l’espace de travail : cliquez sur une autre date pour l’afficher ici.</p>`;
+    openPanel('date', panelShell(d.artist, 'Date', body, `<button class="btn" type="button" data-act="closePanel">Fermer</button><a class="btn primary" href="#production" data-go="production">Ouvrir dans Production</a>`,
+      `${statusPill(d.status)}<span>${esc(d.venue)} · ${esc(d.city)}</span>`));
   }
   function customizeBody(){
     const opts = cur => Object.entries(D.KPIS).map(([k, v]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${esc(v.label)}</option>`).join('');
@@ -422,11 +422,16 @@
   }
   function openSheet(){
     const dlg = $('#sheet');
+    const extra = P.shortcuts.map(tabById).filter(t => t && allowed(t)).slice(4);
+    const groups = visibleModules().map(m => { const tabs = m.tabs.filter(allowed); if (!tabs.length) return '';
+      return `<div class="mod-group" role="group" aria-label="${esc(m.label)}"><span class="eyebrow">${icon(m.icon)}${esc(m.label)}</span>${tabs.map(t => navLink(t)).join('')}</div>`; }).join('');
     dlg.innerHTML = `<div class="box glassy strong"><div class="grabber" aria-hidden="true"></div>
       <div class="dlg-head"><h2 tabindex="-1">Modules</h2><button class="btn ghost icon" type="button" data-act="closeSheet" aria-label="Fermer">${icon('x')}</button></div>
-      <div class="sheet-nav"><button class="side-search" type="button" data-act="search">${icon('search', 'sm')}<span>Rechercher</span></button>${navTree({ sheet: true })}</div>
-      <div class="sheet-foot"><a class="nav-item" href="#preferences" data-go="preferences">${icon('sliders-horizontal')}<span class="lbl">Préférences</span></a>
-        <span class="nav-item" aria-hidden="true"><span class="avatar">A</span><span class="lbl muted">Anthony · démonstration</span></span></div></div>`;
+      <div class="sheet-nav"><button class="sheet-search" type="button" data-act="search">${icon('search', 'sm')}<span>Rechercher</span></button>
+        ${extra.length ? `<div class="mod-group" role="group" aria-label="Autres raccourcis"><span class="eyebrow">${icon('star')}Autres raccourcis</span><div class="mod-grid">${extra.map(t => navLink(t)).join('')}</div></div>` : ''}
+        <div class="mod-grid">${groups}</div>
+      </div>
+      <div class="sheet-foot"><span class="nav-item" aria-hidden="true"><span class="avatar">A</span><span class="lbl muted">Anthony · compte de démonstration</span></span></div></div>`;
     dlg.showModal(); $('.dlg-head h2', dlg).focus();
   }
   // Recherche globale (A11) : Cmd/Ctrl + K hors des éditeurs de texte
