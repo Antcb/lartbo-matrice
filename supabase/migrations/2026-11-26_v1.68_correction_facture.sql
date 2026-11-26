@@ -11,13 +11,13 @@
 --     écriture par la seule fonction facture_corriger.
 --  2. facture_corriger(...) : contrôles, écriture dans une transaction annoncée « correction_facture », historique. Après elle, la
 --     ligne est de nouveau verrouillée (rien n'est « ouvert » durablement : aucune colonne d'état de déverrouillage).
---  3. show_payments_emitted_guard : UNE exception ajoutée (bloc « v1.68 »), insérée dans le texte de production relevé le 26/11/2026
---     (empreinte 08302c0ce88a5f10bc6d386c689ee5c8) ; si la fonction en base n'est pas cette version, la migration s'arrête.
+--  3. show_payments_emitted_guard : réécrite entièrement = texte de production relevé le 26/11/2026 (empreinte
+--     08302c0ce88a5f10bc6d386c689ee5c8) + UNE exception (bloc « v1.68 ») ; si la fonction en base n'est pas cette version, la migration s'arrête.
 -- Aucune donnée existante n'est modifiée.
 -- Retour arrière : drop function public.facture_corriger(uuid, numeric, numeric, numeric, text) ; réappliquer le
 --   show_payments_emitted_guard de la v1.56.9 (supabase/migrations/2026-11-07_v1.56.9_rattachement_pennylane.sql) ; la table
 --   facture_corrections est gardée (historique).
--- Rejouable (if not exists / create or replace ; bloc v1.68 inséré une seule fois).
+-- Rejouable (if not exists / create or replace).
 begin;
 
 create table if not exists public.facture_corrections (
@@ -45,11 +45,46 @@ do $$ begin
   end if;
 end $$;
 
--- show_payments_emitted_guard : exception « correction_facture » insérée avant le bloc v1.56.9
+-- show_payments_emitted_guard : fonction RÉÉCRITE ENTIÈREMENT (CONVENTIONS §7.5) — texte de production relevé le 26/11/2026
+-- (empreinte 08302c0ce88a5f10bc6d386c689ee5c8, identique à la version v1.56.9) + une seule exception ajoutée (bloc « v1.68 »).
+-- Garde : si la fonction en base n'est ni cette version de production ni la nouvelle, la migration s'arrête (rien n'est appliqué).
 do $m$
 declare n text := pg_get_functiondef('public.show_payments_emitted_guard'::regproc);
-        anchor text := '  -- v1.56.9 : CORRECTION d''un rattachement Pennylane';
-        bloc text := $b$  -- v1.68 : CORRECTION D'UNE FACTURE ÉMISE déverrouillée à la main (facture_corriger, transaction annoncée « correction_facture »,
+begin
+  if md5(n) <> '08302c0ce88a5f10bc6d386c689ee5c8' and position('v1.68 : CORRECTION D''UNE FACTURE ÉMISE' in n) = 0 then
+    raise exception 'v1.68 : show_payments_emitted_guard n''est pas la version attendue (empreinte %) : migration arrêtée, rien n''est appliqué', md5(n);
+  end if;
+end $m$;
+CREATE OR REPLACE FUNCTION public.show_payments_emitted_guard()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$   -- §7.3
+declare
+  -- commission de production : la date doit exister et ne pas être en booking. Date introuvable (suppression en chaîne : la date
+  -- est déjà effacée quand ce déclencheur passe) → définition complète, comme pour toute autre ligne (relecture C1, B1)
+  self_paid boolean := old.kind = 'artbo' and exists (select 1 from public.shows where id = old.show_id and coalesce(prod_mode, 'production') <> 'booking');
+  emitted boolean := case when self_paid then old.paid_at is not null
+                     else old.sent_at is not null or old.paid_at is not null
+                          or nullif(btrim(old.invoice_number), '') is not null or nullif(btrim(old.pennylane_id), '') is not null end;
+begin
+  if not emitted then
+    return case when tg_op = 'DELETE' then old else new end;
+  end if;
+  if tg_op = 'DELETE' then
+    raise exception 'Facture déjà émise : elle ne se supprime pas (ni seule, ni avec sa date).' using errcode = 'P0001';
+  end if;
+  if self_paid and coalesce(current_setting('matrice.regularisation', true), '') = 'commission_partielle'
+     and new.paid_at is null and new.amount is not null
+     and public.commission_transferred(old.id) > 0 and public.commission_transferred(old.id) < new.amount
+     and new.amount >= coalesce(old.amount, 0)
+     and new.pct is not distinct from old.pct and new.vat_rate is not distinct from old.vat_rate
+     and new.show_id is not distinct from old.show_id and new.kind is not distinct from old.kind
+     and new.sent_at is not distinct from old.sent_at and new.invoice_number is not distinct from old.invoice_number
+     and new.pennylane_id is not distinct from old.pennylane_id then
+    return new;
+  end if;
+  -- v1.68 : CORRECTION D'UNE FACTURE ÉMISE déverrouillée à la main (facture_corriger, transaction annoncée « correction_facture »,
   -- décisions d'Anthony du 26/11/2026) : montant, % et TVA alignés sur la facture réellement émise ; rien d'autre ne change (type,
   -- date, n°, envoi, paiement, Pennylane, destinataire, hors calcul). Jamais une commission de production.
   if not self_paid and coalesce(current_setting('matrice.regularisation', true), '') = 'correction_facture'
@@ -61,14 +96,70 @@ declare n text := pg_get_functiondef('public.show_payments_emitted_guard'::regpr
      and new.kind is not distinct from old.kind then
     return new;
   end if;
-$b$;
-begin
-  if position('correction_facture' in n) > 0 then return; end if;   -- déjà appliquée
-  if md5(n) <> '08302c0ce88a5f10bc6d386c689ee5c8' or position(anchor in n) = 0 then
-    raise exception 'v1.68 : show_payments_emitted_guard n''est pas la version attendue (empreinte %) : migration arrêtée, rien n''est appliqué', md5(n);
+  -- v1.56.9 : CORRECTION d'un rattachement Pennylane faite par pennylane_rattacher (transaction annoncée « rattachement_pennylane ») :
+  -- une ligne d'acompte / de solde NON payée peut être libérée de sa facture (n°, lien, envoi) ; rien d'autre ne change
+  -- (%, TVA, date, nature) et le montant ne peut que revenir au calcul automatique. Jamais une ligne payée.
+  if not self_paid and coalesce(current_setting('matrice.regularisation', true), '') = 'rattachement_pennylane'
+     and old.kind in ('acompte', 'solde') and old.paid_at is null and new.paid_at is null
+     and new.pennylane_id is null and new.invoice_number is null and new.sent_at is null
+     and new.pct is not distinct from old.pct and new.vat_rate is not distinct from old.vat_rate
+     and new.show_id is not distinct from old.show_id and new.kind is not distinct from old.kind
+     and (new.amount is not distinct from old.amount or new.amount is null) then
+    return new;
   end if;
-  execute replace(n, anchor, bloc || anchor);
-end $m$;
+  if (old.paid_at is not null and new.paid_at is null)
+     or (not self_paid and ((old.sent_at is not null and new.sent_at is null)
+       or (nullif(btrim(old.invoice_number), '') is not null and nullif(btrim(new.invoice_number), '') is null)
+       or (nullif(btrim(old.pennylane_id), '') is not null and nullif(btrim(new.pennylane_id), '') is null))) then
+    raise exception 'Facture déjà émise : son numéro, sa date d’envoi, sa date de paiement et son identifiant Pennylane ne s’effacent pas.' using errcode = 'P0001';
+  end if;
+  if new.amount is distinct from old.amount or new.pct is distinct from old.pct or new.vat_rate is distinct from old.vat_rate
+     or new.show_id is distinct from old.show_id or new.kind is distinct from old.kind then
+    -- seule exception (lot D1) : FIGER un montant encore vide, sans rien changer d'autre, dans une transaction de régularisation
+    -- annoncée explicitement (script validé par Anthony). Un montant déjà rempli ne change jamais.
+    if old.amount is null and new.amount is not null
+       and new.pct is not distinct from old.pct and new.vat_rate is not distinct from old.vat_rate
+       and new.show_id is not distinct from old.show_id and new.kind is not distinct from old.kind
+       and coalesce(current_setting('matrice.regularisation', true), '') = 'gel' then
+      return new;
+    end if;
+    -- acompte ou solde FACTURÉ à un autre % que celui de la Matrice (décision d'Anthony du 27/10 : La Puce à l'Oreille, La MOBA,
+    -- 50 % facturés, 20 % posés par l'import Notion) : dans une transaction qui l'annonce (« acompte_facture »), le montant encore
+    -- vide est FIGÉ au montant de la facture et le % aligné dessus, ensemble et seulement si les deux concordent
+    -- (montant = cachet × % arrondi au centime). Rien d'autre ne change ; un montant déjà rempli ne change jamais.
+    if not self_paid and old.kind in ('acompte', 'solde') and old.amount is null and new.amount is not null and new.pct is not null
+       and new.amount = round(coalesce((select fee_ht from public.shows where id = old.show_id), 0) * new.pct) / 100
+       and new.vat_rate is not distinct from old.vat_rate
+       and new.show_id is not distinct from old.show_id and new.kind is not distinct from old.kind
+       and new.sent_at is not distinct from old.sent_at and new.paid_at is not distinct from old.paid_at
+       and new.invoice_number is not distinct from old.invoice_number and new.pennylane_id is not distinct from old.pennylane_id
+       and new.payee is not distinct from old.payee
+       and coalesce(current_setting('matrice.regularisation', true), '') = 'acompte_facture' then
+      return new;
+    end if;
+    -- retour arrière d'une régularisation (décision d'Anthony du 26/10, point 8) : REVIDER un montant dans une transaction qui
+    -- l'annonce (« degel »), et SEULEMENT si ce montant a été posé par une régularisation contrôlée (dernière écriture du montant
+    -- au journal : vide → cette valeur, source « régularisation contrôlée… »). Le % ne revient en arrière QUE s'il a été changé
+    -- par cette même régularisation (dernière écriture du % au journal : son ancienne valeur → le % actuel, même source).
+    -- Un montant figé à l'émission, au versement ou saisi à la main ne se vide jamais.
+    if old.amount is not null and new.amount is null
+       and new.vat_rate is not distinct from old.vat_rate
+       and new.show_id is not distinct from old.show_id and new.kind is not distinct from old.kind
+       and coalesce(current_setting('matrice.regularisation', true), '') = 'degel'
+       and exists (select 1 from public.finance_log l where l.id = (select max(m.id) from public.finance_log m where m.row_id = old.id and m.field = 'amount')
+                     and l.row_id = old.id and l.field = 'amount'
+                     and l.source in ('régularisation contrôlée', 'régularisation contrôlée (facture émise)') and l.old_value is null
+                     and (case when l.field = 'amount' then l.new_value::numeric end) = old.amount)
+       and (new.pct is not distinct from old.pct
+            or exists (select 1 from public.finance_log l where l.id = (select max(m.id) from public.finance_log m where m.row_id = old.id and m.field = 'pct')
+                         and l.row_id = old.id and l.field = 'pct' and l.source = 'régularisation contrôlée (facture émise)'
+                         and l.new_value is not distinct from old.pct::text and l.old_value is not distinct from new.pct::text)) then
+      return new;
+    end if;
+    raise exception 'Facture déjà émise : son montant, son %%, sa TVA, sa date et son type ne se modifient plus.' using errcode = 'P0001';
+  end if;
+  return new;
+end $function$;
 
 /** Corriger une facture émise dans MATRICE (déverrouillage explicite) : montant HT, %, TVA (type figé) ; motif obligatoire ; historique */
 drop function if exists public.facture_corriger(uuid, numeric, numeric, numeric, text, text);   -- première version (jamais appliquée en production)
