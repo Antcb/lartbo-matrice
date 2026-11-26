@@ -3,6 +3,7 @@
 --  1. pennylane_avoirs (table NOUVELLE) : un avoir par identifiant Pennylane (aucun doublon), rattaché à la ligne de facturation dont
 --     la facture d'ORIGINE a cet identifiant Pennylane ; lien ambigu → « À rattacher » (etat = 'a_rattacher', motif). Écriture par la
 --     seule fonction serveur « pennylane » (clé de service) ; lecture équipe. Un avoir disparu de Pennylane est gardé (gone_at).
+--     pennylane_virements (table NOUVELLE) : virements rapprochés déjà comptés comme encaissement (jamais deux fois).
 --  2. avoir_couvert(paiement) : montant HT couvert par les avoirs rattachés (même règle : js/calc.js avoirCouvert).
 --  3. reminder_candidates : RÉÉCRITE ENTIÈREMENT (CONVENTIONS §7.5) = texte de production relevé le 26/11/2026 (corps identique à
 --     supabase/migrations/2026-11-10_v1.61.1_solde_prevu.sql, empreinte du corps b713325bb648651b08d35b402795a39f) + la colonne
@@ -22,6 +23,7 @@ create table if not exists public.pennylane_avoirs (
   amount_ttc numeric(12,2),
   credited_pennylane_id text,                        -- facture d'origine selon Pennylane (null : non indiquée)
   credited_invoice_number text,
+  rattache_origine text,                             -- facture d'origine au moment du rattachement : écart signalé tant que Pennylane en indique une autre
   etat text not null default 'a_rattacher' check (etat in ('rattache', 'a_rattacher')),
   payment_id uuid references public.show_payments(id) on delete restrict,
   show_id uuid references public.shows(id) on delete restrict,
@@ -45,6 +47,31 @@ do $$ begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
      and not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'pennylane_avoirs') then
     alter publication supabase_realtime add table public.pennylane_avoirs;
+  end if;
+end $$;
+
+-- virements Pennylane déjà comptés comme encaissement d'une ligne (décision d'Anthony du 26/11/2026, 17 h 21) : un même virement
+-- n'est jamais compté deux fois ; écriture par la seule fonction serveur « pennylane »
+create table if not exists public.pennylane_virements (
+  id bigint generated always as identity primary key,
+  transaction_id text not null unique,
+  payment_id uuid not null references public.show_payments(id) on delete restrict,
+  pennylane_invoice_id text,
+  amount numeric(12,2),
+  tx_date date,
+  counted_at timestamptz not null default now()
+);
+create index if not exists pennylane_virements_payment on public.pennylane_virements (payment_id);
+comment on table public.pennylane_virements is 'v1.69 (L1, point 02) : virements rapprochés déjà comptés comme encaissement d''une ligne (jamais deux fois)';
+alter table public.pennylane_virements enable row level security;
+drop policy if exists team_read on public.pennylane_virements;
+create policy team_read on public.pennylane_virements for select to authenticated using (public.is_team());
+revoke all on public.pennylane_virements from anon;
+revoke insert, update, delete on public.pennylane_virements from authenticated;
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'pennylane_virements') then
+    alter publication supabase_realtime add table public.pennylane_virements;
   end if;
 end $$;
 

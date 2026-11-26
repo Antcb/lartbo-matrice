@@ -99,7 +99,12 @@ test('v1.69 cas 3 — avoir partiel : seul le montant couvert est déduit du res
   });
   const partiel = await etat(page, ['av-d3']), payee = await etat(page, ['av-d4']);
   // facture partiellement couverte, pas payée : reste dû = 4 200 − 1 500 = 2 700, toujours impayée et relancée
-  await expect(page.locator('tr.avoir-row', { hasText: 'Reste dû sur cette facture' })).toContainText('2 700,00');
+  await expect(page.locator('tr.avoir-row', { hasText: 'Reste dû sur cette facture après avoir' })).toContainText('2 700,00');
+  // deux restes distincts (décision du 26/11/2026, point 2) : contrat inchangé par l'avoir, factures après avoir
+  const pied = page.locator('.prod-bill', { hasText: 'AV-FICT-301' }).locator('tfoot');
+  await expect(pied).toContainText('Reste à encaisser du contrat : 6 000,00');
+  await expect(pied).toContainText('inchangé par les avoirs');
+  await expect(pied).toContainText('Reste dû sur les factures après avoirs : 2 700,00');
   expect(partiel.fin.impayesProd).toBe(2700);
   expect(partiel.fin.factures).toBe(1);
   expect(partiel.relances.some(t => /Paiement à vérifier : Solde \(F-FICT-300\)/.test(t))).toBe(true);
@@ -129,6 +134,14 @@ test('v1.69 avoir « À rattacher » et avoir disparu de Pennylane : listé / af
   const e = await etat(page, ['av-d5']);
   expect(e.fin.impayesProd).toBe(1000);   // ni l'avoir à rattacher ni l'avoir disparu ne réduisent ce qui est dû
   await expect(page.locator('tr.avoir-row')).toHaveCount(0);
+  // (point 3) avoir rattaché dont Pennylane indique une AUTRE facture d'origine : signal persistant, rien de déplacé
+  await page.evaluate(async () => { const { S, touch } = await import('./js/state.js'); const app = await import('./js/app.js');
+    S.db.pennylane_avoirs.push({ id: 'a-7', pennylane_id: 'pl-fict-502', invoice_number: 'AV-FICT-502', amount_ht: 100, credited_pennylane_id: 'pl-autre', credited_invoice_number: 'F-FICT-AUTRE',
+      rattache_origine: 'pl-fict-500', etat: 'rattache', payment_id: 'av-p5', show_id: 'av-d5' }); touch('pennylane_avoirs'); app.render(); });
+  await expect(page.locator('#avoirs-a-verifier')).toContainText('AV-FICT-502');
+  await expect(page.locator('#avoirs-a-verifier')).toContainText('F-FICT-AUTRE');
+  await expect(page.locator('tr.avoir-row', { hasText: 'AV-FICT-502' })).toContainText('facture d’origine changée dans Pennylane');
+  expect(await page.evaluate(() => window.__DB.pennylane_avoirs.find(a => a.id === 'a-7')?.payment_id ?? 'av-p5')).toBe('av-p5');
   // relecture v1.69 (B1) : montant nul sans avoir → jamais « soldée » (même règle que la base)
   expect(await page.evaluate(async () => { const c = await import('./js/calc.js');
     return [c.soldeeParAvoir({ id: 'x0', kind: 'autre', amount: 0, sent_at: '2026-01-01', invoice_number: 'F-0' }), c.soldeeParAvoir({ id: 'x1', kind: 'autre', amount: -100, sent_at: '2026-01-01' })]; })).toEqual([false, false]);

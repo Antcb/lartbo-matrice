@@ -3,7 +3,7 @@
  * Chaque date se déplie : suivi admin, commissions, dossier Drive, facturation.
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
-import { vatConflict, BILL_KINDS, avoirsARattacher, avoirsOf, resteDu, soldeeParAvoir, canFixInvoice, correctionsOf, acompteRetire, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
+import { vatConflict, BILL_KINDS, avoirsARattacher, avoirsAVerifier, avoirsOf, origineEcart, resteDu, restesAvecAvoirs, soldeeParAvoir, canFixInvoice, correctionsOf, acompteRetire, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, OPTION_PROD, PROD_STEPS } from '../constants.js';
 import { byId, isArchived, projName, setting, showsFiltered, spectacleName, structName } from '../selectors.js';
 import { followedInvoice, lateSteps, remindersOf, staleOf } from '../reminders.js';
@@ -328,7 +328,8 @@ function billFoot(s){
       : `<span class="warn-badge">${b.gap > 0 ? `Il manque ${eur2(b.gap)} HT` : `${eur2(-b.gap)} HT de trop`} par rapport au cachet (${eur2(b.fee)} HT)</span>`}
       <span class="muted nowrap"> · envoyées ${eur2(b.sentHt)} HT · payées ${eur2(b.paidHt)} HT${b.otherHt ? ` · autres lignes ${eur2(b.otherHt)} HT` : ''}</span>
       ${multiSolde(s.id) ? '<span class="warn-badge">Plusieurs lignes de solde sur cette date : à vérifier (le reste à facturer ne va qu’à la première)</span>' : ''}
-      ${b.plannedHt ? `<span class="muted nowrap"> · dont acomptes prévus, non facturés : ${eur2(b.plannedHt)} HT</span>` : ''}</td></tr></tfoot>`;
+      ${b.plannedHt ? `<span class="muted nowrap"> · dont acomptes prévus, non facturés : ${eur2(b.plannedHt)} HT</span>` : ''}
+      ${(r => r.avoirs ? `<div class="small mt-sm">Reste à encaisser du contrat : <b>${eur2(r.contrat)}</b> HT <span class="muted">(cession − encaissé, inchangé par les avoirs)</span> · Reste dû sur les factures après avoirs : <b>${eur2(r.factures)}</b> HT <span class="muted">(factures émises non payées − avoirs)</span></div>` : '')(restesAvecAvoirs(s))}</td></tr></tfoot>`;
 }
 /** Alerte dans l'en-tête de la date quand les factures ne tombent pas juste */
 function billWarn(s, booking){
@@ -362,18 +363,22 @@ function avoirRowsHTML(p){
   if (!list.length) return '';
   const name = a => esc(a.invoice_number || 'Avoir ' + a.pennylane_id);
   const etat = [soldeeParAvoir(p) ? '<b>Facture soldée par l’avoir</b> : plus rien à encaisser sur cette facture, ni relance de paiement'
-      : p.paid_at ? '' : `Reste dû sur cette facture : <b>${eur2(resteDu(p))}</b> HT (montant − avoirs)`,
+      : p.paid_at ? '' : `Reste dû sur cette facture après avoir : <b>${eur2(resteDu(p))}</b> HT (montant − avoirs)`,
     p.paid_at ? `Paiement noté le ${fmtDate(p.paid_at)} : conservé tel quel (un avoir ne crée ni encaissement ni remboursement)` : ''].filter(Boolean).join(' · ');
   return list.map(a => `<tr class="avoir-row"><td colspan="12"><span class="badge">Avoir</span> ${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${name(a)} ↗</a>` : name(a)}${a.invoice_date ? ` du ${fmtDate(a.invoice_date)}` : ''} : <b>− ${eur2(a.amount_ht)}</b> HT
-      <span class="muted small">sur la facture ${esc(p.invoice_number || p.label || '')} · document Pennylane</span></td></tr>`).join('')
+      <span class="muted small">sur la facture ${esc(p.invoice_number || p.label || '')} · document Pennylane</span>${origineEcart(a) ? ` <span class="warn-badge" title="Rattaché à cette facture ; Pennylane indique maintenant une autre facture d’origine. Rien n’a été déplacé : à vérifier.">facture d’origine changée dans Pennylane : à vérifier</span>` : ''}</td></tr>`).join('')
     + (etat ? `<tr class="avoir-row"><td colspan="12" class="small">${etat}</td></tr>` : '');
 }
 
 /** (v1.69) Avoirs que la synchronisation n'a pas rattachés seule : listés en tête de Production (date inconnue ou ambiguë) */
 function avoirsPendingHTML(){
-  const list = avoirsARattacher();
-  if (!list.length) return '';
-  return `<div class="panel pad mb" id="avoirs-a-rattacher" role="status"><p class="help full"><b>Avoir${list.length > 1 ? 's' : ''} Pennylane à rattacher</b> (${list.length}) : la synchronisation ne sait pas à quelle facture de MATRICE ${list.length > 1 ? 'ils se rapportent' : 'il se rapporte'} (rien n’a été modifié, rien n’est compté).</p>
+  const list = avoirsARattacher(), ecarts = avoirsAVerifier();
+  const ecartsHTML = ecarts.length ? `<div class="panel pad mb" id="avoirs-a-verifier" role="status"><p class="help full"><b>Avoir${ecarts.length > 1 ? 's' : ''} à vérifier</b> (${ecarts.length}) : Pennylane indique maintenant une autre facture d’origine que celle du rattachement. Rien n’a été déplacé ; l’écart reste signalé jusqu’à sa résolution.</p>
+    ${ecarts.map(a => { const l = byId('show_payments', a.payment_id), sh = l && byId('shows', l.show_id);
+      return `<div class="file-row"><span>${esc(a.invoice_number || 'Avoir ' + a.pennylane_id)} · − ${eur2(a.amount_ht)} HT · rattaché à ${esc(l?.invoice_number || l?.label || 'une ligne')}${sh ? ' (' + esc([fmtDate(sh.date), sh.venue].filter(Boolean).join(' ')) + ')' : ''} — <span class="muted">origine indiquée par Pennylane : ${esc(a.credited_invoice_number || a.credited_pennylane_id || 'aucune')}</span></span>
+      ${a.url ? `<a class="btn sm ghost" href="${esc(a.url)}" target="_blank" rel="noopener">Voir ↗</a>` : ''}</div>`; }).join('')}</div>` : '';
+  if (!list.length) return ecartsHTML;
+  return ecartsHTML + `<div class="panel pad mb" id="avoirs-a-rattacher" role="status"><p class="help full"><b>Avoir${list.length > 1 ? 's' : ''} Pennylane à rattacher</b> (${list.length}) : la synchronisation ne sait pas à quelle facture de MATRICE ${list.length > 1 ? 'ils se rapportent' : 'il se rapporte'} (rien n’a été modifié, rien n’est compté).</p>
     ${list.map(a => { const sh = a.show_id && byId('shows', a.show_id);
       return `<div class="file-row"><span>${esc(a.invoice_number || 'Avoir ' + a.pennylane_id)} · − ${eur2(a.amount_ht)} HT${a.invoice_date ? ' · ' + fmtDate(a.invoice_date) : ''}${a.credited_invoice_number ? ' · facture d’origine ' + esc(a.credited_invoice_number) : ''}${sh ? ' · ' + esc([fmtDate(sh.date), sh.venue].filter(Boolean).join(' ')) : ''} — <span class="muted">${esc(a.reason || '')}</span></span>
       ${a.url ? `<a class="btn sm ghost" href="${esc(a.url)}" target="_blank" rel="noopener">Voir ↗</a>` : ''}</div>`; }).join('')}</div>`;

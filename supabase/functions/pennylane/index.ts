@@ -6,8 +6,9 @@
 //   Commission : produit « Commission • Booking » (TVA 20 %), facturée à la structure administrative de l'artiste.
 // Le jeton API est gardé côté serveur (Réglages › Pennylane). Appels depuis l'app (utilisateur connecté) :
 //   { action: 'status' } · { action: 'quote', show_id } · { action: 'invoice', payment_id } · { action: 'sync' }
+//   { action: 'lire_avoir', invoice_number? } (v1.69 : lecture seule du format réel d'un avoir)
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { acomptesDeLaDate, baseCommission, describe, emise, encaissementPennylane, estAvoir, factureIsolee, figerMontant, frDate, isBooking, montantAcompte, montantAttendu, origineAvoir, payable, pctCommission, planAvoir, rangeeDansLeDrive, relieAuDevis, soldeDouteux, texteCommission, delaiDocument } from './regles.ts';
+import { acomptesDeLaDate, baseCommission, describe, emise, encaissementAvecAvoir, encaissementPennylane, estAvoir, factureIsolee, figerMontant, frDate, isBooking, montantAcompte, montantAttendu, origineAvoir, payable, pctCommission, planAvoir, rangeeDansLeDrive, relieAuDevis, soldeDouteux, texteCommission, delaiDocument } from './regles.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -171,6 +172,29 @@ Deno.serve(async (req) => {
       return json({ ok: true, company: me?.company?.name || me?.user?.email || null });
     }
 
+    // (L1, v1.69) LECTURE SEULE du format réel d'un avoir dans l'API v2, avant tout import historique (demande d'Anthony du
+    // 26/11/2026) : l'avoir (par son numéro, sinon le plus récent), sa facture d'origine et les virements rapprochés de celle-ci.
+    // Aucune écriture, ni dans MATRICE ni dans Pennylane.
+    if (body.action === 'lire_avoir') {
+      const voulu = body.invoice_number ? norm(String(body.invoice_number)) : '';
+      let cursor = '', avoir: any = null;
+      for (let i = 0; i < 30 && !avoir; i++) {
+        const page = await pl('GET', '/customer_invoices?limit=100&sort=-id' + (cursor ? '&cursor=' + cursor : ''));
+        avoir = (page.items || []).find((x: any) => !x.draft && estAvoir(x) && (!voulu || norm(x.invoice_number || '') === voulu)) || null;
+        if (!page.has_more) break; cursor = page.next_cursor;
+      }
+      if (!avoir) return json({ ok: true, avoir: null, message: 'Aucun avoir trouvé dans la liste des factures clients' });
+      const origine = origineAvoir(avoir);
+      let facture: any = null, virements: any = null, erreur: string | null = null;
+      if (origine) {
+        try { facture = await pl('GET', `/customer_invoices/${origine}`); } catch (e) { erreur = String(e); }
+        try { virements = await pl('GET', `/customer_invoices/${origine}/matched_transactions`); } catch (e) { erreur = (erreur ? erreur + ' ; ' : '') + String(e); }
+      }
+      let virementsAvoir: any = null;
+      try { virementsAvoir = await pl('GET', `/customer_invoices/${avoir.id}/matched_transactions`); } catch (_) { /* */ }
+      return json({ ok: true, origine_lue: origine, avoir, facture, virements, virementsAvoir, erreur });
+    }
+
     // Factures payées dans Pennylane → cochées « Payée » dans la Matrice (acomptes, soldes, autres lignes)
     if (body.action === 'sync') {
       const inv: Record<string, any> = {}, byId: Record<string, any> = {};
@@ -272,7 +296,7 @@ Deno.serve(async (req) => {
       {
         const vuLe = new Date().toISOString();
         const avoirsPl = Object.values(byId).filter(estAvoir);
-        const deja = (await readAll(() => admin.from('pennylane_avoirs').select('id, pennylane_id, etat, payment_id, show_id, gone_at, credited_pennylane_id'))) || [];
+        const deja = (await readAll(() => admin.from('pennylane_avoirs').select('id, pennylane_id, etat, payment_id, show_id, gone_at, rattache_origine'))) || [];
         const parId = new Map(deja.map((a: any) => [String(a.pennylane_id), a]));
         const origines = [...new Set(avoirsPl.map(origineAvoir).filter(Boolean))] as string[];
         const lignes: any[] = [];
@@ -296,9 +320,13 @@ Deno.serve(async (req) => {
           if (eg) erreurs.push(`Avoir ${a.pennylane_id} : ${eg.message}`); else avoirs.disparus++;
         }
       }
-      // lignes couvertes par au moins un avoir : leur paiement n'est jamais repris de Pennylane (soldée par l'avoir ou partielle)
-      const avecAvoir = new Set(((await readAll(() => admin.from('pennylane_avoirs').select('id, payment_id').eq('etat', 'rattache').is('gone_at', null))) || []).map((a: any) => String(a.payment_id)));
-      const payeesAvecAvoir: string[] = [], payeesSansTransaction: string[] = [];
+      // lignes couvertes par au moins un avoir : TTC de leurs avoirs (règle encaissementAvecAvoir, décision du 26/11/2026 17 h 21)
+      const avoirsTtc = new Map<string, (number | null)[]>();
+      for (const a of (await readAll(() => admin.from('pennylane_avoirs').select('id, payment_id, amount_ttc').eq('etat', 'rattache').is('gone_at', null))) || [])
+        { const k = String(a.payment_id); avoirsTtc.set(k, [...(avoirsTtc.get(k) || []), a.amount_ttc == null ? null : Number(a.amount_ttc)]); }
+      // virements déjà comptés pour une ligne : jamais comptés deux fois (pennylane_virements, migration v1.69)
+      const comptes = new Set<string>(((await readAll(() => admin.from('pennylane_virements').select('id, transaction_id'))) || []).map((v: any) => String(v.transaction_id)));
+      const payeesAvecAvoir: string[] = [], payeesSansTransaction: string[] = [], virementsPartiels: string[] = [];
       // paiements repris : acomptes / soldes / autres lignes de PRODUCTION, et factures de commission BOOKING (lot C1) ;
       // jamais les factures de l'artiste en booking, ni la commission de production (pas une facture)
       const pays = ((await readAll(() => admin.from('show_payments').select('id, show_id, kind, label, invoice_number, pennylane_id, paid_at, drive_file_id, shows(date, city, venue, drive_folder_id, prod_mode)')
@@ -319,27 +347,44 @@ Deno.serve(async (req) => {
         if (!filedAll && rangeeDansLeDrive(p) && x.invoice_number && x.public_file_url && x.status !== 'cancelled') toFile.push({ p, x });
         const where = `${frDate((p as any).shows?.date)} ${(p as any).shows?.city || ''}`.trim();
         const isPaid = x.paid === true && x.status !== 'cancelled';
-        if (isPaid && !p.paid_at) {
-          // (L1, v1.69) jamais d'encaissement sur la seule base de « paid = true » : il faut un virement rapproché et aucun avoir
-          // sur la ligne (encaissementPennylane) — plus de date du jour par défaut
-          const avoir = avecAvoir.has(String(p.id));
-          let dates: string[] = [];
-          if (!avoir) {
-            try { const t = await pl('GET', `/customer_invoices/${x.id}/matched_transactions`); dates = (t.items || []).map((y: any) => y.date); }
-            catch (e) { erreurs.push(`${p.invoice_number || x.invoice_number} : virements rapprochés illisibles, paiement non repris (${String(e).replace(/^Error: /, '')})`); continue; }
+        const av = avoirsTtc.get(String(p.id));
+        // (L1, v1.69) ligne sans date de paiement : avec avoir, examinée même si Pennylane ne la dit pas payée (un virement rapproché
+        // peut exister) ; sans avoir, seulement si Pennylane la dit payée. Jamais « paid = true » ni un avoir comme preuve :
+        // il faut un virement rapproché (regles.ts encaissementAvecAvoir / encaissementPennylane). Paiement existant : jamais touché.
+        if (!p.paid_at && x.status !== 'cancelled' && (av || isPaid)) {
+          const nom = `${p.label || p.kind} ${p.invoice_number || x.invoice_number || ''} · ${where}`.replace(/\s+/g, ' ');
+          if (av && encaissementAvecAvoir(x, av, [], comptes).signal === 'soldee') continue;   // soldée par l'avoir : rien à encaisser
+          let vs: any[] = [];
+          try { const t = await pl('GET', `/customer_invoices/${x.id}/matched_transactions`); vs = t.items || []; }
+          catch (e) { erreurs.push(`${p.invoice_number || x.invoice_number} : virements rapprochés illisibles, paiement non repris (${String(e).replace(/^Error: /, '')})`); continue; }
+          const enc = av ? encaissementAvecAvoir(x, av, vs, comptes) : encaissementPennylane(x, vs, comptes);
+          if (!enc.paid_at) {
+            const e2 = enc as any;
+            if (enc.signal === 'partiel') virementsPartiels.push(`${nom} : ${money(e2.encaisse)} € TTC reçus sur ${money(e2.reste)} € TTC restant dus après avoir — paiement partiel à enregistrer avec L2`);
+            else if (av && enc.signal) payeesAvecAvoir.push(`${nom} : ${({ sans_virement: 'aucun virement rapproché', non_etabli: 'montant ou affectation du virement non établis', deja_compte: 'virement déjà compté pour une autre ligne' } as any)[enc.signal] || enc.signal}`);
+            else if (enc.signal) payeesSansTransaction.push(`${nom}${enc.signal === 'deja_compte' ? ' : virement déjà compté pour une autre ligne' : ''}`);
+            continue;
           }
-          const enc = encaissementPennylane(x, dates, avoir);
-          if (!enc.paid_at) { (enc.signal === 'avec_avoir' ? payeesAvecAvoir : payeesSansTransaction).push(`${p.label || p.kind} ${p.invoice_number || x.invoice_number || ''} · ${where}`.replace(/\s+/g, ' ')); continue; }
           const date = enc.paid_at;
-          const { error: e3 } = await admin.from('show_payments').update({ paid_at: date }).eq('id', p.id);
+          const { data: up, error: e3 } = await admin.from('show_payments').update({ paid_at: date }).eq('id', p.id).is('paid_at', null).select('id');
           if (e3) { erreurs.push(`${p.invoice_number} : ${e3.message}`); continue; }
+          if (!up?.length) continue;   // paiement noté entre-temps (à la main) : conservé, rien de compté
+          // virements comptés pour cette ligne : gardés, pour ne jamais les compter deux fois
+          const vm = new Map(vs.map((v: any) => [String(v.id), v]));
+          if (enc.ids.length) {
+            const { error: e4 } = await admin.from('pennylane_virements').upsert(enc.ids.map(id => ({ transaction_id: id, payment_id: p.id, pennylane_invoice_id: String(x.id),
+              amount: Number.isFinite(Number(vm.get(id)?.amount)) ? Number(vm.get(id)?.amount) : null, tx_date: vm.get(id)?.date ? String(vm.get(id).date).slice(0, 10) : null })),
+              { onConflict: 'transaction_id', ignoreDuplicates: true });
+            if (e4) erreurs.push(`${p.invoice_number} : payée, mais virement(s) non mémorisé(s) (${e4.message})`);
+            enc.ids.forEach(id => comptes.add(id));
+          }
           updated.push({ id: p.id, paid_at: date, label: `${p.label || p.kind} ${p.invoice_number} · ${where}` });
         } else if (!isPaid && p.paid_at && x.status !== 'cancelled') {
           pennylaneLate.push(`${p.invoice_number} · ${where} (payée le ${frDate(p.paid_at)} dans la Matrice)`);
         }
       }
       const filed = await fileInvoices(toFile);
-      return json({ ok: true, updated, pennylaneLate, linked, douteux, aRattacher, erreurs, filed, avoirs, payeesAvecAvoir, payeesSansTransaction });
+      return json({ ok: true, updated, pennylaneLate, linked, douteux, aRattacher, erreurs, filed, avoirs, payeesAvecAvoir, payeesSansTransaction, virementsPartiels });
     }
 
     if (body.action === 'quote') {

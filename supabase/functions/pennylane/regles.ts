@@ -149,30 +149,68 @@ export function rattacherAvoir(origine: string | null, lignes: LigneAvoir[], num
   return { etat: 'a_rattacher', payment_id: null, show_id: dates.length === 1 ? dates[0] : null, reason: `Facture d’origine${ref} reliée à ${ls.length} lignes : à choisir` };
 }
 
-export type AvoirExistant = { etat: string; payment_id: string | null; show_id: string | null; credited_pennylane_id?: string | null } | null | undefined;
+export type AvoirExistant = { etat: string; payment_id: string | null; show_id: string | null; rattache_origine?: string | null } | null | undefined;
+/** Écart persistant (décision d'Anthony du 26/11/2026, point 3) : avoir rattaché dont Pennylane indique maintenant une AUTRE facture
+ *  d'origine (ou plus aucune) que celle du rattachement. Jamais de nouveau rattachement automatique ; signalé jusqu'à résolution.
+ *  Même règle côté application : js/calc.js origineEcart. */
+export const origineEcart = (rattacheOrigine: unknown, origine: string | null) => plein(rattacheOrigine) && String(rattacheOrigine) !== String(origine ?? '');
 /** Ligne à enregistrer pour un avoir vu dans Pennylane. Champs Pennylane toujours mis à jour ; rattachement : un avoir déjà
- *  rattaché le reste (jamais déplacé en silence) ; un avoir « À rattacher » est réexaminé à chaque synchronisation. */
+ *  rattaché le reste (jamais déplacé en silence, origine du rattachement gardée) ; un avoir « À rattacher » est réexaminé à chaque
+ *  synchronisation. */
 export function planAvoir(x: DocPl & { invoice_number?: unknown; date?: unknown; credited_invoice?: any }, existant: AvoirExistant, lignes: LigneAvoir[], vuLe: string) {
   const origine = origineAvoir(x);
   const numeroOrigine = (x.credited_invoice && typeof x.credited_invoice === 'object' && plein(x.credited_invoice.invoice_number)) ? String(x.credited_invoice.invoice_number) : null;
   const pl = { pennylane_id: String(x.id), invoice_number: plein(x.invoice_number) ? String(x.invoice_number) : null, invoice_date: plein(x.date) ? String(x.date).slice(0, 10) : null,
-    amount_ht: montantAvoir(x), amount_ttc: plein(x.currency_amount ?? x.amount) ? r2(Math.abs(Number(x.currency_amount ?? x.amount))) : null,
+    amount_ht: montantAvoir(x), amount_ttc: plein(x.currency_amount ?? x.amount) && Number.isFinite(Number(x.currency_amount ?? x.amount)) ? r2(Math.abs(Number(x.currency_amount ?? x.amount))) : null,
     credited_pennylane_id: origine, credited_invoice_number: numeroOrigine, pl_status: plein(x.status) ? String(x.status) : null, last_seen_at: vuLe, gone_at: null };
-  // déjà rattaché : gardé ; si Pennylane indique maintenant une AUTRE facture d'origine, c'est signalé (jamais déplacé en silence)
+  // déjà rattaché : gardé tel quel (rattache_origine non réécrite) ; écart d'origine signalé, jamais déplacé
   if (existant?.etat === 'rattache') return { ...pl, etat: 'rattache', payment_id: existant.payment_id, show_id: existant.show_id, reason: null, nouveau_rattachement: false,
-    origine_changee: plein(existant.credited_pennylane_id) && String(existant.credited_pennylane_id) !== String(origine ?? '') };
+    origine_changee: origineEcart(existant.rattache_origine, origine) };
   const r = rattacherAvoir(origine, lignes, numeroOrigine);
-  return { ...pl, ...r, nouveau_rattachement: r.etat === 'rattache', origine_changee: false };
+  return { ...pl, ...r, ...(r.etat === 'rattache' ? { rattache_origine: origine } : {}), nouveau_rattachement: r.etat === 'rattache', origine_changee: false };
 }
 
-/** Encaissement repris de Pennylane (L1) : JAMAIS sur la seule base de « paid = true ». Seulement si au moins une transaction
- *  bancaire est rapprochée (date = la plus récente) et si la ligne n'a aucun avoir ; sinon rien n'est noté et c'est signalé :
- *  « avec_avoir » (payée dans Pennylane alors qu'un avoir couvre la ligne : soldée par l'avoir ou encaissement partiel, à noter à la
- *  main) ; « sans_transaction » (payée dans Pennylane sans virement rapproché). Facture annulée dans Pennylane : jamais reprise. */
-export function encaissementPennylane(x: DocPl, datesTransactions: (string | null | undefined)[], aDesAvoirs: boolean):
-  { paid_at: string | null; signal: null | 'avec_avoir' | 'sans_transaction' } {
-  if (x?.paid !== true || x?.status === 'cancelled') return { paid_at: null, signal: null };
-  if (aDesAvoirs) return { paid_at: null, signal: 'avec_avoir' };
-  const d = datesTransactions.filter(plein).map(v => String(v).slice(0, 10)).sort().pop();
-  return d ? { paid_at: d, signal: null } : { paid_at: null, signal: 'sans_transaction' };
+// ── Encaissements repris de Pennylane (L1 ; décision d'Anthony du 26/11/2026, 17 h 21) ─────────────────────────────────────────
+// Jamais sur la seule base de « paid = true », jamais sur le montant d'un avoir. Preuve = virement ENTRANT rapproché de la facture
+// (matched_transactions), d'identifiant, de date et de montant établis. Un même virement n'est compté qu'une fois (identifiant
+// gardé dans pennylane_virements). Paiement existant : jamais touché (l'appelant ne traite que les lignes sans date de paiement).
+export type Virement = { id?: unknown; date?: unknown; amount?: unknown; currency_amount?: unknown };
+const idVirement = (v: Virement) => (typeof v?.id === 'string' || typeof v?.id === 'number') && plein(v.id) ? String(v.id) : null;
+const montantVirement = (v: Virement) => { const n = Number(v?.amount ?? v?.currency_amount); return plein(v?.amount ?? v?.currency_amount) && Number.isFinite(n) ? n : NaN; };
+const plusRecente = (vs: Virement[]) => vs.map(v => String(v.date).slice(0, 10)).sort().pop() || null;
+
+/** Ligne SANS avoir : il faut « paid » ET au moins un virement rapproché (date = le plus récent) pas encore compté ailleurs ;
+ *  sinon rien n'est noté : « sans_transaction » (aucun virement) ou « deja_compte » (virements déjà comptés pour une autre ligne). */
+export function encaissementPennylane(x: DocPl, virements: Virement[], dejaComptes: Set<string> = new Set()):
+  { paid_at: string | null; ids: string[]; signal: null | 'sans_transaction' | 'deja_compte' } {
+  if (x?.paid !== true || x?.status === 'cancelled') return { paid_at: null, ids: [], signal: null };
+  const vs = (virements || []).filter(v => plein(v?.date));
+  if (!vs.length) return { paid_at: null, ids: [], signal: 'sans_transaction' };
+  const libres = vs.filter(v => { const i = idVirement(v); return !i || !dejaComptes.has(i); });
+  if (!libres.length) return { paid_at: null, ids: [], signal: 'deja_compte' };
+  return { paid_at: plusRecente(libres), ids: libres.map(idVirement).filter(Boolean) as string[], signal: null };
+}
+
+/** Ligne AVEC avoir(s) : comparaison sur la MÊME base (TTC Pennylane) — reste dû = TTC de la facture − TTC des avoirs ; virements
+ *  ENTRANTS établis (identifiant, date, montant > 0) et pas encore comptés. Couvrent le reste (à 1 centime près) → payée à la date
+ *  du plus récent ; une partie seulement → « partiel » (paiement partiel : enregistrable en L2, rien n'est noté) ; aucun →
+ *  « sans_virement » ; virement sans montant ou sans identifiant → « non_etabli » ; TTC de la facture ou d'un avoir inconnu →
+ *  « non_etabli » ; reste nul → « soldee » (rien à encaisser). Facture annulée dans Pennylane : rien. */
+export function encaissementAvecAvoir(x: DocPl, avoirsTtc: (number | null | undefined)[], virements: Virement[], dejaComptes: Set<string> = new Set()):
+  { paid_at: string | null; ids: string[]; encaisse: number; reste: number | null; signal: null | 'soldee' | 'partiel' | 'sans_virement' | 'non_etabli' | 'deja_compte' } {
+  if (x?.status === 'cancelled') return { paid_at: null, ids: [], encaisse: 0, reste: null, signal: null };
+  const facture = Math.abs(Number(x?.currency_amount ?? x?.amount));
+  if (!plein(x?.currency_amount ?? x?.amount) || !Number.isFinite(facture) || !avoirsTtc.length || avoirsTtc.some(a => a == null || !Number.isFinite(Number(a))))
+    return { paid_at: null, ids: [], encaisse: 0, reste: null, signal: 'non_etabli' };
+  const reste = r2(facture - avoirsTtc.reduce((t: number, a) => t + Math.abs(Number(a)), 0));
+  if (reste <= 0.005) return { paid_at: null, ids: [], encaisse: 0, reste: 0, signal: 'soldee' };
+  const vs = virements || [];
+  const etablis = vs.filter(v => idVirement(v) && plein(v?.date) && montantVirement(v) > 0);
+  const libres = etablis.filter(v => !dejaComptes.has(idVirement(v)!));
+  const encaisse = r2(libres.reduce((t, v) => t + montantVirement(v), 0));
+  if (libres.length && encaisse >= reste - 0.01) return { paid_at: plusRecente(libres), ids: libres.map(v => idVirement(v)!), encaisse, reste, signal: null };
+  if (encaisse > 0) return { paid_at: null, ids: [], encaisse, reste, signal: 'partiel' };
+  if (etablis.length) return { paid_at: null, ids: [], encaisse: 0, reste, signal: 'deja_compte' };
+  if (vs.length) return { paid_at: null, ids: [], encaisse: 0, reste, signal: 'non_etabli' };
+  return { paid_at: null, ids: [], encaisse: 0, reste, signal: 'sans_virement' };
 }
