@@ -93,6 +93,7 @@ Contrôles : V n · É n · NA n · NV n
 | M8 | **Cachet** (Q5) : changer le cachet depuis le tableau Production, la fiche de la date **et** « Valider les conditions » → lignes en % recalculées ; ligne saisie à la main non envoyée → **question** « conserver / recalculer » ; lignes envoyées/payées inchangées. |
 | M9 | **Compte d'encaissement** (Q6) : ligne sans compte affichée « Non renseigné » ; exclue des soldes par compte (compte dédié, avance L'ArtBo) ; clairement identifiable dans les encaissements de la date et dans les totaux par artiste (« dont X € — compte non renseigné ») ; marquer une facture réglée sans compte (à la main et par la synchronisation Pennylane) → demande visible du compte. |
 | M10 | Résumé de budget « Prévu / à jour / écart » cohérent avec ses lignes (reste = cachet − commission − dépenses). |
+| M11 | **Avoirs Pennylane** (C §6.23, v1.69) : avoir visible sous sa facture d'origine ; facture soldée par avoir hors impayés et sans « Paiement à vérifier » / « Facture à envoyer » (application **et** `reminder_candidates`) ; avoir partiel = seule la part couverte déduite ; paiement déjà noté conservé ; aucun encaissement ni remboursement créé par un avoir ou par `paid = true` sans virement rapproché ; avoir « À rattacher » ou disparu jamais compté ; synchronisation rejouée → aucun doublon. |
 
 ## I. Interactions et actions (C §4)
 | ID | Contrôle |

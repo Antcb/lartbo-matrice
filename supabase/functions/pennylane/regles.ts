@@ -109,3 +109,67 @@ export function delaiDocument(cle: keyof typeof DELAIS_DOCUMENTS, valeur: unknow
   const r = DELAIS_DOCUMENTS[cle];
   return typeof valeur === 'number' && Number.isInteger(valeur) && valeur >= r.min && valeur <= r.max ? valeur : r.defaut;
 }
+
+// ── Avoirs (L1, point 02 — décisions d'Anthony du 26/11/2026, D7) ─────────────────────────────────────────────────────────────
+// Anthony crée les avoirs dans Pennylane ; MATRICE les importe et les affiche (table pennylane_avoirs), sans doublon (clé =
+// identifiant Pennylane de l'avoir), rattachés à la ligne dont la facture d'ORIGINE a cet identifiant Pennylane — jamais sur un
+// montant, un client ou un numéro. Lien ambigu (origine non indiquée, absente de MATRICE, ou reliée à plusieurs lignes) : « À
+// rattacher ». Un avoir ne crée JAMAIS d'encaissement ni de remboursement. Même règle côté application : js/calc.js (avoirsOf,
+// avoirCouvert, resteDu, soldeeParAvoir) et base (pennylane_avoirs, avoir_couvert, reminder_candidates — migration v1.69).
+
+type DocPl = { id?: unknown; credit_note?: unknown; document_type?: unknown; credited_invoice?: unknown; credited_invoice_id?: unknown;
+  currency_amount_before_tax?: unknown; amount?: unknown; currency_amount?: unknown; paid?: unknown; status?: unknown; draft?: unknown };
+
+/** Identifiant Pennylane de la facture d'origine d'un avoir, ou null. Forme du champ de l'API v2 NON VÉRIFIÉE sur un avoir réel
+ *  (objet { id, … } attendu ; l'ancien champ credited_invoice_id, retiré le 06/06/2025, est encore accepté). */
+export function origineAvoir(x: DocPl): string | null {
+  const c = x?.credited_invoice as any;
+  const id = c && typeof c === 'object' ? c.id : c ?? x?.credited_invoice_id;
+  return plein(id) ? String(id) : null;
+}
+/** Document Pennylane qui est un avoir : marqué comme tel, lié à une facture d'origine, ou de montant HT négatif */
+export const estAvoir = (x: DocPl) => !!x && (x.credit_note === true || x.document_type === 'credit_note' || origineAvoir(x) != null
+  || Number(x.currency_amount_before_tax) < 0);
+/** Montant couvert par un avoir (HT, positif) — le signe renvoyé par Pennylane n'a pas d'importance */
+export const montantAvoir = (x: DocPl) => r2(Math.abs(Number(x.currency_amount_before_tax) || 0));
+
+export type LigneAvoir = { id: string; show_id: string; pennylane_id?: string | null; invoice_number?: string | null };
+export type Rattachement = { etat: 'rattache'; payment_id: string; show_id: string; reason: null }
+  | { etat: 'a_rattacher'; payment_id: null; show_id: string | null; reason: string };
+
+/** Rattachement d'un avoir : à LA ligne dont pennylane_id = identifiant de la facture d'origine, sinon « À rattacher » (motif) */
+export function rattacherAvoir(origine: string | null, lignes: LigneAvoir[], numeroOrigine?: string | null): Rattachement {
+  const ref = numeroOrigine ? ` (${numeroOrigine})` : '';
+  if (!origine) return { etat: 'a_rattacher', payment_id: null, show_id: null, reason: 'Pennylane n’indique pas la facture d’origine de cet avoir' };
+  const ls = lignes.filter(l => String(l.pennylane_id ?? '') === origine);
+  if (ls.length === 1) return { etat: 'rattache', payment_id: ls[0].id, show_id: ls[0].show_id, reason: null };
+  if (!ls.length) return { etat: 'a_rattacher', payment_id: null, show_id: null, reason: `Facture d’origine${ref} reliée à aucune ligne de MATRICE` };
+  const dates = [...new Set(ls.map(l => l.show_id))];
+  return { etat: 'a_rattacher', payment_id: null, show_id: dates.length === 1 ? dates[0] : null, reason: `Facture d’origine${ref} reliée à ${ls.length} lignes : à choisir` };
+}
+
+export type AvoirExistant = { etat: string; payment_id: string | null; show_id: string | null } | null | undefined;
+/** Ligne à enregistrer pour un avoir vu dans Pennylane. Champs Pennylane toujours mis à jour ; rattachement : un avoir déjà
+ *  rattaché le reste (jamais déplacé en silence) ; un avoir « À rattacher » est réexaminé à chaque synchronisation. */
+export function planAvoir(x: DocPl & { invoice_number?: unknown; date?: unknown; credited_invoice?: any }, existant: AvoirExistant, lignes: LigneAvoir[], vuLe: string) {
+  const origine = origineAvoir(x);
+  const numeroOrigine = (x.credited_invoice && typeof x.credited_invoice === 'object' && plein(x.credited_invoice.invoice_number)) ? String(x.credited_invoice.invoice_number) : null;
+  const pl = { pennylane_id: String(x.id), invoice_number: plein(x.invoice_number) ? String(x.invoice_number) : null, invoice_date: plein(x.date) ? String(x.date).slice(0, 10) : null,
+    amount_ht: montantAvoir(x), amount_ttc: plein(x.currency_amount ?? x.amount) ? r2(Math.abs(Number(x.currency_amount ?? x.amount))) : null,
+    credited_pennylane_id: origine, credited_invoice_number: numeroOrigine, pl_status: plein(x.status) ? String(x.status) : null, last_seen_at: vuLe, gone_at: null };
+  if (existant?.etat === 'rattache') return { ...pl, etat: 'rattache', payment_id: existant.payment_id, show_id: existant.show_id, reason: null, nouveau_rattachement: false };
+  const r = rattacherAvoir(origine, lignes, numeroOrigine);
+  return { ...pl, ...r, nouveau_rattachement: r.etat === 'rattache' };
+}
+
+/** Encaissement repris de Pennylane (L1) : JAMAIS sur la seule base de « paid = true ». Seulement si au moins une transaction
+ *  bancaire est rapprochée (date = la plus récente) et si la ligne n'a aucun avoir ; sinon rien n'est noté et c'est signalé :
+ *  « avec_avoir » (payée dans Pennylane alors qu'un avoir couvre la ligne : soldée par l'avoir ou encaissement partiel, à noter à la
+ *  main) ; « sans_transaction » (payée dans Pennylane sans virement rapproché). Facture annulée dans Pennylane : jamais reprise. */
+export function encaissementPennylane(x: DocPl, datesTransactions: (string | null | undefined)[], aDesAvoirs: boolean):
+  { paid_at: string | null; signal: null | 'avec_avoir' | 'sans_transaction' } {
+  if (x?.paid !== true || x?.status === 'cancelled') return { paid_at: null, signal: null };
+  if (aDesAvoirs) return { paid_at: null, signal: 'avec_avoir' };
+  const d = datesTransactions.filter(plein).map(v => String(v).slice(0, 10)).sort().pop();
+  return d ? { paid_at: d, signal: null } : { paid_at: null, signal: 'sans_transaction' };
+}

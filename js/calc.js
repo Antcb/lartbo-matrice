@@ -138,6 +138,29 @@ export const canFixInvoice = p => !!p && counted(p) && tracked(p) && FIXABLE_KIN
 /** Corrections enregistrées d'une ligne, la plus récente d'abord */
 export const correctionsOf = id => (S.db.facture_corrections || []).filter(c => c.payment_id === id).sort((a, b) => String(b.at).localeCompare(String(a.at)));
 
+/**
+ * Avoirs Pennylane (v1.69, L1 du point 02 — décisions d'Anthony du 26/11/2026, D7) : Anthony les crée dans Pennylane ; MATRICE les
+ * importe (« Synchroniser Pennylane », table pennylane_avoirs) et les affiche sous la facture d'origine. Un avoir n'est JAMAIS un
+ * encaissement ni un remboursement : il réduit seulement ce qui reste dû sur la facture. Avoir « À rattacher » ou disparu de
+ * Pennylane : affiché, jamais compté. Même règle côté base : avoir_couvert, reminder_candidates (migration v1.69) ; serveur :
+ * supabase/functions/pennylane/regles.ts (planAvoir, encaissementPennylane).
+ */
+export const avoirsOf = payId => (S.db.pennylane_avoirs || []).filter(a => a.payment_id === payId && a.etat === 'rattache' && !a.gone_at)
+  .sort((a, b) => String(a.invoice_date || '').localeCompare(String(b.invoice_date || '')));
+/** Avoirs que la synchronisation n'a pas pu rattacher seule (origine inconnue, absente de MATRICE ou ambiguë) */
+export const avoirsARattacher = () => (S.db.pennylane_avoirs || []).filter(a => a.etat === 'a_rattacher' && !a.gone_at);
+/** Montant HT couvert par les avoirs d'une ligne, plafonné au montant de la ligne */
+export function avoirCouvert(p){
+  const c = avoirsOf(p.id).reduce((t, a) => t + (Number(a.amount_ht) || 0), 0);
+  return Math.round(Math.min(c, Math.max(0, payAmount(p) || 0)) * 100) / 100;
+}
+/** Facture émise entièrement couverte par ses avoirs (montant figé) : plus due, ni « à envoyer » ni « paiement à vérifier »,
+ *  hors des impayés. Même règle que la base (soldee : amount non nul et avoir_couvert ≥ amount). */
+export const soldeeParAvoir = p => !!p && isInvoiced(p) && filled(p.amount) && avoirsOf(p.id).length > 0
+  && avoirsOf(p.id).reduce((t, a) => t + (Number(a.amount_ht) || 0), 0) >= Number(p.amount) - 0.005;
+/** Reste dû HT d'une facture émise : rien si un paiement est noté (il est conservé tel quel) ; sinon montant − avoirs */
+export const resteDu = p => p.paid_at ? 0 : Math.max(0, Math.round(((payAmount(p) || 0) - avoirCouvert(p)) * 100) / 100);
+
 /** Pourquoi une ligne de facturation ne peut plus changer ('' = modifiable) */
 export function billLockReason(p){
   if (!p) return '';
@@ -324,16 +347,17 @@ export function financeOf(shows){
   for (const s of shows){
     const pays = paymentsOf(s.id);
     if (isBookingShow(s)){
-      const due = pays.filter(p => p.kind === 'artbo' && isInvoiced(p) && !p.paid_at);
-      out.commissionsBooking += due.reduce((t, p) => t + (payAmount(p) || 0), 0); out.commissions += due.length;
+      // (v1.69) avoirs : seule la part non couverte reste due ; une facture soldée par avoir n'est plus impayée
+      const due = pays.filter(p => p.kind === 'artbo' && isInvoiced(p) && !p.paid_at && resteDu(p) > 0);
+      out.commissionsBooking += due.reduce((t, p) => t + resteDu(p), 0); out.commissions += due.length;
       continue;
     }
     const bill = pays.filter(p => BILL_KINDS.includes(p.kind));
     const cashed = bill.filter(p => p.paid_at).reduce((t, p) => t + (payAmount(p) || 0), 0);
     // coproduction : pas de cession à encaisser ; seules ses factures réelles (s'il y en a) restent à encaisser (27/10/2026)
     out.resteProd += isCoproduction(s) ? bill.filter(p => !p.paid_at).reduce((t, p) => t + (payAmount(p) || 0), 0) : Math.max(0, (Number(s.fee_ht) || 0) - cashed); out.datesProd++;
-    const due = bill.filter(p => isInvoiced(p) && !p.paid_at);
-    out.impayesProd += due.reduce((t, p) => t + (payAmount(p) || 0), 0); out.factures += due.length;
+    const due = bill.filter(p => isInvoiced(p) && !p.paid_at && resteDu(p) > 0);   // (v1.69) avoirs déduits
+    out.impayesProd += due.reduce((t, p) => t + resteDu(p), 0); out.factures += due.length;
   }
   for (const k of ['resteProd', 'impayesProd', 'commissionsBooking']) out[k] = r2(out[k]);
   return out;
