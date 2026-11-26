@@ -201,3 +201,22 @@ test('v1.70 relecture B1 — annuler un encaissement qui avait soldé la facture
   expect(refus).toMatch(/Facture déjà notée payée/);
   expectClean(ctx);
 });
+
+test('v1.70 relecture B1-bis — ligne payée à la main malgré un encaissement partiel : annuler un remboursement ne la rouvre pas', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page, {
+    shows: [show('en-d8', 'Salle Main', { fee_ht: 1000 })],
+    payments: [{ id: 'en-p8', show_id: 'en-d8', kind: 'solde', label: 'Solde', amount: 1000, vat_rate: 5.5, sort: 2, invoice_number: 'F-FICT-8', sent_at: iso(-20), paid_at: iso(-6), payee: 'compte' }],
+    reglements: [{ id: 'rg-8a', payment_id: 'en-p8', show_id: 'en-d8', sens: 'encaissement', etat: 'fait', montant_ttc: 500, date: iso(-8), compte: 'compte', source: 'manuel', transaction_id: null, created_at: iso(-8) },
+      { id: 'rg-8b', payment_id: 'en-p8', show_id: 'en-d8', sens: 'remboursement', etat: 'fait', montant_ttc: 50, date: iso(-3), compte: 'compte', source: 'manuel', transaction_id: null, created_at: iso(-3) }],
+  });
+  for (const id of ['rg-8b', 'rg-8a']) {
+    await page.locator(`[data-act="reglementAnnuler"][data-id="${id}"]`).click();
+    await page.locator('dialog.ask #ask-input').fill('Saisie en double (essai)');
+    await page.locator('dialog.ask button', { hasText: 'Annuler la saisie' }).click();
+    await expect(page.locator(`tr.reglement-row.is-cancelled:has-text("Saisie en double")`)).toHaveCount(id === 'rg-8b' ? 1 : 2);
+  }
+  expect((await etat(page, 'en-d8')).paid['en-p8']).toBe(iso(-6));   // pas couverte par ses encaissements avant : rien n'est rouvert
+  await expect(page.locator('body')).not.toContainText('la facture redevient due');
+  expectClean(ctx);
+});
