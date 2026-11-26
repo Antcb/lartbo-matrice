@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.70.1 — 26/11/2026
+- Relecture L2a : annuler un encaissement qui avait soldé une facture la rouvre si un reste dû apparaît (paiement historique jamais rouvert) ; ligne payée : plus d'encaissement, refusé aussi par la base
+
+
 ## 1.70.0 — 26/11/2026
 - Encaissements et remboursements réels (L2a du point 02) : un mouvement par encaissement ou remboursement, en TTC, saisi à la main ou repris des virements Pennylane sans jamais de doublon ; paiements partiels ; remboursements à faire puis faits ; cinq montants distincts par date ; paiements historiques lus tels quels
 

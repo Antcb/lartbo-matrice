@@ -357,7 +357,8 @@ export const BUDGET_ACTIONS = {
         await reloadReglements(data); toast('Remboursement noté fait.'); render(); return true;
       }});
   },
-  /** (v1.70, R2) Annuler une saisie manuelle non rapprochée : motif obligatoire ; jamais effacée (traçabilité) */
+  /** (v1.70, R2) Annuler une saisie manuelle non rapprochée : motif obligatoire ; jamais effacée (traçabilité). Une annulation n'est
+   *  jamais un remboursement ; la base rouvre la facture si un reste dû apparaît (décision du 26/11/2026). */
   reglementAnnuler: async t => {
     const r = (S.db.reglements || []).find(x => x.id === t.dataset.id); if (!r) return;
     const motif = await askText({title: 'Annuler la saisie ?', text: `${r.sens === 'encaissement' ? 'Encaissement' : 'Remboursement'} de ${eur2(Number(r.montant_ttc))} TTC${r.date ? ' du ' + fmtDate(r.date) : ''}. La saisie reste visible, barrée, avec ce motif.`,
@@ -365,7 +366,13 @@ export const BUDGET_ACTIONS = {
     if (motif == null) return;
     const {data, error} = await sb.rpc('reglement_annuler', {p_id: r.id, p_motif: motif});
     if (error){ toast(error.message, true); return; }
-    await reloadReglements(data); toast('Saisie annulée (gardée, barrée).'); render();
+    await reloadReglements(data);
+    // (décision d'Anthony du 26/11/2026, relecture B1) la base recalcule le statut de la ligne dans la même opération : rouverte si un
+    // reste dû apparaît, sinon soldée à la date du dernier encaissement restant — relue ici (jamais recalculée par l'application)
+    const {data: ligne} = await sb.from('show_payments').select('*').eq('id', r.payment_id).maybeSingle();
+    const avant = byId('show_payments', r.payment_id), rouverte = !!(avant?.paid_at && ligne && !ligne.paid_at);
+    if (ligne && avant){ Object.assign(avant, ligne); touch('show_payments'); }
+    toast(rouverte ? 'Saisie annulée (gardée, barrée) : la facture redevient due.' : 'Saisie annulée (gardée, barrée).'); render();
   },
   /**
    * (v1.68, point n°23, décisions d'Anthony du 26/11/2026) « Déverrouiller pour corriger » une facture émise : la ligne reste

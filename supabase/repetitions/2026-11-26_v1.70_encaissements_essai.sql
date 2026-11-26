@@ -1,4 +1,7 @@
--- Essai LOCAL de la migration v1.70 (base PostgreSQL jetable, jamais Supabase) : psql -v ON_ERROR_STOP=1 -v rc=<fichier> -f ce_fichier
+-- Essai LOCAL de la migration v1.70 (base PostgreSQL jetable, jamais Supabase) : psql -v ON_ERROR_STOP=1 -v rc=<fichier> -v garde=<fichier2> -f ce_fichier
+-- <fichier2> = show_payments_emitted_guard de la v1.68, extraite telle quelle de supabase/migrations/2026-11-26_v1.68_correction_facture.sql
+-- (du « CREATE OR REPLACE FUNCTION public.show_payments_emitted_guard() » jusqu'au « end $function$; ») : définition de production
+-- (empreinte 71493f414718dab4a5a77a2f15f85fac, relevée en lecture seule le 26/11/2026).
 -- <fichier> = reminder_candidates de la v1.61.1 (voir 2026-11-26_v1.69_avoirs_essai.sql) ; la v1.69 est appliquée d'abord : son corps
 -- doit être celui de la production (empreinte 37b36adf92cc516bfe3dc751216d170a, relevée le 26/11/2026). Données FICTIVES.
 -- Contrôle : migration v1.70 appliquée DEUX fois ; garde (corps inattendu → arrêt sans rien appliquer) ; table (contraintes, droits,
@@ -15,12 +18,16 @@ create or replace function auth.jwt() returns jsonb language sql stable as $$ se
 -- équipe : un courriel dans le jeton (simulé) ; sans courriel → hors équipe
 create or replace function public.is_team() returns boolean language sql stable as $$ select coalesce(auth.jwt() ->> 'email', '') <> '' $$;
 create table public.projects (id uuid primary key, name text);
+create table public.finance_log (id bigserial primary key, row_id uuid, field text, old_value text, new_value text, source text);
 create table public.shows (id uuid primary key, project_id uuid, date date, venue text, city text, status text, prod_mode text, archived_at timestamptz,
+  fee_ht numeric, vat_rate numeric, artbo_pct numeric, partner_pct numeric,
   reminders_suspended_at timestamptz, reminders_next jsonb, reminders_reactivated_at timestamptz, created_at timestamptz default now(),
   conf_kit_sent date, precontract_done date, contract_sent date, contract_signed date, contract_cosigned_sent date, boucle_tech date, boucle_com date);
 create table public.show_payments (id uuid primary key default gen_random_uuid(), show_id uuid references public.shows(id) on delete cascade, kind text, label text,
   pct numeric, amount numeric, invoice_number text, sent_at date, paid_at date, pennylane_id text, hors_calcul text, sort int, reminded_at date,
-  reminders_paused boolean not null default false, invoiced_on date, created_at timestamptz default now());
+  reminders_paused boolean not null default false, invoiced_on date, created_at timestamptz default now(),
+  vat_rate numeric, payee text, pennylane_url text);
+create or replace function public.payment_amount_now(p public.show_payments) returns numeric language sql stable as $$ select p.amount $$;
 create or replace function public.delais_dossier(timestamptz) returns jsonb language sql as $$
   select jsonb_object_agg(k, jsonb_build_object('on', true, 'n', n)) from (values ('precontrat',10),('contrat_envoi',10),('contrat_signe',10),('contrat_cosigne',10),
     ('facture_acompte',10),('solde_envoi',7),('booking_commission',10),('facture_envoi',3),('paiement',10),('commission',10),('commission_partenaire',10),
@@ -35,6 +42,15 @@ returns boolean language sql stable set search_path = public as $$
               else p.sent_at is not null or p.paid_at is not null or nullif(btrim(p.invoice_number), '') is not null or nullif(btrim(p.pennylane_id), '') is not null end
 $$;
 \i :rc
+\i :garde
+create trigger show_payments_emitted_guard before update or delete on public.show_payments for each row execute function public.show_payments_emitted_guard();
+select md5(pg_get_functiondef('public.show_payments_emitted_guard'::regproc)) = '71493f414718dab4a5a77a2f15f85fac' as garde_production \gset
+\if :garde_production
+\echo show_payments_emitted_guard identique à la production (v1.68)
+\else
+\echo ÉCHEC : garde locale différente de la production
+select 1/0;
+\endif
 \i supabase/migrations/2026-11-26_v1.69_avoirs.sql
 select md5(prosrc) = '37b36adf92cc516bfe3dc751216d170a' as corps_production from pg_proc where proname = 'reminder_candidates' \gset
 \if :corps_production
@@ -54,6 +70,7 @@ create function public.reminder_candidates(p_show uuid default null, p_all boole
 \echo (erreurs attendues ci-dessous : garde de la v1.70, puis transaction annulée)
 \i supabase/migrations/2026-11-26_v1.70_encaissements.sql
 \set ON_ERROR_STOP 1
+select pg_temp.ok(md5(pg_get_functiondef('public.show_payments_emitted_guard'::regproc)) = '71493f414718dab4a5a77a2f15f85fac', 'garde : show_payments_emitted_guard inchangée');
 select pg_temp.ok(to_regclass('public.reglements') is null and to_regprocedure('public.reglement_saisir(uuid, text, text, numeric, date, text, text, text)') is null
   and (select prosrc from pg_proc where proname = 'reminder_candidates') like '%''autre''%', 'garde : corps inattendu → migration arrêtée, rien appliqué');
 drop function public.reminder_candidates(uuid, boolean);
@@ -61,7 +78,8 @@ alter function public.rc_v169(uuid, boolean) rename to reminder_candidates;
 
 \i supabase/migrations/2026-11-26_v1.70_encaissements.sql
 \i supabase/migrations/2026-11-26_v1.70_encaissements.sql
-select pg_temp.ok(position('v1.70 (L2a)' in (select prosrc from pg_proc where proname = 'reminder_candidates')) > 0, 'migration appliquée deux fois (rejouable)');
+select pg_temp.ok(position('v1.70 (L2a)' in (select prosrc from pg_proc where proname = 'reminder_candidates')) > 0
+  and position('reouverture_encaissement' in pg_get_functiondef('public.show_payments_emitted_guard'::regproc)) > 0, 'migration appliquée deux fois (rejouable)');
 
 -- données fictives : une coréalisation (acompte + solde, commission), une ligne hors calcul, une ligne non émise, un booking
 insert into public.projects values ('00000000-0000-0000-0000-00000000aa01', 'Artiste fictif');
@@ -175,7 +193,11 @@ begin
   begin insert into public.reglements (payment_id, show_id, sens, montant_ttc, date, source, annule_at) values (a, sh, 'encaissement', 1, current_date, 'manuel', now()); raise exception 'annulé sans motif';
   exception when check_violation then raise notice 'ok : annulation sans motif refusée (contrainte)'; end;
   begin delete from public.show_payments where id = a; raise exception 'ligne avec mouvements supprimée';
-  exception when foreign_key_violation then raise notice 'ok : ligne avec mouvements non supprimable'; end;
+  exception when foreign_key_violation or raise_exception then raise notice 'ok : ligne avec mouvements non supprimable (%)', sqlerrm; end;
+  alter table public.show_payments disable trigger show_payments_emitted_guard;
+  begin delete from public.show_payments where id = a; raise exception 'ligne avec mouvements supprimée (sans le verrou)';
+  exception when foreign_key_violation then raise notice 'ok : sans le verrou non plus (clé étrangère)'; end;
+  alter table public.show_payments enable trigger show_payments_emitted_guard;
 end $$;
 
 -- droits : équipe en lecture seule (écriture par les fonctions), anonyme rien
@@ -187,6 +209,57 @@ select pg_temp.ok(has_function_privilege('authenticated', 'public.reglement_sais
   and not has_function_privilege('anon', 'public.reglement_saisir(uuid, text, text, numeric, date, text, text, text)', 'execute')
   and not has_function_privilege('anon', 'public.reglement_effectuer(uuid, date, text, text)', 'execute')
   and not has_function_privilege('anon', 'public.reglement_annuler(uuid, text)', 'execute'), 'fonctions : équipe oui, anonyme non');
+-- ───── relecture B1 (décision d'Anthony du 26/11/2026) : annulation d'un encaissement sur une ligne payée par ses encaissements ─────
+-- ligne 4 200 € HT à 5,5 % (4 431 TTC), avoir 1 500 € HT (1 582,50 TTC) : net 2 848,50 TTC
+insert into public.show_payments (id, show_id, kind, label, amount, vat_rate, invoice_number, sent_at, pennylane_id, sort) values
+ ('00000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-0000000000a1', 'autre', 'Rouverte', 4200, 5.5, 'F-T-7', current_date - 30, 'pl-7', 7),
+ ('00000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-0000000000a1', 'autre', 'Historique', 1000, 5.5, 'F-T-8', current_date - 30, 'pl-8', 8);
+update public.show_payments set paid_at = current_date - 40, payee = 'compte' where id = '00000000-0000-0000-0000-000000000008';   -- paiement historique
+insert into public.pennylane_avoirs (pennylane_id, invoice_number, amount_ht, amount_ttc, credited_pennylane_id, etat, payment_id, show_id) values
+ ('av-7', 'AV-7', 1500, 1582.5, 'pl-7', 'rattache', '00000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-0000000000a1');
+create temp table hist as select * from public.show_payments where id = '00000000-0000-0000-0000-000000000008';
+select * from public.reglement_saisir('00000000-0000-0000-0000-000000000007', 'encaissement', 'fait', 2000, current_date - 9, 'compte', null, null) \gset b1_
+select * from public.reglement_saisir('00000000-0000-0000-0000-000000000007', 'encaissement', 'fait', 848.50, current_date - 5, 'compte', null, null) \gset b2_
+update public.show_payments set paid_at = current_date - 5 where id = '00000000-0000-0000-0000-000000000007';   -- l'application : ligne couverte → payée
+do $$ begin
+  begin perform public.reglement_saisir('00000000-0000-0000-0000-000000000007', 'encaissement', 'fait', 10, current_date, 'compte', null, null); raise exception 'encaissement sur ligne payée';
+  exception when raise_exception then if sqlerrm not like 'Facture déjà notée payée%' then raise; end if; raise notice 'ok : ligne payée — plus d''encaissement (relecture, point 1)'; end;
+  begin perform public.reglement_saisir('00000000-0000-0000-0000-000000000008', 'encaissement', 'fait', 10, current_date, 'compte', null, null); raise exception 'encaissement sur paiement historique';
+  exception when raise_exception then if sqlerrm not like 'Facture déjà notée payée%' then raise; end if; raise notice 'ok : paiement historique — plus d''encaissement'; end;
+end $$;
+-- annulation qui laisse un reste dû (848,50) → ligne rouverte dans la même opération : due, relancée
+select public.reglement_annuler(:'b2_id', 'Saisie en double') is not null as x \gset
+select pg_temp.ok((select paid_at from public.show_payments where id = '00000000-0000-0000-0000-000000000007') is null, 'annulation laissant un reste dû : ligne rouverte (date « Payée » vidée)');
+select pg_temp.ok(exists (select 1 from public.reminder_candidates() where r = 'autre_payee' and t like '%Rouverte%'), 'ligne rouverte : « Paiement à vérifier » revient');
+select pg_temp.ok((select annule_motif from public.reglements where id = :'b2_id') = 'Saisie en double' and (select count(*) from public.reglements where payment_id = '00000000-0000-0000-0000-000000000007') = 2
+  and not exists (select 1 from public.reglements where payment_id = '00000000-0000-0000-0000-000000000007' and sens = 'remboursement'),
+  'trace gardée (montant, date, motif) ; une annulation n''est pas un remboursement');
+-- les autres encaissements suffisent : la ligne reste soldée, à la date du dernier encaissement restant
+select * from public.reglement_saisir('00000000-0000-0000-0000-000000000007', 'encaissement', 'fait', 848.50, current_date - 4, 'compte', null, null) \gset b3_
+select * from public.reglement_saisir('00000000-0000-0000-0000-000000000007', 'encaissement', 'fait', 100, current_date - 2, 'compte', null, null) \gset b4_
+update public.show_payments set paid_at = current_date - 2 where id = '00000000-0000-0000-0000-000000000007';
+select public.reglement_annuler(:'b4_id', 'Excédent saisi par erreur') is not null as x \gset
+select pg_temp.ok((select paid_at from public.show_payments where id = '00000000-0000-0000-0000-000000000007') = current_date - 4, 'autres encaissements suffisants : reste soldée, date du dernier encaissement restant');
+-- un remboursement fait puis annulé sur une ligne soldée : reste soldée
+select * from public.reglement_saisir('00000000-0000-0000-0000-000000000007', 'remboursement', 'fait', 50, current_date - 1, 'compte', null, 'essai') \gset b5_
+select public.reglement_annuler(:'b5_id', 'Remboursement saisi par erreur') is not null as x \gset
+select pg_temp.ok((select paid_at from public.show_payments where id = '00000000-0000-0000-0000-000000000007') = current_date - 4, 'annulation d''un remboursement : ligne toujours soldée');
+-- paiement historique : remboursement saisi puis annulé → paiement intact (E1)
+select * from public.reglement_saisir('00000000-0000-0000-0000-000000000008', 'remboursement', 'fait', 200, current_date - 1, 'compte', null, 'essai') \gset h1_
+select public.reglement_annuler(:'h1_id', 'Erreur') is not null as x \gset
+select pg_temp.ok(not exists (select * from public.show_payments where id = '00000000-0000-0000-0000-000000000008' except select * from hist), 'paiement historique jamais touché');
+-- verrou : l'exception ne vaut que pour la date « Payée » d'une ligne payée par ses encaissements, dans la transaction annoncée
+do $$ begin
+  begin update public.show_payments set paid_at = null where id = '00000000-0000-0000-0000-000000000007'; raise exception 'date effacée sans annonce';
+  exception when raise_exception then if sqlerrm not like 'Facture déjà émise%' then raise; end if; raise notice 'ok : sans annonce, la date « Payée » ne s''efface pas'; end;
+  perform set_config('matrice.regularisation', 'reouverture_encaissement', true);
+  begin update public.show_payments set paid_at = null where id = '00000000-0000-0000-0000-000000000008'; raise exception 'historique rouvert';
+  exception when raise_exception then if sqlerrm not like 'Facture déjà émise%' then raise; end if; raise notice 'ok : paiement historique jamais rouvert, même annoncé'; end;
+  begin update public.show_payments set paid_at = null, payee = 'artbo' where id = '00000000-0000-0000-0000-000000000007'; raise exception 'autre colonne changée';
+  exception when raise_exception then if sqlerrm not like 'Facture déjà émise%' then raise; end if; raise notice 'ok : réouverture — rien d''autre ne change'; end;
+  perform set_config('matrice.regularisation', '', true);
+end $$;
+delete from public.reglements where payment_id in ('00000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000000008');   -- essai local
 -- E1 : aucune ligne de facturation modifiée
-select pg_temp.ok(not exists (select * from public.show_payments except select * from avant) and not exists (select * from avant except select * from public.show_payments), 'show_payments inchangée');
+select pg_temp.ok(not exists (select * from public.show_payments where id in (select id from avant) except select * from avant) and not exists (select * from avant except select * from public.show_payments), 'show_payments inchangée (lignes initiales)');
 \echo ESSAI v1.70 : tout est conforme
