@@ -325,8 +325,32 @@ Deno.serve(async (req) => {
       for (const a of (await readAll(() => admin.from('pennylane_avoirs').select('id, payment_id, amount_ttc').eq('etat', 'rattache').is('gone_at', null))) || [])
         { const k = String(a.payment_id); avoirsTtc.set(k, [...(avoirsTtc.get(k) || []), a.amount_ttc == null ? null : Number(a.amount_ttc)]); }
       // virements déjà comptés pour une ligne : jamais comptés deux fois (pennylane_virements, migration v1.69)
-      const comptes = new Set<string>(((await readAll(() => admin.from('pennylane_virements').select('id, transaction_id'))) || []).map((v: any) => String(v.transaction_id)));
-      const payeesAvecAvoir: string[] = [], payeesSansTransaction: string[] = [], virementsPartiels: string[] = [];
+      // virement → ligne pour laquelle il est compté (ou réservé). Réservé pour LA MÊME ligne (paiement pas écrit la fois précédente) :
+      // réutilisable par elle à la reprise, jamais par une autre (demande d'Anthony du 26/11/2026, 17 h 42)
+      const comptes = new Map<string, string>(((await readAll(() => admin.from('pennylane_virements').select('id, transaction_id, payment_id'))) || []).map((v: any) => [String(v.transaction_id), String(v.payment_id)]));
+      const autresQue = (pid: string) => new Set([...comptes].filter(([, l]) => l !== pid).map(([t]) => t));
+      const payeesAvecAvoir: string[] = [], payeesSansTransaction: string[] = [], virementsPartiels: string[] = [], aVerifier: string[] = [];
+      // paiements HISTORIQUES (notés avant L1, sans identifiant de virement) : avant de compter un virement pour une ligne, les virements
+      // des lignes déjà PAYÉES de la même date (liées à Pennylane) sont relus et réservés pour elles (origine « historique ») ; une ligne
+      // payée de la même date sans lien Pennylane (numéro seul) = doute : rien n'est noté, rapprochement à vérifier à la main
+      const histoFait = new Set<string>(), doutesHisto = new Map<string, string[]>();
+      const reserverHistorique = async (showId: string, sauf: string) => {
+        if (histoFait.has(showId)) return; histoFait.add(showId);
+        const payees = (pays || []).filter((q: any) => q.show_id === showId && q.id !== sauf && q.paid_at);
+        doutesHisto.set(showId, payees.filter((q: any) => !q.pennylane_id && q.invoice_number).map((q: any) => `${q.label || q.kind} ${q.invoice_number}`));
+        for (const q of payees.filter((q: any) => q.pennylane_id && ![...comptes.values()].includes(String(q.id)))) {
+          let tv: any[] = [];
+          try { tv = (await pl('GET', `/customer_invoices/${q.pennylane_id}/matched_transactions`)).items || []; }
+          catch (e) { doutesHisto.get(showId)!.push(`${q.label || q.kind} ${q.invoice_number || ''} (virements illisibles)`); continue; }
+          const rows = tv.filter((v: any) => (typeof v?.id === 'string' || typeof v?.id === 'number') && String(v.id).trim() && !comptes.has(String(v.id)))
+            .map((v: any) => ({ transaction_id: String(v.id), payment_id: q.id, pennylane_invoice_id: String(q.pennylane_id), origine: 'historique',
+              amount: Number.isFinite(Number(v.amount)) ? Number(v.amount) : null, tx_date: v.date ? String(v.date).slice(0, 10) : null }));
+          if (!rows.length) continue;
+          const { error: eh } = await admin.from('pennylane_virements').upsert(rows, { onConflict: 'transaction_id', ignoreDuplicates: true });
+          if (eh) { doutesHisto.get(showId)!.push(`${q.label || q.kind} ${q.invoice_number || ''} (virements non réservés : ${eh.message})`); continue; }
+          rows.forEach(r => comptes.set(r.transaction_id, String(q.id)));
+        }
+      };
       // paiements repris : acomptes / soldes / autres lignes de PRODUCTION, et factures de commission BOOKING (lot C1) ;
       // jamais les factures de l'artiste en booking, ni la commission de production (pas une facture)
       const pays = ((await readAll(() => admin.from('show_payments').select('id, show_id, kind, label, invoice_number, pennylane_id, paid_at, drive_file_id, shows(date, city, venue, drive_folder_id, prod_mode)')
@@ -353,11 +377,16 @@ Deno.serve(async (req) => {
         // il faut un virement rapproché (regles.ts encaissementAvecAvoir / encaissementPennylane). Paiement existant : jamais touché.
         if (!p.paid_at && x.status !== 'cancelled' && (av || isPaid)) {
           const nom = `${p.label || p.kind} ${p.invoice_number || x.invoice_number || ''} · ${where}`.replace(/\s+/g, ' ');
-          if (av && encaissementAvecAvoir(x, av, [], comptes).signal === 'soldee') continue;   // soldée par l'avoir : rien à encaisser
+          if (av && encaissementAvecAvoir(x, av, [], new Set()).signal === 'soldee') continue;   // soldée par l'avoir : rien à encaisser
           let vs: any[] = [];
           try { const t = await pl('GET', `/customer_invoices/${x.id}/matched_transactions`); vs = t.items || []; }
           catch (e) { erreurs.push(`${p.invoice_number || x.invoice_number} : virements rapprochés illisibles, paiement non repris (${String(e).replace(/^Error: /, '')})`); continue; }
-          const enc = av ? encaissementAvecAvoir(x, av, vs, comptes) : encaissementPennylane(x, vs, comptes);
+          if (vs.length) await reserverHistorique(String(p.show_id), String(p.id));
+          const doute = doutesHisto.get(String(p.show_id)) || [];
+          const dejaAilleurs = autresQue(String(p.id));
+          const enc = av ? encaissementAvecAvoir(x, av, vs, dejaAilleurs) : encaissementPennylane(x, vs, dejaAilleurs);
+          if (enc.paid_at && doute.length) { aVerifier.push(`${nom} : virement rapproché, mais paiement(s) noté(s) à la main sans lien Pennylane sur la même date (${doute.join(', ')}) — rien de noté, rapprochement à vérifier`); continue; }
+          if (enc.signal === 'a_verifier') { aVerifier.push(`${nom} : virement(s) plus grand(s) que la facture (virement groupé ?) — rien de noté, rapprochement à vérifier`); continue; }
           if (!enc.paid_at) {
             const e2 = enc as any;
             if (enc.signal === 'partiel') virementsPartiels.push(`${nom} : ${money(e2.encaisse)} € TTC reçus sur ${money(e2.reste)} € TTC restant dus après avoir — paiement partiel à enregistrer avec L2`);
@@ -368,14 +397,19 @@ Deno.serve(async (req) => {
           const date = enc.paid_at;
           // virements mémorisés AVANT le paiement (relecture v1.69.1) : si un autre passage les a déjà comptés, rien n'est noté
           const vm = new Map(vs.map((v: any) => [String(v.id), v]));
-          if (enc.ids.length) {
-            const { error: e4 } = await admin.from('pennylane_virements').insert(enc.ids.map(id => ({ transaction_id: id, payment_id: p.id, pennylane_invoice_id: String(x.id),
+          // déjà réservés pour CETTE ligne (reprise après un paiement non écrit) : réutilisés tels quels, pas réinsérés
+          const nouveaux = enc.ids.filter(id => comptes.get(id) !== String(p.id));
+          if (nouveaux.length) {
+            const { error: e4 } = await admin.from('pennylane_virements').insert(nouveaux.map(id => ({ transaction_id: id, payment_id: p.id, pennylane_invoice_id: String(x.id),
               amount: Number.isFinite(Number(vm.get(id)?.amount)) ? Number(vm.get(id)?.amount) : null, tx_date: vm.get(id)?.date ? String(vm.get(id).date).slice(0, 10) : null })));
             if (e4) { (av ? payeesAvecAvoir : payeesSansTransaction).push(`${nom} : ${e4.code === '23505' ? 'virement déjà compté pour une autre ligne' : 'virement non mémorisé (' + e4.message + ')'} — paiement non repris`); continue; }
-            enc.ids.forEach(id => comptes.add(id));
+            nouveaux.forEach(id => comptes.set(id, String(p.id)));
           }
           const { data: up, error: e3 } = await admin.from('show_payments').update({ paid_at: date }).eq('id', p.id).is('paid_at', null).select('id');
-          const rendre = async () => { if (enc.ids.length) await admin.from('pennylane_virements').delete().eq('payment_id', p.id).in('transaction_id', enc.ids); };
+          // paiement non écrit : la réservation est retirée ; si le retrait échoue, elle reste attachée à CETTE ligne et sera reprise
+          // à la synchronisation suivante (jamais utilisable par une autre ligne) — signalé
+          const rendre = async () => { if (!enc.ids.length) return; const { error: er } = await admin.from('pennylane_virements').delete().eq('payment_id', p.id).in('transaction_id', enc.ids).neq('origine', 'historique');
+            if (er) erreurs.push(`${p.invoice_number} : réservation du virement non retirée (${er.message}) — reprise à la prochaine synchronisation`); else enc.ids.forEach(id => { if (comptes.get(id) === String(p.id)) comptes.delete(id); }); };
           if (e3) { await rendre(); erreurs.push(`${p.invoice_number} : ${e3.message}`); continue; }
           if (!up?.length) { await rendre(); continue; }   // paiement noté entre-temps (à la main) : conservé, virements rendus
           updated.push({ id: p.id, paid_at: date, label: `${p.label || p.kind} ${p.invoice_number} · ${where}` });
@@ -384,7 +418,7 @@ Deno.serve(async (req) => {
         }
       }
       const filed = await fileInvoices(toFile);
-      return json({ ok: true, updated, pennylaneLate, linked, douteux, aRattacher, erreurs, filed, avoirs, payeesAvecAvoir, payeesSansTransaction, virementsPartiels });
+      return json({ ok: true, updated, pennylaneLate, linked, douteux, aRattacher, erreurs, filed, avoirs, payeesAvecAvoir, payeesSansTransaction, virementsPartiels, aVerifier });
     }
 
     if (body.action === 'quote') {

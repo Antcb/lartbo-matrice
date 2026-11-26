@@ -182,13 +182,17 @@ const plusRecente = (vs: Virement[]) => vs.map(v => String(v.date).slice(0, 10))
 /** Ligne SANS avoir : il faut « paid » ET au moins un virement rapproché (date = le plus récent) pas encore compté ailleurs ;
  *  sinon rien n'est noté : « sans_transaction » (aucun virement) ou « deja_compte » (virements déjà comptés pour une autre ligne). */
 export function encaissementPennylane(x: DocPl, virements: Virement[], dejaComptes: Set<string> = new Set()):
-  { paid_at: string | null; ids: string[]; signal: null | 'sans_transaction' | 'deja_compte' } {
+  { paid_at: string | null; ids: string[]; signal: null | 'sans_transaction' | 'deja_compte' | 'a_verifier' } {
   if (x?.paid !== true || x?.status === 'cancelled') return { paid_at: null, ids: [], signal: null };
   // virement daté ; montant connu → entrant seulement (relecture v1.69.1 : un virement sortant n'est jamais un encaissement)
   const vs = (virements || []).filter(v => plein(v?.date) && !(Number.isFinite(montantVirement(v)) && montantVirement(v) <= 0));
   if (!vs.length) return { paid_at: null, ids: [], signal: 'sans_transaction' };
   const libres = vs.filter(v => { const i = idVirement(v); return !i || !dejaComptes.has(i); });
   if (!libres.length) return { paid_at: null, ids: [], signal: 'deja_compte' };
+  // (v1.69.1, demande d'Anthony du 26/11/2026 17 h 42) virements plus grands que la facture (TTC Pennylane connu) : virement groupé,
+  // part de cette facture inconnue → doute, rien n'est noté, rapprochement à vérifier à la main
+  const ttc = Math.abs(Number(x?.currency_amount ?? x?.amount)), somme = libres.reduce((t, v) => t + (Number.isFinite(montantVirement(v)) ? montantVirement(v) : 0), 0);
+  if (plein(x?.currency_amount ?? x?.amount) && Number.isFinite(ttc) && somme > ttc + 0.01) return { paid_at: null, ids: [], signal: 'a_verifier' };
   return { paid_at: plusRecente(libres), ids: libres.map(idVirement).filter(Boolean) as string[], signal: null };
 }
 
