@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.68.3 — 26/11/2026
+- Brouillons propres à leur objet : fiche de renseignements, mails de date, compte d'arrivée d'un paiement (anciens brouillons partagés ignorés)
+
+
 ## 1.68.2 — 26/11/2026
 - Brouillons des fenêtres propres à leur objet : rattachement d'une facture Pennylane, rattacher une pièce, copier les lignes d'une autre date, pièce déjà dans le Drive
 
