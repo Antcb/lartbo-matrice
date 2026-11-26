@@ -289,7 +289,8 @@ export const BUDGET_ACTIONS = {
       {k: 'vat_rate', label: 'TVA de la ligne (%)', type: 'number', placeholder: `vide = TVA par défaut (${String(payVat({...p, vat_rate: null})).replace(".", ",")} %)`},
       {k: 'motif', label: 'Motif de la correction (obligatoire)', type: 'textarea', full: true, rows: 2, max: 500, placeholder: 'ex. facture Pennylane émise à 35 %, et non 30 %'}];
     await openModal({title: 'Déverrouiller pour corriger', saveLabel: 'Enregistrer la correction', fields,
-      values: {amount: cur ?? '', pct: p.pct ?? '', vat_rate: p.vat_rate ?? ''},
+      // id : brouillon propre à CETTE facture (sans lui, une saisie abandonnée sur une facture revenait dans la fenêtre d'une autre)
+      values: {id: p.id, amount: cur ?? '', pct: p.pct ?? '', vat_rate: p.vat_rate ?? ''},
       extraTop: `<div class="help full">
           <p class="m0"><b>${esc(p.label || KIND[p.kind] || p.kind)}</b> · ${facts}${s?.fee_ht ? ` · cachet ${eur2(s.fee_ht)} HT` : ''}</p>
           <p class="m0 mt-sm">La facture reste verrouillée tant que tu n’enregistres pas, et se reverrouille dès que la correction est enregistrée.</p>

@@ -146,12 +146,13 @@ test('v1.68 solde de 2 800 € déjà payé : type figé ; correction autorisée
   expect(after.rappels.some(t => /Facture de solde à faire/.test(t))).toBe(false);
   await expect(page.locator('.bill-total')).toContainText('Il manque 200,00 € HT par rapport au cachet');
   // « aucun changement » refusé sans appel à la base
-  await expect(row(page, 'f-s').locator('input[data-f="amount"]')).toHaveValue('2600');   // rendu après la correction terminé
+  await expect(row(page, 'f-s').locator('input[data-f="amount"]')).toHaveValue('2600');
+  // fin de l'enregistrement précédent (historique relu puis écran redessiné) avant de rouvrir la fenêtre
+  await expect(row(page, 'f-s').locator('.badge', { hasText: 'corrigée' })).toHaveAttribute('title', /Solde facturé 2 600/);
   await row(page, 'f-s').locator('[data-act="fixInvoice"]').click();
   await expect(m.locator('[name=amount]')).toHaveValue('2600');
   await m.locator('[name=motif]').fill('rien');
   const toasts = [];
-  page.on('console', () => {});
   await page.exposeFunction('__toastSeen', t => toasts.push(t)).catch(() => {});
   await page.evaluate(() => new MutationObserver(() => { const t = document.body.innerText; if (/Aucun changement à enregistrer/.test(t)) window.__toastSeen?.(t); })
     .observe(document.body, { childList: true, subtree: true, characterData: true }));
@@ -183,5 +184,24 @@ test('v1.68 refus de la base affiché, ligne inchangée ; commission en booking 
     return { booking: c.canFixInvoice(p), prod: c.canFixInvoice({ ...p, show_id: 'v-1', paid_at: '2026-10-01' }), horsCalcul: c.canFixInvoice({ ...p, hors_calcul: 'import' }),
       acompteArtiste: c.canFixInvoice({ ...p, kind: 'acompte' }) }; });
   expect(r).toEqual({ booking: true, prod: false, horsCalcul: false, acompteArtiste: false });   // acompte / solde en booking : factures de l'artiste
+  expectClean(ctx);
+});
+
+test('v1.68.1 brouillon de la fenêtre de correction propre à chaque facture : une saisie abandonnée ne revient pas sur une autre facture', async ({ page }) => {
+  const ctx = await openApp(page);
+  await seed(page);
+  await openBilling(page);
+  const m = page.locator('#modal');
+  await row(page, 'f-a').locator('[data-act="fixInvoice"]').click();
+  await page.waitForTimeout(200);                                    // brouillon suivi 60 ms après l'ouverture (ui/drafts.js)
+  await m.locator('[name=amount]').fill('9999');
+  await m.locator('[name=motif]').fill('saisie abandonnée');
+  await m.locator('[data-act="closeModal"]').last().click();
+  await expect(m).not.toBeVisible();
+  await row(page, 'f-s').locator('[data-act="fixInvoice"]').click();
+  await page.waitForTimeout(2700);                                   // après les nouvelles applications du brouillon (400 / 1 200 / 2 500 ms)
+  await expect(m.locator('[name=amount]')).toHaveValue('2800');
+  await expect(m.locator('[name=motif]')).toHaveValue('');
+  expect(await rpcCalls(page)).toBe(0);
   expectClean(ctx);
 });
