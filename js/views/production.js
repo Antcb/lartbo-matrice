@@ -3,7 +3,7 @@
  * Chaque date se déplie : suivi admin, commissions, dossier Drive, facturation.
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
-import { vatConflict, BILL_KINDS, canFixInvoice, correctionsOf, acompteRetire, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
+import { vatConflict, BILL_KINDS, avoirsARattacher, avoirsOf, resteDu, soldeeParAvoir, canFixInvoice, correctionsOf, acompteRetire, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, OPTION_PROD, PROD_STEPS } from '../constants.js';
 import { byId, isArchived, projName, setting, showsFiltered, spectacleName, structName } from '../selectors.js';
 import { followedInvoice, lateSteps, remindersOf, staleOf } from '../reminders.js';
@@ -45,7 +45,7 @@ export function viewProduction(){
   const head = viewHead('Production', {
     sub: `${shows.length} date${shows.length>1?'s':''} confirmée${shows.length>1?'s':''}${options.length ? ` · ${options.length} en option (hors montants)` : ''}`,
     filters: filterBar() + `<input class="search" type="search" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" name="recherche-prod" placeholder="Artiste, ville, salle, festival, date…" data-search="production" value="${esc(q)}">`,
-    actions: `<button class="btn" data-act="syncPennylane" title="Coche « Payée » les acomptes et soldes réglés dans Pennylane">Synchroniser Pennylane</button><button class="btn" data-act="expandAll">${shows.length && shows.every(s=>S.openProd.has(s.id)) ? 'Tout replier' : 'Tout déplier'}</button>`});
+    actions: `<button class="btn" data-act="syncPennylane" title="Coche « Payée » les acomptes et soldes réglés dans Pennylane (virement rapproché) et importe les avoirs">Synchroniser Pennylane</button><button class="btn" data-act="expandAll">${shows.length && shows.every(s=>S.openProd.has(s.id)) ? 'Tout replier' : 'Tout déplier'}</button>`});
   // pièces à rattacher d'une date absente de cette liste (supprimée, annulée, autre année, filtrée) : listées ici
   const listed = new Set(shows.map(s => s.id)), away = allPiecesToAttach().filter(a => !listed.has(pieceShowId(a)));
   const awayHTML = away.length ? `<div class="panel pad mb"><p class="help full"><b>Pièces à rattacher hors de cette liste</b> : factures déposées sur une date qui n’apparaît pas ici. Ouvre-les pour les retrouver ; le rattachement se fait depuis l’onglet Factures de la date.</p>
@@ -60,14 +60,15 @@ export function viewProduction(){
     .sort((a, b) => String(a.s.date).localeCompare(String(b.s.date)));
   const staleHTML = stale.length ? `<div class="panel pad mb" id="stale-items"><p class="help full"><b>Anciens éléments à traiter</b> (${stale.length}) : obligations encore ouvertes sur des concerts passés. Plus de notification quotidienne au-delà de la limite (120 jours après le concert, 30 jours pour la facture de solde à faire) ; elles restent ici jusqu’à ce que l’étape soit faite.</p>
     ${stale.map(({s, r}) => `<div class="file-row"><a href="#" data-act="editShow" data-id="${s.id}">${esc([fmtDate(s.date), s.venue, projName(s.project_id)].filter(Boolean).join(' · '))}</a> <span class="warn-txt small">${esc(r.title)}</span> <span class="muted small">— ${esc(r.staleWhy)}, échéance du ${esc(fmtDate(r.due))}</span></div>`).join('')}</div>` : '';
-  if (!all.length && !archivedFin.length && !options.length) return head + awayHTML + staleHTML + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
-  return head + awayHTML + staleHTML + `
+  const avoirsHTML = avoirsPendingHTML();
+  if (!all.length && !archivedFin.length && !options.length) return head + awayHTML + avoirsHTML + staleHTML + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
+  return head + awayHTML + avoirsHTML + staleHTML + `
     <div class="stat-row">
       <div class="stat"><b>${eur2(artbo)}</b><span>Commissions L'ArtBo</span></div>
       <div class="stat"><b>${eur2(partner)}</b><span>dont partenaires</span></div>
       <div class="stat"><b>${eur2(artbo-partner)}</b><span>Net L'ArtBo</span></div>
       <div class="stat" title="Contrats de production : cession − déjà encaissé, date par date (inclut les factures pas encore émises)"><b>${eur2(fin.resteProd)}</b><span>Reste à encaisser — production</span></div>
-      <div class="stat" title="Factures d’acompte et de solde de production émises et pas encore réglées (déjà comprises dans le reste à encaisser : ne pas additionner)"><b>${eur2(fin.impayesProd)}</b><span>Factures émises impayées — production${fin.factures ? ` (${fin.factures})` : ''}</span></div>
+      <div class="stat" title="Factures d’acompte et de solde de production émises et pas encore réglées, avoirs Pennylane déduits (déjà comprises dans le reste à encaisser : ne pas additionner)"><b>${eur2(fin.impayesProd)}</b><span>Factures émises impayées — production${fin.factures ? ` (${fin.factures})` : ''}</span></div>
       <div class="stat" title="Factures de commission L’ArtBo à l’artiste (dates booking) émises et pas encore réglées"><b>${eur2(fin.commissionsBooking)}</b><span>Commissions à encaisser — booking${fin.commissions ? ` (${fin.commissions})` : ''}</span></div>
       <div class="stat"><b style="${late?'color:var(--danger)':''}">${late}</b><span>Relance${late>1?'s':''} en retard</span></div>
     </div>
@@ -85,7 +86,7 @@ function prodRow(s){
   const pays = paymentsOf(s.id).filter(tracked);
   const steps = booking ? BOOKING_STEPS : PROD_STEPS;
   const late = lateSteps(s);
-  const checks = steps.map(([k])=>({ok:!!s[k], late:late.has(k)})).concat(pays.filter(p=>p.kind!=='cnm' && !acompteRetire(p)).map(p=>({ok:!!p.paid_at, late:late.has(p.kind)})));
+  const checks = steps.map(([k])=>({ok:!!s[k], late:late.has(k)})).concat(pays.filter(p=>p.kind!=='cnm' && !acompteRetire(p)).map(p=>({ok:!!p.paid_at || soldeeParAvoir(p), late:late.has(p.kind)})));
   const open = S.openProd.has(s.id);
   return `<div class="prod-row ${open?'open':''}" id="prod-${s.id}">
     <div class="prod-head" data-act="toggleProd" data-id="${s.id}" aria-expanded="${open}">
@@ -283,9 +284,9 @@ function billingTab(s, booking, pays, late){
           <td>${cIn('show_payments',p.id,'invoice_number',p.invoice_number,'text','aria-label="N° de facture"')}</td>
           <td class="${late.has(p.kind)&&!p.sent_at?'late-cell':''}">${cIn('show_payments',p.id,'sent_at',p.sent_at,'date')}</td>
           <td title="Date de la dernière relance">${cIn('show_payments',p.id,'reminded_at',p.reminded_at,'date')}${p.sent_at && !p.paid_at && followedInvoice(p, booking) ? `<div class="small" title="Plus de rappel « Paiement à vérifier » pour cette facture tant que la case est cochée (elle reste impayée et comptée)">${cChk('show_payments', p.id, 'reminders_paused', p.reminders_paused, 'Relances suspendues')}</div>` : ''}</td>
-          <td class="${p.paid_at?'done-cell':''}">${cIn('show_payments',p.id,'paid_at',p.paid_at,'date')}</td>
+          <td class="${p.paid_at?'done-cell':''}">${cIn('show_payments',p.id,'paid_at',p.paid_at,'date')}${soldeeParAvoir(p) && !p.paid_at ? ' <span class="badge" title="Facture entièrement couverte par son avoir Pennylane : plus rien à encaisser ; aucun encaissement n’est noté">soldée par avoir</span>' : ''}</td>
           <td>${pennylaneCell(p, s)}</td>`}
-          <td>${why ? `<span class="muted" role="img" aria-label="Ligne verrouillée" title="${esc(why)}">🔒</span>${canFixInvoice(p) ? ` <button type="button" class="btn sm ghost" data-act="fixInvoice" data-id="${p.id}" title="Corriger le suivi de cette facture dans MATRICE (montant, %, TVA), avec un motif ; rien n’est fait dans Pennylane">Déverrouiller pour corriger</button>` : ''}` : `<button class="btn icon sm ghost danger" data-act="delPay" data-id="${p.id}" aria-label="Supprimer la ligne">✕</button>`}</td></tr>`;}).join('')}
+          <td>${why ? `<span class="muted" role="img" aria-label="Ligne verrouillée" title="${esc(why)}">🔒</span>${canFixInvoice(p) ? ` <button type="button" class="btn sm ghost" data-act="fixInvoice" data-id="${p.id}" title="Corriger le suivi de cette facture dans MATRICE (montant, %, TVA), avec un motif ; rien n’est fait dans Pennylane">Déverrouiller pour corriger</button>` : ''}` : `<button class="btn icon sm ghost danger" data-act="delPay" data-id="${p.id}" aria-label="Supprimer la ligne">✕</button>`}</td></tr>${avoirRowsHTML(p)}`;}).join('')}
         </tbody>${booking || isCoproduction(s) ? '' : billFoot(s)}</table></div>
       ${isCoproduction(s) ? `<p class="help mt-sm">Coproduction : aucune facture de cession, aucun acompte ni solde, aucune commission L’ArtBo ni part partenaire générés. Ajoute une ligne seulement pour une opération réelle.</p>` : ''}
       ${horsCalculHTML(s)}
@@ -354,6 +355,30 @@ function payeeCell(s, p, booking){
  * la Matrice crée le devis, puis « Synchroniser Pennylane » reprend tout seul le numéro et le paiement de chaque facture.
  * Commission et autres lignes : brouillon de facture créé directement.
  */
+/** (v1.69, L1 du point 02) Avoirs Pennylane d'une facture, sous sa ligne : document distinct, jamais un encaissement ni un
+ *  remboursement ; un paiement déjà noté est conservé tel quel ; sinon reste dû = montant − avoirs (soldée si tout est couvert) */
+function avoirRowsHTML(p){
+  const list = avoirsOf(p.id);
+  if (!list.length) return '';
+  const name = a => esc(a.invoice_number || 'Avoir ' + a.pennylane_id);
+  const etat = [soldeeParAvoir(p) ? '<b>Facture soldée par l’avoir</b> : plus rien à encaisser sur cette facture, ni relance de paiement'
+      : p.paid_at ? '' : `Reste dû sur cette facture : <b>${eur2(resteDu(p))}</b> HT (montant − avoirs)`,
+    p.paid_at ? `Paiement noté le ${fmtDate(p.paid_at)} : conservé tel quel (un avoir ne crée ni encaissement ni remboursement)` : ''].filter(Boolean).join(' · ');
+  return list.map(a => `<tr class="avoir-row"><td colspan="12"><span class="badge">Avoir</span> ${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${name(a)} ↗</a>` : name(a)}${a.invoice_date ? ` du ${fmtDate(a.invoice_date)}` : ''} : <b>− ${eur2(a.amount_ht)}</b> HT
+      <span class="muted small">sur la facture ${esc(p.invoice_number || p.label || '')} · document Pennylane</span></td></tr>`).join('')
+    + (etat ? `<tr class="avoir-row"><td colspan="12" class="small">${etat}</td></tr>` : '');
+}
+
+/** (v1.69) Avoirs que la synchronisation n'a pas rattachés seule : listés en tête de Production (date inconnue ou ambiguë) */
+function avoirsPendingHTML(){
+  const list = avoirsARattacher();
+  if (!list.length) return '';
+  return `<div class="panel pad mb" id="avoirs-a-rattacher" role="status"><p class="help full"><b>Avoir${list.length > 1 ? 's' : ''} Pennylane à rattacher</b> (${list.length}) : la synchronisation ne sait pas à quelle facture de MATRICE ${list.length > 1 ? 'ils se rapportent' : 'il se rapporte'} (rien n’a été modifié, rien n’est compté).</p>
+    ${list.map(a => { const sh = a.show_id && byId('shows', a.show_id);
+      return `<div class="file-row"><span>${esc(a.invoice_number || 'Avoir ' + a.pennylane_id)} · − ${eur2(a.amount_ht)} HT${a.invoice_date ? ' · ' + fmtDate(a.invoice_date) : ''}${a.credited_invoice_number ? ' · facture d’origine ' + esc(a.credited_invoice_number) : ''}${sh ? ' · ' + esc([fmtDate(sh.date), sh.venue].filter(Boolean).join(' ')) : ''} — <span class="muted">${esc(a.reason || '')}</span></span>
+      ${a.url ? `<a class="btn sm ghost" href="${esc(a.url)}" target="_blank" rel="noopener">Voir ↗</a>` : ''}</div>`; }).join('')}</div>`;
+}
+
 /** Factures du devis que la synchronisation n'a pas reliées seule (v1.56.9) : choix explicite de la ligne, rien d'automatique */
 function pendingPennylaneHTML(s){
   const list = S.db.pennylane_a_rattacher.filter(r => r.show_id === s.id && !r.resolved_at && !r.cancelled_at);

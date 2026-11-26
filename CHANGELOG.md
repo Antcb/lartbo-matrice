@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.69.0 — 26/11/2026
+- Avoirs Pennylane (L1 du point 02) : import sans doublon, rattachement à la facture d'origine par son identifiant Pennylane, « À rattacher » si ambigu ; facture soldée par avoir hors impayés et relances ; avoir partiel déduit du reste dû ; plus aucun encaissement repris de Pennylane sans virement rapproché ni sur une ligne couverte par un avoir
+
+
 ## 1.68.3 — 26/11/2026
 - Brouillons propres à leur objet : fiche de renseignements, mails de date, compte d'arrivée d'un paiement (anciens brouillons partagés ignorés)
 

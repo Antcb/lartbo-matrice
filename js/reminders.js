@@ -21,7 +21,7 @@
  * échéance d'origine (v1.60.3).
  *   Jamais de relance d'acompte ni de solde (factures de l'artiste à l'organisateur).
  */
-import { acompteRetire, commissionState, isInvoiced, paymentsOf } from './calc.js';
+import { acompteRetire, commissionState, isInvoiced, paymentsOf, soldeeParAvoir } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { addDays, eur2, today, workDay, addMonths, workDayBefore } from './utils.js';
 import { setting } from './selectors.js';
@@ -164,7 +164,9 @@ export function sendDue(p, showDate, d = {facture_envoi: {n: SEND_DELAY}, solde_
 }
 /** Factures suivies : « à envoyer » (faite, pas de date d'envoi) puis « paiement à vérifier » (envoyée, impayée, relances non suspendues) */
 function invoiceRules(pays, booking, rule, showDate, d, monday){
-  for (const p of pays.filter(x => followedInvoice(x, booking))){
+  // (v1.69, L1 du point 02) facture soldée par ses avoirs Pennylane : plus rien à envoyer ni à réclamer ; avoir partiel : toujours
+  // suivie (même règle côté serveur : reminder_candidates, colonne soldee, migration v1.69)
+  for (const p of pays.filter(x => followedInvoice(x, booking) && !soldeeParAvoir(x))){
     if (d.facture_envoi.on && madeNotSent(p) && madeOn(p)) rule(p.kind, sendDue(p, showDate, d), sendTitle(p), 'facture_envoi');
     if (d.paiement.on && p.sent_at && !p.paid_at && !p.reminders_paused) rule(p.kind, monday(addDays(last(p), d.paiement.n)), paidTitle(p), PAID_RULE[p.kind] || 'autre_payee');
   }

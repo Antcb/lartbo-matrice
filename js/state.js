@@ -8,6 +8,7 @@ export const TABLES = ['structures','contacts','contact_structures','projects','
   'commission_transfers',   // versements des commissions de production (lot D1, migration v1.43)
   'pennylane_a_rattacher', 'pennylane_rattachements',   // factures du devis à rattacher à la main et historique des choix (v1.56.9)
   'facture_corrections',   // corrections de factures émises, déverrouillage explicite (v1.68, lecture seule)
+  'pennylane_avoirs',   // avoirs importés de Pennylane (v1.69, L1 du point 02 ; lecture seule, absent tant que la migration n'est pas appliquée)
   'spectacles',   // spectacles d'un artiste, chacun son budget type (v1.57)
   'show_deletions',   // journal des suppressions de dates (v1.60.3, lecture seule ; absent tant que la migration n'est pas appliquée)
   'artist_calendars', 'artist_calendar_events',   // agendas Google des artistes, lecture seule (v1.62)

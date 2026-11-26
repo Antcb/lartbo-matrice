@@ -252,12 +252,20 @@ export const BUDGET_ACTIONS = {
       // factures d'acompte / de solde faites depuis le devis : leur numéro vient d'être repris
       if (out.linked?.length) await refreshFor('show_payments', 'show_id', S.db.shows.filter(x => x.pennylane_quote_id).map(x => x.id));
       if (out.aRattacher || out.linked?.length){ const {fetchAll} = await import('./data.js'); S.db.pennylane_a_rattacher = await fetchAll('pennylane_a_rattacher'); touch('pennylane_a_rattacher'); }
+      // (v1.69) avoirs importés : relus (lecture seule)
+      if (out.avoirs){ const {fetchAll} = await import('./data.js'); S.db.pennylane_avoirs = await fetchAll('pennylane_avoirs'); touch('pennylane_avoirs'); }
       render();
-      const lines = [out.linked?.length ? `${out.linked.length} facture(s) faite(s) depuis le devis, numéro repris : ${out.linked.filter(Boolean).join(', ')}\n` : '', out.updated.length ? `${out.updated.length} facture(s) marquée(s) payée(s) :\n- ` + out.updated.map(u => u.label).join('\n- ') : (out.linked?.length || out.filed?.done?.length) ? '' : 'Rien de nouveau : la Matrice est à jour.',
+      const lines = [out.linked?.length ? `${out.linked.length} facture(s) faite(s) depuis le devis, numéro repris : ${out.linked.filter(Boolean).join(', ')}\n` : '', out.updated.length ? `${out.updated.length} facture(s) marquée(s) payée(s) :\n- ` + out.updated.map(u => u.label).join('\n- ') : (out.linked?.length || out.filed?.done?.length || out.avoirs?.nouveaux || out.avoirs?.rattaches?.length) ? '' : 'Rien de nouveau : la Matrice est à jour.',
         out.erreurs?.length ? `\nÉcritures REFUSÉES (rien n’a été modifié pour ces lignes) — à examiner :\n- ` + out.erreurs.join('\n- ') : '',
         out.douteux?.length ? `\nFacture(s) Pennylane NON reliée(s) au solde : même montant qu’un acompte déjà noté à la main sur la date (numéro, envoi ou paiement) — à rattacher à la main à la bonne ligne :\n- ` + out.douteux.join('\n- ') : '',
         out.aRattacher ? `\n${out.aRattacher} facture(s) du devis NON reliée(s) automatiquement (plusieurs correspondances possibles, ou montant sans ligne) : « Rattacher… » dans l’onglet Factures de la date.` : '',
         out.pennylaneLate.length ? `\nPayées dans la Matrice mais pas encore dans Pennylane (à mettre à jour dans Pennylane) :\n- ` + out.pennylaneLate.join('\n- ') : '',
+        // (v1.69, L1 du point 02) avoirs : importés et affichés, jamais un encaissement ni un remboursement
+        out.avoirs?.importes ? `\n${out.avoirs.importes} avoir(s) Pennylane lu(s)${out.avoirs.nouveaux ? ` dont ${out.avoirs.nouveaux} nouveau(x)` : ''}${out.avoirs.rattaches?.length ? ` ; rattaché(s) à leur facture d’origine : ${out.avoirs.rattaches.join(', ')}` : ''}.` : '',
+        out.avoirs?.aRattacher ? `\n${out.avoirs.aRattacher} avoir(s) à rattacher (facture d’origine inconnue, absente de MATRICE ou ambiguë) : liste en tête de Production. Rien n’est compté.` : '',
+        out.avoirs?.disparus ? `\n${out.avoirs.disparus} avoir(s) qui ne sont plus dans Pennylane : gardés dans MATRICE, plus comptés.` : '',
+        out.payeesAvecAvoir?.length ? `\nPayées dans Pennylane, mais couvertes par un avoir : AUCUN encaissement noté (un avoir n’est pas un paiement ; un encaissement réel se note à la main) :\n- ` + out.payeesAvecAvoir.join('\n- ') : '',
+        out.payeesSansTransaction?.length ? `\nPayées dans Pennylane sans virement rapproché : AUCUN encaissement noté (à vérifier dans Pennylane) :\n- ` + out.payeesSansTransaction.join('\n- ') : '',
         // PDF des factures rangés dans le Drive (compta + dossier de la date)
         out.filed?.done?.length ? `\n${out.filed.done.length} facture(s) rangée(s) dans le Drive (compta › D - Factures de ventes et 02_Finance de la date) :\n- ` + out.filed.done.join('\n- ') : '',
         out.filed?.left ? `\nEncore ${out.filed.left} facture(s) à ranger dans le Drive : relance la synchronisation.` : '',

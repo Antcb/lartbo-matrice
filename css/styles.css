@@ -1047,3 +1047,5 @@ dialog.ask.read .mail-frame{height:60vh;height:60dvh}
 .mail-img-note{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:center;font-size:12px;margin:0 0 var(--sp-1)}
 .mail-msg .ml-att{display:flex;flex-wrap:wrap;gap:var(--sp-1)}
 .mail-msg .att-chip{flex-wrap:wrap;max-width:100%;min-width:0;overflow-wrap:anywhere}
+/* v1.69 : avoirs Pennylane sous la facture d'origine (onglet Factures d'une date) */
+.avoir-row td{background:var(--soft);border-top:0}
