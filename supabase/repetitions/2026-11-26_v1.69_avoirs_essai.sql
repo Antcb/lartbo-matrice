@@ -102,6 +102,11 @@ end $$;
 select pg_temp.ok(has_table_privilege('authenticated', 'public.pennylane_virements', 'select') and not has_table_privilege('authenticated', 'public.pennylane_virements', 'insert')
   and not has_table_privilege('anon', 'public.pennylane_virements', 'select'), 'virements : équipe lecture seule, anonyme aucun');
 select pg_temp.ok(exists (select 1 from information_schema.columns where table_name = 'pennylane_avoirs' and column_name = 'rattache_origine'), 'colonne rattache_origine');
+insert into public.pennylane_virements (transaction_id, payment_id, origine) values ('vir-h', '00000000-0000-0000-0000-000000000003', 'historique');
+do $$ begin
+  begin insert into public.pennylane_virements (transaction_id, payment_id, origine) values ('vir-z', '00000000-0000-0000-0000-000000000003', 'autre'); raise exception 'origine inconnue acceptée';
+  exception when check_violation then raise notice 'ok : origine du virement contrôlée (synchronisation / historique)'; end;
+end $$;
 -- droits : équipe en lecture seule, anonyme rien
 select pg_temp.ok(has_table_privilege('authenticated', 'public.pennylane_avoirs', 'select') and not has_table_privilege('authenticated', 'public.pennylane_avoirs', 'insert')
   and not has_table_privilege('authenticated', 'public.pennylane_avoirs', 'update') and not has_table_privilege('anon', 'public.pennylane_avoirs', 'select'), 'droits : équipe lecture seule, anonyme aucun');

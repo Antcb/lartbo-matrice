@@ -60,8 +60,10 @@ create table if not exists public.pennylane_virements (
   pennylane_invoice_id text,
   amount numeric(12,2),
   tx_date date,
+  origine text not null default 'synchronisation' check (origine in ('synchronisation', 'historique')),   -- historique : virement d'un paiement noté avant L1, réservé pour sa ligne
   counted_at timestamptz not null default now()
 );
+alter table public.pennylane_virements add column if not exists origine text not null default 'synchronisation';
 create index if not exists pennylane_virements_payment on public.pennylane_virements (payment_id);
 comment on table public.pennylane_virements is 'v1.69 (L1, point 02) : virements rapprochés déjà comptés comme encaissement d''une ligne (jamais deux fois)';
 alter table public.pennylane_virements enable row level security;

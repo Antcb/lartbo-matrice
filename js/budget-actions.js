@@ -264,6 +264,7 @@ export const BUDGET_ACTIONS = {
         out.avoirs?.importes ? `\n${out.avoirs.importes} avoir(s) Pennylane lu(s)${out.avoirs.nouveaux ? ` dont ${out.avoirs.nouveaux} nouveau(x)` : ''}${out.avoirs.rattaches?.length ? ` ; rattaché(s) à leur facture d’origine : ${out.avoirs.rattaches.join(', ')}` : ''}.` : '',
         out.avoirs?.aRattacher ? `\n${out.avoirs.aRattacher} avoir(s) à rattacher (facture d’origine inconnue, absente de MATRICE ou ambiguë) : liste en tête de Production. Rien n’est compté.` : '',
         out.avoirs?.origineChangee?.length ? `\nAvoir(s) dont Pennylane indique une AUTRE facture d’origine que celle du rattachement : laissés sur leur facture actuelle, à vérifier (signalés en tête de Production jusqu’à résolution) :\n- ` + out.avoirs.origineChangee.join('\n- ') : '',
+        out.aVerifier?.length ? `\nRapprochements à VÉRIFIER À LA MAIN (doute : rien n’a été noté) :\n- ` + out.aVerifier.join('\n- ') : '',
         out.virementsPartiels?.length ? `\nVirement(s) qui ne couvrent qu’une PARTIE du reste dû après avoir : aucun paiement noté (le paiement partiel s’enregistrera avec L2) :\n- ` + out.virementsPartiels.join('\n- ') : '',
         out.avoirs?.disparus ? `\n${out.avoirs.disparus} avoir(s) qui ne sont plus dans Pennylane : gardés dans MATRICE, plus comptés.` : '',
         out.payeesAvecAvoir?.length ? `\nFactures avec avoir sans virement entrant établi : AUCUN encaissement noté (un avoir n’est pas un paiement) :\n- ` + out.payeesAvecAvoir.join('\n- ') : '',

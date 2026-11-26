@@ -93,6 +93,13 @@ t('affectation non établie (relecture B2) : virement groupé plus grand que le 
   assert.equal(encaissementAvecAvoir(G, [1800], [{ id: 'a', date: '2026-11-20', amount: 2000 }, { id: 'b', date: '2026-11-21', amount: 2000 }]).signal, 'non_etabli');
   assert.equal(encaissementAvecAvoir(G, [1800], [{ id: 'c', date: '2026-11-20', amount: 3240.01 }]).paid_at, '2026-11-20');   // à 1 centime près
 });
+t('sans avoir : virement plus grand que la facture (groupé) → à vérifier, rien de noté (17 h 42)', () => {
+  assert.deepEqual(encaissementPennylane({ paid: true, status: 'paid', currency_amount: '1055' }, [{ id: 'g', date: '2026-11-20', amount: 3000 }]), { paid_at: null, ids: [], signal: 'a_verifier' });
+  assert.equal(encaissementPennylane({ paid: true, status: 'paid', currency_amount: '1055' }, [{ id: 'h', date: '2026-11-20', amount: 1055 }]).paid_at, '2026-11-20');
+  // reprise : virement réservé pour CETTE ligne (absent des « déjà comptés ailleurs ») → repris ; réservé pour une autre → jamais
+  assert.equal(encaissementPennylane({ paid: true, status: 'paid' }, [{ id: 'r', date: '2026-11-20', amount: 10 }], new Set()).paid_at, '2026-11-20');
+  assert.equal(encaissementPennylane({ paid: true, status: 'paid' }, [{ id: 'r', date: '2026-11-20', amount: 10 }], new Set(['r'])).signal, 'deja_compte');
+});
 t('sans avoir : un virement sortant n’est jamais un encaissement (relecture v1.69.1)', () => {
   assert.equal(encaissementPennylane({ paid: true, status: 'paid' }, [{ id: '5', date: '2026-11-20', amount: -100 }]).signal, 'sans_transaction');
   assert.equal(encaissementPennylane({ paid: true, status: 'paid' }, [{ id: '6', date: '2026-11-20', amount: '100' }]).paid_at, '2026-11-20');
@@ -127,7 +134,18 @@ t('avoir créé par erreur puis facture réémise (forme Champs des Notes) : l�
 t('code de la synchronisation : plus de date du jour comme date de paiement, encaissement seulement via encaissementPennylane', () => {
   const src = readFileSync(new URL('../../supabase/functions/pennylane/index.ts', import.meta.url), 'utf8');
   const bloc = src.slice(src.indexOf('const isPaid ='), src.indexOf('pennylaneLate.push'));
-  assert.match(bloc, /av \? encaissementAvecAvoir\(x, av, vs, comptes\) : encaissementPennylane\(x, vs, comptes\)/);
+  assert.match(bloc, /av \? encaissementAvecAvoir\(x, av, vs, dejaAilleurs\) : encaissementPennylane\(x, vs, dejaAilleurs\)/);
+  // (17 h 42, cas 1) reprise : un virement réservé pour CETTE ligne n'est pas « déjà compté » pour elle, ni réinséré ; retrait signalé s'il échoue
+  assert.match(src, /const autresQue = \(pid: string\) => new Set\(\[\.\.\.comptes\]\.filter\(\(\[, l\]\) => l !== pid\)/);
+  assert.match(bloc, /const dejaAilleurs = autresQue\(String\(p\.id\)\)/);
+  assert.match(bloc, /const nouveaux = enc\.ids\.filter\(id => comptes\.get\(id\) !== String\(p\.id\)\)/);
+  assert.match(bloc, /réservation du virement non retirée/);
+  assert.match(bloc, /\.neq\('origine', 'historique'\)/);
+  // (17 h 42, cas 2) historique : virements des lignes déjà payées de la même date réservés AVANT de compter ; doute → à vérifier
+  assert.ok(bloc.indexOf('await reserverHistorique(') > 0 && bloc.indexOf('await reserverHistorique(') < bloc.indexOf('const enc = av ?'));
+  assert.match(bloc, /if \(enc\.paid_at && doute\.length\) \{ aVerifier\.push/);
+  assert.match(bloc, /if \(enc\.signal === 'a_verifier'\) \{ aVerifier\.push/);
+  assert.match(src, /origine: 'historique'/);
   assert.doesNotMatch(bloc, /today\(\)/);
   assert.match(bloc, /const date = enc\.paid_at;/);
   // paiement existant jamais écrasé : écriture conditionnée à une date vide ; virements mémorisés (jamais deux fois)
