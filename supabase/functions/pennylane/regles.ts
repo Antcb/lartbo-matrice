@@ -222,3 +222,76 @@ export function encaissementAvecAvoir(x: DocPl, avoirsTtc: (number | null | unde
   if (vs.length) return { paid_at: null, ids: [], encaisse: 0, reste, signal: 'non_etabli' };
   return { paid_at: null, ids: [], encaisse: 0, reste, signal: 'sans_virement' };
 }
+
+// ── L2a (décisions d'Anthony du 26/11/2026, 18 h 47 : D10, E1 à E4, R1, R2) ─────────────────────────────────────────────────────
+// Encaissements et remboursements RÉELS enregistrés un par mouvement (table reglements, TTC). Paiement historique (date « Payée »
+// sans mouvement enregistré) : jamais réécrit ni reconstitué (E1) — l'appelant ne traite que les lignes sans date de paiement.
+// R1 : un virement Pennylane ne duplique JAMAIS une saisie manuelle : rapproché de LA saisie manuelle non rapprochée du même sens et du
+// même montant (à 1 centime) ; plusieurs candidates, ou une saisie manuelle de montant différent : rien n'est fait, « à vérifier ».
+export type Reglement = { id: string; sens: 'encaissement' | 'remboursement'; etat: 'a_faire' | 'fait'; montant_ttc: number | string;
+  date?: string | null; source: 'manuel' | 'pennylane'; transaction_id?: string | null; annule_at?: string | null };
+const actif = (r: Reglement) => !r.annule_at;
+/** Encaissé net d'une ligne (TTC) d'après ses mouvements enregistrés : encaissements faits − remboursements faits */
+export const encaisseNet = (rs: Reglement[]) => r2(rs.filter(r => actif(r) && r.etat === 'fait')
+  .reduce((t, r) => t + (r.sens === 'encaissement' ? 1 : -1) * Number(r.montant_ttc), 0));
+
+export type PlanEncaissement = { creer: { transaction_id: string; montant: number; date: string }[]; rapprocher: { reglement_id: string; transaction_id: string }[];
+  paid_at: string | null; encaisse: number; reste: number | null; signal: null | 'soldee' | 'partiel' | 'non_etabli' | 'a_verifier' | 'deja_compte' | 'sans_virement' };
+/**
+ * Encaissements d'une ligne SANS date de paiement, d'après les virements rapprochés de sa facture dans Pennylane (même base TTC, E2) :
+ * reste dû = TTC facture − TTC avoirs ; virements ENTRANTS établis (identifiant, date, montant > 0), pas comptés pour une autre ligne.
+ * Déjà enregistrés pour cette ligne : comptés, rien à faire. Nouveaux : rapprochés d'une saisie manuelle (R1) ou créés. Nouveaux
+ * plus grands que ce qui reste dû (au-delà d'1 centime) : affectation non établie, rien n'est fait. Payée (paid_at = mouvement le plus
+ * récent) quand l'encaissé net couvre le reste dû ; sinon encaissement partiel enregistré (signal « partiel »).
+ */
+export function planEncaissement(x: DocPl, avoirsTtc: (number | null | undefined)[], virements: Virement[], dejaAilleurs: Set<string>, reglements: Reglement[]): PlanEncaissement {
+  const vide = (signal: PlanEncaissement['signal'], reste: number | null = null, encaisse = 0): PlanEncaissement => ({ creer: [], rapprocher: [], paid_at: null, encaisse, reste, signal });
+  if (x?.status === 'cancelled') return vide(null);
+  const facture = Math.abs(Number(x?.currency_amount ?? x?.amount));
+  if (!plein(x?.currency_amount ?? x?.amount) || !Number.isFinite(facture) || avoirsTtc.some(a => a == null || !Number.isFinite(Number(a)))) return vide('non_etabli');
+  const reste = r2(facture - avoirsTtc.reduce((t: number, a) => t + Math.abs(Number(a)), 0));
+  const rs = (reglements || []).filter(actif), deja = encaisseNet(rs);
+  if (reste <= 0.005) return vide('soldee', 0, deja);
+  const ici = new Set(rs.map(r => r.transaction_id).filter(Boolean) as string[]);
+  const etablis = (virements || []).filter(v => idVirement(v) && plein(v?.date) && montantVirement(v) > 0);
+  const nouveaux = etablis.filter(v => !dejaAilleurs.has(idVirement(v)!) && !ici.has(idVirement(v)!));
+  const manuels = rs.filter(r => r.source === 'manuel' && !r.transaction_id && r.sens === 'encaissement' && r.etat === 'fait');
+  const creer: PlanEncaissement['creer'] = [], rapprocher: PlanEncaissement['rapprocher'] = [], pris = new Set<string>();
+  for (const v of nouveaux) {
+    const m = montantVirement(v), cands = manuels.filter(r => !pris.has(r.id) && Math.abs(Number(r.montant_ttc) - m) <= 0.01);
+    if (cands.length === 1) { pris.add(cands[0].id); rapprocher.push({ reglement_id: cands[0].id, transaction_id: idVirement(v)! }); continue; }
+    if (cands.length > 1 || manuels.some(r => !pris.has(r.id))) return vide('a_verifier', reste, deja);   // R1 : jamais de doublon
+    creer.push({ transaction_id: idVirement(v)!, montant: r2(m), date: String(v.date).slice(0, 10) });
+  }
+  const ajout = r2(creer.reduce((t, c) => t + c.montant, 0));
+  if (ajout > Math.max(0, r2(reste - deja)) + 0.01) return vide('non_etabli', reste, deja);   // virement groupé : part inconnue
+  const encaisse = r2(deja + ajout), paye = deja + ajout > 0 && encaisse >= reste - 0.01;
+  const dates = [...rs.filter(r => r.etat === 'fait' && r.sens === 'encaissement').map(r => String(r.date || '')), ...creer.map(c => c.date)].filter(Boolean).sort();
+  if (paye) return { creer, rapprocher, paid_at: dates.pop() || null, encaisse, reste, signal: null };
+  if (creer.length || rapprocher.length || deja > 0) return { creer, rapprocher, paid_at: null, encaisse, reste, signal: 'partiel' };
+  return vide(etablis.length && etablis.every(v => dejaAilleurs.has(idVirement(v)!)) ? 'deja_compte' : 'sans_virement', reste, deja);
+}
+
+export type PlanRemboursement = { creer: { transaction_id: string; montant: number; date: string }[]; rapprocher: { reglement_id: string; transaction_id: string; date: string; a_faire: boolean }[];
+  signal: null | 'a_verifier' };
+/**
+ * Remboursements d'un avoir d'après les virements SORTANTS rapprochés de l'avoir dans Pennylane (montant < 0) : rapprochés d'abord d'un
+ * remboursement manuel fait non rapproché, sinon d'un remboursement « à faire », du même montant (à 1 centime, une seule candidate) ;
+ * sinon créés — sauf s'il reste une saisie manuelle non rapprochée (R1 : à vérifier, rien n'est fait). Virements entrants : ignorés.
+ */
+export function planRemboursement(virementsAvoir: Virement[], dejaAilleurs: Set<string>, reglements: Reglement[]): PlanRemboursement {
+  const rs = (reglements || []).filter(actif), ici = new Set(rs.map(r => r.transaction_id).filter(Boolean) as string[]);
+  const sortants = (virementsAvoir || []).filter(v => idVirement(v) && plein(v?.date) && montantVirement(v) < 0 && !dejaAilleurs.has(idVirement(v)!) && !ici.has(idVirement(v)!));
+  const ouverts = rs.filter(r => r.sens === 'remboursement' && !r.transaction_id);
+  const creer: PlanRemboursement['creer'] = [], rapprocher: PlanRemboursement['rapprocher'] = [], pris = new Set<string>();
+  for (const v of sortants) {
+    const m = Math.abs(montantVirement(v)), date = String(v.date).slice(0, 10);
+    const pour = (etat: string) => ouverts.filter(r => r.etat === etat && !pris.has(r.id) && Math.abs(Number(r.montant_ttc) - m) <= 0.01);
+    const faits = pour('fait'), aFaire = pour('a_faire');
+    const c = faits.length === 1 ? faits[0] : !faits.length && aFaire.length === 1 ? aFaire[0] : null;
+    if (c) { pris.add(c.id); rapprocher.push({ reglement_id: c.id, transaction_id: idVirement(v)!, date, a_faire: c.etat === 'a_faire' }); continue; }
+    if (faits.length > 1 || aFaire.length > 1 || ouverts.some(r => r.etat === 'fait' && r.source === 'manuel' && !pris.has(r.id))) return { creer: [], rapprocher: [], signal: 'a_verifier' };
+    creer.push({ transaction_id: idVirement(v)!, montant: r2(m), date });
+  }
+  return { creer, rapprocher, signal: null };
+}

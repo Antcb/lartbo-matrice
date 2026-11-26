@@ -8,7 +8,7 @@
  * Une date cochée « booking uniquement » (prod_mode = booking) n'a pas de budget : seulement la facture de commission.
  */
 import { r2 } from './utils.js';
-import { commissionState, isBookingShow, isCoproduction, isInvoiced, payAmount, paymentsOf } from './calc.js';
+import { commissionState, encaisseHt, isBookingShow, isCoproduction, isInvoiced, mouvementsOf, payAmount, paymentsOf, reglementsOf, resteDu } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { byId, setting, showCommissionPct, showsOfProject } from './selectors.js';
 import { cnmBearer, cnmOf, commissionBase, commissionPctOf, coreaShareOf, isAbroad, isCnmLine, isCorea } from './corea.js';
@@ -141,7 +141,7 @@ export function showBudget(s){
 export const prodShowsOf = projectId => showsOfProject(projectId).filter(s => CONFIRMED_PROD.includes(s.status) && isProdShow(s)).sort((a,b) => (a.date||'').localeCompare(b.date||''));
 
 /** Mouvement réel d'une date (encaissement, paiement, remboursement) : il reste compté même si la date est annulée (audit A-05) */
-const hasRealMove = s => paymentsOf(s.id).some(p => p.paid_at) || S.db.budget_lines.some(l => l.show_id === s.id && (l.paid_at || l.reimbursed_at));
+const hasRealMove = s => paymentsOf(s.id).some(p => p.paid_at || reglementsOf(p.id).some(r => r.etat === 'fait')) || S.db.budget_lines.some(l => l.show_id === s.id && (l.paid_at || l.reimbursed_at));   // (v1.70) mouvements enregistrés compris
 /** Dates du compte dédié : confirmées en production, plus les dates non confirmées qui ont un mouvement réel (seuls leurs mouvements faits comptent) */
 const accountShowsOf = projectId => showsOfProject(projectId).filter(s => isProdShow(s) && (CONFIRMED_PROD.includes(s.status) || hasRealMove(s)))
   .sort((a,b) => (a.date||'').localeCompare(b.date||''));
@@ -171,13 +171,15 @@ export function accountOf(projectId){
       const v = payAmount(pay) || 0;
       // commission (lot D1) : seuls les versements réels sortent du compte ; le reste à transférer reste « à venir »
       if (pay.kind === 'artbo'){ const st = commissionState(pay); a.outDone += st.transferred; if (conf) a.outTodo += st.remaining; continue; }
-      if (!conf && !pay.paid_at) continue;
       // acompte prévu (pas facturé) : à recevoir sur son compte, comme le solde — le solde n'en compte plus le montant
       // (cession − acomptes de la date, décision du 10/11/2026), la cession n'est donc jamais comptée deux fois
       if (['acompte','solde','autre'].includes(pay.kind)){
-        const who = payee(pay);
-        if (who === 'compte') pay.paid_at ? a.inDone += v : a.inTodo += v;
-        else if (!who) pay.paid_at ? a.unassignedDone += v : a.unassignedTodo += v;
+        // (v1.70, L2a) mouvements réels (encaissements et remboursements, chacun sur son compte, équivalent HT) ; paiement historique
+        // lu tel quel (E1) ; reste attendu = reste dû après avoirs et encaissements (facture émise) ou montant prévu
+        for (const m of mouvementsOf(pay)){ if (m.compte === 'compte') a.inDone += m.ht; else if (!m.compte) a.unassignedDone += m.ht; }
+        if (!conf || pay.paid_at) continue;
+        const todo = isInvoiced(pay) ? resteDu(pay) : Math.max(0, v - encaisseHt(pay)), who = payee(pay);
+        if (who === 'compte') a.inTodo += todo; else if (!who) a.unassignedTodo += todo;
       }
     }
     if (conf) a.byCat['Commission'] = (a.byCat['Commission']||0) + commissionAmount(s);
@@ -220,9 +222,10 @@ export function accountMoves(projectId){
         for (const t of st.transfers) moves.push({date: t.transferred_at, label: `Commission L'ArtBo — ${where(s)}${st.transfers.length > 1 || st.remaining ? ' (versement)' : ''}${t.reference ? ' · ' + t.reference : ''}`, amount: -Number(t.amount), calc: false});
         continue;
       }
-      const v = payAmount(pay) || 0; if (!pay.paid_at || !v) continue;   // payee vide : « Non renseigné », pas un mouvement du compte
-      if (['acompte','solde','autre'].includes(pay.kind) && payee(pay) === 'compte')
-        moves.push({date: pay.paid_at, label: `${pay.label || pay.kind} — ${where(s)}`, amount: v, calc: pay.amount == null || pay.amount === ''});
+      // (v1.70, L2a) un mouvement par encaissement / remboursement réel arrivé sur le compte (équivalent HT) ; paiement historique tel quel
+      if (!['acompte','solde','autre'].includes(pay.kind)) continue;   // compte vide : « Non renseigné », pas un mouvement du compte
+      for (const m of mouvementsOf(pay)) if (m.compte === 'compte' && m.ht)
+        moves.push({date: m.date, label: `${pay.label || pay.kind}${m.sens === 'remboursement' ? ' (remboursement)' : m.historique ? '' : ' (encaissement)'} — ${where(s)}`, amount: m.ht, calc: m.historique ? pay.amount == null || pay.amount === '' : false});
     }
   }
   const lines = S.db.budget_lines.filter(l => l.project_id === projectId && accountLineOk(l));

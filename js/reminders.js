@@ -21,7 +21,7 @@
  * échéance d'origine (v1.60.3).
  *   Jamais de relance d'acompte ni de solde (factures de l'artiste à l'organisateur).
  */
-import { acompteRetire, commissionState, isInvoiced, paymentsOf, soldeeParAvoir } from './calc.js';
+import { acompteRetire, commissionState, isInvoiced, paymentsOf, reglementsOf, soldeeParAvoir } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { addDays, eur2, today, workDay, addMonths, workDayBefore } from './utils.js';
 import { setting } from './selectors.js';
@@ -213,7 +213,8 @@ export function remindersOf(s, {all = false, delais} = {}){
   // en production, la commission L'ArtBo n'est pas facturée : L'ArtBo se la verse depuis le compte de l'artiste
   // dès le premier encaissement (acompte, ou solde quand il n'y a pas d'acompte)
   const com = first('artbo'), part = first('partner');
-  const cashed = pays.filter(p => ['acompte','solde'].includes(p.kind) && p.paid_at).map(p => p.paid_at).sort()[0];
+  // premier encaissement, même partiel (Q14) : date « Payée » ou (v1.70, L2a) encaissement enregistré — même règle : reminder_candidates
+  const cashed = pays.filter(p => ['acompte','solde'].includes(p.kind)).flatMap(p => [p.paid_at, ...reglementsOf(p.id).filter(r => r.sens === 'encaissement' && r.etat === 'fait').map(r => r.date)]).filter(Boolean).sort()[0];
   // reste à transférer (versements partiels compris, lot D1) — même règle côté serveur (generate_reminders, migration v1.43)
   const reste = com ? commissionState(com).remaining : 0;
   if (on('commission') && cashed && com && reste >= 0.005) rule('artbo', after('commission', cashed), `${com.label || 'Commission L’ArtBo'} : ${eur2(reste)} à te verser`, 'commission');

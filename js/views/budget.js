@@ -5,7 +5,7 @@
 import { CNM_TODO, INCOMPLETE, bulletinsProposed, isCnmToFill, missingCostName, cnmViaShare, isFacture, accountMoves, accountOf, availableForArtist, coreaCommissionCheck, cnmPct, commissionAmount, commissionOf, isFree, isSolde, lineForecast, lineStatus, lineValue, linesOf, missingCostLines, offLinesOf, payerLabel, payslipCost, prodShowsOf, showBudget } from '../budget.js';
 import { costFillPlan, costGaps, templateSource } from '../budget-template.js';
 import { BUDGET_CATS, PAYERS, TICKETING } from '../constants.js';
-import { commissionState, payAmount, paymentsOf } from '../calc.js';
+import { commissionState, encaisseHt, mouvementsOf, payAmount, paymentsOf } from '../calc.js';
 import { byId } from '../selectors.js';
 import { S } from '../state.js';
 import { archivedTag } from '../ui/bits.js';
@@ -109,10 +109,11 @@ function summaryTable(s, b, com, p){
   const exp = b.lines.filter(l => !isSolde(l)), real = exp.filter(l => l.amount != null), est = exp.filter(l => l.amount == null);
   const realSum = real.reduce((t, l) => t + Number(l.amount), 0), estSum = est.reduce((t, l) => t + (lineForecast(l) || 0), 0);
   const expNow = r2(realSum + estSum), expGap = r2(real.reduce((t, l) => t + Number(l.amount) - (lineForecast(l) ?? Number(l.amount)), 0));
-  const cashedRows = paymentsOf(s.id).filter(x => ['acompte', 'solde'].includes(x.kind) && x.paid_at);
-  const cashed = cashedRows.reduce((t, x) => t + (payAmount(x) || 0), 0);
+  // (v1.70, L2a) encaissé réel (encaissements − remboursements, équivalent HT) ; paiement historique lu tel quel (E1)
+  const cashedRows = paymentsOf(s.id).filter(x => ['acompte', 'solde'].includes(x.kind));
+  const cashed = r2(cashedRows.reduce((t, x) => t + encaisseHt(x), 0));
   // part encaissée sans compte d'encaissement (§6.6, Q6, M9) : comptée dans la date, signalée ; aucun total changé
-  const unassigned = r2(cashedRows.filter(x => !x.payee).reduce((t, x) => t + (payAmount(x) || 0), 0));
+  const unassigned = r2(cashedRows.reduce((t, x) => t + mouvementsOf(x).filter(m => !m.compte).reduce((u, m) => u + m.ht, 0), 0));
   const gapCell = (g, cost) => `<td class="num nowrap ${Math.abs(g) < 0.01 ? 'muted' : (g > 0) === cost ? 'neg' : 'pos'}">${Math.abs(g) < 0.01 ? eur2(0) : (g > 0 ? '+' : '') + eur2(g)}</td>`;
   const row = (label, f, r, gap, help, {cost = false, strong = false} = {}) => `<tr class="${strong ? 'bill-total' : ''}"><td>${strong ? `<b>${label}</b>` : label}${help ? `<div class="muted tiny">${help}</div>` : ''}</td>
       <td class="num nowrap">${strong ? `<b>${eur2(f)}</b>` : eur2(f)}</td><td class="num nowrap">${strong ? `<b>${eur2(r)}</b>` : eur2(r)}</td>${gapCell(gap, cost)}</tr>`;

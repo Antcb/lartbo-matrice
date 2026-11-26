@@ -10,7 +10,7 @@ import { eur2, r2 } from './utils.js';
 import { isCnmLine, isSacemLine, lineValue, lineForecast, linesOf } from './budget.js';
 import { cnmRate } from './corea.js';
 import { byId } from './selectors.js';
-import { payAmount, paymentsOf } from './calc.js';
+import { encaisseHt, payAmount, paymentsOf } from './calc.js';
 
 const num = v => v == null || v === '' ? null : Number(v);
 
@@ -188,7 +188,7 @@ export function coprodClose(s){
   if (rec.some(x => !(payAmount(x) > 0))) issues.push('Recette complémentaire sans montant HT');
   const recTodo = rec.filter(x => !x.paid_at);
   if (recTodo.length) issues.push(`${recTodo.length} recette${recTodo.length > 1 ? 's' : ''} complémentaire${recTodo.length > 1 ? 's' : ''} attendue${recTodo.length > 1 ? 's' : ''} pas encore encaissée${recTodo.length > 1 ? 's' : ''} (${eur2(r2(recTodo.reduce((a, x) => a + (payAmount(x) || 0), 0)))}) : note la date d’encaissement`);
-  const cashedBy = who => r2(rec.filter(x => x.coprod_holder === who && x.paid_at).reduce((a, x) => a + (payAmount(x) || 0), 0));
+  const cashedBy = who => r2(rec.filter(x => x.coprod_holder === who).reduce((a, x) => a + encaisseHt(x), 0));   // (v1.70) encaissé réel ; historique tel quel
   const paidBy = who => r2(realLines.filter(l => l.payer === who && l.paid_at).reduce((a, l) => a + Number(l.amount), 0)
     + (promo && payer === who && promoPaid ? promo : 0));
   const realTaxes = r2((r.cnmReal ?? 0) + (r.sacemReal ?? 0));

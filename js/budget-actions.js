@@ -4,9 +4,9 @@
  */
 import { render } from './app.js';
 import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
-import { cnmDue, commissionOf, coreaCommissionCheck, isFacture, isFree, isSolde, lineForecast, linesOf, prodShowsOf } from './budget.js';
+import { cnmDue, commissionOf, coreaCommissionCheck, isFacture, isFree, isSolde, lineForecast, linesOf, payerLabel, prodShowsOf } from './budget.js';
 import { breakFromText, commissionPctOf, coreaCalc, isCorea } from './corea.js';
-import { acompteState, canFixInvoice, correctionsOf, isCoproduction, isInvoiced, paymentsOf, payAmount, payVat, ttc } from './calc.js';
+import { acompteState, canFixInvoice, correctionsOf, isCoproduction, isInvoiced, paymentsOf, payAmount, payVat, ttc, reglementsOf, resteDuTtc, tropPercuTtc, factureNetTtc, encaisseTtc } from './calc.js';
 import { contentTypeOf, insert, mergeRows, openStored, refreshBudgetMarker, refreshFor, remove, save, sb, typedFile, uploadFailure } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
 import { callScript } from './mail.js';
@@ -254,6 +254,7 @@ export const BUDGET_ACTIONS = {
       if (out.aRattacher || out.linked?.length){ const {fetchAll} = await import('./data.js'); S.db.pennylane_a_rattacher = await fetchAll('pennylane_a_rattacher'); touch('pennylane_a_rattacher'); }
       // (v1.69) avoirs importés : relus (lecture seule)
       if (out.avoirs){ const {fetchAll} = await import('./data.js'); S.db.pennylane_avoirs = await fetchAll('pennylane_avoirs'); touch('pennylane_avoirs'); }
+      if (out.encaissements || out.remboursements){ const {fetchAll} = await import('./data.js'); S.db.reglements = await fetchAll('reglements'); touch('reglements'); }
       render();
       const lines = [out.linked?.length ? `${out.linked.length} facture(s) faite(s) depuis le devis, numéro repris : ${out.linked.filter(Boolean).join(', ')}\n` : '', out.updated.length ? `${out.updated.length} facture(s) marquée(s) payée(s) :\n- ` + out.updated.map(u => u.label).join('\n- ') : (out.linked?.length || out.filed?.done?.length || out.avoirs?.nouveaux || out.avoirs?.rattaches?.length) ? '' : 'Rien de nouveau : la Matrice est à jour.',
         out.erreurs?.length ? `\nÉcritures REFUSÉES (rien n’a été modifié pour ces lignes) — à examiner :\n- ` + out.erreurs.join('\n- ') : '',
@@ -265,7 +266,9 @@ export const BUDGET_ACTIONS = {
         out.avoirs?.aRattacher ? `\n${out.avoirs.aRattacher} avoir(s) à rattacher (facture d’origine inconnue, absente de MATRICE ou ambiguë) : liste en tête de Production. Rien n’est compté.` : '',
         out.avoirs?.origineChangee?.length ? `\nAvoir(s) dont Pennylane indique une AUTRE facture d’origine que celle du rattachement : laissés sur leur facture actuelle, à vérifier (signalés en tête de Production jusqu’à résolution) :\n- ` + out.avoirs.origineChangee.join('\n- ') : '',
         out.aVerifier?.length ? `\nRapprochements à VÉRIFIER À LA MAIN (doute : rien n’a été noté) :\n- ` + out.aVerifier.join('\n- ') : '',
-        out.virementsPartiels?.length ? `\nVirement(s) qui ne couvrent qu’une PARTIE du reste dû après avoir : aucun paiement noté (le paiement partiel s’enregistrera avec L2) :\n- ` + out.virementsPartiels.join('\n- ') : '',
+        out.encaissements?.length ? `\nEncaissement(s) enregistré(s) d’après les virements Pennylane :\n- ` + out.encaissements.join('\n- ') : '',
+        out.virementsPartiels?.length ? `\nEncaissement(s) partiel(s) : la facture reste due pour le reste :\n- ` + out.virementsPartiels.join('\n- ') : '',
+        out.remboursements?.length ? `\nRemboursement(s) d’après les virements sortants rapprochés des avoirs :\n- ` + out.remboursements.join('\n- ') : '',
         out.avoirs?.disparus ? `\n${out.avoirs.disparus} avoir(s) qui ne sont plus dans Pennylane : gardés dans MATRICE, plus comptés.` : '',
         out.payeesAvecAvoir?.length ? `\nFactures avec avoir sans virement entrant établi : AUCUN encaissement noté (un avoir n’est pas un paiement) :\n- ` + out.payeesAvecAvoir.join('\n- ') : '',
         out.payeesSansTransaction?.length ? `\nPayées dans Pennylane sans virement rapproché : AUCUN encaissement noté (à vérifier dans Pennylane) :\n- ` + out.payeesSansTransaction.join('\n- ') : '',
@@ -279,6 +282,90 @@ export const BUDGET_ACTIONS = {
       await inform({title: 'Synchronisation Pennylane', text: lines.join('\n')});
     } catch (err) { toast(err.message, true); }
     t.disabled = false;
+  },
+  /**
+   * (v1.70, L2a du point 02 — décisions d'Anthony du 26/11/2026, 18 h 47) Encaissement réel saisi à la main (TTC, E2) : date, montant,
+   * compte ; marqué « non rapproché » jusqu'à son rapprochement Pennylane, qui ne le duplique jamais (R1). Au-delà du reste dû :
+   * confirmation (trop-perçu affiché, aucun remboursement créé). Ligne couverte : date « Payée » = encaissement le plus récent.
+   * Écriture côté serveur (reglement_saisir) ; rien n'est envoyé à Pennylane.
+   */
+  reglementEncaisser: async t => {
+    const p = byId('show_payments', t.dataset.id); if (!p) return;
+    if (p.paid_at) return toast('Facture déjà notée payée : son paiement est conservé tel quel.', true);
+    const s = byId('shows', p.show_id), proj = byId('projects', s?.project_id), reste = resteDuTtc(p);
+    const num = v => v == null || v === '' ? null : Number(String(v).replace(',', '.'));
+    const level = MODALS_LEVEL();
+    await openModal({title: 'Ajouter un encaissement', level, saveLabel: 'Enregistrer l’encaissement',
+      fields: [{k: 'montant', label: 'Montant reçu TTC (€)', type: 'number'}, {k: 'date', label: 'Date de réception', type: 'date'},
+        {k: 'compte', label: 'Arrivé sur', type: 'select', options: [['', 'Non renseigné'], ...['compte', 'artbo', 'artiste', 'autre'].map(c => [c, payerLabel(c, proj)])]},
+        {k: 'reference', label: 'Référence (relevé bancaire)', full: true}],
+      values: {id: 'encaissement:' + p.id, montant: reste || '', date: today(), compte: p.payee || ''},
+      extraTop: `<p class="mb">${esc(p.label || p.kind)}${p.invoice_number ? ' · ' + esc(p.invoice_number) : ''} : facturé net <b>${eur2(factureNetTtc(p))}</b> TTC · déjà encaissé ${eur2(encaisseTtc(p))} TTC · reste dû <b>${eur2(reste)}</b> TTC. Saisi à la main : « non rapproché » jusqu’au rapprochement Pennylane (jamais compté deux fois).</p>`,
+      onSave: async v => {
+        const montant = num(v.montant);
+        if (!(montant > 0)){ toast('Montant TTC à saisir', true); return false; }
+        if (!v.date){ toast('Date de réception à saisir', true); return false; }
+        if (montant > reste + 0.01 && !(await confirmAsk('Encaissement supérieur au reste dû ?', `${eur2(montant)} TTC pour un reste dû de ${eur2(reste)} TTC : l’excédent (${eur2(Math.round((montant - reste) * 100) / 100)} TTC) sera affiché comme encaissé au-delà du net facturé. Aucun remboursement n’est créé.`, 'Enregistrer quand même'))) return false;
+        const {data, error} = await sb.rpc('reglement_saisir', {p_payment: p.id, p_sens: 'encaissement', p_etat: 'fait', p_montant: montant, p_date: v.date, p_compte: v.compte || null, p_reference: v.reference || null, p_motif: null});
+        if (error){ toast(error.message, true); return false; }
+        await reloadReglements(data);
+        // ligne couverte : payée à la date de l'encaissement le plus récent (paiement non écrasé s'il a été noté entre-temps)
+        const cur = byId('show_payments', p.id);
+        if (cur && !cur.paid_at && resteDuTtc(cur) <= 0.01){
+          const last = reglementsOf(p.id).filter(r => r.sens === 'encaissement' && r.etat === 'fait').map(r => r.date).sort().pop();
+          const comptes = [...new Set(reglementsOf(p.id).filter(r => r.sens === 'encaissement').map(r => r.compte).filter(Boolean))];
+          await save('show_payments', p.id, {paid_at: last, ...(!cur.payee && comptes.length === 1 ? {payee: comptes[0]} : {})}, {rerender: false});
+        }
+        toast('Encaissement enregistré.'); render(); return true;
+      }});
+  },
+  /** (v1.70, L2a, D10) Remboursement à faire (montant, motif) ou fait (date, montant, compte, référence), saisi à la main : non rapproché
+   *  jusqu'à son rapprochement Pennylane, qui ne le compte jamais une seconde fois. Un remboursement n'est jamais un avoir (E3). */
+  reglementRembourser: async t => {
+    const p = byId('show_payments', t.dataset.id); if (!p) return;
+    const fait = t.dataset.etat === 'fait', s = byId('shows', p.show_id), proj = byId('projects', s?.project_id);
+    const num = v => v == null || v === '' ? null : Number(String(v).replace(',', '.'));
+    const fields = [{k: 'montant', label: 'Montant TTC (€)', type: 'number'}, ...(fait ? [{k: 'date', label: 'Date du remboursement', type: 'date'},
+      {k: 'compte', label: 'Parti de', type: 'select', options: [['', 'Non renseigné'], ...['compte', 'artbo', 'artiste', 'autre'].map(c => [c, payerLabel(c, proj)])]},
+      {k: 'reference', label: 'Référence (relevé bancaire)', full: true}] : []), {k: 'motif', label: 'Motif', type: 'textarea', full: true, max: 500}];
+    await openModal({title: fait ? 'Remboursement fait' : 'Remboursement à faire', level: MODALS_LEVEL(), saveLabel: 'Enregistrer',
+      fields, values: {id: (fait ? 'remboursement-fait:' : 'remboursement-a-faire:') + p.id, montant: tropPercuTtc(p) || '', ...(fait ? {date: today(), compte: p.payee || ''} : {})},
+      extraTop: `<p class="mb">${esc(p.label || p.kind)}${p.invoice_number ? ' · ' + esc(p.invoice_number) : ''}. ${fait ? 'Mouvement d’argent sortant, saisi à la main : « non rapproché » jusqu’au rapprochement Pennylane.' : 'Décision de rembourser : aucun mouvement d’argent tant qu’il n’est pas marqué fait.'} Un remboursement et un avoir restent distincts.</p>`,
+      onSave: async v => {
+        const montant = num(v.montant);
+        if (!(montant > 0)){ toast('Montant TTC à saisir', true); return false; }
+        if (fait && !v.date){ toast('Date du remboursement à saisir', true); return false; }
+        const {data, error} = await sb.rpc('reglement_saisir', {p_payment: p.id, p_sens: 'remboursement', p_etat: fait ? 'fait' : 'a_faire', p_montant: montant,
+          p_date: fait ? v.date : null, p_compte: fait ? (v.compte || null) : null, p_reference: fait ? (v.reference || null) : null, p_motif: v.motif || null});
+        if (error){ toast(error.message, true); return false; }
+        await reloadReglements(data); toast(fait ? 'Remboursement enregistré.' : 'Remboursement à faire enregistré.'); render(); return true;
+      }});
+  },
+  /** (v1.70) Remboursement à faire → fait : date, compte, référence (reglement_effectuer) */
+  reglementFait: async t => {
+    const r = (S.db.reglements || []).find(x => x.id === t.dataset.id); if (!r) return;
+    const p = byId('show_payments', r.payment_id), proj = byId('projects', byId('shows', r.show_id)?.project_id);
+    await openModal({title: 'Remboursement fait', level: MODALS_LEVEL(), saveLabel: 'Enregistrer',
+      fields: [{k: 'date', label: 'Date du remboursement', type: 'date'}, {k: 'compte', label: 'Parti de', type: 'select', options: [['', 'Non renseigné'], ...['compte', 'artbo', 'artiste', 'autre'].map(c => [c, payerLabel(c, proj)])]},
+        {k: 'reference', label: 'Référence (relevé bancaire)', full: true}],
+      values: {id: 'remboursement-effectue:' + r.id, date: today(), compte: p?.payee || ''},
+      extraTop: `<p class="mb">Remboursement de <b>${eur2(Number(r.montant_ttc))}</b> TTC${r.motif ? ' · ' + esc(r.motif) : ''}.</p>`,
+      onSave: async v => {
+        if (!v.date){ toast('Date du remboursement à saisir', true); return false; }
+        const {data, error} = await sb.rpc('reglement_effectuer', {p_id: r.id, p_date: v.date, p_compte: v.compte || null, p_reference: v.reference || null});
+        if (error){ toast(error.message, true); return false; }
+        await reloadReglements(data); toast('Remboursement noté fait.'); render(); return true;
+      }});
+  },
+  /** (v1.70, R2) Annuler une saisie manuelle non rapprochée : motif obligatoire ; jamais effacée (traçabilité) */
+  reglementAnnuler: async t => {
+    const r = (S.db.reglements || []).find(x => x.id === t.dataset.id); if (!r) return;
+    const motif = await askText({title: 'Annuler la saisie ?', text: `${r.sens === 'encaissement' ? 'Encaissement' : 'Remboursement'} de ${eur2(Number(r.montant_ttc))} TTC${r.date ? ' du ' + fmtDate(r.date) : ''}. La saisie reste visible, barrée, avec ce motif.`,
+      label: 'Motif', ok: 'Annuler la saisie', check: v => !String(v || '').trim() ? 'Motif obligatoire' : String(v).trim().length > 500 ? '500 caractères au plus' : ''});
+    if (motif == null) return;
+    const {data, error} = await sb.rpc('reglement_annuler', {p_id: r.id, p_motif: motif});
+    if (error){ toast(error.message, true); return; }
+    await reloadReglements(data); toast('Saisie annulée (gardée, barrée).'); render();
   },
   /**
    * (v1.68, point n°23, décisions d'Anthony du 26/11/2026) « Déverrouiller pour corriger » une facture émise : la ligne reste
@@ -415,6 +502,13 @@ export const BUDGET_ACTIONS = {
   },
 };
 
+/** Niveau de fenêtre : au-dessus d'une fenêtre déjà ouverte */
+const MODALS_LEVEL = () => document.querySelector('#modal[open]') ? 2 : 1;
+/** Mouvements relus après une écriture côté serveur (lecture seule dans l'application) */
+async function reloadReglements(row){
+  if (row?.id){ S.db.reglements = [...(S.db.reglements || []).filter(r => r.id !== row.id), row]; touch('reglements'); return; }
+  const {fetchAll} = await import('./data.js'); S.db.reglements = await fetchAll('reglements'); touch('reglements');
+}
 /** Appel de la fonction serveur Pennylane (le jeton API reste côté serveur) */
 export async function pennylane(action, body){
   const {data, error} = await sb.functions.invoke('pennylane', {body:{action, ...body}});

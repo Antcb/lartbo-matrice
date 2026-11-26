@@ -147,6 +147,40 @@
     mail_texte_ecrire: ({ p_id, p_text }) => { if (!(window.__MAILBOX_OWNER ?? true) || !p_text) return false;
       const T = (window.__DB.mail_textes ||= []); if (T.some(t => t.message_id === p_id)) return false;
       T.push({ message_id: p_id, body_text: p_text }); return true; },
+    // v1.70 (L2a) : encaissements et remboursements réels — mêmes contrôles que les fonctions SQL reglement_saisir / reglement_effectuer /
+    // reglement_annuler (essayées sur une vraie base PostgreSQL : supabase/repetitions/2026-11-26_v1.70_encaissements_essai.sql)
+    reglement_saisir: ({ p_payment, p_sens, p_etat, p_montant, p_date, p_compte, p_reference, p_motif }) => {
+      const D = window.__DB, err = m => { throw Object.assign(new Error(m), { code: 'P0001' }); };
+      const p = (D.show_payments || []).find(x => x.id === p_payment); if (!p) err('Ligne de facturation introuvable');
+      const s = (D.shows || []).find(x => x.id === p.show_id) || {}, mode = s.prod_mode || 'production';
+      if (p.hors_calcul != null) err('Ligne hors calcul : aucun encaissement ni remboursement');
+      if (!((mode !== 'booking' && ['acompte', 'solde', 'autre'].includes(p.kind)) || (mode === 'booking' && p.kind === 'artbo'))) err('Cette ligne n\'est pas une facture suivie (encaissements : acompte, solde, autre ligne ; en booking, la commission)');
+      const t = v => String(v ?? '').trim();
+      if (!(p.sent_at || p.paid_at || t(p.invoice_number) || t(p.pennylane_id))) err('Facture pas encore émise : rien à encaisser ni à rembourser');
+      if (!['encaissement', 'remboursement'].includes(p_sens) || !['a_faire', 'fait'].includes(p_etat) || (p_etat === 'a_faire' && p_sens !== 'remboursement')) err('Type de mouvement invalide');
+      const m = Number(p_montant); if (!(m > 0 && m < 1e8)) err('Montant TTC à saisir (positif)');
+      if (p_etat === 'fait' && !p_date) err('Date du mouvement à saisir');
+      if (p_compte != null && !['compte', 'artbo', 'artiste', 'autre'].includes(p_compte)) err('Compte inconnu');
+      const r = { id: 'reg-' + Math.random().toString(36).slice(2, 10), payment_id: p.id, show_id: p.show_id, sens: p_sens, etat: p_etat, montant_ttc: Math.round(m * 100) / 100,
+        date: p_etat === 'fait' ? p_date : null, compte: p_compte ?? null, reference: t(p_reference) || null, motif: t(p_motif) || null, source: 'manuel', transaction_id: null,
+        avoir_id: null, created_at: new Date().toISOString(), created_by: USER, rapproche_at: null, annule_at: null, annule_par: null, annule_motif: null };
+      (D.reglements ||= []).push(r); return r;
+    },
+    reglement_effectuer: ({ p_id, p_date, p_compte, p_reference }) => {
+      const err = m => { throw Object.assign(new Error(m), { code: 'P0001' }); };
+      if (!p_date) err('Date du remboursement à saisir');
+      if (p_compte != null && !['compte', 'artbo', 'artiste', 'autre'].includes(p_compte)) err('Compte inconnu');
+      const r = (window.__DB.reglements || []).find(x => x.id === p_id && x.etat === 'a_faire' && !x.annule_at);
+      if (!r) err('Remboursement introuvable, déjà fait ou annulé');
+      Object.assign(r, { etat: 'fait', date: p_date, compte: p_compte ?? r.compte, reference: String(p_reference ?? '').trim() || r.reference }); return r;
+    },
+    reglement_annuler: ({ p_id, p_motif }) => {
+      const err = m => { throw Object.assign(new Error(m), { code: 'P0001' }); };
+      const m = String(p_motif ?? '').trim(); if (!m || m.length > 500) err('Motif obligatoire (500 caractères au plus)');
+      const r = (window.__DB.reglements || []).find(x => x.id === p_id && x.source === 'manuel' && !x.transaction_id && !x.annule_at);
+      if (!r) err('Seule une saisie manuelle non rapprochée de Pennylane, pas encore annulée, peut être annulée');
+      Object.assign(r, { annule_at: new Date().toISOString(), annule_par: USER, annule_motif: m }); return r;
+    },
     // v1.68 : correction d'une facture émise (déverrouillage explicite) — mêmes contrôles que la fonction SQL facture_corriger
     // (essayée sur une vraie base PostgreSQL : supabase/repetitions/2026-11-26_v1.68_correction_facture_essai.sql)
     facture_corriger: ({ p_payment, p_amount, p_pct, p_vat, p_motif }) => {

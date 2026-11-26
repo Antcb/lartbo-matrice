@@ -3,7 +3,7 @@
  * Chaque date se déplie : suivi admin, commissions, dossier Drive, facturation.
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
-import { vatConflict, BILL_KINDS, avoirsARattacher, avoirsAVerifier, avoirsOf, origineEcart, resteDu, restesAvecAvoirs, soldeeParAvoir, canFixInvoice, correctionsOf, acompteRetire, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
+import { vatConflict, BILL_KINDS, avoirsARattacher, avoirsAVerifier, avoirsOf, origineEcart, resteDu, restesDate, soldeeParAvoir, reglementsTousOf, mouvementsOf, factureNetTtc, encaisseTtc, resteDuTtc, aRembourserTtc, tropPercuTtc, htFiable, canFixInvoice, correctionsOf, acompteRetire, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, OPTION_PROD, PROD_STEPS } from '../constants.js';
 import { byId, isArchived, projName, setting, showsFiltered, spectacleName, structName } from '../selectors.js';
 import { followedInvoice, lateSteps, remindersOf, staleOf } from '../reminders.js';
@@ -286,7 +286,7 @@ function billingTab(s, booking, pays, late){
           <td title="Date de la dernière relance">${cIn('show_payments',p.id,'reminded_at',p.reminded_at,'date')}${p.sent_at && !p.paid_at && followedInvoice(p, booking) && !soldeeParAvoir(p) ? `<div class="small" title="Plus de rappel « Paiement à vérifier » pour cette facture tant que la case est cochée (elle reste impayée et comptée)">${cChk('show_payments', p.id, 'reminders_paused', p.reminders_paused, 'Relances suspendues')}</div>` : ''}</td>
           <td class="${p.paid_at?'done-cell':''}">${cIn('show_payments',p.id,'paid_at',p.paid_at,'date')}${soldeeParAvoir(p) && !p.paid_at ? ' <span class="badge" title="Facture entièrement couverte par son avoir Pennylane : plus rien à encaisser ; aucun encaissement n’est noté">soldée par avoir</span>' : ''}</td>
           <td>${pennylaneCell(p, s)}</td>`}
-          <td>${why ? `<span class="muted" role="img" aria-label="Ligne verrouillée" title="${esc(why)}">🔒</span>${canFixInvoice(p) ? ` <button type="button" class="btn sm ghost" data-act="fixInvoice" data-id="${p.id}" title="Corriger le suivi de cette facture dans MATRICE (montant, %, TVA), avec un motif ; rien n’est fait dans Pennylane">Déverrouiller pour corriger</button>` : ''}` : `<button class="btn icon sm ghost danger" data-act="delPay" data-id="${p.id}" aria-label="Supprimer la ligne">✕</button>`}</td></tr>${avoirRowsHTML(p)}`;}).join('')}
+          <td>${why ? `<span class="muted" role="img" aria-label="Ligne verrouillée" title="${esc(why)}">🔒</span>${canFixInvoice(p) ? ` <button type="button" class="btn sm ghost" data-act="fixInvoice" data-id="${p.id}" title="Corriger le suivi de cette facture dans MATRICE (montant, %, TVA), avec un motif ; rien n’est fait dans Pennylane">Déverrouiller pour corriger</button>` : ''}` : `<button class="btn icon sm ghost danger" data-act="delPay" data-id="${p.id}" aria-label="Supprimer la ligne">✕</button>`}</td></tr>${avoirRowsHTML(p)}${selfPaid ? '' : reglementRowsHTML(s, p, booking)}`;}).join('')}
         </tbody>${booking || isCoproduction(s) ? '' : billFoot(s)}</table></div>
       ${isCoproduction(s) ? `<p class="help mt-sm">Coproduction : aucune facture de cession, aucun acompte ni solde, aucune commission L’ArtBo ni part partenaire générés. Ajoute une ligne seulement pour une opération réelle.</p>` : ''}
       ${horsCalculHTML(s)}
@@ -326,10 +326,10 @@ function billFoot(s){
     <td class="num"><b>${pct(b.pct)}</b></td><td class="num nowrap"><b>${eur2(b.ht)}</b></td><td></td><td class="num nowrap"><b>${eur2(b.ttc)}</b></td>
     <td colspan="7">${ok ? `<span class="ok-badge">✓ = cachet (${eur2(b.fee)} HT · ${eur2(b.feeTtc)} TTC)</span>`
       : `<span class="warn-badge">${b.gap > 0 ? `Il manque ${eur2(b.gap)} HT` : `${eur2(-b.gap)} HT de trop`} par rapport au cachet (${eur2(b.fee)} HT)</span>`}
-      <span class="muted nowrap"> · envoyées ${eur2(b.sentHt)} HT · payées ${eur2(b.paidHt)} HT${b.otherHt ? ` · autres lignes ${eur2(b.otherHt)} HT` : ''}</span>
+      <span class="muted nowrap"> · envoyées ${eur2(b.sentHt)} HT · encaissé ${eur2(b.paidHt)} HT${b.otherHt ? ` · autres lignes ${eur2(b.otherHt)} HT` : ''}</span>
       ${multiSolde(s.id) ? '<span class="warn-badge">Plusieurs lignes de solde sur cette date : à vérifier (le reste à facturer ne va qu’à la première)</span>' : ''}
       ${b.plannedHt ? `<span class="muted nowrap"> · dont acomptes prévus, non facturés : ${eur2(b.plannedHt)} HT</span>` : ''}
-      ${(r => r.avoirs ? `<div class="small mt-sm">Reste à encaisser du contrat : <b>${eur2(r.contrat)}</b> HT <span class="muted">(cession − encaissé, inchangé par les avoirs)</span> · Reste dû sur les factures après avoirs : <b>${eur2(r.factures)}</b> HT <span class="muted">(factures émises non payées − avoirs)</span></div>` : '')(restesAvecAvoirs(s))}</td></tr></tfoot>`;
+      ${restesHTML(s)}</td></tr></tfoot>`;
 }
 /** Alerte dans l'en-tête de la date quand les factures ne tombent pas juste */
 function billWarn(s, booking){
@@ -368,6 +368,39 @@ function avoirRowsHTML(p){
   return list.map(a => `<tr class="avoir-row"><td colspan="12"><span class="badge">Avoir</span> ${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${name(a)} ↗</a>` : name(a)}${a.invoice_date ? ` du ${fmtDate(a.invoice_date)}` : ''} : <b>− ${eur2(a.amount_ht)}</b> HT
       <span class="muted small">sur la facture ${esc(p.invoice_number || p.label || '')} · document Pennylane</span>${origineEcart(a) ? ` <span class="warn-badge" title="Rattaché à cette facture ; Pennylane indique maintenant une autre facture d’origine. Rien n’a été déplacé : à vérifier.">facture d’origine changée dans Pennylane : à vérifier</span>` : ''}</td></tr>`).join('')
     + (etat ? `<tr class="avoir-row"><td colspan="12" class="small">${etat}</td></tr>` : '');
+}
+
+/** (v1.70, décision E3) Les cinq montants de la date, toujours distincts ; TTC (base bancaire, E2), HT à côté seulement s'il est fiable */
+function restesHTML(s){
+  const r = restesDate(s); if (!r.emis) return '';
+  const ht = r.fiable ? ` <span class="muted">(${eur2(r.contratHt)} HT)</span>` : '';
+  return `<div class="small mt-sm" data-restes="${s.id}">Reste contractuel : <b>${eur2(r.contratTtc)}</b> TTC${ht} <span class="muted">(cession − encaissé sur acomptes et soldes)</span>
+    · Facturé net après avoirs : <b>${eur2(r.factureNet)}</b> TTC · Encaissé réel : <b>${eur2(r.encaisse)}</b> TTC · Reste dû : <b>${eur2(r.resteDu)}</b> TTC
+    · Reste à rembourser : <b>${eur2(r.aRembourser)}</b> TTC${r.trop ? ` · <span class="warn-txt">encaissé au-delà du net facturé : ${eur2(r.trop)} TTC (trop-perçu ou facture réémise à rattacher)</span>` : ''}</div>`;
+}
+
+/** (v1.70, L2a) Encaissements et remboursements d'une facture émise, sous sa ligne : un mouvement par ligne, source et rapprochement
+ *  visibles ; paiement historique lu tel quel (E1) ; saisie manuelle non rapprochée annulable avec motif (jamais effacée, R2) */
+function reglementRowsHTML(s, p, booking){
+  if (!isInvoiced(p) || !followedInvoice(p, booking)) return '';
+  const proj = byId('projects', s.project_id), fiable = htFiable(p);
+  const htOf = v => fiable ? ` <span class="muted">(≈ ${eur2(Math.round(v / (1 + (Number(payVat(p)) || 0) / 100) * 100) / 100)} HT)</span>` : '';
+  const histo = mouvementsOf(p).find(m => m.historique);
+  const rows = reglementsTousOf(p.id).map(r => {
+    const quoi = r.sens === 'encaissement' ? 'Encaissement' : r.etat === 'a_faire' ? 'Remboursement à faire' : 'Remboursement fait';
+    const src = r.transaction_id ? '<span class="ok-badge">rapproché Pennylane</span>' : r.source === 'manuel' ? '<span class="badge">saisi à la main, non rapproché</span>' : '';
+    const etat = r.annule_at ? ` <span class="muted">— annulé le ${fmtDate(String(r.annule_at).slice(0, 10))}${r.annule_par ? ' par ' + esc(r.annule_par) : ''} : ${esc(r.annule_motif || '')}</span>` : '';
+    const acts = r.annule_at ? '' : [r.etat === 'a_faire' ? `<button class="btn sm" data-act="reglementFait" data-id="${r.id}">Marquer fait</button>` : '',
+      r.source === 'manuel' && !r.transaction_id ? `<button class="btn sm ghost" data-act="reglementAnnuler" data-id="${r.id}">Annuler la saisie</button>` : ''].join(' ');
+    return `<tr class="reglement-row${r.annule_at ? ' is-cancelled' : ''}"><td colspan="12">${r.annule_at ? '<s>' : ''}${quoi} <b>${r.sens === 'remboursement' ? '− ' : ''}${eur2(Number(r.montant_ttc))}</b> TTC${htOf(Number(r.montant_ttc))}${r.date ? ` · ${fmtDate(r.date)}` : ''}${r.compte ? ` · ${esc(payerLabel(r.compte, proj))}` : ''}${r.reference ? ` · ${esc(r.reference)}` : ''}${r.motif ? ` · ${esc(r.motif)}` : ''}${r.annule_at ? '</s>' : ''} ${src}${etat} ${acts}</td></tr>`;
+  }).join('');
+  const trop = tropPercuTtc(p), reste = resteDuTtc(p), rem = aRembourserTtc(p);
+  const bilan = `Facturé net : <b>${eur2(factureNetTtc(p))}</b> TTC · Encaissé réel : <b>${eur2(encaisseTtc(p))}</b> TTC · Reste dû : <b>${eur2(reste)}</b> TTC${rem ? ` · Reste à rembourser : <b>${eur2(rem)}</b> TTC` : ''}${trop ? ` · <span class="warn-txt">encaissé au-delà du net facturé : ${eur2(trop)} TTC (trop-perçu ou facture réémise à rattacher)</span>` : ''}`;
+  const btns = [!p.paid_at ? `<button class="btn sm" data-act="reglementEncaisser" data-id="${p.id}" title="Encaissement réel reçu (TTC) : date, montant, compte">Ajouter un encaissement</button>` : '',
+    `<button class="btn sm ghost" data-act="reglementRembourser" data-id="${p.id}" data-etat="a_faire">Remboursement à faire</button>`,
+    `<button class="btn sm ghost" data-act="reglementRembourser" data-id="${p.id}" data-etat="fait">Remboursement fait</button>`].join(' ');
+  return `${histo ? `<tr class="reglement-row"><td colspan="12" class="small muted">Paiement noté le ${fmtDate(histo.date)} (avant les encaissements détaillés) : montant de la facture, conservé tel quel</td></tr>` : ''}${rows}
+    <tr class="reglement-row"><td colspan="12" class="small">${bilan} <span class="nowrap">${btns}</span></td></tr>`;
 }
 
 /** (v1.69) Avoirs que la synchronisation n'a pas rattachés seule : listés en tête de Production (date inconnue ou ambiguë) */

@@ -8,7 +8,7 @@
 //   { action: 'status' } · { action: 'quote', show_id } · { action: 'invoice', payment_id } · { action: 'sync' }
 //   { action: 'lire_avoir', invoice_number? } (v1.69 : lecture seule du format réel d'un avoir)
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
-import { acomptesDeLaDate, baseCommission, describe, emise, encaissementAvecAvoir, encaissementPennylane, estAvoir, factureIsolee, figerMontant, frDate, isBooking, montantAcompte, montantAttendu, origineAvoir, payable, pctCommission, planAvoir, rangeeDansLeDrive, relieAuDevis, soldeDouteux, texteCommission, delaiDocument } from './regles.ts';
+import { acomptesDeLaDate, baseCommission, describe, emise, estAvoir, factureIsolee, figerMontant, frDate, isBooking, montantAcompte, montantAttendu, origineAvoir, payable, pctCommission, planAvoir, planEncaissement, planRemboursement, rangeeDansLeDrive, relieAuDevis, soldeDouteux, texteCommission, delaiDocument } from './regles.ts';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const admin = createClient(URL_, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -353,9 +353,95 @@ Deno.serve(async (req) => {
           rows.forEach(r => comptes.set(r.transaction_id, String(q.id)));
         }
       };
+      // (L2a) mouvements déjà enregistrés par ligne ; avoirs rattachés (pour les remboursements)
+      const reglementsParLigne = new Map<string, any[]>();
+      for (const r of (await readAll(() => admin.from('reglements').select('*'))) || []) { const k = String(r.payment_id); reglementsParLigne.set(k, [...(reglementsParLigne.get(k) || []), r]); }
+      const avoirsLignes = (await readAll(() => admin.from('pennylane_avoirs').select('id, pennylane_id, payment_id, show_id, invoice_number').eq('etat', 'rattache').is('gone_at', null))) || [];
+      const encaissements: string[] = [], remboursements: string[] = [];
+      /** virements réservés pour une ligne (avant toute écriture) ; erreur d'unicité = déjà comptés ailleurs */
+      const reserver = async (ids: string[], pid: string, plId: string, vm: Map<string, any>) => {
+        const nouveaux = ids.filter(id => comptes.get(id) !== pid);
+        if (!nouveaux.length) return null;
+        const { error } = await admin.from('pennylane_virements').insert(nouveaux.map(id => ({ transaction_id: id, payment_id: pid, pennylane_invoice_id: plId,
+          amount: Number.isFinite(Number(vm.get(id)?.amount)) ? Number(vm.get(id)?.amount) : null, tx_date: vm.get(id)?.date ? String(vm.get(id).date).slice(0, 10) : null })));
+        if (error) return error.code === '23505' ? 'virement déjà compté pour une autre ligne' : 'virement non mémorisé (' + error.message + ')';
+        nouveaux.forEach(id => comptes.set(id, pid));
+        return null;
+      };
+      /** réservations retirées si rien n'a pu être écrit (jamais une réservation « historique ») ; échec signalé : reprise au passage suivant */
+      const rendre = async (ids: string[], pid: string, num: string) => {
+        if (!ids.length) return;
+        const { error: er } = await admin.from('pennylane_virements').delete().eq('payment_id', pid).in('transaction_id', ids).neq('origine', 'historique');
+        if (er) erreurs.push(`${num} : réservation du virement non retirée (${er.message}) — reprise à la prochaine synchronisation`);
+        else ids.forEach(id => { if (comptes.get(id) === pid) comptes.delete(id); });
+      };
+      const encaisserLigne = async (p: any, x: any, isPaid: boolean, where: string) => {
+        const pid = String(p.id), num = p.invoice_number || x.invoice_number || '';
+        const nom = `${p.label || p.kind} ${num} · ${where}`.replace(/\s+/g, ' ');
+        const av = avoirsTtc.get(pid) || [], rs = reglementsParLigne.get(pid) || [];
+        if (av.length && planEncaissement(x, av, [], new Set(), rs).signal === 'soldee') return;   // soldée par l'avoir : rien à encaisser
+        let vs: any[] = [];
+        try { const t = await pl('GET', `/customer_invoices/${x.id}/matched_transactions`); vs = t.items || []; }
+        catch (e) { erreurs.push(`${num} : virements rapprochés illisibles, paiement non repris (${String(e).replace(/^Error: /, '')})`); return; }
+        if (!vs.length && !rs.length) { if (isPaid) payeesSansTransaction.push(nom); return; }
+        if (vs.length) await reserverHistorique(String(p.show_id), pid);
+        const doute = doutesHisto.get(String(p.show_id)) || [];
+        const plan = planEncaissement(x, av, vs, autresQue(pid), rs);
+        if (plan.signal === 'a_verifier') { aVerifier.push(`${nom} : saisie manuelle non rapprochée et virement Pennylane de montant différent — rien de fait, rapprochement à vérifier`); return; }
+        if (plan.signal === 'non_etabli') { if (vs.length) aVerifier.push(`${nom} : virement(s) plus grand(s) que le reste dû, ou montant non établi (virement groupé ?) — rien de noté, rapprochement à vérifier`); return; }
+        if (plan.signal === 'deja_compte') { (av.length ? payeesAvecAvoir : payeesSansTransaction).push(`${nom} : virement déjà compté pour une autre ligne`); return; }
+        const agit = plan.creer.length || plan.rapprocher.length || plan.paid_at;
+        if (!agit) { if (isPaid) (av.length ? payeesAvecAvoir : payeesSansTransaction).push(`${nom} : aucun virement établi`); return; }
+        if (doute.length) { aVerifier.push(`${nom} : virement rapproché, mais paiement(s) noté(s) à la main sans lien Pennylane sur la même date (${doute.join(', ')}) — rien de noté, rapprochement à vérifier`); return; }
+        const vm = new Map(vs.map((v: any) => [String(v.id), v]));
+        const ids = [...plan.creer.map(c => c.transaction_id), ...plan.rapprocher.map(r => r.transaction_id)];
+        const err = await reserver(ids, pid, String(x.id), vm);
+        if (err) { (av.length ? payeesAvecAvoir : payeesSansTransaction).push(`${nom} : ${err} — rien de noté`); return; }
+        // mouvements : saisies manuelles rapprochées (jamais dupliquées), virements nouveaux créés
+        for (const r of plan.rapprocher) {
+          const { data: up, error: e5 } = await admin.from('reglements').update({ transaction_id: r.transaction_id, rapproche_at: new Date().toISOString() })
+            .eq('id', r.reglement_id).is('transaction_id', null).is('annule_at', null).select('id');
+          if (e5 || !up?.length) { await rendre(ids, pid, num); erreurs.push(`${num} : rapprochement d'une saisie manuelle impossible (${e5?.message || 'saisie modifiée entre-temps'}) — rien de noté`); return; }
+        }
+        if (plan.creer.length) {
+          const { error: e6 } = await admin.from('reglements').insert(plan.creer.map(c => ({ payment_id: p.id, show_id: p.show_id, sens: 'encaissement', etat: 'fait',
+            montant_ttc: c.montant, date: c.date, compte: p.payee || null, source: 'pennylane', transaction_id: c.transaction_id, rapproche_at: new Date().toISOString(), created_by: 'synchronisation Pennylane' })));
+          if (e6) { await rendre(plan.creer.map(c => c.transaction_id), pid, num); erreurs.push(`${num} : encaissement non enregistré (${e6.message})`); return; }
+          encaissements.push(`${nom} : ${plan.creer.map(c => `${money(c.montant)} € TTC le ${frDate(c.date)}`).join(', ')}`);
+        }
+        if (plan.rapprocher.length) encaissements.push(`${nom} : ${plan.rapprocher.length} saisie(s) manuelle(s) rapprochée(s) de Pennylane (pas de doublon)`);
+        if (!plan.paid_at) { if (plan.creer.length) virementsPartiels.push(`${nom} : ${money(plan.encaisse)} € TTC encaissés sur ${money(plan.reste ?? 0)} € TTC dus — encaissement partiel enregistré`); return; }
+        const { data: up, error: e3 } = await admin.from('show_payments').update({ paid_at: plan.paid_at }).eq('id', p.id).is('paid_at', null).select('id');
+        if (e3) { erreurs.push(`${num} : encaissements enregistrés, mais date « Payée » non notée (${e3.message})`); return; }
+        if (up?.length) updated.push({ id: p.id, paid_at: plan.paid_at, label: `${p.label || p.kind} ${num} · ${where}` });
+      };
+      const rembourserAvoir = async (a: any) => {
+        const pid = String(a.payment_id), rs = reglementsParLigne.get(pid) || [];
+        let vs: any[] = [];
+        try { vs = (await pl('GET', `/customer_invoices/${a.pennylane_id}/matched_transactions`)).items || []; }
+        catch (e) { erreurs.push(`Avoir ${a.invoice_number || a.pennylane_id} : virements illisibles (${String(e).replace(/^Error: /, '')})`); return; }
+        const plan = planRemboursement(vs, autresQue(pid), rs);
+        if (plan.signal === 'a_verifier') { aVerifier.push(`Avoir ${a.invoice_number || a.pennylane_id} : remboursement saisi à la main et virement Pennylane de montant différent — rien de fait, à vérifier`); return; }
+        if (!plan.creer.length && !plan.rapprocher.length) return;
+        const vm = new Map(vs.map((v: any) => [String(v.id), v]));
+        const ids = [...plan.creer.map(c => c.transaction_id), ...plan.rapprocher.map(r => r.transaction_id)];
+        const err = await reserver(ids, pid, String(a.pennylane_id), vm);
+        if (err) { aVerifier.push(`Avoir ${a.invoice_number || a.pennylane_id} : ${err} — rien de noté`); return; }
+        for (const r of plan.rapprocher) {
+          const { data: up, error: e7 } = await admin.from('reglements').update({ transaction_id: r.transaction_id, rapproche_at: new Date().toISOString(), ...(r.a_faire ? { etat: 'fait', date: r.date } : {}) })
+            .eq('id', r.reglement_id).is('transaction_id', null).is('annule_at', null).select('id');
+          if (e7 || !up?.length) { await rendre(ids, pid, a.invoice_number || ''); erreurs.push(`Avoir ${a.invoice_number || a.pennylane_id} : rapprochement du remboursement impossible (${e7?.message || 'saisie modifiée entre-temps'})`); return; }
+        }
+        if (plan.creer.length) {
+          const { error: e8 } = await admin.from('reglements').insert(plan.creer.map(c => ({ payment_id: a.payment_id, show_id: a.show_id,
+            sens: 'remboursement', etat: 'fait', montant_ttc: c.montant, date: c.date, source: 'pennylane', transaction_id: c.transaction_id, avoir_id: a.id, rapproche_at: new Date().toISOString(), created_by: 'synchronisation Pennylane' })));
+          if (e8) { await rendre(plan.creer.map(c => c.transaction_id), pid, a.invoice_number || ''); erreurs.push(`Avoir ${a.invoice_number || a.pennylane_id} : remboursement non enregistré (${e8.message})`); return; }
+        }
+        remboursements.push(`Avoir ${a.invoice_number || a.pennylane_id} : ${[...plan.creer.map(c => `${money(c.montant)} € TTC le ${frDate(c.date)}`), ...plan.rapprocher.map(r => `remboursement ${r.a_faire ? 'à faire, maintenant fait' : 'saisi à la main, rapproché'}`)].join(', ')}`);
+      };
       // paiements repris : acomptes / soldes / autres lignes de PRODUCTION, et factures de commission BOOKING (lot C1) ;
       // jamais les factures de l'artiste en booking, ni la commission de production (pas une facture)
-      const pays = ((await readAll(() => admin.from('show_payments').select('id, show_id, kind, label, invoice_number, pennylane_id, paid_at, drive_file_id, shows(date, city, venue, drive_folder_id, prod_mode)')
+      const pays = ((await readAll(() => admin.from('show_payments').select('id, show_id, kind, label, invoice_number, pennylane_id, paid_at, payee, drive_file_id, shows(date, city, venue, drive_folder_id, prod_mode)')
         .in('kind', ['acompte', 'solde', 'autre', 'artbo']).is('hors_calcul', null).or('invoice_number.not.is.null,pennylane_id.not.is.null'))) || [])
         .filter((p: any) => payable(p, p.shows?.prod_mode));
       const updated: any[] = [], pennylaneLate: any[] = [], toFile: { p: any; x: any }[] = [];
@@ -373,54 +459,18 @@ Deno.serve(async (req) => {
         if (!filedAll && rangeeDansLeDrive(p) && x.invoice_number && x.public_file_url && x.status !== 'cancelled') toFile.push({ p, x });
         const where = `${frDate((p as any).shows?.date)} ${(p as any).shows?.city || ''}`.trim();
         const isPaid = x.paid === true && x.status !== 'cancelled';
-        const av = avoirsTtc.get(String(p.id));
-        // (L1, v1.69) ligne sans date de paiement : avec avoir, examinée même si Pennylane ne la dit pas payée (un virement rapproché
-        // peut exister) ; sans avoir, seulement si Pennylane la dit payée. Jamais « paid = true » ni un avoir comme preuve :
-        // il faut un virement rapproché (regles.ts encaissementAvecAvoir / encaissementPennylane). Paiement existant : jamais touché.
-        if (!p.paid_at && x.status !== 'cancelled' && (av || isPaid)) {
-          const nom = `${p.label || p.kind} ${p.invoice_number || x.invoice_number || ''} · ${where}`.replace(/\s+/g, ' ');
-          if (av && encaissementAvecAvoir(x, av, [], new Set()).signal === 'soldee') continue;   // soldée par l'avoir : rien à encaisser
-          let vs: any[] = [];
-          try { const t = await pl('GET', `/customer_invoices/${x.id}/matched_transactions`); vs = t.items || []; }
-          catch (e) { erreurs.push(`${p.invoice_number || x.invoice_number} : virements rapprochés illisibles, paiement non repris (${String(e).replace(/^Error: /, '')})`); continue; }
-          if (vs.length) await reserverHistorique(String(p.show_id), String(p.id));
-          const doute = doutesHisto.get(String(p.show_id)) || [];
-          const dejaAilleurs = autresQue(String(p.id));
-          const enc = av ? encaissementAvecAvoir(x, av, vs, dejaAilleurs) : encaissementPennylane(x, vs, dejaAilleurs);
-          if (enc.paid_at && doute.length) { aVerifier.push(`${nom} : virement rapproché, mais paiement(s) noté(s) à la main sans lien Pennylane sur la même date (${doute.join(', ')}) — rien de noté, rapprochement à vérifier`); continue; }
-          if (enc.signal === 'a_verifier') { aVerifier.push(`${nom} : virement(s) plus grand(s) que la facture (virement groupé ?) — rien de noté, rapprochement à vérifier`); continue; }
-          if (!enc.paid_at) {
-            const e2 = enc as any;
-            if (enc.signal === 'partiel') virementsPartiels.push(`${nom} : ${money(e2.encaisse)} € TTC reçus sur ${money(e2.reste)} € TTC restant dus après avoir — paiement partiel à enregistrer avec L2`);
-            else if (av && enc.signal) payeesAvecAvoir.push(`${nom} : ${({ sans_virement: 'aucun virement rapproché', non_etabli: 'montant ou affectation du virement non établis', deja_compte: 'virement déjà compté pour une autre ligne' } as any)[enc.signal] || enc.signal}`);
-            else if (enc.signal) payeesSansTransaction.push(`${nom}${enc.signal === 'deja_compte' ? ' : virement déjà compté pour une autre ligne' : ''}`);
-            continue;
-          }
-          const date = enc.paid_at;
-          // virements mémorisés AVANT le paiement (relecture v1.69.1) : si un autre passage les a déjà comptés, rien n'est noté
-          const vm = new Map(vs.map((v: any) => [String(v.id), v]));
-          // déjà réservés pour CETTE ligne (reprise après un paiement non écrit) : réutilisés tels quels, pas réinsérés
-          const nouveaux = enc.ids.filter(id => comptes.get(id) !== String(p.id));
-          if (nouveaux.length) {
-            const { error: e4 } = await admin.from('pennylane_virements').insert(nouveaux.map(id => ({ transaction_id: id, payment_id: p.id, pennylane_invoice_id: String(x.id),
-              amount: Number.isFinite(Number(vm.get(id)?.amount)) ? Number(vm.get(id)?.amount) : null, tx_date: vm.get(id)?.date ? String(vm.get(id).date).slice(0, 10) : null })));
-            if (e4) { (av ? payeesAvecAvoir : payeesSansTransaction).push(`${nom} : ${e4.code === '23505' ? 'virement déjà compté pour une autre ligne' : 'virement non mémorisé (' + e4.message + ')'} — paiement non repris`); continue; }
-            nouveaux.forEach(id => comptes.set(id, String(p.id)));
-          }
-          const { data: up, error: e3 } = await admin.from('show_payments').update({ paid_at: date }).eq('id', p.id).is('paid_at', null).select('id');
-          // paiement non écrit : la réservation est retirée ; si le retrait échoue, elle reste attachée à CETTE ligne et sera reprise
-          // à la synchronisation suivante (jamais utilisable par une autre ligne) — signalé
-          const rendre = async () => { if (!enc.ids.length) return; const { error: er } = await admin.from('pennylane_virements').delete().eq('payment_id', p.id).in('transaction_id', enc.ids).neq('origine', 'historique');
-            if (er) erreurs.push(`${p.invoice_number} : réservation du virement non retirée (${er.message}) — reprise à la prochaine synchronisation`); else enc.ids.forEach(id => { if (comptes.get(id) === String(p.id)) comptes.delete(id); }); };
-          if (e3) { await rendre(); erreurs.push(`${p.invoice_number} : ${e3.message}`); continue; }
-          if (!up?.length) { await rendre(); continue; }   // paiement noté entre-temps (à la main) : conservé, virements rendus
-          updated.push({ id: p.id, paid_at: date, label: `${p.label || p.kind} ${p.invoice_number} · ${where}` });
-        } else if (!isPaid && p.paid_at && x.status !== 'cancelled') {
+        // (L1 v1.69, L2a v1.70) ligne sans date de paiement : encaissements d'après les virements rapprochés dans Pennylane, un par
+        // mouvement (reglements) ; jamais « paid = true » ni un avoir comme preuve ; une saisie manuelle n'est jamais dupliquée (R1) ;
+        // paiement existant (historique) jamais touché (E1). Règle : regles.ts planEncaissement.
+        if (!p.paid_at && x.status !== 'cancelled') { await encaisserLigne(p, x, isPaid, where); continue; }
+        if (!isPaid && p.paid_at && x.status !== 'cancelled') {
           pennylaneLate.push(`${p.invoice_number} · ${where} (payée le ${frDate(p.paid_at)} dans la Matrice)`);
         }
       }
+      // (L2a) remboursements d'après les virements SORTANTS rapprochés des avoirs rattachés (regles.ts planRemboursement)
+      for (const a of avoirsLignes) await rembourserAvoir(a);
       const filed = await fileInvoices(toFile);
-      return json({ ok: true, updated, pennylaneLate, linked, douteux, aRattacher, erreurs, filed, avoirs, payeesAvecAvoir, payeesSansTransaction, virementsPartiels, aVerifier });
+      return json({ ok: true, updated, pennylaneLate, linked, douteux, aRattacher, erreurs, filed, avoirs, payeesAvecAvoir, payeesSansTransaction, virementsPartiels, aVerifier, encaissements, remboursements });
     }
 
     if (body.action === 'quote') {
