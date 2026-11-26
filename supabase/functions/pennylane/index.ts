@@ -187,8 +187,10 @@ Deno.serve(async (req) => {
       const origine = origineAvoir(avoir);
       let facture: any = null, virements: any = null, erreur: string | null = null;
       if (origine) {
-        try { facture = await pl('GET', `/customer_invoices/${origine}`); } catch (e) { erreur = String(e); }
-        try { virements = await pl('GET', `/customer_invoices/${origine}/matched_transactions`); } catch (e) { erreur = (erreur ? erreur + ' ; ' : '') + String(e); }
+        // message seul, jamais la pile d'appel (CodeQL, v1.69.1)
+        const msg = (e: unknown) => e instanceof Error ? e.message : 'lecture impossible';
+        try { facture = await pl('GET', `/customer_invoices/${origine}`); } catch (e) { erreur = 'facture d’origine : ' + msg(e); }
+        try { virements = await pl('GET', `/customer_invoices/${origine}/matched_transactions`); } catch (e) { erreur = (erreur ? erreur + ' ; ' : '') + 'virements : ' + msg(e); }
       }
       let virementsAvoir: any = null;
       try { virementsAvoir = await pl('GET', `/customer_invoices/${avoir.id}/matched_transactions`); } catch (_) { /* */ }
