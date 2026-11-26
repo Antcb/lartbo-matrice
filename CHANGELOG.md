@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.70.4 — 26/11/2026
+- Reprise : une facture entièrement couverte par ses encaissements mais sans date « Payée » (écriture en échec) se note payée d'un clic, sans ressaisie
+
+
 ## 1.70.3 — 26/11/2026
 - Point 3 L2a : une facture avec encaissements enregistrés n'est payée que s'ils couvrent son reste dû (date du dernier), jamais à la main ; remboursements automatiques Pennylane inactifs tant que le format n'est pas confirmé
 
