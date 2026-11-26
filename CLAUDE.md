@@ -30,6 +30,7 @@ Les règles marquées **[DÉCIDÉ Qn]** ont été arbitrées par Anthony (Q0 à 
 - **Google Drive** : **ne jamais supprimer, déplacer ni écraser un fichier existant** (en particulier les modèles de contrats de management et de booking). Un remplacement n'a lieu qu'après accord explicite et l'ancien fichier part à la corbeille Drive.
 - **Données historiques** : aucune modification, attribution ou complétion en lot (ex. 225 encaissements sans compte, 547 tâches terminées sans date) sans validation d'Anthony ; aucune valeur inventée.
 - **Structures de la base** : aucune suppression de table, fonction, colonne ou donnée sans recherche des dépendances **et** validation spécifique (`CONVENTIONS.md` §7.8) ; ne jamais conclure qu'un objet est inutilisé faute de référence évidente.
+- **Création de tables en production** [DÉCIDÉ 26/11/2026] : aucune table (y compris temporaire, de contrôle ou de copie) n'est créée en production hors du protocole de migration (§5, fichier de migration relu et validé) sans **autorisation préalable** d'Anthony. Une copie de contrôle « avant / après » se garde hors de la base (fichier local) ou se demande d'abord.
 
 ## 4. Dépendances à toujours vérifier
 - **Supabase** : triggers (`shows_confirmed`, `shows_defaults`, `show_follow_project_mode`, `project_mode_to_shows`, `show_mode_payments`, `contacts_clean`, `structures_place_clean`, `brevo_contacts`…), tâche planifiée `generate_reminders` (5 h UTC), RLS `is_team()`, fonctions publiques à jeton (`fiche_*`, `artist_*`, `rh_*`).
