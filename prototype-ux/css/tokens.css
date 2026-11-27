@@ -1,5 +1,5 @@
 /* =====================================================================
-   MATRICE — jetons du design system (prototype UX/UI V6)
+   MATRICE — jetons du design system (prototype UX/UI V6.1)
    Source unique : fonds clairs (Blanc Apple, Blanc glacier, Argent minéral) et graphite, identités chromatiques
    (Electric Lagoon, Opal), couleurs fonctionnelles, tailles, rayons, ombres, verre, durées. Aucune valeur en dur ailleurs.
    Attributs posés sur <html> par js/app.js : data-appearance (light|dark), data-palette (lagoon|opal), data-bg (apple|glacier|mineral).
@@ -42,15 +42,19 @@
   --chart-fill-top: rgb(114 201 180 / .34); --chart-fill-bot: rgb(36 126 145 / 0);
   --glow: rgb(114 201 180 / .55);
   /* Bloc principal (Booking) : texte blanc ≥ 4,8:1 sur la zone la plus claire, courbe et lueurs comprises */
-  --hero: radial-gradient(60% 130% at 12% 0%, rgb(114 201 180 / .10), rgb(114 201 180 / 0) 65%), linear-gradient(118deg, #0F3B46 0%, #165666 48%, #1C687A 100%);
+  --hero: radial-gradient(55% 120% at 8% 0%, rgb(114 201 180 / .12), rgb(114 201 180 / 0) 70%), linear-gradient(118deg, #0C323C 0%, #124B5A 42%, #165C6C 72%, #186274 100%);
   --hero-ink: #FFFFFF; --hero-ink-2: rgb(255 255 255 / .95); --hero-sep: rgb(255 255 255 / .16);
   --hero-halo: 0 0 1px rgb(19 70 82 / .9), 0 0 5px rgb(19 70 82 / .85), 0 0 10px rgb(19 70 82 / .5);   /* détache le texte du filet de la courbe */
-  --hf-band-0: rgb(114 201 180 / .02); --hf-band-1: rgb(114 201 180 / .17); --hf-band-2: rgb(255 255 255 / .07);
-  --hf-edge-0: rgb(255 255 255 / .05); --hf-edge-1: rgb(190 240 226 / .62); --hf-edge-2: rgb(255 255 255 / .28); --hf-edge-3: rgb(190 240 226 / .55);
-  --hf-depth-0: rgb(255 255 255 / .04); --hf-depth-1: rgb(0 20 26 / .22); --hf-echo: rgb(150 222 204 / .2);
+  /* Liquid Flow : vague en trois couches (pétrole, menthe, pétrole clair), volume et reflet de crête */
+  --lf-b1: rgb(36 126 145 / .62); --lf-b2: rgb(114 201 180 / .42); --lf-b3: rgb(60 170 172 / .55);
+  --lf-m1: rgb(114 201 180 / .36); --lf-m2: rgb(36 126 145 / .5); --lf-m3: rgb(114 201 180 / .34);
+  --lf-f1: rgb(8 36 44 / .58); --lf-f2: rgb(10 48 58 / .5);
+  --lf-v1: rgb(255 255 255 / .10); --lf-v2: rgb(255 255 255 / 0); --lf-v3: rgb(4 24 30 / .26);
+  --lf-shadow: rgb(4 22 28 / .45);
+  --lf-s1: rgb(255 255 255 / 0); --lf-s2: rgb(214 248 238 / .7); --lf-s3: rgb(255 255 255 / .18); --lf-s4: rgb(214 248 238 / .6);
   --hero-shadow: 0 0 0 .5px rgb(19 70 82 / .4), inset 0 1px 0 rgb(255 255 255 / .16), 0 14px 30px -18px rgb(19 70 82 / .7);
   /* Lueur du socle, derrière la navigation en verre seulement */
-  --amb-1: rgb(36 126 145 / .2); --amb-2: rgb(114 201 180 / .26);
+  --amb-1: rgb(36 126 145 / .2); --amb-2: rgb(114 201 180 / .26); --amb-side: rgb(36 126 145 / .07);
 
   /* Couleurs fonctionnelles — indépendantes de la palette */
   --c-ok: #52755D; --c-warn: #B59A3B; --c-warn-ink: #846A1C; --c-err: #A55353; --c-err-ink: #943F3F; --c-info: #4F6E85; --c-off: #737873;
@@ -123,14 +127,17 @@
   --chart-fill-top: rgb(166 181 232 / .40); --chart-fill-bot: rgb(216 164 197 / 0);
   --glow: rgb(166 181 232 / .65);
   /* texte graphite ≥ 4,7:1 sur la zone la plus sombre */
-  --hero: radial-gradient(70% 140% at 100% 100%, rgb(255 255 255 / .22), rgb(255 255 255 / 0) 70%), linear-gradient(118deg, #78B9AD 0%, #A6B5E8 55%, #D8A4C5 100%);
+  --hero: radial-gradient(55% 120% at 8% 0%, rgb(255 255 255 / .3), rgb(255 255 255 / 0) 70%), linear-gradient(118deg, #8FC6BB 0%, #A9BBE6 50%, #CDA9D2 78%, #D8A4C5 100%);
   --hero-ink: #1E1F22; --hero-ink-2: rgb(30 31 34 / .84); --hero-sep: rgb(30 31 34 / .14);
   --hero-halo: none;
-  --hf-band-0: rgb(255 255 255 / .04); --hf-band-1: rgb(255 255 255 / .32); --hf-band-2: rgb(255 255 255 / .14);
-  --hf-edge-0: rgb(255 255 255 / .2); --hf-edge-1: rgb(255 255 255 / .95); --hf-edge-2: rgb(255 255 255 / .55); --hf-edge-3: rgb(255 255 255 / .9);
-  --hf-depth-0: rgb(255 255 255 / .16); --hf-depth-1: rgb(70 70 120 / .05); --hf-echo: rgb(255 255 255 / .42);
+  --lf-b1: rgb(120 185 173 / .7); --lf-b2: rgb(166 181 232 / .62); --lf-b3: rgb(216 164 197 / .7);
+  --lf-m1: rgb(255 255 255 / .34); --lf-m2: rgb(166 181 232 / .45); --lf-m3: rgb(255 255 255 / .3);
+  --lf-f1: rgb(216 164 197 / .45); --lf-f2: rgb(120 185 173 / .5);
+  --lf-v1: rgb(255 255 255 / .26); --lf-v2: rgb(255 255 255 / 0); --lf-v3: rgb(70 60 130 / .08);
+  --lf-shadow: rgb(80 70 150 / .2);
+  --lf-s1: rgb(255 255 255 / 0); --lf-s2: rgb(255 255 255 / .95); --lf-s3: rgb(255 255 255 / .4); --lf-s4: rgb(255 255 255 / .9);
   --hero-shadow: 0 0 0 .5px rgb(120 140 190 / .35), inset 0 1px 0 rgb(255 255 255 / .4), 0 14px 30px -18px rgb(120 130 190 / .7);
-  --amb-1: rgb(166 181 232 / .34); --amb-2: rgb(216 164 197 / .28);
+  --amb-1: rgb(166 181 232 / .34); --amb-2: rgb(216 164 197 / .28); --amb-side: rgb(166 181 232 / .12);
   --glass-tint: rgb(216 164 197 / .6);
 }
 

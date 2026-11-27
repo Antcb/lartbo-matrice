@@ -796,11 +796,6 @@ main{padding:0 var(--pad-main) calc(var(--pad-main) * 1.5)}
 .card-head{padding-left:calc(var(--pad) - 4px)}
 
 /* Bandeau Booking — Liquid Flow */
-.hf-band stop:nth-child(1){stop-color:var(--hf-band-0)} .hf-band stop:nth-child(2){stop-color:var(--hf-band-1)} .hf-band stop:nth-child(3){stop-color:var(--hf-band-2)}
-.hf-edge stop:nth-child(1){stop-color:var(--hf-edge-0)} .hf-edge stop:nth-child(2){stop-color:var(--hf-edge-1)} .hf-edge stop:nth-child(3){stop-color:var(--hf-edge-2)} .hf-edge stop:nth-child(4){stop-color:var(--hf-edge-3)}
-.hf-depth stop:nth-child(1){stop-color:var(--hf-depth-0)} .hf-depth stop:nth-child(2){stop-color:var(--hf-depth-1)}
-.hf-edge-l{fill:none;stroke-width:1.25;vector-effect:non-scaling-stroke}
-.hf-echo{fill:none;stroke:var(--hf-echo);stroke-width:1;vector-effect:non-scaling-stroke}
 .hero{box-shadow:var(--hero-shadow),inset 0 0 0 .5px rgb(255 255 255 / .12)}
 
 /* Liquid Glass — navigation uniquement (barre latérale, barre flottante, menu Modules) */
@@ -862,5 +857,72 @@ dialog.sheet.closing>.box{transform:translateY(100%)}
 .bars{grid-auto-flow:row;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;align-items:start}
 .bar{grid-template-rows:auto auto;gap:6px;justify-items:stretch}
 .bar-c{height:calc(56px + var(--fs-small) * 1.5 + 4px);box-shadow:0 1px 0 var(--hair-strong)}
-.bar-f{width:32px;flex:none}
+.bar-f{width:min(calc(100% - 22px),76px);flex:none}
 .bar-l{white-space:nowrap;text-align:center;align-self:start}
+
+/* =====================================================================
+   V6.1 — finitions ciblées
+   ===================================================================== */
+
+/* Bandeau Booking — vague organique en couches */
+.lf-back stop:nth-child(1){stop-color:var(--lf-b1)} .lf-back stop:nth-child(2){stop-color:var(--lf-b2)} .lf-back stop:nth-child(3){stop-color:var(--lf-b3)}
+.lf-mid stop:nth-child(1){stop-color:var(--lf-m1)} .lf-mid stop:nth-child(2){stop-color:var(--lf-m2)} .lf-mid stop:nth-child(3){stop-color:var(--lf-m3)}
+.lf-front stop:nth-child(1){stop-color:var(--lf-f1)} .lf-front stop:nth-child(2){stop-color:var(--lf-f2)}
+.lf-vol stop:nth-child(1){stop-color:var(--lf-v1)} .lf-vol stop:nth-child(2){stop-color:var(--lf-v2)} .lf-vol stop:nth-child(3){stop-color:var(--lf-v3)}
+.lf-shine stop:nth-child(1){stop-color:var(--lf-s1)} .lf-shine stop:nth-child(2){stop-color:var(--lf-s2)} .lf-shine stop:nth-child(3){stop-color:var(--lf-s3)} .lf-shine stop:nth-child(4){stop-color:var(--lf-s4)}
+.lf-shadow{fill:var(--lf-shadow)}
+.lf-crest{fill:none;stroke-width:1.25;vector-effect:non-scaling-stroke}
+.lf-crest-2{opacity:.5}
+
+/* Barre latérale Mac en clair : verre plus naturel, halo coloré atténué */
+@media (min-width:761px){
+  :root:not([data-appearance="dark"]) .app::before{background:radial-gradient(300px 260px at 0% 0%, rgb(255 255 255 / .9), transparent 70%), radial-gradient(320px 520px at 4% 60%, var(--amb-side), transparent 72%), radial-gradient(260px 300px at 0% 100%, rgb(120 140 152 / .12), transparent 70%)}
+  :root:not([data-appearance="dark"])[data-glass="on"] .side.glassy{
+    --glass-bg: rgb(255 255 255 / .5);
+    --glass-sheen: linear-gradient(180deg, rgb(255 255 255 / .7) 0, rgb(255 255 255 / .12) 9%, rgb(255 255 255 / 0) 30%, rgb(255 255 255 / 0) 82%, rgb(255 255 255 / .22) 100%), linear-gradient(90deg, rgb(255 255 255 / .35) 0, rgb(255 255 255 / 0) 14%, rgb(255 255 255 / 0) 88%, rgb(255 255 255 / .25) 100%);
+    --glass-edge: linear-gradient(170deg, rgb(255 255 255 / 1) 0%, rgb(255 255 255 / .55) 18%, rgb(210 220 226 / .35) 50%, rgb(255 255 255 / .7) 100%);
+    --glass-depth: inset 0 1px 0 rgb(255 255 255 / .95), inset 1px 0 0 rgb(255 255 255 / .5), inset 0 -1px 0 rgb(20 40 50 / .05), inset -1px 0 0 rgb(20 40 50 / .04);
+    --glass-shadow: 0 0 0 .5px rgb(20 40 50 / .1), 0 1px 2px rgb(20 40 50 / .05), 0 8px 24px -12px rgb(20 40 50 / .18), 0 30px 60px -36px rgb(20 40 50 / .22);
+  }
+}
+
+/* Messagerie : trois tuiles compactes identiques */
+.mx-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:0 var(--pad) 8px}
+.mxt{position:relative;display:grid;align-content:center;gap:0;padding:5px 9px 6px;border-radius:var(--r-tile);background:var(--c-surface-2);box-shadow:inset 0 0 0 .5px var(--hair);text-decoration:none;color:var(--c-ink);min-width:0;transition:background-color var(--d-hover) var(--ease)}
+.mxt:hover{background:var(--c-hover)}
+.mxt-n{font-family:var(--font-mono);font-size:calc(1rem * var(--ts));font-weight:500;line-height:1.25;font-variant-numeric:tabular-nums}
+.mxt-l{font-size:var(--fs-small);color:var(--c-ink-2);line-height:1.25}
+.mxt-unread .mxt-n{color:var(--accent-ink)}
+.mxt-unread::before{content:"";position:absolute;top:9px;right:9px;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.mxt:focus-visible{outline-offset:1px}
+
+/* Menu Modules : tableau de bord visible et assombri ; fond opaque limité à la surface du menu */
+dialog.sheet{height:auto;max-height:86dvh;margin:auto 0 0;inset:auto 0 0 0;display:none;background:transparent;transition:none}
+dialog.sheet[open]{display:block}
+dialog.sheet::backdrop{background:rgb(12 18 24 / .34)}
+:root[data-appearance="dark"] dialog.sheet::backdrop{background:rgb(0 0 0 / .55)}
+@starting-style{ dialog.sheet[open]{opacity:1} }
+dialog.sheet.closing{opacity:1}
+/* verre « Liquid Glass » posé sur une base opaque propre au menu : aucune donnée ne transparaît */
+dialog.sheet>.box{background-color:var(--c-bg) !important;
+  background-image:var(--glass-sheen),radial-gradient(70% 60% at 15% 100%, var(--amb-1), transparent 70%),radial-gradient(60% 50% at 90% 90%, var(--amb-2), transparent 70%),linear-gradient(rgb(255 255 255 / .35),rgb(255 255 255 / .35)) !important;
+  -webkit-backdrop-filter:none !important;backdrop-filter:none !important}
+:root[data-appearance="dark"] dialog.sheet>.box{background-image:var(--glass-sheen),radial-gradient(70% 60% at 15% 100%, var(--amb-1), transparent 70%),radial-gradient(60% 50% at 90% 90%, var(--amb-2), transparent 70%),linear-gradient(rgb(255 255 255 / .03),rgb(255 255 255 / .03)) !important}
+:root[data-glass="off"] dialog.sheet>.box{background-image:none !important;background-color:var(--c-surface) !important}
+
+/* Barre du bas : « Modules » ouvre le menu et n'indique jamais la page active */
+.bottom-bar .bb-open{position:relative}
+.bottom-bar .bb-open[aria-expanded="true"]{color:var(--accent-ink)}
+.bb-here{position:absolute;top:5px;left:calc(50% + 9px);width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--c-surface)}
+
+/* iPhone : commandes plus discrètes, zones tactiles de 44 px conservées */
+.vt-1{display:none}
+@media (max-width:760px){
+  .chart-tools{display:none}
+  .vt-1{position:relative;display:grid;place-items:center;width:28px;height:26px;margin:0 12px 0 2px;padding:0;border:0;border-radius:8px;background:var(--hair);color:var(--c-ink-2);cursor:pointer}
+  .vt-1 .ico{width:15px;height:15px}
+  .vt-1::after{content:"";position:absolute;inset:-9px -8px}
+  .tl-more{position:relative;min-height:28px;margin:8px var(--pad) 8px;border-radius:8px}
+  .tl-more::after{content:"";position:absolute;inset:-8px 0}
+  .mxt::after{content:"";position:absolute;inset:-2px 0}
+}

@@ -1,4 +1,4 @@
-// MATRICE — prototype UX/UI V6 (tableau de bord Bento, navigation Liquid Glass, préférences, panneau latéral).
+// MATRICE — prototype UX/UI V6.1 (tableau de bord Bento, navigation Liquid Glass, préférences, panneau latéral).
 // JavaScript natif, sans framework ni dépendance chargée en ligne. Données : js/data.js (fictives).
 // Préférences : stockage local de ce navigateur uniquement (arbitrage A12) — aucune base, aucun service réel.
 (() => {
@@ -37,7 +37,7 @@
     palette: 'lagoon', bgLight: 'glacier', textSize: 1, weight: 'normal', leading: 'normal', tracking: 'normal', contrast: 'normal', zebra: true, glass: true, motion: true, mini: false, owner: true,
   });
   function load(){
-    try { const raw = localStorage.getItem(KEY); if (raw){ const v = JSON.parse(raw); return migrate({ ...DEFAULTS(), ...v, density: { ...DEFAULTS().density, ...(v.density || {}) } }); } }
+    try { const raw = localStorage.getItem(KEY); if (raw){ const v = JSON.parse(raw); return migrate({ ...DEFAULTS(), ...v, layout: v.layout || 0, density: { ...DEFAULTS().density, ...(v.density || {}) } }); } }
     catch { /* stockage indisponible : réglages par défaut */ }
     return DEFAULTS();
   }
@@ -45,7 +45,7 @@
   function migrate(v){
     const known = DEFAULTS().blocks, map = b => b === 'cachets' ? ['finances'] : b === 'suivis' ? ['pipeline', 'relances'] : [b];
     v.blocks = [...new Set((v.blocks || []).flatMap(map).filter(b => known.includes(b)))];
-    if ((v.layout || 0) < 6){ v.blocks = [...known]; v.layout = 6; }   // V6 : ordre des colonnes Bento (Modules retiré du tableau de bord)
+    v.blocks = [...known]; v.layout = 6;   // ordre fixé par le Bento validé (V6.1) : seuls les blocs masqués restent personnalisables
     known.forEach(b => { if (!v.blocks.includes(b)) v.blocks.push(b); });
     v.hiddenBlocks = (v.hiddenBlocks || []).flatMap(map).filter(b => known.includes(b));
     if (!['apple', 'glacier', 'mineral'].includes(v.bgLight)) v.bgLight = 'glacier';
@@ -157,7 +157,7 @@
     const sc = P.shortcuts.map(tabById).filter(t => t && allowed(t)).slice(0, 4);
     const inSc = sc.some(t => t.id === S.tab);
     $('#bottom').innerHTML = `<div class="bottom-bar glassy">${sc.map(t => `<a href="#${t.id}" data-go="${t.id}" ${S.tab === t.id ? 'aria-current="page"' : ''}>${icon(t.icon)}<span class="lbl">${esc(t.label)}</span></a>`).join('')}
-      <button type="button" data-act="sheet" aria-haspopup="dialog" ${inSc ? '' : 'aria-current="page"'}>${icon('layout-grid')}<span class="lbl">Modules</span></button></div>`;
+      <button type="button" class="bb-open" data-act="sheet" aria-haspopup="dialog" aria-expanded="false">${icon('layout-grid')}<span class="lbl">Modules</span>${inSc ? '' : `<span class="bb-here" aria-hidden="true"></span><span class="sr"> (page actuelle : ${esc(tabById(S.tab)?.label || '')})</span>`}</button></div>`;
   }
 
   // ───────────────────────── Pages
@@ -204,25 +204,39 @@
   }
   // Bento Mac : 3 colonnes indépendantes (gauche 31 %, centre 27 %, droite 42 %), sans hauteurs alignées de force
   const COL = { dates: 0, billetterie: 0, taches: 1, relances: 1, pipeline: 1, finances: 2, messages: 2 };
-  const col = (blocks, c) => `<div class="col col-${c}">${blocks.filter(b => COL[b] === c).map(b => `<section class="card blk blk-${b}" aria-labelledby="h-${b}">${BLOCK[b]()}</section>`).join('')}</div>`;
+  const col = (blocks, c) => `<div class="col col-${c}">${DEFAULTS().blocks.filter(b => COL[b] === c && blocks.includes(b)).map(b => `<section class="card blk blk-${b}" aria-labelledby="h-${b}">${BLOCK[b]()}</section>`).join('')}</div>`;
   // Marqueur de section : pictogramme linéaire sur un petit support teinté par la palette
   const MARK = { dates: 'calendar-days', billetterie: 'ticket', taches: 'circle-check', relances: 'refresh-cw', pipeline: 'chart-column', finances: 'chart-spline', messages: 'mail' };
   const cardHead = (id, title, count, tools = '') => `<div class="card-head">${MARK[id] ? `<span class="sec-mk" aria-hidden="true">${icon(MARK[id])}</span>` : ''}<h2 id="h-${id}">${esc(title)}</h2>${count != null ? `<span class="count">${count}</span>` : ''}<span class="grow"></span>${tools}</div>`;
   const goBtn = (id, label) => `<a class="btn ghost sm go" href="#${id}" data-go="${id}" title="Ouvrir ${esc(label)}">${esc(label)}${icon('chevron-right', 'sm')}</a>`;
   const viewToggle = key => `<div class="chart-tools" role="group" aria-label="Affichage">
     <button class="btn sm icon" type="button" data-act="view" data-k="${key}" data-v="chart" aria-pressed="${S.views[key] === 'chart'}" aria-label="Graphique" title="Graphique">${icon('chart-line', 'sm')}</button>
-    <button class="btn sm icon" type="button" data-act="view" data-k="${key}" data-v="table" aria-pressed="${S.views[key] === 'table'}" aria-label="Tableau des valeurs" title="Tableau des valeurs">${icon('table-2', 'sm')}</button></div>`;
+    <button class="btn sm icon" type="button" data-act="view" data-k="${key}" data-v="table" aria-pressed="${S.views[key] === 'table'}" aria-label="Tableau des valeurs" title="Tableau des valeurs">${icon('table-2', 'sm')}</button></div>
+    <button class="vt-1" type="button" data-act="view" data-k="${key}" data-v="${S.views[key] === 'chart' ? 'table' : 'chart'}" aria-label="${S.views[key] === 'chart' ? 'Afficher le tableau des valeurs' : 'Afficher le graphique'}">${icon(S.views[key] === 'chart' ? 'table-2' : 'chart-line', 'sm')}</button>`;
 
   // 3.1 Booking — bloc signature : dégradé de la palette, courbe organique translucide, 4 indicateurs sur une ligne
-  // V6 « Liquid Flow » : ruban translucide avec liseré lumineux, seconde courbe discrète pour le relief
+  // V6.1 « Liquid Flow » : vague organique translucide en trois couches colorées (teintes de la palette),
+  // ombre portée sous la vague pour le volume, reflet lumineux fin sur la crête. Couleurs : jetons --lf-* (tokens.css).
+  const WAVE_BACK = 'M0 112 C 140 96, 250 46, 420 58 C 600 70, 690 150, 880 140 C 1030 132, 1110 64, 1200 52 L1200 200 L0 200 Z';
+  const WAVE_MID = 'M0 150 C 170 142, 300 84, 470 92 C 650 100, 740 176, 930 160 C 1060 150, 1140 104, 1200 98 L1200 200 L0 200 Z';
+  const WAVE_FRONT = 'M0 182 C 200 178, 340 128, 520 136 C 700 144, 800 196, 980 184 C 1090 177, 1160 150, 1200 146 L1200 200 L0 200 Z';
+  const crest = d => d.replace(/ L1200 200 L0 200 Z$/, '');
   const HERO_CURVE = `<svg class="hero-curve" viewBox="0 0 1200 200" preserveAspectRatio="none" aria-hidden="true">
-    <defs><linearGradient id="hf-band" class="hf-band" x1="0" x2="1" y1="0" y2="0"><stop offset="0"/><stop offset=".45"/><stop offset="1"/></linearGradient>
-      <linearGradient id="hf-edge" class="hf-edge" x1="0" x2="1" y1="0" y2="0"><stop offset="0"/><stop offset=".35"/><stop offset=".7"/><stop offset="1"/></linearGradient>
-      <linearGradient id="hf-depth" class="hf-depth" x1="0" x2="0" y1="0" y2="1"><stop offset="0"/><stop offset="1"/></linearGradient></defs>
-    <rect class="hf-shadow" x="0" y="0" width="1200" height="200" fill="url(#hf-depth)"/>
-    <path class="hf-ribbon" fill="url(#hf-band)" d="M0 128 C 170 120, 300 58, 470 70 S 760 168, 960 118 S 1130 30, 1200 26 L1200 70 C 1120 86, 1010 160, 900 170 S 640 132, 480 120 S 180 176, 0 186 Z"/>
-    <path class="hf-edge-l" stroke="url(#hf-edge)" d="M0 128 C 170 120, 300 58, 470 70 S 760 168, 960 118 S 1130 30, 1200 26"/>
-    <path class="hf-echo" d="M0 160 C 200 158, 330 104, 500 108 S 800 196, 990 150 S 1140 78, 1200 80"/></svg>`;
+    <defs>
+      <linearGradient id="lf-back" class="lf-g lf-back" x1="0" x2="1" y1="0" y2="0"><stop offset="0"/><stop offset=".5"/><stop offset="1"/></linearGradient>
+      <linearGradient id="lf-mid" class="lf-g lf-mid" x1="0" x2="1" y1="0" y2=".4"><stop offset="0"/><stop offset=".55"/><stop offset="1"/></linearGradient>
+      <linearGradient id="lf-front" class="lf-g lf-front" x1="0" x2="1" y1="0" y2="0"><stop offset="0"/><stop offset="1"/></linearGradient>
+      <linearGradient id="lf-vol" class="lf-g lf-vol" x1="0" x2="0" y1="0" y2="1"><stop offset="0"/><stop offset=".35"/><stop offset="1"/></linearGradient>
+      <linearGradient id="lf-shine" class="lf-g lf-shine" x1="0" x2="1" y1="0" y2="0"><stop offset="0"/><stop offset=".3"/><stop offset=".62"/><stop offset="1"/></linearGradient>
+      <filter id="lf-soft" x="-.05" y="-.3" width="1.1" height="1.6"><feGaussianBlur stdDeviation="7 5"/></filter>
+    </defs>
+    <path class="lf-shadow" d="${WAVE_MID}" filter="url(#lf-soft)" transform="translate(0 -6)"/>
+    <path fill="url(#lf-back)" d="${WAVE_BACK}"/>
+    <path fill="url(#lf-vol)" d="${WAVE_BACK}"/>
+    <path fill="url(#lf-mid)" d="${WAVE_MID}"/>
+    <path fill="url(#lf-front)" d="${WAVE_FRONT}"/>
+    <path class="lf-crest" stroke="url(#lf-shine)" d="${crest(WAVE_BACK)}"/>
+    <path class="lf-crest lf-crest-2" stroke="url(#lf-shine)" d="${crest(WAVE_MID)}"/></svg>`;
   function hero(){
     const kpis = P.kpis.map(k => D.KPIS[k]).filter(Boolean);
     const pr = D.PROFILES[P.profile];
@@ -349,7 +363,8 @@
     if (!P.owner) return cardHead('messages', 'Messagerie') + `<p class="empty">Boîte réservée à son titulaire : ce bloc et l’onglet Mails sont masqués pour ce compte.</p>`;
     const C = D.MAIL_COUNTS;
     return cardHead('messages', 'Messagerie', null, goBtn('mails', 'Mails'))
-      + `<p class="mx-line"><a class="mx-unread" href="#mails" data-go="mails">${C.unread} non lus</a><span aria-hidden="true">·</span><a href="#mails" data-go="mails">${C.reply} à répondre</a><span aria-hidden="true">·</span><a href="#mails" data-go="mails">${C.link} à rattacher</a></p>`
+      + `<div class="mx-tiles">${[['unread', C.unread, 'Non lus'], ['reply', C.reply, 'À répondre'], ['link', C.link, 'À rattacher']].map(([k, n, l]) =>
+          `<a class="mxt mxt-${k}" href="#mails" data-go="mails"><span class="mxt-n">${n}</span><span class="mxt-l">${l}</span></a>`).join('')}</div>`
       + `<ul class="mx">${D.MESSAGES.map(m => `<li class="mx-row ${m.unread ? 'is-unread' : ''}"><span class="av av-${avTone(m.from)}" aria-hidden="true">${esc(initials(m.from))}</span>
           <span class="mx-b"><span class="mx-1"><span class="mx-f">${esc(m.from)} <span class="mx-o">· ${esc(m.org)}</span></span><span class="mx-at">${esc(m.at)}</span></span>
           <span class="mx-s">${esc(m.subj)}</span><span class="mx-p">${esc(m.proj)}</span></span>${m.unread ? '<span class="mx-dot"><span class="sr">Non lu</span></span>' : '<span></span>'}</li>`).join('')}</ul>`;
@@ -543,10 +558,8 @@
   function customizeBody(){
     const opts = cur => Object.entries(D.KPIS).map(([k, v]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${esc(v.label)}</option>`).join('');
     return `<div class="pnl-sec"><h3>Indicateurs du bloc principal</h3>${P.kpis.map((k, i) => `<label class="field"><span>Indicateur ${i + 1}</span><select class="input" id="kpi-${i}" data-kpi="${i}">${opts(k)}</select></label>`).join('')}</div>
-      <div class="pnl-sec"><h3>Blocs</h3><ul class="order-list">${P.blocks.map((b, i) => { const off = P.hiddenBlocks.includes(b);
+      <div class="pnl-sec"><h3>Blocs</h3><p class="hint">L’ordre suit la grille validée ; chaque bloc peut être masqué.</p><ul class="order-list">${DEFAULTS().blocks.map(b => { const off = P.hiddenBlocks.includes(b);
         return `<li class="${off ? 'off' : ''}"><span class="t">${esc(D.BLOCKS[b])}</span>
-          <button class="btn ghost sm icon" type="button" data-act="move" data-kind="blocks" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Monter ${esc(D.BLOCKS[b])}">${icon('arrow-up', 'sm')}</button>
-          <button class="btn ghost sm icon" type="button" data-act="move" data-kind="blocks" data-i="${i}" data-d="1" ${i === P.blocks.length - 1 ? 'disabled' : ''} aria-label="Descendre ${esc(D.BLOCKS[b])}">${icon('arrow-down', 'sm')}</button>
           <button class="btn ghost sm icon" type="button" data-act="hideBlock" data-id="${b}" aria-pressed="${off}" aria-label="${off ? 'Afficher' : 'Masquer'} ${esc(D.BLOCKS[b])}">${icon(off ? 'eye-off' : 'eye', 'sm')}</button></li>`; }).join('')}</ul></div>
       <p class="hint">Enregistré automatiquement. Contenu définitif des indicateurs à confirmer selon le métier et les données disponibles.</p>`;
   }
@@ -583,6 +596,7 @@
       </div>
       <div class="sheet-foot"><span class="nav-item" aria-hidden="true"><span class="avatar">A</span><span class="lbl muted">Anthony · compte de démonstration</span></span></div></div>`;
     dlg.showModal(); $('.dlg-head h2', dlg).focus();
+    $('.bb-open')?.setAttribute('aria-expanded', 'true'); dlg.addEventListener('close', () => $('.bb-open')?.setAttribute('aria-expanded', 'false'), { once: true });
   }
   // Recherche globale (A11) : Cmd/Ctrl + K hors des éditeurs de texte
   function searchItems(){
@@ -702,7 +716,8 @@
     moreDates: () => { S.datesAll = !S.datesAll; renderMain(); const b = $('[data-act="moreDates"]'); b?.focus(); if (S.datesAll) $('.tl-ev.more')?.focus(); },
     due: () => toast('Factures échues non soldées : parcours à raccorder aux fonctionnalités existantes', 'info'),
     date: b => openDate(b.dataset.id),
-    view: b => { S.views[b.dataset.k] = b.dataset.v; S.sel = null; renderMain(); $(`[data-act="view"][data-k="${b.dataset.k}"][data-v="${b.dataset.v}"]`)?.focus(); },
+    view: b => { const one = b.classList.contains('vt-1'); S.views[b.dataset.k] = b.dataset.v; S.sel = null; renderMain();
+      (one ? $(`.vt-1[data-k="${b.dataset.k}"]`) : $(`.chart-tools [data-k="${b.dataset.k}"][data-v="${b.dataset.v}"]`))?.focus(); },
     pin: b => { const id = b.dataset.id, on = P.shortcuts.includes(id);
       P.shortcuts = on ? P.shortcuts.filter(x => x !== id) : [...P.shortcuts, id]; P.profile = 'perso'; save(); renderSide(); renderBottom(); renderMain();
       $(`[data-act="pin"][data-id="${id}"]`)?.focus(); toast(on ? 'Retiré des raccourcis' : 'Ajouté aux raccourcis'); },

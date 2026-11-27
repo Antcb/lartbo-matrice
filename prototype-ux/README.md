@@ -1,4 +1,4 @@
-# MATRICE — prototype UX/UI V6 « Bento × Liquid Glass »
+# MATRICE — prototype UX/UI V6.1 « Bento × Liquid Glass »
 
 Branche `ux/refonte-uxui`, créée depuis `main` au commit `ee1f806` (v1.68.3, 26/11/2026). `main` inchangée depuis.
 Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (arbitrage A2). `DESIGN_SYSTEM.md` reste celui de `main`.
@@ -10,6 +10,16 @@ Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (a
 - Aucune connexion : ni Supabase, ni Google, ni Pennylane, ni Brevo. Aucun appel réseau.
 - Préférences gardées dans le stockage local du navigateur, sous une clé propre (`matrice-proto.prefs.v1`), conformément à l'arbitrage A12.
 - GitHub Pages ne publie que `main` : ce dossier n'est pas en ligne depuis le dépôt. La démonstration est hébergée à part (lien transmis dans le compte rendu).
+
+## V6.1 (27/11/2026) — finitions ciblées
+
+- Bandeau Booking : vraie vague organique en trois couches colorées (teintes de la palette), volume et reflet de crête ; contraste ≥ 5:1 sous les lettres.
+- Colonne centrale toujours Tâches > Relances prioritaires > Suivis actifs : correction de la reprise des préférences (une ancienne préférence locale inversait l'ordre) ; ordre fixé par la grille, blocs seulement masquables.
+- Messagerie : trois tuiles identiques (Non lus, À répondre, À rattacher). Suivis actifs : barres élargies.
+- Barre latérale Mac en clair : verre plus naturel, halo turquoise atténué.
+- Menu Modules : tableau de bord visible et assombri au-dessus ; fond opaque limité à la surface du menu.
+- Barre du bas iPhone : « Modules » n'est plus jamais sélectionné ; un point signale une page hors barre.
+- iPhone : bouton « Afficher 4 dates de plus » et sélecteur graphique/tableau allégés, zones tactiles de 44 px conservées.
 
 ## V6 (27/11/2026) — Bento, Liquid Flow, Liquid Glass
 
