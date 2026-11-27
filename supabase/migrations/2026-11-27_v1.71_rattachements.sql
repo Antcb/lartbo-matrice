@@ -72,6 +72,9 @@ create table if not exists public.factures_remplacees (
   detache_at timestamptz, detache_par text, detache_motif text,
   constraint factures_remplacees_detache check ((detache_at is null) = (detache_motif is null))
 );
+-- rejouable sur une base déjà en v1.71.0 (relecture) : colonnes ajoutées par la suite
+alter table public.factures_remplacees add column if not exists drive_file_id text;
+alter table public.factures_remplacees add column if not exists reemise_drive_file_id text;
 create unique index if not exists factures_remplacees_active on public.factures_remplacees (pennylane_id) where detache_at is null;
 create index if not exists factures_remplacees_payment on public.factures_remplacees (payment_id);
 comment on table public.factures_remplacees is 'v1.71 (L2b) : facture d''origine remplacée par une facture réémise (la ligne suit la réémission) ; gardée visible';
@@ -91,6 +94,7 @@ create table if not exists public.virements_groupes (
   created_at timestamptz not null default now(),
   created_by text
 );
+alter table public.virements_groupes alter column transaction_id set not null;   -- (v1.71.0 : facultatif) ; échoue s'il en manquait un
 comment on table public.virements_groupes is 'v1.71 (L2b) : virement couvrant plusieurs factures, réparti à la main (reglements.virement_groupe_id) ; cumul jamais au-delà du montant (R3)';
 alter table public.virements_groupes enable row level security;
 drop policy if exists team_read on public.virements_groupes;
@@ -385,7 +389,9 @@ begin
 end $$;
 
 -- ─── 3. virements groupés : créer, affecter (équipe) ─────────────────────────────────────────────────────────────────────────
-create or replace function public.virement_groupe_creer(p_montant numeric, p_date date, p_reference text, p_transaction_id text) returns public.virements_groupes
+-- (v1.71.0 : identifiant facultatif, avec valeur par défaut) recréée sans valeur par défaut
+drop function if exists public.virement_groupe_creer(numeric, date, text, text);
+create function public.virement_groupe_creer(p_montant numeric, p_date date, p_reference text, p_transaction_id text) returns public.virements_groupes
  language plpgsql security definer set search_path = public, pg_temp
 as $$
 declare v public.virements_groupes; t text := nullif(btrim(p_transaction_id), '');

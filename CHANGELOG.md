@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.71.2 — 27/11/2026
+- L2b : migration rejouable sur une base déjà en v1.71.0 ; écart d'un rattachement manuel calculé sur les seules réémissions actives (même règle que le serveur)
+
+
 ## 1.71.1 — 27/11/2026
 - L2b, ajustements : PDF de la facture réémise rangé à côté de l'ancien, identifiant Pennylane exigé pour un virement groupé, montant d'un virement jamais sous le total attribué, rattachement manuel contredit par Pennylane signalé « À vérifier »
 
