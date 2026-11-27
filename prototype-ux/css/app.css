@@ -676,7 +676,6 @@ main{padding:0 var(--pad-main) calc(var(--pad-main) * 1.5)}
 .bar-f{width:min(100%,34px);height:calc(var(--h,0) * 56px);min-height:3px;border-radius:6px 6px 2px 2px;background:var(--bc);box-shadow:inset 0 1px 0 rgb(255 255 255 / .35)}
 .bar-l{font-size:var(--fs-small);color:var(--c-ink-2);text-align:center;line-height:1.2}
 .b-Mailed{--bc:var(--c-off)} .b-Interest{--bc:var(--c-info)} .b-Option{--bc:var(--c-warn)}
-.bar:last-child .bar-f{background:linear-gradient(180deg,var(--p2),var(--p1))}
 .rl{list-style:none;margin:0;padding:0 0 4px}
 .rl-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:2px 6px;align-items:center;padding:6px 8px 6px var(--pad);border-top:1px solid var(--hair);color:inherit;text-decoration:none;min-height:max(var(--row-h),var(--touch))}
 .rl li:first-child .rl-row{border-top:0}
@@ -774,3 +773,94 @@ main{padding:0 var(--pad-main) calc(var(--pad-main) * 1.5)}
 .pref-card{grid-template-columns:minmax(0,1fr)}
 .pref-card>*{min-width:0}
 .pref-card .btn{white-space:normal;text-align:left;padding-block:4px}
+
+/* =====================================================================
+   V6 — Bento Mac, Liquid Flow, Liquid Glass, menu Modules sobre, marqueurs de section
+   ===================================================================== */
+
+/* Bento : 3 colonnes indépendantes (31 / 27 / 42 %), aucune hauteur imposée entre colonnes */
+.bento{display:grid;gap:var(--gap);grid-template-columns:minmax(0,31fr) minmax(0,27fr) minmax(0,42fr);align-items:start}
+.bento .pair{display:contents}
+.bento .col{display:flex;flex-direction:column;gap:var(--gap);min-width:0}
+.bento .col:empty{display:none}
+@container page (max-width: 1099px){
+  .bento{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr)}
+  .bento .pair{display:flex;flex-direction:column;gap:var(--gap);min-width:0}
+}
+@container page (max-width: 760px){ .bento{grid-template-columns:minmax(0,1fr)} }
+
+/* Titres de section en Geist + marqueur pictographique teinté par la palette */
+.card-head h2{font-family:var(--font-ui);font-size:var(--fs-section);font-weight:600;letter-spacing:-.008em}
+.sec-mk{flex:none;width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:var(--accent-tint);color:var(--accent-ink);margin-right:2px}
+.sec-mk .ico{width:13px;height:13px;stroke-width:1.9}
+.card-head{padding-left:calc(var(--pad) - 4px)}
+
+/* Bandeau Booking — Liquid Flow */
+.hf-band stop:nth-child(1){stop-color:var(--hf-band-0)} .hf-band stop:nth-child(2){stop-color:var(--hf-band-1)} .hf-band stop:nth-child(3){stop-color:var(--hf-band-2)}
+.hf-edge stop:nth-child(1){stop-color:var(--hf-edge-0)} .hf-edge stop:nth-child(2){stop-color:var(--hf-edge-1)} .hf-edge stop:nth-child(3){stop-color:var(--hf-edge-2)} .hf-edge stop:nth-child(4){stop-color:var(--hf-edge-3)}
+.hf-depth stop:nth-child(1){stop-color:var(--hf-depth-0)} .hf-depth stop:nth-child(2){stop-color:var(--hf-depth-1)}
+.hf-edge-l{fill:none;stroke-width:1.25;vector-effect:non-scaling-stroke}
+.hf-echo{fill:none;stroke:var(--hf-echo);stroke-width:1;vector-effect:non-scaling-stroke}
+.hero{box-shadow:var(--hero-shadow),inset 0 0 0 .5px rgb(255 255 255 / .12)}
+
+/* Liquid Glass — navigation uniquement (barre latérale, barre flottante, menu Modules) */
+:root[data-glass="on"] .glassy{box-shadow:var(--glass-depth),var(--glass-shadow)}
+.app::before{background:radial-gradient(360px 420px at 0% 4%, var(--amb-1), transparent 70%), radial-gradient(300px 360px at 10% 55%, var(--amb-2), transparent 70%), radial-gradient(340px 380px at 0% 100%, var(--amb-1), transparent 70%)}
+@media (max-width:760px){
+  .app::before{background:radial-gradient(70% 90px at 30% 100%, var(--amb-1), transparent 100%), radial-gradient(55% 80px at 80% 100%, var(--amb-2), transparent 100%)}
+}
+/* élément actif : lentille discrète */
+.side .nav-item[aria-current="page"]::before{content:none}
+:root[data-glass="on"] .side .nav-item[aria-current="page"],
+:root[data-glass="on"] .bottom-bar [aria-current="page"]{background:var(--lens-bg),var(--accent-tint);box-shadow:var(--lens-edge)}
+@media (max-width:760px){
+  .bottom-bar [aria-current="page"]::before{content:none}
+  .bottom-bar [aria-current="page"]{border-radius:16px}
+  :root[data-glass="off"] .bottom-bar [aria-current="page"]{background:var(--accent-tint)}
+}
+/* menus posés sur des données, recherche : surface opaque */
+.solid{background:var(--c-surface);box-shadow:var(--shadow-float)}
+:root[data-appearance="dark"] .solid{background:#2B2C31}
+
+/* Menu Modules (iPhone) : voile opaque derrière le verre, aucune donnée visible au travers */
+dialog.sheet{height:100dvh;max-height:none;margin:0;inset:0;display:none;flex-direction:column;justify-content:flex-end;padding:0;transform:none;
+  background:radial-gradient(70% 38% at 18% 78%, var(--amb-1), transparent 72%), radial-gradient(70% 34% at 88% 92%, var(--amb-2), transparent 72%), radial-gradient(60% 30% at 60% 70%, var(--amb-2), transparent 72%), radial-gradient(90% 45% at 30% 98%, var(--amb-1), transparent 72%), var(--c-bg);transition:opacity var(--d-panel) var(--ease)}
+dialog.sheet[open]{display:flex}
+dialog.sheet::backdrop{background:transparent}
+@starting-style{ dialog.sheet[open]{transform:none;opacity:0} dialog.sheet[open]>.box{transform:translateY(40px)} }
+dialog.sheet.closing{transform:none;opacity:0}
+dialog.sheet>.box{transition:transform var(--d-panel) var(--ease);border-radius:24px 24px 0 0}
+dialog.sheet.closing>.box{transform:translateY(100%)}
+:root[data-glass="off"] dialog.sheet>.box{background:var(--c-surface)}
+
+/* Modules — Apple × Teenage Engineering : supports neutres, accent réservé au module actif, un seul contour fin */
+.mt,.sheet-nav .mt{background:rgb(255 255 255 / .62);box-shadow:inset 0 0 0 .5px var(--hair-strong);border-radius:12px}
+:root[data-appearance="dark"] .mt,:root[data-appearance="dark"] .sheet-nav .mt{background:rgb(255 255 255 / .05)}
+:root[data-glass="off"] .sheet-nav .mt{background:var(--c-surface-2)}
+.mt-i{background:var(--c-surface-2);color:var(--c-ink-2);box-shadow:inset 0 0 0 .5px var(--hair-strong);border-radius:9px}
+.mt-i .ico{stroke-width:1.6}
+.mt[aria-current],.sheet-nav .mt[aria-current]{background:rgb(255 255 255 / .62);box-shadow:inset 0 0 0 1px var(--accent)}
+:root[data-appearance="dark"] .mt[aria-current],:root[data-appearance="dark"] .sheet-nav .mt[aria-current]{background:rgb(255 255 255 / .05)}
+.mt[aria-current] .mt-i{background:var(--accent-tint);color:var(--accent-ink);box-shadow:none}
+.mt:hover{background:rgb(255 255 255 / .8)}
+.sheet-search{background:rgb(255 255 255 / .55);box-shadow:inset 0 0 0 .5px var(--hair-strong)}
+:root[data-appearance="dark"] .sheet-search{background:rgb(255 255 255 / .06)}
+
+/* Prochaines dates : 4 dates sur iPhone, accès aux suivantes */
+.tl-more{display:none}
+@media (max-width:760px){
+  .tl:not(.all) .more{display:none}
+  .tl:not(.all) .tl-ev:has(+ .tl-ev.more) .tl-axis::before{bottom:auto;height:12px}
+  .tl-more{display:flex;align-items:center;justify-content:center;gap:4px;width:calc(100% - var(--pad) * 2);margin:0 var(--pad) 10px;min-height:var(--touch);
+    border:0;border-radius:10px;background:var(--c-surface-2);box-shadow:inset 0 0 0 .5px var(--hair);color:var(--accent-ink);font:inherit;font-size:var(--fs-small);font-weight:500;cursor:pointer}
+  .tl-more .ico{width:14px;height:14px}
+}
+
+/* Suivis actifs : 3 barres identiques, ligne de base commune, libellés alignés */
+.pipe{grid-template-columns:minmax(0,1fr);gap:8px;align-items:start}
+.pipe-tot{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px;max-width:none}
+.bars{grid-auto-flow:row;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;align-items:start}
+.bar{grid-template-rows:auto auto;gap:6px;justify-items:stretch}
+.bar-c{height:calc(56px + var(--fs-small) * 1.5 + 4px);box-shadow:0 1px 0 var(--hair-strong)}
+.bar-f{width:32px;flex:none}
+.bar-l{white-space:nowrap;text-align:center;align-self:start}

@@ -59,8 +59,8 @@ window.MATRICE_DATA = (() => {
 
   // Sections du tableau de bord (V5) : chacune sa composition
   const BLOCKS = {
-    dates: 'Prochaines dates', finances: 'Finances', taches: 'Tâches', billetterie: 'Billetterie',
-    pipeline: 'Suivis actifs', relances: 'Relances prioritaires', messages: 'Messagerie', modules: 'Modules',
+    dates: 'Prochaines dates', billetterie: 'Billetterie', taches: 'Tâches', relances: 'Relances prioritaires',
+    pipeline: 'Suivis actifs', finances: 'Finances', messages: 'Messagerie',
   };
 
   // Les 10 statuts de MATRICE + « sans statut » (11 représentations distinctes, arbitrage A4)
@@ -117,8 +117,9 @@ window.MATRICE_DATA = (() => {
     { s: 'Café des Rives', city: 'Angers', proj: 'Orchestre de Minuit', st: 'Mail envoyé', due: '2026-12-03' },
   ];
 
-  // Messagerie (boîte du titulaire) : compteurs existants de l'onglet Mails (« Non lus », « À rattacher ») ; « à répondre » n'existe pas
-  const MAIL_COUNTS = { unread: 8, link: 3 };
+  // Messagerie (boîte du titulaire) : « Non lus » et « À rattacher » existent dans l'onglet Mails.
+  // « À répondre » : valeur fictive d'affichage seulement ; sa règle métier sera définie plus tard (aucun calcul ici).
+  const MAIL_COUNTS = { unread: 8, reply: 4, link: 3 };
   const MESSAGES = [
     { from: 'Camille Rouet', org: 'Le Grand Kiosque', subj: 'Re : proposition de date en mars', proj: 'Frères Cobalt', at: '09:42', unread: true },
     { from: 'Hugo Ménard', org: 'Théâtre du Rempart', subj: 'Fiche technique et plan de feu', proj: 'Nadia Ferrant Trio', at: '08:15', unread: true },

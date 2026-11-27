@@ -1,4 +1,4 @@
-# MATRICE — prototype UX/UI V5 « Backstage »
+# MATRICE — prototype UX/UI V6 « Bento × Liquid Glass »
 
 Branche `ux/refonte-uxui`, créée depuis `main` au commit `ee1f806` (v1.68.3, 26/11/2026). `main` inchangée depuis.
 Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (arbitrage A2). `DESIGN_SYSTEM.md` reste celui de `main`.
@@ -10,6 +10,15 @@ Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (a
 - Aucune connexion : ni Supabase, ni Google, ni Pennylane, ni Brevo. Aucun appel réseau.
 - Préférences gardées dans le stockage local du navigateur, sous une clé propre (`matrice-proto.prefs.v1`), conformément à l'arbitrage A12.
 - GitHub Pages ne publie que `main` : ce dossier n'est pas en ligne depuis le dépôt. La démonstration est hébergée à part (lien transmis dans le compte rendu).
+
+## V6 (27/11/2026) — Bento, Liquid Flow, Liquid Glass
+
+- Mac : bandeau Booking pleine largeur puis 3 colonnes indépendantes (31 / 27 / 42 %) : Prochaines dates + Billetterie ; Tâches + Relances prioritaires + Suivis actifs ; Finances + Messagerie. Bloc Modules retiré du tableau de bord.
+- Bandeau Booking « Liquid Flow » : dégradé plus profond, ruban translucide à liseré lumineux, seconde courbe discrète ; contraste ≥ 5,3:1 mesuré sous les lettres.
+- Liquid Glass sur la barre latérale, la barre flottante et le menu Modules (posé sur un voile opaque) ; lentille sur l'élément actif ; menus et recherche opaques car posés sur des données.
+- Menu Modules : supports neutres, accent réservé au module actif, un seul contour fin.
+- Marqueur pictographique teinté par section ; titres de section en Geist.
+- iPhone : 4 prochaines dates puis « Afficher N dates de plus ». Histogramme corrigé (barres identiques, base commune, libellés alignés). Messagerie : « à répondre » affiché avec une valeur fictive, sans règle.
 
 ## V5 (27/11/2026) — tableau de bord « Backstage »
 

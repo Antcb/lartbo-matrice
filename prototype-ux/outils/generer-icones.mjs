@@ -10,7 +10,7 @@ const NOMS = ['house', 'radio-tower', 'clapperboard', 'landmark', 'library', 'me
   'menu', 'panel-left-close', 'panel-left-open', 'chevron-down', 'chevron-right', 'chevron-up', 'star', 'x', 'plus', 'sun',
   'moon', 'monitor', 'clock', 'bell', 'arrow-up', 'arrow-down', 'eye', 'eye-off', 'user', 'check', 'table-2',
   'chart-column', 'chart-line', 'info', 'triangle-alert', 'circle-check', 'rotate-ccw', 'ellipsis', 'pencil',
-  'calendar-clock', 'trending-up', 'trending-down'];
+  'calendar-clock', 'trending-up', 'trending-down', 'chart-spline', 'refresh-cw'];
 
 const dossier = process.argv[2];
 if (!dossier) { console.error('Indiquer le dossier des icônes lucide-static'); process.exit(1); }

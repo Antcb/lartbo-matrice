@@ -1,5 +1,5 @@
 /* =====================================================================
-   MATRICE — jetons du design system (prototype UX/UI V5)
+   MATRICE — jetons du design system (prototype UX/UI V6)
    Source unique : fonds clairs (Blanc Apple, Blanc glacier, Argent minéral) et graphite, identités chromatiques
    (Electric Lagoon, Opal), couleurs fonctionnelles, tailles, rayons, ombres, verre, durées. Aucune valeur en dur ailleurs.
    Attributs posés sur <html> par js/app.js : data-appearance (light|dark), data-palette (lagoon|opal), data-bg (apple|glacier|mineral).
@@ -42,13 +42,15 @@
   --chart-fill-top: rgb(114 201 180 / .34); --chart-fill-bot: rgb(36 126 145 / 0);
   --glow: rgb(114 201 180 / .55);
   /* Bloc principal (Booking) : texte blanc ≥ 4,8:1 sur la zone la plus claire, courbe et lueurs comprises */
-  --hero: radial-gradient(70% 140% at 100% 100%, rgb(114 201 180 / .06), rgb(114 201 180 / 0) 70%), linear-gradient(118deg, #134652 0%, #1A5F6E 52%, #1E6C7E 100%);
+  --hero: radial-gradient(60% 130% at 12% 0%, rgb(114 201 180 / .10), rgb(114 201 180 / 0) 65%), linear-gradient(118deg, #0F3B46 0%, #165666 48%, #1C687A 100%);
   --hero-ink: #FFFFFF; --hero-ink-2: rgb(255 255 255 / .95); --hero-sep: rgb(255 255 255 / .16);
   --hero-halo: 0 0 1px rgb(19 70 82 / .9), 0 0 5px rgb(19 70 82 / .85), 0 0 10px rgb(19 70 82 / .5);   /* détache le texte du filet de la courbe */
-  --hc-shade: rgb(114 201 180 / .05); --hc-line: rgb(150 222 204 / .14); --hc-echo: rgb(255 255 255 / .06);
+  --hf-band-0: rgb(114 201 180 / .02); --hf-band-1: rgb(114 201 180 / .17); --hf-band-2: rgb(255 255 255 / .07);
+  --hf-edge-0: rgb(255 255 255 / .05); --hf-edge-1: rgb(190 240 226 / .62); --hf-edge-2: rgb(255 255 255 / .28); --hf-edge-3: rgb(190 240 226 / .55);
+  --hf-depth-0: rgb(255 255 255 / .04); --hf-depth-1: rgb(0 20 26 / .22); --hf-echo: rgb(150 222 204 / .2);
   --hero-shadow: 0 0 0 .5px rgb(19 70 82 / .4), inset 0 1px 0 rgb(255 255 255 / .16), 0 14px 30px -18px rgb(19 70 82 / .7);
   /* Lueur du socle, derrière la navigation en verre seulement */
-  --amb-1: rgb(36 126 145 / .16); --amb-2: rgb(114 201 180 / .22);
+  --amb-1: rgb(36 126 145 / .2); --amb-2: rgb(114 201 180 / .26);
 
   /* Couleurs fonctionnelles — indépendantes de la palette */
   --c-ok: #52755D; --c-warn: #B59A3B; --c-warn-ink: #846A1C; --c-err: #A55353; --c-err-ink: #943F3F; --c-info: #4F6E85; --c-off: #737873;
@@ -66,11 +68,15 @@
   --plan: rgb(28 38 48 / .09);
 
   /* Verre optique (navigation uniquement) : translucidité, reflet, liseré lumineux fin, ombre diffuse */
-  --glass-bg: rgb(250 252 253 / .5); --glass-strong: rgb(250 252 253 / .86);
-  --glass-blur: 30px; --glass-sat: 1.9; --glass-bright: 1.03;
-  --glass-sheen: linear-gradient(180deg, rgb(255 255 255 / .5) 0, rgb(255 255 255 / .1) 26%, rgb(255 255 255 / 0) 52%), radial-gradient(130% 50% at 0% 0%, rgb(255 255 255 / .35), rgb(255 255 255 / 0) 60%);
-  --glass-edge: linear-gradient(165deg, rgb(255 255 255 / .95) 0%, rgb(255 255 255 / .35) 28%, rgb(255 255 255 / .06) 55%, rgb(255 255 255 / .5) 100%);
-  --glass-shadow: 0 0 0 .5px rgb(20 40 50 / .07), 0 1px 1px rgb(20 40 50 / .04), 0 10px 28px -14px rgb(20 40 50 / .22), 0 40px 80px -40px rgb(20 40 50 / .26);
+  --glass-bg: rgb(255 255 255 / .36); --glass-strong: rgb(252 253 254 / .9);
+  --glass-blur: 22px; --glass-sat: 2.2; --glass-bright: 1.06;
+  --glass-sheen: linear-gradient(180deg, rgb(255 255 255 / .5) 0, rgb(255 255 255 / .1) 18%, rgb(255 255 255 / 0) 46%, rgb(255 255 255 / .08) 100%), radial-gradient(120% 40% at 10% 0%, rgb(255 255 255 / .4), rgb(255 255 255 / 0) 60%);
+  --glass-edge: linear-gradient(160deg, rgb(255 255 255 / 1) 0%, rgb(255 255 255 / .45) 22%, rgb(255 255 255 / .08) 50%, var(--glass-tint) 78%, rgb(255 255 255 / .75) 100%);
+  --glass-tint: rgb(114 201 180 / .55);   /* réfraction : le liseré prend une nuance de la palette */
+  --glass-depth: inset 0 1px 0 rgb(255 255 255 / .85), inset 0 -1px 1px rgb(255 255 255 / .3), inset 0 0 14px rgb(255 255 255 / .22);
+  --glass-shadow: 0 0 0 .5px rgb(20 40 50 / .08), 0 1px 2px rgb(20 40 50 / .05), 0 12px 30px -14px rgb(20 40 50 / .24), 0 44px 90px -40px rgb(20 40 50 / .3);
+  --lens-bg: radial-gradient(120% 170% at 50% -30%, rgb(255 255 255 / .9), rgb(255 255 255 / .38) 55%, rgb(255 255 255 / .16));
+  --lens-edge: inset 0 0 0 .5px rgb(255 255 255 / .95), inset 0 -1px 1.5px rgb(20 40 50 / .07), 0 1px 2px rgb(20 40 50 / .10), 0 4px 12px -5px rgb(20 40 50 / .25);
   --lens: var(--accent-tint);
   --lens-shadow: inset 0 0 0 .5px var(--accent-ring);
   --thumb: #FFFFFF;
@@ -120,9 +126,12 @@
   --hero: radial-gradient(70% 140% at 100% 100%, rgb(255 255 255 / .22), rgb(255 255 255 / 0) 70%), linear-gradient(118deg, #78B9AD 0%, #A6B5E8 55%, #D8A4C5 100%);
   --hero-ink: #1E1F22; --hero-ink-2: rgb(30 31 34 / .84); --hero-sep: rgb(30 31 34 / .14);
   --hero-halo: none;
-  --hc-shade: rgb(255 255 255 / .18); --hc-line: rgb(255 255 255 / .6); --hc-echo: rgb(255 255 255 / .3);
+  --hf-band-0: rgb(255 255 255 / .04); --hf-band-1: rgb(255 255 255 / .32); --hf-band-2: rgb(255 255 255 / .14);
+  --hf-edge-0: rgb(255 255 255 / .2); --hf-edge-1: rgb(255 255 255 / .95); --hf-edge-2: rgb(255 255 255 / .55); --hf-edge-3: rgb(255 255 255 / .9);
+  --hf-depth-0: rgb(255 255 255 / .16); --hf-depth-1: rgb(70 70 120 / .05); --hf-echo: rgb(255 255 255 / .42);
   --hero-shadow: 0 0 0 .5px rgb(120 140 190 / .35), inset 0 1px 0 rgb(255 255 255 / .4), 0 14px 30px -18px rgb(120 130 190 / .7);
-  --amb-1: rgb(166 181 232 / .30); --amb-2: rgb(216 164 197 / .24);
+  --amb-1: rgb(166 181 232 / .34); --amb-2: rgb(216 164 197 / .28);
+  --glass-tint: rgb(216 164 197 / .6);
 }
 
 /* Mode sombre — graphite de référence */
@@ -142,9 +151,13 @@
   --shadow-raise: 0 0 0 .5px rgb(255 255 255 / .08), 0 2px 6px -1px rgb(0 0 0 / .3), 0 18px 40px -14px rgb(0 0 0 / .6);
   --shadow-float: 0 0 0 .5px rgb(255 255 255 / .10), 0 6px 14px -4px rgb(0 0 0 / .4), 0 30px 64px -20px rgb(0 0 0 / .7);
   --scrim: rgb(0 0 0 / .5); --plan: rgb(236 236 238 / .12);
-  --glass-bg: rgb(50 52 58 / .5); --glass-strong: rgb(40 41 46 / .88);
+  --glass-bg: rgb(52 54 60 / .42); --glass-strong: rgb(40 41 46 / .92);
   --glass-sheen: linear-gradient(180deg, rgb(255 255 255 / .09) 0, rgb(255 255 255 / .02) 30%, rgb(255 255 255 / 0) 55%), radial-gradient(130% 50% at 0% 0%, rgb(255 255 255 / .06), rgb(255 255 255 / 0) 60%);
-  --glass-edge: linear-gradient(165deg, rgb(255 255 255 / .3) 0%, rgb(255 255 255 / .1) 28%, rgb(255 255 255 / .03) 55%, rgb(255 255 255 / .14) 100%);
+  --glass-edge: linear-gradient(160deg, rgb(255 255 255 / .38) 0%, rgb(255 255 255 / .12) 24%, rgb(255 255 255 / .03) 52%, var(--glass-tint) 80%, rgb(255 255 255 / .16) 100%);
+  --glass-tint: rgb(114 201 180 / .3);
+  --glass-depth: inset 0 1px 0 rgb(255 255 255 / .14), inset 0 -1px 1px rgb(255 255 255 / .04), inset 0 0 14px rgb(255 255 255 / .03);
+  --lens-bg: radial-gradient(120% 170% at 50% -30%, rgb(255 255 255 / .2), rgb(255 255 255 / .07) 55%, rgb(255 255 255 / .03));
+  --lens-edge: inset 0 0 0 .5px rgb(255 255 255 / .22), inset 0 -1px 1.5px rgb(0 0 0 / .25), 0 1px 2px rgb(0 0 0 / .3), 0 4px 12px -5px rgb(0 0 0 / .5);
   --glass-shadow: 0 0 0 .5px rgb(0 0 0 / .55), 0 2px 4px rgb(0 0 0 / .2), 0 18px 44px -14px rgb(0 0 0 / .6);
   --glass-bright: 1;
   --thumb: #3A3B41; --thumb-shadow: 0 0 0 .5px rgb(255 255 255 / .10), inset 0 1px 0 rgb(255 255 255 / .07), 0 1px 3px rgb(0 0 0 / .4);
@@ -157,6 +170,7 @@
   --chart-fill-top: rgb(166 181 232 / .30); --chart-fill-bot: rgb(216 164 197 / 0);
   --glow: rgb(166 181 232 / .65);
   --amb-1: rgb(166 181 232 / .16); --amb-2: rgb(216 164 197 / .10);
+  --glass-tint: rgb(216 164 197 / .3);
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-appearance]){ color-scheme: dark; --c-bg: #1E1F22; --c-surface: #27282C; --c-ink: #ECECEE; --c-ink-2: #B4B5BA; }
