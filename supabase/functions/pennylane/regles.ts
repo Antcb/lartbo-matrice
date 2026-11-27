@@ -154,10 +154,19 @@ export type AvoirExistant = { etat: string; payment_id: string | null; show_id: 
  *  d'origine (ou plus aucune) que celle du rattachement. Jamais de nouveau rattachement automatique ; signalé jusqu'à résolution.
  *  Même règle côté application : js/calc.js origineEcart. */
 export const origineEcart = (rattacheOrigine: unknown, origine: string | null) => plein(rattacheOrigine) && String(rattacheOrigine) !== String(origine ?? '');
+/** (v1.71, décision d'Anthony du 27/11/2026, 16 h 16) Rattachement MANUEL : écart seulement si Pennylane indique une facture d'origine
+ *  qui le contredit — ni l'origine déjà connue (ou confirmée) au rattachement, ni la facture que la ligne suit. Origine absente : aucun
+ *  signal. Même règle côté application : js/calc.js origineEcart (qui tient compte aussi des factures remplacées de la ligne). */
+export const ecartManuel = (existant: { payment_id?: string | null; rattache_origine?: string | null }, origine: string | null, lignes: LigneAvoir[],
+  remplacees: { payment_id: string; pennylane_id: string }[] = []) =>
+  plein(origine) && String(origine) !== String(existant?.rattache_origine ?? '')
+  && !lignes.some(l => l.id === existant?.payment_id && String(l.pennylane_id ?? '') === String(origine))
+  && !remplacees.some(f => f.payment_id === existant?.payment_id && String(f.pennylane_id) === String(origine));
 /** Ligne à enregistrer pour un avoir vu dans Pennylane. Champs Pennylane toujours mis à jour ; rattachement : un avoir déjà
  *  rattaché le reste (jamais déplacé en silence, origine du rattachement gardée) ; un avoir « À rattacher » est réexaminé à chaque
  *  synchronisation. */
-export function planAvoir(x: DocPl & { invoice_number?: unknown; date?: unknown; credited_invoice?: any }, existant: AvoirExistant, lignes: LigneAvoir[], vuLe: string) {
+export function planAvoir(x: DocPl & { invoice_number?: unknown; date?: unknown; credited_invoice?: any }, existant: AvoirExistant, lignes: LigneAvoir[], vuLe: string,
+  remplacees: { payment_id: string; pennylane_id: string }[] = []) {
   const origine = origineAvoir(x);
   const numeroOrigine = (x.credited_invoice && typeof x.credited_invoice === 'object' && plein(x.credited_invoice.invoice_number)) ? String(x.credited_invoice.invoice_number) : null;
   const pl = { pennylane_id: String(x.id), invoice_number: plein(x.invoice_number) ? String(x.invoice_number) : null, invoice_date: plein(x.date) ? String(x.date).slice(0, 10) : null,
@@ -165,8 +174,9 @@ export function planAvoir(x: DocPl & { invoice_number?: unknown; date?: unknown;
     credited_pennylane_id: origine, credited_invoice_number: numeroOrigine, pl_status: plein(x.status) ? String(x.status) : null, last_seen_at: vuLe, gone_at: null };
   // (v1.71, L2b, décision d'Anthony du 27/11/2026) décision MANUELLE (rattaché, corrigé, détaché ou classé « Hors MATRICE » à la
   // main) : jamais défaite par la synchronisation — état, ligne et motif gardés tels quels
+  // (27/11/2026, 16 h 16) rattachement manuel contredit par l'origine que Pennylane indique : « À vérifier » (ecartManuel), gardé
   if (existant?.rattache_mode === 'manuel') return { ...pl, etat: existant.etat, payment_id: existant.payment_id, show_id: existant.show_id, reason: existant.reason ?? null,
-    nouveau_rattachement: false, origine_changee: existant.etat === 'rattache' && origineEcart(existant.rattache_origine, origine) };
+    nouveau_rattachement: false, origine_changee: existant.etat === 'rattache' && ecartManuel(existant, origine, lignes, remplacees) };
   // déjà rattaché : gardé tel quel (rattache_origine non réécrite) ; écart d'origine signalé, jamais déplacé
   if (existant?.etat === 'rattache') return { ...pl, etat: 'rattache', payment_id: existant.payment_id, show_id: existant.show_id, reason: null, nouveau_rattachement: false,
     origine_changee: origineEcart(existant.rattache_origine, origine) };

@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.71.1 — 27/11/2026
+- L2b, ajustements : PDF de la facture réémise rangé à côté de l'ancien, identifiant Pennylane exigé pour un virement groupé, montant d'un virement jamais sous le total attribué, rattachement manuel contredit par Pennylane signalé « À vérifier »
+
+
 ## 1.71.0 — 27/11/2026
 - L2b : rattachements manuels — avoirs et documents sans origine (rattacher, corriger, détacher, Hors MATRICE, qualifier), facture réémise suivie par la ligne (option B), virements groupés répartis sans dépasser le virement
 

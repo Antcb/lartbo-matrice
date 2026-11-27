@@ -332,8 +332,11 @@ Deno.serve(async (req) => {
           if (error) throw new Error('Lecture des factures d’origine des avoirs impossible : ' + error.message);
           lignes.push(...(data || []));
         }
+        // (v1.71) factures remplacées par une réémission : une origine qui en est une concorde avec un rattachement manuel à leur ligne
+        const remplacees = ((await readAll(() => admin.from('factures_remplacees').select('id, payment_id, pennylane_id').is('detache_at', null))) || [])
+          .map((f: any) => ({ payment_id: String(f.payment_id), pennylane_id: String(f.pennylane_id) }));
         for (const x of avoirsPl) {
-          const { nouveau_rattachement, origine_changee, ...rec } = planAvoir(x, parId.get(String(x.id)), lignes, vuLe) as any;
+          const { nouveau_rattachement, origine_changee, ...rec } = planAvoir(x, parId.get(String(x.id)), lignes, vuLe, remplacees) as any;
           const { error: ea } = await admin.from('pennylane_avoirs').upsert({ ...rec, url: await invoicePage(x.id) || linkOf(x) }, { onConflict: 'pennylane_id' });
           if (ea) { erreurs.push(`Avoir ${x.invoice_number || x.id} : ${ea.message}`); continue; }
           avoirs.importes++; if (!parId.has(String(x.id))) avoirs.nouveaux++;
@@ -416,7 +419,7 @@ Deno.serve(async (req) => {
         const doute = doutesHisto.get(String(p.show_id)) || [];
         const plan = planEncaissement(x, av, vs, autresQue(pid), rs);
         if (plan.signal === 'a_verifier') { aVerifier.push(`${nom} : saisie manuelle non rapprochée et virement Pennylane de montant différent — rien de fait, rapprochement à vérifier`); return; }
-        if (plan.signal === 'non_etabli') { if (vs.length) aVerifier.push(`${nom} : virement(s) plus grand(s) que le reste dû, ou montant non établi (virement groupé ?) — rien de noté ; à répartir à la main (« Virement groupé… » sous la facture)`); return; }
+        if (plan.signal === 'non_etabli') { if (vs.length) aVerifier.push(`${nom} : virement(s) plus grand(s) que le reste dû, ou montant non établi (virement groupé ?) — rien de noté ; à répartir à la main (« Virement groupé… » sous la facture), identifiant Pennylane : ${vs.map((v: any) => `${v.id} (${Number.isFinite(Number(v.amount)) ? money(Number(v.amount)) + ' €' : 'montant ?'}${v.date ? ' le ' + frDate(String(v.date).slice(0, 10)) : ''})`).join(', ')}`); return; }
         if (plan.signal === 'deja_compte') { (av.length ? payeesAvecAvoir : payeesSansTransaction).push(`${nom} : virement déjà compté pour une autre ligne`); return; }
         const agit = plan.creer.length || plan.rapprocher.length || plan.paid_at;
         if (!agit) { if (isPaid) (av.length ? payeesAvecAvoir : payeesSansTransaction).push(`${nom} : aucun virement établi`); return; }

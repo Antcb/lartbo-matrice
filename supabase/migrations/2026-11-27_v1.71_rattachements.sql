@@ -12,6 +12,9 @@
 --     reste non attribué est permis et affiché ; le cumul des affectations ne dépasse JAMAIS le montant TTC du virement, contrôlé par
 --     la base à l'enregistrement (déclencheur, verrou sur le virement) — R3.
 --  4. avoir_couvert et reglement_couverture : RÉÉCRITES ENTIÈREMENT (gardes d'empreinte) — avoirs d'une facture remplacée exclus.
+--  5. Ajustements du 27/11/2026, 16 h 16 : PDF de chaque facture gardé avec elle (réémission) ; identifiant Pennylane du virement
+--     obligatoire ; montant d'un virement groupé jamais sous le total attribué ; rattachement manuel contredit par Pennylane :
+--     « À vérifier » persistant, gardé jusqu'à correction ou confirmation (avoir_confirmer, motif).
 -- Aucune donnée existante n'est modifiée. Aucun appel à Pennylane. Rejouable.
 -- Retour arrière : réappliquer avoir_couvert (v1.69) et reglement_couverture (v1.70) ; drop des fonctions et déclencheurs v1.71 ;
 -- tables et colonnes gardées (historique).
@@ -59,8 +62,10 @@ create table if not exists public.factures_remplacees (
   pennylane_id text not null,                 -- facture d'origine (remplacée)
   invoice_number text,
   pennylane_url text,
+  drive_file_id text,                         -- PDF de la facture d'origine dans le Drive (gardé avec elle, jamais effacé)
   remplacee_par_pennylane_id text not null,   -- facture réémise que la ligne suit maintenant
   remplacee_par_numero text,
+  reemise_drive_file_id text,                 -- PDF de la facture réémise, gardé ici si la réémission est détachée (pas de copie au retour)
   motif text,
   created_at timestamptz not null default now(),
   created_by text,
@@ -79,7 +84,7 @@ revoke insert, update, delete on public.factures_remplacees from authenticated;
 -- ─── 3. virements groupés ────────────────────────────────────────────────────────────────────────────────────────────────────
 create table if not exists public.virements_groupes (
   id uuid primary key default gen_random_uuid(),
-  transaction_id text unique,                 -- virement Pennylane (facultatif) : alors jamais compté par la synchronisation
+  transaction_id text not null unique,        -- virement Pennylane (obligatoire, décision du 27/11/2026, 16 h 16) : jamais compté par la synchronisation
   montant_ttc numeric(12,2) not null check (montant_ttc > 0 and montant_ttc < 100000000),
   date date not null,
   reference text,
@@ -131,6 +136,24 @@ revoke all on function public.reglements_virement_plafond() from public, anon, a
 drop trigger if exists reglements_virement_plafond on public.reglements;
 create trigger reglements_virement_plafond before insert or update on public.reglements
   for each row execute function public.reglements_virement_plafond();
+
+-- (décision du 27/11/2026, 16 h 16) le montant d'un virement groupé ne descend jamais sous le total déjà attribué
+create or replace function public.virements_groupes_plancher() returns trigger
+ language plpgsql security definer set search_path = public, pg_temp
+as $$
+declare deja numeric;
+begin
+  if new.montant_ttc is not distinct from old.montant_ttc then return new; end if;
+  select coalesce(sum(montant_ttc), 0) into deja from public.reglements where virement_groupe_id = old.id and annule_at is null;
+  if new.montant_ttc < deja - 0.005 then
+    raise exception 'Virement groupé : montant % € TTC inférieur au total déjà attribué (% € TTC) — refusé',
+      replace(to_char(new.montant_ttc, 'FM999999990.00'), '.', ','), replace(to_char(deja, 'FM999999990.00'), '.', ',') using errcode = 'P0001';
+  end if;
+  return new;
+end $$;
+revoke all on function public.virements_groupes_plancher() from public, anon, authenticated;
+drop trigger if exists virements_groupes_plancher on public.virements_groupes;
+create trigger virements_groupes_plancher before update on public.virements_groupes for each row execute function public.virements_groupes_plancher();
 
 -- ─── 4. calculs : avoirs d'une facture remplacée exclus ──────────────────────────────────────────────────────────────────────
 do $m$
@@ -212,6 +235,26 @@ begin
   values ('avoir', a.id::text, case when a.etat = 'a_rattacher' then 'rattacher' else 'corriger' end,
           jsonb_build_object('etat', a.etat, 'payment_id', a.payment_id, 'show_id', a.show_id, 'classement_motif', a.classement_motif),
           jsonb_build_object('etat', n.etat, 'payment_id', n.payment_id, 'show_id', n.show_id), m, auth.jwt() ->> 'email');
+  return n;
+end $$;
+
+-- (décision du 27/11/2026, 16 h 16) rattachement manuel contredit par la facture d'origine que Pennylane indique ensuite : signal
+-- « À vérifier » persistant, rattachement gardé ; résolu en corrigeant (avoir_rattacher) ou en CONFIRMANT le rattachement (motif)
+create or replace function public.avoir_confirmer(p_avoir uuid, p_motif text) returns public.pennylane_avoirs
+ language plpgsql security definer set search_path = public, pg_temp
+as $$
+declare a public.pennylane_avoirs; n public.pennylane_avoirs; m text := nullif(btrim(p_motif), '');
+begin
+  if not public.is_team() then raise exception 'Accès refusé'; end if;
+  if m is null or length(m) > 500 then raise exception 'Motif obligatoire (500 caractères au plus)'; end if;
+  select * into a from public.pennylane_avoirs where id = p_avoir for update;
+  if not found then raise exception 'Document introuvable'; end if;
+  if a.etat <> 'rattache' then raise exception 'Document non rattaché : rien à confirmer'; end if;
+  if a.rattache_origine is not distinct from a.credited_pennylane_id then raise exception 'Aucun écart à confirmer'; end if;
+  update public.pennylane_avoirs set rattache_origine = a.credited_pennylane_id, rattache_mode = 'manuel' where id = a.id returning * into n;
+  insert into public.rattachements_journal (objet, objet_id, action, avant, apres, motif, auteur)
+  values ('avoir', a.id::text, 'confirmer', jsonb_build_object('payment_id', a.payment_id, 'rattache_origine', a.rattache_origine),
+          jsonb_build_object('payment_id', n.payment_id, 'origine_pennylane', a.credited_pennylane_id), m, auth.jwt() ->> 'email');
   return n;
 end $$;
 
@@ -298,10 +341,16 @@ begin
   if p_amount_ht is null or montant is null or abs(p_amount_ht - montant) > 0.01 then
     raise exception 'Montant HT différent de la ligne (% € contre % €) : ce n''est pas une simple réémission — utilise la correction de facture',
       coalesce(p_amount_ht::text, '?'), coalesce(montant::text, '?'); end if;
-  insert into public.factures_remplacees (payment_id, show_id, pennylane_id, invoice_number, pennylane_url, remplacee_par_pennylane_id, remplacee_par_numero, motif, created_by)
-  values (p.id, p.show_id, p.pennylane_id, p.invoice_number, p.pennylane_url, p_pennylane_id, btrim(p_invoice_number), m, p_auteur) returning * into f;
-  -- la ligne suit la facture réémise (option B) : numéro, identifiant, lien ; montant, dates d'envoi et de paiement inchangés
-  update public.show_payments set pennylane_id = p_pennylane_id, invoice_number = btrim(p_invoice_number), pennylane_url = nullif(btrim(p_url), '') where id = p.id;
+  insert into public.factures_remplacees (payment_id, show_id, pennylane_id, invoice_number, pennylane_url, drive_file_id, remplacee_par_pennylane_id, remplacee_par_numero, motif, created_by)
+  values (p.id, p.show_id, p.pennylane_id, p.invoice_number, p.pennylane_url, p.drive_file_id, p_pennylane_id, btrim(p_invoice_number), m, p_auteur) returning * into f;
+  -- la ligne suit la facture réémise (option B) : numéro, identifiant, lien ; montant, dates d'envoi et de paiement inchangés.
+  -- PDF (décision d'Anthony du 27/11/2026, 16 h 16) : celui de l'ancienne facture reste avec elle (factures_remplacees.drive_file_id) ;
+  -- la ligne reprend le PDF déjà rangé de CETTE réémission s'il existe (réémission détachée puis rattachée : pas de copie), sinon la
+  -- synchronisation range le nouveau PDF à côté de l'ancien (l'ancien n'est jamais déplacé ni écrasé)
+  update public.show_payments set pennylane_id = p_pennylane_id, invoice_number = btrim(p_invoice_number), pennylane_url = nullif(btrim(p_url), ''),
+    drive_file_id = (select x.reemise_drive_file_id from public.factures_remplacees x where x.payment_id = p.id and x.remplacee_par_pennylane_id = p_pennylane_id
+                      and x.reemise_drive_file_id is not null order by x.detache_at desc nulls last limit 1)
+   where id = p.id;
   -- avoirs de la facture remplacée : restent visibles, ne réduisent plus le net facturé de la ligne
   update public.pennylane_avoirs set facture_remplacee = true where payment_id = p.id and credited_pennylane_id = f.pennylane_id;
   insert into public.rattachements_journal (objet, objet_id, action, avant, apres, motif, auteur)
@@ -324,8 +373,10 @@ begin
   if p.pennylane_id is distinct from f.remplacee_par_pennylane_id then raise exception 'La ligne ne suit plus cette facture réémise : rien à détacher'; end if;
   if exists (select 1 from public.show_payments x where x.id <> p.id and (x.pennylane_id = f.pennylane_id or upper(btrim(x.invoice_number)) = upper(btrim(f.invoice_number)))) then
     raise exception 'La facture d''origine est liée à une autre ligne : détachement refusé'; end if;
-  update public.factures_remplacees set detache_at = now(), detache_par = auth.jwt() ->> 'email', detache_motif = m where id = f.id returning * into f;
-  update public.show_payments set pennylane_id = f.pennylane_id, invoice_number = f.invoice_number, pennylane_url = f.pennylane_url where id = p.id;
+  update public.factures_remplacees set detache_at = now(), detache_par = auth.jwt() ->> 'email', detache_motif = m, reemise_drive_file_id = p.drive_file_id
+   where id = f.id returning * into f;
+  -- chaque PDF reste avec sa facture : la ligne reprend celui de la facture d'origine ; celui de la réémission est gardé sur f
+  update public.show_payments set pennylane_id = f.pennylane_id, invoice_number = f.invoice_number, pennylane_url = f.pennylane_url, drive_file_id = f.drive_file_id where id = p.id;
   update public.pennylane_avoirs set facture_remplacee = false where payment_id = p.id and credited_pennylane_id = f.pennylane_id;
   insert into public.rattachements_journal (objet, objet_id, action, avant, apres, motif, auteur)
   values ('reemission', f.id::text, 'detacher', jsonb_build_object('payment_id', p.id, 'pennylane_id', p.pennylane_id, 'invoice_number', p.invoice_number),
@@ -334,7 +385,7 @@ begin
 end $$;
 
 -- ─── 3. virements groupés : créer, affecter (équipe) ─────────────────────────────────────────────────────────────────────────
-create or replace function public.virement_groupe_creer(p_montant numeric, p_date date, p_reference text, p_transaction_id text default null) returns public.virements_groupes
+create or replace function public.virement_groupe_creer(p_montant numeric, p_date date, p_reference text, p_transaction_id text) returns public.virements_groupes
  language plpgsql security definer set search_path = public, pg_temp
 as $$
 declare v public.virements_groupes; t text := nullif(btrim(p_transaction_id), '');
@@ -342,6 +393,9 @@ begin
   if not public.is_team() then raise exception 'Accès refusé'; end if;
   if p_montant is null or p_montant = 'NaN'::numeric or p_montant <= 0 or p_montant >= 100000000 then raise exception 'Montant TTC du virement à saisir (positif)'; end if;
   if p_date is null then raise exception 'Date du virement à saisir'; end if;
+  -- (décision d'Anthony du 27/11/2026, 16 h 16) identifiant Pennylane du virement exigé avant toute répartition : la synchronisation
+  -- ne peut alors jamais enregistrer de nouveau le virement entier pour une ligne
+  if t is null or t !~ '^[0-9]{1,20}$' then raise exception 'Identifiant Pennylane du virement à saisir (chiffres seulement, tel qu''indiqué par la synchronisation)'; end if;
   if t is not null and (exists (select 1 from public.pennylane_virements x where x.transaction_id = t)
      or exists (select 1 from public.reglements x where x.transaction_id = t)) then
     raise exception 'Ce virement Pennylane est déjà compté pour une ligne : il ne se répartit pas une seconde fois'; end if;
@@ -373,7 +427,7 @@ end $$;
 
 -- droits : équipe (contrôle is_team dans chaque fonction), jamais anonyme
 do $$ declare f text; begin
-  foreach f in array array['public.avoir_rattacher(uuid, uuid, text)', 'public.avoir_detacher(uuid, text)', 'public.avoir_classer_hors(uuid, text)',
+  foreach f in array array['public.avoir_rattacher(uuid, uuid, text)', 'public.avoir_confirmer(uuid, text)', 'public.avoir_detacher(uuid, text)', 'public.avoir_classer_hors(uuid, text)',
     'public.avoir_qualifier(uuid, text)', 'public.facture_reemise_detacher(uuid, text)', 'public.virement_groupe_creer(numeric, date, text, text)',
     'public.virement_groupe_affecter(uuid, uuid, numeric, text)'] loop
     execute format('revoke all on function %s from public, anon', f);
