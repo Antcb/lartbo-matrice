@@ -169,7 +169,17 @@ export function virementGroupeEtat(v){
 }
 /** (décision d'Anthony du 26/11/2026, point 3) Avoir rattaché dont Pennylane indique maintenant une AUTRE facture d'origine (ou
  *  plus aucune) : écart persistant, à vérifier, jamais de nouveau rattachement automatique. Même règle : regles.ts origineEcart. */
-export const origineEcart = a => !!a && a.etat === 'rattache' && filled(a.rattache_origine) && String(a.rattache_origine) !== String(a.credited_pennylane_id ?? '');
+export const origineEcart = a => {
+  if (!a || a.etat !== 'rattache') return false;
+  // (v1.71, décision du 27/11/2026, 16 h 16) rattachement MANUEL : écart seulement si Pennylane indique une origine qui le contredit —
+  // ni l'origine connue ou confirmée au rattachement, ni la facture que la ligne suit (ou qu'elle a remplacée) ; origine absente : rien
+  if (a.rattache_mode === 'manuel'){
+    const o = a.credited_pennylane_id, l = byId('show_payments', a.payment_id);
+    return filled(o) && String(o) !== String(a.rattache_origine ?? '') && String(o) !== String(l?.pennylane_id ?? '')
+      && !(S.db.factures_remplacees || []).some(f => f.payment_id === a.payment_id && String(f.pennylane_id) === String(o));
+  }
+  return filled(a.rattache_origine) && String(a.rattache_origine) !== String(a.credited_pennylane_id ?? '');
+};
 export const avoirsAVerifier = () => (S.db.pennylane_avoirs || []).filter(a => !a.gone_at && origineEcart(a));
 /** Avoirs que la synchronisation n'a pas pu rattacher seule (origine inconnue, absente de MATRICE ou ambiguë) */
 export const avoirsARattacher = () => (S.db.pennylane_avoirs || []).filter(a => a.etat === 'a_rattacher' && !a.gone_at);

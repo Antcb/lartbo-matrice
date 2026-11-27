@@ -7,6 +7,7 @@
 create or replace function pg_temp.ok(c boolean, msg text) returns void language plpgsql as $$
 begin if c is not true then raise exception 'ÉCHEC : %', msg; end if; raise notice 'ok : %', msg; end $$;
 set request.jwt.claims = '{"email":"equipe@exemple.test"}';
+alter table public.show_payments add column if not exists drive_file_id text;   -- colonne de production (PDF rangé dans le Drive), absente de la base d'essai v1.70
 
 -- garde : avoir_couvert inattendu → arrêt sans rien appliquer
 create or replace function public.avoir_couvert(p_payment uuid) returns numeric language sql as $$ select 0::numeric $$;
@@ -34,7 +35,7 @@ insert into public.shows (id, project_id, date, venue, city, status, prod_mode, 
 insert into public.show_payments (id, show_id, kind, label, amount, vat_rate, invoice_number, sent_at, pennylane_id, pennylane_url, sort, invoiced_on) values
  ('00000000-0000-0000-0000-0000000000d2', '00000000-0000-0000-0000-0000000000d1', 'acompte', 'Acompte', 1750, 5.5, 'F-TEST-77', '2026-06-10', 'pl-77', 'https://exemple.test/77', 1, '2026-06-10'),
  ('00000000-0000-0000-0000-0000000000d3', '00000000-0000-0000-0000-0000000000d1', 'solde', 'Solde', 1750, 5.5, 'F-TEST-78', '2026-06-10', 'pl-78', null, 2, '2026-06-10');
-update public.show_payments set paid_at = '2026-10-30', payee = 'compte' where id = '00000000-0000-0000-0000-0000000000d2';   -- paiement historique (E1)
+update public.show_payments set paid_at = '2026-10-30', payee = 'compte', drive_file_id = 'drive-77' where id = '00000000-0000-0000-0000-0000000000d2';   -- paiement historique (E1), PDF rangé
 insert into public.pennylane_avoirs (pennylane_id, invoice_number, amount_ht, amount_ttc, credited_pennylane_id, etat, payment_id, show_id, rattache_origine) values
  ('pl-117', 'AV-TEST-117', 1750, 1846.25, 'pl-77', 'rattache', '00000000-0000-0000-0000-0000000000d2', '00000000-0000-0000-0000-0000000000d1', 'pl-77');
 select pg_temp.ok(public.avoir_couvert('00000000-0000-0000-0000-0000000000d2') = 1750, 'avant : la ligne est « soldée par l''avoir » (deux documents sur trois)');
@@ -48,6 +49,9 @@ select (public.facture_reemise_enregistrer('00000000-0000-0000-0000-0000000000d2
 select pg_temp.ok((select pennylane_id = 'pl-120' and invoice_number = 'F-TEST-120' and paid_at = '2026-10-30' and amount = 1750 and payee = 'compte'
   from public.show_payments where id = '00000000-0000-0000-0000-0000000000d2'), 'option B : la ligne suit F-120 ; montant, paiement du 30/10 et compte inchangés');
 select pg_temp.ok((select count(*) from public.show_payments where show_id = '00000000-0000-0000-0000-0000000000d1' and kind = 'acompte') = 1, 'une seule ligne d''acompte');
+select pg_temp.ok((select drive_file_id from public.factures_remplacees where id = :'fr_id') = 'drive-77' and (select drive_file_id is null from public.show_payments where id = '00000000-0000-0000-0000-0000000000d2'),
+  'PDF : celui de F-77 reste avec F-77 ; la ligne attend le rangement du PDF de F-120 (à côté, sans écraser l''ancien)');
+update public.show_payments set drive_file_id = 'drive-120' where id = '00000000-0000-0000-0000-0000000000d2';   -- la synchronisation a rangé le PDF de F-120
 select pg_temp.ok(exists (select 1 from public.factures_remplacees where id = :'fr_id' and pennylane_id = 'pl-77' and invoice_number = 'F-TEST-77' and remplacee_par_numero = 'F-TEST-120' and detache_at is null),
   'F-77 gardée visible dans l''historique de la ligne');
 select pg_temp.ok((select facture_remplacee and etat = 'rattache' and payment_id = '00000000-0000-0000-0000-0000000000d2' from public.pennylane_avoirs where pennylane_id = 'pl-117'),
@@ -72,9 +76,12 @@ do $$ begin
 end $$;
 -- détacher puis rattacher de nouveau : retour exact à F-77, puis à F-120 ; paiement jamais touché
 select public.facture_reemise_detacher(:'fr_id', 'Essai de détachement') is not null as x \gset
+select pg_temp.ok((select drive_file_id from public.show_payments where id = '00000000-0000-0000-0000-0000000000d2') = 'drive-77' and (select reemise_drive_file_id from public.factures_remplacees where id = :'fr_id') = 'drive-120',
+  'détachement : chaque PDF reste avec sa facture');
 select pg_temp.ok((select pennylane_id = 'pl-77' and invoice_number = 'F-TEST-77' and pennylane_url = 'https://exemple.test/77' and paid_at = '2026-10-30' from public.show_payments where id = '00000000-0000-0000-0000-0000000000d2')
   and not (select facture_remplacee from public.pennylane_avoirs where pennylane_id = 'pl-117'), 'détachement : la ligne revient à F-77, F-117 compte de nouveau ; paiement inchangé');
 select public.facture_reemise_enregistrer('00000000-0000-0000-0000-0000000000d2', 'pl-120', 'F-TEST-120', 'https://exemple.test/120', 1750, null, 'equipe@exemple.test') is not null as x \gset
+select pg_temp.ok((select drive_file_id from public.show_payments where id = '00000000-0000-0000-0000-0000000000d2') = 'drive-120', 'réémission rattachée de nouveau : son PDF déjà rangé est repris (aucune copie)');
 select pg_temp.ok((select count(*) from public.factures_remplacees where payment_id = '00000000-0000-0000-0000-0000000000d2') = 2
   and (select count(*) from public.factures_remplacees where payment_id = '00000000-0000-0000-0000-0000000000d2' and detache_at is null) = 1, 'historique gardé : une réémission détachée, une active');
 
@@ -114,6 +121,21 @@ do $$ begin
   begin update public.pennylane_avoirs set classement_motif = null where pennylane_id = 'pl-neg'; raise exception 'hors sans motif';
   exception when check_violation then raise notice 'ok : « Hors MATRICE » sans motif impossible (contrainte)'; end;
 end $$;
+-- rattachement manuel contredit plus tard par l'origine indiquée par Pennylane : gardé ; résolu par confirmation (motif)
+insert into public.pennylane_avoirs (pennylane_id, invoice_number, amount_ht, amount_ttc, etat, reason) values ('pl-man', 'AV-MAN', 20, 21.10, 'a_rattacher', 'origine inconnue');
+select public.avoir_rattacher((select id from public.pennylane_avoirs where pennylane_id = 'pl-man'), '00000000-0000-0000-0000-000000000001', null) is not null as x \gset
+update public.pennylane_avoirs set credited_pennylane_id = 'pl-autre' where pennylane_id = 'pl-man';   -- la synchronisation lit une origine
+do $$ declare n uuid := (select id from public.pennylane_avoirs where pennylane_id = 'pl-man'); begin
+  begin perform public.avoir_confirmer(n, ''); raise exception 'confirmation sans motif';
+  exception when raise_exception then if sqlerrm not like 'Motif obligatoire%' then raise; end if; raise notice 'ok : confirmation sans motif refusée'; end;
+end $$;
+select pg_temp.ok((public.avoir_confirmer((select id from public.pennylane_avoirs where pennylane_id = 'pl-man'), 'Vérifié : l''avoir porte bien sur l''acompte')).rattache_origine = 'pl-autre'
+  and (select payment_id = '00000000-0000-0000-0000-000000000001' from public.pennylane_avoirs where pennylane_id = 'pl-man'), 'écart confirmé (motif) : rattachement gardé, signal levé');
+do $$ begin
+  begin perform public.avoir_confirmer((select id from public.pennylane_avoirs where pennylane_id = 'pl-man'), 'x'); raise exception 'rien à confirmer';
+  exception when raise_exception then if sqlerrm <> 'Aucun écart à confirmer' then raise; end if; raise notice 'ok : plus d''écart — rien à confirmer'; end;
+end $$;
+
 -- un remboursement enregistré sur un avoir : jamais déplacé avec lui
 insert into public.reglements (payment_id, show_id, sens, montant_ttc, date, source, transaction_id, avoir_id)
  values ('00000000-0000-0000-0000-0000000000d2', '00000000-0000-0000-0000-0000000000d1', 'remboursement', 10, current_date, 'pennylane', 'tx-remb', (select id from public.pennylane_avoirs where pennylane_id = 'pl-117'));
@@ -127,15 +149,21 @@ delete from public.reglements where transaction_id = 'tx-remb';   -- essai local
 insert into public.show_payments (id, show_id, kind, label, amount, vat_rate, invoice_number, sent_at, sort) values
  ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000a1', 'autre', 'Groupé A', 500, 5.5, 'F-G-A', current_date - 20, 20),
  ('00000000-0000-0000-0000-0000000000e2', '00000000-0000-0000-0000-0000000000d1', 'autre', 'Groupé B', 500, 5.5, 'F-G-B', current_date - 20, 20);
-insert into public.pennylane_virements (transaction_id, payment_id) values ('tx-deja', '00000000-0000-0000-0000-000000000001');
+insert into public.pennylane_virements (transaction_id, payment_id) values ('9000001', '00000000-0000-0000-0000-000000000001');
 do $$ begin
-  begin perform public.virement_groupe_creer(1000, current_date - 3, 'x', 'tx-deja'); raise exception 'virement déjà compté';
+  begin perform public.virement_groupe_creer(1000, current_date - 3, 'x', '9000001'); raise exception 'virement déjà compté';
   exception when raise_exception then if sqlerrm not like 'Ce virement Pennylane est déjà compté%' then raise; end if; raise notice 'ok : virement déjà compté pour une ligne — refus'; end;
 end $$;
-select (public.virement_groupe_creer(1000, current_date - 3, 'VIR GROUPE FICTIF', 'tx-groupe')).id as vg \gset
+do $$ begin
+  begin perform public.virement_groupe_creer(1000, current_date - 3, 'x', null); raise exception 'sans identifiant';
+  exception when raise_exception then if sqlerrm not like 'Identifiant Pennylane du virement à saisir%' then raise; end if; raise notice 'ok : virement groupé sans identifiant Pennylane refusé'; end;
+  begin perform public.virement_groupe_creer(1000, current_date - 3, 'x', 'VIR 12'); raise exception 'identifiant texte';
+  exception when raise_exception then if sqlerrm not like 'Identifiant Pennylane du virement à saisir%' then raise; end if; raise notice 'ok : identifiant qui n''est pas celui de Pennylane refusé'; end;
+end $$;
+select (public.virement_groupe_creer(1000, current_date - 3, 'VIR GROUPE FICTIF', '9000002')).id as vg \gset
 select pg_temp.ok((public.virement_groupe_affecter(:'vg', '00000000-0000-0000-0000-0000000000e1', 527.50, 'compte')).date = current_date - 3, 'affectation A : 527,50 € (encaissement daté du virement)');
 select count(*) as n0 from public.reglements \gset
-do $$ declare v uuid := (select id from public.virements_groupes where transaction_id = 'tx-groupe'); begin
+do $$ declare v uuid := (select id from public.virements_groupes where transaction_id = '9000002'); begin
   begin perform public.virement_groupe_affecter(v, '00000000-0000-0000-0000-0000000000e2', 527.50, 'compte'); raise exception 'dépassement accepté';
   exception when raise_exception then if sqlerrm not like 'Virement groupé de 1000,00 € TTC : 527,50 € TTC déjà attribués, reste 472,50 € TTC%' then raise; end if; raise notice 'ok : cumul au-delà du virement refusé (%)', sqlerrm; end;
 end $$;
@@ -143,7 +171,7 @@ select pg_temp.ok((select count(*) from public.reglements) = :n0, 'refus : rien 
 select pg_temp.ok((public.virement_groupe_affecter(:'vg', '00000000-0000-0000-0000-0000000000e2', 400, null)).montant_ttc = 400, 'affectation B : 400 € — reste non attribué 72,50 € permis');
 select pg_temp.ok((select v.montant_ttc - sum(r.montant_ttc) from public.virements_groupes v join public.reglements r on r.virement_groupe_id = v.id and r.annule_at is null where v.id = :'vg' group by v.montant_ttc) = 72.50, 'reste non attribué : 72,50 €');
 do $$ begin
-  begin update public.reglements set montant_ttc = 700 where virement_groupe_id = (select id from public.virements_groupes where transaction_id = 'tx-groupe') and payment_id = '00000000-0000-0000-0000-0000000000e2'; raise exception 'modification au-delà acceptée';
+  begin update public.reglements set montant_ttc = 700 where virement_groupe_id = (select id from public.virements_groupes where transaction_id = '9000002') and payment_id = '00000000-0000-0000-0000-0000000000e2'; raise exception 'modification au-delà acceptée';
   exception when raise_exception then if sqlerrm not like 'Virement groupé de%' then raise; end if; raise notice 'ok : modification directe au-delà du virement refusée (base)'; end;
   begin update public.reglements set transaction_id = 'tx-x' where virement_groupe_id is not null; raise exception 'affectation rapprochée';
   exception when check_violation then raise notice 'ok : une affectation ne reçoit pas d''identifiant de virement (contrainte)'; end;
@@ -152,11 +180,17 @@ end $$;
 select public.reglement_annuler((select id from public.reglements where virement_groupe_id = :'vg' and payment_id = '00000000-0000-0000-0000-0000000000e2'), 'Mauvaise date') is not null as x \gset
 select pg_temp.ok((public.virement_groupe_affecter(:'vg', '00000000-0000-0000-0000-0000000000e2', 472.50, null)).montant_ttc = 472.50, 'affectation annulée → sa part est de nouveau disponible');
 select pg_temp.ok((select (public.reglement_couverture(x)).enc from public.show_payments x where id = '00000000-0000-0000-0000-0000000000e1') = 527.50, 'affectation comptée comme encaissement de la ligne');
+do $$ begin
+  begin update public.virements_groupes set montant_ttc = 900 where transaction_id = '9000002'; raise exception 'montant sous le total attribué';
+  exception when raise_exception then if sqlerrm not like 'Virement groupé : montant 900,00 € TTC inférieur au total déjà attribué (1000,00 € TTC)%' then raise; end if; raise notice 'ok : montant ramené sous le total attribué refusé (base)'; end;
+end $$;
+update public.virements_groupes set montant_ttc = 1200 where transaction_id = '9000002';
+select pg_temp.ok((select montant_ttc from public.virements_groupes where transaction_id = '9000002') = 1200, 'montant relevé au-dessus du total attribué : accepté');
 
 -- ═══ D. droits ═══
 select pg_temp.ok(not has_function_privilege('authenticated', 'public.facture_reemise_enregistrer(uuid, text, text, text, numeric, text, text)', 'execute'), 'réémission : jamais appelée depuis l''application (lecture Pennylane par la fonction serveur)');
 select pg_temp.ok(has_function_privilege('authenticated', 'public.avoir_rattacher(uuid, uuid, text)', 'execute') and has_function_privilege('authenticated', 'public.facture_reemise_detacher(uuid, text)', 'execute')
-  and has_function_privilege('authenticated', 'public.virement_groupe_affecter(uuid, uuid, numeric, text)', 'execute')
+  and has_function_privilege('authenticated', 'public.virement_groupe_affecter(uuid, uuid, numeric, text)', 'execute') and has_function_privilege('authenticated', 'public.avoir_confirmer(uuid, text)', 'execute')
   and not has_function_privilege('anon', 'public.avoir_rattacher(uuid, uuid, text)', 'execute') and not has_function_privilege('anon', 'public.virement_groupe_creer(numeric, date, text, text)', 'execute')
   and not has_function_privilege('authenticated', 'public.ligne_suivie(public.show_payments)', 'execute'), 'fonctions : équipe oui, anonyme non');
 select pg_temp.ok(not has_table_privilege('authenticated', 'public.factures_remplacees', 'insert') and not has_table_privilege('authenticated', 'public.virements_groupes', 'update')

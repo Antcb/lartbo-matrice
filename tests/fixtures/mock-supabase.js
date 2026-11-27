@@ -221,6 +221,14 @@
           Object.assign(a, { etat: 'rattache', payment_id: p.id, show_id: p.show_id, reason: null, classement_motif: null, rattache_mode: 'manuel', rattache_origine: a.credited_pennylane_id ?? null, facture_remplacee: remplacee(p, a) });
           journal('avoir', a.id, avant.etat === 'a_rattacher' ? 'rattacher' : 'corriger', avant, { etat: a.etat, payment_id: a.payment_id }, m); return a;
         },
+        avoir_confirmer: ({ p_avoir, p_motif }) => {
+          const m = motifOblig(p_motif), a = avoir(p_avoir);
+          if (a.etat !== 'rattache') err('Document non rattaché : rien à confirmer');
+          if ((a.rattache_origine ?? null) === (a.credited_pennylane_id ?? null)) err('Aucun écart à confirmer');
+          const avant = { payment_id: a.payment_id, rattache_origine: a.rattache_origine ?? null };
+          Object.assign(a, { rattache_origine: a.credited_pennylane_id, rattache_mode: 'manuel' });
+          journal('avoir', a.id, 'confirmer', avant, { payment_id: a.payment_id, origine_pennylane: a.credited_pennylane_id }, m); return a;
+        },
         avoir_detacher: ({ p_avoir, p_motif }) => {
           const m = motifOblig(p_motif), a = avoir(p_avoir);
           if (a.etat === 'a_rattacher') err('Document déjà « à rattacher »');
@@ -249,10 +257,11 @@
           if (p.pennylane_id === p_pennylane_id) err('La ligne suit déjà cette facture');
           if ((D().show_payments || []).some(x => x.pennylane_id === p_pennylane_id || String(x.invoice_number || '').trim().toUpperCase() === String(p_invoice_number).trim().toUpperCase())) err('Cette facture Pennylane est déjà liée à une ligne de MATRICE');
           if (Math.abs(Number(p_amount_ht) - Number(p.amount)) > 0.01) err(`Montant HT différent de la ligne (${p_amount_ht} € contre ${p.amount} €) : ce n'est pas une simple réémission — utilise la correction de facture`);
-          const f = { id: 'fr-' + Math.random().toString(36).slice(2, 10), payment_id: p.id, show_id: p.show_id, pennylane_id: p.pennylane_id, invoice_number: p.invoice_number, pennylane_url: p.pennylane_url ?? null,
+          const f = { id: 'fr-' + Math.random().toString(36).slice(2, 10), payment_id: p.id, show_id: p.show_id, pennylane_id: p.pennylane_id, invoice_number: p.invoice_number, pennylane_url: p.pennylane_url ?? null, drive_file_id: p.drive_file_id ?? null, reemise_drive_file_id: null,
             remplacee_par_pennylane_id: p_pennylane_id, remplacee_par_numero: String(p_invoice_number).trim(), motif: String(p_motif ?? '').trim() || null, created_at: now(), created_by: p_auteur, detache_at: null, detache_par: null, detache_motif: null };
           (D().factures_remplacees ||= []).push(f);
-          Object.assign(p, { pennylane_id: p_pennylane_id, invoice_number: f.remplacee_par_numero, pennylane_url: p_url || null });
+          const deja = (D().factures_remplacees || []).filter(x => x.payment_id === p.id && x.remplacee_par_pennylane_id === p_pennylane_id && x.reemise_drive_file_id).pop();
+          Object.assign(p, { pennylane_id: p_pennylane_id, invoice_number: f.remplacee_par_numero, pennylane_url: p_url || null, drive_file_id: deja ? deja.reemise_drive_file_id : null });
           (D().pennylane_avoirs || []).filter(a => a.payment_id === p.id && a.credited_pennylane_id === f.pennylane_id).forEach(a => { a.facture_remplacee = true; });
           journal('reemission', f.id, 'rattacher', { pennylane_id: f.pennylane_id }, { pennylane_id: p_pennylane_id }, f.motif); return f;
         },
@@ -260,8 +269,8 @@
           const m = motifOblig(p_motif), f = (D().factures_remplacees || []).find(x => x.id === p_id && !x.detache_at) || err('Réémission introuvable ou déjà détachée');
           const p = (D().show_payments || []).find(x => x.id === f.payment_id);
           if (p.pennylane_id !== f.remplacee_par_pennylane_id) err('La ligne ne suit plus cette facture réémise : rien à détacher');
-          Object.assign(f, { detache_at: now(), detache_par: USER, detache_motif: m });
-          Object.assign(p, { pennylane_id: f.pennylane_id, invoice_number: f.invoice_number, pennylane_url: f.pennylane_url });
+          Object.assign(f, { detache_at: now(), detache_par: USER, detache_motif: m, reemise_drive_file_id: p.drive_file_id ?? null });
+          Object.assign(p, { pennylane_id: f.pennylane_id, invoice_number: f.invoice_number, pennylane_url: f.pennylane_url, drive_file_id: f.drive_file_id ?? null });
           (D().pennylane_avoirs || []).filter(a => a.payment_id === p.id && a.credited_pennylane_id === f.pennylane_id).forEach(a => { a.facture_remplacee = false; });
           journal('reemission', f.id, 'detacher', { pennylane_id: f.remplacee_par_pennylane_id }, { pennylane_id: f.pennylane_id }, m); return f;
         },
@@ -269,6 +278,7 @@
           const m = Number(p_montant), t = String(p_transaction_id ?? '').trim() || null;
           if (!(m > 0 && m < 1e8)) err('Montant TTC du virement à saisir (positif)');
           if (!p_date) err('Date du virement à saisir');
+          if (!t || !/^\d{1,20}$/.test(t)) err('Identifiant Pennylane du virement à saisir (chiffres seulement, tel qu\'indiqué par la synchronisation)');
           if (t && ((D().pennylane_virements || []).some(x => x.transaction_id === t) || (D().reglements || []).some(x => x.transaction_id === t))) err('Ce virement Pennylane est déjà compté pour une ligne : il ne se répartit pas une seconde fois');
           if (t && (D().virements_groupes || []).some(x => x.transaction_id === t)) err('Ce virement Pennylane est déjà un virement groupé');
           const v = { id: 'vg-' + Math.random().toString(36).slice(2, 10), transaction_id: t, montant_ttc: Math.round(m * 100) / 100, date: p_date, reference: String(p_reference ?? '').trim() || null, created_at: now(), created_by: USER };

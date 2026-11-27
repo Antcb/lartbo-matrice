@@ -145,6 +145,26 @@ t('(v1.71) Champs des Notes après réémission puis resynchronisation : l’avo
   assert.match(src, /if \(!p\.paid_at && x\.status !== 'cancelled'\) \{ await encaisserLigne/);
 });
 
+t('(v1.71, 27/11 16 h 16) rattachement manuel : écart seulement si Pennylane indique une origine qui le contredit', () => {
+  const x = o => ({ id: 'avm', invoice_number: 'AV-M', currency_amount_before_tax: '-10', credited_invoice: o ? { id: o } : null });
+  const ex = { etat: 'rattache', payment_id: 'L7', show_id: 'S7', rattache_mode: 'manuel', rattache_origine: null };
+  const L = [{ id: 'L7', show_id: 'S7', pennylane_id: 'pl-7' }];
+  assert.equal(planAvoir(x(null), ex, L, 'now').origine_changee, false);                         // origine absente : rien
+  assert.equal(planAvoir(x('pl-7'), ex, L, 'now').origine_changee, false);                       // concorde avec la ligne
+  assert.equal(planAvoir(x('pl-77'), ex, [], 'now', [{ payment_id: 'L7', pennylane_id: 'pl-77' }]).origine_changee, false);   // facture remplacée de la ligne
+  const c = planAvoir(x('pl-autre'), ex, L, 'now');
+  assert.equal(c.origine_changee, true); assert.equal(c.payment_id, 'L7'); assert.equal(c.etat, 'rattache');   // signalé, gardé
+  assert.equal(planAvoir(x('pl-autre'), { ...ex, rattache_origine: 'pl-autre' }, L, 'now').origine_changee, false);   // confirmé
+});
+t('(v1.71, 27/11 16 h 16) parts saisies d’un virement groupé : la synchronisation n’enregistre jamais de nouveau le virement entier', () => {
+  const parts = [{ ...reg({ id: 'g1', m: 1000 }), virement_groupe_id: 'vg-1' }];
+  // le virement (identifiant obligatoire, compté « ailleurs » pour toutes les lignes) rapproché ensuite d'une seule facture
+  const p = planEncaissement(F, AV, [vir('9000002', 1000)], new Set(['9000002']), parts);
+  assert.deepEqual(p.creer, []); assert.deepEqual(p.rapprocher, []); assert.equal(p.encaisse, 1000);
+  const src = readFileSync(new URL('../../supabase/functions/pennylane/index.ts', import.meta.url), 'utf8');
+  assert.match(src, /identifiant Pennylane : \$\{vs\.map/);   // le signal donne l'identifiant à saisir
+});
+
 let ok = 0;
 for (const [nom, f] of cas) { try { f(); ok++; } catch (e) { console.error('ÉCHEC :', nom, '\n', e.message); process.exitCode = 1; } }
 console.log(`Encaissements Pennylane (fausses données) : ${ok}/${cas.length} réussies.`);

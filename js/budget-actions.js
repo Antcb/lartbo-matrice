@@ -346,6 +346,18 @@ export const BUDGET_ACTIONS = {
         toast(`${nom} rattaché`); render(); return true;
       }});
   },
+  /** (v1.71, décision du 27/11/2026, 16 h 16) Rattachement manuel contredit par l'origine que Pennylane indique : « À vérifier »
+   *  persistant ; le rattachement est gardé. Confirmer (motif obligatoire) lève le signal ; sinon « Corriger… ». */
+  avoirConfirmer: async t => {
+    const a = byId('pennylane_avoirs', t.dataset.id); if (!a) return;
+    const l = byId('show_payments', a.payment_id);
+    const motif = await askText({title: 'Confirmer le rattachement ?', text: `${a.invoice_number || 'Avoir ' + a.pennylane_id} reste rattaché à ${l?.invoice_number || l?.label || 'sa ligne'}, alors que Pennylane indique la facture d’origine ${a.credited_invoice_number || a.credited_pennylane_id}. Le signal « À vérifier » sera levé.`,
+      label: 'Motif', ok: 'Confirmer', check: motifObligatoire});
+    if (motif == null) return;
+    const {error} = await sb.rpc('avoir_confirmer', {p_avoir: a.id, p_motif: motif});
+    if (error) return toast(error.message, true);
+    await rechargerTables('pennylane_avoirs', 'rattachements_journal'); toast('Rattachement confirmé'); render();
+  },
   /** (v1.71) Détacher un document (rattaché ou classé « Hors MATRICE ») : motif obligatoire ; il redevient « À rattacher » et la
    *  synchronisation ne le rattache plus d'elle-même */
   avoirDetacher: async t => {
@@ -430,7 +442,7 @@ export const BUDGET_ACTIONS = {
       extraTop: `<p class="help full">${esc(p.label || p.kind)}${p.invoice_number ? ' · ' + esc(p.invoice_number) : ''} : reste dû <b>${eur2(reste)}</b> TTC. La part attribuée est un encaissement de cette facture, daté du virement. Le reste du virement peut rester non attribué ; le cumul ne dépasse jamais son montant.</p>`,
       fields: [{k: 'vg', label: 'Virement', type: 'select', full: true, options: [['', 'Nouveau virement groupé'], ...ouverts.map(({v, e}) => [v.id, `${fmtDate(v.date)} · ${v.reference || 'sans référence'} · ${eur2(Number(v.montant_ttc))} TTC · reste non attribué ${eur2(e.reste)} TTC`])]},
         {k: 'total', label: 'Montant TTC du virement (nouveau)', type: 'number'}, {k: 'date', label: 'Date du virement (nouveau)', type: 'date'},
-        {k: 'reference', label: 'Référence (relevé bancaire)', full: true}, {k: 'tx', label: 'Identifiant du virement dans Pennylane (facultatif)', full: true},
+        {k: 'reference', label: 'Référence (relevé bancaire)', full: true}, {k: 'tx', label: 'Identifiant du virement dans Pennylane (obligatoire, donné par « Synchroniser Pennylane »)', full: true},
         {k: 'montant', label: 'Part pour cette facture TTC (€)', type: 'number'},
         {k: 'compte', label: 'Arrivé sur', type: 'select', options: [['', 'Non renseigné'], ...['compte', 'artbo', 'artiste', 'autre'].map(c => [c, payerLabel(c, proj)])]}],
       values: {id: 'virement-groupe:' + p.id, vg: ouverts[0]?.v.id || '', date: today(), montant: reste || '', compte: p.payee || ''},
@@ -441,10 +453,12 @@ export const BUDGET_ACTIONS = {
         const dispo = vg ? virementGroupeEtat(vg).reste : num(v.total);
         if (!vg && !(dispo > 0)){ toast('Montant TTC du virement à saisir', true); return false; }
         if (!vg && !v.date){ toast('Date du virement à saisir', true); return false; }
+        // (décision du 27/11/2026, 16 h 16) identifiant Pennylane exigé avant toute répartition (même contrôle : virement_groupe_creer)
+        if (!vg && !/^\d{1,20}$/.test(String(v.tx || '').trim())){ toast('Identifiant Pennylane du virement à saisir (chiffres seulement, indiqué par « Synchroniser Pennylane »)', true); return false; }
         if (montant > dispo + 0.005){ toast(`Part supérieure au reste non attribué du virement (${eur2(dispo)} TTC)`, true); return false; }
         if (montant > reste + 0.01 && !(await confirmAsk('Part supérieure au reste dû ?', `${eur2(montant)} TTC pour un reste dû de ${eur2(reste)} TTC : l’excédent sera affiché comme encaissé au-delà du net facturé. Aucun remboursement n’est créé.`, 'Enregistrer quand même'))) return false;
         if (!vg){
-          const {data, error} = await sb.rpc('virement_groupe_creer', {p_montant: num(v.total), p_date: v.date, p_reference: v.reference || null, p_transaction_id: v.tx || null});
+          const {data, error} = await sb.rpc('virement_groupe_creer', {p_montant: num(v.total), p_date: v.date, p_reference: v.reference || null, p_transaction_id: String(v.tx).trim()});
           if (error){ toast(error.message, true); return false; }
           vg = data; S.db.virements_groupes = [...(S.db.virements_groupes || []), data]; touch('virements_groupes');
         }

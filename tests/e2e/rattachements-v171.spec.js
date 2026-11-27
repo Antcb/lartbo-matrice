@@ -35,7 +35,7 @@ test('v1.71 — Champs des Notes (fictif), option B : la ligne suit F-120 ; F-77
   const ctx = await openApp(page);
   await preparer(page, {
     shows: [show('rt-d1', 'Salle Réémise')],
-    payments: [{ id: 'rt-p1', show_id: 'rt-d1', kind: 'acompte', label: 'Acompte', pct: 50, amount: 1750, vat_rate: 5.5, sort: 1, invoice_number: 'F-TEST-77', pennylane_id: 'pl-77', pennylane_url: 'https://exemple.test/77', sent_at: `${Y - 1}-06-10`, paid_at: `${Y - 1}-10-30`, payee: 'compte' }],
+    payments: [{ id: 'rt-p1', show_id: 'rt-d1', kind: 'acompte', label: 'Acompte', pct: 50, amount: 1750, vat_rate: 5.5, sort: 1, invoice_number: 'F-TEST-77', pennylane_id: 'pl-77', pennylane_url: 'https://exemple.test/77', drive_file_id: 'drive-77', sent_at: `${Y - 1}-06-10`, paid_at: `${Y - 1}-10-30`, payee: 'compte' }],
     avoirs: [{ id: 'rt-a1', pennylane_id: 'pl-117', invoice_number: 'AV-TEST-117', amount_ht: 1750, amount_ttc: 1846.25, credited_pennylane_id: 'pl-77', credited_invoice_number: 'F-TEST-77', etat: 'rattache', payment_id: 'rt-p1', show_id: 'rt-d1', rattache_origine: 'pl-77', rattache_mode: 'auto' }],
   });
   // avant : deux documents sur trois, l'encaissement paraît « au-delà du net facturé »
@@ -54,6 +54,10 @@ test('v1.71 — Champs des Notes (fictif), option B : la ligne suit F-120 ; F-77
   e = await etat(page, 'rt-d1');
   expect(e.lignes).toEqual([{ id: 'rt-p1', kind: 'acompte', invoice_number: 'F-TEST-120', pennylane_id: 'pl-120', paid_at: `${Y - 1}-10-30`, payee: 'compte', amount: 1750 }]);   // une seule ligne d'acompte
   expect(e.reglements).toEqual([]);                                     // aucun encaissement créé ni dupliqué
+  // PDF : celui de F-77 reste avec F-77 (lien visible) ; la ligne attend le rangement du PDF de F-120 par la synchronisation
+  expect(e.remplacees[0]).toMatchObject({ drive_file_id: 'drive-77' });
+  expect(await page.evaluate(async () => { const { S } = await import('./js/state.js'); return S.db.show_payments.find(p => p.id === 'rt-p1').drive_file_id ?? null; })).toBeNull();
+  await expect(page.locator('tr[data-facture-remplacee] a', { hasText: 'PDF' })).toHaveAttribute('href', /drive-77/);
   expect(e.restes).toMatchObject({ factureNet: 1846.25, encaisse: 1846.25, resteDu: 0, aRembourser: 0, trop: 0 });   // aucun nouveau reste
   expect(e.avoirs.find(a => a.pennylane_id === 'pl-117')).toMatchObject({ etat: 'rattache', payment_id: 'rt-p1', facture_remplacee: true });
   // trois documents visibles : F-120 (ligne), F-77 (facture d'origine), F-117 (avoir sur la facture remplacée)
@@ -150,6 +154,14 @@ test('v1.71 — virement groupé sur deux dates : reste non attribué affiché, 
   await page.locator('#modal [name=date]').fill(iso(-3));
   await page.locator('#modal [name=reference]').fill('VIR GROUPE FICTIF');
   await page.locator('#modal [name=montant]').fill('527.50');
+  // identifiant Pennylane du virement exigé avant toute répartition
+  await page.locator('#modal button[type=submit]').click();
+  await expect(page.locator('body')).toContainText('Identifiant Pennylane du virement à saisir');
+  expect(await page.evaluate(() => window.__calls.filter(c => c.rpc === 'virement_groupe_creer').length)).toBe(0);
+  await page.locator('#modal [name=tx]').fill('VIR-12');
+  await page.locator('#modal button[type=submit]').click();
+  await expect(page.locator('body')).toContainText('Identifiant Pennylane du virement à saisir');
+  await page.locator('#modal [name=tx]').fill('33500453799999');
   await page.locator('#modal button[type=submit]').click();
   await expect(page.locator('body')).toContainText('reste non attribué 472,50');
   expect((await etat(page, 'rt-d4')).lignes[0].paid_at).toBe(iso(-3));
@@ -172,5 +184,34 @@ test('v1.71 — virement groupé sur deux dates : reste non attribué affiché, 
   const refus = await page.evaluate(async () => { const { sb } = await import('./js/data.js'); const v = window.__DB.virements_groupes[0];
     const { error } = await sb.rpc('virement_groupe_affecter', { p_virement: v.id, p_payment: 'rt-p5', p_montant: 100, p_compte: null }); return error && error.message; });
   expect(refus).toMatch(/le cumul ne dépasse jamais le virement/);
+  expectClean(ctx);
+});
+
+test('v1.71 — rattachement manuel contredit par l’origine indiquée ensuite par Pennylane : « À vérifier » persistant, gardé ; confirmé avec motif', async ({ page }) => {
+  const ctx = await openApp(page);
+  await preparer(page, {
+    shows: [show('rt-d6', 'Salle Écart')],
+    payments: [{ id: 'rt-p6', show_id: 'rt-d6', kind: 'solde', label: 'Solde', amount: 1750, vat_rate: 5.5, sort: 2, invoice_number: 'F-TEST-6', pennylane_id: 'pl-6', sent_at: iso(-20) }],
+    avoirs: [
+      // rattaché à la main sans origine connue, puis Pennylane indique une AUTRE facture → écart
+      { id: 'rt-m1', pennylane_id: 'pl-m1', invoice_number: 'AV-M1', amount_ht: 10, amount_ttc: 10.55, credited_pennylane_id: 'pl-autre', credited_invoice_number: 'F-AUTRE', etat: 'rattache', payment_id: 'rt-p6', show_id: 'rt-d6', rattache_origine: null, rattache_mode: 'manuel' },
+      // rattaché à la main, Pennylane indique ensuite la facture de la ligne → concordant, aucun signal
+      { id: 'rt-m2', pennylane_id: 'pl-m2', invoice_number: 'AV-M2', amount_ht: 5, amount_ttc: 5.28, credited_pennylane_id: 'pl-6', credited_invoice_number: 'F-TEST-6', etat: 'rattache', payment_id: 'rt-p6', show_id: 'rt-d6', rattache_origine: null, rattache_mode: 'manuel' }],
+  });
+  const panneau = page.locator('#avoirs-a-verifier');
+  await expect(panneau).toContainText('AV-M1');
+  await expect(panneau).not.toContainText('AV-M2');
+  await expect(page.locator('tr[data-avoir="rt-m1"]')).toContainText('à vérifier');
+  // gardé tant que non résolu : l'avoir compte toujours sur la ligne
+  expect((await etat(page, 'rt-d6')).restes.factureNet).toBe(1846.25 - 10.55 - 5.28);
+  await panneau.locator('[data-act="avoirConfirmer"][data-id="rt-m1"]').click();
+  await page.locator('dialog.ask button', { hasText: 'Confirmer' }).click();
+  await expect(page.locator('dialog.ask')).toContainText('À remplir');
+  await page.locator('dialog.ask #ask-input').fill('Vérifié avec la comptabilité');
+  await page.locator('dialog.ask button', { hasText: 'Confirmer' }).click();
+  await expect(page.locator('#avoirs-a-verifier')).toHaveCount(0);
+  const j = await page.evaluate(() => window.__DB.rattachements_journal.filter(x => x.objet_id === 'rt-m1').map(x => [x.action, x.motif]));
+  expect(j).toEqual([['confirmer', 'Vérifié avec la comptabilité']]);
+  expect((await etat(page, 'rt-d6')).avoirs.find(a => a.pennylane_id === 'pl-m1')).toMatchObject({ etat: 'rattache', payment_id: 'rt-p6' });
   expectClean(ctx);
 });
