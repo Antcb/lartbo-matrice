@@ -176,7 +176,7 @@ export const origineEcart = a => {
   if (a.rattache_mode === 'manuel'){
     const o = a.credited_pennylane_id, l = byId('show_payments', a.payment_id);
     return filled(o) && String(o) !== String(a.rattache_origine ?? '') && String(o) !== String(l?.pennylane_id ?? '')
-      && !(S.db.factures_remplacees || []).some(f => f.payment_id === a.payment_id && String(f.pennylane_id) === String(o));
+      && !(S.db.factures_remplacees || []).some(f => f.payment_id === a.payment_id && !f.detache_at && String(f.pennylane_id) === String(o));
   }
   return filled(a.rattache_origine) && String(a.rattache_origine) !== String(a.credited_pennylane_id ?? '');
 };
