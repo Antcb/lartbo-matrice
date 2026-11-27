@@ -6,7 +6,7 @@ import { render } from './app.js';
 import { PROD_LINES, isProductionShow, prodOf } from './production-budget.js';
 import { cnmDue, commissionOf, coreaCommissionCheck, isFacture, isFree, isSolde, lineForecast, linesOf, payerLabel, prodShowsOf } from './budget.js';
 import { breakFromText, commissionPctOf, coreaCalc, isCorea } from './corea.js';
-import { acompteState, canFixInvoice, correctionsOf, isCoproduction, isInvoiced, paymentsOf, payAmount, payVat, ttc, reglementsOf, resteDuTtc, tropPercuTtc, factureNetTtc, encaisseTtc } from './calc.js';
+import { acompteState, canFixInvoice, correctionsOf, isCoproduction, isInvoiced, paymentsOf, payAmount, payVat, ttc, reglementsOf, resteDuTtc, tropPercuTtc, factureNetTtc, encaisseTtc, QUALIFICATIONS_AVOIR, virementGroupeEtat } from './calc.js';
 import { contentTypeOf, insert, mergeRows, openStored, refreshBudgetMarker, refreshFor, remove, save, sb, typedFile, uploadFailure } from './data.js';
 import { byId, membersOfProject, setting } from './selectors.js';
 import { callScript } from './mail.js';
@@ -313,6 +313,149 @@ export const BUDGET_ACTIONS = {
         toast('Encaissement enregistré.'); render(); return true;
       }});
   },
+  /**
+   * (v1.71, L2b — décisions d'Anthony du 27/11/2026, 11 h 55) Avoir ou document négatif : rattacher (ou corriger le rattachement /
+   * le classement) à une ligne. Toute l'équipe ; motif obligatoire pour une correction ; auteur, date, liens avant / après gardés
+   * (rattachements_journal) ; un encaissement n'est jamais effacé ni dupliqué (un avoir ne porte aucun encaissement ; un
+   * remboursement enregistré sur l'avoir bloque son déplacement). Écriture côté serveur (avoir_rattacher).
+   */
+  avoirRattacher: async t => {
+    const a = byId('pennylane_avoirs', t.dataset.id); if (!a) return;
+    const correction = a.etat !== 'a_rattacher', cur = a.payment_id && byId('show_payments', a.payment_id);
+    const nom = a.invoice_number || 'Document ' + a.pennylane_id;
+    const shOf = p => byId('shows', p.show_id);
+    const lignes = (S.db.show_payments || []).filter(p => lignePourDocument(p) && p.id !== a.payment_id)
+      .sort((x, y) => (shOf(x)?.id === a.show_id ? -1 : 0) - (shOf(y)?.id === a.show_id ? -1 : 0) || String(shOf(y)?.date || '').localeCompare(String(shOf(x)?.date || '')));
+    if (!lignes.length) return toast('Aucune ligne de facture émise suivie à laquelle rattacher ce document', true);
+    const label = p => { const sh = shOf(p), pr = sh && byId('projects', sh.project_id);
+      return [sh?.date ? fmtDate(sh.date) : '', pr?.name, sh?.venue, `${p.label || p.kind}${p.invoice_number ? ' ' + p.invoice_number : ''}`, eur2(payAmount(p) || 0) + ' HT'].filter(Boolean).join(' · '); };
+    await openModal({title: correction ? 'Corriger le rattachement' : 'Rattacher le document', saveLabel: correction ? 'Corriger' : 'Rattacher',
+      extraTop: `<div class="help full"><p class="m0"><b>${esc(nom)}</b> · − ${eur2(a.amount_ht)} HT${a.invoice_date ? ' · ' + fmtDate(a.invoice_date) : ''}${a.credited_invoice_number ? ' · facture d’origine indiquée par Pennylane : ' + esc(a.credited_invoice_number) : ''}
+        ${a.url ? ` · <a href="${esc(a.url)}" target="_blank" rel="noopener">voir dans Pennylane ↗</a>` : ''}</p>
+        ${cur ? `<p class="m0">Actuellement rattaché à : ${esc(label(cur))}</p>` : a.etat === 'hors_matrice' ? `<p class="m0">Actuellement classé « Hors MATRICE » : ${esc(a.classement_motif || '')}</p>` : ''}
+        <p class="m0">Le document Pennylane n’est pas modifié. Un avoir réduit le reste dû de la ligne ; il ne crée ni encaissement ni remboursement. Ce choix est gardé aux synchronisations suivantes.</p></div>`,
+      values: {id: 'avoir:' + a.id},
+      fields: [{k: 'to', label: 'Ligne', type: 'select', full: true, options: lignes.map(p => [p.id, label(p)])},
+        {k: 'motif', label: correction ? 'Motif de la correction (obligatoire)' : 'Motif (facultatif)', type: 'textarea', full: true, rows: 2}],
+      onSave: async v => {
+        if (!v.to){ toast('Choisis la ligne', true); return false; }
+        if (correction && !String(v.motif || '').trim()){ toast('Indique le motif de la correction', true); return false; }
+        const {error} = await sb.rpc('avoir_rattacher', {p_avoir: a.id, p_payment: v.to, p_motif: v.motif || null});
+        if (error){ toast(error.message, true); return false; }
+        await rechargerTables('pennylane_avoirs', 'rattachements_journal');
+        toast(`${nom} rattaché`); render(); return true;
+      }});
+  },
+  /** (v1.71) Détacher un document (rattaché ou classé « Hors MATRICE ») : motif obligatoire ; il redevient « À rattacher » et la
+   *  synchronisation ne le rattache plus d'elle-même */
+  avoirDetacher: async t => {
+    const a = byId('pennylane_avoirs', t.dataset.id); if (!a) return;
+    const motif = await askText({title: a.etat === 'hors_matrice' ? 'Remettre « À rattacher » ?' : 'Détacher le document ?',
+      text: `${a.invoice_number || 'Document ' + a.pennylane_id} (− ${eur2(a.amount_ht)} HT) redevient « À rattacher ». Rien n’est modifié dans Pennylane ; aucun encaissement n’est touché.`,
+      label: 'Motif', ok: 'Détacher', check: motifObligatoire});
+    if (motif == null) return;
+    const {error} = await sb.rpc('avoir_detacher', {p_avoir: a.id, p_motif: motif});
+    if (error) return toast(error.message, true);
+    await rechargerTables('pennylane_avoirs', 'rattachements_journal'); toast('Document remis « À rattacher »'); render();
+  },
+  /** (v1.71) Classer « Hors MATRICE / sans objet » : motif obligatoire ; sort de « À rattacher », reste consultable, corrigeable */
+  avoirHors: async t => {
+    const a = byId('pennylane_avoirs', t.dataset.id); if (!a) return;
+    const motif = await askText({title: 'Classer « Hors MATRICE / sans objet » ?',
+      text: `${a.invoice_number || 'Document ' + a.pennylane_id} (− ${eur2(a.amount_ht)} HT) sort de « À rattacher » sans être rattaché ; il reste consultable et son classement peut être corrigé.`,
+      label: 'Motif', ok: 'Classer', check: motifObligatoire});
+    if (motif == null) return;
+    const {error} = await sb.rpc('avoir_classer_hors', {p_avoir: a.id, p_motif: motif});
+    if (error) return toast(error.message, true);
+    await rechargerTables('pennylane_avoirs', 'rattachements_journal'); toast('Document classé « Hors MATRICE »'); render();
+  },
+  /** (v1.71) Qualification facultative d'un avoir (« Erreur de facturation ») */
+  avoirQualifier: async t => {
+    const a = byId('pennylane_avoirs', t.dataset.id); if (!a) return;
+    await openModal({title: 'Qualifier l’avoir', saveLabel: 'Enregistrer', values: {id: 'qualif:' + a.id, q: a.qualification || ''},
+      extraTop: `<p class="help full">${esc(a.invoice_number || 'Avoir ' + a.pennylane_id)} · − ${eur2(a.amount_ht)} HT. Qualification facultative : à laisser vide tant que le motif n’est pas connu.</p>`,
+      fields: [{k: 'q', label: 'Qualification', type: 'select', full: true, options: [['', 'Non qualifié'], ...Object.entries(QUALIFICATIONS_AVOIR)]}],
+      onSave: async v => {
+        const {error} = await sb.rpc('avoir_qualifier', {p_avoir: a.id, p_qualification: v.q || null});
+        if (error){ toast(error.message, true); return false; }
+        await rechargerTables('pennylane_avoirs', 'rattachements_journal'); render(); return true;
+      }});
+  },
+  /**
+   * (v1.71, option B — Champs des Notes) Facture RÉÉMISE hors devis : la ligne suit la nouvelle facture (synchronisation, numéro,
+   * lien) ; l'ancienne et ses avoirs restent visibles dans son historique ; aucun encaissement créé, effacé ni dupliqué ; même montant
+   * HT exigé. La facture est lue dans Pennylane par la fonction serveur (jamais modifiée), l'écriture est faite par la base.
+   */
+  factureReemise: async t => {
+    const p = byId('show_payments', t.dataset.id); if (!p) return;
+    await openModal({title: 'Rattacher une facture réémise', saveLabel: 'Rattacher la réémission', values: {id: 'reemission:' + p.id},
+      extraTop: `<div class="help full"><p class="m0">${esc(p.label || p.kind)} · suit aujourd’hui <b>${esc(p.invoice_number || p.pennylane_id || '')}</b> · ${eur2(payAmount(p) || 0)} HT${p.paid_at ? ` · payée le ${fmtDate(p.paid_at)}` : ''}</p>
+        <p class="m0">La ligne suivra la facture réémise (même montant HT). L’ancienne facture et ses avoirs restent visibles dans l’historique de la ligne ; l’encaissement noté n’est ni modifié, ni dupliqué. Aucun document Pennylane n’est modifié.</p></div>`,
+      fields: [{k: 'numero', label: 'N° de la facture réémise (Pennylane)', full: true}, {k: 'motif', label: 'Motif (facultatif)', type: 'textarea', full: true, rows: 2}],
+      onSave: async v => {
+        if (!String(v.numero || '').trim()){ toast('Indique le numéro de la facture réémise', true); return false; }
+        if (!(await confirmAsk('Rattacher la réémission ?', `« ${p.label || p.kind} » suivra ${String(v.numero).trim()} au lieu de ${p.invoice_number || p.pennylane_id}. Montant, date « Payée » et encaissements inchangés.`, 'Rattacher'))) return false;
+        try { await pennylane('reemission', {payment_id: p.id, invoice_number: String(v.numero).trim(), motif: v.motif || null}); }
+        catch (err){ toast(err.message, true); return false; }
+        await refreshFor('show_payments', 'show_id', [p.show_id]);
+        await rechargerTables('factures_remplacees', 'pennylane_avoirs', 'rattachements_journal');
+        toast('Réémission rattachée : la ligne suit la nouvelle facture'); render(); return true;
+      }});
+  },
+  /** (v1.71) Détacher une réémission : la ligne revient à sa facture d'origine ; motif obligatoire ; historique gardé */
+  reemissionDetacher: async t => {
+    const f = (S.db.factures_remplacees || []).find(x => x.id === t.dataset.id); if (!f) return;
+    const motif = await askText({title: 'Détacher la réémission ?', text: `La ligne revient à ${f.invoice_number || f.pennylane_id} (au lieu de ${f.remplacee_par_numero || f.remplacee_par_pennylane_id}). Encaissements et date « Payée » inchangés ; l’historique est gardé.`,
+      label: 'Motif', ok: 'Détacher', check: motifObligatoire});
+    if (motif == null) return;
+    const {error} = await sb.rpc('facture_reemise_detacher', {p_id: f.id, p_motif: motif});
+    if (error) return toast(error.message, true);
+    await refreshFor('show_payments', 'show_id', [f.show_id]);
+    await rechargerTables('factures_remplacees', 'pennylane_avoirs', 'rattachements_journal'); toast('Réémission détachée'); render();
+  },
+  /**
+   * (v1.71, R3 — décision du 27/11/2026) Part d'un virement GROUPÉ pour cette facture : virement existant ou nouveau (montant TTC,
+   * date, référence, identifiant Pennylane facultatif) ; un reste non attribué est permis et affiché ; le cumul ne dépasse jamais le
+   * virement (contrôlé aussi par la base à l'enregistrement). L'affectation est un encaissement de la ligne, daté du virement.
+   */
+  virementGroupe: async t => {
+    const p = byId('show_payments', t.dataset.id); if (!p) return;
+    if (p.paid_at) return toast('Facture déjà notée payée : son paiement est conservé tel quel.', true);
+    const s = byId('shows', p.show_id), proj = byId('projects', s?.project_id);
+    const num = v => v == null || v === '' ? null : Number(String(v).replace(',', '.'));
+    const ouverts = (S.db.virements_groupes || []).map(v => ({v, e: virementGroupeEtat(v)})).filter(x => x.e.reste > 0.004)
+      .sort((x, y) => String(y.v.date).localeCompare(String(x.v.date)));
+    const reste = resteDuTtc(p);
+    await openModal({title: 'Virement groupé', level: MODALS_LEVEL(), saveLabel: 'Enregistrer la part',
+      extraTop: `<p class="help full">${esc(p.label || p.kind)}${p.invoice_number ? ' · ' + esc(p.invoice_number) : ''} : reste dû <b>${eur2(reste)}</b> TTC. La part attribuée est un encaissement de cette facture, daté du virement. Le reste du virement peut rester non attribué ; le cumul ne dépasse jamais son montant.</p>`,
+      fields: [{k: 'vg', label: 'Virement', type: 'select', full: true, options: [['', 'Nouveau virement groupé'], ...ouverts.map(({v, e}) => [v.id, `${fmtDate(v.date)} · ${v.reference || 'sans référence'} · ${eur2(Number(v.montant_ttc))} TTC · reste non attribué ${eur2(e.reste)} TTC`])]},
+        {k: 'total', label: 'Montant TTC du virement (nouveau)', type: 'number'}, {k: 'date', label: 'Date du virement (nouveau)', type: 'date'},
+        {k: 'reference', label: 'Référence (relevé bancaire)', full: true}, {k: 'tx', label: 'Identifiant du virement dans Pennylane (facultatif)', full: true},
+        {k: 'montant', label: 'Part pour cette facture TTC (€)', type: 'number'},
+        {k: 'compte', label: 'Arrivé sur', type: 'select', options: [['', 'Non renseigné'], ...['compte', 'artbo', 'artiste', 'autre'].map(c => [c, payerLabel(c, proj)])]}],
+      values: {id: 'virement-groupe:' + p.id, vg: ouverts[0]?.v.id || '', date: today(), montant: reste || '', compte: p.payee || ''},
+      onSave: async v => {
+        const montant = num(v.montant);
+        if (!(montant > 0)){ toast('Part TTC à saisir', true); return false; }
+        let vg = v.vg ? (S.db.virements_groupes || []).find(x => x.id === v.vg) : null;
+        const dispo = vg ? virementGroupeEtat(vg).reste : num(v.total);
+        if (!vg && !(dispo > 0)){ toast('Montant TTC du virement à saisir', true); return false; }
+        if (!vg && !v.date){ toast('Date du virement à saisir', true); return false; }
+        if (montant > dispo + 0.005){ toast(`Part supérieure au reste non attribué du virement (${eur2(dispo)} TTC)`, true); return false; }
+        if (montant > reste + 0.01 && !(await confirmAsk('Part supérieure au reste dû ?', `${eur2(montant)} TTC pour un reste dû de ${eur2(reste)} TTC : l’excédent sera affiché comme encaissé au-delà du net facturé. Aucun remboursement n’est créé.`, 'Enregistrer quand même'))) return false;
+        if (!vg){
+          const {data, error} = await sb.rpc('virement_groupe_creer', {p_montant: num(v.total), p_date: v.date, p_reference: v.reference || null, p_transaction_id: v.tx || null});
+          if (error){ toast(error.message, true); return false; }
+          vg = data; S.db.virements_groupes = [...(S.db.virements_groupes || []), data]; touch('virements_groupes');
+        }
+        const {data, error} = await sb.rpc('virement_groupe_affecter', {p_virement: vg.id, p_payment: p.id, p_montant: montant, p_compte: v.compte || null});
+        if (error){ toast(error.message, true); await rechargerTables('virements_groupes'); render(); return false; }
+        await reloadReglements(data);
+        await rechargerTables('virements_groupes', 'rattachements_journal');
+        await payeeDapresMouvements(p.id);
+        toast(`Part du virement enregistrée : ${eur2(montant)} TTC (reste non attribué ${eur2(virementGroupeEtat(vg).reste)} TTC)`); render(); return true;
+      }});
+  },
   /** (v1.70, reprise demandée par Anthony le 26/11/2026, 23 h 15) Facture entièrement couverte par ses encaissements enregistrés mais
    *  sans date « Payée » (écriture précédente en échec, facture sans lien Pennylane) : la pose d'après les mouvements, sans ressaisie */
   async reglementPayee(t){
@@ -520,6 +663,18 @@ async function payeeDapresMouvements(id){
   const last = enc.map(r => r.date).sort().pop(); if (!last) return false;
   const comptes = [...new Set(enc.map(r => r.compte).filter(Boolean))];
   return !!(await save('show_payments', id, {paid_at: last, ...(!cur.payee && comptes.length === 1 ? {payee: comptes[0]} : {})}, {rerender: false}));
+}
+/** (v1.71) Ligne qui peut recevoir un document ou une part de virement : facture émise suivie, pas hors calcul (même règle que la
+ *  base : ligne_suivie) */
+function lignePourDocument(p){
+  if (!p || p.hors_calcul != null || !isInvoiced(p)) return false;
+  const sh = byId('shows', p.show_id); if (!sh) return false;
+  return sh.prod_mode === 'booking' ? p.kind === 'artbo' : ['acompte', 'solde', 'autre'].includes(p.kind);
+}
+const motifObligatoire = v => !String(v || '').trim() ? 'Motif obligatoire' : String(v).trim().length > 500 ? '500 caractères au plus' : '';
+async function rechargerTables(...tables){
+  const {fetchAll} = await import('./data.js');
+  for (const tb of tables){ S.db[tb] = await fetchAll(tb); touch(tb); }
 }
 /** Niveau de fenêtre : au-dessus d'une fenêtre déjà ouverte */
 const MODALS_LEVEL = () => document.querySelector('#modal[open]') ? 2 : 1;

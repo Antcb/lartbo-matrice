@@ -143,7 +143,7 @@ t('code de la synchronisation (L1 + L2a) : jamais la date du jour ; virements r�
   assert.ok(bloc.indexOf('await reserverHistorique(') > 0 && bloc.indexOf('await reserverHistorique(') < bloc.indexOf('const plan = planEncaissement'));
   assert.match(bloc, /if \(doute\.length\) \{ aVerifier\.push/);
   // reprise : un virement réservé pour CETTE ligne n'est pas « déjà compté » pour elle ni réinséré ; retrait jamais d'une réservation historique
-  assert.match(src, /const autresQue = \(pid: string\) => new Set\(\[\.\.\.comptes\]\.filter\(\(\[, l\]\) => l !== pid\)/);
+  assert.match(src, /const autresQue = \(pid: string\) => new Set\(\[\.\.\.\[\.\.\.comptes\]\.filter\(\(\[, l\]\) => l !== pid\)/);
   assert.match(src, /const nouveaux = ids\.filter\(id => comptes\.get\(id\) !== pid\)/);
   assert.match(src, /\.neq\('origine', 'historique'\)/);
   assert.match(src, /réservation du virement non retirée/);

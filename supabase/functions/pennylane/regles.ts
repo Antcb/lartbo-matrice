@@ -149,7 +149,7 @@ export function rattacherAvoir(origine: string | null, lignes: LigneAvoir[], num
   return { etat: 'a_rattacher', payment_id: null, show_id: dates.length === 1 ? dates[0] : null, reason: `Facture d’origine${ref} reliée à ${ls.length} lignes : à choisir` };
 }
 
-export type AvoirExistant = { etat: string; payment_id: string | null; show_id: string | null; rattache_origine?: string | null } | null | undefined;
+export type AvoirExistant = { etat: string; payment_id: string | null; show_id: string | null; rattache_origine?: string | null; rattache_mode?: string | null; reason?: string | null } | null | undefined;
 /** Écart persistant (décision d'Anthony du 26/11/2026, point 3) : avoir rattaché dont Pennylane indique maintenant une AUTRE facture
  *  d'origine (ou plus aucune) que celle du rattachement. Jamais de nouveau rattachement automatique ; signalé jusqu'à résolution.
  *  Même règle côté application : js/calc.js origineEcart. */
@@ -163,6 +163,10 @@ export function planAvoir(x: DocPl & { invoice_number?: unknown; date?: unknown;
   const pl = { pennylane_id: String(x.id), invoice_number: plein(x.invoice_number) ? String(x.invoice_number) : null, invoice_date: plein(x.date) ? String(x.date).slice(0, 10) : null,
     amount_ht: montantAvoir(x), amount_ttc: plein(x.currency_amount ?? x.amount) && Number.isFinite(Number(x.currency_amount ?? x.amount)) ? r2(Math.abs(Number(x.currency_amount ?? x.amount))) : null,
     credited_pennylane_id: origine, credited_invoice_number: numeroOrigine, pl_status: plein(x.status) ? String(x.status) : null, last_seen_at: vuLe, gone_at: null };
+  // (v1.71, L2b, décision d'Anthony du 27/11/2026) décision MANUELLE (rattaché, corrigé, détaché ou classé « Hors MATRICE » à la
+  // main) : jamais défaite par la synchronisation — état, ligne et motif gardés tels quels
+  if (existant?.rattache_mode === 'manuel') return { ...pl, etat: existant.etat, payment_id: existant.payment_id, show_id: existant.show_id, reason: existant.reason ?? null,
+    nouveau_rattachement: false, origine_changee: existant.etat === 'rattache' && origineEcart(existant.rattache_origine, origine) };
   // déjà rattaché : gardé tel quel (rattache_origine non réécrite) ; écart d'origine signalé, jamais déplacé
   if (existant?.etat === 'rattache') return { ...pl, etat: 'rattache', payment_id: existant.payment_id, show_id: existant.show_id, reason: null, nouveau_rattachement: false,
     origine_changee: origineEcart(existant.rattache_origine, origine) };
@@ -229,7 +233,7 @@ export function encaissementAvecAvoir(x: DocPl, avoirsTtc: (number | null | unde
 // R1 : un virement Pennylane ne duplique JAMAIS une saisie manuelle : rapproché de LA saisie manuelle non rapprochée du même sens et du
 // même montant (à 1 centime) ; plusieurs candidates, ou une saisie manuelle de montant différent : rien n'est fait, « à vérifier ».
 export type Reglement = { id: string; sens: 'encaissement' | 'remboursement'; etat: 'a_faire' | 'fait'; montant_ttc: number | string;
-  date?: string | null; source: 'manuel' | 'pennylane'; transaction_id?: string | null; annule_at?: string | null };
+  date?: string | null; source: 'manuel' | 'pennylane'; transaction_id?: string | null; annule_at?: string | null; virement_groupe_id?: string | null };
 const actif = (r: Reglement) => !r.annule_at;
 /** Encaissé net d'une ligne (TTC) d'après ses mouvements enregistrés : encaissements faits − remboursements faits */
 export const encaisseNet = (rs: Reglement[]) => r2(rs.filter(r => actif(r) && r.etat === 'fait')
@@ -255,7 +259,8 @@ export function planEncaissement(x: DocPl, avoirsTtc: (number | null | undefined
   const ici = new Set(rs.map(r => r.transaction_id).filter(Boolean) as string[]);
   const etablis = (virements || []).filter(v => idVirement(v) && plein(v?.date) && montantVirement(v) > 0);
   const nouveaux = etablis.filter(v => !dejaAilleurs.has(idVirement(v)!) && !ici.has(idVirement(v)!));
-  const manuels = rs.filter(r => r.source === 'manuel' && !r.transaction_id && r.sens === 'encaissement' && r.etat === 'fait');
+  // (v1.71) part d'un virement groupé réparti à la main : déjà liée à SON virement, jamais rapprochée d'un autre
+  const manuels = rs.filter(r => r.source === 'manuel' && !r.transaction_id && !r.virement_groupe_id && r.sens === 'encaissement' && r.etat === 'fait');
   const creer: PlanEncaissement['creer'] = [], rapprocher: PlanEncaissement['rapprocher'] = [], pris = new Set<string>();
   for (const v of nouveaux) {
     const m = montantVirement(v), cands = manuels.filter(r => !pris.has(r.id) && Math.abs(Number(r.montant_ttc) - m) <= 0.01);

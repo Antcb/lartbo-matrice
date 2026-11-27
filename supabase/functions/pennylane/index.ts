@@ -7,6 +7,7 @@
 // Le jeton API est gardé côté serveur (Réglages › Pennylane). Appels depuis l'app (utilisateur connecté) :
 //   { action: 'status' } · { action: 'quote', show_id } · { action: 'invoice', payment_id } · { action: 'sync' }
 //   { action: 'lire_avoir', invoice_number? } (v1.69 : lecture seule du format réel d'un avoir)
+//   { action: 'reemission', payment_id, invoice_number, motif? } (v1.71 : la ligne suit une facture réémise — option B, L2b)
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 import { acomptesDeLaDate, baseCommission, describe, emise, estAvoir, factureIsolee, figerMontant, frDate, isBooking, montantAcompte, montantAttendu, origineAvoir, payable, pctCommission, planAvoir, planEncaissement, planRemboursement, rangeeDansLeDrive, remboursementsAutoActifs, relieAuDevis, soldeDouteux, texteCommission, delaiDocument } from './regles.ts';
 
@@ -197,6 +198,28 @@ Deno.serve(async (req) => {
       return json({ ok: true, origine_lue: origine, avoir, facture, virements, virementsAvoir, erreur });
     }
 
+    // (v1.71, L2b, décision d'Anthony du 27/11/2026 — option B) FACTURE RÉÉMISE hors devis : la facture est LUE dans Pennylane (jamais
+    // modifiée), puis la base enregistre le changement en une seule opération (facture_reemise_enregistrer) : la ligne suit la
+    // réémission, l'ancienne facture reste visible, ses avoirs ne réduisent plus le net ; aucun encaissement créé ni touché.
+    if (body.action === 'reemission') {
+      const voulu = norm(String(body.invoice_number || ''));
+      if (!voulu || !body.payment_id) return json({ error: 'Ligne et numéro de la facture réémise requis' }, 400);
+      let cursor = '', x: any = null;
+      for (let i = 0; i < 30 && !x; i++) {
+        const page = await pl('GET', '/customer_invoices?limit=100&sort=-id' + (cursor ? '&cursor=' + cursor : ''));
+        x = (page.items || []).find((d: any) => !d.draft && norm(d.invoice_number || '') === voulu) || null;
+        if (!page.has_more) break; cursor = page.next_cursor;
+      }
+      if (!x) return json({ error: 'Facture introuvable dans Pennylane (finalisée, ce numéro)' }, 404);
+      if (estAvoir(x)) return json({ error: 'Ce numéro est un avoir, pas une facture : rattache-le comme avoir' }, 400);
+      if (x.status === 'cancelled') return json({ error: 'Facture annulée dans Pennylane : ce n’est pas une réémission' }, 400);
+      const { data: me } = await user.auth.getUser();
+      const { data, error } = await admin.rpc('facture_reemise_enregistrer', { p_payment: body.payment_id, p_pennylane_id: String(x.id), p_invoice_number: String(x.invoice_number),
+        p_url: await invoicePage(x.id) || linkOf(x), p_amount_ht: Number(x.currency_amount_before_tax), p_motif: body.motif || null, p_auteur: me?.user?.email || null });
+      if (error) return json({ error: error.message }, 400);
+      return json({ ok: true, remplacee: data, facture: { id: String(x.id), invoice_number: x.invoice_number, paid: x.paid === true, status: x.status } });
+    }
+
     // Factures payées dans Pennylane → cochées « Payée » dans la Matrice (acomptes, soldes, autres lignes)
     if (body.action === 'sync') {
       const inv: Record<string, any> = {}, byId: Record<string, any> = {};
@@ -225,6 +248,8 @@ Deno.serve(async (req) => {
         const used = new Set<string>(); for (const t of taken || []) { if (t.pennylane_id) used.add('id:' + t.pennylane_id); if (t.invoice_number) used.add('n:' + norm(t.invoice_number)); }
         // factures déjà choisies à la main (historique des rattachements) : plus jamais reliées automatiquement
         const manual = new Set(((await readAll(() => admin.from('pennylane_rattachements').select('id, pennylane_id'))) || []).map((r: any) => String(r.pennylane_id)));
+        // (v1.71) factures d'origine remplacées par une réémission : plus jamais reliées automatiquement à une ligne
+        for (const f of (await readAll(() => admin.from('factures_remplacees').select('id, pennylane_id').is('detache_at', null))) || []) manual.add(String(f.pennylane_id));
         const free = (c: any) => !used.has('id:' + c.id) && !(c.invoice_number && used.has('n:' + norm(c.invoice_number))) && !manual.has(String(c.id));
         const pending = new Map<string, { x: any; show_id: string; reason: string }>();
         const flag = (x: any, show_id: string, reason: string) => { if (!pending.has(String(x.id))) pending.set(String(x.id), { x, show_id, reason }); };
@@ -298,7 +323,7 @@ Deno.serve(async (req) => {
       {
         const vuLe = new Date().toISOString();
         const avoirsPl = Object.values(byId).filter(estAvoir);
-        const deja = (await readAll(() => admin.from('pennylane_avoirs').select('id, pennylane_id, etat, payment_id, show_id, gone_at, rattache_origine'))) || [];
+        const deja = (await readAll(() => admin.from('pennylane_avoirs').select('id, pennylane_id, etat, payment_id, show_id, gone_at, rattache_origine, rattache_mode, reason'))) || [];
         const parId = new Map(deja.map((a: any) => [String(a.pennylane_id), a]));
         const origines = [...new Set(avoirsPl.map(origineAvoir).filter(Boolean))] as string[];
         const lignes: any[] = [];
@@ -324,13 +349,16 @@ Deno.serve(async (req) => {
       }
       // lignes couvertes par au moins un avoir : TTC de leurs avoirs (règle encaissementAvecAvoir, décision du 26/11/2026 17 h 21)
       const avoirsTtc = new Map<string, (number | null)[]>();
-      for (const a of (await readAll(() => admin.from('pennylane_avoirs').select('id, payment_id, amount_ttc').eq('etat', 'rattache').is('gone_at', null))) || [])
+      // (v1.71) avoirs d'une facture remplacée par une réémission : visibles, mais ne réduisent plus le net de la ligne
+      for (const a of (await readAll(() => admin.from('pennylane_avoirs').select('id, payment_id, amount_ttc').eq('etat', 'rattache').is('gone_at', null).eq('facture_remplacee', false))) || [])
         { const k = String(a.payment_id); avoirsTtc.set(k, [...(avoirsTtc.get(k) || []), a.amount_ttc == null ? null : Number(a.amount_ttc)]); }
       // virements déjà comptés pour une ligne : jamais comptés deux fois (pennylane_virements, migration v1.69)
       // virement → ligne pour laquelle il est compté (ou réservé). Réservé pour LA MÊME ligne (paiement pas écrit la fois précédente) :
       // réutilisable par elle à la reprise, jamais par une autre (demande d'Anthony du 26/11/2026, 17 h 42)
       const comptes = new Map<string, string>(((await readAll(() => admin.from('pennylane_virements').select('id, transaction_id, payment_id'))) || []).map((v: any) => [String(v.transaction_id), String(v.payment_id)]));
-      const autresQue = (pid: string) => new Set([...comptes].filter(([, l]) => l !== pid).map(([t]) => t));
+      // (v1.71, R3) virements groupés répartis à la main : jamais comptés par la synchronisation, pour aucune ligne
+      const groupes = new Set<string>(((await readAll(() => admin.from('virements_groupes').select('id, transaction_id').not('transaction_id', 'is', null))) || []).map((v: any) => String(v.transaction_id)));
+      const autresQue = (pid: string) => new Set([...[...comptes].filter(([, l]) => l !== pid).map(([t]) => t), ...groupes]);
       const payeesAvecAvoir: string[] = [], payeesSansTransaction: string[] = [], virementsPartiels: string[] = [], aVerifier: string[] = [];
       // paiements HISTORIQUES (notés avant L1, sans identifiant de virement) : avant de compter un virement pour une ligne, les virements
       // des lignes déjà PAYÉES de la même date (liées à Pennylane) sont relus et réservés pour elles (origine « historique ») ; une ligne
@@ -344,7 +372,7 @@ Deno.serve(async (req) => {
           let tv: any[] = [];
           try { tv = (await pl('GET', `/customer_invoices/${q.pennylane_id}/matched_transactions`)).items || []; }
           catch (e) { doutesHisto.get(showId)!.push(`${q.label || q.kind} ${q.invoice_number || ''} (virements illisibles)`); continue; }
-          const rows = tv.filter((v: any) => (typeof v?.id === 'string' || typeof v?.id === 'number') && String(v.id).trim() && !comptes.has(String(v.id)))
+          const rows = tv.filter((v: any) => (typeof v?.id === 'string' || typeof v?.id === 'number') && String(v.id).trim() && !comptes.has(String(v.id)) && !groupes.has(String(v.id)))
             .map((v: any) => ({ transaction_id: String(v.id), payment_id: q.id, pennylane_invoice_id: String(q.pennylane_id), origine: 'historique',
               amount: Number.isFinite(Number(v.amount)) ? Number(v.amount) : null, tx_date: v.date ? String(v.date).slice(0, 10) : null }));
           if (!rows.length) continue;
@@ -388,7 +416,7 @@ Deno.serve(async (req) => {
         const doute = doutesHisto.get(String(p.show_id)) || [];
         const plan = planEncaissement(x, av, vs, autresQue(pid), rs);
         if (plan.signal === 'a_verifier') { aVerifier.push(`${nom} : saisie manuelle non rapprochée et virement Pennylane de montant différent — rien de fait, rapprochement à vérifier`); return; }
-        if (plan.signal === 'non_etabli') { if (vs.length) aVerifier.push(`${nom} : virement(s) plus grand(s) que le reste dû, ou montant non établi (virement groupé ?) — rien de noté, rapprochement à vérifier`); return; }
+        if (plan.signal === 'non_etabli') { if (vs.length) aVerifier.push(`${nom} : virement(s) plus grand(s) que le reste dû, ou montant non établi (virement groupé ?) — rien de noté ; à répartir à la main (« Virement groupé… » sous la facture)`); return; }
         if (plan.signal === 'deja_compte') { (av.length ? payeesAvecAvoir : payeesSansTransaction).push(`${nom} : virement déjà compté pour une autre ligne`); return; }
         const agit = plan.creer.length || plan.rapprocher.length || plan.paid_at;
         if (!agit) { if (isPaid) (av.length ? payeesAvecAvoir : payeesSansTransaction).push(`${nom} : aucun virement établi`); return; }

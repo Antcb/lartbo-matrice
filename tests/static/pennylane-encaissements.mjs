@@ -2,7 +2,7 @@
 // d'après les virements Pennylane, sur de FAUSSES données (aucun appel à Pennylane ni à la base). Module : pennylane/regles.ts
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { encaisseNet, planEncaissement, planRemboursement, remboursementsAutoActifs } from '../../supabase/functions/pennylane/regles.ts';
+import { encaisseNet, planAvoir, planEncaissement, planRemboursement, remboursementsAutoActifs } from '../../supabase/functions/pennylane/regles.ts';
 
 const cas = [];
 const t = (nom, f) => cas.push([nom, f]);
@@ -101,6 +101,48 @@ t('remboursements automatiques : désactivés sauf réglage explicite « oui » 
   const f = src.slice(src.indexOf('const rembourserAvoir'), src.indexOf('// paiements repris'));
   const garde = f.indexOf('if (!rembAuto)');
   assert.ok(garde > 0 && garde < f.indexOf('await reserver(') && garde < f.indexOf("from('reglements')"), 'garde avant toute réservation ou écriture');
+});
+
+t('(v1.71, L2b) part d’un virement groupé réparti à la main : jamais rapprochée d’un autre virement, comptée dans l’encaissé', () => {
+  const part = { ...reg({ id: 'g1', m: 1000 }), virement_groupe_id: 'vg-1' };
+  const p = planEncaissement(F, AV, [vir('v5', 1848.5)], S0, [part]);
+  assert.deepEqual(p.rapprocher, []); assert.deepEqual(p.creer, [{ transaction_id: 'v5', montant: 1848.5, date: '2026-11-20' }]);
+  assert.equal(p.paid_at, '2026-11-20');                       // 1 000 + 1 848,50 = 2 848,50 dus
+  // le virement groupé lui-même (compté « ailleurs » pour toutes les lignes) n'est jamais repris
+  assert.equal(planEncaissement(F, AV, [vir('vg-tx', 5000)], new Set(['vg-tx']), [part]).signal, 'partiel');
+});
+t('(v1.71, L2b) décision manuelle sur un avoir (rattaché, détaché, hors MATRICE) : jamais défaite par la synchronisation', () => {
+  const x = { id: 'av1', invoice_number: 'AV-1', currency_amount_before_tax: '-100', currency_amount: '-105.5', credited_invoice: { id: 'pl-9' } };
+  const lignes = [{ id: 'L9', show_id: 'S9', pennylane_id: 'pl-9' }];
+  const auto = planAvoir(x, { etat: 'a_rattacher', payment_id: null, show_id: null, rattache_mode: 'auto' }, lignes, 'now');
+  assert.equal(auto.etat, 'rattache');                          // réexaminé : rattaché automatiquement
+  const det = planAvoir(x, { etat: 'a_rattacher', payment_id: null, show_id: null, rattache_mode: 'manuel', reason: 'Détaché à la main : x' }, lignes, 'now');
+  assert.equal(det.etat, 'a_rattacher'); assert.equal(det.payment_id, null); assert.equal(det.reason, 'Détaché à la main : x');
+  const hors = planAvoir(x, { etat: 'hors_matrice', payment_id: null, show_id: null, rattache_mode: 'manuel' }, lignes, 'now');
+  assert.equal(hors.etat, 'hors_matrice'); assert.equal(hors.payment_id, null);
+  const man = planAvoir(x, { etat: 'rattache', payment_id: 'L7', show_id: 'S7', rattache_mode: 'manuel', rattache_origine: 'pl-9' }, lignes, 'now');
+  assert.equal(man.payment_id, 'L7'); assert.equal(man.origine_changee, false); assert.equal(man.amount_ht, 100);
+  assert.equal(planAvoir(x, { etat: 'rattache', payment_id: 'L7', show_id: 'S7', rattache_mode: 'manuel', rattache_origine: 'pl-8' }, lignes, 'now').origine_changee, true);
+});
+t('(v1.71, L2b) synchronisation : avoirs d’une facture remplacée hors du net ; virements groupés jamais comptés ; réémission lue puis écrite par la base', () => {
+  const src = readFileSync(new URL('../../supabase/functions/pennylane/index.ts', import.meta.url), 'utf8');
+  assert.match(src, /select\('id, payment_id, amount_ttc'\)\.eq\('etat', 'rattache'\)\.is\('gone_at', null\)\.eq\('facture_remplacee', false\)/);
+  assert.match(src, /rattache_origine, rattache_mode, reason'/);
+  assert.match(src, /const autresQue = \(pid: string\) => new Set\(\[\.\.\.\[\.\.\.comptes\]\.filter\(\(\[, l\]\) => l !== pid\)\.map\(\(\[t\]\) => t\), \.\.\.groupes\]\)/);
+  assert.match(src, /!comptes\.has\(String\(v\.id\)\) && !groupes\.has\(String\(v\.id\)\)/);
+  const r = src.slice(src.indexOf("body.action === 'reemission'"), src.indexOf("body.action === 'sync'"));
+  assert.ok(r.includes("admin.rpc('facture_reemise_enregistrer'") && !/from\('show_payments'\)\.update/.test(r), 'écriture par la seule fonction de la base');
+  assert.ok(r.indexOf('estAvoir(x)') > 0 && r.indexOf("x.status === 'cancelled'") > 0);
+});
+
+t('(v1.71) Champs des Notes après réémission puis resynchronisation : l’avoir de F-77 reste rattaché, sa marque « facture remplacée », sa qualification ne sont jamais réécrites', () => {
+  const f117 = { id: 'pl-117', invoice_number: 'AV-117', currency_amount_before_tax: '-1750', currency_amount: '-1846.25', credited_invoice: { id: 'pl-77', invoice_number: 'F-77' } };
+  const rec = planAvoir(f117, { etat: 'rattache', payment_id: 'L1', show_id: 'S1', rattache_origine: 'pl-77', rattache_mode: 'auto' }, [{ id: 'L1', show_id: 'S1', pennylane_id: 'pl-120' }], 'now');
+  assert.equal(rec.etat, 'rattache'); assert.equal(rec.payment_id, 'L1'); assert.equal(rec.origine_changee, false);
+  for (const k of ['facture_remplacee', 'qualification', 'classement_motif', 'rattache_mode']) assert.ok(!(k in rec), k + ' jamais écrit par la synchronisation');
+  // ligne payée (paiement historique du 30/10) : la synchronisation n'y crée aucun encaissement (seules les lignes sans date « Payée »)
+  const src = readFileSync(new URL('../../supabase/functions/pennylane/index.ts', import.meta.url), 'utf8');
+  assert.match(src, /if \(!p\.paid_at && x\.status !== 'cancelled'\) \{ await encaisserLigne/);
 });
 
 let ok = 0;
