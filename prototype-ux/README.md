@@ -1,4 +1,4 @@
-# MATRICE — prototype UX/UI V4 « Creative Engineering × Backstage Studio »
+# MATRICE — prototype UX/UI V5 « Backstage »
 
 Branche `ux/refonte-uxui`, créée depuis `main` au commit `ee1f806` (v1.68.3, 26/11/2026). `main` inchangée depuis.
 Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (arbitrage A2). `DESIGN_SYSTEM.md` reste celui de `main`.
@@ -10,6 +10,14 @@ Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (a
 - Aucune connexion : ni Supabase, ni Google, ni Pennylane, ni Brevo. Aucun appel réseau.
 - Préférences gardées dans le stockage local du navigateur, sous une clé propre (`matrice-proto.prefs.v1`), conformément à l'arbitrage A12.
 - GitHub Pages ne publie que `main` : ce dossier n'est pas en ligne depuis le dépôt. La démonstration est hébergée à part (lien transmis dans le compte rendu).
+
+## V5 (27/11/2026) — tableau de bord « Backstage »
+
+- Fonds clairs au choix (Préférences › Apparence › Fond clair) : Blanc Apple `#F5F5F7`, Blanc glacier `#EFF3F5` (défaut), Argent minéral `#E8EBED` ; graphite `#1E1F22` en sombre. Indépendants de la palette et du mode.
+- Une composition par section : Booking (bloc signature en dégradé, courbe translucide, 4 indicateurs sur une ligne), Prochaines dates (timeline par mois, statut complet), Tâches (4 compteurs en grille 2 × 2, liste prioritaire, case « Marquer comme faite »), Finances (chiffre d'affaires HT, courbe réalisé / prévisionnel, périodes 1M à Tout, 3 indicateurs TTC dont l'échu non soldé), Billetterie (jauges fines avec repère du break), Suivis actifs (histogramme par statut actif), Relances prioritaires, Messagerie (non lus, à rattacher, avatars), Modules (carrés dégradés, aussi dans la feuille Modules sur iPhone).
+- Verre retravaillé (translucidité, reflet, liseré lumineux, ombre diffuse), réservé à la navigation, désactivable.
+- Densité : titres, marges, en-têtes et commandes réduits ; réglages de densité et de confort conservés.
+- Préférences des versions précédentes reprises (blocs convertis, palette conservée).
 
 ## V4 (27/11/2026) — rupture artistique
 

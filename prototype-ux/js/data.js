@@ -49,17 +49,18 @@ window.MATRICE_DATA = (() => {
     options: { m: 'Options', label: 'Options en cours', value: '7', note: 'dont 2 à relancer' },
     cachets: { m: 'Cachets', label: 'Cachets confirmés', value: 64350, eur: true, note: 'HT, saison en cours' },
     commissions: { m: 'Commissions', label: 'Commissions nettes', value: 8912, eur: true, note: 'après part partenaires' },
-    reste: { m: 'À encaisser', label: 'Reste à encaisser', value: 21480, eur: true, note: 'production' },
-    impayes: { m: 'Impayés', label: 'Factures impayées', value: 6240, eur: true, note: '3 factures émises' },
+    reste: { m: 'À encaisser', label: 'Reste à encaisser', value: 42850, eur: true, note: 'production' },
+    impayes: { m: 'Impayés', label: 'Factures impayées', value: 8240, eur: true, note: '5 factures émises' },
     relances: { m: 'Retards', label: 'Relances en retard', value: '4', note: 'à traiter', warn: true },
     suivis: { m: 'À relancer', label: 'Suivis à relancer', value: '9', note: 'sans réponse > 10 j' },
     taches: { m: 'Urgentes', label: 'Tâches urgentes', value: '5', note: 'échéance ≤ 7 j' },
     remplissage: { m: 'Remplissage', label: 'Remplissage moyen', value: '72 %', note: 'dates en billetterie' },
   };
 
+  // Sections du tableau de bord (V5) : chacune sa composition
   const BLOCKS = {
-    dates: 'Prochaines dates', taches: 'Tâches', suivis: 'Suivis à relancer', messages: 'Messages',
-    cachets: 'Cachets par mois', billetterie: 'Billetterie',
+    dates: 'Prochaines dates', finances: 'Finances', taches: 'Tâches', billetterie: 'Billetterie',
+    pipeline: 'Suivis actifs', relances: 'Relances prioritaires', messages: 'Messagerie', modules: 'Modules',
   };
 
   // Les 10 statuts de MATRICE + « sans statut » (11 représentations distinctes, arbitrage A4)
@@ -74,7 +75,7 @@ window.MATRICE_DATA = (() => {
   const ARTISTS = ['Lune Ardente', 'Frères Cobalt', 'Nadia Ferrant Trio', 'Orchestre de Minuit'];
 
   const DATES = [
-    { id: 'd1', date: '2026-11-28', artist: 'Lune Ardente', venue: 'Le Hangar Bleu', city: 'Nantes (44)', status: 'Confirmée Salle', fee: 3200, contract: 'Cession', capacity: 450, sold: 318, seuil: 260 },
+    { id: 'd1', date: '2026-11-28', artist: 'Lune Ardente', venue: 'Le Hangar Bleu', city: 'Nantes (44)', status: 'Confirmée Salle', fee: 3200, contract: 'Cession', capacity: 450, sold: 318, seuil: 250 },
     { id: 'd2', date: '2026-12-03', artist: 'Frères Cobalt', venue: 'La Cale Sèche', city: 'Brest (29)', status: 'Option Salle', fee: 2400, contract: 'Co-Réalisation', capacity: 300, sold: 0, seuil: 210 },
     { id: 'd3', date: '2026-12-05', artist: 'Nadia Ferrant Trio', venue: 'Théâtre du Rempart', city: 'Dijon (21)', status: 'Confirmée Salle', fee: 4100, contract: 'Cession', capacity: 620, sold: 401, seuil: 450 },
     { id: 'd4', date: '2026-12-12', artist: 'Lune Ardente', venue: 'Salle Paul-Verdier', city: 'Lyon (69)', status: 'Intérêt Salle', fee: 2800, contract: 'N.C', capacity: 0, sold: 0, seuil: 0 },
@@ -84,35 +85,66 @@ window.MATRICE_DATA = (() => {
     { id: 'd8', date: '2027-07-24', artist: 'Lune Ardente', venue: 'Rencontres du Littoral', city: 'Sète (34)', status: 'Intérêt Festival', fee: 4800, contract: 'N.C', capacity: 0, sold: 0, seuil: 0 },
   ];
 
+  // Tâches : échéance (due) ; done = date à laquelle la tâche a été faite. « Terminées » = 30 derniers jours, comme le filtre
+  // « Terminées (30 j) » de l'onglet To Do de MATRICE (done_at ≥ aujourd'hui − 30 j).
   const TASKS = [
-    { t: 'Relancer le contrat signé — Théâtre du Rempart', due: '2026-11-25', prio: 'late', pole: 'Production' },
-    { t: 'Envoyer la fiche technique à La Cale Sèche', due: '2026-11-27', prio: 'high', pole: 'Production' },
-    { t: 'Commande d’affiches A3 — Le Hangar Bleu', due: '2026-11-28', prio: 'high', pole: 'Communication' },
-    { t: 'Facture de solde — Le Hangar Bleu', due: '2026-12-01', prio: 'normal', pole: 'Comptabilité' },
-    { t: 'Préparer le planning de janvier', due: '2026-12-04', prio: 'normal', pole: 'Booking' },
+    { t: 'Relancer le contrat signé — Théâtre du Rempart', proj: 'Nadia Ferrant Trio', pole: 'Production', due: '2026-11-24' },
+    { t: 'Envoyer la fiche technique à La Cale Sèche', proj: 'Frères Cobalt', pole: 'Production', due: '2026-11-26' },
+    { t: 'Commande d’affiches A3 — Le Hangar Bleu', proj: 'Lune Ardente', pole: 'Communication', due: '2026-11-27' },
+    { t: 'Valider la feuille de route — Le Hangar Bleu', proj: 'Lune Ardente', pole: 'Production', due: '2026-11-27' },
+    { t: 'Facture de solde — Le Hangar Bleu', proj: 'Lune Ardente', pole: 'Comptabilité', due: '2026-12-01' },
+    { t: 'Préparer le planning de janvier', proj: 'Orchestre de Minuit', pole: 'Booking', due: '2026-12-04' },
+    { t: 'Boucle communication — La Fabrique Sonore', proj: 'Frères Cobalt', pole: 'Communication', due: '2026-12-08' },
+    { t: 'Relancer le Festival des Tilleuls', proj: 'Nadia Ferrant Trio', pole: 'Booking', due: '2026-12-10' },
+    { t: 'Acompte reçu — Théâtre du Rempart', proj: 'Nadia Ferrant Trio', pole: 'Comptabilité', due: '2026-11-20', done: '2026-11-25' },
+    { t: 'Envoyer le contrat — Le Préau', proj: 'Orchestre de Minuit', pole: 'Booking', due: '2026-11-18', done: '2026-11-19' },
+    { t: 'Plan de feu — Le Hangar Bleu', proj: 'Lune Ardente', pole: 'Production', due: '2026-11-15', done: '2026-11-14' },
+    { t: 'Visuels réseaux — La Cale Sèche', proj: 'Frères Cobalt', pole: 'Communication', due: '2026-11-10', done: '2026-11-09' },
+    { t: 'Déclaration Movinmotion — octobre', proj: 'Lune Ardente', pole: 'Comptabilité', due: '2026-11-05', done: '2026-11-04' },
+    { t: 'Fiche technique validée — Théâtre du Rempart', proj: 'Nadia Ferrant Trio', pole: 'Production', due: '2026-11-02', done: '2026-11-02' },
+    { t: 'Devis transport — tournée d’automne', proj: 'Frères Cobalt', pole: 'Production', due: '2026-10-15', done: '2026-10-14' },
   ];
 
-  const SUIVIS = [
-    { s: 'Le Grand Kiosque', city: 'Rennes', artist: 'Frères Cobalt', last: '2026-11-12', st: 'Mail envoyé' },
-    { s: 'Festival des Marais', city: 'Niort', artist: 'Lune Ardente', last: '2026-11-08', st: 'Intérêt' },
-    { s: 'Scène des Remparts', city: 'Vannes', artist: 'Nadia Ferrant Trio', last: '2026-11-05', st: 'Option' },
-    { s: 'Café des Rives', city: 'Angers', artist: 'Orchestre de Minuit', last: '2026-10-30', st: 'Mail envoyé' },
+  // Prospection : suivis actifs par statut de MATRICE (PROSPECT_LABEL). « Confirmé » et « Clos » sont des suivis clos (suiviClosed) : hors décompte.
+  const SUIVIS_ACTIFS = [
+    { k: 'Mailed', l: 'Mail envoyé', n: 23 }, { k: 'Interest', l: 'Intérêt', n: 12 }, { k: 'Option', l: 'Option', n: 6 },
+  ];
+  // Relances prioritaires : échéance de la tâche de relance du suivi
+  const RELANCES = [
+    { s: 'Le Grand Kiosque', city: 'Rennes', proj: 'Frères Cobalt', st: 'Mail envoyé', due: '2026-11-23' },
+    { s: 'Festival des Marais', city: 'Niort', proj: 'Lune Ardente', st: 'Intérêt', due: '2026-11-26' },
+    { s: 'Scène des Remparts', city: 'Vannes', proj: 'Nadia Ferrant Trio', st: 'Option', due: '2026-11-30' },
+    { s: 'Café des Rives', city: 'Angers', proj: 'Orchestre de Minuit', st: 'Mail envoyé', due: '2026-12-03' },
   ];
 
+  // Messagerie (boîte du titulaire) : compteurs existants de l'onglet Mails (« Non lus », « À rattacher ») ; « à répondre » n'existe pas
+  const MAIL_COUNTS = { unread: 8, link: 3 };
   const MESSAGES = [
-    { from: 'Programmation — Le Grand Kiosque', subj: 'Re : proposition de date en mars', at: '09:42', unread: true },
-    { from: 'Régie — Théâtre du Rempart', subj: 'Fiche technique et plan de feu', at: '08:15', unread: true },
-    { from: 'Festival des Marais', subj: 'Dossier de candidature 2027', at: 'Hier', unread: false },
-    { from: 'Administration — Le Hangar Bleu', subj: 'Acompte réglé', at: 'Hier', unread: false },
+    { from: 'Camille Rouet', org: 'Le Grand Kiosque', subj: 'Re : proposition de date en mars', proj: 'Frères Cobalt', at: '09:42', unread: true },
+    { from: 'Hugo Ménard', org: 'Théâtre du Rempart', subj: 'Fiche technique et plan de feu', proj: 'Nadia Ferrant Trio', at: '08:15', unread: true },
+    { from: 'Inès Carrel', org: 'Festival des Marais', subj: 'Dossier de candidature 2027', proj: 'Lune Ardente', at: 'Hier', unread: false },
+    { from: 'Paul Ternier', org: 'Le Hangar Bleu', subj: 'Acompte réglé', proj: 'Lune Ardente', at: 'Hier', unread: false },
+    { from: 'Léa Fournel', org: 'La Fabrique Sonore', subj: 'Boucle communication : visuels reçus', proj: 'Frères Cobalt', at: 'mer.', unread: false },
   ];
 
-  // Cachets par mois, exercice 01/10/2026 → 30/09/2027 : réalisé (jusqu'à novembre) et prévisionnel
+  // Finances : chiffre d'affaires HT par mois (réalisé, prévisionnel) depuis la création (oct. 2024), exercices du 1er octobre au 30 septembre.
+  // Novembre 2026 : réalisé à date (27/11). Montants entièrement fictifs ; la règle de calcul réelle reste à arbitrer.
+  const FIN_REAL = [3200, 4100, 6800, 2100, 3900, 5200, 4400, 6100, 8800, 11200, 6900, 2600,   // 2024-2025
+    5400, 6900, 9200, 3100, 5600, 6800, 5900, 8400, 10900, 14600, 8100, 3300,                   // 2025-2026
+    7400, 8350];                                                                               // 2026-2027 à date
+  const FIN_PLAN = [8000, 9600, 11500, 4200, 6300, 7800, 5600, 8200, 12400, 16900, 9100, 3500];   // prévisionnel 2026-2027
+  const FIN = {
+    start: '2024-10',
+    months: FIN_REAL.map((r, i) => ({ real: r, plan: null })).concat(Array(10).fill(0).map(() => ({ real: null, plan: null }))).map((x, i) => i >= 24 ? { ...x, plan: FIN_PLAN[i - 24] } : x),
+    // mois en cours par semaine (semaines commençant le lundi) : réalisé à date, prévisionnel
+    weeks: [{ d: '2026-11-02', real: 2300, plan: 2400 }, { d: '2026-11-09', real: 1650, plan: 2200 }, { d: '2026-11-16', real: 3100, plan: 2600 },
+      { d: '2026-11-23', real: 1300, plan: 1800 }, { d: '2026-11-30', real: null, plan: 600 }],
+    n1ToDate: 6100,   // novembre 2025, du 1er au 27
+    // encaissements au 27/11, TTC ; l'échu non soldé est COMPRIS dans le reste à encaisser (jamais additionné)
+    encaisse: 24180, aEncaisser: 42850, echu: 8240, echuN: 5,
+  };
+
   const MONTHS = ['oct.', 'nov.', 'déc.', 'janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.'];
-  const CACHETS = [
-    { m: 0, real: 7400, plan: 8000 }, { m: 1, real: 9800, plan: 9000 }, { m: 2, real: null, plan: 11500 }, { m: 3, real: null, plan: 4200 },
-    { m: 4, real: null, plan: 6300 }, { m: 5, real: null, plan: 7800 }, { m: 6, real: null, plan: 5600 }, { m: 7, real: null, plan: 8200 },
-    { m: 8, real: null, plan: 12400 }, { m: 9, real: null, plan: 16900 }, { m: 10, real: null, plan: 9100 }, { m: 11, real: null, plan: 3500 },
-  ];
 
   const NOTIFS = [
     { icon: 'triangle-alert', t: 'Contrat signé non reçu', b: 'Théâtre du Rempart · Nadia Ferrant Trio · échéance dépassée', when: 'Aujourd’hui, 6 h' },
@@ -123,5 +155,5 @@ window.MATRICE_DATA = (() => {
   const CONTACTS = ['Camille Rouet — Le Grand Kiosque', 'Hugo Ménard — Théâtre du Rempart', 'Inès Carrel — Festival des Marais', 'Paul Ternier — Le Hangar Bleu'];
   const STRUCTURES = ['Le Hangar Bleu', 'La Cale Sèche', 'Théâtre du Rempart', 'Le Grand Kiosque', 'Festival des Marais', 'La Fabrique Sonore', 'Festival des Tilleuls'];
 
-  return { MODULES, PROFILES, KPIS, BLOCKS, STATUSES, ARTISTS, DATES, TASKS, SUIVIS, MESSAGES, MONTHS, CACHETS, NOTIFS, CONTACTS, STRUCTURES, TODAY: '2026-11-26' };
+  return { MODULES, PROFILES, KPIS, BLOCKS, STATUSES, ARTISTS, DATES, TASKS, SUIVIS_ACTIFS, RELANCES, MAIL_COUNTS, MESSAGES, MONTHS, FIN, NOTIFS, CONTACTS, STRUCTURES, TODAY: '2026-11-27' };
 })();

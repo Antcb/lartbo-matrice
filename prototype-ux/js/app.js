@@ -1,4 +1,4 @@
-// MATRICE — prototype UX/UI V2 (tableau de bord, navigation modulaire, préférences, panneau latéral).
+// MATRICE — prototype UX/UI V5 (tableau de bord « Backstage », navigation modulaire, préférences, panneau latéral).
 // JavaScript natif, sans framework ni dépendance chargée en ligne. Données : js/data.js (fictives).
 // Préférences : stockage local de ce navigateur uniquement (arbitrage A12) — aucune base, aucun service réel.
 (() => {
@@ -32,20 +32,30 @@
   const KEY = 'matrice-proto.prefs.v1';
   const fromProfile = p => { const pr = D.PROFILES[p]; return { profile: p, order: [...pr.order], shortcuts: [...pr.shortcuts], kpis: [...pr.kpis] }; };
   const DEFAULTS = () => ({
-    ...fromProfile('booking'), hidden: [], folded: [], blocks: ['dates', 'taches', 'cachets', 'billetterie', 'suivis', 'messages'], hiddenBlocks: [],
+    ...fromProfile('booking'), hidden: [], folded: [], blocks: ['dates', 'finances', 'taches', 'billetterie', 'pipeline', 'relances', 'messages', 'modules'], hiddenBlocks: [],
     appearance: 'system', darkFrom: '19:00', darkTo: '07:30', density: { desktop: 'compacte', tablet: 'compacte', phone: 'compacte' },
-    palette: 'lagoon', hot: 1, textSize: 1, weight: 'normal', leading: 'normal', tracking: 'normal', contrast: 'normal', zebra: true, glass: true, motion: true, mini: false, owner: true,
+    palette: 'lagoon', bgLight: 'glacier', textSize: 1, weight: 'normal', leading: 'normal', tracking: 'normal', contrast: 'normal', zebra: true, glass: true, motion: true, mini: false, owner: true,
   });
   function load(){
-    try { const raw = localStorage.getItem(KEY); if (raw){ const v = JSON.parse(raw); return { ...DEFAULTS(), ...v, density: { ...DEFAULTS().density, ...(v.density || {}) } }; } }
+    try { const raw = localStorage.getItem(KEY); if (raw){ const v = JSON.parse(raw); return migrate({ ...DEFAULTS(), ...v, density: { ...DEFAULTS().density, ...(v.density || {}) } }); } }
     catch { /* stockage indisponible : réglages par défaut */ }
     return DEFAULTS();
+  }
+  // Blocs des versions précédentes : « Cachets par mois » → Finances ; « Suivis à relancer » → Suivis actifs + Relances prioritaires
+  function migrate(v){
+    const known = DEFAULTS().blocks, map = b => b === 'cachets' ? ['finances'] : b === 'suivis' ? ['pipeline', 'relances'] : [b];
+    v.blocks = [...new Set((v.blocks || []).flatMap(map).filter(b => known.includes(b)))];
+    known.forEach(b => { if (!v.blocks.includes(b)) v.blocks.push(b); });
+    v.hiddenBlocks = (v.hiddenBlocks || []).flatMap(map).filter(b => known.includes(b));
+    if (!['apple', 'glacier', 'mineral'].includes(v.bgLight)) v.bgLight = 'glacier';
+    delete v.hot;
+    return v;
   }
   let P = load();
   function save(){ try { localStorage.setItem(KEY, JSON.stringify(P)); } catch { /* sans stockage : réglages gardés le temps de la visite */ } }
 
   // État de la page (non enregistré)
-  const S = { tab: 'tableau-de-bord', views: { cachets: 'chart', billetterie: 'chart' }, sel: null, notifRead: false, exact: false, panel: null, panelFrom: null, openDate: null };
+  const S = { tab: 'tableau-de-bord', views: { fin: 'chart', billetterie: 'chart' }, finP: '1A', sel: null, done: [], notifRead: false, panel: null, panelFrom: null, openDate: null };
 
   const allowed = t => !(t.owner && !P.owner);          // A8 : Mails masqué hors titulaire ; contrôle serveur inchangé
   const visibleModules = () => P.order.map(modById).filter(m => m && !P.hidden.includes(m.id));
@@ -68,7 +78,7 @@
     const a = {
       'data-appearance': darkNow() ? 'dark' : 'light', 'data-density': P.density[device()] || 'compacte', 'data-weight': P.weight, 'data-leading': P.leading,
       'data-tracking': P.tracking, 'data-contrast': P.contrast, 'data-motion': P.motion ? 'on' : 'off', 'data-glass': P.glass ? 'on' : 'off',
-      'data-zebra': P.zebra ? 'on' : 'off', 'data-palette': P.palette === 'opal' ? 'opal' : 'lagoon', 'data-tsl': P.textSize >= 1.125 ? 'l' : 'n',
+      'data-zebra': P.zebra ? 'on' : 'off', 'data-palette': P.palette === 'opal' ? 'opal' : 'lagoon', 'data-bg': P.bgLight, 'data-tsl': P.textSize >= 1.125 ? 'l' : 'n',
     };
     Object.entries(a).forEach(([k, v]) => root.setAttribute(k, v));
     root.style.setProperty('--ts', String(P.textSize));
@@ -87,9 +97,7 @@
     const dot = x.stage === 'opt' ? '<circle cx="6" cy="6" r="1.7" fill="currentColor"/>' : '';
     return `<svg class="mk ${tone} ${x.stage === 'conf' ? 'fill' : ''}" width="${size}" height="${size}" viewBox="0 0 12 12" aria-hidden="true">${shape}${dot}</svg>`;
   }
-  const STAGE = { int: 'Intérêt', opt: 'Option', conf: 'Confirmée' };
-  const shortStatus = s => { const x = ST[s]; if (!x) return s; return x.type === 'ann' ? 'Annulée' : x.type === 'ss' ? 'Sans suite' : x.type === 'none' ? '—' : STAGE[x.stage]; };
-  const statusPill = s => `<span class="st">${marker(s)}<span class="st-full">${esc(s)}</span><span class="st-short" aria-hidden="true">${esc(shortStatus(s))}</span></span>`;
+  const statusPill = s => `<span class="st">${marker(s)}<span>${esc(s)}</span></span>`;   // V5 : libellé complet partout (onze statuts distincts)
 
   // ───────────────────────── Coque
   function shell(){
@@ -152,12 +160,13 @@
   }
 
   // ───────────────────────── Pages
-  const SWOOSH = `<svg class="swoosh" viewBox="0 0 600 160" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="sw" class="sw-a" x1="0" x2="1" y1="0" y2="0"><stop offset="0"/><stop offset=".35"/><stop offset=".75"/><stop offset="1"/></linearGradient></defs>
-    <path d="M10 150 C 220 150, 330 60, 590 18" stroke="url(#sw)" stroke-width="30"/><path d="M60 158 C 260 156, 380 84, 600 46" stroke="url(#sw)" stroke-width="6" opacity=".45"/></svg>`;
-  function pageHead(t, { sub = '', acts = '', hero = false } = {}){
+  const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+  function pageHead(t, { sub = '', acts = '' } = {}){
     const pinned = P.shortcuts.includes(t.id);
-    return `<div class="page-head">${hero ? SWOOSH : ''}<div class="grow"><h1>${esc(t.label)}</h1><p class="sub">${sub}<span class="chip">Données fictives</span></p></div>
-      <div class="acts">${acts}<button class="btn" type="button" data-act="pin" data-id="${t.id}" aria-pressed="${pinned}" title="${pinned ? 'Retirer des raccourcis' : 'Ajouter aux raccourcis'}">${icon('star', 'sm')}<span class="bt">Raccourci</span><span class="sr">${pinned ? ' : présent dans les raccourcis' : ' : ajouter aux raccourcis'}</span></button></div></div>`;
+    const tabs = t.module.tabs.filter(allowed);
+    const strip = tabs.length > 1 ? `<nav class="subtabs" aria-label="${esc(t.module.label)}">${tabs.map(x => `<a href="#${x.id}" data-go="${x.id}" ${x.id === t.id ? 'aria-current="page"' : ''}>${esc(x.label)}</a>`).join('')}</nav>` : '';
+    return `<div class="page-head"><div class="grow"><h1>${esc(t.label)}</h1><p class="sub">${sub}<span class="chip">Données fictives</span></p></div>
+      <div class="acts">${acts}<button class="btn ghost icon tool" type="button" data-act="pin" data-id="${t.id}" aria-pressed="${pinned}" aria-label="${pinned ? 'Retirer des raccourcis' : 'Ajouter aux raccourcis'}" title="${pinned ? 'Retirer des raccourcis' : 'Ajouter aux raccourcis'}">${icon('star', 'sm')}</button></div></div>${strip}`;
   }
 
   function renderMain(){
@@ -166,80 +175,187 @@
     main.innerHTML = `<div class="page">${S.tab === 'tableau-de-bord' ? dashboard() : S.tab === 'preferences' ? prefsPage() : placeholder(t)}</div>`;
     main.scrollTop = keep;
     applyVars(main);
-    const fig = $('#fig-cachets', main); if (fig) mountBars(fig);
+    const fig = $('#fig-fin', main); if (fig) mountChart(fig);
   }
-  const applyVars = r => { $$('[data-w]', r).forEach(el => el.style.setProperty('--w', el.dataset.w)); $$('[data-s]', r).forEach(el => el.style.setProperty('--s', el.dataset.s)); };
+  const applyVars = r => { [['w', '--w'], ['s', '--s'], ['h', '--h']].forEach(([k, v]) => $$(`[data-${k}]`, r).forEach(el => el.style.setProperty(v, el.dataset[k]))); };
 
-  // Indicateurs : valeur exacte + forme abrégée (téléphone)
+  // Valeurs : exactes ; sur téléphone, forme abrégée au-delà de 10 000 € (valeur exacte lue par les lecteurs d'écran)
   function kpiValue(k){
     if (k.eur){
       const full = `${esc(NUM.format(k.value))}<span class="u">€</span>`;
-      const short = k.value >= 10000 ? `${esc(NUM1.format(k.value / 1000))}<span class="u">k€</span>` : full;
-      return `<span class="k-full">${full}</span><span class="k-short" aria-hidden="true">${short}</span>`;
+      return k.value >= 10000 ? `<span class="k-full">${full}</span><span class="k-short" aria-hidden="true">${esc(NUM1.format(k.value / 1000))}<span class="u">k€</span></span>` : full;
     }
     const m = String(k.value).match(/^(.*?)\s*%$/);
     return m ? `${esc(m[1])}<span class="u">%</span>` : esc(k.value);
   }
+  const money = n => `${esc(NUM.format(n))}<span class="u">€</span>`;
+  const dMed = iso => day(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  const dDay = iso => `${cap(dWeek(iso))}. ${dShort(iso)}`;
+  const daysFrom = iso => Math.round((day(iso) - day(D.TODAY)) / 864e5);
+
   function dashboard(){
     const t = tabById('tableau-de-bord');
-    const kpis = P.kpis.map(k => D.KPIS[k]).filter(Boolean);
-    const blocks = P.blocks.filter(b => !P.hiddenBlocks.includes(b));
-    const SPAN = { dates: 7, taches: 5, cachets: 7, billetterie: 5, suivis: 6, messages: 6 };
-    return pageHead(t, { hero: true, sub: `<span>${esc(dLong(D.TODAY))}</span>`,
-        acts: `<button class="btn" type="button" data-act="customize" title="Personnaliser le tableau de bord">${icon('sliders-horizontal', 'sm')}<span class="bt">Personnaliser</span></button>` })
-      + `<section class="card kpis-wrap" aria-label="Indicateurs principaux"><div class="kpis ${S.exact ? 'exact' : ''}">${kpis.map((k, i) => `<button type="button" class="kpi ${k.warn ? 'k-warn' : ''} ${i === P.hot ? 'hot' : ''}" data-act="hot" data-i="${i}" aria-pressed="${i === P.hot}" title="Mettre en avant">
-          <span class="k-label" title="${esc(k.label)}"><span class="k-l-full">${esc(k.label)}</span><span class="k-l-short" aria-hidden="true">${esc(k.m || k.label)}</span></span><span class="k-value">${kpiValue(k)}</span>
-          <span class="k-note">${k.warn ? icon('triangle-alert') : ''}${esc(k.note)}</span></button>`).join('')}</div>
-        ${kpis.some(k => k.eur && k.value >= 10000) ? `<button class="kpi-hint" type="button" data-act="exact" aria-pressed="${S.exact}">${icon(S.exact ? 'eye-off' : 'eye', 'sm')}${S.exact ? 'Montants abrégés' : 'Afficher les montants exacts'}</button>` : ''}</section>`
-      + `<div class="grid">${blocks.map(b => `<section class="card span-${SPAN[b]}" aria-labelledby="h-${b}">${BLOCK[b]()}</section>`).join('')}</div>`;
+    const blocks = P.blocks.filter(b => !P.hiddenBlocks.includes(b) && BLOCK[b]);
+    return pageHead(t, { sub: `<span>${esc(cap(dLong(D.TODAY)))}</span>`,
+        acts: `<button class="btn ghost icon tool" type="button" data-act="customize" aria-label="Personnaliser le tableau de bord" title="Personnaliser le tableau de bord">${icon('sliders-horizontal', 'sm')}</button>` })
+      + hero()
+      + `<div class="grid">${blocks.map(b => `<section class="card blk blk-${b}" aria-labelledby="h-${b}">${BLOCK[b]()}</section>`).join('')}</div>`;
   }
   const cardHead = (id, title, count, tools = '') => `<div class="card-head"><h2 id="h-${id}">${esc(title)}</h2>${count != null ? `<span class="count">${count}</span>` : ''}<span class="grow"></span>${tools}</div>`;
-  const goBtn = (id, label) => `<a class="btn ghost sm" href="#${id}" data-go="${id}">${esc(label)}${icon('chevron-right', 'sm')}</a>`;
+  const goBtn = (id, label) => `<a class="btn ghost sm go" href="#${id}" data-go="${id}" title="Ouvrir ${esc(label)}">${esc(label)}${icon('chevron-right', 'sm')}</a>`;
   const viewToggle = key => `<div class="chart-tools" role="group" aria-label="Affichage">
-    <button class="btn sm icon" type="button" data-act="view" data-k="${key}" data-v="chart" aria-pressed="${S.views[key] === 'chart'}" aria-label="Graphique" title="Graphique">${icon('chart-column', 'sm')}</button>
+    <button class="btn sm icon" type="button" data-act="view" data-k="${key}" data-v="chart" aria-pressed="${S.views[key] === 'chart'}" aria-label="Graphique" title="Graphique">${icon('chart-line', 'sm')}</button>
     <button class="btn sm icon" type="button" data-act="view" data-k="${key}" data-v="table" aria-pressed="${S.views[key] === 'table'}" aria-label="Tableau des valeurs" title="Tableau des valeurs">${icon('table-2', 'sm')}</button></div>`;
 
-  const BLOCK = {
-    dates: () => cardHead('dates', 'Prochaines dates', D.DATES.length, goBtn('booking', 'Booking'))
-      + `<div class="list">${D.DATES.map(d => `<div class="row click r-date" tabindex="0" role="button" data-act="date" data-id="${d.id}" ${S.openDate === d.id ? 'aria-current="true"' : ''} aria-label="${esc(`${dLong(d.date)}, ${d.artist}, ${d.venue}, ${d.status}`)}">
-          <span class="dt">${esc(dShort(d.date))} <span class="muted">${esc(dWeek(d.date))}</span></span>
-          <span class="t"><b>${esc(d.artist)}</b> <span class="sub v">${esc(d.venue)}<span class="c-in"> · ${esc(d.city)}</span></span></span>
-          <span class="t sub c-col">${esc(d.city)}</span>${statusPill(d.status)}</div>`).join('')}</div>`,
-    taches: () => cardHead('taches', 'Tâches', D.TASKS.length, goBtn('todo', 'To Do'))
-      + `<ul class="list">${D.TASKS.map(x => `<li class="row r-task">
-          <span class="prio ${x.prio}">${x.prio === 'late' ? icon('triangle-alert', 'sm') + 'En retard' : x.prio === 'high' ? icon('arrow-up', 'sm') + 'Haute' : 'Normale'}</span>
-          <span class="t">${esc(x.t)}</span><span class="tag">${esc(x.pole)}</span><span class="dt">${esc(dShort(x.due))}</span></li>`).join('')}</ul>`,
-    suivis: () => cardHead('suivis', 'Suivis à relancer', D.SUIVIS.length, goBtn('suivi', 'Suivi'))
-      + `<ul class="list">${D.SUIVIS.map(x => `<li class="row r-suivi"><span class="t"><b>${esc(x.s)}</b> <span class="sub">· ${esc(x.city)} · ${esc(x.artist)}</span></span>
-          <span class="tag">${esc(x.st)}</span><span class="dt">${esc(dShort(x.last))}</span></li>`).join('')}</ul>`,
-    messages: () => {
-      if (!P.owner) return cardHead('messages', 'Messages') + `<p class="empty">Boîte réservée à son titulaire : ce bloc et l’onglet Mails sont masqués pour ce compte.</p>`;
-      return cardHead('messages', 'Messages', D.MESSAGES.filter(m => m.unread).length + ' non lus', goBtn('mails', 'Mails'))
-        + `<ul class="list">${D.MESSAGES.map(m => `<li class="row r-msg"><span class="unread ${m.unread ? '' : 'read'}" ${m.unread ? 'title="Non lu"' : ''}></span><span class="t sub c-col">${esc(m.from)}</span>
-          <span class="t">${m.unread ? `<b>${esc(m.subj)}</b><span class="sr"> (non lu)</span>` : esc(m.subj)}<span class="sub c-in">${esc(m.from)}</span></span><span class="dt">${esc(m.at)}</span></li>`).join('')}</ul>`;
-    },
-    cachets: () => cardHead('cachets', 'Cachets par mois', null, viewToggle('cachets'))
-      + `<p class="legend"><span><i class="lg-real"></i>Réalisé</span><span><i class="lg-plan"></i>Prévisionnel</span><span><i class="lg-sel"></i>Mois choisi</span><span class="mono">Exercice 2026-2027 · HT</span></p>`
-      + (S.views.cachets === 'chart'
-        ? `<div class="card-body"><div class="fig" id="fig-cachets" role="group" aria-label="Cachets par mois : réalisé et prévisionnel. Valeurs exactes au survol, au toucher ou dans le tableau."></div></div>`
-        : `<div class="card-body"><div class="tbl-wrap" tabindex="0" role="region" aria-label="Cachets par mois"><table class="tbl"><thead><tr><th>Mois</th><th class="num">Réalisé</th><th class="num">Prévisionnel</th></tr></thead><tbody>
-          ${D.CACHETS.map(c => `<tr><td>${esc(D.MONTHS[c.m])}</td><td class="num">${c.real == null ? '<span class="muted">—</span>' : esc(eur(c.real))}</td><td class="num">${esc(eur(c.plan))}</td></tr>`).join('')}</tbody></table></div></div>`),
-    billetterie: () => {
-      const list = D.DATES.filter(d => d.capacity && d.status.startsWith('Confirmée'));
-      return cardHead('billetterie', 'Billetterie', list.length, viewToggle('billetterie'))
-        + `<p class="legend"><span><i class="lg-real"></i>Billets vendus</span><span><i class="lg-seuil"></i>Seuil de rentabilité</span></p>`
-        + (S.views.billetterie === 'chart'
-          ? `<div class="card-body meters">${list.map(d => { const ok = d.sold >= d.seuil;
-              return `<div class="meter"><span class="m-name"><b>${esc(d.venue)}</b> <span class="muted">· ${esc(dShort(d.date))}</span></span><span class="m-val">${NUM.format(d.sold)} / ${NUM.format(d.capacity)} · ${Math.round(d.sold / d.capacity * 100)} %</span>
-                <span class="m-track" role="img" aria-label="${esc(`${d.sold} billets vendus sur ${d.capacity}, seuil ${d.seuil}`)}"><span class="m-fill" data-w="${(d.sold / d.capacity * 100).toFixed(1)}%"></span><span class="m-seuil" data-s="${(d.seuil / d.capacity * 100).toFixed(1)}%"></span></span>
-                <span class="m-state ${ok ? 'ok' : ''}">${ok ? icon('circle-check') + 'Seuil atteint' : `Encore ${NUM.format(d.seuil - d.sold)} billets pour le seuil (${NUM.format(d.seuil)})`}</span></div>`; }).join('')}</div>`
-          : `<div class="card-body"><div class="tbl-wrap" tabindex="0" role="region" aria-label="Billetterie"><table class="tbl"><thead><tr><th>Date</th><th>Lieu</th><th class="num">Vendus</th><th class="num">Jauge</th><th class="num">Seuil</th></tr></thead><tbody>
-            ${list.map(d => `<tr><td class="mono">${esc(dShort(d.date))}</td><td>${esc(d.venue)}</td><td class="num">${NUM.format(d.sold)}</td><td class="num">${NUM.format(d.capacity)}</td><td class="num">${NUM.format(d.seuil)}</td></tr>`).join('')}</tbody></table></div></div>`);
-    },
-  };
+  // 3.1 Booking — bloc signature : dégradé de la palette, courbe organique translucide, 4 indicateurs sur une ligne
+  const HERO_CURVE = `<svg class="hero-curve" viewBox="0 0 1200 200" preserveAspectRatio="none" aria-hidden="true">
+    <path class="hc-shade" d="M0 150 C 190 152, 280 78, 450 84 S 770 176, 950 128 S 1130 40, 1200 44 L1200 200 L0 200 Z"/>
+    <path class="hc-line" d="M0 150 C 190 152, 280 78, 450 84 S 770 176, 950 128 S 1130 40, 1200 44"/>
+    <path class="hc-echo" d="M0 172 C 210 172, 320 112, 490 116 S 800 190, 970 154 S 1140 82, 1200 86"/></svg>`;
+  function hero(){
+    const kpis = P.kpis.map(k => D.KPIS[k]).filter(Boolean);
+    const pr = D.PROFILES[P.profile];
+    return `<section class="hero" aria-labelledby="h-hero">${HERO_CURVE}
+      <div class="hero-top"><h2 id="h-hero">${esc(pr ? pr.label.split(' / ')[0] : 'Indicateurs')}</h2><span class="hero-meta">Saison 2026-2027</span></div>
+      <dl class="hero-kpis">${kpis.map(k => `<div class="hk"><dt class="hk-l"><span class="hk-lf">${esc(k.label)}</span><span class="hk-ls" aria-hidden="true">${esc(k.m || k.label)}</span></dt>
+        <dd class="hk-v">${kpiValue(k)}</dd><dd class="hk-n">${k.warn ? icon('triangle-alert') : ''}${esc(k.note)}</dd></div>`).join('')}</dl></section>`;
+  }
 
-  // Graphique V4 : courbes lissées monotones (aucun dépassement des valeurs réelles), aire en dégradé, point choisi lumineux
-  function smooth(pts){   // interpolation cubique monotone (Fritsch–Carlson) : passe exactement par chaque point, sans creux ni bosse inventés
+  // 3.2 Prochaines dates — timeline mensuelle (statut complet, repère de forme et de couleur sur l'axe)
+  function datesBlock(){
+    const groups = [];
+    D.DATES.forEach(d => { const k = d.date.slice(0, 7); let g = groups.find(x => x.k === k); if (!g) groups.push(g = { k, items: [] }); g.items.push(d); });
+    const y0 = D.TODAY.slice(0, 4);
+    return cardHead('dates', 'Prochaines dates', D.DATES.length, goBtn('booking', 'Booking'))
+      + `<div class="tl">${groups.map(g => { const n = g.items.length, y = g.k.slice(0, 4);
+          const name = day(g.k + '-01').toLocaleDateString('fr-FR', { month: 'long' }) + (y !== y0 ? ' ' + y : '');
+          const count = `${n} date${n > 1 ? 's' : ''}`;
+          return `<div class="tl-month" role="group" aria-label="${esc(`${cap(name)}, ${count}`)}"><div class="tl-mh" aria-hidden="true"><span class="tl-mn">${esc(name)}</span><span class="tl-rule"></span><span class="tl-mc">${count}</span></div>
+            ${g.items.map(d => `<div class="tl-ev" role="button" tabindex="0" data-act="date" data-id="${d.id}" ${S.openDate === d.id ? 'aria-current="true"' : ''} aria-label="${esc(`${dLong(d.date)}, ${d.artist}, ${d.venue}, ${d.city}, ${d.status}`)}">
+              <span class="tl-day" aria-hidden="true"><b>${String(day(d.date).getDate()).padStart(2, '0')}</b><span>${esc(dWeek(d.date))}.</span></span>
+              <span class="tl-axis">${marker(d.status)}</span>
+              <span class="tl-body" aria-hidden="true"><span class="tl-l1"><b class="tl-a">${esc(d.artist)}</b><span class="tl-s">${esc(d.status)}</span></span><span class="tl-p">${esc(d.venue)} — ${esc(d.city)}</span></span></div>`).join('')}</div>`; }).join('')}</div>`;
+  }
+
+  // 3.3 Tâches — rappels : 4 compteurs, puis les tâches à traiter en priorité (case « Marquer comme faite » conservée)
+  function taskList(){
+    return D.TASKS.map((x, i) => ({ ...x, i, done: x.done || (S.done.includes(i) ? D.TODAY : null) }));
+  }
+  function tasksBlock(){
+    const T = taskList(), open = T.filter(x => !x.done);
+    const c = { late: open.filter(x => x.due < D.TODAY).length, today: open.filter(x => x.due === D.TODAY).length, next: open.filter(x => x.due > D.TODAY).length,
+      done: T.filter(x => x.done && daysFrom(x.done) >= -30).length };
+    const tiles = [['late', 'En retard', 'triangle-alert'], ['today', 'Aujourd’hui', 'sun'], ['next', 'À venir', 'calendar-clock'], ['done', 'Terminées', 'check']];
+    const prio = open.sort((a, b) => a.due.localeCompare(b.due)).slice(0, 4);
+    return cardHead('taches', 'Tâches', null, goBtn('todo', 'To Do'))
+      + `<div class="rem-grid">${tiles.map(([k, l, ic]) => `<div class="rem rem-${k}"><span class="rem-ico" aria-hidden="true">${icon(ic)}</span><span class="rem-n">${c[k]}</span>
+          <span class="rem-l">${esc(l)}${k === 'done' ? '<span class="rem-p"> · 30 j</span><span class="sr"> ces 30 derniers jours</span>' : ''}</span></div>`).join('')}</div>`
+      + (prio.length ? `<ul class="tasks" aria-label="À traiter en priorité">${prio.map(x => { const d = daysFrom(x.due);
+          const st = d < 0 ? ['late', `En retard · ${-d} j`] : d === 0 ? ['today', 'Aujourd’hui'] : ['next', dDay(x.due)];
+          return `<li class="tk-row"><label class="tick-w"><input type="checkbox" class="tick" data-tick="${x.i}" aria-label="Marquer comme faite : ${esc(x.t)}"></label>
+            <span class="tk-b"><span class="tk-t">${esc(x.t)}</span><span class="tk-m">${esc(x.proj)} · ${esc(x.pole)}</span></span><span class="tk-st st-${st[0]}">${d < 0 ? icon('triangle-alert', 'sm') : ''}${esc(st[1])}</span></li>`; }).join('')}</ul>`
+        : '<p class="empty">Aucune tâche ouverte.</p>');
+  }
+
+  // 3.4 Finances — chiffre d'affaires HT de la période, courbe réalisé / prévisionnel, encaissements TTC
+  const FIN_P = [['1M', '1M'], ['3M', '3M'], ['6M', '6M'], ['1A', '1A'], ['ALL', 'Tout']];
+  const ymOf = i => { const [y, m] = D.FIN.start.split('-').map(Number), t = y * 12 + (m - 1) + i; return [Math.floor(t / 12), t % 12]; };
+  const CUR = (() => { const [y, m] = D.TODAY.split('-').map(Number), [y0, m0] = D.FIN.start.split('-').map(Number); return (y - y0) * 12 + (m - m0); })();
+  const MON3 = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+  const sum = a => a.reduce((s, v) => s + (v || 0), 0);
+  function finSeries(p){
+    const M = D.FIN.months, dToday = Number(D.TODAY.slice(8, 10));
+    const mo = (i, full) => { const [y, m] = ymOf(i); return full ? `${MON3[m]} ${y}` : MON3[m] + (m === 0 || full === 0 ? ` ${String(y).slice(2)}` : ''); };
+    const monthPts = (a, b) => M.slice(a, b + 1).map((x, k) => ({ lab: mo(a + k), long: mo(a + k, true), real: x.real, plan: x.plan, partial: a + k === CUR }));
+    const n1 = (a, b) => sum(M.slice(a - 12, b - 12).map(x => x.real)) + D.FIN.n1ToDate;   // même période un an plus tôt, mois en cours à date
+    const fy = CUR - ((ymOf(CUR)[1] + 3) % 12);   // premier mois de l'exercice (octobre)
+    if (p === '1M'){
+      const pts = D.FIN.weeks.map((w, k) => ({ lab: dMed(w.d), long: `semaine du ${dMed(w.d)}`, real: w.real, plan: w.plan, partial: k === 3 }));
+      return { pts, title: cap(mo(CUR, true)), real: sum(pts.map(x => x.real)), prev: D.FIN.n1ToDate, prevLab: `${mo(CUR - 12, true)} à date`, plan: sum(pts.map(x => x.plan)), today: 3 + (dToday - 23) / 7 };
+    }
+    if (p === '3M' || p === '6M'){ const n = p === '3M' ? 3 : 6, a = CUR - n + 1, pts = monthPts(a, CUR);
+      return { pts, title: `${mo(a, true)} – ${mo(CUR, true)}`, real: sum(pts.map(x => x.real)), prev: n1(a, CUR), prevLab: 'même période l’an dernier, à date' }; }
+    if (p === '1A'){ const pts = monthPts(fy, fy + 11);
+      return { pts, title: `Exercice ${ymOf(fy)[0]}-${ymOf(fy)[0] + 1}`, real: sum(pts.map(x => x.real)), prev: n1(fy, CUR), prevLab: `exercice ${ymOf(fy)[0] - 1}-${ymOf(fy)[0]} à date`,
+        plan: sum(pts.map(x => x.plan)), today: CUR - fy + (dToday - 1) / 30 }; }
+    const pts = monthPts(0, M.length - 1);
+    return { pts, title: `Depuis ${mo(0, true)}`, real: sum(pts.map(x => x.real)), prev: null, today: CUR + (dToday - 1) / 30, every: 6 };
+  }
+  function finBlock(){
+    const f = finSeries(S.finP), F = D.FIN;
+    const pct = f.prev ? (f.real - f.prev) / f.prev * 100 : null, up = pct != null && pct >= 0;
+    return cardHead('finances', 'Finances', null, viewToggle('fin') + goBtn('finances', 'Finances'))
+      + `<div class="fin-top"><span class="fin-k">Chiffre d’affaires HT · ${esc(f.title)}</span>
+        <div class="fin-v"><span class="fin-big">${money(f.real)}</span>${pct != null ? `<span class="fin-d ${up ? 'up' : 'down'}">${icon(up ? 'trending-up' : 'trending-down', 'sm')}${up ? '+' : '−'}${esc(NUM1.format(Math.abs(pct)))} %</span>` : ''}</div>
+        <span class="fin-s">Réalisé au ${esc(dShort(D.TODAY))}${f.prev ? ` · ${esc(eur(f.prev))} ${esc(f.prevLab)}` : ''}${f.plan ? ` · prévisionnel ${esc(eur(f.plan))}` : ''}</span></div>`
+      + `<p class="fin-lg"><span><i class="lg-real"></i>Réalisé</span><span><i class="lg-plan"></i>Prévisionnel</span></p>`
+      + (S.views.fin === 'chart'
+        ? `<div class="fig" id="fig-fin" role="group" aria-label="${esc(`Chiffre d’affaires HT, ${f.title} : réalisé et prévisionnel. Valeurs exactes au survol, au toucher ou dans le tableau.`)}"></div>`
+        : `<div class="fin-tbl"><div class="tbl-wrap" tabindex="0" role="region" aria-label="Chiffre d’affaires HT"><table class="tbl"><thead><tr><th>Période</th><th class="num">Réalisé</th><th class="num">Prévisionnel</th></tr></thead><tbody>
+          ${f.pts.map(x => `<tr><td>${esc(x.long)}</td><td class="num">${x.real == null ? '<span class="muted">—</span>' : esc(eur(x.real)) + (x.partial ? ' <span class="muted">à date</span>' : '')}</td><td class="num">${x.plan == null ? '<span class="muted">—</span>' : esc(eur(x.plan))}</td></tr>`).join('')}</tbody></table></div></div>`)
+      + `<div class="seg per" role="radiogroup" aria-label="Période">${FIN_P.map(([v, l]) => `<label><input type="radio" name="finp" value="${v}" data-finp ${S.finP === v ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>`
+      + `<div class="fin-tiles" role="group" aria-label="Encaissements au ${esc(dShort(D.TODAY))}, TTC">
+          <div class="ft"><span class="ft-l">Encaissé TTC</span><span class="ft-v">${money(F.encaisse)}</span></div>
+          <div class="ft"><span class="ft-l">À encaisser TTC</span><span class="ft-v">${money(F.aEncaisser)}</span></div>
+          <button class="ft ft-due" type="button" data-act="due"><span class="ft-l">Échu non soldé TTC</span><span class="ft-v">${money(F.echu)}</span><span class="ft-n">${F.echuN} factures</span><span class="sr">, compris dans le montant à encaisser</span></button></div>`;
+  }
+
+  // 3.5 Billetterie — jauges horizontales compactes, toutes les informations au-dessus de la jauge
+  function ticketsBlock(){
+    const list = D.DATES.filter(d => d.capacity && d.status.startsWith('Confirmée'));
+    return cardHead('billetterie', 'Billetterie', list.length, viewToggle('billetterie') + goBtn('ticketing', 'Ticketing'))
+      + (S.views.billetterie === 'chart'
+        ? `<div class="tix">${list.map(d => { const pct = Math.round(d.sold / d.capacity * 100), ok = d.sold >= d.seuil;
+            return `<div class="tix-ev"><b class="tix-a">${esc(d.artist)}</b><span class="tix-n">${NUM.format(d.sold)} / ${NUM.format(d.capacity)}</span><span class="tix-p">${pct} %</span>
+              <span class="tix-w">${esc(dMed(d.date))} · ${esc(d.city.replace(/\s*\(.*\)$/, ''))}</span><span class="tix-b">Break : ${NUM.format(d.seuil)}</span>
+              <span class="tix-s ${ok ? 'ok' : 'miss'}">${ok ? icon('check', 'sm') + 'Atteint' : `Manque ${NUM.format(d.seuil - d.sold)}`}</span>
+              <span class="tix-bar" role="img" aria-label="${esc(`${d.sold} billets vendus sur ${d.capacity}, soit ${pct} %. Break à ${d.seuil} billets : ${ok ? 'atteint' : `il manque ${d.seuil - d.sold} billets`}.`)}"><span class="tix-fill" data-w="${pct}%"></span><span class="tix-mark" data-s="${(d.seuil / d.capacity * 100).toFixed(1)}%"></span></span></div>`; }).join('')}</div>`
+        : `<div class="card-body"><div class="tbl-wrap" tabindex="0" role="region" aria-label="Billetterie"><table class="tbl"><thead><tr><th>Date</th><th>Artiste</th><th class="num">Vendus</th><th class="num">Jauge</th><th class="num">Break</th></tr></thead><tbody>
+          ${list.map(d => `<tr><td class="mono">${esc(dShort(d.date))}</td><td>${esc(d.artist)}</td><td class="num">${NUM.format(d.sold)}</td><td class="num">${NUM.format(d.capacity)}</td><td class="num">${NUM.format(d.seuil)}</td></tr>`).join('')}</tbody></table></div></div>`);
+  }
+
+  // 3.6 Prospection — bloc 1 : suivis actifs (histogramme) ; bloc 2 : relances prioritaires
+  function pipelineBlock(){
+    const L = D.SUIVIS_ACTIFS, tot = sum(L.map(x => x.n)), max = Math.max(...L.map(x => x.n));
+    return cardHead('pipeline', 'Suivis actifs', null, goBtn('suivi', 'Suivi'))
+      + `<div class="pipe"><p class="pipe-tot"><span class="pipe-big">${tot}</span><span class="pipe-cap">suivis en cours, hors confirmés et clos</span></p>
+        <ul class="bars" aria-label="Répartition par statut">${L.map(x => `<li class="bar b-${x.k}"><span class="bar-c"><span class="bar-v">${x.n}</span><span class="bar-f" data-h="${(x.n / max).toFixed(3)}"></span></span><span class="bar-l">${esc(x.l)}</span></li>`).join('')}</ul></div>`;
+  }
+  function relancesBlock(){
+    const L = [...D.RELANCES].sort((a, b) => a.due.localeCompare(b.due));
+    return cardHead('relances', 'Relances prioritaires', L.length, goBtn('suivi', 'Suivi'))
+      + `<ul class="rl">${L.map(x => { const d = daysFrom(x.due), late = d < 0;
+          return `<li><a class="rl-row" href="#suivi" data-go="suivi"><span class="rl-b"><b>${esc(x.s)}</b><span class="rl-m">${esc(x.proj)} · ${esc(x.city)} · ${esc(x.st)}</span></span>
+            <span class="rl-d ${late ? 'late' : d === 0 ? 'today' : ''}">${late ? icon('triangle-alert', 'sm') + `En retard · ${-d} j` : d === 0 ? 'Aujourd’hui' : esc(dDay(x.due))}</span>${icon('chevron-right', 'sm rl-c')}</a></li>`; }).join('')}</ul>`;
+  }
+
+  // 3.7 Messagerie — ligne d'indicateurs discrète, puis les derniers échanges
+  const initials = s => s.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const avTone = s => [...s].reduce((a, c) => a + c.charCodeAt(0), 0) % 5;
+  function messagesBlock(){
+    if (!P.owner) return cardHead('messages', 'Messagerie') + `<p class="empty">Boîte réservée à son titulaire : ce bloc et l’onglet Mails sont masqués pour ce compte.</p>`;
+    const C = D.MAIL_COUNTS;
+    return cardHead('messages', 'Messagerie', null, goBtn('mails', 'Mails'))
+      + `<p class="mx-line"><a class="mx-unread" href="#mails" data-go="mails">${C.unread} non lus</a><span aria-hidden="true">·</span><a href="#mails" data-go="mails">${C.link} à rattacher</a></p>`
+      + `<ul class="mx">${D.MESSAGES.map(m => `<li class="mx-row ${m.unread ? 'is-unread' : ''}"><span class="av av-${avTone(m.from)}" aria-hidden="true">${esc(initials(m.from))}</span>
+          <span class="mx-b"><span class="mx-1"><span class="mx-f">${esc(m.from)} <span class="mx-o">· ${esc(m.org)}</span></span><span class="mx-at">${esc(m.at)}</span></span>
+          <span class="mx-s">${esc(m.subj)}</span><span class="mx-p">${esc(m.proj)}</span></span>${m.unread ? '<span class="mx-dot"><span class="sr">Non lu</span></span>' : '<span></span>'}</li>`).join('')}</ul>`;
+  }
+
+  // 3.8 Modules — Backstage Control : carré dégradé contenant le pictogramme, nom, chevron
+  function moduleTiles(){
+    return visibleModules().map(m => { const tabs = m.tabs.filter(allowed); if (!tabs.length) return '';
+      const cur = tabs.some(t => t.id === S.tab);
+      return `<a class="mt" href="#${tabs[0].id}" data-go="${tabs[0].id}" ${cur ? 'aria-current="true"' : ''}><span class="mt-i" aria-hidden="true">${icon(m.icon)}</span>
+        <span class="mt-t"><b>${esc(m.label)}</b><span class="mt-s">${esc(tabs.map(t => t.label).join(' · '))}</span></span>${icon('chevron-right', 'sm mt-c')}</a>`; }).join('');
+  }
+  const modulesBlock = () => cardHead('modules', 'Modules', null, `<a class="btn ghost sm go" href="#preferences" data-go="preferences" title="Ordre et visibilité des modules">Personnaliser${icon('chevron-right', 'sm')}</a>`)
+    + `<nav class="mt-grid" aria-label="Modules">${moduleTiles()}</nav>`;
+
+  const BLOCK = { dates: datesBlock, finances: finBlock, taches: tasksBlock, billetterie: ticketsBlock, pipeline: pipelineBlock, relances: relancesBlock, messages: messagesBlock, modules: modulesBlock };
+
+  // Courbe : interpolation monotone (passe exactement par chaque valeur, sans bosse ni creux inventés), aire en dégradé sous le réalisé
+  function smooth(pts){   // Fritsch–Carlson
     if (pts.length < 2) return '';
     if (pts.length === 2) return `M${pts[0][0]},${pts[0][1]} L${pts[1][0]},${pts[1][1]}`;
     const n = pts.length, dx = [], dy = [], m = [], t = [];
@@ -250,47 +366,46 @@
     for (let i = 0; i < n - 1; i++){ const h = dx[i] / 3; d += ` C${pts[i][0] + h},${pts[i][1] + t[i] * h} ${pts[i + 1][0] - h},${pts[i + 1][1] - t[i + 1] * h} ${pts[i + 1][0]},${pts[i + 1][1]}`; }
     return d;
   }
-  let barsObserver = null, barsDraw = () => {};
-  function mountBars(fig){
-    if (barsObserver) barsObserver.disconnect();
-    const draw = barsDraw = () => {
+  const runs = (pts, key, x, y) => { const out = []; let cur = []; pts.forEach((p, i) => { if (p[key] == null){ if (cur.length) out.push(cur); cur = []; } else cur.push([x(i), y(p[key])]); }); if (cur.length) out.push(cur); return out; };
+  let chartObserver = null, chartDraw = () => {};
+  function mountChart(fig){
+    if (chartObserver) chartObserver.disconnect();
+    const draw = chartDraw = () => {
       const W = fig.clientWidth, H = fig.clientHeight; if (!W || !H) return;
-      const narrow = W < 520, ml = narrow ? 26 : 40, mr = 10, mb = 22, mt = 16;
-      const max = Math.ceil(Math.max(...D.CACHETS.map(c => Math.max(c.plan, c.real || 0))) * 1.1 / 5000) * 5000;
-      const y = v => mt + (H - mt - mb) * (1 - v / max), step = (W - ml - mr) / 11, x = m => ml + step * m;
-      const ticks = [0, max / 2, max];
-      const k = v => `${Math.round(v / 1000)}${narrow ? '' : ' k€'}`;
-      const plan = D.CACHETS.map(c => [x(c.m), y(c.plan)]), real = D.CACHETS.filter(c => c.real != null).map(c => [x(c.m), y(c.real)]);
-      const dPlan = smooth(plan), dReal = smooth(real);
+      const f = finSeries(S.finP), pts = f.pts, n = pts.length;
+      const ml = 4, mr = 34, mb = 18, mt = 10;
+      const top = Math.max(...pts.map(p => Math.max(p.real || 0, p.plan || 0)));
+      const max = Math.ceil(top * 1.12 / 1000) * 1000 || 1000;
+      const step = (W - ml - mr) / Math.max(n - 1, 1), x = i => ml + step * i, y = v => mt + (H - mt - mb) * (1 - v / max);
+      const k = v => `${NUM.format(Math.round(v / 1000))} k€`;
       let s = `<defs><linearGradient id="g-line" class="g-line" x1="0" x2="1" y1="0" y2="0"><stop offset="0"/><stop offset=".55"/><stop offset="1"/></linearGradient>
         <linearGradient id="g-fill" class="g-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0"/><stop offset="1"/></linearGradient>
-        <filter id="g-blur" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="5"/></filter></defs>`;
-      s += ticks.map((v, i) => `<line class="${i ? 'grid-l' : 'base-l'}" x1="${ml}" x2="${W - mr}" y1="${y(v)}" y2="${y(v)}"/><text class="axis-t" x="${ml - 6}" y="${y(v) + 3.5}" text-anchor="end">${k(v)}</text>`).join('');
-      s += `<path class="area-plan" d="${dPlan} L${x(11)},${y(0)} L${x(0)},${y(0)} Z"/><path class="line-plan" d="${dPlan}"/>`;
-      if (real.length > 1) s += `<path class="area-real" d="${dReal} L${real[real.length - 1][0]},${y(0)} L${real[0][0]},${y(0)} Z"/><path class="line-real" d="${dReal}"/>`;
-      const tx = x(1 + 26 / 30);
-      s += `<line class="today" x1="${tx}" x2="${tx}" y1="${mt - 6}" y2="${y(0)}"/><text class="today-t" x="${tx + 4}" y="${mt}">auj.</text>`;
-      s += D.CACHETS.map(c => `${c.real != null ? `<circle class="dot-real" cx="${x(c.m)}" cy="${y(c.real)}" r="3.5"/>` : `<circle class="dot-plan" cx="${x(c.m)}" cy="${y(c.plan)}" r="2.5"/>`}
-        ${!narrow || c.m % 2 === 0 ? `<text class="axis-t" x="${x(c.m)}" y="${H - 6}" text-anchor="middle">${esc(MONTHS[c.m])}</text>` : ''}`).join('');
-      if (S.sel != null){ const c = D.CACHETS[S.sel], v = c.real ?? c.plan, cx = x(c.m), cy = y(v);
-        s += `<line class="sel-line" x1="${cx}" x2="${cx}" y1="${cy}" y2="${y(0)}"/><circle class="sel-glow" cx="${cx}" cy="${cy}" r="10"/><circle class="sel-dot" cx="${cx}" cy="${cy}" r="5.5"/>`; }
-      s += D.CACHETS.map(c => { const aria = `${D.MONTHS[c.m]} : ${c.real == null ? 'pas encore réalisé' : 'réalisé ' + eur(c.real)}, prévisionnel ${eur(c.plan)}`;
-        return `<rect class="hit" x="${x(c.m) - step / 2}" y="${mt}" width="${step}" height="${H - mt - mb}" tabindex="0" role="button" data-m="${c.m}" aria-label="${esc(aria)}" aria-pressed="${S.sel === c.m}"/>`; }).join('');
+        <filter id="g-blur" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="4"/></filter></defs>`;
+      s += [0, max / 2, max].map((v, i) => `<line class="${i ? 'grid-l' : 'base-l'}" x1="${ml}" x2="${W - mr + 4}" y1="${y(v)}" y2="${y(v)}"/>${i ? `<text class="axis-t" x="${W}" y="${y(v) + 3.5}" text-anchor="end">${k(v)}</text>` : ''}`).join('');
+      runs(pts, 'plan', x, y).forEach(r => { s += `<path class="line-plan" d="${smooth(r)}"/>`; });
+      runs(pts, 'real', x, y).forEach(r => { const d = smooth(r); s += `<path class="area-real" d="${d} L${r[r.length - 1][0]},${y(0)} L${r[0][0]},${y(0)} Z"/><path class="line-real" d="${d}"/>`; });
+      if (f.today != null && f.today < n - 1){ const tx = ml + step * f.today; s += `<line class="today" x1="${tx}" x2="${tx}" y1="${mt - 4}" y2="${y(0)}"/><text class="today-t" x="${tx + 4}" y="${mt + 2}">auj.</text>`; }
+      const every = f.every || (n > 8 ? 2 : 1);
+      s += pts.map((p, i) => `${p.real != null && n <= 12 ? `<circle class="dot-real" cx="${x(i)}" cy="${y(p.real)}" r="2.75"/>` : ''}${i % every === 0 ? `<text class="axis-t" x="${x(i)}" y="${H - 4}" text-anchor="${i === 0 ? 'start' : 'middle'}">${esc(p.lab)}</text>` : ''}`).join('');
+      if (S.sel != null && pts[S.sel]){ const p = pts[S.sel], v = p.real ?? p.plan, cx = x(S.sel), cy = y(v);
+        s += `<line class="sel-line" x1="${cx}" x2="${cx}" y1="${cy}" y2="${y(0)}"/><circle class="sel-glow" cx="${cx}" cy="${cy}" r="8"/><circle class="sel-dot" cx="${cx}" cy="${cy}" r="4.5"/>`; }
+      s += pts.map((p, i) => { const aria = `${p.long} : ${p.real == null ? 'pas de réalisé' : 'réalisé ' + eur(p.real) + (p.partial ? ' à date' : '')}${p.plan == null ? '' : ', prévisionnel ' + eur(p.plan)}`;
+        return `<rect class="hit" x="${x(i) - step / 2}" y="${mt}" width="${step}" height="${H - mt - mb}" tabindex="0" role="button" data-m="${i}" aria-label="${esc(aria)}" aria-pressed="${S.sel === i}"/>`; }).join('');
       fig.innerHTML = `<svg>${s}</svg>`;
       if (S.sel != null) showTip(fig, S.sel);
     };
-    barsObserver = new ResizeObserver(draw); barsObserver.observe(fig); draw();
+    chartObserver = new ResizeObserver(draw); chartObserver.observe(fig); draw();
   }
-  function showTip(fig, m){
+  function showTip(fig, i){
     if (!fig) return;
-    const c = D.CACHETS[m], hit = $(`.hit[data-m="${m}"]`, fig); if (!hit) return;
+    const p = finSeries(S.finP).pts[i], hit = $(`.hit[data-m="${i}"]`, fig); if (!p || !hit) return;
     $('.tip', fig)?.remove();
     const r = hit.getBoundingClientRect(), f = fig.getBoundingClientRect();
     const tip = document.createElement('div'); tip.className = 'tip';
-    tip.innerHTML = `<b>${esc(D.MONTHS[c.m])}</b><span class="mono">Réalisé ${c.real == null ? '—' : esc(eur(c.real))}</span><br><span class="mono">Prévu ${esc(eur(c.plan))}</span>`;
+    tip.innerHTML = `<b>${esc(cap(p.long))}</b><span class="mono">Réalisé ${p.real == null ? '—' : esc(eur(p.real)) + (p.partial ? ' à date' : '')}</span><br><span class="mono">Prévu ${p.plan == null ? '—' : esc(eur(p.plan))}</span>`;
     fig.appendChild(tip);
     const left = Math.min(Math.max(r.left - f.left + r.width / 2, tip.offsetWidth / 2), f.width - tip.offsetWidth / 2);
-    tip.style.left = left + 'px'; tip.style.top = '-6px';
+    tip.style.left = left + 'px'; tip.style.top = '-8px';
   }
 
   // Écran non prototypé : existant et accès transversaux
@@ -327,6 +442,10 @@
           <label class="pal pal-lagoon"><input type="radio" name="palette" value="lagoon" data-pref="palette" ${P.palette !== 'opal' ? 'checked' : ''}><span class="bar"></span><b>Electric Lagoon</b><span class="hexes"><span><i class="sw-lag1"></i>#247E91</span><span><i class="sw-lag2"></i>#72C9B4</span></span><span class="check" aria-hidden="true">${icon('check')}</span></label>
           <label class="pal pal-opal"><input type="radio" name="palette" value="opal" data-pref="palette" ${P.palette === 'opal' ? 'checked' : ''}><span class="bar"></span><b>Opal</b><span class="hexes"><span><i class="sw-op1"></i>#78B9AD</span><span><i class="sw-op2"></i>#A6B5E8</span><span><i class="sw-op3"></i>#D8A4C5</span></span><span class="check" aria-hidden="true">${icon('check')}</span></label>
         </div><p class="hint">Indépendante du mode clair, sombre ou automatique. Les couleurs des statuts ne changent pas.</p></div>
+        <div class="pref-row"><span class="l">Fond clair</span>
+        <div class="bgs" role="radiogroup" aria-label="Fond clair">${[['apple', 'Blanc Apple', '#F5F5F7'], ['glacier', 'Blanc glacier', '#EFF3F5'], ['mineral', 'Argent minéral', '#E8EBED']].map(([v, l, h]) =>
+          `<label class="bgc bgc-${v}"><input type="radio" name="bgLight" value="${v}" data-pref="bgLight" ${P.bgLight === v ? 'checked' : ''}><span class="sw" aria-hidden="true"></span><b>${l}</b><span class="hex">${h}${v === 'glacier' ? ' · défaut' : ''}</span></label>`).join('')}</div>
+        <p class="hint">Utilisé en mode clair. Indépendant de l’identité chromatique et du mode ; le mode sombre garde le graphite.</p></div>
         <div class="pref-row"><span class="l">Mode</span>${seg('appearance', P.appearance, [['light', 'Clair'], ['dark', 'Sombre'], ['system', 'Système'], ['schedule', 'Horaires']], 'Apparence')}
         ${P.appearance === 'schedule' ? `<div class="inline"><label class="field"><span>Sombre à partir de</span><input class="input" type="time" id="pf-from" data-pref="darkFrom" value="${esc(P.darkFrom)}"></label>
           <label class="field"><span>jusqu’à</span><input class="input" type="time" id="pf-to" data-pref="darkTo" value="${esc(P.darkTo)}"></label></div>` : ''}</div>`)}
@@ -383,7 +502,7 @@
   function closePanel({ restore = true } = {}){
     if (!S.panel) return;
     const from = S.panelFrom; S.panel = null; S.panelFrom = null;
-    if (S.openDate){ S.openDate = null; $$('.r-date[aria-current]').forEach(r => r.removeAttribute('aria-current')); }
+    if (S.openDate){ S.openDate = null; $$('.tl-ev[aria-current]').forEach(r => r.removeAttribute('aria-current')); }
     const dlg = $('#psheet');
     if (dlg.open) animatedClose(dlg);
     const app = $('.app'), dock = $('#dock');
@@ -399,7 +518,7 @@
   function openDate(id){
     const d = D.DATES.find(x => x.id === id); if (!d) return;
     S.openDate = id;
-    $$('.r-date').forEach(r => { if (r.dataset.id === id) r.setAttribute('aria-current', 'true'); else r.removeAttribute('aria-current'); });
+    $$('.tl-ev').forEach(r => { if (r.dataset.id === id) r.setAttribute('aria-current', 'true'); else r.removeAttribute('aria-current'); });
     const pct = d.capacity ? Math.round(d.sold / d.capacity * 100) : 0;
     const body = `<div class="facts"><div class="fact"><span class="eyebrow">Date</span><span class="v">${esc(dShort(d.date))}</span><span class="hint">${esc(dLong(d.date))}</span></div>
         <div class="fact"><span class="eyebrow">Cachet HT</span><span class="v">${d.fee ? esc(eur(d.fee)) : '—'}</span><span class="hint">Contrat : ${esc(d.contract)}</span></div></div>
@@ -413,7 +532,7 @@
   }
   function customizeBody(){
     const opts = cur => Object.entries(D.KPIS).map(([k, v]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${esc(v.label)}</option>`).join('');
-    return `<div class="pnl-sec"><h3>Indicateurs principaux</h3>${P.kpis.map((k, i) => `<label class="field"><span>Indicateur ${i + 1}</span><select class="input" id="kpi-${i}" data-kpi="${i}">${opts(k)}</select></label>`).join('')}</div>
+    return `<div class="pnl-sec"><h3>Indicateurs du bloc principal</h3>${P.kpis.map((k, i) => `<label class="field"><span>Indicateur ${i + 1}</span><select class="input" id="kpi-${i}" data-kpi="${i}">${opts(k)}</select></label>`).join('')}</div>
       <div class="pnl-sec"><h3>Blocs</h3><ul class="order-list">${P.blocks.map((b, i) => { const off = P.hiddenBlocks.includes(b);
         return `<li class="${off ? 'off' : ''}"><span class="t">${esc(D.BLOCKS[b])}</span>
           <button class="btn ghost sm icon" type="button" data-act="move" data-kind="blocks" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Monter ${esc(D.BLOCKS[b])}">${icon('arrow-up', 'sm')}</button>
@@ -446,13 +565,11 @@
   function openSheet(){
     const dlg = $('#sheet');
     const extra = P.shortcuts.map(tabById).filter(t => t && allowed(t)).slice(4);
-    const groups = visibleModules().map(m => { const tabs = m.tabs.filter(allowed); if (!tabs.length) return '';
-      return `<div class="mod-group" role="group" aria-label="${esc(m.label)}"><span class="eyebrow">${icon(m.icon)}${esc(m.label)}</span>${tabs.map(t => navLink(t)).join('')}</div>`; }).join('');
     dlg.innerHTML = `<div class="box glassy strong"><div class="grabber" aria-hidden="true"></div>
       <div class="dlg-head"><h2 tabindex="-1">Modules</h2><button class="btn ghost icon" type="button" data-act="closeSheet" aria-label="Fermer">${icon('x')}</button></div>
       <div class="sheet-nav"><button class="sheet-search" type="button" data-act="search">${icon('search', 'sm')}<span>Rechercher</span></button>
         ${extra.length ? `<div class="mod-group" role="group" aria-label="Autres raccourcis"><span class="eyebrow">${icon('star')}Autres raccourcis</span><div class="mod-grid">${extra.map(t => navLink(t)).join('')}</div></div>` : ''}
-        <div class="mod-grid">${groups}</div>
+        <div class="mt-grid">${moduleTiles()}</div>
       </div>
       <div class="sheet-foot"><span class="nav-item" aria-hidden="true"><span class="avatar">A</span><span class="lbl muted">Anthony · compte de démonstration</span></span></div></div>`;
     dlg.showModal(); $('.dlg-head h2', dlg).focus();
@@ -572,10 +689,9 @@
     closeSheet: () => animatedClose($('#sheet')),
     closePanel: () => closePanel(),
     customize: () => openCustomize(),
-    hot: b => { P.hot = Number(b.dataset.i); save(); renderMain(); $(`.kpi[data-i="${b.dataset.i}"]`)?.focus(); },
-    exact: () => { S.exact = !S.exact; renderMain(); $('[data-act="exact"]')?.focus(); },
+    due: () => toast('Factures échues non soldées : parcours à raccorder aux fonctionnalités existantes', 'info'),
     date: b => openDate(b.dataset.id),
-    view: b => { S.views[b.dataset.k] = b.dataset.v; renderMain(); $(`[data-act="view"][data-k="${b.dataset.k}"][data-v="${b.dataset.v}"]`)?.focus(); },
+    view: b => { S.views[b.dataset.k] = b.dataset.v; S.sel = null; renderMain(); $(`[data-act="view"][data-k="${b.dataset.k}"][data-v="${b.dataset.v}"]`)?.focus(); },
     pin: b => { const id = b.dataset.id, on = P.shortcuts.includes(id);
       P.shortcuts = on ? P.shortcuts.filter(x => x !== id) : [...P.shortcuts, id]; P.profile = 'perso'; save(); renderSide(); renderBottom(); renderMain();
       $(`[data-act="pin"][data-id="${id}"]`)?.focus(); toast(on ? 'Retiré des raccourcis' : 'Ajouté aux raccourcis'); },
@@ -605,7 +721,7 @@
     const g = e.target.closest('[data-go]');
     if (g){ e.preventDefault(); ['#sheet', '#psheet'].forEach(s => { if ($(s).open) $(s).close(); }); go(g.dataset.go); return; }
     const hit = e.target.closest('.hit[data-m]');
-    if (hit){ const m = Number(hit.dataset.m); S.sel = S.sel === m ? null : m; barsDraw(); if (e.detail === 0) $(`#fig-cachets .hit[data-m="${m}"]`)?.focus(); return; }   // focus rendu seulement au clavier
+    if (hit){ const m = Number(hit.dataset.m); S.sel = S.sel === m ? null : m; chartDraw(); if (e.detail === 0) $(`#fig-fin .hit[data-m="${m}"]`)?.focus(); return; }   // focus rendu seulement au clavier
     if (e.target.tagName === 'DIALOG'){   // clic sur le fond d'une fenêtre
       if (e.target.id === 'psheet') closePanel(); else if (e.target.id === 'search') closeSearch(); else if (e.target.id === 'sheet') animatedClose(e.target);
       return;
@@ -613,13 +729,20 @@
     const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
     const fn = ACTS[b.dataset.act]; if (fn){ e.preventDefault(); fn(b); }
   });
-  document.addEventListener('pointerover', e => { const hit = e.target.closest?.('.hit[data-m]'); if (hit && e.pointerType === 'mouse') showTip($('#fig-cachets'), Number(hit.dataset.m)); });
-  document.addEventListener('pointerout', e => { const hit = e.target.closest?.('.hit[data-m]'); if (hit && e.pointerType === 'mouse' && S.sel == null) $('#fig-cachets .tip')?.remove(); });
-  document.addEventListener('focusin', e => { const hit = e.target.closest?.('.hit[data-m]'); if (hit) showTip($('#fig-cachets'), Number(hit.dataset.m)); });
+  document.addEventListener('pointerover', e => { const hit = e.target.closest?.('.hit[data-m]'); if (hit && e.pointerType === 'mouse') showTip($('#fig-fin'), Number(hit.dataset.m)); });
+  document.addEventListener('pointerout', e => { const hit = e.target.closest?.('.hit[data-m]'); if (hit && e.pointerType === 'mouse' && S.sel == null) $('#fig-fin .tip')?.remove(); });
+  document.addEventListener('focusin', e => { const hit = e.target.closest?.('.hit[data-m]'); if (hit) showTip($('#fig-fin'), Number(hit.dataset.m)); });
 
   document.addEventListener('change', e => {
     const t = e.target;
     if (t.dataset.kpi != null){ P.kpis[Number(t.dataset.kpi)] = t.value; save(); renderMain(); return; }
+    if (t.hasAttribute('data-finp')){ S.finP = t.value; S.sel = null; renderMain(); $('input[name="finp"]:checked')?.focus(); return; }
+    if (t.dataset.tick != null){   // prototype : la tâche passe en « Terminées » pour cette visite seulement
+      const i = Number(t.dataset.tick); S.done.push(i);
+      const next = t.closest('li')?.nextElementSibling ? Number(t.closest('li').nextElementSibling.querySelector('[data-tick]')?.dataset.tick) : null;
+      renderMain(); ($(`[data-tick="${next}"]`) || $('.blk-taches [data-tick]') || $('.blk-taches .go'))?.focus();
+      toast('Tâche marquée comme faite (non enregistrée : prototype)'); return;
+    }
     const k = t.dataset.pref; if (!k) return;
     const keepId = t.id || null, keepName = t.type === 'radio' ? t.name : null;
     if (k === 'density') P.density[device()] = t.value;
@@ -649,7 +772,7 @@
       if (d){ if (d.id === 'psheet'){ e.preventDefault(); closePanel(); } else if (d.id === 'sheet'){ e.preventDefault(); animatedClose(d); } return; }
       if (S.panel){ closePanel(); return; }
     }
-    const row = e.target.closest?.('.row[role="button"]');
+    const row = e.target.closest?.('.row[role="button"],.tl-ev[role="button"]');
     if (row && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); row.click(); }
     const hit = e.target.closest?.('.hit[data-m]');
     if (hit && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); hit.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 })); }
