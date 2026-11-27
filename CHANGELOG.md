@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.71.0 — 27/11/2026
+- L2b : rattachements manuels — avoirs et documents sans origine (rattacher, corriger, détacher, Hors MATRICE, qualifier), facture réémise suivie par la ligne (option B), virements groupés répartis sans dépasser le virement
+
+
 ## 1.70.4 — 26/11/2026
 - Reprise : une facture entièrement couverte par ses encaissements mais sans date « Payée » (écriture en échec) se note payée d'un clic, sans ressaisie
 

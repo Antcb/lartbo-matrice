@@ -3,7 +3,7 @@
  * Chaque date se déplie : suivi admin, commissions, dossier Drive, facturation.
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
-import { vatConflict, payeeParMouvements, BILL_KINDS, avoirsARattacher, avoirsAVerifier, avoirsOf, origineEcart, resteDu, restesDate, soldeeParAvoir, reglementsTousOf, mouvementsOf, factureNetTtc, encaisseTtc, resteDuTtc, aRembourserTtc, tropPercuTtc, htFiable, canFixInvoice, correctionsOf, acompteRetire, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
+import { vatConflict, payeeParMouvements, avoirsVisiblesOf, facturesRemplaceesOf, avoirsHorsMatrice, QUALIFICATIONS_AVOIR, virementGroupeEtat, BILL_KINDS, avoirsARattacher, avoirsAVerifier, avoirsOf, origineEcart, resteDu, restesDate, soldeeParAvoir, reglementsTousOf, mouvementsOf, factureNetTtc, encaisseTtc, resteDuTtc, aRembourserTtc, tropPercuTtc, htFiable, canFixInvoice, correctionsOf, acompteRetire, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, OPTION_PROD, PROD_STEPS } from '../constants.js';
 import { byId, isArchived, projName, setting, showsFiltered, spectacleName, structName } from '../selectors.js';
 import { followedInvoice, lateSteps, remindersOf, staleOf } from '../reminders.js';
@@ -359,14 +359,23 @@ function payeeCell(s, p, booking){
 /** (v1.69, L1 du point 02) Avoirs Pennylane d'une facture, sous sa ligne : document distinct, jamais un encaissement ni un
  *  remboursement ; un paiement déjà noté est conservé tel quel ; sinon reste dû = montant − avoirs (soldée si tout est couvert) */
 function avoirRowsHTML(p){
-  const list = avoirsOf(p.id);
-  if (!list.length) return '';
+  // (v1.71, L2b) documents visibles : avoirs qui comptent, avoirs d'une facture remplacée (visibles, hors du net) et factures
+  // d'origine remplacées par une réémission (option B)
+  const list = avoirsVisiblesOf(p.id), remplacees = facturesRemplaceesOf(p.id);
+  if (!list.length && !remplacees.length) return '';
   const name = a => esc(a.invoice_number || 'Avoir ' + a.pennylane_id);
+  const lien = (url, txt) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${txt} ↗</a>` : txt;
+  const docs = remplacees.map(f => `<tr class="avoir-row${f.detache_at ? ' is-cancelled' : ''}" data-facture-remplacee="${f.id}"><td colspan="12">${f.detache_at ? '<s>' : ''}<span class="badge">Facture d’origine</span> ${lien(f.pennylane_url, esc(f.invoice_number || f.pennylane_id))}
+      — remplacée par <b>${esc(f.remplacee_par_numero || f.remplacee_par_pennylane_id)}</b> le ${fmtDate(String(f.created_at).slice(0, 10))}${f.created_by ? ' par ' + esc(f.created_by) : ''}${f.motif ? ' · ' + esc(f.motif) : ''}${f.detache_at ? '</s>' : ''}
+      <span class="muted small">${f.detache_at ? `réémission détachée le ${fmtDate(String(f.detache_at).slice(0, 10))}${f.detache_par ? ' par ' + esc(f.detache_par) : ''} : ${esc(f.detache_motif || '')}` : 'la ligne suit la facture réémise (synchronisation) ; document Pennylane inchangé'}</span>
+      ${f.detache_at ? '' : `<button class="btn sm ghost" data-act="reemissionDetacher" data-id="${f.id}">Détacher…</button>`}</td></tr>`).join('');
   const etat = [soldeeParAvoir(p) ? '<b>Facture soldée par l’avoir</b> : plus rien à encaisser sur cette facture, ni relance de paiement'
-      : p.paid_at ? '' : `Reste dû sur cette facture après avoir : <b>${eur2(resteDu(p))}</b> HT (montant − avoirs)`,
-    p.paid_at ? `Paiement noté le ${fmtDate(p.paid_at)} : conservé tel quel (un avoir ne crée ni encaissement ni remboursement)` : ''].filter(Boolean).join(' · ');
-  return list.map(a => `<tr class="avoir-row"><td colspan="12"><span class="badge">Avoir</span> ${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${name(a)} ↗</a>` : name(a)}${a.invoice_date ? ` du ${fmtDate(a.invoice_date)}` : ''} : <b>− ${eur2(a.amount_ht)}</b> HT
-      <span class="muted small">sur la facture ${esc(p.invoice_number || p.label || '')} · document Pennylane</span>${origineEcart(a) ? ` <span class="warn-badge" title="Rattaché à cette facture ; Pennylane indique maintenant une autre facture d’origine. Rien n’a été déplacé : à vérifier.">facture d’origine changée dans Pennylane : à vérifier</span>` : ''}</td></tr>`).join('')
+      : p.paid_at || !avoirsOf(p.id).length ? '' : `Reste dû sur cette facture après avoir : <b>${eur2(resteDu(p))}</b> HT (montant − avoirs)`,
+    p.paid_at && list.length ? `Paiement noté le ${fmtDate(p.paid_at)} : conservé tel quel (un avoir ne crée ni encaissement ni remboursement)` : ''].filter(Boolean).join(' · ');
+  return docs + list.map(a => `<tr class="avoir-row" data-avoir="${a.id}"><td colspan="12"><span class="badge">Avoir</span> ${lien(a.url, name(a))}${a.invoice_date ? ` du ${fmtDate(a.invoice_date)}` : ''} : <b>− ${eur2(a.amount_ht)}</b> HT
+      ${a.qualification ? `<span class="badge tag">${esc(QUALIFICATIONS_AVOIR[a.qualification] || a.qualification)}</span>` : ''}
+      <span class="muted small">${a.facture_remplacee ? `sur la facture d’origine ${esc(a.credited_invoice_number || a.credited_pennylane_id || '')} (remplacée) : ne réduit plus le net de cette ligne` : `sur la facture ${esc(p.invoice_number || p.label || '')}`} · document Pennylane${a.rattache_mode === 'manuel' ? ' · rattaché à la main' : ''}</span>${origineEcart(a) ? ` <span class="warn-badge" title="Rattaché à cette facture ; Pennylane indique maintenant une autre facture d’origine. Rien n’a été déplacé : à vérifier.">facture d’origine changée dans Pennylane : à vérifier</span>` : ''}
+      <span class="nowrap"><button class="btn sm ghost" data-act="avoirQualifier" data-id="${a.id}">Qualifier…</button> <button class="btn sm ghost" data-act="avoirRattacher" data-id="${a.id}">Corriger…</button> <button class="btn sm ghost" data-act="avoirDetacher" data-id="${a.id}">Détacher…</button></span></td></tr>`).join('')
     + (etat ? `<tr class="avoir-row"><td colspan="12" class="small">${etat}</td></tr>` : '');
 }
 
@@ -388,7 +397,9 @@ function reglementRowsHTML(s, p, booking){
   const histo = mouvementsOf(p).find(m => m.historique);
   const rows = reglementsTousOf(p.id).map(r => {
     const quoi = r.sens === 'encaissement' ? 'Encaissement' : r.etat === 'a_faire' ? 'Remboursement à faire' : 'Remboursement fait';
-    const src = r.transaction_id ? '<span class="ok-badge">rapproché Pennylane</span>' : r.source === 'manuel' ? '<span class="badge">saisi à la main, non rapproché</span>' : '';
+    const vg = r.virement_groupe_id && (S.db.virements_groupes || []).find(v => v.id === r.virement_groupe_id);
+    const src = r.transaction_id ? '<span class="ok-badge">rapproché Pennylane</span>' : vg ? `<span class="badge" data-part-virement="${vg.id}">part d’un virement groupé de ${eur2(Number(vg.montant_ttc))} TTC · reste non attribué ${eur2(virementGroupeEtat(vg).reste)} TTC</span>`
+      : r.source === 'manuel' ? '<span class="badge">saisi à la main, non rapproché</span>' : '';
     const etat = r.annule_at ? ` <span class="muted">— annulé le ${fmtDate(String(r.annule_at).slice(0, 10))}${r.annule_par ? ' par ' + esc(r.annule_par) : ''} : ${esc(r.annule_motif || '')}</span>` : '';
     const acts = r.annule_at ? '' : [r.etat === 'a_faire' ? `<button class="btn sm" data-act="reglementFait" data-id="${r.id}">Marquer fait</button>` : '',
       r.source === 'manuel' && !r.transaction_id ? `<button class="btn sm ghost" data-act="reglementAnnuler" data-id="${r.id}">Annuler la saisie</button>` : ''].join(' ');
@@ -397,6 +408,7 @@ function reglementRowsHTML(s, p, booking){
   const trop = tropPercuTtc(p), reste = resteDuTtc(p), rem = aRembourserTtc(p);
   const bilan = `Facturé net : <b>${eur2(factureNetTtc(p))}</b> TTC · Encaissé réel : <b>${eur2(encaisseTtc(p))}</b> TTC · Reste dû : <b>${eur2(reste)}</b> TTC${rem ? ` · Reste à rembourser : <b>${eur2(rem)}</b> TTC` : ''}${trop ? ` · <span class="warn-txt">encaissé au-delà du net facturé : ${eur2(trop)} TTC (trop-perçu ou facture réémise à rattacher)</span>` : ''}`;
   const btns = [!p.paid_at ? `<button class="btn sm" data-act="reglementEncaisser" data-id="${p.id}" title="Encaissement réel reçu (TTC) : date, montant, compte">Ajouter un encaissement</button>` : '',
+    !p.paid_at ? `<button class="btn sm ghost" data-act="virementGroupe" data-id="${p.id}" title="Un virement qui paie plusieurs factures : enregistre la part de celle-ci (le cumul ne dépasse jamais le virement)">Virement groupé…</button>` : '',
     `<button class="btn sm ghost" data-act="reglementRembourser" data-id="${p.id}" data-etat="a_faire">Remboursement à faire</button>`,
     `<button class="btn sm ghost" data-act="reglementRembourser" data-id="${p.id}" data-etat="fait">Remboursement fait</button>`].join(' ');
   return `${histo ? `<tr class="reglement-row"><td colspan="12" class="small muted">Paiement noté le ${fmtDate(histo.date)} (avant les encaissements détaillés) : montant de la facture, conservé tel quel</td></tr>` : ''}${rows}
@@ -410,11 +422,17 @@ function avoirsPendingHTML(){
     ${ecarts.map(a => { const l = byId('show_payments', a.payment_id), sh = l && byId('shows', l.show_id);
       return `<div class="file-row"><span>${esc(a.invoice_number || 'Avoir ' + a.pennylane_id)} · − ${eur2(a.amount_ht)} HT · rattaché à ${esc(l?.invoice_number || l?.label || 'une ligne')}${sh ? ' (' + esc([fmtDate(sh.date), sh.venue].filter(Boolean).join(' ')) + ')' : ''} — <span class="muted">origine indiquée par Pennylane : ${esc(a.credited_invoice_number || a.credited_pennylane_id || 'aucune')}</span></span>
       ${a.url ? `<a class="btn sm ghost" href="${esc(a.url)}" target="_blank" rel="noopener">Voir ↗</a>` : ''}</div>`; }).join('')}</div>` : '';
-  if (!list.length) return ecartsHTML;
-  return ecartsHTML + `<div class="panel pad mb" id="avoirs-a-rattacher" role="status"><p class="help full"><b>Avoir${list.length > 1 ? 's' : ''} Pennylane à rattacher</b> (${list.length}) : la synchronisation ne sait pas à quelle facture de MATRICE ${list.length > 1 ? 'ils se rapportent' : 'il se rapporte'} (rien n’a été modifié, rien n’est compté).</p>
+  const hors = avoirsHorsMatrice(), horsHTML = hors.length ? `<details class="panel pad mb" id="avoirs-hors-matrice"><summary><b>Documents classés « Hors MATRICE / sans objet »</b> (${hors.length}) : consultables, classement corrigeable</summary>
+    ${hors.map(a => `<div class="file-row" data-avoir="${a.id}"><span>${esc(a.invoice_number || 'Document ' + a.pennylane_id)} · − ${eur2(a.amount_ht)} HT${a.invoice_date ? ' · ' + fmtDate(a.invoice_date) : ''} — <span class="muted">${esc(a.classement_motif || '')}</span></span>
+      ${a.url ? `<a class="btn sm ghost" href="${esc(a.url)}" target="_blank" rel="noopener">Voir ↗</a>` : ''} <button class="btn sm ghost" data-act="avoirRattacher" data-id="${a.id}">Rattacher…</button> <button class="btn sm ghost" data-act="avoirDetacher" data-id="${a.id}">Remettre à rattacher…</button></div>`).join('')}</details>` : '';
+  const vgs = (S.db.virements_groupes || []).map(v => ({v, e: virementGroupeEtat(v)})).filter(x => x.e.reste > 0.004);
+  const vgHTML = vgs.length ? `<div class="panel pad mb" id="virements-groupes"><p class="help full"><b>Virements groupés avec un reste non attribué</b> (${vgs.length}) : à répartir depuis « Virement groupé… » sous la facture concernée, ou à laisser tel quel.</p>
+    ${vgs.map(({v, e}) => `<div class="file-row" data-virement-groupe="${v.id}"><span>${fmtDate(v.date)} · ${esc(v.reference || 'sans référence')} · ${eur2(Number(v.montant_ttc))} TTC — attribué ${eur2(e.attribue)} TTC · <b>reste non attribué ${eur2(e.reste)} TTC</b></span></div>`).join('')}</div>` : '';
+  if (!list.length) return ecartsHTML + vgHTML + horsHTML;
+  return ecartsHTML + vgHTML + horsHTML + `<div class="panel pad mb" id="avoirs-a-rattacher" role="status"><p class="help full"><b>Avoir${list.length > 1 ? 's' : ''} Pennylane à rattacher</b> (${list.length}) : la synchronisation ne sait pas à quelle facture de MATRICE ${list.length > 1 ? 'ils se rapportent' : 'il se rapporte'} (rien n’a été modifié, rien n’est compté).</p>
     ${list.map(a => { const sh = a.show_id && byId('shows', a.show_id);
-      return `<div class="file-row"><span>${esc(a.invoice_number || 'Avoir ' + a.pennylane_id)} · − ${eur2(a.amount_ht)} HT${a.invoice_date ? ' · ' + fmtDate(a.invoice_date) : ''}${a.credited_invoice_number ? ' · facture d’origine ' + esc(a.credited_invoice_number) : ''}${sh ? ' · ' + esc([fmtDate(sh.date), sh.venue].filter(Boolean).join(' ')) : ''} — <span class="muted">${esc(a.reason || '')}</span></span>
-      ${a.url ? `<a class="btn sm ghost" href="${esc(a.url)}" target="_blank" rel="noopener">Voir ↗</a>` : ''}</div>`; }).join('')}</div>`;
+      return `<div class="file-row" data-avoir="${a.id}"><span>${esc(a.invoice_number || 'Avoir ' + a.pennylane_id)} · − ${eur2(a.amount_ht)} HT${a.invoice_date ? ' · ' + fmtDate(a.invoice_date) : ''}${a.credited_invoice_number ? ' · facture d’origine ' + esc(a.credited_invoice_number) : ''}${sh ? ' · ' + esc([fmtDate(sh.date), sh.venue].filter(Boolean).join(' ')) : ''} — <span class="muted">${esc(a.reason || '')}</span></span>
+      ${a.url ? `<a class="btn sm ghost" href="${esc(a.url)}" target="_blank" rel="noopener">Voir ↗</a>` : ''} <button class="btn sm" data-act="avoirRattacher" data-id="${a.id}">Rattacher…</button> <button class="btn sm ghost" data-act="avoirHors" data-id="${a.id}">Hors MATRICE…</button></div>`; }).join('')}</div>`;
 }
 
 /** Factures du devis que la synchronisation n'a pas reliées seule (v1.56.9) : choix explicite de la ligne, rien d'automatique */
@@ -431,7 +449,10 @@ function pennylaneCell(p, s){
   if (!['acompte','solde','artbo','autre'].includes(p.kind)) return '';
   // acompte / solde relié à une facture du devis : rattachement corrigeable (confirmation, motif, historique ; v1.56.9)
   const fix = ['acompte','solde'].includes(p.kind) && !p.paid_at ? ` <button class="btn sm ghost" data-act="pennylaneAttach" data-pid="${esc(p.pennylane_id)}" data-show="${p.show_id}" title="La facture est sur la mauvaise ligne ? Choisir la bonne (le document Pennylane n’est pas modifié)">Corriger</button>` : '';
-  if (p.pennylane_id) return (p.pennylane_url ? `<a class="btn sm ghost" href="${esc(p.pennylane_url)}" target="_blank" rel="noopener">Facture ↗</a>` : '<span class="ok-badge">Facture créée</span>') + fix;
+  // (v1.71, L2b) facture réémise hors devis : la ligne suit la nouvelle facture (option B), l'ancienne reste visible
+  const reem = isInvoiced(p) && p.hors_calcul == null && (s?.prod_mode === 'booking' ? p.kind === 'artbo' : p.kind !== 'artbo')
+    ? ` <button class="btn sm ghost" data-act="factureReemise" data-id="${p.id}" title="Une nouvelle facture remplace celle-ci dans Pennylane (même montant) : la ligne la suivra ; l’ancienne reste visible">Réémise…</button>` : '';
+  if (p.pennylane_id) return (p.pennylane_url ? `<a class="btn sm ghost" href="${esc(p.pennylane_url)}" target="_blank" rel="noopener">Facture ↗</a>` : '<span class="ok-badge">Facture créée</span>') + fix + reem;
   if (['acompte','solde'].includes(p.kind)){
     if (p.invoice_number) return '';
     return s?.pennylane_quote_id

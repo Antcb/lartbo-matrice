@@ -145,8 +145,28 @@ export const correctionsOf = id => (S.db.facture_corrections || []).filter(c => 
  * Pennylane : affiché, jamais compté. Même règle côté base : avoir_couvert, reminder_candidates (migration v1.69) ; serveur :
  * supabase/functions/pennylane/regles.ts (planAvoir, encaissementPennylane).
  */
-export const avoirsOf = payId => (S.db.pennylane_avoirs || []).filter(a => a.payment_id === payId && a.etat === 'rattache' && !a.gone_at)
+export const avoirsOf = payId => (S.db.pennylane_avoirs || []).filter(a => a.payment_id === payId && a.etat === 'rattache' && !a.gone_at && !a.facture_remplacee)
   .sort((a, b) => String(a.invoice_date || '').localeCompare(String(b.invoice_date || '')));
+/**
+ * (v1.71, L2b — décisions d'Anthony du 27/11/2026, 11 h 55) Documents rattachés à une ligne, tous affichés : ceux qui comptent
+ * (avoirsOf) et ceux d'une facture REMPLACÉE par une réémission (option B : la ligne suit la facture réémise ; l'avoir de l'ancienne
+ * facture reste visible mais ne réduit plus son net). Même règle : base avoir_couvert / reglement_couverture (facture_remplacee),
+ * serveur regles.ts / index.ts.
+ */
+export const avoirsVisiblesOf = payId => (S.db.pennylane_avoirs || []).filter(a => a.payment_id === payId && a.etat === 'rattache' && !a.gone_at)
+  .sort((a, b) => String(a.invoice_date || '').localeCompare(String(b.invoice_date || '')));
+/** Factures d'origine remplacées par une réémission (gardées visibles, détachées comprises : historique) */
+export const facturesRemplaceesOf = payId => (S.db.factures_remplacees || []).filter(f => f.payment_id === payId)
+  .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+/** Documents classés « Hors MATRICE / sans objet » (motif obligatoire ; consultables, classement corrigeable) */
+export const avoirsHorsMatrice = () => (S.db.pennylane_avoirs || []).filter(a => a.etat === 'hors_matrice' && !a.gone_at);
+export const QUALIFICATIONS_AVOIR = {erreur_facturation: 'Erreur de facturation'};
+/** (R3, décision du 27/11/2026) Virement groupé : cumul des affectations actives et reste non attribué (jamais négatif) */
+export function virementGroupeEtat(v){
+  const parts = (S.db.reglements || []).filter(r => r.virement_groupe_id === v.id && !r.annule_at);
+  const attribue = Math.round(parts.reduce((t, r) => t + Number(r.montant_ttc || 0), 0) * 100) / 100;
+  return {parts, attribue, reste: Math.round(Math.max(0, Number(v.montant_ttc) - attribue) * 100) / 100};
+}
 /** (décision d'Anthony du 26/11/2026, point 3) Avoir rattaché dont Pennylane indique maintenant une AUTRE facture d'origine (ou
  *  plus aucune) : écart persistant, à vérifier, jamais de nouveau rattachement automatique. Même règle : regles.ts origineEcart. */
 export const origineEcart = a => !!a && a.etat === 'rattache' && filled(a.rattache_origine) && String(a.rattache_origine) !== String(a.credited_pennylane_id ?? '');

@@ -195,6 +195,95 @@
       }
       return r;
     },
+    // v1.71 (L2b) : rattachements manuels — mêmes contrôles que les fonctions SQL (essayées sur une vraie base PostgreSQL :
+    // supabase/repetitions/2026-11-27_v1.71_rattachements_essai.sql)
+    ...(() => {
+      const err = m => { throw Object.assign(new Error(m), { code: 'P0001' }); };
+      const D = () => window.__DB, now = () => new Date().toISOString();
+      const journal = (objet, objet_id, action, avant, apres, motif) => (D().rattachements_journal ||= []).push({ id: Math.random(), objet, objet_id: String(objet_id), action, avant, apres, motif: motif || null, auteur: USER, at: now() });
+      const suivie = p => { const sh = (D().shows || []).find(x => x.id === p.show_id) || {}; const t = v => String(v ?? '').trim();
+        return p.hors_calcul == null && !!(p.sent_at || p.paid_at || t(p.invoice_number) || t(p.pennylane_id))
+          && ((sh.prod_mode !== 'booking' && ['acompte', 'solde', 'autre'].includes(p.kind)) || (sh.prod_mode === 'booking' && p.kind === 'artbo')); };
+      const avoir = id => (D().pennylane_avoirs || []).find(a => a.id === id) || err('Document introuvable');
+      const rembourse = a => (D().reglements || []).some(r => r.avoir_id === a.id && !r.annule_at) && err('Un remboursement est enregistré sur ce document : rattachement inchangé (annule d\'abord le remboursement)');
+      const motifOblig = m => { m = String(m ?? '').trim(); if (!m || m.length > 500) err('Motif obligatoire (500 caractères au plus)'); return m; };
+      const remplacee = (p, a) => !!a.credited_pennylane_id && a.credited_pennylane_id !== p.pennylane_id && (D().factures_remplacees || []).some(f => f.payment_id === p.id && f.pennylane_id === a.credited_pennylane_id && !f.detache_at);
+      return {
+        avoir_rattacher: ({ p_avoir, p_payment, p_motif }) => {
+          const a = avoir(p_avoir), m = String(p_motif ?? '').trim() || null;
+          if (a.gone_at) err('Document disparu de Pennylane : il ne se rattache plus');
+          const p = (D().show_payments || []).find(x => x.id === p_payment) || err('Ligne de facturation introuvable');
+          if (!suivie(p)) err('Cette ligne ne reçoit pas de document (facture émise suivie, pas hors calcul)');
+          if (a.etat === 'rattache' && a.payment_id === p.id) err('Document déjà rattaché à cette ligne');
+          if (a.etat !== 'a_rattacher' && !m) err('Motif obligatoire pour corriger un rattachement ou un classement');
+          rembourse(a);
+          const avant = { etat: a.etat, payment_id: a.payment_id, show_id: a.show_id };
+          Object.assign(a, { etat: 'rattache', payment_id: p.id, show_id: p.show_id, reason: null, classement_motif: null, rattache_mode: 'manuel', rattache_origine: a.credited_pennylane_id ?? null, facture_remplacee: remplacee(p, a) });
+          journal('avoir', a.id, avant.etat === 'a_rattacher' ? 'rattacher' : 'corriger', avant, { etat: a.etat, payment_id: a.payment_id }, m); return a;
+        },
+        avoir_detacher: ({ p_avoir, p_motif }) => {
+          const m = motifOblig(p_motif), a = avoir(p_avoir);
+          if (a.etat === 'a_rattacher') err('Document déjà « à rattacher »');
+          rembourse(a); const avant = { etat: a.etat, payment_id: a.payment_id };
+          Object.assign(a, { etat: 'a_rattacher', payment_id: null, show_id: null, classement_motif: null, rattache_origine: null, facture_remplacee: false, rattache_mode: 'manuel', reason: 'Détaché à la main : ' + m });
+          journal('avoir', a.id, 'detacher', avant, { etat: a.etat }, m); return a;
+        },
+        avoir_classer_hors: ({ p_avoir, p_motif }) => {
+          const m = motifOblig(p_motif), a = avoir(p_avoir);
+          if (a.etat === 'hors_matrice') err('Document déjà classé « Hors MATRICE »');
+          rembourse(a); const avant = { etat: a.etat, payment_id: a.payment_id };
+          Object.assign(a, { etat: 'hors_matrice', payment_id: null, show_id: null, classement_motif: m, rattache_origine: null, facture_remplacee: false, rattache_mode: 'manuel', reason: null });
+          journal('avoir', a.id, 'classer_hors_matrice', avant, { etat: a.etat }, m); return a;
+        },
+        avoir_qualifier: ({ p_avoir, p_qualification }) => {
+          const q = String(p_qualification ?? '').trim() || null;
+          if (q && q !== 'erreur_facturation') err('Qualification inconnue');
+          const a = avoir(p_avoir); if ((a.qualification ?? null) === q) return a;
+          journal('avoir', a.id, 'qualifier', { qualification: a.qualification ?? null }, { qualification: q }); a.qualification = q; return a;
+        },
+        // appelée seulement par la fonction serveur simulée (réémission lue dans Pennylane) : jamais par l'application
+        facture_reemise_enregistrer: ({ p_payment, p_pennylane_id, p_invoice_number, p_url, p_amount_ht, p_motif, p_auteur }) => {
+          const p = (D().show_payments || []).find(x => x.id === p_payment) || err('Ligne de facturation introuvable');
+          if (!suivie(p)) err('Cette ligne ne suit pas de facture (facture émise suivie, pas hors calcul)');
+          if (!p.pennylane_id) err('La ligne n\'est liée à aucune facture Pennylane : rattache-la d\'abord');
+          if (p.pennylane_id === p_pennylane_id) err('La ligne suit déjà cette facture');
+          if ((D().show_payments || []).some(x => x.pennylane_id === p_pennylane_id || String(x.invoice_number || '').trim().toUpperCase() === String(p_invoice_number).trim().toUpperCase())) err('Cette facture Pennylane est déjà liée à une ligne de MATRICE');
+          if (Math.abs(Number(p_amount_ht) - Number(p.amount)) > 0.01) err(`Montant HT différent de la ligne (${p_amount_ht} € contre ${p.amount} €) : ce n'est pas une simple réémission — utilise la correction de facture`);
+          const f = { id: 'fr-' + Math.random().toString(36).slice(2, 10), payment_id: p.id, show_id: p.show_id, pennylane_id: p.pennylane_id, invoice_number: p.invoice_number, pennylane_url: p.pennylane_url ?? null,
+            remplacee_par_pennylane_id: p_pennylane_id, remplacee_par_numero: String(p_invoice_number).trim(), motif: String(p_motif ?? '').trim() || null, created_at: now(), created_by: p_auteur, detache_at: null, detache_par: null, detache_motif: null };
+          (D().factures_remplacees ||= []).push(f);
+          Object.assign(p, { pennylane_id: p_pennylane_id, invoice_number: f.remplacee_par_numero, pennylane_url: p_url || null });
+          (D().pennylane_avoirs || []).filter(a => a.payment_id === p.id && a.credited_pennylane_id === f.pennylane_id).forEach(a => { a.facture_remplacee = true; });
+          journal('reemission', f.id, 'rattacher', { pennylane_id: f.pennylane_id }, { pennylane_id: p_pennylane_id }, f.motif); return f;
+        },
+        facture_reemise_detacher: ({ p_id, p_motif }) => {
+          const m = motifOblig(p_motif), f = (D().factures_remplacees || []).find(x => x.id === p_id && !x.detache_at) || err('Réémission introuvable ou déjà détachée');
+          const p = (D().show_payments || []).find(x => x.id === f.payment_id);
+          if (p.pennylane_id !== f.remplacee_par_pennylane_id) err('La ligne ne suit plus cette facture réémise : rien à détacher');
+          Object.assign(f, { detache_at: now(), detache_par: USER, detache_motif: m });
+          Object.assign(p, { pennylane_id: f.pennylane_id, invoice_number: f.invoice_number, pennylane_url: f.pennylane_url });
+          (D().pennylane_avoirs || []).filter(a => a.payment_id === p.id && a.credited_pennylane_id === f.pennylane_id).forEach(a => { a.facture_remplacee = false; });
+          journal('reemission', f.id, 'detacher', { pennylane_id: f.remplacee_par_pennylane_id }, { pennylane_id: f.pennylane_id }, m); return f;
+        },
+        virement_groupe_creer: ({ p_montant, p_date, p_reference, p_transaction_id }) => {
+          const m = Number(p_montant), t = String(p_transaction_id ?? '').trim() || null;
+          if (!(m > 0 && m < 1e8)) err('Montant TTC du virement à saisir (positif)');
+          if (!p_date) err('Date du virement à saisir');
+          if (t && ((D().pennylane_virements || []).some(x => x.transaction_id === t) || (D().reglements || []).some(x => x.transaction_id === t))) err('Ce virement Pennylane est déjà compté pour une ligne : il ne se répartit pas une seconde fois');
+          if (t && (D().virements_groupes || []).some(x => x.transaction_id === t)) err('Ce virement Pennylane est déjà un virement groupé');
+          const v = { id: 'vg-' + Math.random().toString(36).slice(2, 10), transaction_id: t, montant_ttc: Math.round(m * 100) / 100, date: p_date, reference: String(p_reference ?? '').trim() || null, created_at: now(), created_by: USER };
+          (D().virements_groupes ||= []).push(v); journal('virement_groupe', v.id, 'creer', null, v); return v;
+        },
+        virement_groupe_affecter: ({ p_virement, p_payment, p_montant, p_compte }) => {
+          const v = (D().virements_groupes || []).find(x => x.id === p_virement) || err('Virement groupé introuvable');
+          const deja = (D().reglements || []).filter(r => r.virement_groupe_id === v.id && !r.annule_at).reduce((t, r) => t + Number(r.montant_ttc), 0);
+          const m = Math.round(Number(p_montant) * 100) / 100;
+          if (deja + m > Number(v.montant_ttc) + 0.005) err(`Virement groupé de ${v.montant_ttc} € TTC : ${deja} € TTC déjà attribués — affectation refusée (le cumul ne dépasse jamais le virement)`);
+          const r = RPC.reglement_saisir({ p_payment, p_sens: 'encaissement', p_etat: 'fait', p_montant: m, p_date: v.date, p_compte, p_reference: v.reference || 'Virement groupé', p_motif: null });
+          r.virement_groupe_id = v.id; journal('virement_groupe', v.id, 'affecter', null, { reglement_id: r.id, payment_id: r.payment_id, montant_ttc: r.montant_ttc }); return r;
+        },
+      };
+    })(),
     // v1.68 : correction d'une facture émise (déverrouillage explicite) — mêmes contrôles que la fonction SQL facture_corriger
     // (essayée sur une vraie base PostgreSQL : supabase/repetitions/2026-11-26_v1.68_correction_facture_essai.sql)
     facture_corriger: ({ p_payment, p_amount, p_pct, p_vat, p_motif }) => {
@@ -296,6 +385,8 @@
           // (v1.66.5) refus d'une fonction (exception levée par sa garde) : rendu comme la base, en erreur avec son code
           const f = RPC[name]; try { return { data: f ? clone(f(args || {})) : null, error: null }; } catch (err) { if (!err?.code) throw err; return { data: null, error: { code: err.code, message: err.message } }; } },
         // window.__FN_ERROR = { nom: 'message' } : la fonction serveur répond par cette erreur (essais de la file des résumés IA)
+        // (v1.71) window.__rpc(nom, args) : fonction SQL simulée, pour une fonction serveur simulée qui l'appelle (réémission)
+        ...(window.__rpc = (n, a) => clone(RPC[n](a)), {}),
         functions: { invoke: async (name, o) => { window.__calls.push({ fn: name, body: o && o.body, url: String(url) });
           const err = window.__FN_ERROR && window.__FN_ERROR[name];
           // window.__FN_DATA = { nom: réponse | (body) => réponse } : réponse simulée de la fonction serveur (agendas des artistes…)
