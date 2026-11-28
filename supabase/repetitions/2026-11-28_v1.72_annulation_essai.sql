@@ -238,6 +238,8 @@ end $$;
 select pg_temp.ok(not has_function_privilege('anon', 'public.show_annuler(uuid, numeric, text, date, text)', 'execute')
   and has_function_privilege('authenticated', 'public.show_annuler(uuid, numeric, text, date, text)', 'execute')
   and not has_function_privilege('authenticated', 'public.annulation_appliquer(uuid, numeric)', 'execute')
+  and not has_function_privilege('authenticated', 'public.show_engagee(uuid)', 'execute')
+  and not has_function_privilege('authenticated', 'public.annulation_relance_impaye(uuid)', 'execute')
   and not has_table_privilege('authenticated', 'public.annulations', 'insert') and not has_table_privilege('anon', 'public.annulations', 'select'), 'droits : équipe seulement, écriture par les fonctions');
 set request.jwt.claims = '{}';
 do $$ begin
