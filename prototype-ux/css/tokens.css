@@ -46,12 +46,13 @@
   --hero-ink: #FFFFFF; --hero-ink-2: rgb(255 255 255 / .95); --hero-sep: rgb(255 255 255 / .16);
   --hero-halo: 0 0 1px rgb(19 70 82 / .9), 0 0 5px rgb(19 70 82 / .85), 0 0 10px rgb(19 70 82 / .5);   /* détache le texte du filet de la courbe */
   /* Liquid Flow : vague en trois couches (pétrole, menthe, pétrole clair), volume et reflet de crête */
-  --lf-b1: rgb(36 126 145 / .62); --lf-b2: rgb(114 201 180 / .42); --lf-b3: rgb(60 170 172 / .55);
+  --lf-b1: rgb(36 126 145 / .62); --lf-b2: rgb(114 201 180 / .3); --lf-b3: rgb(60 170 172 / .46);
   --lf-m1: rgb(114 201 180 / .36); --lf-m2: rgb(36 126 145 / .5); --lf-m3: rgb(114 201 180 / .34);
   --lf-f1: rgb(8 36 44 / .58); --lf-f2: rgb(10 48 58 / .5);
   --lf-v1: rgb(255 255 255 / .10); --lf-v2: rgb(255 255 255 / 0); --lf-v3: rgb(4 24 30 / .26);
   --lf-shadow: rgb(4 22 28 / .45);
-  --lf-s1: rgb(255 255 255 / 0); --lf-s2: rgb(214 248 238 / .7); --lf-s3: rgb(255 255 255 / .18); --lf-s4: rgb(214 248 238 / .6);
+  --lf-g1: rgb(255 255 255 / .14); --lf-g2: rgb(255 255 255 / 0); --lf-p1: rgb(114 201 180 / .09); --lf-p2: rgb(114 201 180 / 0);
+  --lf-s1: rgb(255 255 255 / 0); --lf-s2: rgb(214 248 238 / .42); --lf-s3: rgb(255 255 255 / .14); --lf-s4: rgb(214 248 238 / .38);
   --hero-shadow: 0 0 0 .5px rgb(19 70 82 / .4), inset 0 1px 0 rgb(255 255 255 / .16), 0 14px 30px -18px rgb(19 70 82 / .7);
   /* Lueur du socle, derrière la navigation en verre seulement */
   --amb-1: rgb(36 126 145 / .2); --amb-2: rgb(114 201 180 / .26); --amb-side: rgb(36 126 145 / .07);
@@ -135,6 +136,7 @@
   --lf-f1: rgb(216 164 197 / .45); --lf-f2: rgb(120 185 173 / .5);
   --lf-v1: rgb(255 255 255 / .26); --lf-v2: rgb(255 255 255 / 0); --lf-v3: rgb(70 60 130 / .08);
   --lf-shadow: rgb(80 70 150 / .2);
+  --lf-g1: rgb(255 255 255 / .4); --lf-g2: rgb(255 255 255 / 0); --lf-p1: rgb(255 255 255 / .35); --lf-p2: rgb(255 255 255 / 0);
   --lf-s1: rgb(255 255 255 / 0); --lf-s2: rgb(255 255 255 / .95); --lf-s3: rgb(255 255 255 / .4); --lf-s4: rgb(255 255 255 / .9);
   --hero-shadow: 0 0 0 .5px rgb(120 140 190 / .35), inset 0 1px 0 rgb(255 255 255 / .4), 0 14px 30px -18px rgb(120 130 190 / .7);
   --amb-1: rgb(166 181 232 / .34); --amb-2: rgb(216 164 197 / .28); --amb-side: rgb(166 181 232 / .12);

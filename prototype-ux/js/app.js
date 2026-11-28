@@ -1,4 +1,5 @@
-// MATRICE — prototype UX/UI V6.1 (tableau de bord Bento, navigation Liquid Glass, préférences, panneau latéral).
+// MATRICE — prototype UX/UI V7 (tableau de bord Bento, Booking, navigation Liquid Glass, préférences, panneau latéral).
+// Les écrans métier (js/booking.js…) s'enregistrent dans window.MX_EXT ; ce fichier leur expose ses outils par window.MX.
 // JavaScript natif, sans framework ni dépendance chargée en ligne. Données : js/data.js (fictives).
 // Préférences : stockage local de ce navigateur uniquement (arbitrage A12) — aucune base, aucun service réel.
 (() => {
@@ -32,7 +33,7 @@
   const KEY = 'matrice-proto.prefs.v1';
   const fromProfile = p => { const pr = D.PROFILES[p]; return { profile: p, order: [...pr.order], shortcuts: [...pr.shortcuts], kpis: [...pr.kpis] }; };
   const DEFAULTS = () => ({
-    ...fromProfile('booking'), hidden: [], folded: [], blocks: ['dates', 'billetterie', 'taches', 'relances', 'pipeline', 'finances', 'messages'], hiddenBlocks: [], layout: 6,
+    ...fromProfile('booking'), hidden: [], folded: [], blocks: ['dates', 'billetterie', 'taches', 'relances', 'pipeline', 'finances', 'messages'], hiddenBlocks: [], blockCol: {}, layout: 7, bk: null,
     appearance: 'system', darkFrom: '19:00', darkTo: '07:30', density: { desktop: 'compacte', tablet: 'compacte', phone: 'compacte' },
     palette: 'lagoon', bgLight: 'glacier', textSize: 1, weight: 'normal', leading: 'normal', tracking: 'normal', contrast: 'normal', zebra: true, glass: true, motion: true, mini: false, owner: true,
   });
@@ -45,7 +46,9 @@
   function migrate(v){
     const known = DEFAULTS().blocks, map = b => b === 'cachets' ? ['finances'] : b === 'suivis' ? ['pipeline', 'relances'] : [b];
     v.blocks = [...new Set((v.blocks || []).flatMap(map).filter(b => known.includes(b)))];
-    v.blocks = [...known]; v.layout = 6;   // ordre fixé par le Bento validé (V6.1) : seuls les blocs masqués restent personnalisables
+    // avant la V7, l'ordre enregistré ne suivait pas le Bento validé : disposition par défaut ; ensuite, l'ordre personnalisé est respecté
+    if ((v.layout || 0) < 7){ v.blocks = [...known]; v.blockCol = {}; v.layout = 7; }
+    if (!v.blockCol || typeof v.blockCol !== 'object') v.blockCol = {};
     known.forEach(b => { if (!v.blocks.includes(b)) v.blocks.push(b); });
     v.hiddenBlocks = (v.hiddenBlocks || []).flatMap(map).filter(b => known.includes(b));
     if (!['apple', 'glacier', 'mineral'].includes(v.bgLight)) v.bgLight = 'glacier';
@@ -53,6 +56,8 @@
     return v;
   }
   let P = load();
+  // Écrans métier enregistrés par d'autres fichiers (js/booking.js) : pages, actions, réactions aux saisies, garde des modifications
+  const EXT = Object.assign({ pages: {}, after: {}, acts: {}, change: () => false, input: () => false, keydown: () => false, guard: null }, window.MX_EXT || {});
   function save(){ try { localStorage.setItem(KEY, JSON.stringify(P)); } catch { /* sans stockage : réglages gardés le temps de la visite */ } }
 
   // État de la page (non enregistré)
@@ -173,10 +178,12 @@
   function renderMain(){
     const t = tabById(S.tab), main = $('#main'), keep = main.dataset.tab === S.tab ? main.scrollTop : 0;
     main.dataset.tab = S.tab;
-    main.innerHTML = `<div class="page">${S.tab === 'tableau-de-bord' ? dashboard() : S.tab === 'preferences' ? prefsPage() : placeholder(t)}</div>`;
+    const ext = EXT.pages[S.tab];
+    main.innerHTML = `<div class="page ${ext ? 'page-' + S.tab : ''}">${S.tab === 'tableau-de-bord' ? dashboard() : S.tab === 'preferences' ? prefsPage() : ext ? ext() : placeholder(t)}</div>`;
     main.scrollTop = keep;
     applyVars(main);
     const fig = $('#fig-fin', main); if (fig) mountChart(fig);
+    EXT.after[S.tab]?.(main);
   }
   const applyVars = r => { [['w', '--w'], ['s', '--s'], ['h', '--h']].forEach(([k, v]) => $$(`[data-${k}]`, r).forEach(el => el.style.setProperty(v, el.dataset[k]))); };
 
@@ -204,7 +211,8 @@
   }
   // Bento Mac : 3 colonnes indépendantes (gauche 31 %, centre 27 %, droite 42 %), sans hauteurs alignées de force
   const COL = { dates: 0, billetterie: 0, taches: 1, relances: 1, pipeline: 1, finances: 2, messages: 2 };
-  const col = (blocks, c) => `<div class="col col-${c}">${DEFAULTS().blocks.filter(b => COL[b] === c && blocks.includes(b)).map(b => `<section class="card blk blk-${b}" aria-labelledby="h-${b}">${BLOCK[b]()}</section>`).join('')}</div>`;
+  const colOf = b => P.blockCol[b] ?? COL[b];
+  const col = (blocks, c) => `<div class="col col-${c}">${blocks.filter(b => colOf(b) === c).map(b => `<section class="card blk blk-${b}" aria-labelledby="h-${b}">${BLOCK[b]()}</section>`).join('')}</div>`;
   // Marqueur de section : pictogramme linéaire sur un petit support teinté par la palette
   const MARK = { dates: 'calendar-days', billetterie: 'ticket', taches: 'circle-check', relances: 'refresh-cw', pipeline: 'chart-column', finances: 'chart-spline', messages: 'mail' };
   const cardHead = (id, title, count, tools = '') => `<div class="card-head">${MARK[id] ? `<span class="sec-mk" aria-hidden="true">${icon(MARK[id])}</span>` : ''}<h2 id="h-${id}">${esc(title)}</h2>${count != null ? `<span class="count">${count}</span>` : ''}<span class="grow"></span>${tools}</div>`;
@@ -215,8 +223,8 @@
     <button class="vt-1" type="button" data-act="view" data-k="${key}" data-v="${S.views[key] === 'chart' ? 'table' : 'chart'}" aria-label="${S.views[key] === 'chart' ? 'Afficher le tableau des valeurs' : 'Afficher le graphique'}">${icon(S.views[key] === 'chart' ? 'table-2' : 'chart-line', 'sm')}</button>`;
 
   // 3.1 Booking — bloc signature : dégradé de la palette, courbe organique translucide, 4 indicateurs sur une ligne
-  // V6.1 « Liquid Flow » : vague organique translucide en trois couches colorées (teintes de la palette),
-  // ombre portée sous la vague pour le volume, reflet lumineux fin sur la crête. Couleurs : jetons --lf-* (tokens.css).
+  // V7 « Liquid Flow » : vague organique en couches de profondeur — couche arrière floutée (profondeur de champ), lumière diffuse,
+  // vague médiane avec reflet en volume (dégradé vertical sous la crête), couche avant sombre légèrement adoucie. Couleurs : jetons --lf-*.
   const WAVE_BACK = 'M0 112 C 140 96, 250 46, 420 58 C 600 70, 690 150, 880 140 C 1030 132, 1110 64, 1200 52 L1200 200 L0 200 Z';
   const WAVE_MID = 'M0 150 C 170 142, 300 84, 470 92 C 650 100, 740 176, 930 160 C 1060 150, 1140 104, 1200 98 L1200 200 L0 200 Z';
   const WAVE_FRONT = 'M0 182 C 200 178, 340 128, 520 136 C 700 144, 800 196, 980 184 C 1090 177, 1160 150, 1200 146 L1200 200 L0 200 Z';
@@ -227,16 +235,21 @@
       <linearGradient id="lf-mid" class="lf-g lf-mid" x1="0" x2="1" y1="0" y2=".4"><stop offset="0"/><stop offset=".55"/><stop offset="1"/></linearGradient>
       <linearGradient id="lf-front" class="lf-g lf-front" x1="0" x2="1" y1="0" y2="0"><stop offset="0"/><stop offset="1"/></linearGradient>
       <linearGradient id="lf-vol" class="lf-g lf-vol" x1="0" x2="0" y1="0" y2="1"><stop offset="0"/><stop offset=".35"/><stop offset="1"/></linearGradient>
+      <linearGradient id="lf-gloss" class="lf-g lf-gloss" x1="0" x2="0" y1=".42" y2=".72"><stop offset="0"/><stop offset="1"/></linearGradient>
       <linearGradient id="lf-shine" class="lf-g lf-shine" x1="0" x2="1" y1="0" y2="0"><stop offset="0"/><stop offset=".3"/><stop offset=".62"/><stop offset="1"/></linearGradient>
+      <radialGradient id="lf-pool" class="lf-g lf-pool" cx=".5" cy=".5" r=".5"><stop offset="0"/><stop offset="1"/></radialGradient>
       <filter id="lf-soft" x="-.05" y="-.3" width="1.1" height="1.6"><feGaussianBlur stdDeviation="7 5"/></filter>
+      <filter id="lf-deep" x="-.05" y="-.4" width="1.1" height="1.8"><feGaussianBlur stdDeviation="5 3.5"/></filter>
+      <filter id="lf-edge" x="-.02" y="-.2" width="1.04" height="1.4"><feGaussianBlur stdDeviation="1.2 .8"/></filter>
     </defs>
+    <ellipse fill="url(#lf-pool)" cx="760" cy="120" rx="420" ry="110"/>
+    <g filter="url(#lf-deep)"><path fill="url(#lf-back)" d="${WAVE_BACK}"/><path fill="url(#lf-vol)" d="${WAVE_BACK}"/></g>
     <path class="lf-shadow" d="${WAVE_MID}" filter="url(#lf-soft)" transform="translate(0 -6)"/>
-    <path fill="url(#lf-back)" d="${WAVE_BACK}"/>
-    <path fill="url(#lf-vol)" d="${WAVE_BACK}"/>
     <path fill="url(#lf-mid)" d="${WAVE_MID}"/>
-    <path fill="url(#lf-front)" d="${WAVE_FRONT}"/>
-    <path class="lf-crest" stroke="url(#lf-shine)" d="${crest(WAVE_BACK)}"/>
-    <path class="lf-crest lf-crest-2" stroke="url(#lf-shine)" d="${crest(WAVE_MID)}"/></svg>`;
+    <path fill="url(#lf-gloss)" d="${WAVE_MID}"/>
+    <path fill="url(#lf-front)" d="${WAVE_FRONT}" filter="url(#lf-edge)"/>
+    <path class="lf-crest" stroke="url(#lf-shine)" d="${crest(WAVE_MID)}"/>
+    <path class="lf-crest lf-crest-2" stroke="url(#lf-shine)" d="${crest(WAVE_BACK)}" filter="url(#lf-edge)"/></svg>`;
   function hero(){
     const kpis = P.kpis.map(k => D.KPIS[k]).filter(Boolean);
     const pr = D.PROFILES[P.profile];
@@ -460,30 +473,35 @@
     const free = TABS.filter(x => !P.shortcuts.includes(x.id) && allowed(x));
     const moveBtns = (kind, i, n, label) => `<button class="btn ghost sm icon" type="button" data-act="move" data-kind="${kind}" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Monter ${esc(label)}">${icon('arrow-up', 'sm')}</button>
       <button class="btn ghost sm icon" type="button" data-act="move" data-kind="${kind}" data-i="${i}" data-d="1" ${i === n - 1 ? 'disabled' : ''} aria-label="Descendre ${esc(label)}">${icon('arrow-down', 'sm')}</button>`;
-    const card = (id, title, body) => `<section class="card" aria-labelledby="${id}"><div class="pref-card"><h2 id="${id}">${title}</h2>${body}</div></section>`;
+    // V7 : chaque ensemble indique s'il est « Par défaut » ou « Personnalisé », avec sa propre restauration
+    const dflt = DEFAULTS(), prof = D.PROFILES[P.profile] ? fromProfile(P.profile) : null;
+    const isDef = keys => keys.every(k => same(P[k], ['order', 'shortcuts'].includes(k) && prof ? prof[k] : dflt[k]));
+    const card = (id, title, body, keys) => { const def = keys ? isDef(keys) : null;
+      return `<section class="card" aria-labelledby="${id}"><div class="pref-card"><div class="pref-h"><h2 id="${id}">${title}</h2>${keys ? defTag(def) : ''}
+        ${keys && !def ? `<button class="btn ghost sm" type="button" data-act="resetPrefs" data-keys="${keys.join(',')}" data-card="${id}">${icon('rotate-ccw', 'sm')}Rétablir</button>` : ''}</div>${body}</div></section>`; };
     return pageHead(t, { sub: '<span>Propres à ce compte et à ce navigateur</span>' }) + `<div class="prefs">
       ${card('p-look', 'Apparence', `<div class="pref-row"><span class="l">Identité chromatique</span>
         <div class="palettes" role="radiogroup" aria-label="Identité chromatique">
-          <label class="pal pal-lagoon"><input type="radio" name="palette" value="lagoon" data-pref="palette" ${P.palette !== 'opal' ? 'checked' : ''}><span class="bar"></span><b>Electric Lagoon</b><span class="hexes"><span><i class="sw-lag1"></i>#247E91</span><span><i class="sw-lag2"></i>#72C9B4</span></span><span class="check" aria-hidden="true">${icon('check')}</span></label>
-          <label class="pal pal-opal"><input type="radio" name="palette" value="opal" data-pref="palette" ${P.palette === 'opal' ? 'checked' : ''}><span class="bar"></span><b>Opal</b><span class="hexes"><span><i class="sw-op1"></i>#78B9AD</span><span><i class="sw-op2"></i>#A6B5E8</span><span><i class="sw-op3"></i>#D8A4C5</span></span><span class="check" aria-hidden="true">${icon('check')}</span></label>
+          <label class="pal pal-lagoon"><input type="radio" name="palette" value="lagoon" data-pref="palette" ${P.palette !== 'opal' ? 'checked' : ''}><span class="bar"></span><b>Electric Lagoon</b><span class="hexes" aria-hidden="true"><i class="sw-lag1"></i><i class="sw-lag2"></i></span><span class="check" aria-hidden="true">${icon('check')}</span></label>
+          <label class="pal pal-opal"><input type="radio" name="palette" value="opal" data-pref="palette" ${P.palette === 'opal' ? 'checked' : ''}><span class="bar"></span><b>Opal</b><span class="hexes" aria-hidden="true"><i class="sw-op1"></i><i class="sw-op2"></i><i class="sw-op3"></i></span><span class="check" aria-hidden="true">${icon('check')}</span></label>
         </div><p class="hint">Indépendante du mode clair, sombre ou automatique. Les couleurs des statuts ne changent pas.</p></div>
         <div class="pref-row"><span class="l">Fond clair</span>
-        <div class="bgs" role="radiogroup" aria-label="Fond clair">${[['apple', 'Blanc Apple', '#F5F5F7'], ['glacier', 'Blanc glacier', '#EFF3F5'], ['mineral', 'Argent minéral', '#E8EBED']].map(([v, l, h]) =>
-          `<label class="bgc bgc-${v}"><input type="radio" name="bgLight" value="${v}" data-pref="bgLight" ${P.bgLight === v ? 'checked' : ''}><span class="sw" aria-hidden="true"></span><b>${l}</b><span class="hex">${h}${v === 'glacier' ? ' · défaut' : ''}</span></label>`).join('')}</div>
+        <div class="bgs" role="radiogroup" aria-label="Fond clair">${[['apple', 'Blanc Apple'], ['glacier', 'Blanc glacier'], ['mineral', 'Argent minéral']].map(([v, l]) =>
+          `<label class="bgc bgc-${v}"><input type="radio" name="bgLight" value="${v}" data-pref="bgLight" ${P.bgLight === v ? 'checked' : ''}><span class="sw" aria-hidden="true"></span><b>${l}</b>${v === 'glacier' ? '<span class="hex">Par défaut</span>' : ''}</label>`).join('')}</div>
         <p class="hint">Utilisé en mode clair. Indépendant de l’identité chromatique et du mode ; le mode sombre garde le graphite.</p></div>
         <div class="pref-row"><span class="l">Mode</span>${seg('appearance', P.appearance, [['light', 'Clair'], ['dark', 'Sombre'], ['system', 'Système'], ['schedule', 'Horaires']], 'Apparence')}
         ${P.appearance === 'schedule' ? `<div class="inline"><label class="field"><span>Sombre à partir de</span><input class="input" type="time" id="pf-from" data-pref="darkFrom" value="${esc(P.darkFrom)}"></label>
-          <label class="field"><span>jusqu’à</span><input class="input" type="time" id="pf-to" data-pref="darkTo" value="${esc(P.darkTo)}"></label></div>` : ''}</div>`)}
+          <label class="field"><span>jusqu’à</span><input class="input" type="time" id="pf-to" data-pref="darkTo" value="${esc(P.darkTo)}"></label></div>` : ''}</div>`, ['palette', 'bgLight', 'appearance', 'darkFrom', 'darkTo'])}
       ${card('p-dens', 'Densité', `${seg('density', P.density[dev], [['compacte', 'Compacte'], ['standard', 'Standard'], ['confort', 'Confort']], 'Densité')}
-        <p class="hint">Réglage propre à ce type d’appareil (${DEVICE_LABEL[dev]}).</p>`)}
+        <p class="hint">Réglage propre à ce type d’appareil (${DEVICE_LABEL[dev]}).</p>`, ['density'])}
       ${card('p-fx', 'Effets', `${sw('glass', 'Effets de verre', P.glass, 'Navigation et menus seulement, jamais sur les données')}
-        ${MQ.still.matches ? sw('motion', 'Animations', false, 'Désactivées par votre système (réduction des animations) : réglage indisponible ici.', true) : sw('motion', 'Animations', P.motion, 'Panneaux, menus et fenêtres')}`)}
+        ${MQ.still.matches ? sw('motion', 'Animations', false, 'Désactivées par votre système (réduction des animations) : réglage indisponible ici.', true) : sw('motion', 'Animations', P.motion, 'Panneaux, menus et fenêtres')}`, ['glass', 'motion'])}
       ${card('p-read', 'Confort de lecture', `<div class="pref-row"><span class="l">Taille du texte</span>${seg('textSize', P.textSize, [['0.9', '90 %'], ['1', '100 %'], ['1.125', '112 %'], ['1.25', '125 %']], 'Taille du texte')}</div>
         <div class="pref-row"><span class="l">Graisse</span>${seg('weight', P.weight, [['normal', 'Normale'], ['strong', 'Renforcée']], 'Graisse')}</div>
         <div class="pref-row"><span class="l">Interligne</span>${seg('leading', P.leading, [['normal', 'Standard'], ['airy', 'Aéré']], 'Interligne')}</div>
         <div class="pref-row"><span class="l">Espacement des lettres</span>${seg('tracking', P.tracking, [['normal', 'Standard'], ['wide', 'Élargi']], 'Espacement des lettres')}</div>
         <div class="pref-row"><span class="l">Contraste</span>${seg('contrast', P.contrast, [['normal', 'Standard'], ['high', 'Renforcé']], 'Contraste')}</div>
-        ${sw('zebra', 'Alternance des fonds des listes et tableaux', P.zebra)}`)}
+        ${sw('zebra', 'Alternance des fonds des listes et tableaux', P.zebra)}`, ['textSize', 'weight', 'leading', 'tracking', 'contrast', 'zebra'])}
       ${card('p-prof', 'Profil métier', `<p class="hint">Configuration de départ : ordre des modules, raccourcis, indicateurs. Ce n’est pas un rôle : les droits d’accès ne changent pas.</p>
         <div class="inline"><select class="input" id="pf-profile" aria-label="Profil métier">${Object.entries(D.PROFILES).map(([k, v]) => `<option value="${k}" ${P.profile === k ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}<option value="perso" ${P.profile === 'perso' ? 'selected' : ''}>Personnalisé</option></select>
         <button class="btn" type="button" data-act="applyProfile">Appliquer</button></div>`)}
@@ -491,11 +509,11 @@
         ${sc.length ? `<ul class="order-list">${sc.map((x, i) => `<li><span class="t">${icon(x.icon, 'sm')}${esc(x.label)} <span class="hint">${esc(x.module.label)}</span></span>${moveBtns('shortcuts', i, sc.length, x.label)}
           <button class="btn ghost sm icon" type="button" data-act="unpin" data-id="${x.id}" aria-label="Retirer ${esc(x.label)} des raccourcis">${icon('x', 'sm')}</button></li>`).join('')}</ul>` : '<p class="hint">Aucun raccourci.</p>'}
         <div class="inline"><select class="input" id="pf-add" aria-label="Onglet à ajouter aux raccourcis">${free.map(x => `<option value="${x.id}">${esc(x.module.label)} › ${esc(x.label)}</option>`).join('')}</select>
-          <button class="btn" type="button" data-act="addShortcut" ${free.length ? '' : 'disabled'}>${icon('plus', 'sm')}Ajouter</button></div>`)}
+          <button class="btn" type="button" data-act="addShortcut" ${free.length ? '' : 'disabled'}>${icon('plus', 'sm')}Ajouter</button></div>`, ['shortcuts'])}
       ${card('p-mod', 'Modules', `<p class="hint">Ordre et visibilité dans la navigation. Masquer un module ne retire aucun droit : il reste accessible par la recherche.</p>
         <ul class="order-list">${mods.map((m, i) => { const off = P.hidden.includes(m.id);
           return `<li class="${off ? 'off' : ''}"><span class="t">${icon(m.icon, 'sm')}${esc(m.label)}</span>${moveBtns('order', i, mods.length, m.label)}
-            <button class="btn ghost sm icon" type="button" data-act="hide" data-id="${m.id}" ${m.fixed ? 'disabled title="Toujours visible"' : ''} aria-pressed="${off}" aria-label="${off ? 'Afficher' : 'Masquer'} ${esc(m.label)}">${icon(off ? 'eye-off' : 'eye', 'sm')}</button></li>`; }).join('')}</ul>`)}
+            <button class="btn ghost sm icon" type="button" data-act="hide" data-id="${m.id}" ${m.fixed ? 'disabled title="Toujours visible"' : ''} aria-pressed="${off}" aria-label="${off ? 'Afficher' : 'Masquer'} ${esc(m.label)}">${icon(off ? 'eye-off' : 'eye', 'sm')}</button></li>`; }).join('')}</ul>`, ['order', 'hidden'])}
       ${card('p-prev', 'Aperçu d’un tableau', `<p class="hint">Densité, alternance, contraste et chiffres alignés (IBM Plex Mono).</p>
         <div class="tbl-wrap" tabindex="0" role="region" aria-label="Aperçu d’un tableau"><table class="tbl"><thead><tr><th>Date</th><th>Artiste</th><th>Statut</th><th class="num">Cachet HT</th></tr></thead><tbody>
           ${D.DATES.slice(0, 6).map(d => `<tr><td class="mono">${esc(dShort(d.date))}</td><td>${esc(d.artist)}</td><td>${statusPill(d.status)}</td><td class="num">${d.fee ? esc(eur(d.fee)) : '<span class="muted">—</span>'}</td></tr>`).join('')}</tbody></table></div>`)}
@@ -511,11 +529,11 @@
         <button class="btn ghost icon" type="button" data-act="closePanel" aria-label="Fermer le panneau">${icon('x')}</button>${meta ? `<div class="meta">${meta}</div>` : ''}</div>
       <div class="pnl-body">${body}</div>${foot ? `<div class="pnl-foot">${foot}</div>` : ''}</div>`;
   }
-  function openPanel(kind, html){
+  function openPanel(kind, html, { full = false } = {}){
     if (!S.panel) S.panelFrom = document.activeElement;
     S.panel = kind;
     if (device() === 'phone'){
-      const dlg = $('#psheet'); dlg.innerHTML = html; applyVars(dlg);
+      const dlg = $('#psheet'); dlg.innerHTML = html; applyVars(dlg); dlg.classList.toggle('full', full);   // formulaires : plein écran sur iPhone
       if (!dlg.open) dlg.showModal();
       $('#pnl-title', dlg)?.focus();
       return;
@@ -524,8 +542,15 @@
     dock.innerHTML = html; applyVars(dock); dock.hidden = false;
     requestAnimationFrame(() => { app.classList.add('dock-open'); $('#pnl-title', dock)?.focus({ preventScroll: true }); });
   }
-  function closePanel({ restore = true } = {}){
+  // Protection contre la perte de modifications : un écran peut déclarer une saisie non enregistrée (EXT.guard)
+  function guarded(fn){
+    if (!EXT.guard?.()){ fn(); return; }
+    askConfirm('Abandonner les modifications ?', 'Les modifications de cette fiche ne sont pas enregistrées.', 'Abandonner', 'Continuer la saisie').then(ok => { if (ok){ EXT.guard = null; EXT.discard?.(); fn(); } });
+  }
+  function closePanel({ restore = true, force = false } = {}){
     if (!S.panel) return;
+    if (!force && EXT.guard?.()){ guarded(() => closePanel({ restore, force: true })); return; }
+    EXT.discard?.();
     const from = S.panelFrom; S.panel = null; S.panelFrom = null;
     if (S.openDate){ S.openDate = null; $$('.tl-ev[aria-current]').forEach(r => r.removeAttribute('aria-current')); }
     const dlg = $('#psheet');
@@ -555,16 +580,30 @@
     openPanel('date', panelShell(d.artist, 'Date', body, `<button class="btn" type="button" data-act="closePanel">Fermer</button><a class="btn primary" href="#production" data-go="production">Ouvrir dans Production</a>`,
       `${statusPill(d.status)}<span>${esc(d.venue)} · ${esc(d.city)}</span>`));
   }
+  // Marqueur « Par défaut » / « Personnalisé » (V7) et bouton de restauration propre à chaque ensemble de réglages
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const defTag = def => `<span class="def-tag ${def ? '' : 'is-custom'}">${def ? 'Par défaut' : 'Personnalisé'}</span>`;
+  const COL_LABEL = ['Colonne gauche', 'Colonne centrale', 'Colonne droite'];
+  const layoutIsDefault = () => same(P.blocks, DEFAULTS().blocks) && !Object.keys(P.blockCol).length && !P.hiddenBlocks.length;
   function customizeBody(){
     const opts = cur => Object.entries(D.KPIS).map(([k, v]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${esc(v.label)}</option>`).join('');
-    return `<div class="pnl-sec"><h3>Indicateurs du bloc principal</h3>${P.kpis.map((k, i) => `<label class="field"><span>Indicateur ${i + 1}</span><select class="input" id="kpi-${i}" data-kpi="${i}">${opts(k)}</select></label>`).join('')}</div>
-      <div class="pnl-sec"><h3>Blocs</h3><p class="hint">L’ordre suit la grille validée ; chaque bloc peut être masqué.</p><ul class="order-list">${DEFAULTS().blocks.map(b => { const off = P.hiddenBlocks.includes(b);
-        return `<li class="${off ? 'off' : ''}"><span class="t">${esc(D.BLOCKS[b])}</span>
-          <button class="btn ghost sm icon" type="button" data-act="hideBlock" data-id="${b}" aria-pressed="${off}" aria-label="${off ? 'Afficher' : 'Masquer'} ${esc(D.BLOCKS[b])}">${icon(off ? 'eye-off' : 'eye', 'sm')}</button></li>`; }).join('')}</ul></div>
+    const kpiDef = same(P.kpis, (D.PROFILES[P.profile] || D.PROFILES.booking).kpis);
+    const group = c => { const list = P.blocks.filter(b => colOf(b) === c);
+      return `<div class="cz-col"><p class="eyebrow">${COL_LABEL[c]}</p><ul class="order-list">${list.map((b, i) => { const off = P.hiddenBlocks.includes(b), n = esc(D.BLOCKS[b]);
+        return `<li class="${off ? 'off' : ''}"><span class="t">${n}</span>
+          <button class="btn ghost sm icon" type="button" data-act="moveBlock" data-id="${b}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Monter ${n}">${icon('arrow-up', 'sm')}</button>
+          <button class="btn ghost sm icon" type="button" data-act="moveBlock" data-id="${b}" data-d="1" ${i === list.length - 1 ? 'disabled' : ''} aria-label="Descendre ${n}">${icon('arrow-down', 'sm')}</button>
+          <select class="input cz-sel" data-blockcol="${b}" aria-label="Colonne de ${n}">${COL_LABEL.map((l, k) => `<option value="${k}" ${k === c ? 'selected' : ''}>${['Gauche', 'Centre', 'Droite'][k]}</option>`).join('')}</select>
+          <button class="btn ghost sm icon" type="button" data-act="hideBlock" data-id="${b}" aria-pressed="${off}" aria-label="${off ? 'Afficher' : 'Masquer'} ${n}">${icon(off ? 'eye-off' : 'eye', 'sm')}</button></li>`; }).join('') || '<li class="empty-col"><span class="hint">Aucun bloc</span></li>'}</ul></div>`; };
+    return `<div class="pnl-sec"><h3>Indicateurs du bloc principal ${defTag(kpiDef)}</h3>${P.kpis.map((k, i) => `<label class="field"><span>Indicateur ${i + 1}</span><select class="input" id="kpi-${i}" data-kpi="${i}">${opts(k)}</select></label>`).join('')}
+        ${kpiDef ? '' : `<button class="btn sm" type="button" data-act="resetKpis">${icon('rotate-ccw', 'sm')}Indicateurs du profil</button>`}</div>
+      <div class="pnl-sec"><h3>Disposition des blocs ${defTag(layoutIsDefault())}</h3><p class="hint">Sur Mac, trois colonnes. Sur iPhone, les blocs se suivent de la colonne gauche à la colonne droite.</p>
+        ${[0, 1, 2].map(group).join('')}
+        <button class="btn sm" type="button" data-act="resetLayout" ${layoutIsDefault() ? 'disabled' : ''}>${icon('rotate-ccw', 'sm')}Rétablir la disposition par défaut</button></div>
       <p class="hint">Enregistré automatiquement. Contenu définitif des indicateurs à confirmer selon le métier et les données disponibles.</p>`;
   }
   const openCustomize = () => openPanel('customize', panelShell('Personnaliser le tableau de bord', 'Tableau de bord', customizeBody(),
-    `<button class="btn" type="button" data-act="resetDash">Revenir au profil</button><button class="btn primary" type="button" data-act="closePanel">Terminé</button>`));
+    `<button class="btn" type="button" data-act="resetDash">Tout rétablir</button><button class="btn primary" type="button" data-act="closePanel">Terminé</button>`));
   function refreshCustomize(focusSel){
     if (S.panel !== 'customize') return;
     const host = device() === 'phone' ? $('#psheet') : $('#dock'); const body = $('.pnl-body', host); if (!body) return;
@@ -573,11 +612,11 @@
   }
 
   // ───────────────────────── Fenêtres : confirmation, feuille Modules, recherche
-  function askConfirm(title, text, ok){
+  function askConfirm(title, text, ok, cancel = 'Annuler'){
     return new Promise(resolve => {
       const dlg = $('#confirm'), from = document.activeElement;
       dlg.innerHTML = `<div class="box solid"><div class="dlg-head"><h2 id="confirm-title">${esc(title)}</h2></div><div class="dlg-body"><p>${esc(text)}</p></div>
-        <div class="dlg-foot"><button class="btn" type="button" value="non">Annuler</button><button class="btn primary" type="button" value="oui">${esc(ok)}</button></div></div>`;
+        <div class="dlg-foot"><button class="btn" type="button" value="non">${esc(cancel)}</button><button class="btn primary" type="button" value="oui">${esc(ok)}</button></div></div>`;
       const done = v => { dlg.removeEventListener('click', onClick); animatedClose(dlg); if (from?.isConnected) from.focus(); resolve(v); };
       const onClick = e => { const b = e.target.closest('button[value]'); if (b) done(b.value === 'oui'); };
       dlg.addEventListener('click', onClick);
@@ -673,7 +712,7 @@
     const t = tabById(decodeURIComponent(location.hash.slice(1)));
     S.tab = t ? t.id : 'tableau-de-bord';   // onglet non autorisé : la page affiche « accès réservé »
     S.sel = null;
-    closePanel({ restore: false }); closePop();
+    closePanel({ restore: false, force: true }); closePop();
     $('.app').classList.remove('drawer'); $('.work').inert = false;
     ['#sheet', '#search'].forEach(s => { if ($(s).open) $(s).close(); });
     renderAll();
@@ -732,7 +771,13 @@
       $(`[data-act="hide"][data-id="${id}"]`)?.focus(); },
     hideBlock: b => { const id = b.dataset.id; P.hiddenBlocks = P.hiddenBlocks.includes(id) ? P.hiddenBlocks.filter(x => x !== id) : [...P.hiddenBlocks, id]; save(); renderMain();
       refreshCustomize(`[data-act="hideBlock"][data-id="${id}"]`); },
-    resetDash: () => { const pr = D.PROFILES[P.profile] || D.PROFILES.booking; P.kpis = [...pr.kpis]; P.blocks = DEFAULTS().blocks; P.hiddenBlocks = []; save(); renderMain(); refreshCustomize(); toast('Tableau de bord revenu au profil'); },
+    resetDash: () => { const pr = D.PROFILES[P.profile] || D.PROFILES.booking; P.kpis = [...pr.kpis]; P.blocks = DEFAULTS().blocks; P.blockCol = {}; P.hiddenBlocks = []; save(); renderMain(); refreshCustomize(); toast('Tableau de bord rétabli : indicateurs du profil et disposition par défaut'); },
+    resetKpis: () => { P.kpis = [...(D.PROFILES[P.profile] || D.PROFILES.booking).kpis]; save(); renderMain(); refreshCustomize('#kpi-0'); toast('Indicateurs du profil rétablis'); },
+    resetLayout: () => { P.blocks = DEFAULTS().blocks; P.blockCol = {}; P.hiddenBlocks = []; save(); renderMain(); refreshCustomize('[data-act="moveBlock"]'); toast('Disposition par défaut rétablie'); },
+    moveBlock: b => { const id = b.dataset.id, d = Number(b.dataset.d), c = colOf(id), list = P.blocks.filter(x => colOf(x) === c), i = list.indexOf(id), other = list[i + d];
+      if (!other) return; const a = P.blocks.indexOf(id), z = P.blocks.indexOf(other); [P.blocks[a], P.blocks[z]] = [P.blocks[z], P.blocks[a]];
+      save(); renderMain(); refreshCustomize(`[data-act="moveBlock"][data-id="${id}"][data-d="${d}"]:not([disabled])`) ; if (!$(`[data-act="moveBlock"][data-id="${id}"][data-d="${d}"]:not([disabled])`)) $(`[data-act="moveBlock"][data-id="${id}"]:not([disabled])`)?.focus(); },
+    resetPrefs: b => { const d = DEFAULTS(); b.dataset.keys.split(',').forEach(k => { P[k] = JSON.parse(JSON.stringify(d[k])); }); save(); renderAll(); $(`[data-act="resetPrefs"][data-keys="${b.dataset.keys}"]`)?.focus() || $(`#${b.dataset.card}`)?.focus?.(); toast('Réglages par défaut rétablis'); },
     applyProfile: async () => { const p = $('#pf-profile').value; if (p === 'perso'){ toast('Profil personnalisé : réglez modules et raccourcis ci-dessous', 'info'); return; }
       if (!await askConfirm('Appliquer ce profil ?', `L’ordre des modules, les raccourcis et les indicateurs du tableau de bord seront remplacés par la configuration « ${D.PROFILES[p].label} ». Les droits d’accès ne changent pas.`, 'Appliquer')) return;
       Object.assign(P, fromProfile(p), { hidden: [], folded: [] }); save(); renderAll(); toast(`Profil « ${D.PROFILES[p].label} » appliqué`); },
@@ -745,7 +790,7 @@
     if ($('.pop') && !e.target.closest('.pop,[data-act="notifs"],[data-act="fold"]')) closePop();
     const res = e.target.closest('#results .res'); if (res){ runResult(Number(res.dataset.i)); return; }
     const g = e.target.closest('[data-go]');
-    if (g){ e.preventDefault(); ['#sheet', '#psheet'].forEach(s => { if ($(s).open) $(s).close(); }); go(g.dataset.go); return; }
+    if (g){ e.preventDefault(); guarded(() => { ['#sheet', '#psheet'].forEach(s => { if ($(s).open) $(s).close(); }); go(g.dataset.go); }); return; }
     const hit = e.target.closest('.hit[data-m]');
     if (hit){ const m = Number(hit.dataset.m); S.sel = S.sel === m ? null : m; chartDraw(); if (e.detail === 0) $(`#fig-fin .hit[data-m="${m}"]`)?.focus(); return; }   // focus rendu seulement au clavier
     if (e.target.tagName === 'DIALOG'){   // clic sur le fond d'une fenêtre
@@ -753,7 +798,7 @@
       return;
     }
     const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
-    const fn = ACTS[b.dataset.act]; if (fn){ e.preventDefault(); fn(b); }
+    const fn = ACTS[b.dataset.act] || EXT.acts[b.dataset.act]; if (fn){ e.preventDefault(); fn(b, e); }
   });
   document.addEventListener('pointerover', e => { const hit = e.target.closest?.('.hit[data-m]'); if (hit && e.pointerType === 'mouse') showTip($('#fig-fin'), Number(hit.dataset.m)); });
   document.addEventListener('pointerout', e => { const hit = e.target.closest?.('.hit[data-m]'); if (hit && e.pointerType === 'mouse' && S.sel == null) $('#fig-fin .tip')?.remove(); });
@@ -761,7 +806,12 @@
 
   document.addEventListener('change', e => {
     const t = e.target;
-    if (t.dataset.kpi != null){ P.kpis[Number(t.dataset.kpi)] = t.value; save(); renderMain(); return; }
+    if (t.dataset.kpi != null){ P.kpis[Number(t.dataset.kpi)] = t.value; save(); renderMain(); refreshCustomize(`#kpi-${t.dataset.kpi}`); return; }
+    if (t.dataset.blockcol){ const b = t.dataset.blockcol, c = Number(t.value);
+      if (c === COL[b]) delete P.blockCol[b]; else P.blockCol[b] = c;
+      P.blocks = [...P.blocks.filter(x => x !== b), b];   // arrive en bas de sa nouvelle colonne
+      save(); renderMain(); refreshCustomize(`[data-blockcol="${b}"]`); toast(`${D.BLOCKS[b]} : ${COL_LABEL[c].toLowerCase()}`); return; }
+    if (EXT.change(t)) return;
     if (t.hasAttribute('data-finp')){ S.finP = t.value; S.sel = null; renderMain(); $('input[name="finp"]:checked')?.focus(); return; }
     if (t.dataset.tick != null){   // prototype : la tâche passe en « Terminées » pour cette visite seulement
       const i = Number(t.dataset.tick); S.done.push(i);
@@ -791,6 +841,7 @@
       else if (e.key === 'Escape'){ e.preventDefault(); closeSearch(); }
       return;
     }
+    if (EXT.keydown(e)) return;
     if (e.key === 'Escape'){
       if ($('.pop')){ closePop(true); return; }
       if ($('.app').classList.contains('drawer')){ setDrawer(false); return; }
@@ -803,7 +854,7 @@
     const hit = e.target.closest?.('.hit[data-m]');
     if (hit && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); hit.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 })); }
   });
-  document.addEventListener('input', e => { if (e.target.id === 'q') renderResults(e.target.value); });
+  document.addEventListener('input', e => { if (e.target.id === 'q') renderResults(e.target.value); else EXT.input(e.target, e); });
   document.addEventListener('cancel', e => { if (e.target.id === 'psheet'){ e.preventDefault(); closePanel(); } }, true);
 
   // Changements de contexte : thème système, horaires, type d'appareil
@@ -815,6 +866,10 @@
   window.addEventListener('hashchange', route);
   window.addEventListener('resize', () => closePop());
 
+  // Outils partagés avec les écrans métier (lecture des préférences et de l'état à la demande)
+  window.MX = { D, $, $$, esc, icon, NUM, NUM1, eur, day, dShort, dLong, dWeek, norm, MQ, device, marker, statusPill, pageHead, applyVars, renderMain, renderAll,
+    openPanel, closePanel, panelShell, askConfirm, toast, openPop, closePop, go, guarded, animatedClose, motionMs, save, defTag, same,
+    get P(){ return P; }, get S(){ return S; }, EXT };
   shell();
   route();
 })();

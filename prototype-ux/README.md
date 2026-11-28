@@ -1,4 +1,4 @@
-# MATRICE — prototype UX/UI V6.1 « Bento × Liquid Glass »
+# MATRICE — prototype UX/UI V7 « Booking »
 
 Branche `ux/refonte-uxui`, créée depuis `main` au commit `ee1f806` (v1.68.3, 26/11/2026). `main` inchangée depuis.
 Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (arbitrage A2). `DESIGN_SYSTEM.md` reste celui de `main`.
@@ -10,6 +10,18 @@ Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (a
 - Aucune connexion : ni Supabase, ni Google, ni Pennylane, ni Brevo. Aucun appel réseau.
 - Préférences gardées dans le stockage local du navigateur, sous une clé propre (`matrice-proto.prefs.v1`), conformément à l'arbitrage A12.
 - GitHub Pages ne publie que `main` : ce dossier n'est pas en ligne depuis le dépôt. La démonstration est hébergée à part (lien transmis dans le compte rendu).
+
+## V7 (28/11/2026) — écran Booking, corrections résiduelles
+
+- **Booking** (`js/booking.js`, données fictives) reprend les fonctionnalités de Booking sur `main` (lecture seule de `js/views/booking.js`, `js/forms.js`, `js/exports.js`, `js/actions.js`) :
+  - Mac : tableau de référence (en-tête fixe, séparateurs fins, alternance désactivable, colonnes redimensionnables, réorganisables, masquables, épinglables) ; groupes mensuels ; indisponibilités Google intercalées ; statut modifiable sur la ligne ; trajet A/B ;
+  - indicateurs, recherche, année, artistes, inactifs, annulées / sans suite, archivées ; filtres actifs en puces ;
+  - fiche de la date dans le panneau latéral (plein écran sur iPhone), protection des modifications, validations de main, suppression / archivage et restauration en fenêtre centrale ;
+  - carte et trajets (fond schématique, distances estimées), enchaînements, export ;
+  - iPhone : liste compacte, actions rapides, filtres en plein écran.
+- Tableau de bord : ordre et colonne des blocs de nouveau personnalisables, marqueurs « Par défaut » / « Personnalisé », restauration de la disposition.
+- Préférences : codes hexadécimaux retirés, chaque ensemble indique s'il est personnalisé et se rétablit seul.
+- Bandeau Booking : couches de profondeur floutées, lumière diffuse, reflet en volume.
 
 ## V6.1 (27/11/2026) — finitions ciblées
 
