@@ -9,7 +9,7 @@ import { S } from './state.js';
 import { refreshFor, sb } from './data.js';
 import { byId, projName, structName } from './selectors.js';
 import { aRembourserTtc, allPaymentsOf, annulationOf, avoirCouvert, commissionState, dateEngagee, depenseEngagee, encaisseHt, encaisseTtc, etatAnnulation, factureNetTtc,
-  isInvoiced, mouvementsOf, payAmount, paymentsOf, resteDu, selfPaidCommission, showVat, soldeeParAvoir, transfersOf, ttc } from './calc.js';
+  isInvoiced, mouvementsOf, payAmount, paymentsOf, payVat, resteDu, selfPaidCommission, showVat, soldeeParAvoir, transfersOf, ttc } from './calc.js';
 import { COMMISSION_LABEL, ORIGINE_LABEL, REGIME_LABEL, operationsAnnulation, planAnnulation, regimeAnnulation, relanceImpaye } from './annulation-regles.js';
 import { payerLabel } from './budget.js';
 import { isOff } from './constants.js';
@@ -65,11 +65,15 @@ const AB = 'L’ArtBoristerie';
 /** (v1.72.3, décision du 28/11/2026, 14 h 31) Qui doit payer qui : une ligne par opération, avec son montant ; rien n'est créé */
 export function operationsHTML(s, ops, regime = 'cession'){
   const o = orga(s), hasRemb = ops.some(x => x.type === 'remboursement'), cs = comptes(s);
+  // TTC : null quand les lignes n'ont pas toutes le taux de la date (TVA mixte) — montant HT seul, TTC à vérifier (rien d'inventé)
+  const mixte = '<span class="warn-txt">TTC à vérifier (TVA mixte)</span>';
+  const ttcTxt = x => x.ttc == null ? mixte : `${eur2(x.ttc)} TTC`;
+  const fort = x => x.ttc == null ? `<b>${eur2(x.ht)} HT</b> (${mixte})` : `<b>${eur2(x.ttc)} TTC</b>`;
   const ligne = x => {
-    if (x.type === 'facture') return `<b>Facture à émettre</b> — ${AB} → ${esc(o)} : <b>${eur2(x.ht)} HT</b> (${eur2(x.ttc)} TTC). Rappel « Facture à faire » dès l’annulation.`;
-    if (x.type === 'paiement') return `<b>Paiement attendu</b> — ${esc(o)} → ${AB} : <b>${eur2(x.ttc)} TTC</b> (facture à émettre comprise).`;
-    if (x.type === 'avoir') return `<b>Avoir à émettre</b> (à la main, dans Pennylane) — ${AB} → ${esc(o)} : <b>${eur2(x.ht)} HT</b> (${eur2(x.ttc)} TTC)${hasRemb ? '' : ' — aucun remboursement : rien n’a été encaissé au-delà du montant dû'}.`;
-    if (x.type === 'remboursement') return `<b>Remboursement réel</b> — ${AB} → ${esc(o)} (bénéficiaire) : <b>${eur2(x.ttc)} TTC</b>${cs.length ? ` · encaissé sur : ${esc(cs.join(', '))}` : ''}${x.saisi > 0.005 ? ` · déjà saisi : ${eur2(x.saisi)}, reste à saisir : ${eur2(x.aSaisir)}` : ''}. Rien n’est déclenché automatiquement.`;
+    if (x.type === 'facture') return `<b>Facture à émettre</b> — ${AB} → ${esc(o)} : <b>${eur2(x.ht)} HT</b> (${ttcTxt(x)}). Rappel « Facture à faire » dès l’annulation.`;
+    if (x.type === 'paiement') return `<b>Paiement attendu</b> — ${esc(o)} → ${AB} : ${fort(x)} (facture à émettre comprise).`;
+    if (x.type === 'avoir') return `<b>Avoir à émettre</b> (à la main, dans Pennylane) — ${AB} → ${esc(o)} : <b>${eur2(x.ht)} HT</b> (${ttcTxt(x)})${hasRemb ? '' : ' — aucun remboursement : rien n’a été encaissé au-delà du montant dû'}.`;
+    if (x.type === 'remboursement') return `<b>Remboursement réel</b> — ${AB} → ${esc(o)} (bénéficiaire) : ${fort(x)}${cs.length ? ` · encaissé sur : ${esc(cs.join(', '))}` : ''}${x.saisi > 0.005 ? ` · déjà saisi : ${eur2(x.saisi)}${x.aSaisir != null ? `, reste à saisir : ${eur2(x.aSaisir)}` : ''}` : ''}. Rien n’est déclenché automatiquement.`;
     if (x.statut === 'a_regulariser') return `<b class="warn-txt">Commission L’ArtBo non due — à régulariser</b> (lot suivant) : ${eur2(x.ht)} HT${x.facturee ? ' déjà facturée' : ''}${x.versee > 0.005 ? ` · déjà versée : ${eur2(x.versee)}` : ''} ; historique conservé.`;
     if (x.statut === 'non_due') return `<b>Commission L’ArtBo non due</b> — rien à verser.`;
     return `Commission L’ArtBo : montant gardé (${eur2(x.ht)} HT), à revoir (lot suivant).`;
@@ -101,7 +105,7 @@ export function apercuHTML(s, du, origine = new Map(), commission = 'a_revoir'){
     <tbody>${bill.map(p => `<tr data-apercu-ligne="${p.id}"><td data-label="Ligne">${esc(nom(p))}</td><td data-label="Après l’annulation">${etat(p)}</td></tr>`).join('')}</tbody></table></div>
     <p class="small">Montant dû ${eur2(pl.du)} HT · facturé net ${eur2(pl.factureNet)} · encaissé ${eur2(enc)} · <b>reste à facturer ${eur2(pl.resteAFacturer)} HT</b></p>
     ${regul.length ? `<div class="warn-txt small" data-a-regulariser><b>À régulariser</b> (aucun avoir ni remboursement automatique) :<ul>${regul.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>` : ''}
-    ${operationsHTML(s, operationsAnnulation({regime: 'cession', du: pl.du, tva: showVat(s), factureNetHt: pl.factureNet,
+    ${operationsHTML(s, operationsAnnulation({regime: 'cession', du: pl.du, tva: showVat(s), tvaUniforme: bill.every(p => payVat(p) === showVat(s)), encaisseHt: enc, factureNetHt: pl.factureNet,
       factureNetTtc: bill.reduce((t, p) => t + factureNetTtc(p), 0), encaisseTtc: bill.reduce((t, p) => t + encaisseTtc(p), 0),
       rembourseSaisiTtc: bill.reduce((t, p) => t + aRembourserTtc(p), 0), resteAFacturerHt: pl.resteAFacturer, commission: commissionInfo(s, commission)}))}</div>`;
 }

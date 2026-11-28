@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.72.4 — 28/11/2026
+- L3 (relecture) : « Qui doit payer qui » comparé en HT ; montants TTC seulement si toutes les lignes ont la TVA de la date, sinon « TTC à vérifier » ; migration arrêtée devant une table d'annulation antérieure
+
+
 ## 1.72.3 — 28/11/2026
 - L3 : fiche d'annulation avec l'origine (artiste, organisateur, décision commune, autre) saisie à part des conditions convenues (montant dû, commission « à revoir » ou « non due ») ; récapitulatif « Qui doit payer qui » (facture à émettre, paiement attendu, avoir, remboursement TTC et bénéficiaire, commission à régulariser) ; « Facture à faire » dès l'annulation pour chaque ligne recalculée
 

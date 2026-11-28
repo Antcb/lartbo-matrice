@@ -55,7 +55,7 @@ ok(relanceImpaye({ regime: 'cession', du: 4000, encaisseHt: 1200, reclameHt: 280
 const ops = x => operationsAnnulation({ regime: 'cession', tva: 5.5, ...x });
 const type = (l, t) => l.find(o => o.type === t);
 // l'artiste annule, acompte encaissé restitué intégralement, commission versée → non due
-let o = ops({ du: 0, factureNetHt: 1200, factureNetTtc: 1266, encaisseTtc: 1266, resteAFacturerHt: 0, commission: { existe: true, statut: 'non_due', montant: 180, versee: true, verse: 180 } });
+let o = ops({ du: 0, factureNetHt: 1200, factureNetTtc: 1266, encaisseHt: 1200, encaisseTtc: 1266, resteAFacturerHt: 0, commission: { existe: true, statut: 'non_due', montant: 180, versee: true, verse: 180 } });
 ok(!type(o, 'facture') && !type(o, 'paiement') && type(o, 'avoir').ht === 1200 && type(o, 'avoir').ttc === 1266, 'artiste : avoir 1 200 € HT / 1 266 € TTC, rien à facturer ni à payer');
 ok(type(o, 'remboursement').ttc === 1266 && type(o, 'remboursement').de === 'artbo' && type(o, 'remboursement').vers === 'organisateur', 'artiste : remboursement 1 266 € TTC de L’ArtBoristerie à l’organisateur');
 ok(type(o, 'commission').statut === 'a_regulariser', 'commission non due déjà versée : à régulariser');
@@ -64,12 +64,20 @@ o = ops({ du: 0, factureNetHt: 1200, factureNetTtc: 1266, encaisseTtc: 0, resteA
 ok(type(o, 'avoir').ttc === 1266 && !type(o, 'remboursement') && !type(o, 'paiement'), 'jamais encaissé : avoir sans remboursement');
 ok(type(o, 'commission').statut === 'non_due', 'commission non due, ni facturée ni versée : rien à verser');
 // 2 000 € dus, 1 266 € encaissés : facture de 800 € HT (844 € TTC), paiement attendu 844 € TTC
-o = ops({ du: 2000, factureNetHt: 1200, factureNetTtc: 1266, encaisseTtc: 1266, resteAFacturerHt: 800, commission: { existe: true, statut: 'a_revoir', montant: 600 } });
+o = ops({ du: 2000, factureNetHt: 1200, factureNetTtc: 1266, encaisseHt: 1200, encaisseTtc: 1266, resteAFacturerHt: 800, commission: { existe: true, statut: 'a_revoir', montant: 600 } });
 ok(type(o, 'facture').ttc === 844 && type(o, 'paiement').ttc === 844 && type(o, 'paiement').de === 'organisateur' && !type(o, 'avoir') && !type(o, 'remboursement'), 'facture 800 € HT et paiement attendu 844 € TTC');
 ok(type(o, 'commission').statut === 'a_revoir', 'commission à revoir');
 // remboursement déjà saisi en partie ; booking : commission seule
-o = ops({ du: 0, factureNetHt: 1200, factureNetTtc: 1266, encaisseTtc: 1266, rembourseSaisiTtc: 266 });
+o = ops({ du: 0, factureNetHt: 1200, factureNetTtc: 1266, encaisseHt: 1200, encaisseTtc: 1266, rembourseSaisiTtc: 266 });
 ok(type(o, 'remboursement').saisi === 266 && type(o, 'remboursement').aSaisir === 1000, 'remboursement : déjà saisi / reste à saisir');
+// relecture B1 : TVA d'une ligne ≠ TVA de la date — rien n'est dû de part et d'autre : aucune opération inventée ; écart réel : HT seul
+o = ops({ du: 1000, tvaUniforme: false, factureNetHt: 1000, factureNetTtc: 1200, encaisseHt: 1000, encaisseTtc: 1200 });
+ok(o.length === 0, 'TVA mixte, 1 000 € dus = facturé = encaissé : aucune opération (ni avoir, ni remboursement, ni paiement)');
+o = operationsAnnulation({ regime: 'cession', tva: 20, du: 1000, tvaUniforme: false, factureNetHt: 1000, factureNetTtc: 1055, encaisseHt: 1000, encaisseTtc: 1055 });
+ok(o.length === 0, 'TVA mixte (ligne 5,5 %, date 20 %) : aucun paiement attendu inventé');
+o = ops({ du: 0, tvaUniforme: false, factureNetHt: 1000, factureNetTtc: 1200, encaisseHt: 1000, encaisseTtc: 1200, rembourseSaisiTtc: 200 });
+ok(type(o, 'avoir').ht === 1000 && type(o, 'avoir').ttc === null && type(o, 'remboursement').ht === 1000 && type(o, 'remboursement').ttc === null && type(o, 'remboursement').aSaisir === null,
+  'TVA mixte, 0 € dus : avoir et remboursement en HT, TTC « à vérifier » (null)');
 o = operationsAnnulation({ regime: 'booking', du: null, tva: 20, commission: { existe: true, statut: 'non_due', montant: 600, facturee: true } });
 ok(o.length === 1 && o[0].type === 'commission' && o[0].statut === 'a_regulariser', 'booking : commission seule, non due déjà facturée → à régulariser');
 console.log(`annulation-regles : ${n}/${n} conformes`);
