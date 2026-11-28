@@ -1,4 +1,4 @@
-# MATRICE — prototype UX/UI V7.1 « Booking »
+# MATRICE — prototype UX/UI V8 « Suivi »
 
 Branche `ux/refonte-uxui`, créée depuis `main` au commit `ee1f806` (v1.68.3, 26/11/2026). `main` inchangée depuis.
 Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (arbitrage A2). `DESIGN_SYSTEM.md` reste celui de `main`.
@@ -10,6 +10,13 @@ Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (a
 - Aucune connexion : ni Supabase, ni Google, ni Pennylane, ni Brevo. Aucun appel réseau.
 - Préférences gardées dans le stockage local du navigateur, sous une clé propre (`matrice-proto.prefs.v1`), conformément à l'arbitrage A12.
 - GitHub Pages ne publie que `main` : ce dossier n'est pas en ligne depuis le dépôt. La démonstration est hébergée à part (lien transmis dans le compte rendu).
+
+## V8 (28/11/2026) — écran Suivi (`js/suivi.js`)
+Repris de main en lecture seule (`js/views/suivi.js`, `forms.js`, `actions.js`, `prospection.js`), données fictives, aucune connexion.
+- Liste : colonnes de main (structure, artiste(s), statut, dernier échange, journal, fichiers, résumé), tri par dernier échange ; recherche, statut, artistes, menu « Affichage » (inactifs, suivis clos) ; indicateurs des suivis actifs ; Exporter et Nouveau suivi dans l'en-tête.
+- Espace de prospection : structure, contacts et lieu du concert ; statut (clos ou confirmé : 5 s avec « Annuler », relances automatiques retirées) ; état du mail de prospection et des relances ; résumé (IA simulée, modification, copie pour ChatGPT) ; tâches ; journal avec brouillon, pièces jointes, « Marquer envoyé », « Lire en entier » ; autres notes ; suppression.
+- Dates de ce suivi (modifier, centrer, détacher, rattacher), date en négociation (libre / pas libre), rayon 0–300 km, carte, 5 jours avant / après, rayon jusqu'à un an après, planning (45 jours ou 12 mois). « Poser une date » ouvre la fiche de Booking préremplie.
+- iPhone : liste compacte, filtres en plein écran, espace en deux volets (Échanges / Dates et carte).
 
 ## V7.1 (28/11/2026) — corrections de Booking
 - Indicateurs : libellé au-dessus, valeur plus grande, séparateurs fins.

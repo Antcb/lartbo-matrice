@@ -427,10 +427,10 @@
       ${id && s.remindersSuspended ? `<p class="bk-susp">${icon('bell-off', 'sm')}<span>Relances suspendues depuis la restauration de la date ; échéances d’origine intactes.</span><button class="btn sm" type="button" data-act="bkSim" data-m="Réactivation des relances : fenêtre non simulée">Réactiver les relances…</button></p>` : ''}
     </form>`;
   }
-  function openShow(id, { isNew = false } = {}){
+  function openShow(id, { isNew = false, prefill = null } = {}){
     const go = () => {
       const s = isNew ? { id: 'n' + Date.now(), status: 'Intérêt Salle', contract_type: 'Cession', project_id: B.projects.length === 1 ? B.projects[0] : '', communication_enabled: true, ticketing_type: '',
-        date: '', venue: '', city: '', department: '', postal_code: '', address: '', notes: '', lat: null, lng: null } : byId(id);
+        date: '', venue: '', city: '', department: '', postal_code: '', address: '', notes: '', lat: null, lng: null, ...(prefill || {}) } : byId(id);   // prefill : « Poser une date » depuis un suivi
       if (!s) return;
       if (isNew && s.project_id) s.spectacle_id = defaultSpectacle(s.project_id);
       B.open = isNew ? null : id; B.isNew = isNew; B.dirty = false; B.draft = s;
@@ -743,5 +743,7 @@
     acts: { ...(window.MX_EXT?.acts || {}), ...ACTS }, change, input, keydown,
     discard: () => { B.dirty = false; B.draft = null; B.isNew = false; if (B.open){ B.open = null; X().$$('.bk-row.sel,.bkm-row.sel,.bk-mrow.sel').forEach(r => r.classList.remove('sel')); } },
   });
-  window.MATRICE_BOOKING = { DB, B, COLS, CAL, chains, route };   // lecture par les tests automatisés
+  // Partagé avec Suivi (js/suivi.js) et lu par les tests automatisés : mêmes données, mêmes règles, mêmes fenêtres
+  window.MATRICE_BOOKING = { DB, B, COLS, CAL, chains, route, hav, PROJECTS, STRUCTS, CITY, SPECTACLES, isOff, byId, proj, projName, struct, fmtD, fmtMed, cityLine, locMissing,
+    statusSel, openShow, OUTLINE, PRJ, MW, MH, TODAY };
 })();
