@@ -409,6 +409,7 @@
         (D().reglements || []).filter(r => r.show_id === sid).map(r => [r.id, r.etat, r.montant_ttc, r.annule_at]),
         (D().pennylane_avoirs || []).filter(a => a.show_id === sid).map(a => [a.id, a.etat, a.payment_id, a.gone_at])]);
       const journal = (a, action, avant, apres, motif) => (D().annulations_journal ||= []).push({ id: Math.random(), annulation_id: a.id, show_id: a.show_id, action, avant, apres, motif, auteur: USER, at: now() });
+      const ORIGINES = ['artiste', 'organisateur', 'commun', 'autre'];
       const champs = (reg, p_montant, p_motif, p_decide_le, p_justificatif) => {
         const m = t(p_motif); if (!m || m.length > 1000) err('Motif obligatoire (1 000 caractères au plus)');
         if (!p_decide_le) err('Date de la décision obligatoire');
@@ -417,7 +418,10 @@
         return { motif: m, decide_le: p_decide_le, justificatif: t(p_justificatif) || null, montant_du_ht: reg === 'cession' ? c2(p_montant) : null };
       };
       return {
-        show_annuler: ({ p_show, p_montant, p_motif, p_decide_le, p_justificatif }) => {
+        show_annuler: ({ p_show, p_montant, p_motif, p_decide_le, p_justificatif, p_origine, p_commission = 'a_revoir', p_origine_precision }) => {
+          // v1.72.3 : origine obligatoire, commission « à revoir » / « non due » (mêmes contrôles que la fonction SQL)
+          if (!ORIGINES.includes(p_origine)) err('Indique qui est à l\'origine de l\'annulation (artiste, organisateur, décision commune ou autre)');
+          if (!['a_revoir', 'non_due'].includes(p_commission)) err('Commission : « à revoir » ou « non due »');
           const s = show(p_show) || err('Date introuvable');
           if (['Annulée', 'Sans Suite'].includes(s.status)) err(`Date déjà en « ${s.status} »`);
           if ((D().annulations || []).some(a => a.show_id === s.id && !a.retablie_at)) err('Cette date a déjà une fiche d\'annulation');
@@ -425,18 +429,22 @@
           const reg = regime(s), v = champs(reg, p_montant, p_motif, p_decide_le, p_justificatif);
           const initial = { show: { status: s.status, fee_ht: s.fee_ht, vat_rate: s.vat_rate ?? null, contract_type: s.contract_type ?? null, contract_signed: s.contract_signed ?? null, artbo_pct: s.artbo_pct ?? null },
             lignes: (D().show_payments || []).filter(p => p.show_id === s.id).map(p => ({ id: p.id, kind: p.kind, label: p.label, montant_ht: c2(montant(p)), emise: emise(p), invoice_number: p.invoice_number ?? null, paid_at: p.paid_at ?? null })) };
-          const a = { id: 'an-' + Math.random().toString(36).slice(2, 10), show_id: s.id, regime: reg, ...v, statut_avant: s.status, initial, lignes: [], created_at: now(), created_by: USER, retablie_at: null };
+          const a = { id: 'an-' + Math.random().toString(36).slice(2, 10), show_id: s.id, regime: reg, ...v, origine: p_origine, origine_precision: t(p_origine_precision) || null, commission: p_commission,
+            statut_avant: s.status, initial, lignes: [], created_at: now(), created_by: USER, retablie_at: null };
           if (reg === 'cession') a.lignes = appliquer(s.id, v.montant_du_ht);
           s.status = 'Annulée'; a.empreinte = empreinte(s.id);
           (D().annulations ||= []).push(a); journal(a, 'annuler', { status: a.statut_avant }, { status: 'Annulée', montant_du_ht: a.montant_du_ht }, v.motif); return a;
         },
-        annulation_corriger: ({ p_id, p_montant, p_motif, p_decide_le, p_justificatif, p_motif_correction }) => {
+        annulation_corriger: ({ p_id, p_montant, p_motif, p_decide_le, p_justificatif, p_motif_correction, p_origine = null, p_commission = null, p_origine_precision = null }) => {
+          if (p_origine != null && !ORIGINES.includes(p_origine)) err('Indique qui est à l\'origine de l\'annulation (artiste, organisateur, décision commune ou autre)');
+          if (p_commission != null && !['a_revoir', 'non_due'].includes(p_commission)) err('Commission : « à revoir » ou « non due »');
           const mc = t(p_motif_correction); if (!mc) err('Motif de la correction obligatoire (1 000 caractères au plus)');
           const a = (D().annulations || []).find(x => x.id === p_id && !x.retablie_at) || err('Fiche d\'annulation introuvable ou rétablie');
-          const v = champs(a.regime, p_montant, p_motif, p_decide_le, p_justificatif), avant = { montant_du_ht: a.montant_du_ht, motif: a.motif };
+          const v = champs(a.regime, p_montant, p_motif, p_decide_le, p_justificatif), avant = { montant_du_ht: a.montant_du_ht, motif: a.motif, origine: a.origine, commission: a.commission };
           if (a.regime === 'cession') { const gardees = (a.lignes || []).filter(l => emise((D().show_payments || []).find(p => p.id === l.payment_id) || {})); defaire(a); a.lignes = [...gardees, ...appliquer(a.show_id, v.montant_du_ht)]; }
-          Object.assign(a, v, { corrige_at: now(), corrige_par: USER }); a.empreinte = empreinte(a.show_id);
-          journal(a, 'corriger', avant, { montant_du_ht: a.montant_du_ht, motif: a.motif }, mc); return a;
+          Object.assign(a, v, { corrige_at: now(), corrige_par: USER, origine: p_origine ?? a.origine, commission: p_commission ?? a.commission,
+            origine_precision: p_origine == null ? a.origine_precision : (t(p_origine_precision) || null) }); a.empreinte = empreinte(a.show_id);
+          journal(a, 'corriger', avant, { montant_du_ht: a.montant_du_ht, motif: a.motif, origine: a.origine, commission: a.commission }, mc); return a;
         },
         annulation_retablir: ({ p_id, p_motif }) => {
           const m = t(p_motif); if (!m) err('Motif obligatoire (1 000 caractères au plus)');

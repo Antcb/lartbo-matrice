@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.72.3 — 28/11/2026
+- L3 : fiche d'annulation avec l'origine (artiste, organisateur, décision commune, autre) saisie à part des conditions convenues (montant dû, commission « à revoir » ou « non due ») ; récapitulatif « Qui doit payer qui » (facture à émettre, paiement attendu, avoir, remboursement TTC et bénéficiaire, commission à régulariser) ; « Facture à faire » dès l'annulation pour chaque ligne recalculée
+
+
 ## 1.72.2 — 28/11/2026
 - L3 : relances « Facture de solde à faire » et « Facture à envoyer » rétablies pour le solde recalculé d'une date annulée (sauf facture au-delà du montant retenu) ; ajout d'acompte, de solde ou d'« Autre ligne » refusé sur une date annulée (application et base)
 

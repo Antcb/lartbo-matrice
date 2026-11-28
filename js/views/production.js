@@ -132,7 +132,8 @@ function prodBody(s, booking, steps, pays, late){
   // dans l'ordre du travail : conditions, suivi administratif (contrat…), factures, puis budget
   // (v1.72, L3) date annulée : onglet « Annulation » (fiche) en premier, ouvert par défaut
   const annulee = !!annulationOf(s.id), ea = annulee ? etatAnnulation(s) : null;
-  const aRegulariser = !!ea && !!(ea.depassement || ea.encaisseAuDela || ea.resteSansLigne || (ea.relancees.length && !ea.relanceGardee));
+  const aRegulariser = !!ea && !!(ea.depassement || ea.encaisseAuDela || ea.resteSansLigne || (ea.relancees.length && !ea.relanceGardee)
+    || ea.ops.some(o => o.type === 'commission' && o.statut === 'a_regulariser'));   // (v1.72.3) commission non due déjà facturée ou versée
   const tabs = [...(annulee ? [['annulation', 'Annulation', aRegulariser ? '⚠︎' : '']] : []),
     ['conditions', 'Conditions'], ['suivi', 'Suivi admin', late.size ? '⚠︎' : ''], ['factures', 'Factures', pays.length], ...(booking ? [] : [['budget', 'Budget']]), ['notes', 'Notes', s.notes ? '•' : '']];
   const cur = tabs.some(([k]) => k === S.tab[key]) ? S.tab[key] : annulee ? 'annulation' : 'conditions';

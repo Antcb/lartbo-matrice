@@ -93,6 +93,17 @@ select pg_temp.date_fictive('00000000-0000-0000-0000-0000000a1009', 'Le Hangar B
 select pg_temp.date_fictive('00000000-0000-0000-0000-0000000a1010', 'Le Hangar Bleu (solde fait, maintien)'); select pg_temp.lignes_fictives('00000000-0000-0000-0000-0000000a1010', 'v10');
 update public.show_payments set amount = 2800, invoice_number = 'F-X-S-' || show_id::text, invoiced_on = current_date - 5
  where kind = 'solde' and show_id in ('00000000-0000-0000-0000-0000000a1009', '00000000-0000-0000-0000-0000000a1010');
+-- (14 h 31) l'artiste annule, acompte encaissé restitué intégralement (0 € dus, commission versée → non due, à régulariser) ;
+-- acompte facturé jamais encaissé (0 € dus) ; ligne recalculée autre qu'un solde (aucun solde, 2ᵉ acompte non émis)
+select pg_temp.date_fictive('00000000-0000-0000-0000-0000000a1011', 'Le Hangar Bleu (l''artiste annule)'); select pg_temp.lignes_fictives('00000000-0000-0000-0000-0000000a1011', 'v11');
+update public.show_payments set amount = 180 where id = md5('v11c')::uuid;
+insert into public.commission_transfers (payment_id, amount, transferred_at) values (md5('v11c')::uuid, 180, current_date - 45);
+select pg_temp.date_fictive('00000000-0000-0000-0000-0000000a1012', 'Le Hangar Bleu (acompte jamais encaissé)');
+insert into public.show_payments (id, show_id, kind, label, pct, amount, invoice_number, sent_at, sort) values
+  (md5('v12a')::uuid, '00000000-0000-0000-0000-0000000a1012', 'acompte', 'Acompte', 30, 1200, 'F-X-v12-A', current_date - 60, 1),
+  (md5('v12s')::uuid, '00000000-0000-0000-0000-0000000a1012', 'solde', 'Solde', 70, null, null, null, 2);
+select pg_temp.date_fictive('00000000-0000-0000-0000-0000000a1013', 'Le Hangar Bleu (deux acomptes)'); select pg_temp.lignes_fictives('00000000-0000-0000-0000-0000000a1013', 'v13');
+update public.show_payments set kind = 'acompte', label = 'Acompte 2', pct = 10, amount = 400 where id = md5('v13s')::uuid;
 -- non engagée (ni contrat signé, ni facture…) ; booking ; coréalisation
 select pg_temp.date_fictive('00000000-0000-0000-0000-0000000a1006', 'Salle non engagée');
 update public.shows set contract_signed = null where id = '00000000-0000-0000-0000-0000000a1006';
@@ -121,22 +132,22 @@ do $$ begin
   exception when raise_exception then if sqlerrm not like 'Date engagée%' then raise; end if; raise notice 'ok : « Annulée » direct refusé (date engagée)'; end;
   begin update public.shows set status = 'Sans Suite' where id = '00000000-0000-0000-0000-0000000a1001'; raise exception 'Sans Suite accepté';
   exception when raise_exception then if sqlerrm not like '%Sans Suite » n''est pas possible%' then raise; end if; raise notice 'ok : « Sans Suite » refusé (date engagée)'; end;
-  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1006', 0, 'essai', current_date, null); raise exception 'fiche sur date non engagée';
+  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1006', 0, 'essai', current_date, null, 'organisateur'); raise exception 'fiche sur date non engagée';
   exception when raise_exception then if sqlerrm not like 'Date non engagée%' then raise; end if; raise notice 'ok : pas de fiche pour une date non engagée'; end;
-  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1001', null, 'essai', current_date, null); raise exception 'montant manquant accepté';
+  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1001', null, 'essai', current_date, null, 'organisateur'); raise exception 'montant manquant accepté';
   exception when raise_exception then if sqlerrm not like 'Montant total dû%' then raise; end if; raise notice 'ok : montant obligatoire (cession)'; end;
-  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1001', 2000, '  ', current_date, null); raise exception 'motif vide accepté';
+  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1001', 2000, '  ', current_date, null, 'organisateur'); raise exception 'motif vide accepté';
   exception when raise_exception then if sqlerrm not like 'Motif obligatoire%' then raise; end if; raise notice 'ok : motif obligatoire'; end;
-  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1001', 2000, 'essai', null, null); raise exception 'date manquante acceptée';
+  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1001', 2000, 'essai', null, null, 'organisateur'); raise exception 'date manquante acceptée';
   exception when raise_exception then if sqlerrm not like 'Date de la décision%' then raise; end if; raise notice 'ok : date de la décision obligatoire'; end;
-  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1001', -1, 'essai', current_date, null); raise exception 'montant négatif accepté';
+  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1001', -1, 'essai', current_date, null, 'organisateur'); raise exception 'montant négatif accepté';
   exception when raise_exception then if sqlerrm not like 'Montant total dû%' then raise; end if; raise notice 'ok : montant négatif refusé'; end;
 end $$;
 update public.shows set status = 'Annulée' where id = '00000000-0000-0000-0000-0000000a1006';
 select pg_temp.ok((select status from public.shows where id = '00000000-0000-0000-0000-0000000a1006') = 'Annulée', 'date non engagée : passe en « Annulée » directement (inchangé)');
 
 -- ═══ variante 1 : 2 000 € HT dus → 800 € HT à facturer sur le solde ═══
-select pg_temp.ok((public.show_annuler('00000000-0000-0000-0000-0000000a1001', 2000, 'L''organisateur annule ; avenant : 50 % du prix', current_date - 1, 'Mail du 20/02')).regime = 'cession', 'variante 1 : fiche créée');
+select pg_temp.ok((public.show_annuler('00000000-0000-0000-0000-0000000a1001', 2000, 'L''organisateur annule ; avenant : 50 % du prix', current_date - 1, 'Mail du 20/02', 'organisateur')).regime = 'cession', 'variante 1 : fiche créée');
 select pg_temp.ok((select status from public.shows where id = '00000000-0000-0000-0000-0000000a1001') = 'Annulée', 'variante 1 : date « Annulée »');
 select pg_temp.ok((select amount = 1200 and invoice_number = 'F-X-v1-A' and paid_at = current_date - 50 and annulation is null from public.show_payments where id = md5('v1a')::uuid),
   'variante 1 : acompte émis et encaissé intact');
@@ -147,49 +158,76 @@ select pg_temp.ok((select (initial #>> '{show,fee_ht}')::numeric = 4000 and init
   from public.annulations where show_id = '00000000-0000-0000-0000-0000000a1001'), 'variante 1 : conditions initiales figées (cachet 4 000 €, statut, lignes)');
 select pg_temp.ok((select fee_ht = 4000 from public.shows where id = '00000000-0000-0000-0000-0000000a1001'), 'variante 1 : cachet initial conservé');
 select pg_temp.ok((select amount is null from public.show_payments where id = md5('v1c')::uuid), 'variante 1 : commission inchangée (montant existant, à revoir)');
-select pg_temp.ok((select array_agg(r) = array['solde_envoi'] from public.reminder_candidates('00000000-0000-0000-0000-0000000a1001')),
-  'variante 1 : organisation arrêtée ; seule « Facture de solde à faire » reste (solde recalculé de 800 €)');
+select pg_temp.ok((select array_agg(r || '|' || raw || '|' || t) = array['annulation_facture|' || current_date || '|Facture à faire (date annulée) : Solde']
+  from public.reminder_candidates('00000000-0000-0000-0000-0000000a1001')),
+  'variante 1 : organisation arrêtée ; seule « Facture à faire » reste, due dès aujourd''hui (solde recalculé de 800 €, concert dans 90 jours)');
+select pg_temp.ok((select origine = 'organisateur' and commission = 'a_revoir' from public.annulations where show_id = '00000000-0000-0000-0000-0000000a1001'), 'variante 1 : origine et commission enregistrées');
 select pg_temp.ok((select count(*) = 1 from public.annulations_journal where show_id = '00000000-0000-0000-0000-0000000a1001' and action = 'annuler' and auteur = 'equipe@exemple.test'), 'variante 1 : journal');
 
 -- ═══ variante 2 : 1 200 € HT dus → le solde ne doit plus être émis ═══
-select public.show_annuler('00000000-0000-0000-0000-0000000a1002', 1200, 'Acompte conservé', current_date - 1, null);
+select public.show_annuler('00000000-0000-0000-0000-0000000a1002', 1200, 'Acompte conservé', current_date - 1, null, 'organisateur');
 select pg_temp.ok((select amount = 0 and annulation = 'abandonnee' from public.show_payments where id = md5('v2s')::uuid), 'variante 2 : solde « ne doit plus être émis » (gardé, 0)');
 select pg_temp.ok((select amount = 1200 and paid_at is not null and annulation is null from public.show_payments where id = md5('v2a')::uuid), 'variante 2 : acompte intact');
 select pg_temp.ok(not exists (select 1 from public.reminder_candidates('00000000-0000-0000-0000-0000000a1002')), 'variante 2 : solde abandonné : aucune relance (ni à faire, ni à envoyer)');
 
 -- ═══ variante 3 : 0 € (sans frais) → solde abandonné ; acompte facturé et encaissé au-delà : rien n'est créé ═══
-select public.show_annuler('00000000-0000-0000-0000-0000000a1003', 0, 'Annulation sans frais', current_date - 1, 'Clause 7');
+select public.show_annuler('00000000-0000-0000-0000-0000000a1003', 0, 'Annulation sans frais', current_date - 1, 'Clause 7', 'organisateur');
 select pg_temp.ok((select amount = 0 and annulation = 'abandonnee' from public.show_payments where id = md5('v3s')::uuid), 'variante 3 : solde abandonné');
 select pg_temp.ok((select amount = 1200 and invoice_number = 'F-X-v3-A' from public.show_payments where id = md5('v3a')::uuid)
   and not exists (select 1 from public.pennylane_avoirs where show_id = '00000000-0000-0000-0000-0000000a1003')
   and not exists (select 1 from public.reglements where show_id = '00000000-0000-0000-0000-0000000a1003'), 'variante 3 : aucun avoir ni remboursement créé ; facture d''acompte intacte');
 
 -- ═══ facture émise au-delà du montant retenu ═══
-select public.show_annuler('00000000-0000-0000-0000-0000000a1004', 2000, 'Maintien partiel', current_date - 1, null);
+select public.show_annuler('00000000-0000-0000-0000-0000000a1004', 2000, 'Maintien partiel', current_date - 1, null, 'organisateur');
 select pg_temp.ok((select amount = 2800 and invoice_number is not null and annulation is null from public.show_payments where id = md5('v4s')::uuid), 'au-delà : solde émis 2 800 € intact');
 select pg_temp.ok(not public.annulation_relance_impaye('00000000-0000-0000-0000-0000000a1004')
   and not exists (select 1 from public.reminder_candidates('00000000-0000-0000-0000-0000000a1004')), 'au-delà : 2 800 € réclamés > 800 € encore dus → relance d''impayé suspendue (À régulariser)');
-select public.show_annuler('00000000-0000-0000-0000-0000000a1005', 4000, 'Maintien intégral', current_date - 1, null);
+select public.show_annuler('00000000-0000-0000-0000-0000000a1005', 4000, 'Maintien intégral', current_date - 1, null, 'organisateur');
 select pg_temp.ok(public.annulation_relance_impaye('00000000-0000-0000-0000-0000000a1005')
   and (select array_agg(r) = array['solde_paye'] from public.reminder_candidates('00000000-0000-0000-0000-0000000a1005')), 'maintien : 2 800 € réclamés = encore dus → seule la relance d''impayé reste');
 
 -- ═══ booking et coréalisation : sans calcul ═══
 do $$ begin
-  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1007', 600, 'essai', current_date, null); raise exception 'montant accepté en booking';
+  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1007', 600, 'essai', current_date, null, 'organisateur'); raise exception 'montant accepté en booking';
   exception when raise_exception then if sqlerrm not like 'Pas de montant%' then raise; end if; raise notice 'ok : booking : pas de montant'; end;
 end $$;
+-- (14 h 31) origine obligatoire, commission « à revoir » ou « non due »
+do $$ begin
+  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1011', 0, 'essai', current_date, null, null); raise exception 'origine manquante acceptée';
+  exception when raise_exception then if sqlerrm not like 'Indique qui est à l''origine%' then raise; end if; raise notice 'ok : origine obligatoire'; end;
+  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1011', 0, 'essai', current_date, null, 'artiste', 'payee'); raise exception 'commission invalide acceptée';
+  exception when raise_exception then if sqlerrm not like 'Commission :%' then raise; end if; raise notice 'ok : commission « à revoir » ou « non due » seulement'; end;
+end $$;
+select public.show_annuler('00000000-0000-0000-0000-0000000a1011', 0, 'L''artiste annule ; acompte restitué intégralement', current_date, 'Mail fictif', 'artiste', 'non_due');
+select pg_temp.ok((select origine = 'artiste' and commission = 'non_due' and montant_du_ht = 0 from public.annulations where show_id = '00000000-0000-0000-0000-0000000a1011')
+  and (select amount = 1200 and paid_at is not null and invoice_number = 'F-X-v11-A' and annulation is null from public.show_payments where id = md5('v11a')::uuid)
+  and (select amount = 0 and annulation = 'abandonnee' from public.show_payments where id = md5('v11s')::uuid)
+  and (select amount = 180 from public.show_payments where id = md5('v11c')::uuid) and (select count(*) = 1 from public.commission_transfers where payment_id = md5('v11c')::uuid)
+  and not exists (select 1 from public.reglements where show_id = '00000000-0000-0000-0000-0000000a1011'),
+  'l''artiste annule : 0 € dus, acompte facturé et encaissé gardés, solde « ne doit plus être émis », commission et versement intacts, aucun remboursement créé');
+select pg_temp.ok(not exists (select 1 from public.reminder_candidates('00000000-0000-0000-0000-0000000a1011')), 'l''artiste annule : aucune relance');
+select public.show_annuler('00000000-0000-0000-0000-0000000a1012', 0, 'Annulation sans frais', current_date, null, 'commun', 'a_revoir');
+select pg_temp.ok(public.annulation_depasse('00000000-0000-0000-0000-0000000a1012') and not public.annulation_relance_impaye('00000000-0000-0000-0000-0000000a1012')
+  and not exists (select 1 from public.reminder_candidates('00000000-0000-0000-0000-0000000a1012'))
+  and (select paid_at is null and invoice_number is not null from public.show_payments where id = md5('v12a')::uuid),
+  'acompte facturé jamais encaissé, 0 € dus : facturé au-delà (avoir à émettre), impayé plus relancé, aucun mouvement');
+select public.show_annuler('00000000-0000-0000-0000-0000000a1013', 2000, 'Avenant : 50 %', current_date, null, 'organisateur', 'a_revoir');
+select pg_temp.ok((select amount = 800 and annulation = 'recalculee' and kind = 'acompte' from public.show_payments where id = md5('v13s')::uuid)
+  and (select array_agg(r || '|' || raw || '|' || t) = array['annulation_facture|' || current_date || '|Facture à faire (date annulée) : Acompte 2']
+       from public.reminder_candidates('00000000-0000-0000-0000-0000000a1013')),
+  'ligne recalculée autre qu''un solde (acompte 2 : 800 €) : « Facture à faire » due dès aujourd''hui, concert dans 90 jours');
 -- facture faite non envoyée : « Facture à envoyer » seulement si elle correspond au montant retenu (pas de facturé au-delà)
-select public.show_annuler('00000000-0000-0000-0000-0000000a1009', 2000, 'Maintien partiel', current_date - 1, null);
-select public.show_annuler('00000000-0000-0000-0000-0000000a1010', 4000, 'Maintien total', current_date - 1, null);
+select public.show_annuler('00000000-0000-0000-0000-0000000a1009', 2000, 'Maintien partiel', current_date - 1, null, 'organisateur');
+select public.show_annuler('00000000-0000-0000-0000-0000000a1010', 4000, 'Maintien total', current_date - 1, null, 'organisateur');
 select pg_temp.ok(public.annulation_depasse('00000000-0000-0000-0000-0000000a1009')
   and not exists (select 1 from public.reminder_candidates('00000000-0000-0000-0000-0000000a1009')), 'au-delà, non envoyée : facture à régulariser, sans relance « à envoyer »');
 select pg_temp.ok(not public.annulation_depasse('00000000-0000-0000-0000-0000000a1010')
   and (select array_agg(r) = array['facture_envoi'] from public.reminder_candidates('00000000-0000-0000-0000-0000000a1010')), 'maintien, non envoyée : « Facture à envoyer » gardée');
-select public.show_annuler('00000000-0000-0000-0000-0000000a1007', null, 'Festival annulé', current_date, null);
+select public.show_annuler('00000000-0000-0000-0000-0000000a1007', null, 'Festival annulé', current_date, null, 'organisateur');
 select pg_temp.ok((select regime = 'booking' from public.annulations where show_id = '00000000-0000-0000-0000-0000000a1007')
   and (select amount = 600 and annulation is null from public.show_payments where id = '00000000-0000-0000-0000-0000000b1007')
   and not exists (select 1 from public.reminder_candidates('00000000-0000-0000-0000-0000000a1007')), 'booking : commission gardée (à revoir), relance suspendue');
-select public.show_annuler('00000000-0000-0000-0000-0000000a1008', null, 'Salle fermée', current_date, null);
+select public.show_annuler('00000000-0000-0000-0000-0000000a1008', null, 'Salle fermée', current_date, null, 'organisateur');
 select pg_temp.ok((select regime = 'corea' from public.annulations where show_id = '00000000-0000-0000-0000-0000000a1008')
   and (select count(*) = 0 from public.show_payments where show_id = '00000000-0000-0000-0000-0000000a1008' and annulation is not null)
   and (select amount is null from public.show_payments where id = md5('v8s')::uuid), 'coréalisation : motif enregistré, lignes inchangées (sans calcul)');
@@ -218,28 +256,32 @@ do $$ begin
   exception when raise_exception then if sqlerrm not like 'Date annulée : aucune ligne de facturation%' then raise; end if; raise notice 'ok : rattachement d''une ligne à une date annulée refusé'; end;
   begin insert into public.show_payments (show_id, kind, label, pct, sort, annulation) values ('00000000-0000-0000-0000-0000000a1006', 'acompte', 'Acompte', 10, 9, 'recalculee'); raise exception 'marque posée';
   exception when raise_exception then if sqlerrm not like 'Le marquage d''annulation%' then raise; end if; raise notice 'ok : marque d''annulation non posable à la création'; end;
-  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1001', 0, 'x', current_date, null); raise exception 'seconde fiche';
+  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1001', 0, 'x', current_date, null, 'organisateur'); raise exception 'seconde fiche';
   exception when raise_exception then if sqlerrm not like 'Date déjà en « Annulée »%' then raise; end if; raise notice 'ok : une seule fiche'; end;
 end $$;
 
 -- ═══ correction : motif obligatoire, avant / après ═══
 do $$ begin
-  begin perform public.annulation_corriger((select id from public.annulations where show_id = '00000000-0000-0000-0000-0000000a1003'), 1200, 'Annulation', current_date, null, ' '); raise exception 'correction sans motif';
+  begin perform public.annulation_corriger((select id from public.annulations where show_id = '00000000-0000-0000-0000-0000000a1003'), 1200, 'Annulation', current_date, null, ' ', 'organisateur', 'a_revoir'); raise exception 'correction sans motif';
   exception when raise_exception then if sqlerrm not like 'Motif de la correction obligatoire%' then raise; end if; raise notice 'ok : correction sans motif refusée'; end;
 end $$;
-select public.annulation_corriger((select id from public.annulations where show_id = '00000000-0000-0000-0000-0000000a1003'), 2000, 'Avenant : 50 %', current_date, 'Avenant signé', 'Avenant reçu');
+select public.annulation_corriger((select id from public.annulations where show_id = '00000000-0000-0000-0000-0000000a1003'), 2000, 'Avenant : 50 %', current_date, 'Avenant signé', 'Avenant reçu', 'organisateur', 'a_revoir');
 select pg_temp.ok((select amount = 800 and annulation = 'recalculee' from public.show_payments where id = md5('v3s')::uuid), 'correction : 0 € → 2 000 € : solde de 800 € à émettre');
 select pg_temp.ok((select montant_du_ht = 2000 and corrige_par = 'equipe@exemple.test' from public.annulations where show_id = '00000000-0000-0000-0000-0000000a1003')
   and (select avant ->> 'montant_du_ht' = '0.00' and apres ->> 'montant_du_ht' = '2000.00' and motif = 'Avenant reçu' from public.annulations_journal
        where show_id = '00000000-0000-0000-0000-0000000a1003' and action = 'corriger'), 'correction : trace avant / après, motif');
 select pg_temp.ok((select (e ->> 'montant_initial')::numeric = 2800 from public.annulations a, jsonb_array_elements(a.lignes) e
   where a.show_id = '00000000-0000-0000-0000-0000000a1003' and e ->> 'payment_id' = md5('v3s')::uuid::text), 'correction : montant initial du solde toujours 2 800 €');
+select public.annulation_corriger((select id from public.annulations where show_id = '00000000-0000-0000-0000-0000000a1003'), 2000, 'Avenant : 50 %', current_date, 'Avenant signé', 'Origine précisée', 'commun', 'non_due', 'Salle et artiste');
+select pg_temp.ok((select origine = 'commun' and commission = 'non_due' and origine_precision = 'Salle et artiste' from public.annulations where show_id = '00000000-0000-0000-0000-0000000a1003')
+  and (select avant ->> 'origine' = 'organisateur' and apres ->> 'origine' = 'commun' and apres ->> 'commission' = 'non_due' from public.annulations_journal
+       where show_id = '00000000-0000-0000-0000-0000000a1003' and action = 'corriger' and motif = 'Origine précisée'), 'correction : origine et commission corrigées, avant / après tracé');
 
 -- ═══ rétablir ═══
 -- solde de 800 € émis depuis l'annulation → rétablir refusé, dossier gardé à régulariser
 update public.show_payments set invoice_number = 'F-X-v1-S', invoiced_on = current_date where id = md5('v1s')::uuid;
 select pg_temp.ok((select array_agg(r) = array['facture_envoi'] from public.reminder_candidates('00000000-0000-0000-0000-0000000a1001')),
-  'solde recalculé émis (800 € = montant retenu) : « Facture à envoyer » prend le relais de « Facture de solde à faire »');
+  'solde recalculé émis (800 € = montant retenu) : « Facture à envoyer » prend le relais de « Facture à faire »');
 update public.show_payments set sent_at = current_date where id = md5('v1s')::uuid;
 select pg_temp.ok((select array_agg(r) = array['solde_paye'] from public.reminder_candidates('00000000-0000-0000-0000-0000000a1001')),
   'solde recalculé envoyé : relance d''impayé (800 € réclamés = encore dus)');
@@ -262,7 +304,7 @@ insert into public.show_payments (id, show_id, kind, label, amount, sort) values
 select pg_temp.ok(exists (select 1 from public.show_payments where id = md5('v2x')::uuid), 'rétablie : ajout d''une « Autre ligne » de nouveau possible');
 delete from public.show_payments where id = md5('v2x')::uuid;
 -- un encaissement ajouté depuis → refus
-select public.show_annuler('00000000-0000-0000-0000-0000000a1002', 1200, 'Acompte conservé (de nouveau)', current_date, null);
+select public.show_annuler('00000000-0000-0000-0000-0000000a1002', 1200, 'Acompte conservé (de nouveau)', current_date, null, 'organisateur');
 select public.reglement_saisir(md5('v2a')::uuid, 'remboursement', 'a_faire', 100, null, null, 'Geste commercial', null);
 do $$ begin
   begin perform public.annulation_retablir((select id from public.annulations where show_id = '00000000-0000-0000-0000-0000000a1002' and retablie_at is null), 'essai'); raise exception 'rétabli';
@@ -270,16 +312,17 @@ do $$ begin
 end $$;
 
 -- ═══ droits ═══
-select pg_temp.ok(not has_function_privilege('anon', 'public.show_annuler(uuid, numeric, text, date, text)', 'execute')
-  and has_function_privilege('authenticated', 'public.show_annuler(uuid, numeric, text, date, text)', 'execute')
+select pg_temp.ok(not has_function_privilege('anon', 'public.show_annuler(uuid, numeric, text, date, text, text, text, text)', 'execute')
+  and has_function_privilege('authenticated', 'public.show_annuler(uuid, numeric, text, date, text, text, text, text)', 'execute')
   and not has_function_privilege('authenticated', 'public.annulation_appliquer(uuid, numeric)', 'execute')
   and not has_function_privilege('authenticated', 'public.show_engagee(uuid)', 'execute')
   and not has_function_privilege('authenticated', 'public.annulation_relance_impaye(uuid)', 'execute')
   and not has_function_privilege('authenticated', 'public.annulation_depasse(uuid)', 'execute')
+  and has_function_privilege('authenticated', 'public.annulation_corriger(uuid, numeric, text, date, text, text, text, text, text)', 'execute')
   and not has_table_privilege('authenticated', 'public.annulations', 'insert') and not has_table_privilege('anon', 'public.annulations', 'select'), 'droits : équipe seulement, écriture par les fonctions');
 set request.jwt.claims = '{}';
 do $$ begin
-  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1005', 0, 'x', current_date, null); raise exception 'hors équipe accepté';
+  begin perform public.show_annuler('00000000-0000-0000-0000-0000000a1005', 0, 'x', current_date, null, 'organisateur'); raise exception 'hors équipe accepté';
   exception when raise_exception then if sqlerrm <> 'Accès refusé' then raise; end if; raise notice 'ok : hors équipe refusé'; end;
 end $$;
 set request.jwt.claims = '{"email":"equipe@exemple.test"}';

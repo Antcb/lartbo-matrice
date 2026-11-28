@@ -39,3 +39,41 @@ export function relanceImpaye({regime, du, encaisseHt, reclameHt}){
   const encore = Math.max(0, r2(Number(du) - (Number(encaisseHt) || 0)));
   return {garde: r2(reclameHt) <= encore + 0.01, encore};
 }
+
+/** (v1.72.3, décision du 28/11/2026, 14 h 31) Qui est à l'origine de l'annulation : information, elle ne fixe ni les montants dus ni
+ *  le sens des paiements (saisis à part : montant dû, commission). Même liste côté base : annulations.origine */
+export const ORIGINE_LABEL = {artiste: 'L’artiste', organisateur: 'L’organisateur', commun: 'Décision commune', autre: 'Autre'};
+/** Commission L'ArtBo convenue : à revoir (traitement en L5) ou non due — annulations.commission */
+export const COMMISSION_LABEL = {a_revoir: 'À revoir (lot suivant)', non_due: 'Non due'};
+
+const ttcDe = (ht, tva) => r2((Number(ht) || 0) * (1 + (Number(tva) || 0) / 100));
+/**
+ * (v1.72.3) Opérations d'une date annulée : qui doit payer qui, avec le montant de chaque opération. Rien n'est créé : MATRICE affiche
+ * les actions ; avoirs émis à la main dans Pennylane, aucun remboursement déclenché.
+ *  - facture  : reste à facturer (lignes recalculées) — L'ArtBoristerie facture l'organisateur ;
+ *  - paiement : ce que l'organisateur doit encore payer (montant dû TTC − encaissé TTC), facture à émettre comprise ;
+ *  - avoir    : facturé net au-delà du montant dû — document de L'ArtBoristerie à l'organisateur (même s'il n'y a rien à rembourser :
+ *               acompte facturé jamais encaissé) ;
+ *  - remboursement : encaissé TTC au-delà du montant dû TTC — L'ArtBoristerie rembourse l'organisateur (dont déjà saisi) ;
+ *  - commission : non due et déjà facturée ou versée → à régulariser (L5) ; non due sinon → rien à verser ; à revoir.
+ * Montants TTC au taux de TVA de la date pour le montant dû ; facturé et encaissé : TTC réels des lignes.
+ */
+export function operationsAnnulation({regime, du, tva, factureNetHt = 0, factureNetTtc = 0, encaisseTtc = 0, rembourseSaisiTtc = 0, resteAFacturerHt = 0, commission = {}}){
+  const ops = [];
+  if (regime === 'cession' && du != null){
+    const duTtc = ttcDe(du, tva);
+    if (resteAFacturerHt > 0.005) ops.push({type: 'facture', de: 'artbo', vers: 'organisateur', ht: r2(resteAFacturerHt), ttc: ttcDe(resteAFacturerHt, tva)});
+    const attendu = Math.max(0, r2(duTtc - encaisseTtc));
+    if (attendu > 0.005) ops.push({type: 'paiement', de: 'organisateur', vers: 'artbo', ttc: attendu});
+    const avoirHt = Math.max(0, r2(factureNetHt - du)), avoirTtc = Math.max(0, r2(factureNetTtc - duTtc));
+    if (avoirHt > 0.005 || avoirTtc > 0.005) ops.push({type: 'avoir', de: 'artbo', vers: 'organisateur', ht: avoirHt, ttc: avoirTtc});
+    const rembourse = Math.max(0, r2(encaisseTtc - duTtc));
+    if (rembourse > 0.005) ops.push({type: 'remboursement', de: 'artbo', vers: 'organisateur', ttc: rembourse, saisi: Math.min(rembourse, r2(rembourseSaisiTtc)), aSaisir: Math.max(0, r2(rembourse - rembourseSaisiTtc))});
+  }
+  const c = commission || {};
+  if (c.existe){
+    const statut = c.statut === 'non_due' ? ((c.facturee || c.versee) ? 'a_regulariser' : 'non_due') : 'a_revoir';
+    ops.push({type: 'commission', statut, ht: r2(c.montant), versee: r2(c.verse), facturee: !!c.facturee});
+  }
+  return ops;
+}
