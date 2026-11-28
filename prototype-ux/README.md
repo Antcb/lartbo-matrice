@@ -3,6 +3,13 @@
 Branche `ux/refonte-uxui`, créée depuis `main` au commit `ee1f806` (v1.68.3, 26/11/2026). `main` inchangée depuis.
 Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (arbitrage A2). `DESIGN_SYSTEM.md` reste celui de `main`.
 
+
+## Aperçu sans claude.ai (ChatGPT, partage)
+Le prototype interactif sur claude.ai n'est pas lisible par ChatGPT. À chaque version, le dossier `apercu/` est régénéré
+(`node outils/apercu.mjs <playwright/index.mjs> <Chrome> <version> <commit>`, serveur local lancé) et poussé sur la branche :
+captures Mac et iPhone de chaque écran et texte affiché, lisibles sans JavaScript.
+Lien stable : https://github.com/Antcb/lartbo-matrice/blob/ux/refonte-uxui/prototype-ux/apercu/README.md
+
 ## Isolation
 
 - Dossier autonome : **aucun fichier de l'application n'est modifié** (`index.html`, `js/`, `css/`, `supabase/`, `apps-script/` intacts).
