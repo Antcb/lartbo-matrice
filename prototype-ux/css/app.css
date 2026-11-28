@@ -1224,10 +1224,7 @@ dialog.psheet.full .pnl-head{padding-top:max(14px,env(safe-area-inset-top,0px))}
 .bk-mfpop .switch{padding:6px 0}
 /* Groupes : filet d'accent (niveau 1), retrait (niveau 2), même hauteur */
 .bkt .grp th{height:26px}
-.bkt .grp1 th{background:color-mix(in srgb,var(--c-surface-2) 70%,var(--c-surface));box-shadow:inset 3px 0 0 var(--accent-ring),inset 0 -1px 0 var(--hair-strong)}
-.bkt .grp2 th{position:static;background:var(--c-surface);box-shadow:inset 0 -1px 0 var(--hair)}
 .bkt .grp2 .grp-in{padding-left:30px}
-.bkt tbody.g1+tbody.g1 .grp1 th{box-shadow:inset 3px 0 0 var(--accent-ring),inset 0 1px 0 var(--hair-strong),inset 0 -1px 0 var(--hair-strong)}
 .grp-t{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 4px 0 0;border:0;border-radius:6px;background:none;color:inherit;font:inherit;cursor:pointer}
 .grp-t:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .grp-t .grp-chev{width:13px;height:13px;color:var(--c-ink-2);transition:transform var(--d-hover) var(--ease)}
@@ -1382,5 +1379,97 @@ input.input[type=date]::-webkit-datetime-edit{padding:0}
   .sv-ta{grid-column:2 / -1;justify-content:flex-start}
   .sv-hrow .btn{min-height:var(--touch)}
 }
-@media (max-width:760px){ .sv-card>.sv-grid2{grid-template-columns:minmax(0,1fr)} .page-suivi .page-head .acts .btn.icon{width:max(38px,var(--touch));height:max(38px,var(--touch))} }
+@media (max-width:760px){ .sv-card>.sv-grid2{grid-template-columns:minmax(0,1fr)} }
 @media (max-width:760px){ .sv-pane label{min-height:max(38px,var(--touch))} }
+
+/* ───────── V8.1 — Booking : groupes sans fond coloré (typographie, retrait, filets fins), alternance très discrète */
+.bkt .grp1 th{background:var(--c-surface);box-shadow:inset 0 -1px 0 var(--hair-strong)}
+.bkt tbody.g1+tbody.g1 .grp1 th{box-shadow:inset 0 1px 0 var(--hair-strong),inset 0 -1px 0 var(--hair-strong)}
+.bkt .grp1 .grp-m{color:var(--c-ink);font-weight:600}
+.bkt .grp2 th{position:static;background:var(--c-surface);box-shadow:inset 0 -1px 0 var(--hair)}
+.bkt .grp2 .grp-in{padding-left:30px}
+.bkt .grp2 .grp-m{font-weight:500;color:var(--c-ink-2)}
+.bkt .grp2 .grp-m.is-a{font-size:var(--fs-small)}
+:root[data-zebra="on"] .bkt tbody .bk-row.alt td{background:color-mix(in srgb,var(--c-row-alt) 60%,var(--c-surface))}
+.bk-grpbtn b{font-weight:600;color:var(--c-ink)}
+.bk-grpbtn .bk-grp-k{color:var(--c-ink-2)}
+.bk-grp-opts{display:grid;gap:0;min-width:15rem}
+.bk-grp-opts .def-tag{margin-left:6px}
+.bk-grp-foot{display:flex;flex-wrap:wrap;gap:6px}
+.bk-bar1{display:flex;align-items:center;gap:8px;width:100%}
+.bk-bar1 .bk-search{flex:1;min-width:0;max-width:none}
+.bk-bar2 .bk-fbtn{position:relative}
+.bk-bar2 .bk-fbtn .count{position:absolute;top:-4px;right:-4px}
+/* ───────── V8.1 — Suivi */
+.mk.dash .shape{stroke-dasharray:2.2 1.8}
+.sv-stats dt{display:inline-flex;align-items:center;gap:5px}
+.svt.wrap td{white-space:normal;overflow:visible;text-overflow:clip;vertical-align:top}
+.svt td.c-summary,.svt td.c-artists{overflow:hidden;text-overflow:ellipsis}
+.th-sort{display:inline-flex;align-items:center;gap:4px;min-width:0;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:pointer;text-align:left}
+.th-sort .th-dir{display:inline-flex;opacity:0;transition:opacity var(--d-hover) var(--ease)}
+.th-sort:hover .th-dir,.th-sort:focus-visible .th-dir,.th-sort.on .th-dir{opacity:1}
+.th-sort.on{color:var(--c-ink)}
+.th-sort:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.sv-sortnote{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:var(--fs-small);color:var(--c-ink-2)}
+.sv-closedn{margin:-4px 0 0}
+.sv-sortl{display:inline-flex;align-items:center;gap:6px;flex:1;min-width:0;color:var(--c-ink-2)}
+.sv-sortl select{flex:1;min-width:0}
+.sv-sortb,.sv-stacts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.sv-stchk{display:grid;gap:0;min-width:14rem}
+.sv-stchk .st{display:inline-flex;align-items:center;gap:6px}
+.sv-stsel{display:inline-flex;align-items:center;gap:6px}
+.sv-msel{display:inline-flex;align-items:center;flex:1 1 14rem;min-width:0;width:auto;text-align:left;cursor:pointer;font:inherit;font-size:var(--fs-list)}
+.sv-msel-v{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sv-link{display:inline-flex;align-items:center;gap:4px;width:max-content;font-size:var(--fs-small);color:var(--c-ink-2)}
+.sv-link.on{color:var(--accent-ink);font-weight:500}
+.sv-dropzone{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:12px;border:1.5px dashed var(--hair-strong);border-radius:var(--r-tile);background:var(--c-surface)}
+.sv-dropzone.over{border-color:var(--accent);background:var(--accent-tint)}
+.sv-dz-ic{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--c-surface-2);color:var(--c-ink-2)}
+.sv-dz-b{display:grid;gap:2px;flex:1 1 14rem;min-width:0;font-size:var(--fs-list)}
+.sv-dz-a{display:flex;flex-wrap:wrap;gap:6px}
+.sv-file{display:flex;align-items:center;gap:6px;margin:0;font-size:var(--fs-list)}
+.linkbtn{padding:0;border:0;background:none;color:var(--accent-ink);font:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer;text-align:left}
+.sv-found{list-style:none;margin:0;padding:0}
+.sv-found li{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:8px 0;border-top:1px solid var(--hair)}
+.sv-found li>span{display:grid;gap:2px;min-width:0}
+.sv-why{display:flex;gap:6px;align-items:flex-start;margin:0;padding:8px 10px;border-radius:var(--r-tile);background:var(--c-due-bg);color:var(--c-warn-ink);font-size:var(--fs-small)}
+.bkm-l1{display:flex;justify-content:space-between;gap:8px}
+.bkm-l2.wrap{white-space:normal}
+.pref-sel{max-width:26rem}
+/* iPhone : formulaires, boutons et cartes plus compacts ; indicateurs alignés sur une ligne */
+@media (max-width:760px){
+  .sv-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0}
+  .sv-stats>.bks{padding:0 6px 0 0;margin:0 6px 0 0;min-width:0}
+  .sv-stats .bks dt{font-size:calc(.5625rem * var(--ts));letter-spacing:.03em;white-space:normal;line-height:1.2}
+  .sv-stats .bks dt .mk{display:none}
+  .sv-stats .bks-v{font-size:calc(1.0625rem * var(--ts))}
+  .sv-card{padding:10px 12px;gap:8px}
+  .sv-ws,.sv-col{gap:10px}
+  .sv-hrow{flex-wrap:nowrap}
+  .sv-hrow .sv-h{min-width:0}
+  .sv-hrow .btn.icon,.sv-dz-a .btn,.sv-loga .btn{min-height:36px}
+  .sv-hrow .btn.icon{width:36px}
+  .sv-logf{padding:8px;gap:6px}
+  .sv-dr{gap:6px 8px;padding:6px 0}
+  .sv-da .btn{min-height:32px}
+  .sv-dropzone{padding:10px}
+  .sv-dz-ic{display:none}
+}
+/* iOS : un champ dont le texte fait moins de 16 px déclenche un agrandissement automatique au focus, qui persiste ensuite
+   (retour à la liste, fermeture du clavier). Cause corrigée à la source : 16 px minimum dans tous les champs sur écran tactile.
+   Le zoom volontaire reste possible (aucun maximum-scale ni user-scalable=no). */
+@media (pointer:coarse){
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),select,textarea{font-size:max(16px,1em)!important}
+}
+/* iPhone : commandes visuellement compactes (36 px), zone tactile de 44 px conservée par un débord invisible */
+@media (pointer:coarse) and (max-width:760px){
+  .page-suivi .btn.sm,.page-booking .btn.sm{position:relative;min-height:36px}
+  .page-suivi .btn.sm.icon,.page-booking .btn.sm.icon{width:36px}
+  .page-suivi .btn.sm::after,.page-booking .btn.sm::after{content:"";position:absolute;inset:-4px -2px}
+  .page-suivi .btn.sm.icon::after,.page-booking .btn.sm.icon::after{inset:-4px}
+  .page-suivi .input,.page-suivi select.input{min-height:40px}
+  .page-suivi .sv-stsel select.input{min-height:36px}
+  .page-suivi .chipbtn{min-height:36px;height:36px}
+}
+.sv-sortl select.input.bk-sel{width:100%;min-width:0;text-overflow:ellipsis}
+.bk-bar2 .sv-sortl{flex:1 1 auto}

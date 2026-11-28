@@ -19,61 +19,61 @@
   const EXTRA_ST = [{ id: 'sx1', name: 'Scène des Remparts', city: 'Vannes', lat: 47.658, lng: -2.76, dep: '56', festival: false },
     { id: 'sx2', name: 'Le Café des Rives', city: 'Angers', lat: 47.478, lng: -.563, dep: '49', festival: false }];
   const CONTACTS = {
-    st9: [['c1', 'Camille Rouet', 'Programmation', '06 12 34 56 78']], st10: [['c2', 'Julien Barre', 'Direction artistique', '']],
+    st9: [['c1', 'Camille Rouet', 'Programmation', '06 12 34 56 78']], st10: [['c2', 'Inès Carrel', 'Direction artistique', '']],
     sx1: [['c3', 'Inès Moreau', 'Programmation', '06 98 76 54 32']], sx2: [['c4', 'Paul Ledoux', 'Gérance', '02 41 00 00 00']],
     st2: [['c5', 'Morgane Le Gall', 'Programmation', '06 11 22 33 44'], ['c6', 'Yann Kerhervé', 'Régie', '']], st4: [['c7', 'Sophie Dariot', 'Programmation', '']],
     st7: [['c8', 'Lucie Fabre', 'Coordination', '06 55 44 33 22']], st8: [['c9', 'Nathan Esposito', 'Direction', '']], st16: [['c10', 'Claire Vigier', 'Administration', '']],
-    st15: [['c11', 'Hugo Ménard', 'Programmation', '']], st1: [['c12', 'Léa Garnier', 'Programmation', '']],
+    st15: [['c11', 'Sarah Benali', 'Programmation', '']], st1: [['c12', 'Paul Ternier', 'Programmation', '']], st3: [['c13', 'Hugo Ménard', 'Direction technique', '']],
   };
   const sp = (id, st, pids, status, o = {}) => ({ id, structure_id: st, project_ids: pids, status, last_contact: null, summary: '', content_md: '', relances: 0,
-    mail_sent_at: null, mail_draft: false, place: null, updated_at: '2026-11-01', ...o });
+    mail_sent_at: null, mail_draft: false, place: null, created_at: o.created_at || '2026-09-15', updated_at: o.updated_at || o.last_contact || '2026-11-01', ...o });
   const SEED = [
-    sp('p1', 'st9', ['cobalt'], 'Mailed', { last_contact: '2026-11-13', relances: 1, mail_sent_at: '2026-11-03', updated_at: '2026-11-13',
+    sp('p1', 'st9', ['cobalt'], 'Mailed', { created_at: '2026-11-03', updated_at: '2026-11-21', last_contact: '2026-11-13', relances: 1, mail_sent_at: '2026-11-03',
       summary: '- **Contexte** : Camille Rouet, programmation.\n- **Date visée** : mars 2027, week-end.\n- **Statut actuel** : relance n°1 envoyée le 13/11.\n- **Prochaine action** : relance le 23/11.' }),
-    sp('p2', 'st10', ['lune'], 'Interest', { last_contact: '2026-11-16', mail_sent_at: '2026-10-20',
-      summary: '- **Contexte** : Julien Barre, direction artistique.\n- **Date visée** : juillet 2027.\n- **Offre financière** : à préciser (cession).\n- **Prochaine action** : rappeler le 26/11.' }),
-    sp('p3', 'sx1', ['nadia'], 'Option', { last_contact: '2026-11-20', summary: '- **Date visée** : 6 février 2027, option posée.\n- **Jauge** : 280 places, billetterie payante.\n- **Prochaine action** : retour budget avant le 30/11.' }),
-    sp('p4', 'sx2', ['minuit'], 'Mailed', { last_contact: '2026-11-19', relances: 3, mail_sent_at: '2026-10-15', summary: '- **Statut actuel** : trois relances par mail sans réponse.\n- **Prochaine action** : appel le 03/12.' }),
-    sp('p5', 'st2', ['cobalt'], 'Option', { last_contact: '2026-11-24', mail_sent_at: '2026-09-01',
+    sp('p2', 'st10', ['lune'], 'Interest', { created_at: '2026-10-20', last_contact: '2026-11-16', mail_sent_at: '2026-10-20',
+      summary: '- **Contexte** : Inès Carrel, direction artistique.\n- **Date visée** : juillet 2027.\n- **Offre financière** : à préciser (cession).\n- **Prochaine action** : rappeler le 26/11.' }),
+    sp('p3', 'sx1', ['nadia'], 'Option', { created_at: '2026-11-20', updated_at: '2026-11-26', last_contact: '2026-11-20', summary: '- **Date visée** : 6 février 2027, option posée.\n- **Jauge** : 280 places, billetterie payante.\n- **Prochaine action** : retour budget avant le 30/11.' }),
+    sp('p4', 'sx2', ['minuit'], 'Mailed', { created_at: '2026-10-15', last_contact: '2026-11-19', relances: 3, mail_sent_at: '2026-10-15', summary: '- **Statut actuel** : trois relances par mail sans réponse.\n- **Prochaine action** : appel le 03/12.' }),
+    sp('p5', 'st2', ['cobalt'], 'Option', { created_at: '2026-09-01', updated_at: '2026-11-25', last_contact: '2026-11-24', mail_sent_at: '2026-09-01',
       summary: '- **Contexte** : Morgane Le Gall.\n- **Date** : 3 décembre 2026 en option.\n- **Offre financière** : co-réalisation, minimum garanti 2 400 € HT.\n- **Accueil** : catering et hébergement pris en charge.\n- **Prochaine action** : confirmation attendue.' }),
-    sp('p6', 'st4', ['lune'], 'Interest', { last_contact: '2026-10-21' }),
-    sp('p7', 'st7', ['nadia'], 'Option', { last_contact: '2026-11-08', place: { venue: 'Jardin de l’Évêché', city: 'Auch', lat: 43.646, lng: .586 } }),
-    sp('p8', 'st8', ['lune', 'cobalt'], 'Interest', { last_contact: '2026-11-05' }),
-    sp('p9', 'st1', ['lune'], 'Confirmed', { last_contact: '2026-06-12' }),
-    sp('p10', 'st16', ['minuit'], 'Interest', { last_contact: '2026-11-25', mail_draft: true }),
-    sp('p11', 'st15', ['lune'], 'Option', { last_contact: '2026-11-18' }),
-    sp('p12', 'st3', ['nadia'], 'Confirmed', { last_contact: '2026-09-30' }),
-    sp('p13', 'st14', ['nadia'], 'Closed', { last_contact: '2026-03-02' }),
-    sp('p14', 'st5', ['voix'], 'Mailed', { last_contact: '2026-10-02' }),
-    sp('p15', 'st6', ['cobalt'], 'Confirmed', { last_contact: '2026-10-28' }),
+    sp('p6', 'st4', ['lune'], 'Interest', { created_at: '2026-10-21', updated_at: '2026-11-22', last_contact: '2026-10-21' }),
+    sp('p7', 'st7', ['nadia'], 'Option', { created_at: '2026-06-30', last_contact: '2026-11-08', place: { venue: 'Jardin de l’Évêché', city: 'Auch', lat: 43.646, lng: .586 } }),
+    sp('p8', 'st8', ['lune', 'cobalt'], 'Interest', { created_at: '2026-10-28', last_contact: '2026-11-05' }),
+    sp('p9', 'st1', ['lune'], 'Confirmed', { created_at: '2026-04-02', last_contact: '2026-06-12' }),
+    sp('p10', 'st16', ['minuit'], 'Interest', { created_at: '2026-11-25', last_contact: '2026-11-25', mail_draft: true }),
+    sp('p11', 'st15', ['lune'], 'Option', { created_at: '2026-11-18', last_contact: '2026-11-18' }),
+    sp('p12', 'st3', ['nadia'], 'Confirmed', { created_at: '2026-05-11', last_contact: '2026-09-30' }),
+    sp('p13', 'st14', ['nadia'], 'Closed', { created_at: '2026-01-14', last_contact: '2026-03-02' }),
+    sp('p14', 'st5', ['voix'], 'Mailed', { created_at: '2026-10-02', last_contact: '2026-10-02' }),
+    sp('p15', 'st6', ['cobalt'], 'Confirmed', { created_at: '2026-07-07', last_contact: '2026-10-28' }),
   ];
   const lg = (id, p, date, kind, who, body, o = {}) => ({ id, prospect_id: p, date, time: o.time || null, kind, contact_name: who, body, mail: kind === 'Mail', draft: false, full: o.full || null, ...o });
   const LOGS = [
     lg('l1', 'p1', '2026-11-13', 'Mail', 'Camille Rouet', '**Relance n°1** (en réponse à « Frères Cobalt — mars 2027 »)', { time: '10:12', full: 'Bonjour Camille,\n\nJe me permets de revenir vers vous au sujet des Frères Cobalt pour mars 2027…\n\nBelle journée,\nAnthony' }),
-    lg('l2', 'p1', '2026-11-03', 'Mail', 'Camille Rouet', '**Prospection** — Frères Cobalt, mars 2027', { time: '09:40', full: 'Bonjour Camille,\n\nJe vous propose les Frères Cobalt, en tournée en mars 2027…' }),
-    lg('l3', 'p2', '2026-11-16', 'Appel', 'Julien Barre', 'Intéressé par Lune Ardente pour l’édition 2027. Attend la fiche technique et un ordre de prix.'),
-    lg('l4', 'p2', '2026-10-20', 'Mail', 'Julien Barre', '**Prospection** — Lune Ardente, été 2027', { time: '16:02' }),
+    lg('l2', 'p1', '2026-11-03', 'Mail', 'Camille Rouet', '**Prospection** — Frères Cobalt, mars 2027', { time: '09:40', msgid: '<p1-prosp@artbo.test>', full: 'Bonjour Camille,\n\nJe vous propose les Frères Cobalt, en tournée en mars 2027…' }),
+    lg('l3', 'p2', '2026-11-16', 'Appel', 'Inès Carrel', 'Intéressé par Lune Ardente pour l’édition 2027. Attend la fiche technique et un ordre de prix.'),
+    lg('l4', 'p2', '2026-10-20', 'Mail', 'Inès Carrel', '**Prospection** — Lune Ardente, été 2027', { time: '16:02' }),
     lg('l5', 'p3', '2026-11-20', 'RDV', 'Inès Moreau', 'Rendez-vous au salon : option posée sur le 6 février ; budget à confirmer par la mairie.'),
     lg('l6', 'p4', '2026-11-19', 'Mail', 'Paul Ledoux', '**Relance n°3** — Orchestre de Minuit', { time: '11:30' }),
     lg('l7', 'p4', '2026-11-19', 'Note', null, '**3 relances par mail sans réponse** (prospection le 15/10, relances les 26/10, 05/11, 19/11) : la prochaine relance se fait par téléphone.'),
     lg('l8', 'p5', '2026-11-24', 'Appel', 'Morgane Le Gall', 'Confirmation attendue la semaine prochaine ; hébergement réservé de leur côté.'),
-    lg('l9', 'p5', '2026-09-01', 'Mail', 'Morgane Le Gall', '**Prospection** — Frères Cobalt, décembre 2026', { time: '08:55' }),
+    lg('l9', 'p5', '2026-09-01', 'Mail', 'Morgane Le Gall', '**Prospection** — Frères Cobalt, décembre 2026', { time: '08:55', msgid: '<p5-prosp@artbo.test>' }),
     lg('l10', 'p10', '2026-11-25', 'Mail', 'Claire Vigier', '**Prospection** — Orchestre de Minuit, printemps 2027 (brouillon Gmail)', { draft: true, date: null }),
     lg('l11', 'p7', '2026-11-08', 'Mail', 'Lucie Fabre', 'Option posée pour le 10 juillet ; concert dans le jardin de l’Évêché.', { time: '14:20' }),
-    lg('l12', 'p11', '2026-11-18', 'Appel', 'Hugo Ménard', 'Option sur le 12 mars ; souhaite une date de repli le 13.'),
+    lg('l12', 'p11', '2026-11-18', 'Appel', 'Sarah Benali', 'Option sur le 12 mars ; souhaite une date de repli le 13.'),
   ];
   const FILES = [{ id: 'f1', prospect_id: 'p5', name: 'Contrat de co-réalisation — projet.pdf', date: '2026-11-24', size: '182 Ko' },
     { id: 'f2', prospect_id: 'p3', name: 'Fiche technique Nadia Ferrant Trio.pdf', date: '2026-11-20', size: '640 Ko' }];
   const tk = (id, p, title, deadline, auto, o = {}) => ({ id, prospect_id: p, title, deadline, status: 'To Do', auto_kind: auto, ...o });
   const TASKS = [
-    tk('t1', 'p1', 'Relance — Le Grand Kiosque', '2026-11-23', 'relance_mail'), tk('t2', 'p2', 'Rappeler Julien Barre', '2026-11-26', null),
+    tk('t1', 'p1', 'Relance — Le Grand Kiosque', '2026-11-23', 'relance_mail'), tk('t2', 'p2', 'Rappeler Inès Carrel', '2026-11-26', null),
     tk('t3', 'p3', 'Retour budget mairie', '2026-11-30', null), tk('t4', 'p4', 'Relance téléphone — Le Café des Rives', '2026-12-03', 'relance_tel'),
     tk('t5', 'p5', 'Envoyer la fiche technique', '2026-11-28', null), tk('t6', 'p10', 'Relance — Opéra de Limoges', '2026-12-07', 'relance_mail'),
   ];
 
   // ───────────────────────── État (le temps de la visite)
   const DB = { prospects: SEED.map(x => ({ ...x, project_ids: [...x.project_ids] })), logs: LOGS.map(x => ({ ...x })), files: FILES.map(x => ({ ...x })), tasks: TASKS.map(x => ({ ...x })) };
-  const SV = { q: '', status: '', projects: [], showInactive: false, showClosed: false, open: null, linger: {}, drafts: {}, target: undefined, targetFor: null, radius: 200,
+  const SV = { q: '', statuses: [], sort: null, projects: [], showInactive: false, showClosed: false, open: null, linger: {}, drafts: {}, target: undefined, targetFor: null, radius: 200,
     wsProject: null, pane: 'fiche', undo: null, draftSuivi: null, edit: null, dirty: false };
   const byId = id => DB.prospects.find(p => p.id === id);
   const stOf = id => { const s = BK().STRUCTS.find(x => x.id === id); if (s){ const c = BK().CITY[s.city] || []; return { ...s, lat: c[0], lng: c[1], dep: c[2], festival: /festival|rencontres/i.test(s.name) }; } return EXTRA_ST.find(x => x.id === id) || null; };
@@ -91,6 +91,9 @@
   const daysBetween = (a, b) => Math.round((X().day(b) - X().day(a)) / 864e5);
   const linger = id => { SV.linger[id] = Date.now() + 5000; setTimeout(() => { if (X().S.tab === 'suivi') X().renderMain(); }, 5050); };
   const sim = m => X().toast(m, 'info');
+  const ab = (act, ic, label, { cls = '', attrs = '' } = {}) => { const ph = X().device() === 'phone';
+    return `<button class="btn sm ${cls} ${ph ? 'icon' : ''}" type="button" data-act="${act}" ${attrs} ${ph ? `aria-label="${label}" title="${label}"` : ''}>${X().icon(ic, 'sm')}${ph ? '' : label}</button>`; };
+  const touch = p => { if (p) p.updated_at = TODAY; };
 
   // Dates rattachées : liées explicitement, ou même structure et même artiste ; sans les archivées (views/suivi.js showsOfSuivi)
   const showsOfSuivi = p => BK().DB.shows.filter(s => !s.archived_at && (s.prospect_id === p.id || (p.structure_id && s.structure_id === p.structure_id && p.project_ids.includes(s.project_id))))
@@ -99,68 +102,111 @@
   const suiviTasks = p => DB.tasks.filter(t => t.prospect_id === p.id && (!isDone(t) || lingering(t.id))).sort((a, b) => (a.deadline || '9999').localeCompare(b.deadline || '9999'));
   const here = p => p.place ? (p.place.lat != null ? [p.place.lat, p.place.lng] : null) : (st => st && st.lat != null ? [st.lat, st.lng] : null)(stOf(p.structure_id));
 
-  // ───────────────────────── Statut d'un suivi : libellé de main et jauge d'avancement (quatre étapes ; « Clos » hors parcours)
-  const stPill = st => { const i = ['Mailed', 'Interest', 'Option', 'Confirmed'].indexOf(st);
-    return `<span class="svp ${st === 'Closed' ? 'off' : ''}"><span class="svp-g" aria-hidden="true">${[0, 1, 2, 3].map(k => `<i class="${k <= i ? 'on' : ''}"></i>`).join('')}</span><span>${X().esc(LABEL[st])}</span></span>`; };
-  const stSelect = (p, id = 'sv-status') => `<label class="sv-stsel"><span class="sr">Statut du suivi</span><select class="input" id="${id}" data-svst="${p.id}">${PROSPECT.map(x => `<option value="${x}" ${x === p.status ? 'selected' : ''}>${LABEL[x]}</option>`).join('')}</select></label>`;
+  // Statut : marqueur selon les principes de Booking (contour → point → plein, mêmes couleurs), libellés de main inchangés
+  const SVMK = { Mailed: ['t-art', 'dash'], Interest: ['t-int', ''], Option: ['t-opt', 'dot'], Confirmed: ['t-conf', 'fill'], Closed: ['t-ss', 'ss'] };
+  const svMarker = (st, size = 12) => { const [tone, f] = SVMK[st] || SVMK.Mailed;
+    return `<svg class="mk ${tone} ${f === 'fill' ? 'fill' : ''} ${f === 'dash' ? 'dash' : ''}" width="${size}" height="${size}" viewBox="0 0 12 12" aria-hidden="true"><circle class="shape" cx="6" cy="6" r="4.3"/>${f === 'dot' ? '<circle cx="6" cy="6" r="1.7" fill="currentColor"/>' : f === 'ss' ? '<path class="shape" d="M3.6 6h4.8"/>' : ''}</svg>`; };
+  const stPill = st => `<span class="st">${svMarker(st)}<span>${X().esc(LABEL[st])}</span></span>`;
+  const stSelect = (p, id = 'sv-status') => `<label class="sv-stsel"><span class="sr">Statut du suivi</span>${svMarker(p.status)}<select class="input" id="${id}" data-svst="${p.id}">${PROSPECT.map(x => `<option value="${x}" ${x === p.status ? 'selected' : ''}>${LABEL[x]}</option>`).join('')}</select></label>`;
   const urgency = t => { if (!t.deadline || isDone(t)) return null; const d = daysBetween(TODAY, t.deadline);
     return d < 0 ? { cls: 'late', l: `En retard de ${-d} j` } : d === 0 ? { cls: 'today', l: 'Aujourd’hui' } : d <= 3 ? { cls: 'soon', l: `Dans ${d} j` } : { cls: '', l: `Le ${BK().fmtMed(t.deadline)}` }; };
 
-  // ───────────────────────── Liste
+  // ───────────────────────── Liste : tri (ponctuel ou par défaut), filtres, colonnes personnalisables (composant commun)
+  const SORTS = [['modified', 'Dernière modification', 'plus ancienne d’abord', 'plus récente d’abord'], ['last', 'Dernier échange', 'plus ancien d’abord', 'plus récent d’abord'],
+    ['created', 'Date de création', 'plus ancienne d’abord', 'plus récente d’abord'], ['structure', 'Structure', 'A → Z', 'Z → A'], ['artists', 'Artiste', 'A → Z', 'Z → A'],
+    ['status', 'Statut', 'du premier au dernier stade', 'du dernier au premier stade']];
+  const DATE_KEYS = ['modified', 'last', 'created'];
+  const parseSort = v => { const [key, dir] = String(v || '').split(':'); return SORTS.some(x => x[0] === key) && ['asc', 'desc'].includes(dir) ? { key, dir } : null; };
+  const defSort = () => parseSort(X().P.svSort) || { key: 'last', dir: 'desc' };
+  const sortNow = () => SV.sort || defSort();
+  const sortTxt = s => { const d = SORTS.find(x => x[0] === s.key); return `${d[1]} (${s.dir === 'asc' ? d[2] : d[3]})`; };
+  const sortVal = (p, k) => k === 'modified' ? p.updated_at : k === 'last' ? lastExchange(p) : k === 'created' ? p.created_at : k === 'structure' ? X().norm(stOf(p.structure_id)?.name || '')
+    : k === 'artists' ? X().norm(projNames(p)) : k === 'status' ? String(PROSPECT.indexOf(p.status)) : '';
+  const COLS = [
+    { k: 'structure', l: 'Structure', w: 240 }, { k: 'artists', l: 'Artiste(s)', w: 170, asc: 'A → Z', desc: 'Z → A' }, { k: 'status', l: 'Statut', w: 140, asc: 'du premier au dernier stade', desc: 'du dernier au premier stade' },
+    { k: 'last', l: 'Dernier échange', w: 146, asc: 'plus ancien d’abord', desc: 'plus récent d’abord' }, { k: 'modified', l: 'Dernière modification', w: 150, hidden: true, asc: 'plus ancienne d’abord', desc: 'plus récente d’abord' },
+    { k: 'created', l: 'Création', w: 110, hidden: true, asc: 'plus ancienne d’abord', desc: 'plus récente d’abord' }, { k: 'journal', l: 'Journal', w: 84, num: true }, { k: 'files', l: 'Fichiers', w: 84, num: true },
+    { k: 'summary', l: 'Résumé', w: 380 },
+  ];
+  COLS[0].asc = 'A → Z'; COLS[0].desc = 'Z → A';
+  const GR = window.MX_GRID.make({ p: 'sv', cols: COLS, pref: 'svCols', locked: ['structure'], defPin: ['structure'], sortable: SORTS.map(x => x[0]),
+    onSort: (k, dir) => { const cur = sortNow(); SV.sort = { key: k, dir: dir || (cur.key === k ? (cur.dir === 'asc' ? 'desc' : 'asc') : (DATE_KEYS.includes(k) ? 'desc' : 'asc')) };
+      if (X().same(SV.sort, defSort())) SV.sort = null; } });
   const projOk = p => SV.projects.length ? p.project_ids.some(x => SV.projects.includes(x)) : (SV.showInactive || !p.project_ids.length || p.project_ids.some(x => BK().proj(x)?.active));
   function rows(){
-    const { norm } = X();
-    let l = DB.prospects.filter(p => projOk(p) && (!SV.status || p.status === SV.status));
-    const nClosed = SV.status ? 0 : l.filter(p => suiviClosed(p) && !lingering(p.id)).length;
-    if (!SV.status && !SV.showClosed) l = l.filter(p => !suiviClosed(p) || lingering(p.id));
+    const { norm } = X(), multi = SV.statuses.length;
+    let l = DB.prospects.filter(p => projOk(p) && (!multi || SV.statuses.includes(p.status)));
+    const nClosed = multi ? 0 : l.filter(p => suiviClosed(p) && !lingering(p.id)).length;
+    if (!multi && !SV.showClosed) l = l.filter(p => !suiviClosed(p) || lingering(p.id));          // statuts choisis : affichés tels quels (comme le filtre de main)
     const w = norm(SV.q).split(/\s+/).filter(Boolean);
     if (w.length) l = l.filter(p => { const st = stOf(p.structure_id); const h = norm(`${st?.name || ''} ${st?.city || ''} ${projNames(p)} ${p.summary}`); return w.every(x => h.includes(x)); });
-    l = l.map(p => ({ p, last: lastExchange(p) })).sort((a, b) => (b.last || '').localeCompare(a.last || '') || (b.p.updated_at || '').localeCompare(a.p.updated_at || ''));
+    const s = sortNow(), m = s.dir === 'asc' ? 1 : -1;
+    l = l.map(p => ({ p, last: lastExchange(p), v: sortVal(p, s.key) })).sort((a, b) => (!a.v && b.v ? 1 : a.v && !b.v ? -1 : m * String(a.v).localeCompare(String(b.v), 'fr'))
+      || (b.last || '').localeCompare(a.last || '') || (b.p.updated_at || '').localeCompare(a.p.updated_at || ''));
     return { l, nClosed };
   }
   const plain = t => String(t || '').replace(/\*\*/g, '').replace(/^- /gm, '').replace(/\n/g, ' · ');
   function stats(){
     const act = DB.prospects.filter(p => projOk(p) && !suiviClosed(p));
     const late = DB.tasks.filter(t => !isDone(t) && t.auto_kind && t.deadline < TODAY && act.some(p => p.id === t.prospect_id)).length;
-    return `<dl class="bk-stats" aria-label="Suivis actifs"><div class="bks"><dt>Actifs</dt><dd class="bks-v">${act.length}</dd></div>
-      ${['Mailed', 'Interest', 'Option'].map(k => `<div class="bks"><dt>${LABEL[k]}</dt><dd class="bks-v">${act.filter(p => p.status === k).length}</dd></div>`).join('')}
+    return `<dl class="bk-stats sv-stats" aria-label="Suivis actifs"><div class="bks"><dt>Actifs</dt><dd class="bks-v">${act.length}</dd></div>
+      ${['Mailed', 'Interest', 'Option'].map(k => `<div class="bks"><dt>${svMarker(k, 10)}${LABEL[k]}</dt><dd class="bks-v">${act.filter(p => p.status === k).length}</dd></div>`).join('')}
       <div class="bks"><dt>Relances en retard</dt><dd class="bks-v ${late ? 'sv-late' : ''}">${late}</dd></div></dl>`;
   }
+  const sortSel = id => `<label class="sv-sortl" for="${id}"><span class="sr">Trier par</span>${X().icon('arrow-down-up', 'sm')}<select class="input bk-sel" id="${id}" data-sv="sort">${SORTS.flatMap(([k, l, a, d]) =>
+    [['desc', d], ['asc', a]].map(([dir, t]) => `<option value="${k}:${dir}" ${sortNow().key === k && sortNow().dir === dir ? 'selected' : ''}>${X().esc(`${l} — ${t}`)}</option>`)).join('')}</select></label>`;
+  const sortNote = () => { const s = sortNow(), adhoc = !!SV.sort;
+    return `<span class="sv-sortnote">${adhoc ? `Tri : <b>${X().esc(sortTxt(s))}</b> <button class="btn ghost sm" type="button" data-act="svSortSave">Utiliser par défaut</button><button class="btn ghost sm" type="button" data-act="svSortBack">Tri par défaut</button>`
+      : `<span class="hint">Tri par défaut : ${X().esc(sortTxt(s))}</span>`}</span>`; };
   function toolbar(nClosed){
-    const { esc, icon, device } = X(), phone = device() === 'phone', na = SV.projects.length, ns = [SV.showInactive, SV.showClosed].filter(Boolean).length;
+    const { esc, icon, device } = X(), phone = device() === 'phone', na = SV.projects.length, ns = [SV.showInactive, SV.showClosed].filter(Boolean).length, nst = SV.statuses.length;
     const search = `<label class="bk-search">${icon('search', 'sm')}<input type="search" id="sv-q" value="${esc(SV.q)}" placeholder="Structure, ville, mot du résumé…" aria-label="Rechercher dans les suivis" autocomplete="off"></label>`;
-    const status = `<select class="input bk-sel" id="sv-st" data-sv="status" aria-label="Statut"><option value="">Tous les statuts</option>${PROSPECT.map(x => `<option value="${x}" ${x === SV.status ? 'selected' : ''}>${LABEL[x]}</option>`).join('')}</select>`;
-    if (phone) return `<div class="bk-bar">${search}<div class="bk-bar2"><button class="btn sm bk-fbtn" type="button" data-act="svFilters">${icon('sliders-horizontal', 'sm')}Filtres${na + ns + (SV.status ? 1 : 0) ? `<span class="count">${na + ns + (SV.status ? 1 : 0)}</span>` : ''}</button>
-      <span class="grow"></span><button class="btn sm icon" type="button" data-act="svExport" aria-label="Exporter les suivis">${icon('download', 'sm')}</button>
-      <button class="btn sm primary icon" type="button" data-act="svNew" aria-label="Nouveau suivi">${icon('plus', 'sm')}</button></div></div>`;
-    return `<div class="bk-bar"><div class="bk-f">${search}${status}
+    const nf = na + ns + nst;
+    if (phone) return `<div class="bk-bar"><div class="bk-bar1">${search}<button class="btn sm icon" type="button" data-act="svExport" aria-label="Exporter les suivis">${icon('download', 'sm')}</button>
+      <button class="btn sm primary icon" type="button" data-act="svNew" aria-label="Nouveau suivi">${icon('plus', 'sm')}</button></div>
+      <div class="bk-bar2"><button class="btn sm icon bk-fbtn" type="button" data-act="svFilters" aria-label="Filtres${nf ? ` (${nf} actifs)` : ''}">${icon('sliders-horizontal', 'sm')}${nf ? `<span class="count">${nf}</span>` : ''}</button>${sortSel('sv-sort')}</div></div>`;
+    return `<div class="bk-bar"><div class="bk-f">${search}
+      <button class="chipbtn ${nst ? 'on' : ''}" type="button" data-act="svStatuses" aria-haspopup="dialog">Statuts${nst ? `<span class="n">${nst}</span>` : ''}${icon('chevron-down', 'sm')}</button>
       <button class="chipbtn ${na ? 'on' : ''}" type="button" data-act="svArtists" aria-haspopup="dialog">Artistes${na ? `<span class="n">${na}</span>` : ''}${icon('chevron-down', 'sm')}</button>
       <button class="chipbtn ${ns ? 'on' : ''}" type="button" data-act="svDisplay" aria-haspopup="dialog">${icon('sliders-horizontal', 'sm')}Affichage${ns ? `<span class="n">${ns}</span>` : ''}${icon('chevron-down', 'sm')}</button></div>
-      <div class="bk-v"><span class="hint">${nClosed ? `${nClosed} suivi${nClosed > 1 ? 's' : ''} clos masqué${nClosed > 1 ? 's' : ''}` : ''}</span></div></div>`;
+      <div class="bk-v">${sortNote()}${GR.colsBtn()}</div></div>
+      ${nClosed ? `<p class="hint sv-closedn">${nClosed} suivi${nClosed > 1 ? 's' : ''} clos masqué${nClosed > 1 ? 's' : ''} (Affichage › Suivis clos)</p>` : ''}`;
   }
   const activeRow = () => { const { esc, icon } = X(), a = [];
-    if (SV.q) a.push(['q', `Recherche : « ${SV.q} »`]); if (SV.status) a.push(['status', `Statut : ${LABEL[SV.status]}`]);
+    if (SV.q) a.push(['q', `Recherche : « ${SV.q} »`]); SV.statuses.forEach(k => a.push(['st:' + k, `Statut : ${LABEL[k]}`]));
     SV.projects.forEach(id => a.push(['proj:' + id, projName(id)])); if (SV.showInactive) a.push(['showInactive', 'Artistes inactifs affichés']); if (SV.showClosed) a.push(['showClosed', 'Suivis clos affichés']);
     return a.length ? `<div class="bk-active" aria-label="Filtres actifs">${a.map(([k, l]) => `<button class="fchip" type="button" data-act="svUnset" data-k="${esc(k)}" aria-label="Retirer le filtre ${esc(l)}">${esc(l)}${icon('x', 'sm')}</button>`).join('')}
       <button class="btn ghost sm" type="button" data-act="svReset">Réinitialiser les filtres</button></div>` : ''; };
+  function cell(k, p, last){
+    const { esc } = X(), st = stOf(p.structure_id);
+    switch (k){
+      case 'structure': return `<b class="sv-name">${esc(st?.name || 'Sans structure')}</b><span class="sv-sub">${esc([st?.city, st?.dep && `(${st.dep})`].filter(Boolean).join(' '))}</span>`;
+      case 'artists': return esc(projNames(p)) || '<span class="muted">—</span>';
+      case 'status': return stPill(p.status);
+      case 'last': return last ? `<span class="mono">${esc(fmtD(last))}</span>` : '<span class="muted">—</span>';
+      case 'modified': return `<span class="mono">${esc(fmtD(p.updated_at))}</span>`;
+      case 'created': return `<span class="mono">${esc(fmtD(p.created_at))}</span>`;
+      case 'journal': return String(logsOf(p.id).length || '');
+      case 'files': return String(filesOf(p.id).length || '');
+      case 'summary': return esc(plain(p.summary || p.content_md)) || '<span class="muted">—</span>';
+    }
+    return '';
+  }
+  const full = (k, p) => k === 'artists' ? projNames(p) : k === 'summary' ? plain(p.summary || p.content_md) : '';
   function listPage(){
     const { pageHead, D, esc, icon, device } = X(), t = { ...D.MODULES.flatMap(m => m.tabs.map(x => ({ ...x, module: m }))).find(x => x.id === 'suivi') };
-    const { l, nClosed } = rows(), phone = device() === 'phone';
+    const { l, nClosed } = rows(), phone = device() === 'phone', cols = GR.shown(), s = sortNow();
     const acts = phone ? '' : `<button class="btn sm" type="button" data-act="svExport">${icon('download', 'sm')}Exporter</button><button class="btn sm primary" type="button" data-act="svNew">${icon('plus', 'sm')}Nouveau suivi</button>`;
-    const empty = `<div class="bk-empty"><p>Aucun suivi${SV.q || SV.status || SV.projects.length ? ' pour ces filtres' : ''}.</p></div>`;
-    const tr = ({ p, last }, i) => { const st = stOf(p.structure_id), nl = logsOf(p.id).length, nf = filesOf(p.id).length;
+    const empty = `<div class="bk-empty"><p>Aucun suivi${SV.q || SV.statuses.length || SV.projects.length ? ' pour ces filtres' : ''}.</p></div>`;
+    const tr = ({ p, last }, i) => { const st = stOf(p.structure_id);
       return `<tr class="bk-row sv-row ${i % 2 ? 'alt' : ''} ${lingering(p.id) ? 'leaving' : ''}" data-svid="${p.id}" tabindex="0" aria-label="${esc(`${st?.name || 'Suivi sans structure'}, ${projNames(p)}, ${LABEL[p.status]}. Ouvrir le suivi`)}">
-        <td class="c-st"><b class="sv-name">${esc(st?.name || 'Sans structure')}</b><span class="sv-sub">${esc([st?.city, st?.dep && `(${st.dep})`].filter(Boolean).join(' '))}</span></td>
-        <td>${esc(projNames(p)) || '<span class="muted">—</span>'}</td><td>${stPill(p.status)}</td>
-        <td class="mono">${last ? esc(fmtD(last)) : '<span class="muted">—</span>'}</td><td class="num">${nl || ''}</td><td class="num">${nf || ''}</td>
-        <td class="sv-sum">${esc(plain(p.summary || p.content_md).slice(0, 200)) || '<span class="muted">—</span>'}</td></tr>`; };
-    const table = l.length ? `<div class="bk-tw"><table class="bkt svt" aria-label="Suivis, du dernier échange le plus récent au plus ancien"><colgroup><col class="w-st"><col class="w-a"><col class="w-s"><col class="w-d"><col class="w-n"><col class="w-n"><col></colgroup>
-        <thead><tr><th scope="col">Structure</th><th scope="col">Artiste(s)</th><th scope="col">Statut</th><th scope="col">Dernier échange</th><th scope="col" class="num">Journal</th><th scope="col" class="num">Fichiers</th><th scope="col">Résumé</th></tr></thead>
+        ${cols.map(k => `<td class="${GR.cls(k)}" ${full(k, p) ? `title="${esc(full(k, p))}"` : ''}>${cell(k, p, last)}</td>`).join('')}</tr>`; };
+    const table = l.length ? `<div class="bk-tw"><table class="bkt svt ${X().P.svWrap ? 'wrap' : ''}" data-grid="sv" aria-label="Suivis triés par ${esc(sortTxt(s).toLowerCase())}">${GR.head({ sort: s })}
         <tbody>${l.slice(0, 500).map(tr).join('')}</tbody></table></div>` : empty;
     const list = l.length ? `<div class="bkm svm">${l.map(({ p, last }) => { const st = stOf(p.structure_id);
       return `<div class="bkm-row ${lingering(p.id) ? 'leaving' : ''}"><button class="bkm-main" type="button" data-act="svOpen" data-id="${p.id}" aria-label="${esc(`${st?.name || 'Sans structure'}, ${projNames(p)}, ${LABEL[p.status]}. Ouvrir le suivi`)}">
-        <span class="bkm-b" aria-hidden="true"><span class="bkm-l1"><b>${esc(st?.name || 'Sans structure')}</b></span><span class="bkm-l2">${esc([st?.city, projNames(p)].filter(Boolean).join(' · '))}</span>
-        <span class="bkm-l3">${stPill(p.status)}<span class="mono">${last ? esc(BK().fmtMed(last)) : ''}</span></span></span></button></div>`; }).join('')}</div>` : empty;
+        <span class="bkm-b" aria-hidden="true"><span class="bkm-l1"><b>${esc(st?.name || 'Sans structure')}</b><span class="mono">${['modified', 'created'].includes(s.key) ? esc(BK().fmtMed(sortVal(p, s.key))) : last ? esc(BK().fmtMed(last)) : ''}</span></span>
+        <span class="bkm-l2 ${X().P.svWrap ? 'wrap' : ''}">${esc([st?.city, projNames(p)].filter(Boolean).join(' · '))}</span><span class="bkm-l3">${stPill(p.status)}</span></span></button></div>`; }).join('')}</div>` : empty;
     return pageHead(t, { acts }) + stats() + toolbar(nClosed) + activeRow() + undoBar() + (phone ? list : table);
   }
   const undoBar = () => { const u = SV.undo; if (!u || u.until < Date.now()) return '';
@@ -205,16 +251,14 @@
   }
   function card(p){
     const { esc, icon } = X(), logs = logsOf(p.id), files = filesOf(p.id), tasks = suiviTasks(p), d = SV.drafts[p.id] || {};
-    const headRow = `<div class="sv-head"><div class="sv-chips">${p.project_ids.map(id => `<span class="tag">${esc(projName(id))}</span>`).join('')}
-        <button class="btn ghost sm" type="button" data-act="svArtistsEdit">${icon('pencil', 'sm')}Artistes</button></div>
+    const headRow = `<div class="sv-head"><button class="input sv-msel" type="button" data-act="svArtistsPick" aria-haspopup="dialog" aria-label="Artistes du suivi : ${esc(projNames(p) || 'aucun')}">
+        <span class="sv-msel-v">${esc(projNames(p)) || '<span class="muted">Choisir les artistes…</span>'}</span></button>
       ${stSelect(p)}<span class="hint">Dernier échange : ${lastExchange(p) ? esc(fmtD(lastExchange(p))) : '—'}</span></div>${mailState(p)}`;
     const summary = `<section class="sv-card" aria-labelledby="sv-sum-h"><div class="sv-hrow"><h2 class="sv-h" id="sv-sum-h">Résumé des échanges</h2>
-        <button class="btn sm" type="button" data-act="svAi">${icon('sparkles', 'sm')}Mettre à jour avec l’IA</button>
-        <button class="btn ghost sm" type="button" data-act="svText" data-f="summary">Modifier</button>
-        <button class="btn ghost sm" type="button" data-act="svCopy" title="Copie le suivi pour le coller dans ChatGPT">Copier pour ChatGPT</button></div>
+        ${ab('svAi', 'sparkles', 'Mettre à jour avec l’IA')}${ab('svText', 'pencil', 'Modifier', { cls: 'ghost', attrs: 'data-f="summary"' })}${ab('svCopy', 'copy', 'Copier pour ChatGPT', { cls: 'ghost' })}</div>
       <div class="sv-md">${md(p.summary) || '<p class="muted">Pas encore de résumé.</p>'}</div></section>`;
     const tasksH = `<section class="sv-card" aria-labelledby="sv-tk-h"><div class="sv-hrow"><h2 class="sv-h" id="sv-tk-h">Tâches <span class="count">${tasks.filter(t => !isDone(t)).length}</span></h2>
-        <button class="btn sm" type="button" data-act="svTaskNew">${icon('plus', 'sm')}Nouvelle tâche</button></div>
+        ${ab('svTaskNew', 'plus', 'Nouvelle tâche')}</div>
       ${tasks.length ? `<ul class="sv-tasks">${tasks.map(t => { const u = urgency(t);
         return `<li class="${isDone(t) ? 'done' : ''} ${lingering(t.id) ? 'leaving' : ''}"><label class="sv-tchk"><input type="checkbox" data-svtask="${t.id}" ${isDone(t) ? 'checked' : ''}><span class="sr">Marquer « ${esc(t.title)} » comme faite</span></label>
           <span class="sv-tt"><b>${esc(t.title)}</b>${t.auto_kind ? `<span class="hint">${t.auto_kind === 'relance_tel' ? 'Relance téléphone automatique' : 'Relance automatique'}</span>` : ''}</span>
@@ -222,7 +266,7 @@
           <span class="sv-ta"><button class="btn ghost sm" type="button" data-act="svTaskEdit" data-id="${t.id}">Détails</button>
           ${t.auto_kind === 'relance_tel' && !isDone(t) && !suiviClosed(p) ? `<button class="btn ghost sm danger" type="button" data-act="svNoAnswer" data-id="${t.id}">Pas de réponse : clore</button>` : ''}</span></li>`; }).join('')}</ul>`
         : '<p class="muted">Aucune tâche liée à ce suivi.</p>'}</section>`;
-    const thread = [...logs.map(l => ({ l, at: l.date || '9999' })), ...files.map(f => ({ f, at: f.date }))].sort((a, b) => b.at.localeCompare(a.at));
+    const thread = [...logs.map(l => ({ l, at: l.date || '9999' })), ...files.filter(f => !f.log).map(f => ({ f, at: f.date }))].sort((a, b) => b.at.localeCompare(a.at));
     const journal = `<section class="sv-card" aria-labelledby="sv-j-h"><div class="sv-hrow"><h2 class="sv-h" id="sv-j-h">Journal des échanges <span class="count">${logs.length}</span>${files.length ? `<span class="hint">· ${files.length} pièce${files.length > 1 ? 's' : ''} jointe${files.length > 1 ? 's' : ''}</span>` : ''}</h2></div>
       <form class="sv-logf" id="sv-logf" data-svlog="${p.id}">
         <div class="sv-logr"><label class="field"><span>Date</span><input class="input" type="date" name="date" value="${esc(d.date || TODAY)}"></label>
@@ -230,18 +274,25 @@
         <label class="field sv-who"><span>Interlocuteur</span><input class="input" name="who" list="sv-dlwho" value="${esc(d.who || '')}" autocomplete="off"><datalist id="sv-dlwho">${(CONTACTS[p.structure_id] || []).map(c => `<option value="${esc(c[1])}">`).join('')}</datalist></label></div>
         <label class="field"><span>Notes de l’échange</span><textarea class="input" name="body" rows="3" placeholder="Gardées en brouillon tant que tu ne les ajoutes pas">${esc(d.body || '')}</textarea></label>
         <div class="sv-loga"><button class="btn primary sm" type="submit">Ajouter au journal</button>${(d.body || d.who) ? `<span class="hint">Brouillon enregistré</span><button class="btn ghost sm" type="button" data-act="svDraftClear">Effacer le brouillon</button>` : ''}
-          <span class="grow"></span><label class="btn ghost sm sv-drop">${icon('paperclip', 'sm')}Joindre un fichier<input type="file" id="sv-file" multiple class="sr"></label>
-          <button class="btn ghost sm" type="button" data-act="svSim" data-m="Retrouver un mail dans la messagerie : recherche non simulée">Retrouver un mail</button></div></form>
-      <ol class="sv-thread">${thread.map(x => x.f ? `<li class="sv-log is-file"><div class="sv-lh">${icon('paperclip', 'sm')}<b>${esc(fmtD(x.f.date))}</b><span>Pièce jointe</span></div><p class="sv-file">${esc(x.f.name)} <span class="hint">${esc(x.f.size)}</span></p></li>`
+</div></form>
+      <div class="sv-dropzone" data-svdrop="${p.id}" role="group" aria-labelledby="sv-dz-h"><span class="sv-dz-ic" aria-hidden="true">${icon('inbox')}</span>
+        <div class="sv-dz-b"><b id="sv-dz-h">Pièces jointes et mails</b><span class="hint">Glisse ici des fichiers ou des mails (depuis Mail ou en .eml) : un mail s’ajoute aussi au journal, avec ses pièces jointes.</span></div>
+        <div class="sv-dz-a"><label class="btn sm sv-drop">${icon('paperclip', 'sm')}Ajouter un fichier<input type="file" id="sv-file" multiple class="sr"></label>
+        <button class="btn ghost sm" type="button" data-act="svFindMail">${icon('search', 'sm')}Retrouver un mail</button></div></div>
+      <ol class="sv-thread">${thread.map(x => x.f ? `<li class="sv-log is-file"><div class="sv-lh">${icon('paperclip', 'sm')}<b>${esc(fmtD(x.f.date))}</b><span>Pièce jointe${x.f.mail ? ' du mail' : ''}</span></div>${fileRow(x.f)}</li>`
         : `<li class="sv-log ${x.l.draft ? 'is-draft' : ''}"><div class="sv-lh">${icon(LOG_ICON[x.l.kind] || 'notebook-pen', 'sm')}<b>${x.l.date ? esc(fmtD(x.l.date)) : 'Sans date'}</b>${x.l.time ? `<span class="mono">${esc(x.l.time)}</span>` : ''}${x.l.contact_name ? `<span>· ${esc(x.l.contact_name)}</span>` : ''}${x.l.draft ? '<span class="tag">Brouillon</span>' : ''}
           <span class="grow"></span>${x.l.full ? `<button class="btn ghost sm" type="button" data-act="svRead" data-id="${x.l.id}">Lire en entier</button>` : ''}${x.l.draft ? `<button class="btn sm" type="button" data-act="svSent" data-id="${x.l.id}">Marquer envoyé</button>` : ''}
           <button class="btn ghost sm" type="button" data-act="svLogEdit" data-id="${x.l.id}">Modifier</button><button class="btn ghost sm icon danger" type="button" data-act="svLogDel" data-id="${x.l.id}" aria-label="Supprimer l’entrée du ${esc(fmtD(x.l.date) || 'journal')}">${icon('trash-2', 'sm')}</button></div>
-          <div class="sv-md">${md(x.l.body)}</div></li>`).join('') || '<li class="muted">Aucun échange enregistré.</li>'}</ol></section>`;
+          <div class="sv-md">${md(x.l.body)}</div>${filesOfLog(x.l).map(fileRow).join('')}</li>`).join('') || '<li class="muted">Aucun échange enregistré.</li>'}</ol></section>`;
     const notes = `<section class="sv-card" aria-labelledby="sv-n-h"><div class="sv-hrow"><h2 class="sv-h" id="sv-n-h">Autres notes</h2><button class="btn ghost sm" type="button" data-act="svText" data-f="content_md">Modifier</button></div>
       <div class="sv-md">${md(p.content_md) || '<p class="muted">—</p>'}</div>
       <div class="sv-danger"><button class="btn ghost sm danger" type="button" data-act="svDelete">${icon('trash-2', 'sm')}Supprimer le suivi…</button></div></section>`;
     return `<section class="sv-card sv-headcard" aria-label="Statut du suivi">${headRow}</section>${summary}${tasksH}${journal}${notes}`;
   }
+  // Un mail importé garde son original (.eml) et ses pièces jointes affichés AVEC son entrée du journal (comme main)
+  const filesOfLog = l => DB.files.filter(f => f.log === l.id);
+  const fileRow = f => `<p class="sv-file">${X().icon(f.eml ? 'mail' : 'paperclip', 'sm')}<button class="linkbtn" type="button" data-act="svSim" data-m="Ouverture du fichier « ${X().esc(f.name)} » : non simulée">${X().esc(f.name)}</button><span class="hint">${X().esc(f.size)}</span>
+    <button class="btn ghost sm icon danger" type="button" data-act="svFileDel" data-id="${f.id}" aria-label="Supprimer ${X().esc(f.name)}">${X().icon('trash-2', 'sm')}</button></p>`;
   // Markdown réduit (gras, italique, puces) : texte échappé d'abord
   const md = t => { if (!t) return ''; const e = X().esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/_(.+?)_/g, '<i>$1</i>');
     const lines = e.split('\n'); let out = '', ul = false;
@@ -252,7 +303,7 @@
     const { esc, icon, eur } = X(), B = BK(), ids = p.project_ids;
     const active = linked.filter(s => !B.isOff(s.status) && ids.includes(s.project_id)), others = linked.filter(s => !active.includes(s));
     const row = s => `<li class="sv-dr ${s.date === SV.target ? 'target' : ''}"><span class="sv-dd"><b>${esc(B.fmtMed(s.date))}</b><span class="hint">${s.date.slice(0, 4)}</span></span>
-      <span class="sv-db"><b>${esc(projName(s.project_id))}</b> <span class="muted">${esc(s.venue)}</span><span class="sv-dst">${B.statusSel(s)}${s.fee_ht ? `<span class="mono">${esc(eur(s.fee_ht))} HT</span>` : ''}</span></span>
+      <span class="sv-db"><b>${esc(projName(s.project_id))}</b> <span class="muted">${esc(s.venue)}</span>${s.prospect_id === p.id ? `<span class="sv-link on">${icon('link', 'sm')}Rattachée à ce suivi</span>` : '<span class="sv-link">Même structure et même artiste</span>'}<span class="sv-dst">${B.statusSel(s)}${s.fee_ht ? `<span class="mono">${esc(eur(s.fee_ht))} HT</span>` : ''}</span></span>
       <span class="sv-da"><button class="btn sm" type="button" data-act="svShowEdit" data-id="${s.id}">Modifier</button>${s.date !== SV.target ? `<button class="btn ghost sm" type="button" data-act="svCenter" data-d="${s.date}">Centrer</button>` : ''}
         ${s.prospect_id === p.id ? `<button class="btn ghost sm" type="button" data-act="svDetach" data-id="${s.id}" title="Retire seulement le lien avec ce suivi : rien n’est supprimé">Détacher</button>` : ''}</span></li>`;
     const candidates = B.DB.shows.filter(s => !s.archived_at && ids.includes(s.project_id) && !linked.includes(s));
@@ -318,6 +369,7 @@
   }
   let mapRO = null;
   function after(main){
+    GR.after(main);
     if (mapRO) mapRO.disconnect(); const m = X().$('.sv-map', main);
     if (m){ placeMap(m); mapRO = new ResizeObserver(() => placeMap(m)); mapRO.observe(m); }
   }
@@ -341,19 +393,19 @@
     if (suiviClosed({ status: v })){
       const undo = DB.tasks.filter(t => t.prospect_id === p.id && ['relance_mail', 'relance_tel'].includes(t.auto_kind) && !isDone(t)).map(t => [t, t.status]);
       undo.forEach(([t]) => { t.status = 'Cancelled'; });                                   // relances automatiques retirées (prospection.js cancelAutoRelances)
-      p.status = v; linger(p.id);
+      p.status = v; touch(p); linger(p.id);
       SV.undo = { id: p.id, before, tasks: undo, until: Date.now() + 5000, msg: v === 'Confirmed' ? 'Suivi confirmé : rangé dans les suivis clos (relances automatiques retirées)' : 'Suivi clos (relances automatiques retirées)' };
       setTimeout(() => { if (SV.undo && SV.undo.until <= Date.now()){ SV.undo = null; if (X().S.tab === 'suivi') X().renderMain(); } }, 5100);
       rr('#' + (el?.id || 'sv-status')); return;
     }
-    p.status = v; p.updated_at = TODAY; rr('#' + (el?.id || 'sv-status')); X().toast('Statut du suivi enregistré');
+    touch(p); p.status = v; rr('#' + (el?.id || 'sv-status')); X().toast('Statut du suivi enregistré');
   }
   function addLog(form){
     const p = byId(form.dataset.svlog), f = new FormData(form), body = String(f.get('body') || '').trim(), who = String(f.get('who') || '').trim();
     if (!body && !who){ X().toast('Écris les notes de l’échange', 'triangle-alert'); form.elements.body.focus(); return; }
     const date = f.get('date') || TODAY;
     DB.logs.push({ id: 'l' + Date.now(), prospect_id: p.id, date, time: null, kind: f.get('kind'), contact_name: who || null, body, mail: false, draft: false });
-    p.last_contact = [p.last_contact, date].filter(Boolean).sort().pop(); delete SV.drafts[p.id];
+    p.last_contact = [p.last_contact, date].filter(Boolean).sort().pop(); touch(p); delete SV.drafts[p.id];
     rr('#sv-logf textarea'); X().toast('Ajouté au journal');
   }
   function textPanel(p, f){
@@ -386,13 +438,65 @@
     openPanel('svread', panelShell(l.body.replace(/\*\*/g, '').split('\n')[0], 'Mail', `<p class="hint">${esc([fmtD(l.date), l.time, l.contact_name].filter(Boolean).join(' · '))}</p><pre class="sv-mailtext">${esc(l.full)}</pre>
       <p class="hint">Texte intégral fictif. Dans MATRICE : message exact de la messagerie (pièces jointes, images, liens).</p>`, '<span class="grow"></span><button class="btn" type="button" data-act="closePanel">Fermer</button>'), { full: device() === 'phone' });
   }
-  function artistsEdit(p){
-    const { panelShell, openPanel, esc, device } = X();
-    SV.edit = { kind: 'artists', id: p.id }; SV.dirty = false; X().EXT.guard = () => SV.dirty;
-    const list = BK().PROJECTS.filter(x => x.active || p.project_ids.includes(x.id));
-    openPanel('svart', panelShell('Artistes du suivi', 'Suivi', `<form id="sv-form" class="sv-pform"><fieldset class="sv-checks"><legend>Artiste(s) concerné(s)</legend>${list.map(x => `<label class="chk"><input type="checkbox" name="pids" value="${x.id}" ${p.project_ids.includes(x.id) ? 'checked' : ''}><span>${esc(x.name)}${x.active ? '' : ' <span class="tag">inactif</span>'}</span></label>`).join('')}</fieldset>
-      <p class="hint">Choisis explicitement : jamais repris du filtre d’affichage (règle de main).</p></form>`,
-      '<span class="grow"></span><button class="btn" type="button" data-act="closePanel">Annuler</button><button class="btn primary" type="submit" form="sv-form">Enregistrer</button>'), { full: device() === 'phone' });
+  // ───────────────────────── Import des pièces jointes et des mails (repris de main : events.js, data.js uploadFiles, prospection.js findMail)
+  // Un .eml : clé « msgid:<Message-ID> » ; déjà dans ce suivi → refusé ; dans un autre suivi → refusé avec accès à ce suivi ;
+  // sinon entrée « Mail » au journal (objet, date, De / À, texte) + original conservé ; autre fichier → pièce jointe du suivi.
+  // Texte seul (objet glissé depuis la liste d'Apple Mail par Safari) → rien n'est joint : « Retrouver un mail » sur cet objet.
+  const MAILBOX = [
+    { id: '<p1-prosp@artbo.test>', subject: 'Frères Cobalt — mars 2027', from: 'Anthony', to: 'Camille Rouet', date: '2026-11-03', body: 'Bonjour Camille,\n\nJe vous propose les Frères Cobalt, en tournée en mars 2027…' },
+    { id: '<p5-prosp@artbo.test>', subject: 'Frères Cobalt, décembre 2026', from: 'Anthony', to: 'Morgane Le Gall', date: '2026-09-01', body: 'Bonjour Morgane,\n\nSuite à notre échange…' },
+    { id: '<kiosque-re1@lgk.test>', subject: 'Re : Frères Cobalt — mars 2027', from: 'Camille Rouet', to: 'Anthony', date: '2026-11-24', body: 'Bonjour Anthony,\n\nMerci pour la relance : nous regardons le 20 ou le 21 mars, je reviens vers vous la semaine prochaine.\n\nCamille' },
+    { id: '<rempart-devis@rempart.test>', subject: 'Devis technique et plan de feu', from: 'Hugo Ménard', to: 'Anthony', date: '2026-11-22', body: 'Bonjour,\n\nVous trouverez ci-joint le devis technique.' },
+    { id: '<moulin-fdr@moulin.test>', subject: 'Re : Feuille de route Lune Ardente', from: 'Équipe du Moulin', to: 'Production', date: '2026-02-10', body: 'Tout est en ordre pour samedi.' },
+  ];
+  const msgOwner = id => DB.logs.find(l => l.msgid === id)?.prospect_id || null;
+  const size = n => n > 1e6 ? (n / 1e6).toFixed(1) + ' Mo' : Math.max(1, Math.round(n / 1024)) + ' Ko';
+  const header = (txt, k) => (txt.match(new RegExp(`^${k}:\\s*(.+(?:\\r?\\n[ \\t].+)*)`, 'mi')) || [])[1]?.replace(/\r?\n[ \t]+/g, ' ').trim() || '';
+  function addMail(p, m, { original = null } = {}){
+    const lid = 'l' + Date.now() + Math.random().toString(36).slice(2, 6);
+    DB.logs.push({ id: lid, prospect_id: p.id, date: m.date || TODAY, time: m.time || null, kind: 'Mail', contact_name: m.from === 'Anthony' ? m.to : m.from, msgid: m.id,
+      body: `**${m.subject || '(sans objet)'}**\nDe : ${m.from || '—'} · À : ${m.to || '—'}`, full: m.body || '', mail: true });
+    if (original) DB.files.push({ id: 'f' + lid, prospect_id: p.id, name: original.name, date: m.date || TODAY, size: size(original.size), log: lid, eml: true, mail: true });
+    p.last_contact = [p.last_contact, m.date].filter(Boolean).sort().pop(); touch(p);
+  }
+  async function importFiles(p, files){
+    const done = [], failed = []; let elsewhere = null;
+    for (const f of files){
+      if (/\.eml$/i.test(f.name) || f.type === 'message/rfc822'){
+        let txt = ''; try { txt = await f.text(); } catch { failed.push([f.name, 'mail illisible']); continue; }
+        const id = header(txt, 'Message-ID'), owner = id && msgOwner(id);
+        if (owner === p.id){ failed.push([f.name, 'déjà dans ce suivi']); continue; }
+        if (owner){ failed.push([f.name, 'déjà rattaché à un autre suivi']); elsewhere = owner; continue; }
+        const d = new Date(header(txt, 'Date')), date = isNaN(d) ? TODAY : d.toISOString().slice(0, 10);
+        const body = txt.split(/\r?\n\r?\n/).slice(1).join('\n\n').trim().slice(0, 4000);
+        addMail(p, { id: id || null, subject: header(txt, 'Subject'), from: header(txt, 'From').replace(/<.*>/, '').trim(), to: header(txt, 'To').replace(/<.*>/, '').trim(), date, body }, { original: f });
+        done.push(f.name + ' (journal)');
+      } else { DB.files.push({ id: 'f' + Date.now() + done.length, prospect_id: p.id, name: f.name, date: TODAY, size: size(f.size) }); touch(p); done.push(f.name); }
+    }
+    X().renderMain(); X().$('#sv-dz-h')?.closest('.sv-dropzone')?.focus?.();
+    if (failed.length){
+      const txt = [...done.map(n => `✓ ${n}`), ...failed.map(([n, w]) => `✗ ${n} — ${w}`)].join(' · ');
+      if (elsewhere){ if (await X().askConfirm(`${done.length} ajouté${done.length > 1 ? 's' : ''}, ${failed.length} refusé${failed.length > 1 ? 's' : ''}`, txt, 'Ouvrir le suivi concerné', 'Fermer')) open(elsewhere); }
+      else X().toast(txt, 'triangle-alert');
+    } else if (done.length) X().toast(`${done.length} fichier${done.length > 1 ? 's' : ''} ajouté${done.length > 1 ? 's' : ''} : ${done.join(', ')} (prototype : rien n’est envoyé)`);
+  }
+  function findMailPanel(p, hint = '', why = ''){
+    const { panelShell, openPanel, esc, device, icon } = X();
+    SV.find = { q: hint }; const res = () => { const q = X().norm(SV.find.q); return q.length < 2 ? [] : MAILBOX.filter(m => X().norm(m.subject).includes(q)); };
+    const list = () => { const r = res(); return SV.find.q.trim().length < 2 ? '<p class="hint">Tape au moins deux caractères de l’objet du mail.</p>' : r.length ? `<ul class="sv-found">${r.map(m => { const o = msgOwner(m.id);
+      return `<li><span><b>${esc(m.subject)}</b><span class="hint">${esc(`${fmtD(m.date)} · ${m.from === 'Anthony' ? 'À ' + m.to : 'De ' + m.from}`)}${o ? ` · ${o === p.id ? 'déjà dans ce suivi' : 'dans un autre suivi'}` : ''}</span></span>
+        <button class="btn sm" type="button" data-act="svFindPick" data-id="${esc(m.id)}" ${o ? 'disabled' : ''}>Joindre</button></li>`; }).join('')}</ul>` : '<p class="muted">Aucun mail avec cet objet.</p>'; };
+    SV.findList = list;
+    openPanel('svfind', panelShell('Retrouver un mail', 'Messagerie', `${why ? `<p class="sv-why">${icon('triangle-alert', 'sm')}${esc(why)}</p>` : ''}
+      <label class="field"><span>Objet du mail</span><input class="input" type="search" id="sv-findq" value="${esc(hint)}" autocomplete="off"></label><div id="sv-findr">${list()}</div>
+      <p class="hint">Rien n’est rattaché sur le seul objet : choisis le mail (aucune présélection). Sa conversation est jointe au journal, sans doublon. Messagerie fictive du prototype.</p>`,
+      '<span class="grow"></span><button class="btn" type="button" data-act="closePanel">Fermer</button>'), { full: device() === 'phone' });
+    setTimeout(() => X().$('#sv-findq')?.focus(), 60);
+  }
+  function artistsPick(btn, p){
+    const { esc } = X(), list = BK().PROJECTS.filter(x => x.active || p.project_ids.includes(x.id));
+    X().openPop(btn, `<p class="eyebrow">Artistes du suivi</p><div class="pop-sw">${list.map(x => `<label class="chk"><input type="checkbox" data-svpa="${x.id}" ${p.project_ids.includes(x.id) ? 'checked' : ''}><span>${esc(x.name)}${x.active ? '' : ' <span class="tag">inactif</span>'}</span></label>`).join('')}</div>
+      <p class="hint">Choisis explicitement : jamais repris du filtre d’affichage.</p>`, { label: 'Artistes du suivi', cls: 'bk-pop sv-papop' });
   }
   function exportPanel(){
     const { panelShell, openPanel, esc, device } = X();
@@ -412,11 +516,17 @@
     const n = list.reduce((a, p) => a + Math.max(1, (CONTACTS[p.structure_id] || []).length), 0);
     X().closePanel({ force: true }); X().toast(`${n} ligne${n > 1 ? 's' : ''} exportée${n > 1 ? 's' : ''} (${list.length} suivi${list.length > 1 ? 's' : ''}) — fichier non généré dans le prototype`);
   }
+  const statusChecks = () => `<div class="sv-stchk">${PROSPECT.map(x => `<label class="chk"><input type="checkbox" data-svsts="${x}" ${SV.statuses.includes(x) ? 'checked' : ''}><span>${stPill(x)}</span></label>`).join('')}</div>
+    <div class="sv-stacts"><button class="btn ghost sm" type="button" data-act="svStAll" ${SV.statuses.length === PROSPECT.length ? 'disabled' : ''}>Tous les statuts</button><button class="btn ghost sm" type="button" data-act="svStReset" ${SV.statuses.length ? '' : 'disabled'}>Réinitialiser</button></div>
+    <p class="hint">${SV.statuses.length ? 'Seuls les statuts cochés sont affichés, clos compris.' : 'Aucun statut coché : suivis actifs (les clos selon « Affichage »).'}</p>`;
+  function statusPop(btn){ X().openPop(btn, `<p class="eyebrow">Statuts</p>${statusChecks()}`, { label: 'Statuts', cls: 'bk-pop sv-stpop' }); }
+  const reStatus = () => { const inPop = !!X().$('.sv-stpop'); X().renderMain(); refreshFilters(); if (inPop) statusPop(X().$('[data-act="svStatuses"]')); };
   function filtersSheet(){
     const { panelShell, openPanel, esc } = X();
     const sw = (k, l, n) => `<label class="switch" for="svf-${k}"><span class="txt">${l}${n != null ? ` <span class="hint">${n}</span>` : ''}</span><input type="checkbox" role="switch" id="svf-${k}" data-svx="${k}" ${SV[k] ? 'checked' : ''}></label>`;
     const nClosed = DB.prospects.filter(p => projOk(p) && suiviClosed(p)).length;
-    openPanel('svfilters', panelShell('Filtres', 'Suivi', `<div class="pnl-sec"><h3>Statut</h3><select class="input" data-sv="status" aria-label="Statut"><option value="">Tous les statuts</option>${PROSPECT.map(x => `<option value="${x}" ${x === SV.status ? 'selected' : ''}>${LABEL[x]}</option>`).join('')}</select></div>
+    openPanel('svfilters', panelShell('Filtres', 'Suivi', `<div class="pnl-sec"><h3>Trier par</h3>${sortSel('svf-sort')}${SV.sort ? '<div class="sv-sortb"><button class="btn sm" type="button" data-act="svSortSave">Utiliser par défaut</button><button class="btn ghost sm" type="button" data-act="svSortBack">Tri par défaut</button></div>' : ''}</div>
+      <div class="pnl-sec"><h3>Statuts</h3>${statusChecks()}</div>
       <div class="pnl-sec"><h3>Artistes</h3>${BK().PROJECTS.filter(x => x.active || SV.showInactive).map(x => `<label class="chk"><input type="checkbox" data-svproj="${x.id}" ${SV.projects.includes(x.id) ? 'checked' : ''}><span>${esc(x.name)}</span></label>`).join('')}</div>
       <div class="pnl-sec"><h3>Affichage</h3>${sw('showInactive', 'Artistes inactifs')}${sw('showClosed', 'Suivis clos', nClosed)}</div>`,
       '<button class="btn ghost" type="button" data-act="svReset">Réinitialiser</button><span class="grow"></span><button class="btn primary" type="button" data-act="closePanel">Voir les suivis</button>'), { full: true });
@@ -444,14 +554,24 @@
     svArtists: b => { if (X().$('.pop')?._from === b){ X().closePop(); return; } artistsPop(b); },
     svDisplay: b => { if (X().$('.pop')?._from === b){ X().closePop(); return; } displayPop(b); },
     svArtClear: () => { SV.projects = []; X().closePop(); rr('[data-act="svArtists"]'); },
-    svUnset: b => { const k = b.dataset.k; if (k === 'q') SV.q = ''; else if (k === 'status') SV.status = ''; else if (k.startsWith('proj:')) SV.projects = SV.projects.filter(x => x !== k.slice(5)); else SV[k] = false;
+    svUnset: b => { const k = b.dataset.k; if (k === 'q') SV.q = ''; else if (k.startsWith('st:')) SV.statuses = SV.statuses.filter(x => x !== k.slice(3)); else if (k.startsWith('proj:')) SV.projects = SV.projects.filter(x => x !== k.slice(5)); else SV[k] = false;
       rr('.bk-active .fchip, #sv-q'); refreshFilters(); },
-    svReset: () => { Object.assign(SV, { q: '', status: '', projects: [], showInactive: false, showClosed: false }); rr('#sv-q'); refreshFilters(); },
+    svReset: () => { Object.assign(SV, { q: '', statuses: [], projects: [], showInactive: false, showClosed: false }); rr('#sv-q'); refreshFilters(); },
+    svStatuses: b => { if (X().$('.pop')?._from === b){ X().closePop(); return; } statusPop(b); },
+    svStAll: () => { SV.statuses = [...PROSPECT]; reStatus(); X().$('.sv-stpop [data-act="svStReset"], #psheet [data-act="svStReset"]')?.focus(); },
+    svStReset: () => { SV.statuses = []; reStatus(); X().$('.sv-stpop [data-act="svStAll"], #psheet [data-act="svStAll"]')?.focus(); },
+    svSortSave: () => { X().P.svSort = `${sortNow().key}:${sortNow().dir}`; SV.sort = null; X().save(); rr('#sv-q'); refreshFilters(); X().toast(`Tri par défaut : ${sortTxt(sortNow()).toLowerCase()}`); },
+    svSortBack: () => { SV.sort = null; rr('#sv-q'); refreshFilters(); },
     svUndo: () => { const u = SV.undo; if (!u) return; const p = byId(u.id); if (p){ p.status = u.before; delete SV.linger[p.id]; } u.tasks.forEach(([t, s]) => { t.status = s; });
       SV.undo = null; rr(); X().toast('Annulé : statut et relances rétablis'); },
     svSim: b => sim(b.dataset.m),
     svPlaceClear: () => { cur().place = null; rr('#sv-place'); },
-    svArtistsEdit: () => artistsEdit(cur()),
+    svArtistsPick: b => { if (X().$('.pop')?._from === b){ X().closePop(); return; } artistsPick(b, cur()); },
+    svFindMail: () => findMailPanel(cur()),
+    svFindPick: b => { const m = MAILBOX.find(x => x.id === b.dataset.id), p = cur(); if (!m || msgOwner(m.id)) return; addMail(p, m); X().closePanel({ force: true }); X().renderMain(); X().toast(`Mail « ${m.subject} » ajouté au journal`); },
+    svFileDel: async b => { const f = DB.files.find(x => x.id === b.dataset.id); if (!f) return;
+      if (!(await X().askConfirm('Supprimer la pièce jointe ?', `Supprimer « ${f.name} » de ce suivi ? Les fichiers Google Drive ne sont pas touchés.`, 'Supprimer'))) return;
+      DB.files = DB.files.filter(x => x !== f); touch(cur()); rr('#sv-dz-h'); X().toast('Pièce jointe supprimée'); },
     svAi: b => { b.disabled = true; b.textContent = 'Rédaction en cours…'; setTimeout(() => { b.disabled = false; X().renderMain(); sim('Résumé par l’IA : aucun appel dans le prototype (résumé inchangé)'); }, 700); },
     svText: b => textPanel(cur(), b.dataset.f),
     svCopy: async () => { const p = cur(), st = stOf(p.structure_id);
@@ -489,7 +609,9 @@
   // ───────────────────────── Évènements (composés avec ceux de Booking)
   function change(t){
     if (t.dataset.svst){ setStatus(byId(t.dataset.svst), t.value, t); return true; }
-    if (t.dataset.sv === 'status'){ SV.status = t.value; X().renderMain(); refreshFilters(); return true; }
+    if (t.dataset.svsts){ const k = t.dataset.svsts; SV.statuses = t.checked ? [...SV.statuses, k] : SV.statuses.filter(x => x !== k); reStatus(); X().$(`.sv-stpop [data-svsts="${k}"], #psheet [data-svsts="${k}"]`)?.focus(); return true; }
+    if (t.dataset.sv === 'sort'){ const v = parseSort(t.value); SV.sort = X().same(v, defSort()) ? null : v; rr('#' + t.id); refreshFilters(); return true; }
+    if (GR.change(t)) return true;
     if (t.dataset.sv === 'pane'){ SV.pane = t.value; rr(`input[name="svpane"][value="${t.value}"]`); return true; }
     if (t.dataset.sv === 'proj'){ SV.wsProject = t.value; rr(`input[name="svproj"][value="${t.value}"]`); return true; }
     if (t.dataset.sv === 'target'){ SV.target = t.value || null; rr('#sv-target'); return true; }
@@ -499,18 +621,20 @@
     if (t.dataset.svproj){ const id = t.dataset.svproj; SV.projects = t.checked ? [...SV.projects, id] : SV.projects.filter(x => x !== id);
       const inPop = !!t.closest('.pop'); X().renderMain(); refreshFilters(); if (inPop){ artistsPop(X().$('[data-act="svArtists"]')); X().$(`.pop [data-svproj="${id}"]`)?.focus(); } return true; }
     if (t.dataset.svtask){ const tk = DB.tasks.find(x => x.id === t.dataset.svtask); tk.status = t.checked ? 'Done' : 'To Do'; if (t.checked){ linger(tk.id); X().toast('Tâche faite'); } rr(`[data-svtask="${tk.id}"]`); return true; }
-    if (t.dataset.svf === 'structure'){ const p = cur(); p.structure_id = t.value || null; rr('#sv-struct'); return true; }
+    if (t.dataset.svf === 'structure'){ const p = cur(); p.structure_id = t.value || null; touch(p); rr('#sv-struct'); return true; }
     if (t.dataset.svf === 'place'){ const p = cur(), v = t.value.trim(); if (!v){ p.place = null; rr('#sv-place'); return true; }
       const s = BK().DB.shows.find(x => `${x.venue} — ${x.city}` === v); p.place = s ? { venue: s.venue, city: s.city, lat: s.lat, lng: s.lng } : { venue: v, city: '', lat: null, lng: null }; rr('#sv-place'); return true; }
     if (t.dataset.svf === 'link'){ const s = BK().byId(t.value); if (s){ s.prospect_id = cur().id; rr('#sv-d-h'); X().toast('Date rattachée au suivi'); } return true; }
-    if (t.id === 'sv-file'){ const p = cur(); [...t.files].forEach((f, i) => DB.files.push({ id: 'f' + Date.now() + i, prospect_id: p.id, name: f.name, date: TODAY, size: `${Math.max(1, Math.round(f.size / 1024))} Ko` }));
-      rr('#sv-j-h'); X().toast('Pièce jointe ajoutée au suivi (fictif : rien n’est envoyé)'); return true; }
+    if (t.id === 'sv-file'){ importFiles(cur(), [...t.files]); return true; }
+    if (t.dataset.svpa){ const p = cur(), id = t.dataset.svpa; p.project_ids = t.checked ? [...p.project_ids, id] : p.project_ids.filter(x => x !== id); touch(p);
+      X().renderMain(); artistsPick(X().$('[data-act="svArtistsPick"]'), p); X().$(`.sv-papop [data-svpa="${id}"]`)?.focus(); return true; }
     if (t.closest?.('#sv-form')){ SV.dirty = true; return true; }
     return false;
   }
   function input(t){
     if (t.id === 'sv-q'){ SV.q = t.value; const pos = t.selectionStart; X().renderMain(); const q = X().$('#sv-q'); if (q){ q.focus(); q.setSelectionRange(pos, pos); } return true; }
     if (t.id === 'sv-radius'){ X().$('#sv-rv') && (X().$('#sv-rv').textContent = t.value + ' km'); return true; }
+    if (t.id === 'sv-findq'){ SV.find.q = t.value; X().$('#sv-findr').innerHTML = SV.findList(); return true; }
     if (t.closest?.('#sv-logf')){ const f = t.closest('form'), d = SV.drafts[f.dataset.svlog] ||= {}; d[t.name] = t.value; return true; }
     if (t.closest?.('#sv-form')){ SV.dirty = true; return true; }
     return false;
@@ -521,8 +645,8 @@
     if (f.id === 'sv-exp'){ e.preventDefault(); exportGo(f); return; }
     if (f.id !== 'sv-form' || !SV.edit) return; e.preventDefault();
     const v = Object.fromEntries(new FormData(f)), E = SV.edit;
-    if (E.kind === 'text'){ byId(E.id)[E.f] = v.v.trim(); X().toast(E.f === 'summary' ? 'Résumé enregistré' : 'Notes enregistrées'); }
-    if (E.kind === 'log'){ const l = DB.logs.find(x => x.id === E.id); Object.assign(l, { date: v.date || null, kind: v.kind, contact_name: v.who || null, body: v.body }); X().toast('Échange modifié'); }
+    if (E.kind === 'text'){ byId(E.id)[E.f] = v.v.trim(); touch(byId(E.id)); X().toast(E.f === 'summary' ? 'Résumé enregistré' : 'Notes enregistrées'); }
+    if (E.kind === 'log'){ const l = DB.logs.find(x => x.id === E.id); Object.assign(l, { date: v.date || null, kind: v.kind, contact_name: v.who || null, body: v.body }); touch(byId(l.prospect_id)); X().toast('Échange modifié'); }
     if (E.kind === 'task'){ if (!v.title?.trim()){ X().toast('Indique la tâche', 'triangle-alert'); f.elements.title.focus(); return; }
       if (E.id) Object.assign(DB.tasks.find(x => x.id === E.id), { title: v.title.trim(), deadline: v.deadline || null });
       else DB.tasks.push({ id: 't' + Date.now(), prospect_id: E.p, title: v.title.trim(), deadline: v.deadline || null, status: 'To Do', auto_kind: null });
@@ -531,26 +655,31 @@
     SV.dirty = false; SV.edit = null; X().EXT.guard = null; X().closePanel({ force: true }); X().renderMain();
   }
   function keydown(e){
+    if (GR.keydown(e)) return true;
     const r = e.target.closest?.('.sv-row'); if (r && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); open(r.dataset.svid); return true; }
     return false;
   }
   document.addEventListener('submit', submit);
   document.addEventListener('click', e => { if (e.defaultPrevented) return; const r = e.target.closest?.('.sv-row'); if (r && !e.target.closest('button,a,input,select')) open(r.dataset.svid); });
-  // dépôt de fichiers sur le formulaire du journal (fictif : nom et taille seulement)
-  document.addEventListener('dragover', e => { if (e.target.closest?.('#sv-logf')){ e.preventDefault(); e.target.closest('#sv-logf').classList.add('drop-on'); } });
-  document.addEventListener('dragleave', e => { e.target.closest?.('#sv-logf')?.classList.remove('drop-on'); });
-  document.addEventListener('drop', e => { const f = e.target.closest?.('#sv-logf'); if (!f || !e.dataTransfer?.files?.length) return; e.preventDefault(); f.classList.remove('drop-on');
-    const p = cur(); [...e.dataTransfer.files].forEach((x, i) => DB.files.push({ id: 'f' + Date.now() + i, prospect_id: p.id, name: x.name, date: TODAY, size: `${Math.max(1, Math.round(x.size / 1024))} Ko` }));
-    rr('#sv-j-h'); X().toast('Pièce jointe ajoutée au suivi (fictif : rien n’est envoyé)'); });
+  // glisser-déposer sur l'espace « Pièces jointes et mails » (fichiers, .eml ; texte seul → retrouver le mail)
+  const zoneOf = e => e.target.closest?.('[data-svdrop]');
+  ['dragenter', 'dragover'].forEach(ev => document.addEventListener(ev, e => { const z = zoneOf(e); if (!z) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; z.classList.add('over'); }));
+  document.addEventListener('dragleave', e => { const z = zoneOf(e); if (z && !z.contains(e.relatedTarget)) z.classList.remove('over'); });
+  document.addEventListener('drop', e => { const z = zoneOf(e); if (!z) return; e.preventDefault(); z.classList.remove('over');
+    const p = byId(z.dataset.svdrop), files = [...(e.dataTransfer?.files || [])];
+    if (files.length){ importFiles(p, files); return; }
+    const txt = e.dataTransfer?.getData('text/plain') || '', mid = (txt.match(/message:%3C(.+?)%3E/i) || [])[1];
+    if (mid){ const m = MAILBOX.find(x => x.id === `<${decodeURIComponent(mid)}>`); if (m && !msgOwner(m.id)){ addMail(p, m); X().renderMain(); X().toast(`Mail « ${m.subject} » ajouté au journal`); return; } }
+    findMailPanel(p, txt.split(/\r?\n/).map(x => x.trim()).find(Boolean)?.replace(/^\s*((re|tr|fwd?|fw)\s*:\s*)+/i, '').slice(0, 120) || '', 'Seul du texte (l’objet du mail) a été transmis, pas le mail lui-même : rien n’a été joint.'); });
 
   const prev = window.MX_EXT || {}, pc = prev.change, pi = prev.input, pk = prev.keydown, pd = prev.discard;   // fonctions de Booking capturées avant composition
   window.MX_EXT = Object.assign(prev, {
     pages: { ...(prev.pages || {}), suivi: page }, after: { ...(prev.after || {}), suivi: after },
-    acts: { ...(prev.acts || {}), ...ACTS },
+    acts: { ...(prev.acts || {}), ...ACTS, ...GR.acts },
     change: (t, e) => change(t) || (pc ? pc(t, e) : false),
     input: (t, e) => input(t) || (pi ? pi(t, e) : false),
     keydown: e => keydown(e) || (pk ? pk(e) : false),
     discard: () => { SV.dirty = false; SV.edit = null; pd?.(); },
   });
-  window.MATRICE_SUIVI = { DB, SV, LABEL, suiviClosed, showsOfSuivi, lastExchange };   // lecture par les tests automatisés
+  window.MATRICE_SUIVI = { SORTS, DB, SV, LABEL, suiviClosed, showsOfSuivi, lastExchange, stOf };   // lecture par les tests automatisés
 })();

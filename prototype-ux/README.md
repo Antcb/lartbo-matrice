@@ -1,4 +1,4 @@
-# MATRICE — prototype UX/UI V8 « Suivi »
+# MATRICE — prototype UX/UI V8.1 « Booking et Suivi »
 
 Branche `ux/refonte-uxui`, créée depuis `main` au commit `ee1f806` (v1.68.3, 26/11/2026). `main` inchangée depuis.
 Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (arbitrage A2). `DESIGN_SYSTEM.md` reste celui de `main`.
@@ -10,6 +10,14 @@ Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (a
 - Aucune connexion : ni Supabase, ni Google, ni Pennylane, ni Brevo. Aucun appel réseau.
 - Préférences gardées dans le stockage local du navigateur, sous une clé propre (`matrice-proto.prefs.v1`), conformément à l'arbitrage A12.
 - GitHub Pages ne publie que `main` : ce dossier n'est pas en ligne depuis le dépôt. La démonstration est hébergée à part (lien transmis dans le compte rendu).
+
+## V8.1 (28/11/2026) — corrections Booking et Suivi
+- Composant commun `js/grid.js` : colonnes (largeur, ordre, visibilité, épinglage, tri par en-tête) utilisées par Booking et Suivi.
+- Booking : groupes sans fond coloré (typographie, retrait, filets fins), alternance plus discrète et désactivable ; « Regrouper par » toujours visible (Mac et iPhone), regroupement ponctuel distinct du regroupement par défaut (Préférences › Tableaux).
+- Suivi, liste : tri (dernière modification, dernier échange, création, structure, artiste, statut) dans les deux sens, par en-tête sur Mac et sélecteur sur iPhone, tri par défaut personnalisable ; statuts en sélection multiple ; colonnes personnalisables ; textes complets (infobulle, préférence) ; marqueurs de statut au lieu des jauges.
+- Suivi, fiche : artistes en liste déroulante à sélection multiple ; espace « Pièces jointes et mails » (glisser-déposer, .eml au journal avec anti-doublon, texte seul → retrouver le mail, retrouver un mail) ; date rattachée distincte d'une date de même structure et artiste.
+- iPhone : champs à 16 px (cause du zoom automatique), commandes compactes à zone tactile conservée, indicateurs sur une ligne.
+- Tableau de bord calculé sur les données de Booking et Suivi. Correction : la barre latérale ne s'inverse plus d'un écran à l'autre.
 
 ## V8 (28/11/2026) — écran Suivi (`js/suivi.js`)
 Repris de main en lecture seule (`js/views/suivi.js`, `forms.js`, `actions.js`, `prospection.js`), données fictives, aucune connexion.

@@ -91,7 +91,7 @@
   // ───────────────────────── État (le temps de la visite)
   const DB = { shows: SEED.map(x => ({ ...x })) };
   const B = { year: 2026, projects: [], showInactive: false, showCancelled: false, showArchived: false, q: '', pane: 'list', pick: { a: null, b: null },
-    mapHidden: new Set(), collapsed: new Set(), open: null, linger: {}, mapPop: null, draft: null, dirty: false, isNew: false };
+    mapHidden: new Set(), collapsed: new Set(), group: null, open: null, linger: {}, mapPop: null, draft: null, dirty: false, isNew: false };
   const byId = id => DB.shows.find(s => s.id === id);
   const proj = id => PROJECTS.find(p => p.id === id);
   const projName = id => proj(id)?.name || '';
@@ -119,15 +119,9 @@
     { k: 'capacity', l: 'Jauge', w: 84, num: true, hidden: true }, { k: 'request', l: 'Date de la demande', w: 128, hidden: true },
     { k: 'flags', l: 'Ticketing · Communication', w: 176, hidden: true },
   ];
-  const colDef = k => COLS.find(c => c.k === k);
-  const defLayout = () => ({ order: COLS.map(c => c.k), w: {}, hidden: COLS.filter(c => c.hidden).map(c => c.k), pin: ['date'] });
-  const lay = () => { const P = X().P; const L = P.bk && Array.isArray(P.bk.order) ? P.bk : defLayout();
-    const order = [...L.order.filter(colDef), ...COLS.map(c => c.k).filter(k => !L.order.includes(k))];
-    return { order, w: L.w || {}, hidden: (L.hidden || []).filter(colDef), pin: (L.pin || []).filter(colDef) }; };
-  const setLay = L => { X().P.bk = L; X().save(); };
-  const layIsDefault = () => X().same(lay(), defLayout());
-  const shownCols = () => { const L = lay(); const vis = L.order.filter(k => !L.hidden.includes(k)); return [...vis.filter(k => L.pin.includes(k)), ...vis.filter(k => !L.pin.includes(k))]; };
-  const widthOf = k => lay().w[k] || colDef(k).w;
+  // colonnes : composant commun (js/grid.js), préférence P.bk inchangée
+  const GR = window.MX_GRID.make({ p: 'bk', cols: COLS, pref: 'bk', locked: ['date', 'venue'], defPin: ['date'] });
+  const { lay, colDef, widthOf } = GR, layIsDefault = GR.isDefault, shownCols = GR.shown;
 
   // ───────────────────────── Rendu
   function stats(){
@@ -154,8 +148,18 @@
   };
   // Regroupement du tableau (préférence personnelle) : indépendant des filtres, des colonnes et des indicateurs
   const GROUPS = [['month', 'Mois'], ['artist', 'Artiste'], ['artist-month', 'Artiste puis mois'], ['month-artist', 'Mois puis artiste']];
-  const grouping = () => GROUPS.some(([v]) => v === X().P.bkGroup) ? X().P.bkGroup : 'month';
-  const groupSel = id => `<label class="bk-grp-l" for="${id}"><span>Regrouper par</span><select class="input bk-sel" id="${id}" data-bk="group">${GROUPS.map(([v, l]) => `<option value="${v}" ${grouping() === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
+  // Regroupement utilisé (ponctuel, le temps de la visite) ≠ regroupement par défaut (préférence personnelle P.bkGroup)
+  const defGroup = () => GROUPS.some(([v]) => v === X().P.bkGroup) ? X().P.bkGroup : 'month';
+  const grouping = () => B.group || defGroup();
+  const gLabel = v => GROUPS.find(([k]) => k === v)[1];
+  const groupBtn = () => { const { icon, esc, device } = X(), cur = grouping(), adhoc = cur !== defGroup(), phone = device() === 'phone';
+    return `<button class="chipbtn bk-grpbtn ${adhoc ? 'on' : ''}" type="button" data-act="bkGroupPop" aria-haspopup="dialog" aria-label="Regrouper par : ${esc(gLabel(cur))}${adhoc ? ' (différent du regroupement par défaut)' : ''}">${icon('list-tree', 'sm')}${phone ? '' : '<span class="bk-grp-k">Regrouper par</span>'}<b>${esc(gLabel(cur))}</b>${icon('chevron-down', 'sm')}</button>`; };
+  function groupPop(btn){
+    const { esc, openPop, icon } = X(), cur = grouping(), d = defGroup();
+    openPop(btn, `<p class="eyebrow">Regrouper par</p><div class="bk-grp-opts" role="radiogroup" aria-label="Regrouper par">${GROUPS.map(([v, l]) => `<label class="chk"><input type="radio" name="bkgrp" value="${v}" data-bk="group" ${v === cur ? 'checked' : ''}><span>${esc(l)}${v === d ? ' <span class="def-tag">Par défaut</span>' : ''}</span></label>`).join('')}</div>
+      ${cur !== d ? `<div class="pop-foot bk-grp-foot"><button class="btn sm" type="button" data-act="bkGroupSave">${icon('pin', 'sm')}Utiliser par défaut</button><button class="btn ghost sm" type="button" data-act="bkGroupBack">Revenir à « ${esc(gLabel(d))} »</button></div>` : ''}
+      <p class="hint">Ce choix vaut pour cette visite. Le regroupement par défaut se règle ici ou dans Préférences › Tableaux.</p>`, { label: 'Regrouper par', cls: 'bk-pop bk-grppop' });
+  }
   const secondary = () => [B.showInactive, B.showCancelled, B.showArchived].filter(Boolean).length;
   function toolbar(){
     const { esc, icon, device } = X(), phone = device() === 'phone', af = activeFilters().filter(([k]) => k !== 'q').length;
@@ -165,17 +169,17 @@
     const search = `<label class="bk-search">${icon('search', 'sm')}<input type="search" id="bk-q" value="${esc(B.q)}" placeholder="Lieu, ville, artiste, structure…" aria-label="Rechercher dans les dates" autocomplete="off"></label>`;
     const all = allCollapsed();
     const fold = B.pane === 'list' ? `<button class="btn sm icon ghost bk-foldall" type="button" data-act="bkFoldAll" aria-label="${all ? 'Tout déplier' : 'Tout replier'}" title="${all ? 'Tout déplier' : 'Tout replier'}">${icon(all ? 'chevrons-up-down' : 'chevrons-down-up', 'sm')}</button>` : '';
-    if (phone) return `<div class="bk-bar">${search}<div class="bk-bar2">
-        <button class="btn sm bk-fbtn" type="button" data-act="bkFilters">${icon('sliders-horizontal', 'sm')}Filtres${af ? `<span class="count">${af}</span>` : ''}</button>${fold}${pane}
-        <button class="btn sm icon" type="button" data-act="bkMore" aria-label="Plus d’actions : exporter">${icon('ellipsis', 'sm')}</button>
-        <button class="btn sm primary icon" type="button" data-act="bkNew" aria-label="Nouvelle date">${icon('plus', 'sm')}</button></div></div>`;
+    // iPhone : recherche et actions sur une ligne ; filtres, regroupement (toujours visible), repli et affichage sur la seconde
+    if (phone) return `<div class="bk-bar"><div class="bk-bar1">${search}<button class="btn sm icon" type="button" data-act="bkMore" aria-label="Plus d’actions : exporter">${icon('ellipsis', 'sm')}</button>
+        <button class="btn sm primary icon" type="button" data-act="bkNew" aria-label="Nouvelle date">${icon('plus', 'sm')}</button></div><div class="bk-bar2">
+        <button class="btn sm icon bk-fbtn" type="button" data-act="bkFilters" aria-label="Filtres${af ? ` (${af} actifs)` : ''}">${icon('sliders-horizontal', 'sm')}${af ? `<span class="count">${af}</span>` : ''}</button>${B.pane === 'list' ? groupBtn() + fold : ''}<span class="grow"></span>${pane}</div></div>`;
     const na = B.projects.length, ns = secondary();
     return `<div class="bk-bar"><div class="bk-f">${search}
       <select class="input bk-sel" id="bk-year" data-bk="year" aria-label="Année">${years.map(y => `<option ${y === B.year ? 'selected' : ''}>${y}</option>`).join('')}</select>
       <button class="chipbtn ${na ? 'on' : ''}" type="button" data-act="bkArtists" aria-haspopup="dialog">Artistes${na ? `<span class="n">${na}</span>` : ''}${icon('chevron-down', 'sm')}</button>
       <button class="chipbtn ${ns ? 'on' : ''}" type="button" data-act="bkMoreFilters" aria-haspopup="dialog">${icon('sliders-horizontal', 'sm')}Affichage${ns ? `<span class="n">${ns}</span>` : ''}${icon('chevron-down', 'sm')}</button></div>
-      <div class="bk-v">${B.pane === 'list' ? groupSel('bk-group') + fold : ''}${pane}
-      ${B.pane === 'list' ? `<button class="btn sm" type="button" data-act="bkCols" aria-haspopup="dialog">${icon('table-2', 'sm')}Colonnes${layIsDefault() ? '' : '<span class="dot" aria-label="personnalisées"></span>'}</button>` : ''}</div></div>`;
+      <div class="bk-v">${B.pane === 'list' ? groupBtn() + fold : ''}${pane}
+      ${B.pane === 'list' ? GR.colsBtn() : ''}</div></div>`;
   }
   function moreFiltersPop(btn){
     const c = counts(), sw = (k, label, n) => `<label class="switch" for="bkp-${k}"><span class="txt">${label}${n != null ? ` <span class="hint">${n}</span>` : ''}</span><input type="checkbox" role="switch" id="bkp-${k}" data-bkf="${k}" ${B[k] ? 'checked' : ''}></label>`;
@@ -254,15 +258,11 @@
   function table(){
     const { esc, icon } = X(), cols = shownCols(), L = lay(), G = tree();
     if (!G.length) return `<div class="bk-empty"><p>Aucune date en ${B.year}${B.q ? ' pour cette recherche' : ''}.</p><button class="btn sm primary" type="button" data-act="bkNew">${icon('plus', 'sm')}Nouvelle date</button></div>`;
-    const head = cols.map(k => { const c = colDef(k), pin = L.pin.includes(k);
-      return `<th scope="col" class="c-${k} ${c.num ? 'num' : ''} ${pin ? 'pin' : ''}" data-col="${k}" draggable="true" aria-label="${esc(c.l)}${pin ? ' (épinglée)' : ''}">
-        <span class="th-in"><span class="th-l">${pin ? icon('pin', 'sm') : ''}${esc(c.l)}</span><button class="th-m" type="button" data-act="bkColMenu" data-col="${k}" aria-label="Options de la colonne ${esc(c.l)}">${icon('ellipsis', 'sm')}</button></span>
-        <span class="rs" role="separator" aria-orientation="vertical" tabindex="0" data-rs="${k}" aria-label="Largeur de la colonne ${esc(c.l)}" aria-valuenow="${widthOf(k)}" aria-valuemin="64" aria-valuemax="480"></span></th>`; }).join('');
     const body = G.map(g => { const open = !B.collapsed.has(g.key);
       return `<tbody class="g1 ${open ? '' : 'closed'}"><tr class="grp grp1"><th colspan="${cols.length}" scope="rowgroup"><span class="grp-in">${toggleBtn(g, 1)}</span></th></tr>
         ${!open ? '' : g.children ? g.children.map(c => { const o2 = !B.collapsed.has(c.key);
           return `<tr class="grp grp2"><th colspan="${cols.length}" scope="rowgroup"><span class="grp-in">${toggleBtn(c, 2)}</span></th></tr>${o2 ? rowsHTML(c.list, cols, L) : ''}`; }).join('') : rowsHTML(g.list, cols, L)}</tbody>`; }).join('');
-    return `<div class="bk-tw" tabindex="-1"><table class="bkt" aria-label="Dates ${B.year}, regroupées par ${GROUPS.find(([v]) => v === grouping())[1].toLowerCase()}"><colgroup>${cols.map(k => `<col data-col="${k}">`).join('')}</colgroup><thead><tr>${head}</tr></thead>${body}</table></div>`;
+    return `<div class="bk-tw" tabindex="-1"><table class="bkt" data-grid="bk" aria-label="Dates ${B.year}, regroupées par ${GROUPS.find(([v]) => v === grouping())[1].toLowerCase()}">${GR.head()}${body}</table></div>`;
   }
   function calRow(c, span){
     const { esc, icon, dWeek } = X();
@@ -374,12 +374,9 @@
   function after(main){
     // largeurs des colonnes et décalage des colonnes épinglées (JS : aucune valeur de style dans le HTML)
     const L = lay(), cols = shownCols();
-    X().$$('col[data-col]', main).forEach(c => { c.style.width = widthOf(c.dataset.col) + 'px'; });
-    const tbl = X().$('.bkt', main); if (tbl) tbl.style.width = cols.reduce((a, k) => a + widthOf(k), 0) + 'px';
-    let left = 0; cols.filter(k => L.pin.includes(k)).forEach((k, i, arr) => { X().$$(`.bkt .c-${k}.pin`, main).forEach(el => { el.style.left = left + 'px'; el.classList.toggle('pin-last', i === arr.length - 1); }); left += widthOf(k); });
+    GR.after(main);
     X().$$('.bk-map', main).forEach(placeMap);
     if (mapRO) mapRO.disconnect(); const mp = X().$('.bk-map', main); if (mp){ mapRO = new ResizeObserver(() => placeMap(mp)); mapRO.observe(mp); }
-    const tw = X().$('.bk-tw', main); if (tw){ const upd = () => tw.classList.toggle('scrolled', tw.scrollLeft > 0); tw.addEventListener('scroll', upd, { passive: true }); upd(); }
   }
 
   // ───────────────────────── Fiche : consultation et modification d'une date (panneau sur Mac, plein écran sur iPhone)
@@ -552,32 +549,10 @@
     const sw = (k, label, n) => `<label class="switch" for="bkf-${k}"><span class="txt">${label}${n != null ? ` <span class="hint">(${n})</span>` : ''}</span><input type="checkbox" role="switch" id="bkf-${k}" data-bkf="${k}" ${B[k] ? 'checked' : ''}></label>`;
     const body = `<div class="pnl-sec"><h3>Année</h3><div class="seg" role="radiogroup" aria-label="Année">${[2025, 2026, 2027, 2028].map(y => `<label><input type="radio" name="bkfy" value="${y}" data-bkf="year" ${B.year === y ? 'checked' : ''}><span>${y}</span></label>`).join('')}</div></div>
       <div class="pnl-sec"><h3>Artistes</h3><div class="pop-checks">${PROJECTS.filter(p => p.active || B.showInactive || B.projects.includes(p.id)).map(p => `<label class="chk"><input type="checkbox" data-bkproj="${p.id}" ${B.projects.includes(p.id) ? 'checked' : ''}><span>${esc(p.name)}</span></label>`).join('')}</div></div>
-      <div class="pnl-sec"><h3>Regroupement</h3>${groupSel('bkf-group')}</div>
       <div class="pnl-sec"><h3>Affichage</h3>${sw('showInactive', 'Artistes inactifs')}${sw('showCancelled', 'Annulées / sans suite', c.off)}${sw('showArchived', 'Dates archivées', c.arch)}</div>`;
     openPanel('bkfilters', panelShell('Filtres', 'Booking', body, `<button class="btn" type="button" data-act="bkReset">${icon('rotate-ccw', 'sm')}Réinitialiser</button><button class="btn primary" type="button" data-act="closePanel">Afficher ${visible().length} dates</button>`), { full: true });
   }
   const refreshFilters = () => { if (X().S.panel === 'bkfilters'){ const foc = document.activeElement?.id || document.activeElement?.dataset?.bkproj; filtersSheet(); if (foc) (document.getElementById(foc) || X().$(`[data-bkproj="${foc}"]`))?.focus(); } };
-  function colsPop(btn){
-    const { esc, icon, openPop, defTag } = X(), L = lay();
-    openPop(btn, `<div class="pop-head"><b>Colonnes</b>${defTag(layIsDefault())}</div><ul class="col-list">${L.order.map((k, i) => { const c = colDef(k), on = !L.hidden.includes(k), pin = L.pin.includes(k);
-      return `<li><label class="chk"><input type="checkbox" data-bkcol="${k}" ${on ? 'checked' : ''}><span>${esc(c.l)}</span></label>
-        <button class="btn ghost sm icon" type="button" data-act="bkColMove" data-col="${k}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Déplacer ${esc(c.l)} vers la gauche">${icon('arrow-up', 'sm')}</button>
-        <button class="btn ghost sm icon" type="button" data-act="bkColMove" data-col="${k}" data-d="1" ${i === L.order.length - 1 ? 'disabled' : ''} aria-label="Déplacer ${esc(c.l)} vers la droite">${icon('arrow-down', 'sm')}</button>
-        <button class="btn ghost sm icon ${pin ? 'on' : ''}" type="button" data-act="bkColPin" data-col="${k}" aria-pressed="${pin}" aria-label="${pin ? 'Désépingler' : 'Épingler'} ${esc(c.l)}">${icon('pin', 'sm')}</button></li>`; }).join('')}</ul>
-      <p class="hint">Glisser un en-tête pour le déplacer, tirer son bord pour la largeur (flèches au clavier).</p>
-      <div class="pop-foot"><button class="btn sm" type="button" data-act="bkColReset" ${layIsDefault() ? 'disabled' : ''}>${icon('rotate-ccw', 'sm')}Colonnes par défaut</button></div>`, { label: 'Colonnes', cls: 'bk-pop bk-colpop' });
-  }
-  function colMenu(btn, k){
-    const { esc, icon, openPop } = X(), L = lay(), i = shownCols().indexOf(k), c = colDef(k), pin = L.pin.includes(k);
-    openPop(btn, `<p class="eyebrow">${esc(c.l)}</p><div class="menu">
-      <button type="button" data-act="bkColPin" data-col="${k}">${icon('pin', 'sm')}${pin ? 'Désépingler' : 'Épingler à gauche'}</button>
-      <button type="button" data-act="bkColShift" data-col="${k}" data-d="-1" ${i <= 0 ? 'disabled' : ''}>${icon('arrow-left', 'sm')}Déplacer à gauche</button>
-      <button type="button" data-act="bkColShift" data-col="${k}" data-d="1" ${i >= shownCols().length - 1 ? 'disabled' : ''}>${icon('arrow-right', 'sm')}Déplacer à droite</button>
-      <button type="button" data-act="bkColWidth" data-col="${k}">${icon('rotate-ccw', 'sm')}Largeur par défaut</button>
-      ${['date', 'venue'].includes(k) ? '' : `<button type="button" data-act="bkColHide" data-col="${k}">${icon('eye-off', 'sm')}Masquer la colonne</button>`}</div>`, { label: `Colonne ${c.l}`, cls: 'bk-pop' });
-  }
-  const moveCol = (k, d, list) => { const L = lay(); const vis = list || shownCols(); const j = vis.indexOf(k) + d; if (j < 0 || j >= vis.length) return;
-    const other = vis[j], o = L.order.filter(x => x !== k); o.splice(o.indexOf(other) + (d > 0 ? 1 : 0), 0, k); L.order = o; setLay(L); };
   function exportPanel(){
     const { esc, panelShell, openPanel, device } = X();
     const body = `<form class="bk-form" id="bk-exp" novalidate><fieldset><legend>Export des dates</legend>
@@ -631,6 +606,9 @@
     bkSim: b => X().toast(b.dataset.m, 'info'),
     bkRestore: b => restore(b.dataset.id),
     bkCalAssoc: () => X().toast('Association de l’événement Google à une date : non simulée', 'info'),
+    bkGroupPop: b => { if (X().$('.pop')?._from === b){ X().closePop(); return; } groupPop(b); },
+    bkGroupSave: () => { X().P.bkGroup = grouping(); B.group = null; X().save(); X().closePop(); rr('[data-act="bkGroupPop"]'); X().toast(`Regroupement par défaut : ${gLabel(defGroup()).toLowerCase()}`); },
+    bkGroupBack: () => { B.group = null; B.collapsed.clear(); X().closePop(); rr('[data-act="bkGroupPop"]'); },
     bkGrp: b => { const k = b.dataset.k; B.collapsed.has(k) ? B.collapsed.delete(k) : B.collapsed.add(k); rr(`[data-act="bkGrp"][data-k="${CSS.escape(k)}"]`); },
     bkFoldAll: () => { if (allCollapsed()) B.collapsed.clear(); else allKeys().forEach(k => B.collapsed.add(k)); rr('[data-act="bkFoldAll"]'); },
     bkMoreFilters: b => { if (X().$('.pop')?._from === b){ X().closePop(); return; } moreFiltersPop(b); },
@@ -659,32 +637,18 @@
     bkStMenu: b => rowMenu(b.dataset.id, 1),
     bkSetSt: b => { closeSheet(); setStatus(b.dataset.id, b.dataset.v); },
     bkSheetClose: () => closeSheet(),
-    bkCols: b => { if (X().$('.pop')?._from === b){ X().closePop(); return; } colsPop(b); },
-    bkColMenu: b => { if (X().$('.pop')?._from === b){ X().closePop(); return; } colMenu(b, b.dataset.col); },
-    bkColPin: b => { const k = b.dataset.col, L = lay(); L.pin = L.pin.includes(k) ? L.pin.filter(x => x !== k) : [...L.pin, k]; setLay(L); reopen(b, k); },
-    bkColMove: b => { const L = lay(), k = b.dataset.col, i = L.order.indexOf(k), j = i + Number(b.dataset.d); if (j < 0 || j >= L.order.length) return; [L.order[i], L.order[j]] = [L.order[j], L.order[i]]; setLay(L); reopen(b, k); },
-    bkColShift: b => { moveCol(b.dataset.col, Number(b.dataset.d)); X().closePop(); rr(`.bkt th[data-col="${b.dataset.col}"] .th-m`); },
-    bkColHide: b => { const L = lay(); L.hidden = [...L.hidden, b.dataset.col]; setLay(L); X().closePop(); rr('[data-act="bkCols"]'); X().toast(`Colonne « ${colDef(b.dataset.col).l} » masquée — Colonnes pour la réafficher`); },
-    bkColWidth: b => { const L = lay(); delete L.w[b.dataset.col]; setLay(L); X().closePop(); rr(`.bkt th[data-col="${b.dataset.col}"] .th-m`); },
-    bkColReset: () => { X().P.bk = null; X().save(); X().closePop(); rr('[data-act="bkCols"]'); X().toast('Colonnes par défaut rétablies'); },
   };
-  // la fenêtre « Colonnes » reste ouverte après un réglage (focus conservé sur la commande utilisée)
-  function reopen(b, k){
-    const inCols = !!b.closest('.bk-colpop'); X().closePop(); X().renderMain();
-    if (inCols){ const btn = X().$('[data-act="bkCols"]'); colsPop(btn); X().$(`.bk-colpop [data-act="${b.dataset.act}"][data-col="${k}"]${b.dataset.d ? `[data-d="${b.dataset.d}"]` : ''}`)?.focus(); }
-    else X().$(`.bkt th[data-col="${k}"] .th-m`)?.focus();
-  }
 
   function change(t){
     if (t.dataset.bkst){ setStatus(t.dataset.bkst, t.value, t); return true; }
     if (t.dataset.bk === 'year'){ B.year = Number(t.value); rr('#bk-year'); return true; }
-    if (t.dataset.bk === 'group'){ X().P.bkGroup = t.value; X().save(); B.collapsed.clear(); rr(`#${t.id}`); refreshFilters(); return true; }
+    if (t.dataset.bk === 'group'){ B.group = t.value === defGroup() ? null : t.value; B.collapsed.clear(); X().closePop(); X().renderMain(); groupPop(X().$('[data-act="bkGroupPop"]')); X().$(`.bk-grppop input[value="${t.value}"]`)?.focus(); return true; }
     if (t.dataset.bk === 'pane'){ B.pane = t.value; B.mapPop = null; rr(`input[name="bkpane"][value="${t.value}"]`); return true; }
     if (t.dataset.bkproj){ const id = t.dataset.bkproj; B.projects = t.checked ? [...B.projects, id] : B.projects.filter(x => x !== id);
       const inPop = !!t.closest('.pop'); X().renderMain(); if (inPop){ artistsPop(X().$('[data-act="bkArtists"]')); X().$(`.pop [data-bkproj="${id}"]`)?.focus(); } refreshFilters(); return true; }
     if (t.dataset.bkf){ const k = t.dataset.bkf, inPop = !!t.closest('.pop'); if (k === 'year') B.year = Number(t.value); else B[k] = t.checked; X().renderMain(); refreshFilters();
       if (inPop){ moreFiltersPop(X().$('[data-act="bkMoreFilters"]')); X().$(`#bkp-${k}`)?.focus(); } return true; }
-    if (t.dataset.bkcol){ const L = lay(), k = t.dataset.bkcol; L.hidden = t.checked ? L.hidden.filter(x => x !== k) : [...L.hidden, k]; setLay(L); reopen({ closest: () => true, dataset: { act: 'x' } }, k); X().$(`.bk-colpop [data-bkcol="${k}"]`)?.focus(); return true; }
+    if (GR.change(t)) return true;
     if (t.closest?.('#bk-form')){ B.dirty = true;
       if (t.name === 'project_id'){ const sel = X().$('#bf-spectacle_id'), cur = sel.value; sel.innerHTML = spectacleOpts(t.value, null).map(([v, l]) => `<option value="${X().esc(v)}">${X().esc(l)}</option>`).join('');
         if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur; else if (B.isNew) sel.value = defaultSpectacle(t.value); }
@@ -702,8 +666,7 @@
   function keydown(e){
     if (X().S.tab !== 'booking') return false;
     const t = e.target;
-    if (t.dataset?.rs && ['ArrowLeft', 'ArrowRight', 'Home'].includes(e.key)){ e.preventDefault(); const k = t.dataset.rs, L = lay();
-      L.w[k] = e.key === 'Home' ? colDef(k).w : Math.max(64, Math.min(480, widthOf(k) + (e.key === 'ArrowRight' ? 16 : -16))); if (e.key === 'Home') delete L.w[k]; setLay(L); rr(`[data-rs="${k}"]`); return true; }
+    if (GR.keydown(e)) return true;
     const row = t.closest?.('.bk-row');
     if (row && t === row && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); openShow(row.dataset.id); return true; }
     if (row && t === row && (e.key === 'ArrowDown' || e.key === 'ArrowUp')){ e.preventDefault(); const rows = X().$$('.bk-row'), i = rows.indexOf(row); rows[i + (e.key === 'ArrowDown' ? 1 : -1)]?.focus(); return true; }
@@ -719,31 +682,13 @@
   document.addEventListener('submit', e => { if (e.target.id === 'bk-form'){ e.preventDefault(); saveShow(); } });
   document.addEventListener('pointerover', e => { const r = e.target.closest?.('.bk-mrow'); X()?.$$?.('.mpt.hot').forEach(m => m.classList.remove('hot'));
     if (r) X().$(`.mpt[data-id="${r.dataset.id}"]`)?.classList.add('hot'); });
-  // redimensionnement à la souris / au doigt
-  document.addEventListener('pointerdown', e => {
-    const h = e.target.closest?.('.bkt .rs'); if (!h) return; e.preventDefault();
-    const k = h.dataset.rs, x0 = e.clientX, w0 = widthOf(k), col = X().$(`.bkt col[data-col="${k}"]`), tbl = X().$('.bkt'), tw0 = tbl.offsetWidth;
-    h.setPointerCapture(e.pointerId); h.classList.add('drag');
-    const mv = ev => { const w = Math.max(64, Math.min(480, w0 + ev.clientX - x0)); col.style.width = w + 'px'; tbl.style.width = (tw0 + w - w0) + 'px'; h.setAttribute('aria-valuenow', w); };
-    const up = ev => { h.removeEventListener('pointermove', mv); h.classList.remove('drag'); const L = lay(); L.w[k] = Math.max(64, Math.min(480, w0 + ev.clientX - x0)); setLay(L); rr(`[data-rs="${k}"]`); };
-    h.addEventListener('pointermove', mv); h.addEventListener('pointerup', up, { once: true });
-  });
-  // réorganisation par glisser-déposer des en-têtes (même groupe : épinglées / non épinglées)
-  let dragK = null;
-  document.addEventListener('dragstart', e => { const th = e.target.closest?.('.bkt th[data-col]'); if (!th) return; dragK = th.dataset.col; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', dragK); th.classList.add('dragging'); });
-  document.addEventListener('dragover', e => { const th = e.target.closest?.('.bkt th[data-col]'); if (!th || !dragK) return; e.preventDefault();
-    X().$$('.bkt th.drop-l,.bkt th.drop-r').forEach(x => x.classList.remove('drop-l', 'drop-r')); const r = th.getBoundingClientRect(); th.classList.add(e.clientX < r.left + r.width / 2 ? 'drop-l' : 'drop-r'); });
-  document.addEventListener('drop', e => { const th = e.target.closest?.('.bkt th[data-col]'); if (!th || !dragK) return; e.preventDefault();
-    const k = th.dataset.col, L = lay(); if (k !== dragK && L.pin.includes(k) === L.pin.includes(dragK)){ const after = th.classList.contains('drop-r'); const o = L.order.filter(x => x !== dragK); o.splice(o.indexOf(k) + (after ? 1 : 0), 0, dragK); L.order = o; setLay(L); }
-    dragK = null; X().renderMain(); });
-  document.addEventListener('dragend', () => { dragK = null; X()?.$$?.('.bkt th').forEach(x => x.classList.remove('dragging', 'drop-l', 'drop-r')); });
 
   window.MX_EXT = Object.assign(window.MX_EXT || {}, {
     pages: { ...(window.MX_EXT?.pages || {}), booking: page }, after: { ...(window.MX_EXT?.after || {}), booking: after },
-    acts: { ...(window.MX_EXT?.acts || {}), ...ACTS }, change, input, keydown,
+    acts: { ...(window.MX_EXT?.acts || {}), ...ACTS, ...GR.acts }, change, input, keydown,
     discard: () => { B.dirty = false; B.draft = null; B.isNew = false; if (B.open){ B.open = null; X().$$('.bk-row.sel,.bkm-row.sel,.bk-mrow.sel').forEach(r => r.classList.remove('sel')); } },
   });
   // Partagé avec Suivi (js/suivi.js) et lu par les tests automatisés : mêmes données, mêmes règles, mêmes fenêtres
-  window.MATRICE_BOOKING = { DB, B, COLS, CAL, chains, route, hav, PROJECTS, STRUCTS, CITY, SPECTACLES, isOff, byId, proj, projName, struct, fmtD, fmtMed, cityLine, locMissing,
+  window.MATRICE_BOOKING = { GROUPS, DB, B, COLS, CAL, chains, route, hav, PROJECTS, STRUCTS, CITY, SPECTACLES, isOff, byId, proj, projName, struct, fmtD, fmtMed, cityLine, locMissing,
     statusSel, openShow, OUTLINE, PRJ, MW, MH, TODAY };
 })();

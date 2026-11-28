@@ -156,5 +156,31 @@ window.MATRICE_DATA = (() => {
   const CONTACTS = ['Camille Rouet — Le Grand Kiosque', 'Hugo Ménard — Théâtre du Rempart', 'Inès Carrel — Festival des Marais', 'Paul Ternier — Le Hangar Bleu'];
   const STRUCTURES = ['Le Hangar Bleu', 'La Cale Sèche', 'Théâtre du Rempart', 'Le Grand Kiosque', 'Festival des Marais', 'La Fabrique Sonore', 'Festival des Tilleuls'];
 
-  return { MODULES, PROFILES, KPIS, BLOCKS, STATUSES, ARTISTS, DATES, TASKS, SUIVIS_ACTIFS, RELANCES, MAIL_COUNTS, MESSAGES, MONTHS, FIN, NOTIFS, CONTACTS, STRUCTURES, TODAY: '2026-11-27' };
+  const D = { MODULES, PROFILES, KPIS, BLOCKS, STATUSES, ARTISTS, DATES, TASKS, SUIVIS_ACTIFS, RELANCES, MAIL_COUNTS, MESSAGES, MONTHS, FIN, NOTIFS, CONTACTS, STRUCTURES, TODAY: '2026-11-27' };
+
+  // V8.1 — Données mutualisées : le tableau de bord lit les dates de Booking et les suivis de Suivi (mêmes données fictives, mêmes règles).
+  // Les valeurs ci-dessus restent la référence tant que ces écrans ne sont pas chargés (et pour la finance, absente de Booking et de Suivi).
+  const BK = () => window.MATRICE_BOOKING, SV = () => window.MATRICE_SUIVI;
+  const SEASON = ['2026-09-01', '2027-08-31'];                                       // saison 2026-2027
+  const TICKETS = Object.fromEntries(DATES.map(d => [d.id, { sold: d.sold, seuil: d.seuil }]));   // billetterie fictive (Production)
+  const live = () => !!(BK() && SV());
+  const upcoming = () => BK().DB.shows.filter(s => !s.archived_at && !BK().isOff(s.status) && s.date >= D.TODAY && s.status !== 'Sans statut' && BK().proj(s.project_id)?.active).sort((a, b) => a.date.localeCompare(b.date));
+  const inSeason = () => BK().DB.shows.filter(s => !s.archived_at && s.date >= SEASON[0] && s.date <= SEASON[1]);
+  const viaArtbo = s => !['Option Artiste', 'Confirmée Artiste'].includes(s.status);
+  const openRelances = () => SV().DB.tasks.filter(t => t.auto_kind && t.status !== 'Done' && t.status !== 'Cancelled' && SV().DB.prospects.some(p => p.id === t.prospect_id && !SV().suiviClosed(p)));
+  Object.defineProperties(D, {
+    DATES: { get: () => !live() ? DATES : upcoming().slice(0, 8).map(s => ({ id: s.id, date: s.date, artist: BK().projName(s.project_id), venue: s.venue, city: BK().cityLine(s), status: s.status,
+      fee: s.fee_ht || 0, contract: s.contract_type, capacity: s.capacity || 0, ...(TICKETS[s.id] || { sold: 0, seuil: 0 }) })) },
+    TIX: { get: () => !live() ? DATES : upcoming().filter(s => s.capacity && s.status.startsWith('Confirmée') && TICKETS[s.id]).map(s => ({ id: s.id, date: s.date, artist: BK().projName(s.project_id), venue: s.venue,
+      city: BK().cityLine(s), status: s.status, fee: s.fee_ht || 0, capacity: s.capacity, ...TICKETS[s.id] })) },
+    SUIVIS_ACTIFS: { get: () => !live() ? SUIVIS_ACTIFS : SUIVIS_ACTIFS.map(x => ({ ...x, n: SV().DB.prospects.filter(p => p.status === x.k).length })) },
+    RELANCES: { get: () => !live() ? RELANCES : openRelances().map(t => { const p = SV().DB.prospects.find(x => x.id === t.prospect_id), st = SV().stOf(p.structure_id);
+      return { s: st?.name || '', city: st?.city || '', proj: p.project_ids.map(BK().projName).join(', '), st: SV().LABEL[p.status], due: t.deadline }; }) },
+    KPIS: { get: () => { if (!live()) return KPIS; const S = inSeason(), conf = S.filter(s => s.status.startsWith('Confirmée')), opt = S.filter(s => s.status.startsWith('Option'));
+      const late = openRelances().filter(t => t.deadline < D.TODAY).length;
+      return { ...KPIS, confirmees: { ...KPIS.confirmees, value: String(conf.length) }, options: { ...KPIS.options, value: String(opt.length), note: 'saison 2026-2027' },
+        cachets: { ...KPIS.cachets, value: conf.filter(viaArtbo).reduce((a, s) => a + (Number(s.fee_ht) || 0), 0), note: 'HT, saison 2026-2027' },
+        suivis: { ...KPIS.suivis, value: String(openRelances().length), note: 'relances ouvertes' }, relances: { ...KPIS.relances, value: String(late) } }; } },
+  });
+  return D;
 })();

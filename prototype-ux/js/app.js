@@ -35,7 +35,7 @@
   const DEFAULTS = () => ({
     ...fromProfile('booking'), hidden: [], folded: [], blocks: ['dates', 'billetterie', 'taches', 'relances', 'pipeline', 'finances', 'messages'], hiddenBlocks: [], blockCol: {}, layout: 7, bk: null,
     appearance: 'system', darkFrom: '19:00', darkTo: '07:30', density: { desktop: 'compacte', tablet: 'compacte', phone: 'compacte' },
-    palette: 'lagoon', bgLight: 'glacier', textSize: 1, weight: 'normal', leading: 'normal', tracking: 'normal', contrast: 'normal', zebra: true, glass: true, motion: true, mini: false, owner: true, navMulti: false, autoMini: true, dockW: null, bkGroup: 'month',
+    palette: 'lagoon', bgLight: 'glacier', textSize: 1, weight: 'normal', leading: 'normal', tracking: 'normal', contrast: 'normal', zebra: true, glass: true, motion: true, mini: false, owner: true, navMulti: false, autoMini: true, dockW: null, bkGroup: 'month', svSort: 'last:desc', svWrap: false, svCols: null,
   });
   function load(){
     try { const raw = localStorage.getItem(KEY); if (raw){ const v = JSON.parse(raw); return migrate({ ...DEFAULTS(), ...v, layout: v.layout || 0, density: { ...DEFAULTS().density, ...(v.density || {}) } }); } }
@@ -88,7 +88,7 @@
     };
     Object.entries(a).forEach(([k, v]) => root.setAttribute(k, v));
     root.style.setProperty('--ts', String(P.textSize));
-    $('.app')?.classList.toggle('mini', (!!P.mini || S.autoMini) && device() === 'desktop');
+    $('.app')?.classList.toggle('mini', !!((P.mini || S.autoMini) && device() === 'desktop'));   // booléen strict : toggle(…, undefined) inverserait la classe
     $('.app')?.style.setProperty('--dock-w', P.dockW && device() === 'desktop' ? P.dockW + 'px' : '');
   }
 
@@ -346,7 +346,7 @@
 
   // 3.5 Billetterie — jauges horizontales compactes, toutes les informations au-dessus de la jauge
   function ticketsBlock(){
-    const list = D.DATES.filter(d => d.capacity && d.status.startsWith('Confirmée'));
+    const list = (D.TIX || D.DATES).filter(d => d.capacity && d.status.startsWith('Confirmée'));
     return cardHead('billetterie', 'Billetterie', list.length, viewToggle('billetterie') + goBtn('ticketing', 'Ticketing'))
       + (S.views.billetterie === 'chart'
         ? `<div class="tix">${list.map(d => { const pct = Math.round(d.sold / d.capacity * 100), ok = d.sold >= d.seuil;
@@ -500,6 +500,11 @@
         <p class="hint">Réglage propre à ce type d’appareil (${DEVICE_LABEL[dev]}).</p>`, ['density'])}
       ${card('p-nav', 'Navigation', `${sw('navMulti', 'Garder plusieurs modules ouverts', P.navMulti, 'Par défaut, ouvrir un module referme les autres (accordéon)')}
         ${sw('autoMini', 'Réduire la barre latérale à l’ouverture d’un panneau', P.autoMini, 'Sur Mac : plus de place pour la fiche ; elle revient à la fermeture du panneau')}`, ['navMulti', 'autoMini'])}
+      ${card('p-tab', 'Tableaux', (() => { const G = window.MATRICE_BOOKING?.GROUPS || [], SO = window.MATRICE_SUIVI?.SORTS || [];
+        const sel = (id, label, cur, opts, hint) => `<label class="field pref-sel" for="pf-${id}"><span>${esc(label)}</span><select class="input" id="pf-${id}" data-pref="${id}">${opts.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>${hint ? `<span class="hint">${esc(hint)}</span>` : ''}</label>`;
+        return sel('bkGroup', 'Booking — regroupement par défaut', P.bkGroup, G, 'Un autre regroupement peut être choisi ponctuellement dans Booking')
+          + sel('svSort', 'Suivi — tri par défaut', P.svSort, SO.flatMap(([k, l, a, d]) => [[`${k}:${d ? 'desc' : 'asc'}`, `${l} (${d || a})`], ...(d && a ? [[`${k}:asc`, `${l} (${a})`]] : [])]), 'Un autre tri peut être choisi ponctuellement dans Suivi')
+          + sw('svWrap', 'Suivi — afficher les textes en entier', P.svWrap, 'Artistes et résumés sur plusieurs lignes au lieu d’être tronqués'); })(), ['bkGroup', 'svSort', 'svWrap'])}
       ${card('p-fx', 'Effets', `${sw('glass', 'Effets de verre', P.glass, 'Navigation et menus seulement, jamais sur les données')}
         ${MQ.still.matches ? sw('motion', 'Animations', false, 'Désactivées par votre système (réduction des animations) : réglage indisponible ici.', true) : sw('motion', 'Animations', P.motion, 'Panneaux, menus et fenêtres')}`, ['glass', 'motion'])}
       ${card('p-read', 'Confort de lecture', `<div class="pref-row"><span class="l">Taille du texte</span>${seg('textSize', P.textSize, [['0.9', '90 %'], ['1', '100 %'], ['1.125', '112 %'], ['1.25', '125 %']], 'Taille du texte')}</div>
