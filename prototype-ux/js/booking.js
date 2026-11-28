@@ -262,7 +262,7 @@
       return `<tbody class="g1 ${open ? '' : 'closed'}"><tr class="grp grp1"><th colspan="${cols.length}" scope="rowgroup"><span class="grp-in">${toggleBtn(g, 1)}</span></th></tr>
         ${!open ? '' : g.children ? g.children.map(c => { const o2 = !B.collapsed.has(c.key);
           return `<tr class="grp grp2"><th colspan="${cols.length}" scope="rowgroup"><span class="grp-in">${toggleBtn(c, 2)}</span></th></tr>${o2 ? rowsHTML(c.list, cols, L) : ''}`; }).join('') : rowsHTML(g.list, cols, L)}</tbody>`; }).join('');
-    return `<div class="bk-tw" tabindex="-1"><table class="bkt" data-grid="bk" aria-label="Dates ${B.year}, regroupées par ${GROUPS.find(([v]) => v === grouping())[1].toLowerCase()}">${GR.head()}${body}</table></div>`;
+    return `<div class="bk-tw" tabindex="-1"><table class="bkt ${G[0]?.children ? 'lvl2' : ''}" data-grid="bk" aria-label="Dates ${B.year}, regroupées par ${GROUPS.find(([v]) => v === grouping())[1].toLowerCase()}">${GR.head()}${body}</table></div>`;
   }
   function calRow(c, span){
     const { esc, icon, dWeek } = X();
@@ -286,7 +286,7 @@
   function phoneList(){
     const G = tree();
     if (!G.length) return `<div class="bk-empty"><p>Aucune date en ${B.year}.</p></div>`;
-    return `<div class="bkm">${G.map(g => { const open = !B.collapsed.has(g.key);
+    return `<div class="bkm ${G[0]?.children ? 'lvl2' : ''}">${G.map(g => { const open = !B.collapsed.has(g.key);
       return `<section class="bkm-g ${open ? '' : 'closed'}"><div class="bkm-gh">${toggleBtn(g, 1)}</div>
         ${!open ? '' : g.children ? g.children.map(c => { const o2 = !B.collapsed.has(c.key); return `<div class="bkm-sh">${toggleBtn(c, 2)}</div>${o2 ? phoneRows(c.list) : ''}`; }).join('') : phoneRows(g.list)}</section>`; }).join('')}</div>`;
   }

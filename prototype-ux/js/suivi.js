@@ -132,6 +132,7 @@
   const GR = window.MX_GRID.make({ p: 'sv', cols: COLS, pref: 'svCols', locked: ['structure'], defPin: ['structure'], sortable: SORTS.map(x => x[0]),
     onSort: (k, dir) => { const cur = sortNow(); SV.sort = { key: k, dir: dir || (cur.key === k ? (cur.dir === 'asc' ? 'desc' : 'asc') : (DATE_KEYS.includes(k) ? 'desc' : 'asc')) };
       if (X().same(SV.sort, defSort())) SV.sort = null; } });
+  const closedOn = () => SV.showClosed && !SV.statuses.length;   // effet réel de « Suivis clos »
   const projOk = p => SV.projects.length ? p.project_ids.some(x => SV.projects.includes(x)) : (SV.showInactive || !p.project_ids.length || p.project_ids.some(x => BK().proj(x)?.active));
   function rows(){
     const { norm } = X(), multi = SV.statuses.length;
@@ -159,7 +160,7 @@
     return `<span class="sv-sortnote">${adhoc ? `Tri : <b>${X().esc(sortTxt(s))}</b> <button class="btn ghost sm" type="button" data-act="svSortSave">Utiliser par défaut</button><button class="btn ghost sm" type="button" data-act="svSortBack">Tri par défaut</button>`
       : `<span class="hint">Tri par défaut : ${X().esc(sortTxt(s))}</span>`}</span>`; };
   function toolbar(nClosed){
-    const { esc, icon, device } = X(), phone = device() === 'phone', na = SV.projects.length, ns = [SV.showInactive, SV.showClosed].filter(Boolean).length, nst = SV.statuses.length;
+    const { esc, icon, device } = X(), phone = device() === 'phone', na = SV.projects.length, ns = [SV.showInactive, closedOn()].filter(Boolean).length, nst = SV.statuses.length;
     const search = `<label class="bk-search">${icon('search', 'sm')}<input type="search" id="sv-q" value="${esc(SV.q)}" placeholder="Structure, ville, mot du résumé…" aria-label="Rechercher dans les suivis" autocomplete="off"></label>`;
     const nf = na + ns + nst;
     if (phone) return `<div class="bk-bar"><div class="bk-bar1">${search}<button class="btn sm icon" type="button" data-act="svExport" aria-label="Exporter les suivis">${icon('download', 'sm')}</button>
@@ -174,7 +175,7 @@
   }
   const activeRow = () => { const { esc, icon } = X(), a = [];
     if (SV.q) a.push(['q', `Recherche : « ${SV.q} »`]); SV.statuses.forEach(k => a.push(['st:' + k, `Statut : ${LABEL[k]}`]));
-    SV.projects.forEach(id => a.push(['proj:' + id, projName(id)])); if (SV.showInactive) a.push(['showInactive', 'Artistes inactifs affichés']); if (SV.showClosed) a.push(['showClosed', 'Suivis clos affichés']);
+    SV.projects.forEach(id => a.push(['proj:' + id, projName(id)])); if (SV.showInactive) a.push(['showInactive', 'Artistes inactifs affichés']); if (closedOn()) a.push(['showClosed', 'Suivis clos affichés']);
     return a.length ? `<div class="bk-active" aria-label="Filtres actifs">${a.map(([k, l]) => `<button class="fchip" type="button" data-act="svUnset" data-k="${esc(k)}" aria-label="Retirer le filtre ${esc(l)}">${esc(l)}${icon('x', 'sm')}</button>`).join('')}
       <button class="btn ghost sm" type="button" data-act="svReset">Réinitialiser les filtres</button></div>` : ''; };
   function cell(k, p, last){
@@ -521,6 +522,11 @@
     <p class="hint">${SV.statuses.length ? 'Seuls les statuts cochés sont affichés, clos compris.' : 'Aucun statut coché : suivis actifs (les clos selon « Affichage »).'}</p>`;
   function statusPop(btn){ X().openPop(btn, `<p class="eyebrow">Statuts</p>${statusChecks()}`, { label: 'Statuts', cls: 'bk-pop sv-stpop' }); }
   const reStatus = () => { const inPop = !!X().$('.sv-stpop'); X().renderMain(); refreshFilters(); if (inPop) statusPop(X().$('[data-act="svStatuses"]')); };
+  // « Suivis clos » = Confirmé + Clos (suiviClosed de main). Statuts cochés : l'option est sans effet, donc désactivée et expliquée ;
+  // son réglage est conservé et reprend effet quand les statuts sont réinitialisés.
+  const swClosed = (pre, n) => { const off = SV.statuses.length > 0;
+    return `<label class="switch ${off ? 'is-off' : ''}" for="${pre}-showClosed"><span class="txt">Suivis clos (confirmés et clos) <span class="hint">${n}</span>${off ? '<br><span class="hint">Sans effet tant que des statuts sont cochés : coche « Confirmé » ou « Clos » dans Statuts.</span>' : ''}</span>
+      <input type="checkbox" role="switch" id="${pre}-showClosed" data-svx="showClosed" ${SV.showClosed ? 'checked' : ''} ${off ? 'disabled aria-disabled="true"' : ''}></label>`; };
   function filtersSheet(){
     const { panelShell, openPanel, esc } = X();
     const sw = (k, l, n) => `<label class="switch" for="svf-${k}"><span class="txt">${l}${n != null ? ` <span class="hint">${n}</span>` : ''}</span><input type="checkbox" role="switch" id="svf-${k}" data-svx="${k}" ${SV[k] ? 'checked' : ''}></label>`;
@@ -528,7 +534,7 @@
     openPanel('svfilters', panelShell('Filtres', 'Suivi', `<div class="pnl-sec"><h3>Trier par</h3>${sortSel('svf-sort')}${SV.sort ? '<div class="sv-sortb"><button class="btn sm" type="button" data-act="svSortSave">Utiliser par défaut</button><button class="btn ghost sm" type="button" data-act="svSortBack">Tri par défaut</button></div>' : ''}</div>
       <div class="pnl-sec"><h3>Statuts</h3>${statusChecks()}</div>
       <div class="pnl-sec"><h3>Artistes</h3>${BK().PROJECTS.filter(x => x.active || SV.showInactive).map(x => `<label class="chk"><input type="checkbox" data-svproj="${x.id}" ${SV.projects.includes(x.id) ? 'checked' : ''}><span>${esc(x.name)}</span></label>`).join('')}</div>
-      <div class="pnl-sec"><h3>Affichage</h3>${sw('showInactive', 'Artistes inactifs')}${sw('showClosed', 'Suivis clos', nClosed)}</div>`,
+      <div class="pnl-sec"><h3>Affichage</h3>${sw('showInactive', 'Artistes inactifs')}${swClosed('svf', nClosed)}</div>`,
       '<button class="btn ghost" type="button" data-act="svReset">Réinitialiser</button><span class="grow"></span><button class="btn primary" type="button" data-act="closePanel">Voir les suivis</button>'), { full: true });
   }
   const refreshFilters = () => { if (X().S.panel === 'svfilters') filtersSheet(); };
@@ -540,7 +546,7 @@
   function displayPop(btn){
     const nClosed = DB.prospects.filter(p => projOk(p) && suiviClosed(p)).length;
     const sw = (k, l, n) => `<label class="switch" for="svp-${k}"><span class="txt">${l}${n != null ? ` <span class="hint">${n}</span>` : ''}</span><input type="checkbox" role="switch" id="svp-${k}" data-svx="${k}" ${SV[k] ? 'checked' : ''}></label>`;
-    X().openPop(btn, `<p class="eyebrow">Affichage</p><div class="pop-sw">${sw('showInactive', 'Artistes inactifs')}${sw('showClosed', 'Suivis clos (confirmés et clos)', nClosed)}</div>`, { label: 'Affichage', cls: 'bk-pop bk-mfpop' });
+    X().openPop(btn, `<p class="eyebrow">Affichage</p><div class="pop-sw">${sw('showInactive', 'Artistes inactifs')}${swClosed('svp', nClosed)}</div>`, { label: 'Affichage', cls: 'bk-pop bk-mfpop' });
   }
   const cur = () => byId(SV.open);
   const ACTS = {

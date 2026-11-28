@@ -1,4 +1,4 @@
-# MATRICE — prototype UX/UI V8.1 « Booking et Suivi »
+# MATRICE — prototype UX/UI V8.2 « Booking et Suivi »
 
 Branche `ux/refonte-uxui`, créée depuis `main` au commit `ee1f806` (v1.68.3, 26/11/2026). `main` inchangée depuis.
 Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (arbitrage A2). `DESIGN_SYSTEM.md` reste celui de `main`.
@@ -21,6 +21,12 @@ https://antcb.github.io/matrice-prototype/ — dépôt public `Antcb/matrice-pro
 - Aucune connexion : ni Supabase, ni Google, ni Pennylane, ni Brevo. Aucun appel réseau.
 - Préférences gardées dans le stockage local du navigateur, sous une clé propre (`matrice-proto.prefs.v1`), conformément à l'arbitrage A12.
 - GitHub Pages ne publie que `main` : ce dossier n'est pas en ligne depuis le dépôt. La démonstration est hébergée à part (lien transmis dans le compte rendu).
+
+## V8.2 (28/11/2026) — corrections ciblées
+- Booking, regroupements à deux niveaux : en-tête principal dominant (38 px, 15 px gras, filet marqué), sous-groupes en retrait, plus petits, filet partiel ; regroupement à un niveau et défaut « Mois » inchangés.
+- Suivi : « Suivis clos » (Confirmé + Clos) désactivé et expliqué quand des statuts sont cochés (sans effet), sans pastille ni puce ; repris à la réinitialisation des statuts.
+- Téléphone : indicateurs sur deux rangées, libellés sur une ligne, chiffres en dessous (Booking : trois compteurs puis cachets ; Suivi : actifs et statuts puis relances en retard).
+- Barre du bas de Suivi : recouvrement de la dernière carte non reproduit (barre hors de la zone de défilement) ; aucune modification.
 
 ## V8.1 (28/11/2026) — corrections Booking et Suivi
 - Composant commun `js/grid.js` : colonnes (largeur, ordre, visibilité, épinglage, tri par en-tête) utilisées par Booking et Suivi.
