@@ -23,6 +23,7 @@
  */
 import { acompteRetire, annulationOf, commissionState, etatAnnulation, isInvoiced, payAmount, paymentsOf, reglementsOf, soldeeParAvoir } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
+import { TOLERANCE } from './annulation-regles.js';
 import { addDays, eur2, today, workDay, addMonths, workDayBefore } from './utils.js';
 import { setting } from './selectors.js';
 
@@ -207,6 +208,15 @@ export function remindersOf(s, {all = false, delais} = {}){
     const jour = parisDay(e.a.created_at);
     for (const p of pays.filter(x => x.annulation === 'recalculee' && !isInvoiced(x) && (payAmount(x) || 0) > 0.005))
       rule(p.kind, jour, annulFactureTitle(p), 'annulation_facture');
+    // (v1.73, L4, décision 7 du 28/11/2026, 16 h 46) un rappel par type et par dossier, dû dès l'annulation, au montant restant : l'avoir
+    // rattaché solde seulement le rappel d'avoir ; seul un remboursement FAIT réduit le reste ; TTC non établi : « TTC à vérifier ».
+    // Même règle côté serveur : reminder_candidates (v1.73, annulation_avoir / annulation_remboursement, annulation_suivi)
+    const sv = e.suivi;
+    if (sv?.cession){
+      if (sv.avoir.reste > TOLERANCE) rule('avoir', jour, `Avoir à émettre (date annulée) : ${eur2(sv.avoir.reste)} HT`, 'annulation_avoir');
+      if ((sv.remboursement.resteTtc ?? sv.remboursement.resteHt) > TOLERANCE)
+        rule('remboursement', jour, `Remboursement à faire (date annulée) : ${sv.remboursement.resteTtc == null ? 'TTC à vérifier' : eur2(sv.remboursement.resteTtc) + ' TTC'}`, 'annulation_remboursement');
+    }
     invoiceRules(pays.filter(p => p.annulation !== 'abandonnee'), false, rule, s.date,
       {...d, facture_envoi: {...d.facture_envoi, on: d.facture_envoi.on && !e.depassement}, paiement: {...d.paiement, on: d.paiement.on && e.relanceGardee}}, monday);
     return out;

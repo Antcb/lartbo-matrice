@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 // js/utils.js (r2, fonction officielle) ne se charge pas hors du navigateur : seule son arrondi au centime est repris pour l'essai
 const src = readFileSync(new URL('../../js/annulation-regles.js', import.meta.url), 'utf8')
   .replace("import { r2 } from './utils.js';", "const r2 = n => Math.round((Number(n) || 0) * 100) / 100;");
-const { planAnnulation, regimeAnnulation, relanceImpaye, operationsAnnulation } = await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
+const { planAnnulation, regimeAnnulation, relanceImpaye, operationsAnnulation, suiviRegularisation } = await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
 
 let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
 const lignes = (soldeEmis = false) => [
@@ -80,4 +80,42 @@ ok(type(o, 'avoir').ht === 1000 && type(o, 'avoir').ttc === null && type(o, 'rem
   'TVA mixte, 0 € dus : avoir et remboursement en HT, TTC « à vérifier » (null)');
 o = operationsAnnulation({ regime: 'booking', du: null, tva: 20, commission: { existe: true, statut: 'non_due', montant: 600, facturee: true } });
 ok(o.length === 1 && o[0].type === 'commission' && o[0].statut === 'a_regulariser', 'booking : commission seule, non due déjà facturée → à régulariser');
+// (v1.73, L4) suivi des régularisations — mêmes figures que l'essai SQL v1.73 (annulation_suivi)
+const sv = x => suiviRegularisation({ regime: 'cession', tva: 5.5, factureEmise: true, commission: { existe: true, statut: 'non_due' }, ...x });
+const codes = r => r.blocages.map(b => b.code).sort().join();
+// A : l'artiste annule, 0 € dus, acompte 1 200 € HT encaissé (1 266 € TTC)
+let v = sv({ du: 0, factureBrutHt: 1200, encaisseHt: 1200, encaisseTtc: 1266 });
+ok(v.avoir.reste === 1200 && v.remboursement.resteTtc === 1266 && codes(v) === 'avenant,avoir,remboursement', 'A : avoir 1 200 € HT, 1 266 € TTC à rembourser, avenant manquant');
+v = sv({ du: 0, factureBrutHt: 1200, avoirsHt: 1200, encaisseHt: 1200, encaisseTtc: 1266, rembourseAFaireTtc: 1266 });
+ok(v.avoir.reste === 0 && v.avoir.fait === 1200 && v.remboursement.resteTtc === 1266 && v.remboursement.faitTtc === 0 && v.remboursement.aFaireTtc === 1266,
+  'A : avoir rattaché ≠ remboursement ; « à faire » non compté');
+v = sv({ du: 0, factureBrutHt: 1200, avoirsHt: 1200, encaisseHt: 252.13, encaisseTtc: 266, rembourseFaitTtc: 1000 });
+ok(v.remboursement.resteTtc === 266 && v.remboursement.prevuTtc === 1266 && v.remboursement.faitTtc === 1000, 'A : remboursement partiel → reste 266 € TTC');
+v = sv({ du: 0, factureBrutHt: 1200, avoirsHt: 1200, encaisseHt: 0, encaisseTtc: 0, rembourseFaitTtc: 1266, avenant: { signe: true, lien: 'https://exemple.test/a' } });
+ok(v.pret && !v.blocages.length, 'A : tout réglé, avenant, commission non due jamais versée → prêt à clôturer');
+ok(!sv({ du: 0, factureBrutHt: 1200, avoirsHt: 1200, rembourseFaitTtc: 1266, avenant: { signe: true, lien: ' ' } }).pret, 'avenant coché sans lien : non prêt');
+// A' : commission
+ok(codes(sv({ du: 0, commission: { existe: true, statut: 'non_due', versee: true }, factureEmise: false })) === 'commission', "A' : non due déjà versée → bloque");
+ok(codes(sv({ du: 0, commission: { existe: true, statut: 'a_revoir' }, factureEmise: false })) === 'commission', "A' : à revoir → bloque");
+ok(sv({ du: 0, commission: { existe: false }, factureEmise: false }).pret, 'sans commission : rien ne bloque de ce côté');
+// B : jamais encaissé : avoir, aucun remboursement
+v = sv({ du: 0, factureBrutHt: 1200 });
+ok(codes(v) === 'avenant,avoir' && v.remboursement.resteTtc === 0, 'B : avoir à émettre, aucun remboursement');
+// C : maintien partiel 2 000 €
+v = sv({ du: 2000, factureBrutHt: 1200, encaisseHt: 1200, encaisseTtc: 1266, avenant: { signe: true, lien: 'x' } });
+ok(v.facturation.reste === 800 && v.encaissement.resteTtc === 844 && codes(v) === 'encaissement,facturation', 'C : 800 € HT à facturer, 844 € TTC à encaisser');
+v = sv({ du: 2000, factureBrutHt: 2000, encaisseHt: 1579.15, encaisseTtc: 1666, avenant: { signe: true, lien: 'x' } });
+ok(v.encaissement.resteTtc === 444 && codes(v) === 'encaissement', 'C : encaissement partiel → reste 444 € TTC');
+// D, E : avoir partiel ; avoir à rattacher
+v = sv({ du: 0, factureBrutHt: 1200, avoirsHt: 600, encaisseHt: 1200, encaisseTtc: 1266, avoirsARattacher: 1 });
+ok(v.avoir.reste === 600 && v.blocages.some(b => b.code === 'a_rattacher'), 'D/E : avoir partiel → 600 € restent ; avoir « à rattacher » bloque');
+// F : TVA mixte : pas de montant TTC de remboursement
+v = sv({ du: 0, tvaUniforme: false, factureBrutHt: 4000, encaisseHt: 1200, encaisseTtc: 1266 });
+ok(v.remboursement.resteTtc === null && v.remboursement.resteHt === 1200 && v.blocages.find(b => b.code === 'remboursement').motif === 'Remboursement à faire : TTC à vérifier', 'F : TVA mixte → TTC à vérifier, aucun montant proposé');
+// G : dispense ; H : booking
+v = sv({ du: 0, factureEmise: false });
+ok(v.pret && v.avenantDispense, 'G : sans frais, aucune facture émise → avenant dispensé, prêt');
+ok(!suiviRegularisation({ regime: 'booking', du: null }).pret && suiviRegularisation({ regime: 'booking', du: null }).blocages[0].code === 'regime', 'H : booking non clôturable en L4');
+// tolérance d'un centime
+ok(sv({ du: 1000, factureBrutHt: 1000, encaisseHt: 1000, encaisseTtc: 1054.99, factureEmise: true, avenant: { signe: true, lien: 'x' } }).pret, 'écart d’un centime toléré');
 console.log(`annulation-regles : ${n}/${n} conformes`);

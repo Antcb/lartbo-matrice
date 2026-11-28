@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.73.0 — 28/11/2026
+- L4 : suivi des régularisations d'une date annulée — prévu, fait et reste (facturation, encaissement, avoirs, remboursements), avenant signé, clôture revérifiée par la base, réouverture automatique, rappels « Avoir à émettre » et « Remboursement à faire »
+
+
 ## 1.72.4 — 28/11/2026
 - L3 (relecture) : « Qui doit payer qui » comparé en HT ; montants TTC seulement si toutes les lignes ont la TVA de la date, sinon « TTC à vérifier » ; migration arrêtée devant une table d'annulation antérieure
 

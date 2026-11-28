@@ -81,3 +81,45 @@ export function operationsAnnulation({regime, du, tva, tvaUniforme = true, factu
   }
   return ops;
 }
+
+/**
+ * (v1.73, L4 — décisions d'Anthony du 28/11/2026, 16 h 46) Suivi des régularisations d'une cession annulée : pour chaque rubrique, ce qui
+ * était prévu, ce qui est fait (avec ses preuves) et ce qui reste ; conditions de clôture. Même calcul côté base : annulation_suivi
+ * (migration v1.73), qui revérifie à la clôture et rouvre le dossier si un mouvement fait réapparaître un reste.
+ *  - Facturation (HT) : montant dû / facturé net (factures émises − avoirs rattachés) / reste à facturer.
+ *  - Avoirs (HT) : facturé brut au-delà du montant dû / avoirs rattachés / reste à émettre. Un avoir ne rembourse jamais rien.
+ *  - Encaissement (TTC) : montant dû TTC / encaissé net / reste à encaisser.
+ *  - Remboursements (TTC) : trop-perçu / remboursements FAITS (une saisie « à faire » ne compte pas) / reste à rembourser.
+ *  TTC établi seulement si toutes les lignes de la cession ont la TVA de la date ; sinon null (« TTC à vérifier »), décision en HT.
+ *  Écart toléré : 1 centime (comme les rapprochements). Conditions de clôture (une par code) : cession seulement ; aucun reste ;
+ *  aucun avoir importé « à rattacher » sur la date ; avenant signé (case + lien), sauf annulation sans frais sans facture émise ;
+ *  commission ni « à revoir », ni non due déjà facturée ou versée. Les dépenses dues ne bloquent pas (décision 4).
+ */
+export const TOLERANCE = 0.01;
+export function suiviRegularisation({regime, du, tva, tvaUniforme = true, factureBrutHt = 0, avoirsHt = 0, encaisseHt = 0, encaisseTtc = 0,
+  rembourseFaitTtc = 0, rembourseAFaireTtc = 0, factureEmise = false, avoirsARattacher = 0, avenant = {}, commission = {}}){
+  const blocages = [], bloque = (code, motif) => blocages.push({code, motif});
+  if (regime !== 'cession' || du == null){
+    bloque('regime', regime === 'booking' ? 'Booking : la régularisation porte sur la commission (lot L5)' : 'Coproduction / coréalisation : régularisation dans le lot L8');
+    return {cession: false, blocages, pret: false};
+  }
+  const d = r2(du), net = r2(factureBrutHt - avoirsHt), duTtc = r2(d * (1 + (Number(tva) || 0) / 100));
+  const facturation = {prevu: d, fait: net, reste: Math.max(0, r2(d - net))};
+  const avoir = {prevu: Math.max(0, r2(factureBrutHt - d)), fait: r2(avoirsHt), reste: Math.max(0, r2(net - d))};
+  const encaissement = {prevuTtc: tvaUniforme ? duTtc : null, faitTtc: tvaUniforme ? r2(encaisseTtc) : null, resteTtc: tvaUniforme ? Math.max(0, r2(duTtc - encaisseTtc)) : null,
+    resteHt: Math.max(0, r2(d - encaisseHt))};
+  const remboursement = {prevuTtc: tvaUniforme ? Math.max(0, r2(encaisseTtc + rembourseFaitTtc - duTtc)) : null, faitTtc: r2(rembourseFaitTtc), aFaireTtc: r2(rembourseAFaireTtc),
+    resteTtc: tvaUniforme ? Math.max(0, r2(encaisseTtc - duTtc)) : null, resteHt: Math.max(0, r2(encaisseHt - d))};
+  const reste = (ttc, ht) => (ttc ?? ht) > TOLERANCE;
+  if (facturation.reste > TOLERANCE) bloque('facturation', `Reste à facturer : ${facturation.reste.toFixed(2)} € HT`);
+  if (avoir.reste > TOLERANCE) bloque('avoir', `Avoir à émettre : ${avoir.reste.toFixed(2)} € HT`);
+  if (reste(encaissement.resteTtc, encaissement.resteHt)) bloque('encaissement', encaissement.resteTtc == null ? `Reste à encaisser : ${encaissement.resteHt.toFixed(2)} € HT (TTC à vérifier)` : `Reste à encaisser : ${encaissement.resteTtc.toFixed(2)} € TTC`);
+  if (reste(remboursement.resteTtc, remboursement.resteHt)) bloque('remboursement', remboursement.resteTtc == null ? 'Remboursement à faire : TTC à vérifier' : `Reste à rembourser : ${remboursement.resteTtc.toFixed(2)} € TTC`);
+  if (avoirsARattacher > 0) bloque('a_rattacher', `${avoirsARattacher} avoir(s) importé(s) à rattacher sur cette date`);
+  const dispense = d <= TOLERANCE && !factureEmise;
+  if (!dispense && !(avenant.signe && String(avenant.lien || '').trim())) bloque('avenant', 'Avenant signé à renseigner (case et lien)');
+  const c = commission || {};
+  if (c.existe && c.statut !== 'non_due') bloque('commission', 'Commission à revoir (lot L5)');
+  else if (c.existe && c.statut === 'non_due' && (c.facturee || c.versee)) bloque('commission', 'Commission non due mais déjà facturée ou versée : à régulariser (lot L5)');
+  return {cession: true, du: d, duTtc: tvaUniforme ? duTtc : null, tvaUniforme, facturation, avoir, encaissement, remboursement, avenantDispense: dispense, blocages, pret: !blocages.length};
+}

@@ -34,8 +34,10 @@ export function viewProduction(){
   // (v1.72, décision 9 du 28/11/2026) dates ENGAGÉES annulées (fiche d'annulation) : section « Annulées à régulariser », hors du
   // compteur des dates confirmées ; leurs montants retenus, encaissements réels et commissions restent dans les chiffres (jamais le
   // cachet initial : financeOf prend le montant dû après annulation)
-  const annulees = showsFiltered().filter(s => s.status === 'Annulée' && annulationOf(s.id) && hit(s));
-  const finShows = shows.concat(archivedFin, annulees);
+  const annuleesToutes = showsFiltered().filter(s => s.status === 'Annulée' && annulationOf(s.id) && hit(s));
+  // (v1.73, L4) dossiers régularisés (clôturés) : sortis de « Annulées à régulariser », repliés à part ; toujours dans les totaux (D9)
+  const regularisees = annuleesToutes.filter(s => annulationOf(s.id)?.cloture_at), annulees = annuleesToutes.filter(s => !annulationOf(s.id)?.cloture_at);
+  const finShows = shows.concat(archivedFin, annuleesToutes);
   let artbo=0, partner=0;
   finShows.forEach(s => paymentsOf(s.id).forEach(p => {
     const a = payAmount(p)||0;
@@ -69,7 +71,10 @@ export function viewProduction(){
   const annulHTML = annulees.length ? `<section class="group" id="annulees-a-regulariser"><div class="group-head"><h2>Annulées à régulariser</h2><span class="count">${annulees.length}</span></div>
       <p class="help full">Dates engagées passées en « Annulée » : hors des dates confirmées ; leurs montants retenus, encaissements et dépenses restent dans les chiffres ci-dessus. Rien n’est régularisé automatiquement.</p>
       <div class="prod-list">${annulees.map(prodRow).join('')}</div></section>` : '';
-  if (!all.length && !archivedFin.length && !options.length && !annulees.length) return head + awayHTML + avoirsHTML + staleHTML + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
+  const regulHTML = regularisees.length ? `<details class="group" id="annulees-regularisees"><summary class="group-head"><h2>Annulées régularisées</h2><span class="count">${regularisees.length}</span></summary>
+      <p class="help full">Régularisation clôturée : tout reste consultable et compté dans les chiffres ; le dossier se rouvre de lui-même si un mouvement fait réapparaître un reste.</p>
+      <div class="prod-list">${regularisees.map(prodRow).join('')}</div></details>` : '';
+  if (!all.length && !archivedFin.length && !options.length && !annuleesToutes.length) return head + awayHTML + avoirsHTML + staleHTML + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
   return head + awayHTML + avoirsHTML + staleHTML + `
     <div class="stat-row">
       <div class="stat"><b>${eur2(artbo)}</b><span>Commissions L'ArtBo</span></div>
@@ -83,8 +88,8 @@ export function viewProduction(){
     ${archHTML}
     ${shows.length || options.length ? order.map(pid => `<section class="group"><div class="group-head"><h2>${esc(projName(pid)||'Sans projet')}</h2><span class="count">${groups[pid].length}</span></div>
       ${pid ? projectBudgetHTML(pid) : ''}
-      <div class="prod-list">${groups[pid].map(prodRow).join('')}</div></section>`).join('') : annulees.length ? '' : '<div class="empty panel">Aucune date ne correspond à la recherche.</div>'}
-    ${annulHTML}`;
+      <div class="prod-list">${groups[pid].map(prodRow).join('')}</div></section>`).join('') : annuleesToutes.length ? '' : '<div class="empty panel">Aucune date ne correspond à la recherche.</div>'}
+    ${annulHTML}${regulHTML}`;
 }
 
 function prodRow(s){
@@ -132,8 +137,8 @@ function prodBody(s, booking, steps, pays, late){
   // dans l'ordre du travail : conditions, suivi administratif (contrat…), factures, puis budget
   // (v1.72, L3) date annulée : onglet « Annulation » (fiche) en premier, ouvert par défaut
   const annulee = !!annulationOf(s.id), ea = annulee ? etatAnnulation(s) : null;
-  const aRegulariser = !!ea && !!(ea.depassement || ea.encaisseAuDela || ea.resteSansLigne || (ea.relancees.length && !ea.relanceGardee)
-    || ea.ops.some(o => o.type === 'commission' && o.statut === 'a_regulariser'));   // (v1.72.3) commission non due déjà facturée ou versée
+  // (v1.73, L4) ⚠︎ tant que le dossier n'est pas régularisé (clôturé) : reste, avenant, commission, ou réouverture automatique
+  const aRegulariser = !!ea && ea.dossier !== 'regularise';
   const tabs = [...(annulee ? [['annulation', 'Annulation', aRegulariser ? '⚠︎' : '']] : []),
     ['conditions', 'Conditions'], ['suivi', 'Suivi admin', late.size ? '⚠︎' : ''], ['factures', 'Factures', pays.length], ...(booking ? [] : [['budget', 'Budget']]), ['notes', 'Notes', s.notes ? '•' : '']];
   const cur = tabs.some(([k]) => k === S.tab[key]) ? S.tab[key] : annulee ? 'annulation' : 'conditions';

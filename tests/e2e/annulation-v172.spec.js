@@ -163,7 +163,7 @@ test('v1.72 — facture émise au-delà du montant retenu : relance d’impayé 
   let e = await etat(page, 'an-d4');
   expect(e.lignes.find(l => l.id === 'an-d4-s')).toMatchObject({ amount: 2800, annulation: null, invoice_number: 'F-TEST-an-d4-S' });   // facture émise intacte
   expect(e.etat).toMatchObject({ factureNet: 4000, depassement: 2000, relanceGardee: false });
-  expect(e.relances).toEqual([]);
+  expect(e.relances).toEqual(['annulation_avoir']);   // (v1.73, L4) seul le rappel « Avoir à émettre » ; impayé suspendu
   await expect(page.locator('#prod-an-d4 [data-a-regulariser]')).toContainText('Relance d’impayé suspendue : 2 800,00');
   await expect(page.locator('#prod-an-d4 [data-operation=avoir]')).toContainText('2 000,00 € HT');
   // maintien intégral : 2 800 € réclamés = encore dus → seule la relance d'impayé reste
@@ -239,7 +239,7 @@ test('v1.72 — ajustement du 28/11 (13 h 25) : solde recalculé « à faire » 
   await annuler(page, 'an-d7', { montant: 2000, motif: 'Maintien partiel (essai)' }); await confirmer(page);
   e = await etat(page, 'an-d7');
   expect(e.etat).toMatchObject({ depassement: 2000 });
-  expect(e.relances).toEqual([]);
+  expect(e.relances).toEqual(['annulation_avoir']);   // (v1.73, L4) facture au-delà : pas « à envoyer », mais « Avoir à émettre »
   await annuler(page, 'an-d8', { montant: 4000, motif: 'Maintien intégral (essai)' }); await confirmer(page);
   expect((await etat(page, 'an-d8')).relances).toEqual(['facture_envoi']);
   // aucun ajout d'acompte, de solde ni d'« Autre ligne » sur une date annulée (même refus que la base) ; boutons absents
@@ -274,7 +274,7 @@ test('v1.72.3 — qui doit payer qui : l’artiste annule (acompte encaissé res
   expect(e.lignes.find(l => l.id === 'an-e1-a')).toMatchObject({ amount: 1200, invoice_number: 'F-TEST-an-e1-A', annulation: null });   // facture et encaissement gardés
   expect(e.lignes.find(l => l.id === 'an-e1-s')).toMatchObject({ amount: 0, annulation: 'abandonnee' });
   expect(e.lignes.find(l => l.id === 'an-e1-c')).toMatchObject({ amount: 180 });   // commission : montant et versement intacts (L5)
-  expect(e.relances).toEqual([]);
+  expect(e.relances).toEqual(['annulation_avoir', 'annulation_remboursement']);   // (v1.73, L4) rappels de régularisation, solde sans relance
   const f1 = page.locator('#prod-an-e1 [data-fiche-annulation]');
   await expect(f1.locator('[data-origine=artiste]')).toContainText('L’artiste');
   await expect(f1.locator('[data-commission=non_due]')).toContainText('Non due');
@@ -290,7 +290,7 @@ test('v1.72.3 — qui doit payer qui : l’artiste annule (acompte encaissé res
   // 2. acompte facturé mais jamais encaissé, 0 € dus : avoir à émettre, AUCUN remboursement ; relance d'impayé suspendue
   await annuler(page, 'an-e2', { montant: 0, origine: 'commun', motif: 'Annulation d’un commun accord (essai)' }); await confirmer(page);
   e = await etat(page, 'an-e2');
-  expect(e.relances).toEqual([]);
+  expect(e.relances).toEqual(['annulation_avoir']);   // (v1.73, L4) « Avoir à émettre » ; impayé suspendu, aucun remboursement
   const f2 = page.locator('#prod-an-e2 [data-fiche-annulation]');
   await expect(f2.locator('[data-operation=avoir]')).toContainText('aucun remboursement');
   await expect(f2.locator('[data-operation=remboursement]')).toHaveCount(0);

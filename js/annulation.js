@@ -9,7 +9,7 @@ import { S } from './state.js';
 import { refreshFor, sb } from './data.js';
 import { byId, projName, structName } from './selectors.js';
 import { aRembourserTtc, allPaymentsOf, annulationOf, avoirCouvert, commissionState, dateEngagee, depenseEngagee, encaisseHt, encaisseTtc, etatAnnulation, factureNetTtc,
-  isInvoiced, mouvementsOf, payAmount, paymentsOf, payVat, resteDu, selfPaidCommission, showVat, soldeeParAvoir, transfersOf, ttc } from './calc.js';
+  avoirsOf, isInvoiced, mouvementsOf, payAmount, paymentsOf, payVat, reglementsOf, resteDu, selfPaidCommission, showVat, soldeeParAvoir, transfersOf, ttc } from './calc.js';
 import { COMMISSION_LABEL, ORIGINE_LABEL, REGIME_LABEL, operationsAnnulation, planAnnulation, regimeAnnulation, relanceImpaye } from './annulation-regles.js';
 import { payerLabel } from './budget.js';
 import { isOff } from './constants.js';
@@ -247,8 +247,9 @@ export function ficheAnnulationHTML(s){
     e.relancees.length && !e.relanceGardee && (e.regime === 'cession' ? `Relance d’impayé suspendue : ${eur2(e.reclame)} réclamés pour ${eur2(e.encore)} encore dus (affectation à vérifier).` : 'Relance de la facture de commission suspendue : commission à revoir.'),
     e.ops.some(o => o.type === 'commission' && o.statut === 'a_regulariser') && 'Commission L’ArtBo non due mais déjà facturée ou versée : à régulariser (lot suivant).'].filter(Boolean);
   const journal = (S.db.annulations_journal || []).filter(j => j.annulation_id === a.id).sort((x, y) => String(x.at).localeCompare(String(y.at)));
-  const ACT = {annuler: 'Annulée', corriger: 'Corrigée', retablir: 'Rétablie'};
+  const ACT = {annuler: 'Annulée', corriger: 'Corrigée', retablir: 'Rétablie', avenant: 'Avenant', cloturer: 'Clôturée (régularisée)', rouvrir: 'Rouverte automatiquement'};
   return `<div class="annul-fiche" data-fiche-annulation="${a.id}">
+    ${e ? suiviHTML(s, e) : ''}
     <p class="tab-intro"><b>Date annulée</b> le ${fmtDate(a.created_at)}${a.created_by ? ` par ${esc(a.created_by)}` : ''} · décision du ${fmtDate(a.decide_le)} · ${esc(REGIME_LABEL[a.regime])}${a.corrige_at ? ` · corrigée le ${fmtDate(a.corrige_at)}` : ''}
       <button class="btn sm" data-act="annulationCorriger" data-id="${a.id}">Corriger l’annulation…</button>
       <button class="btn sm ghost" data-act="annulationRetablir" data-id="${a.id}">Rétablir la date…</button></p>
@@ -274,7 +275,82 @@ export function ficheAnnulationHTML(s){
   </div>`;
 }
 
+// ─── (v1.73, L4 — décisions d'Anthony du 28/11/2026, 16 h 46) suivi des régularisations ──────────────────────────────────────
+export const DOSSIER_LABEL = {a_regulariser: 'À régulariser', pret: 'Prêt à clôturer', regularise: 'Régularisé'};
+const MOTIF = {regime: null, facturation: 'reste à facturer', avoir: 'avoir à émettre', encaissement: 'reste à encaisser', remboursement: 'reste à rembourser',
+  a_rattacher: 'avoir importé à rattacher sur la date', avenant: 'avenant signé à renseigner', commission: 'commission à revoir ou à régulariser (L5)'};
+const ttcOu = (v, ht) => v == null ? `<span class="warn-txt">TTC à vérifier</span>${ht != null ? ` <span class="muted small">(${eur2(ht)} HT)</span>` : ''}` : `${eur2(v)} TTC`;
+/** Preuves : avoirs rattachés aux factures de la date ; remboursements faits (date, compte, référence, rapproché ou non) et décidés */
+function preuves(s){
+  const bill = paymentsOf(s.id).filter(p => CESSION.includes(p.kind) && isInvoiced(p)), proj = byId('projects', s.project_id);
+  const avoirs = bill.flatMap(p => avoirsOf(p.id).map(x => `<li data-preuve-avoir>${esc(x.invoice_number || 'Avoir')}${x.invoice_date ? ` du ${fmtDate(x.invoice_date)}` : ''} : ${eur2(x.amount_ht)} HT sur ${esc(nom(p))}</li>`));
+  const rembs = bill.flatMap(p => reglementsOf(p.id).filter(r => r.sens === 'remboursement').map(r => r.etat === 'fait'
+    ? `<li data-preuve-remboursement="fait">${eur2(r.montant_ttc)} TTC remboursés le ${fmtDate(r.date)}${r.compte ? ` depuis ${esc(payerLabel(r.compte, proj))}` : ''}${r.reference ? ` · réf. ${esc(r.reference)}` : ''} · ${r.transaction_id ? 'rapproché' : '<b>Non rapproché</b>'}</li>`
+    : `<li data-preuve-remboursement="a_faire" class="muted">${eur2(r.montant_ttc)} TTC « à faire » (décidé) — non compté tant qu’il n’est pas fait</li>`));
+  return {avoirs, rembs};
+}
+/** Tableau prévu / fait / reste, état du dossier, motifs de blocage, avenant et clôture (onglet Annulation) */
+export function suiviHTML(s, e){
+  const a = e.a, sv = e.suivi, d = e.dossier;
+  const etat = `<span class="${d === 'regularise' ? 'ok-badge' : d === 'pret' ? 'badge' : 'warn-badge'}" data-dossier="${d}">${esc(DOSSIER_LABEL[d])}</span>`;
+  const rouvert = a.reouvert_at && d !== 'regularise' ? `<p class="warn-txt small" data-reouvert>Rouvert automatiquement le ${fmtDate(a.reouvert_at)} — ${esc(a.reouvert_cause || '')}</p>` : '';
+  const ferme = a.cloture_at ? `<p class="small" data-cloture>Régularisé le ${fmtDate(a.cloture_at)}${a.cloture_par ? ` par ${esc(a.cloture_par)}` : ''}.</p>` : '';
+  if (!sv.cession) return `<section class="mt annul-suivi" data-suivi-regularisation><h3 class="block-title">Suivi des régularisations ${etat}</h3>${rouvert}
+    <p class="small muted">${a.regime === 'booking' ? 'Booking : la régularisation porte sur la commission (lot L5).' : 'Coproduction / coréalisation : régularisation dans le lot L8.'} Pas de clôture ici pour l’instant.</p></section>`;
+  const {avoirs, rembs} = preuves(s);
+  const ligne = (code, titre, prevu, fait, reste, detail = '') => `<tr data-suivi="${code}"><td data-label="Rubrique"><b>${titre}</b>${detail}</td><td class="num" data-label="Prévu">${prevu}</td>
+    <td class="num" data-label="Fait">${fait}</td><td class="num" data-label="Reste"><b${sv.blocages.some(b => b.code === code) ? ' class="warn-txt"' : ''}>${reste}</b></td></tr>`;
+  const R = sv.remboursement, E = sv.encaissement;
+  const avenantOk = sv.avenantDispense ? '<span class="muted">non requis (sans frais, aucune facture émise)</span>'
+    : a.avenant_signe ? `signé · ${lien(a.avenant_lien)}` : '<span class="warn-txt">à renseigner</span>';
+  const bloque = sv.blocages.filter(b => MOTIF[b.code]);
+  return `<section class="mt annul-suivi" data-suivi-regularisation>
+    <h3 class="block-title">Suivi des régularisations ${etat}</h3>${rouvert}${ferme}
+    <div class="tbl-wrap"><table class="cards"><thead><tr><th>Rubrique</th><th class="num">Prévu</th><th class="num">Fait</th><th class="num">Reste</th></tr></thead><tbody>
+      ${ligne('facturation', 'Facturation (HT)', eur2(sv.facturation.prevu), eur2(sv.facturation.fait), eur2(sv.facturation.reste), ' <span class="muted small">montant dû · facturé net · reste à facturer</span>')}
+      ${ligne('encaissement', 'Encaissement', E.prevuTtc == null ? ttcOu(null, sv.du) : `${eur2(E.prevuTtc)} TTC`, E.faitTtc == null ? ttcOu(null) : `${eur2(E.faitTtc)} TTC`, ttcOu(E.resteTtc, E.resteHt), ' <span class="muted small">montant dû · encaissé net · reste à encaisser</span>')}
+      ${ligne('avoir', 'Avoirs (HT)', eur2(sv.avoir.prevu), eur2(sv.avoir.fait), eur2(sv.avoir.reste), `${avoirs.length ? `<ul class="small">${avoirs.join('')}</ul>` : ' <span class="muted small">aucun avoir rattaché</span>'}<span class="muted small">Un avoir ne rembourse rien.</span>`)}
+      ${ligne('remboursement', 'Remboursements', R.prevuTtc == null ? ttcOu(null, R.resteHt) : `${eur2(R.prevuTtc)} TTC`, `${eur2(R.faitTtc)} TTC`, ttcOu(R.resteTtc, R.resteHt), rembs.length ? `<ul class="small">${rembs.join('')}</ul>` : ' <span class="muted small">aucun remboursement enregistré</span>')}
+    </tbody></table></div>
+    <div class="steps mt"><label>Avenant signé</label><span data-avenant>${avenantOk} ${sv.avenantDispense ? '' : `<button class="btn sm ghost" data-act="annulationAvenant" data-id="${a.id}">Renseigner l’avenant…</button>`}</span>
+      <label>Commission</label><span>${sv.blocages.some(b => b.code === 'commission') ? '<span class="warn-txt">bloque la clôture — à traiter en L5</span>' : 'ne bloque pas'}</span>
+      <label>Dépenses dues</label><span class="muted">suivies dans le budget de la date (ne bloquent pas)</span></div>
+    ${d === 'regularise' ? '' : bloque.length ? `<p class="small" data-blocages><b>Avant de clôturer :</b> ${bloque.map(b => `<span data-blocage="${b.code}">${esc(MOTIF[b.code])}</span>`).join(' · ')}</p>`
+      : `<p data-pret><button class="btn primary sm" data-act="annulationCloturer" data-id="${a.id}">Clôturer…</button> <span class="small muted">Tout est réglé : la base revérifie avant de passer le dossier à « Régularisé ».</span></p>`}
+    <p class="small"><button class="btn sm ghost" data-act="subtab" data-key="prod:${s.id}" data-tab="factures">Factures, avoirs et remboursements →</button>
+      <span class="muted">Rattacher un avoir, enregistrer un remboursement : depuis l’onglet Factures. Rien n’est créé automatiquement.</span></p>
+  </section>`;
+}
+/** Avenant signé (décision 2) : case + lien ; décocher peut rouvrir un dossier régularisé (base : annulation_avenant) */
+export async function avenantAnnulation(annulId){
+  const a = (S.db.annulations || []).find(x => x.id === annulId && !x.retablie_at); if (!a) return;
+  return openModal({title: 'Avenant d’annulation', saveLabel: 'Enregistrer', cancelLabel: 'Fermer', values: {id: 'avenant:' + a.id, signe: !!a.avenant_signe, lien: a.avenant_lien || ''},
+    extraTop: '<p class="help full">Le justificatif de la décision d’annulation reste dans la fiche. La génération de l’avenant viendra plus tard (lot L9).</p>',
+    fields: [{k: 'signe', label: 'Avenant signé', type: 'checkbox', full: true}, {k: 'lien', label: 'Lien vers l’avenant signé', placeholder: 'https://…', full: true}],
+    onSave: async v => {
+      const signe = !!v.signe, l = String(v.lien || '').trim();
+      if (signe && !l){ toast('Indique le lien vers l’avenant signé', true); return false; }
+      const {error} = await sb.rpc('annulation_avenant', {p_id: a.id, p_signe: signe, p_lien: l || null});
+      if (error){ toast(error.message, true); return false; }
+      await recharger(a.show_id); toast('Avenant enregistré'); return true;
+    }});
+}
+/** Clôture manuelle (décision 1) : confirmation, puis la base revérifie toutes les conditions (annulation_cloturer) */
+export async function cloturerAnnulation(annulId){
+  const a = (S.db.annulations || []).find(x => x.id === annulId && !x.retablie_at); if (!a) return;
+  const s = byId('shows', a.show_id), e = s && etatAnnulation(s);
+  if (!e || e.dossier !== 'pret') return toast('Le dossier n’est pas prêt à clôturer', true);
+  if ((await ask({title: 'Clôturer la régularisation ?', text: 'Tout est réglé : facturation, encaissements, avoirs et remboursements à zéro, avenant renseigné ou non requis, commission sans blocage. Le dossier passera à « Régularisé » ; il se rouvrira de lui-même si un mouvement fait réapparaître un reste.',
+    actions: [{value: true, label: 'Clôturer'}], cancel: 'Revenir'})) !== true) return;
+  const {error} = await sb.rpc('annulation_cloturer', {p_id: a.id});
+  await recharger(a.show_id);
+  if (error) return toast(error.message, true);
+  toast('Dossier régularisé'); render();
+}
+
 export const ANNUL_ACTIONS = {
+  annulationAvenant: t => avenantAnnulation(t.dataset.id),
+  annulationCloturer: t => cloturerAnnulation(t.dataset.id),
   annulerDate: t => annulerDate(t.dataset.id, t.dataset.statut || 'Annulée'),
   annulationCorriger: t => corrigerAnnulation(t.dataset.id),
   annulationRetablir: t => retablirDate(t.dataset.id),

@@ -446,6 +446,22 @@
             origine_precision: p_origine == null ? a.origine_precision : (t(p_origine_precision) || null) }); a.empreinte = empreinte(a.show_id);
           journal(a, 'corriger', avant, { montant_du_ht: a.montant_du_ht, motif: a.motif, origine: a.origine, commission: a.commission }, mc); return a;
         },
+        // v1.73 (L4) : avenant (case + lien) et clôture — la base revérifie les conditions (annulation_suivi, essai SQL v1.73) ; ici,
+        // un refus de la base se simule par window.__RPC_ERROR.annulation_cloturer ; la réouverture automatique est essayée en SQL
+        annulation_avenant: ({ p_id, p_signe, p_lien }) => {
+          if (p_signe == null) err('Indique si l\'avenant est signé');
+          if (p_signe && !t(p_lien)) err('Lien vers l\'avenant signé obligatoire');
+          const a = (D().annulations || []).find(x => x.id === p_id && !x.retablie_at) || err('Fiche d\'annulation introuvable ou rétablie');
+          const avant = { avenant_signe: !!a.avenant_signe, avenant_lien: a.avenant_lien ?? null };
+          Object.assign(a, { avenant_signe: !!p_signe, avenant_lien: t(p_lien) || null });
+          journal(a, 'avenant', avant, { avenant_signe: a.avenant_signe, avenant_lien: a.avenant_lien }, null); return a;
+        },
+        annulation_cloturer: ({ p_id }) => {
+          const a = (D().annulations || []).find(x => x.id === p_id && !x.retablie_at) || err('Fiche d\'annulation introuvable ou rétablie');
+          if (a.cloture_at) err('Dossier déjà régularisé');
+          Object.assign(a, { cloture_at: now(), cloture_par: USER, reouvert_at: null, reouvert_cause: null });
+          journal(a, 'cloturer', {}, {}, null); return a;
+        },
         annulation_retablir: ({ p_id, p_motif }) => {
           const m = t(p_motif); if (!m) err('Motif obligatoire (1 000 caractères au plus)');
           const a = (D().annulations || []).find(x => x.id === p_id && !x.retablie_at) || err('Fiche d\'annulation introuvable ou déjà rétablie');

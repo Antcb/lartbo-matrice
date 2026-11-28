@@ -5,7 +5,7 @@ import { r2, eur2 } from './utils.js';
 import { byId, showCommissionPct } from './selectors.js';
 import { S } from './state.js';
 import { commissionBase } from './corea.js';
-import { operationsAnnulation, planAnnulation, relanceImpaye } from './annulation-regles.js';
+import { operationsAnnulation, planAnnulation, relanceImpaye, suiviRegularisation } from './annulation-regles.js';
 
 /** Lignes financières d'une date QUI COMPTENT : une ligne « hors calcul » (coproduction, import — v1.44) est gardée pour la traçabilité
  *  mais n'entre dans aucun calcul, indicateur, compte, rappel ni opération Pennylane. Même règle côté base : payment_is_emitted, rappels. */
@@ -288,14 +288,25 @@ export function etatAnnulation(s){
   // (v1.72.3) qui doit payer qui : facture à émettre, paiement attendu, avoir à émettre, remboursement TTC, commission (non due → à
   // régulariser si déjà facturée ou versée) — affichage seulement, rien n'est créé (js/annulation-regles.js operationsAnnulation)
   const com = paymentsOf(s.id).find(p => p.kind === 'artbo'), cs = com && !booking ? commissionState(com) : null;
-  const ops = operationsAnnulation({regime, du, tva: showVat(s), tvaUniforme: bill.every(p => payVat(p) === showVat(s)), encaisseHt: encaisse, factureNetHt: plan.factureNet,
+  let comInfo;
+  const tvaUniforme = bill.every(p => Number(payVat(p)) === Number(showVat(s)));
+  const ops = operationsAnnulation({regime, du, tva: showVat(s), tvaUniforme, encaisseHt: encaisse, factureNetHt: plan.factureNet,
     factureNetTtc: r2(bill.reduce((t, p) => t + factureNetTtc(p), 0)), encaisseTtc: r2(bill.reduce((t, p) => t + encaisseTtc(p), 0)),
     rembourseSaisiTtc: r2(bill.reduce((t, p) => t + aRembourserTtc(p), 0)), resteAFacturerHt: du == null ? 0 : plan.resteAFacturer,
-    commission: {existe: !!com && regime !== 'coprod', statut: a.commission, montant: com ? payAmount(com) || 0 : 0, facturee: !!com && !selfPaidCommission(com) && isInvoiced(com),
+    commission: comInfo = {existe: !!com && regime !== 'coprod', statut: a.commission, montant: com ? payAmount(com) || 0 : 0, facturee: !!com && !selfPaidCommission(com) && isInvoiced(com),
       versee: !!com && (booking ? filled(com.paid_at) : (cs.transferred > 0.005 || filled(com.paid_at))), verse: cs ? cs.transferred : (com && filled(com.paid_at) ? payAmount(com) || 0 : 0)}});
   return {a, regime, du, factureNet: du == null ? null : plan.factureNet, resteAFacturer: du == null ? null : plan.resteAFacturer, aEmettre,
     resteSansLigne: du == null ? 0 : Math.max(0, r2(plan.resteAFacturer - aEmettre)), depassement: du == null ? 0 : plan.depassement,
-    encaisse, encaisseAuDela: du == null ? 0 : Math.max(0, r2(encaisse - du)), reclame, relancees, relanceGardee: rel.garde, encore: rel.encore, ops};
+    encaisse, encaisseAuDela: du == null ? 0 : Math.max(0, r2(encaisse - du)), reclame, relancees, relanceGardee: rel.garde, encore: rel.encore, ops,
+    // (v1.73, L4) suivi des régularisations et conditions de clôture — même calcul côté base : annulation_suivi
+    suivi: suiviRegularisation({regime, du, tva: showVat(s), tvaUniforme,
+      factureBrutHt: r2(bill.filter(isInvoiced).reduce((t, p) => t + Math.max(0, payAmount(p) || 0), 0)), avoirsHt: r2(bill.filter(isInvoiced).reduce((t, p) => t + avoirCouvert(p), 0)),
+      encaisseHt: encaisse, encaisseTtc: r2(bill.reduce((t, p) => t + encaisseTtc(p), 0)),
+      rembourseFaitTtc: r2(bill.reduce((t, p) => t + reglementsOf(p.id).filter(r => r.sens === 'remboursement' && r.etat === 'fait').reduce((x, r) => x + Number(r.montant_ttc), 0), 0)),
+      rembourseAFaireTtc: r2(bill.reduce((t, p) => t + aRembourserTtc(p), 0)), factureEmise: bill.some(isInvoiced),
+      avoirsARattacher: avoirsARattacher().filter(x => x.show_id === s.id).length, avenant: {signe: !!a.avenant_signe, lien: a.avenant_lien}, commission: comInfo}),
+    // état du dossier : régularisé (clôturé par la base), prêt à clôturer, ou à régulariser
+    get dossier(){ return a.cloture_at ? 'regularise' : this.suivi.pret ? 'pret' : 'a_regulariser'; }};
 }
 
 /** (v1.72, ajustement du 28/11/2026, 13 h 25) Création refusée : aucune ligne de facturation (acompte, solde, autre) sur une date
