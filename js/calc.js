@@ -290,6 +290,15 @@ export function etatAnnulation(s){
     encaisse, encaisseAuDela: du == null ? 0 : Math.max(0, r2(encaisse - du)), reclame, relancees, relanceGardee: rel.garde, encore: rel.encore};
 }
 
+/** (v1.72, ajustement du 28/11/2026, 13 h 25) Création refusée : aucune ligne de facturation (acompte, solde, autre) sur une date
+ *  annulée avec une fiche active — le montant dû se change par « Corriger l'annulation ». Même règle côté base :
+ *  show_payments_annulation_guard (insert). Appelée par data.insertRow pour TOUTE création. */
+export function insertBlocked(table, values){
+  if (table === 'show_payments' && ['acompte', 'solde', 'autre'].includes(values?.kind) && annulationOf(values.show_id))
+    return 'Date annulée : aucune ligne de facturation (acompte, solde, autre ligne) ne s’y ajoute ; passe par « Corriger l’annulation ».';
+  return '';
+}
+
 /** Pourquoi une ligne de facturation ne peut plus changer ('' = modifiable) */
 export function billLockReason(p){
   if (!p) return '';
@@ -411,6 +420,8 @@ export function changeBlocked(table, id, patch){
       return 'Facture déjà émise : son numéro, sa date d’envoi, sa date de paiement et son identifiant Pennylane ne s’effacent pas (une régularisation se décide à part).';
     // (v1.61.1, décision d'Anthony du 10/11/2026) plus d'acompte « caduc » : un acompte non facturé reste dû et peut s'émettre
     // même après le solde (la base ne le refuse plus : show_payments_caduc_guard)
+    // (v1.72) ligne rattachée par changement de date ou de nature à une date annulée : même refus qu'une création (insertBlocked)
+    if (['show_id', 'kind'].some(k => k in patch && !sameVal(patch[k], row[k]))){ const why = insertBlocked('show_payments', {...row, ...patch}); if (why) return why; }
     if (!['amount', 'pct', 'vat_rate', 'show_id', 'kind'].some(k => k in patch && !sameVal(patch[k], row[k]))) return '';
     return billLockReason(row) || acompteRetireOnly(row, patch);
   }

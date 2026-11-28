@@ -176,7 +176,7 @@ function invoiceRules(pays, booking, rule, showDate, d, monday){
  *  {all: true} = relances concernées malgré la suspension, à leur échéance d'origine (fenêtre « Réactiver les relances »).
  *  Chaque relance porte sa règle (key) = celle de generate_reminders. */
 export function remindersOf(s, {all = false, delais} = {}){
-  // (v1.72, L3) date annulée avec une fiche d'annulation : relance d'impayé seulement (décision 6 du 28/11/2026, plus bas)
+  // (v1.72, L3) date annulée avec une fiche d'annulation : relances de facturation de la cession seulement (plus bas)
   const annulee = s.status === 'Annulée' && !!annulationOf(s.id);
   if (!(CONFIRMED_PROD.includes(s.status) || annulee) || s.archived_at || (s.reminders_suspended_at && !all)) return [];
   const out = [], pays = paymentsOf(s.id), now = today(), next = (!all && s.reminders_next) || {};
@@ -190,12 +190,20 @@ export function remindersOf(s, {all = false, delais} = {}){
   // prochaine échéance choisie à la réactivation : jamais avant l'échéance d'origine
   const rule = (step, due, title, key) => { const origin = due; if (next[key] && next[key] > due) due = next[key];
     out.push({step, key, due, origin, title, late: due <= now, ...(old(key) ? {stale: true, staleWhy: OLD_DAYS[RULE[key].old]} : {})}); };
-  // (v1.72) date annulée : aucune relance d'organisation ni des lignes qui ne doivent plus être émises ; relance d'impayé gardée
-  // (cession) seulement si le montant réclamé ne dépasse pas ce qui reste dû après annulation — sinon « À régulariser » et suspendue ;
-  // booking (commission à revoir), coproduction, coréalisation : aucune. Même règle côté serveur : reminder_candidates (v1.72)
+  // (v1.72) date annulée : aucune relance d'organisation ni des lignes qui ne doivent plus être émises. Cession seulement (booking :
+  // commission à revoir ; coproduction, coréalisation : aucune) — décisions d'Anthony du 28/11/2026 (12 h 08 et 13 h 25) :
+  //  - « Facture de solde à faire » pour le solde recalculé (non émis, montant > 0), à l'échéance habituelle ;
+  //  - « Facture à envoyer » tant qu'une facture faite n'est pas envoyée ET que le facturé net ne dépasse pas le montant retenu
+  //    (sinon facture « à régulariser » : sans relance) ;
+  //  - impayé : gardé seulement si le montant réclamé ne dépasse pas ce qui reste dû après annulation, sinon suspendu.
+  // Même règle côté serveur : reminder_candidates (v1.72, colonnes so_recalc / envoi_ok / impaye_ok)
   if (annulee){
     const e = etatAnnulation(s);
-    if (e?.regime === 'cession' && e.relanceGardee) invoiceRules(pays, false, rule, s.date, {...d, facture_envoi: {...d.facture_envoi, on: false}}, monday);
+    if (e?.regime !== 'cession') return out;
+    const so = first('solde');
+    if (on('solde_envoi') && s.date && so?.annulation === 'recalculee' && !isInvoiced(so)) rule('solde', soldeReminderDay(s.date, d.solde_envoi.n), 'Facture de solde à faire', 'solde_envoi');
+    invoiceRules(pays.filter(p => p.annulation !== 'abandonnee'), false, rule, s.date,
+      {...d, facture_envoi: {...d.facture_envoi, on: d.facture_envoi.on && !e.depassement}, paiement: {...d.paiement, on: d.paiement.on && e.relanceGardee}}, monday);
     return out;
   }
   if (s.prod_mode === 'booking'){

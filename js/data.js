@@ -30,12 +30,14 @@ export async function fetchAll(table){
   }
 }
 
-let saveGuard = null, saveComplement = null, saveConfirm = null;
+let saveGuard = null, saveComplement = null, saveConfirm = null, insertGuard = null;
 /** Confirmation demandée avant certains enregistrements (installée par actions.js : changement de cachet / % / mode d'une date qui
  *  a déjà des factures émises ou des commissions versées, lot D1) ; renvoie false = rien n'est écrit */
 export const setSaveConfirm = f => { saveConfirm = f; };
 /** Garde-fou appelé avant chaque enregistrement (installé par actions.js : calc.changeBlocked) ; message = refus */
 export const setSaveGuard = f => { saveGuard = f; };
+/** (v1.72) garde-fou des créations (js/calc.js insertBlocked), branché par actions.js comme setSaveGuard */
+export const setInsertGuard = f => { insertGuard = f; };
 /** Compléments écrits avec un enregistrement (installé par actions.js : calc.freezeOnEmit — montant du solde figé à l'émission) */
 export const setSaveComplement = f => { saveComplement = f; };
 
@@ -139,6 +141,8 @@ export async function insert(table, values){
 }
 /** Création sans message (v1.60.4) : {data, error} ; l'appelant explique l'échec (ex. doublon d'import_key, code 23505) */
 export async function insertRow(table, values){
+  const why = insertGuard ? insertGuard(table, values) : '';
+  if (why) return {data: null, error: {message: why}};
   const {data, error} = await sb.from(table).insert(values).select().single();
   if (error) return {data: null, error};
   // la ligne a pu arriver avant par la mise à jour automatique : on la remplace au lieu de l'ajouter deux fois

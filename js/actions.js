@@ -7,9 +7,9 @@ import { MAIL_ACTIONS } from './mailbox.js';
 import { TEXT_ACTIONS } from './textes-journal.js';
 import { afterFeeChange, askConfirmation, becameConfirmed, sendConfirmation, validateTerms } from './confirm-flow.js';
 import { go, render } from './app.js';
-import { BILL_KINDS, payeeParMouvements, billLockReason, billPct, changeBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
+import { BILL_KINDS, payeeParMouvements, billLockReason, billPct, changeBlocked, insertBlocked, commissionState, emittedLinesOf, isProdCommission, freezeOnEmit, isInvoiced, payAmount, paymentsOf, payVat, soldeInvoiced } from './calc.js';
 import { CONFIRMED_PROD, FOLLOW_DATES, INVOICE_DATES, PAY_KINDS, isOff } from './constants.js';
-import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, restoreShow, save, saveLinger, sb, setProspection, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
+import { insert, openStored, purgeStored, refreshFor, refreshShowSide, refreshSummary, remove, removeWhere, restoreShow, save, saveLinger, sb, setProspection, setInsertGuard, setSaveComplement, setSaveConfirm, setSaveGuard } from './data.js';
 import { reactivateRemindersWindow, createArtistFolder, editContact, prospectionBlock, editProject, editProspect, editShow, editStructure, editTask, exportSuivis, linkDrive, newEvent, newSpectacle, projectPhoto, showPrefillFromStructure, showPrefillFromSuivi } from './forms.js';
 import { departments, attachmentsOf, byId, contactsExclusPartages, filesOf, linkLabel, logsOf, projIds, projNames, publicLink, setting, showLabel, showsFiltered, structName, unreadNotifs } from './selectors.js';
 import { CFG } from './config.js';
@@ -49,6 +49,7 @@ export async function cleanupDraft(){
 }
 
 setSaveGuard(changeBlocked);   // aucune facture émise ne change, par aucun écran (§6.4)
+setInsertGuard(insertBlocked);   // (v1.72) aucune ligne de facturation ajoutée à une date annulée
 setSaveComplement(freezeOnEmit);   // montant figé au moment où la ligne est émise ou versée (lot C1 solde, lot D1 toutes)
 // Avertissement (lot D1) : cachet, %, TVA ou mode d'une date qui a déjà des factures émises ou des commissions / parts versées.
 // Leurs montants sont figés et ne changeront pas ; on demande quand même une confirmation (fenêtre de l'application, jamais confirm()).
