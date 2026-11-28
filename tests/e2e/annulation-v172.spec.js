@@ -214,3 +214,41 @@ test('v1.72 — « Sans Suite » renvoie vers l’annulation ; date non engagée
   await expect(page.locator('#prod-an-d9 [data-fiche-annulation]')).toContainText('Sans calcul automatique');
   expectClean(ctx);
 });
+
+test('v1.72 — ajustement du 28/11 (13 h 25) : solde recalculé « à faire » puis « à envoyer » ; facture au-delà sans relance ; aucun ajout de ligne', async ({ page }) => {
+  const ctx = await openApp(page);
+  const faite = sid => ({ ...lignes(sid)[1], amount: 2800, invoice_number: 'F-TEST-' + sid + '-S', invoiced_on: iso(-5) });
+  await preparer(page, { shows: [date('an-d6'), date('an-d7'), date('an-d8')],
+    payments: [...lignes('an-d6'), ...lignes('an-d7').map(p => p.kind === 'solde' ? faite('an-d7') : p), ...lignes('an-d8').map(p => p.kind === 'solde' ? faite('an-d8') : p)] });
+  // solde recalculé (800 € à émettre) : « Facture de solde à faire » rétablie, seule relance de la date
+  await annuler(page, 'an-d6', { montant: 2000 }); await confirmer(page);
+  let e = await etat(page, 'an-d6');
+  expect(e.lignes.find(l => l.id === 'an-d6-s')).toMatchObject({ amount: 800, annulation: 'recalculee' });
+  expect(e.relances).toEqual(['solde_envoi']);
+  // une fois émis (800 € = montant retenu) : « Facture à envoyer » prend le relais ; envoyé : relance d'impayé (800 € encore dus)
+  await page.evaluate(async () => { const { save } = await import('./js/data.js'); await save('show_payments', 'an-d6-s', { invoice_number: 'F-TEST-an-d6-S', invoiced_on: new Date().toISOString().slice(0, 10) }); });
+  e = await etat(page, 'an-d6');
+  expect(e.lignes.find(l => l.id === 'an-d6-s')).toMatchObject({ amount: 800, invoice_number: 'F-TEST-an-d6-S' });
+  expect(e.relances).toEqual(['facture_envoi']);
+  await page.evaluate(async d => { const { save } = await import('./js/data.js'); await save('show_payments', 'an-d6-s', { sent_at: d }); }, iso(0));
+  expect((await etat(page, 'an-d6')).relances).toEqual(['solde_paye']);
+  // solde de 2 800 € fait mais pas envoyé, 2 000 € dus : facture « à régulariser » → aucune relance ; 4 000 € dus : « à envoyer » gardée
+  await annuler(page, 'an-d7', { montant: 2000, motif: 'Maintien partiel (essai)' }); await confirmer(page);
+  e = await etat(page, 'an-d7');
+  expect(e.etat).toMatchObject({ depassement: 2000 });
+  expect(e.relances).toEqual([]);
+  await annuler(page, 'an-d8', { montant: 4000, motif: 'Maintien intégral (essai)' }); await confirmer(page);
+  expect((await etat(page, 'an-d8')).relances).toEqual(['facture_envoi']);
+  // aucun ajout d'acompte, de solde ni d'« Autre ligne » sur une date annulée (même refus que la base) ; boutons absents
+  await expect(page.locator('#prod-an-d6 [data-act=addPay]')).toHaveCount(0);
+  await page.evaluate(() => { window.__calls.length = 0; });
+  const refus = await page.evaluate(async () => { const { insertRow } = await import('./js/data.js'); const out = [];
+    for (const kind of ['acompte', 'autre', 'solde']) out.push((await insertRow('show_payments', { show_id: 'an-d6', kind, label: 'Essai', sort: 9 })).error?.message || '');
+    return out; });
+  refus.forEach(m => expect(m).toContain('Date annulée : aucune ligne de facturation'));
+  const rattache = await page.evaluate(async () => (await import('./js/calc.js')).changeBlocked('show_payments', 'an-d6-c', { kind: 'autre' }));
+  expect(rattache).toContain('Date annulée : aucune ligne de facturation');
+  expect(await ecritures(page)).toEqual([]);
+  expect((await etat(page, 'an-d6')).lignes).toHaveLength(3);
+  expectClean(ctx);
+});

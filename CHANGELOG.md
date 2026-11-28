@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.72.2 — 28/11/2026
+- L3 : relances « Facture de solde à faire » et « Facture à envoyer » rétablies pour le solde recalculé d'une date annulée (sauf facture au-delà du montant retenu) ; ajout d'acompte, de solde ou d'« Autre ligne » refusé sur une date annulée (application et base)
+
+
 ## 1.72.1 — 28/11/2026
 - L3, relecture : pas de devis Pennylane sur une date annulée ; fonctions internes d'annulation réservées à la base
 

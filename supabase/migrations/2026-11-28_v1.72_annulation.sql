@@ -12,9 +12,12 @@
 --  4. Commission : montant existant gardé (« À revoir », L5). Booking : écran limité à la commission. Coproduction, coréalisation :
 --     motif, documents et mouvements, sans calcul (L8).
 --  5. Relances (reminder_candidates, même règle : js/reminders.js) : date annulée = aucune relance d'organisation ni des lignes
---     abandonnées ; relance d'impayé gardée (cession) seulement si le montant réclamé (restes dus HT des factures relancées) ne dépasse
---     pas ce qui reste dû (montant dû − encaissé HT) ; sinon « À régulariser », relance suspendue. Booking : commission à revoir →
---     relance suspendue.
+--     abandonnées. Cession (ajustement du 28/11/2026, 13 h 25) : « Facture de solde à faire » pour le solde recalculé ; « Facture à
+--     envoyer » tant que le facturé net ne dépasse pas le montant retenu (annulation_depasse), sinon facture « à régulariser » sans
+--     relance ; impayé gardé seulement si le montant réclamé (restes dus HT des factures relancées) ne dépasse pas ce qui reste dû
+--     (montant dû − encaissé HT), sinon « À régulariser », relance suspendue. Booking : commission à revoir → relance suspendue.
+--  5 bis. Ajout d'une ligne de facturation (acompte, solde, autre) sur une date annulée avec fiche : refusé en base (même garde) ;
+--     le solde recalculé reste facturable et « Rétablir la date » fonctionne (transaction annoncée).
 --  6. Correction (annulation_corriger) : motif obligatoire, trace avant / après. Rétablir (annulation_retablir) : seulement si aucune
 --     facture, aucun avoir, aucun paiement ni remboursement n'a été ajouté ou modifié depuis (empreinte) ; les lignes reprennent leur
 --     état d'origine et la date son statut d'avant.
@@ -146,6 +149,22 @@ $$;
 -- interne (reminder_candidates) : l'application calcule de son côté (js/calc.js etatAnnulation)
 revoke all on function public.annulation_relance_impaye(uuid) from public, anon, authenticated;
 
+-- facturé au-delà du montant retenu (cession) : facturé net des lignes émises, après avoirs, supérieur au montant dû — la facture est
+-- alors « à régulariser » et n'est plus relancée pour l'envoi (décision du 28/11/2026, 13 h 25) ; même calcul que annulation_appliquer
+-- et js/annulation-regles.js planAnnulation (depassement)
+create or replace function public.annulation_depasse(p_show uuid) returns boolean
+ language sql stable security definer set search_path = public, pg_temp
+as $$
+  select coalesce((
+    select (select coalesce(sum(greatest(0, coalesce(public.payment_amount_now(x), 0) - least(public.avoir_couvert(x.id), greatest(0, coalesce(public.payment_amount_now(x), 0))))), 0)
+              from public.show_payments x
+             where x.show_id = p_show and x.hors_calcul is null and x.kind in ('acompte', 'solde', 'autre') and public.payment_is_emitted(x))
+           > a.montant_du_ht + 0.005
+      from public.annulations a where a.show_id = p_show and a.retablie_at is null and a.regime = 'cession'), false)
+$$;
+-- interne (reminder_candidates)
+revoke all on function public.annulation_depasse(uuid) from public, anon, authenticated;
+
 -- empreinte des opérations financières de la date (rétablir seulement si rien n'a été ajouté ni modifié depuis l'annulation) :
 -- factures (émission), avoirs, encaissements / remboursements, réémissions, versements de commission ; les montants posés par
 -- l'annulation elle-même (lignes recalculées / abandonnées) n'y entrent pas
@@ -248,6 +267,18 @@ create or replace function public.show_payments_annulation_guard() returns trigg
 as $$
 declare annonce boolean := coalesce(current_setting('matrice.annulation', true), '') = 'on';
 begin
+  -- (ajustement du 28/11/2026, 13 h 25) aucune ligne de facturation ajoutée — ni rattachée par changement de date ou de nature — à
+  -- une date annulée avec une fiche active : le montant dû se change par « Corriger l'annulation » ; même règle : js/calc.js insertBlocked
+  if not annonce and new.kind in ('acompte', 'solde', 'autre')
+     and (tg_op = 'INSERT' or new.show_id is distinct from old.show_id or new.kind is distinct from old.kind)
+     and exists (select 1 from public.annulations a where a.show_id = new.show_id and a.retablie_at is null) then
+    raise exception 'Date annulée : aucune ligne de facturation (acompte, solde, autre ligne) ne s''y ajoute ; passe par « Corriger l''annulation »' using errcode = 'P0001';
+  end if;
+  if tg_op = 'INSERT' then
+    if new.annulation is not null and not annonce then
+      raise exception 'Le marquage d''annulation d''une ligne ne se pose que par « Annuler la date » ou « Corriger l''annulation »' using errcode = 'P0001'; end if;
+    return new;
+  end if;
   if tg_op = 'DELETE' then
     if old.annulation is not null and not annonce then
       raise exception 'Ligne fixée par l''annulation de la date : elle ne se supprime pas' using errcode = 'P0001'; end if;
@@ -268,7 +299,7 @@ begin
 end $$;
 revoke all on function public.show_payments_annulation_guard() from public, anon, authenticated;
 drop trigger if exists show_payments_annulation_guard on public.show_payments;
-create trigger show_payments_annulation_guard before update or delete on public.show_payments for each row execute function public.show_payments_annulation_guard();
+create trigger show_payments_annulation_guard before insert or update or delete on public.show_payments for each row execute function public.show_payments_annulation_guard();
 
 -- ─── fonctions de l'équipe ──────────────────────────────────────────────────────────────────────────────────────────────────
 create or replace function public.show_annuler(p_show uuid, p_montant numeric, p_motif text, p_decide_le date, p_justificatif text default null)
@@ -388,9 +419,13 @@ create or replace function public.reminder_candidates(p_show uuid default null, 
  language sql stable security definer set search_path to 'public'
 as $function$
   with s as (
-    -- v1.72 (L3) : date annulée avec une fiche d'annulation (décision 6 du 28/11/2026) — seulement la relance d'impayé, et seulement
-    -- si le montant réclamé ne dépasse pas ce qui reste dû après annulation (annulation_relance_impaye) ; rien d'autre
+    -- v1.72 (L3) : date annulée avec une fiche d'annulation (décisions du 28/11/2026, 12 h 08 et 13 h 25), cession seulement :
+    -- « Facture de solde à faire » pour le solde recalculé (so_recalc) ; « Facture à envoyer » tant que le facturé net ne dépasse pas
+    -- le montant retenu (envoi_ok, annulation_depasse) ; impayé seulement si le montant réclamé ne dépasse pas ce qui reste dû
+    -- (impaye_ok, annulation_relance_impaye) ; rien d'autre (lignes « ne doit plus être émise » exclues : f) — même règle : js/reminders.js
     select an.id is not null annule, (an.id is not null and an.regime = 'cession' and public.annulation_relance_impaye(sh.id)) impaye_ok,
+      (an.id is not null and an.regime = 'cession' and not public.annulation_depasse(sh.id)) envoi_ok,
+      (an.id is not null and an.regime = 'cession' and so.annulation = 'recalculee') so_recalc,
       sh.id, sh.date, sh.venue, sh.city, coalesce(sh.prod_mode,'production') mode, coalesce(pr.name,'') proj,
       -- rappels administratifs (étapes, boucles, factures à faire, partenaire) : dates passées de plus de 120 jours exclues ;
       -- factures (à envoyer, impayées) et commission à virer : sans limite de durée (Q13, décision du 27/10)
@@ -456,6 +491,7 @@ as $function$
       coalesce(x.amount > 0 and public.avoir_couvert(x.id) > 0 and public.avoir_couvert(x.id) >= x.amount - 0.005, false) soldee
     from show_payments x join d on d.id = x.show_id
     where x.hors_calcul is null and ((d.mode <> 'booking' and x.kind in ('acompte', 'solde', 'autre')) or (d.mode = 'booking' and x.kind = 'artbo'))
+      and x.annulation is distinct from 'abandonnee'   -- v1.72 : ligne qui ne doit plus être émise, jamais relancée
   ), cand as (
     -- k : clé anti-doublon sans la règle (…:échéance brute avec les délais PAR DÉFAUT, comme avant v1.64) ; raw : échéance réelle ;
     -- w : échéance après une étape (0 jour compris) décalée au lundi si elle tombe le week-end, selon la politique (wa, décision du
@@ -494,6 +530,7 @@ as $function$
   )
   select c.r, c.id, c.k, c.raw, c.w, c.t, s.venue, s.proj, s.date, s.city, s.nxt, s.reactiv from cand c join s on s.id = c.id
    where not s.annule or (s.impaye_ok and c.r in ('acompte_paye', 'solde_paye', 'autre_payee'))
+      or (s.envoi_ok and c.r = 'facture_envoi') or (s.so_recalc and c.r = 'solde_envoi')
 $function$;
 
 commit;
