@@ -58,12 +58,13 @@ export const MODALS = {};
 export let MODAL = null;
 
 /**
- * openModal({title, fields, values, onSave, onDelete, deleteAsk, extra, extraTop, level, wide, saveLabel})
+ * openModal({title, fields, values, onSave, onDelete, deleteAsk, extra, extraTop, level, wide, saveLabel, cancelLabel})
+ * cancelLabel : texte du bouton qui ferme sans enregistrer (« Annuler » par défaut ; « Fermer » quand l'action elle-même est une annulation).
  * deleteAsk() : question de suppression ({title, text, actions}, voir ui/dialog.js) ; onDelete(choix) reçoit la valeur du bouton choisi.
  * extraTop : contenu libre affiché avant les champs, extra : après.
  * onSave(valeurs) : renvoyer false pour garder la fenêtre ouverte.
  */
-export function openModal({title, fields, values={}, onSave, onDelete, deleteAsk, extra='', extraTop='', level=1, wide=false, mail=false, footExtra='', saveLabel='Enregistrer'}){
+export function openModal({title, fields, values={}, onSave, onDelete, deleteAsk, extra='', extraTop='', level=1, wide=false, mail=false, footExtra='', saveLabel='Enregistrer', cancelLabel='Annuler'}){
   const dlg = $(level===2 ? '#modal2' : '#modal');
   MODALS[level] = {fields, onSave, onDelete, deleteAsk, dlg};
   if (level===1) MODAL = MODALS[1];
@@ -73,7 +74,7 @@ export function openModal({title, fields, values={}, onSave, onDelete, deleteAsk
     <div class="modal-head"><h2>${esc(title)}</h2><button type="button" class="btn icon ghost" data-act="closeModal" data-level="${level}" aria-label="Fermer">✕</button></div>
     <div class="modal-body">${extraTop}${fields.map(f=>field(f, values[f.k])).join('')}${extra}</div>
     <div class="modal-foot">${onDelete?`<button type="button" class="btn ghost danger left" data-act="modalDelete" data-level="${level}">Supprimer</button>`:''}
-      <button type="button" class="btn" data-act="closeModal" data-level="${level}">Annuler</button>${footExtra}<button class="btn primary" type="submit">${esc(saveLabel)}</button></div></form>`;
+      <button type="button" class="btn" data-act="closeModal" data-level="${level}">${esc(cancelLabel)}</button>${footExtra}<button class="btn primary" type="submit">${esc(saveLabel)}</button></div></form>`;
   const wasOpen = dlg.open;
   dlg.showModal();
   if (!wasOpen) trackModal(dlg);

@@ -18,6 +18,7 @@ import { CREATORS } from './ui/autocomplete.js';
 import { fileRow, remindersSuspendedNote } from './ui/bits.js';
 import { remindersOf, taskDelay } from './reminders.js';
 import { hiddenFields, openModal } from './ui/modal.js';
+import { STATUT_VERROUILLE, annulationRequise, annulerDate, statutVerrouille } from './annulation.js';
 import { $, capWords, downloadCSV, esc, fmtDate, norm, toast, today, workDay, addDays, pct } from './utils.js';
 import { driveHTML } from './views/production.js';
 import { cancelAutoRelances, closeNoAnswer, deleteProspect, prospectDeleteAsk } from './prospection.js';
@@ -215,7 +216,13 @@ export function editShow(id, projectId, prefill={}){
       await locateShow(v, s);
       // agenda Google de l'artiste : chevauchement avec une indisponibilité (ou agenda plus à jour) → avertissement, poursuite possible
       if (!(await calCheckBeforeSave(v, id ? s : null))) return false;
-      const before = s.status, wasOff = isOff(before), nowOff = isOff(v.status), oldFee = s.fee_ht;
+      const before = s.status, wasOff = isOff(before), oldFee = s.fee_ht;
+      // (v1.72, L3) date annulée avec une fiche : son statut ne change que par « Rétablir la date » ; date ENGAGÉE passée en
+      // « Annulée » / « Sans Suite » : les autres champs s'enregistrent, le statut reste, puis « Annuler la date » s'ouvre
+      if (id && statutVerrouille(s) && v.status !== before){ toast(STATUT_VERROUILLE, true); return false; }
+      const viaAnnulation = id && annulationRequise(s, v.status) ? v.status : null;
+      if (viaAnnulation) v.status = before;
+      const nowOff = isOff(v.status);
       let showId = id, ok = true;
       if (id){
         if (nowOff && !wasOff){ ok = !!(await saveLinger('shows', id, v, `Date passée en « ${v.status} »`)); }
@@ -225,6 +232,7 @@ export function editShow(id, projectId, prefill={}){
       if (id && Number(v.fee_ht) !== Number(oldFee)) await afterFeeChange(id, {level: 2});   // cachet changé : même règle partout (§6.5, Q5)
       // date qui passe en confirmée : envoyer la confirmation maintenant ? (une fois cette fenêtre fermée)
       if (becameConfirmed(before, v.status)) setTimeout(() => askConfirmation(showId), 80);
+      if (viaAnnulation) setTimeout(() => annulerDate(showId, viaAnnulation), 80);
     }
   });
   // Choix d'une structure (organisateur) → son nom comme lieu si le nom est vide, rien d'autre : ni adresse, code postal, ville,

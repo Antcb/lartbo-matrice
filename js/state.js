@@ -11,6 +11,7 @@ export const TABLES = ['structures','contacts','contact_structures','projects','
   'pennylane_avoirs',   // avoirs importés de Pennylane (v1.69, L1 du point 02 ; lecture seule, absent tant que la migration n'est pas appliquée)
   'reglements',   // encaissements et remboursements réels, un par mouvement, TTC (v1.70, L2a ; lecture seule, absent tant que la migration n'est pas appliquée)
   'factures_remplacees', 'virements_groupes', 'rattachements_journal',   // rattachements manuels (v1.71, L2b ; lecture seule, absents tant que la migration n'est pas appliquée)
+  'annulations', 'annulations_journal',   // fiches d'annulation des dates engagées (v1.72, L3 ; lecture seule, écritures par les fonctions serveur)
   'pennylane_virements',   // virements Pennylane déjà comptés comme encaissement, jamais deux fois (v1.69, lecture seule)
   'spectacles',   // spectacles d'un artiste, chacun son budget type (v1.57)
   'show_deletions',   // journal des suppressions de dates (v1.60.3, lecture seule ; absent tant que la migration n'est pas appliquée)

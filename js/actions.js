@@ -30,6 +30,7 @@ import { exportShows } from './exports.js';
 import { callProspect, cancelAutoRelances, closeNoAnswer, deleteProspect, detachShowFromSuivi, findMail, markLogSent, openProspection, prospectDeleteAsk, restoreRelances, setSuiviPlace } from './prospection.js';
 import { EMP_ACTIONS, editEmployee } from './views/employees.js';
 import { BUDGET_ACTIONS, confirmProvisionalCommission } from './budget-actions.js';
+import { ANNUL_ACTIONS, STATUT_VERROUILLE, annulationRequise, annulerDate, statutVerrouille } from './annulation.js';
 
 /** Nouveau suivi : créé tout de suite et ouvert dans l'espace de prospection (pas de fenêtre) */
 async function newSuivi(structureId){
@@ -79,6 +80,7 @@ export const ACTIONS = {
   ...MAIL_ACTIONS,
   ...TEXT_ACTIONS,
   ...BUDGET_ACTIONS,
+  ...ANNUL_ACTIONS,
   employeeCard: t => editEmployee(t.dataset.id),
   closeModal: t => (t.dataset.level==='2' ? $('#modal2') : $('#modal')).close(),
   // suppression depuis une fenêtre : fenêtre de dialogue de l'application (Q20) — Annuler, Échap ou clic dehors ne suppriment jamais rien
@@ -565,6 +567,10 @@ for (const f of ['sent_at', 'reminded_at'])
 // Date annulée / sans suite : reste visible 5 s
 ACTIONS['change:shows.status'] = async (t, v) => {
   const show = byId('shows', t.dataset.id), before = show?.status;
+  // (v1.72, L3) date annulée avec une fiche : statut changé seulement par « Rétablir la date » ; date ENGAGÉE qui passe en
+  // « Annulée » ou « Sans Suite » : rien n'est enregistré ici, « Annuler la date » s'ouvre (même garde côté base)
+  if (statutVerrouille(show) && v !== before){ toast(STATUT_VERROUILLE, true); render(); return; }
+  if (annulationRequise(show, v)){ render(); return annulerDate(show.id, v); }
   if (isOff(v)) return saveLinger('shows', t.dataset.id, {status:v}, `Date passée en « ${v} »`);
   // agenda Google de l'artiste : même avertissement que dans la fenêtre de la date (date qui s'engage sur un jour indisponible)
   if (show && !(await calCheckBeforeSave({...show, status: v}, show))) { render(); return; }
