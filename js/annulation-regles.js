@@ -51,24 +51,28 @@ const ttcDe = (ht, tva) => r2((Number(ht) || 0) * (1 + (Number(tva) || 0) / 100)
  * (v1.72.3) Opérations d'une date annulée : qui doit payer qui, avec le montant de chaque opération. Rien n'est créé : MATRICE affiche
  * les actions ; avoirs émis à la main dans Pennylane, aucun remboursement déclenché.
  *  - facture  : reste à facturer (lignes recalculées) — L'ArtBoristerie facture l'organisateur ;
- *  - paiement : ce que l'organisateur doit encore payer (montant dû TTC − encaissé TTC), facture à émettre comprise ;
+ *  - paiement : ce que l'organisateur doit encore payer (montant dû − encaissé), facture à émettre comprise ;
  *  - avoir    : facturé net au-delà du montant dû — document de L'ArtBoristerie à l'organisateur (même s'il n'y a rien à rembourser :
  *               acompte facturé jamais encaissé) ;
- *  - remboursement : encaissé TTC au-delà du montant dû TTC — L'ArtBoristerie rembourse l'organisateur (dont déjà saisi) ;
+ *  - remboursement : encaissé au-delà du montant dû — L'ArtBoristerie rembourse l'organisateur (dont déjà saisi) ;
  *  - commission : non due et déjà facturée ou versée → à régulariser (L5) ; non due sinon → rien à verser ; à revoir.
- * Montants TTC au taux de TVA de la date pour le montant dû ; facturé et encaissé : TTC réels des lignes.
+ * Existence et sens de chaque opération : comparés en HT (relecture v1.72.3, B1 — jamais un taux de la date contre le taux d'une
+ * ligne). TTC : seulement si toutes les lignes facturées sont au taux de la date (tvaUniforme) ; sinon ttc = null, « TVA mixte, à
+ * vérifier » (aucun montant TTC inventé).
  */
-export function operationsAnnulation({regime, du, tva, factureNetHt = 0, factureNetTtc = 0, encaisseTtc = 0, rembourseSaisiTtc = 0, resteAFacturerHt = 0, commission = {}}){
+export function operationsAnnulation({regime, du, tva, tvaUniforme = true, factureNetHt = 0, factureNetTtc = 0, encaisseHt = 0, encaisseTtc = 0, rembourseSaisiTtc = 0, resteAFacturerHt = 0, commission = {}}){
   const ops = [];
   if (regime === 'cession' && du != null){
-    const duTtc = ttcDe(du, tva);
-    if (resteAFacturerHt > 0.005) ops.push({type: 'facture', de: 'artbo', vers: 'organisateur', ht: r2(resteAFacturerHt), ttc: ttcDe(resteAFacturerHt, tva)});
-    const attendu = Math.max(0, r2(duTtc - encaisseTtc));
-    if (attendu > 0.005) ops.push({type: 'paiement', de: 'organisateur', vers: 'artbo', ttc: attendu});
-    const avoirHt = Math.max(0, r2(factureNetHt - du)), avoirTtc = Math.max(0, r2(factureNetTtc - duTtc));
-    if (avoirHt > 0.005 || avoirTtc > 0.005) ops.push({type: 'avoir', de: 'artbo', vers: 'organisateur', ht: avoirHt, ttc: avoirTtc});
-    const rembourse = Math.max(0, r2(encaisseTtc - duTtc));
-    if (rembourse > 0.005) ops.push({type: 'remboursement', de: 'artbo', vers: 'organisateur', ttc: rembourse, saisi: Math.min(rembourse, r2(rembourseSaisiTtc)), aSaisir: Math.max(0, r2(rembourse - rembourseSaisiTtc))});
+    const duTtc = ttcDe(du, tva), t = v => tvaUniforme ? Math.max(0, r2(v)) : null;
+    if (resteAFacturerHt > 0.005) ops.push({type: 'facture', de: 'artbo', vers: 'organisateur', ht: r2(resteAFacturerHt), ttc: t(ttcDe(resteAFacturerHt, tva))});
+    const attenduHt = Math.max(0, r2(du - encaisseHt));
+    if (attenduHt > 0.005) ops.push({type: 'paiement', de: 'organisateur', vers: 'artbo', ht: attenduHt, ttc: t(duTtc - encaisseTtc)});
+    const avoirHt = Math.max(0, r2(factureNetHt - du));
+    if (avoirHt > 0.005) ops.push({type: 'avoir', de: 'artbo', vers: 'organisateur', ht: avoirHt, ttc: t(factureNetTtc - duTtc)});
+    const rembHt = Math.max(0, r2(encaisseHt - du));
+    if (rembHt > 0.005){ const ttc = t(encaisseTtc - duTtc);
+      ops.push({type: 'remboursement', de: 'artbo', vers: 'organisateur', ht: rembHt, ttc,
+        saisi: ttc == null ? r2(rembourseSaisiTtc) : Math.min(ttc, r2(rembourseSaisiTtc)), aSaisir: ttc == null ? null : Math.max(0, r2(ttc - rembourseSaisiTtc))}); }
   }
   const c = commission || {};
   if (c.existe){

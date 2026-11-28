@@ -29,6 +29,15 @@
 -- Retour arrière : réappliquer reminder_candidates de la v1.70 ; drop des déclencheurs et fonctions v1.72 ; tables et colonne gardées.
 begin;
 
+-- relecture v1.72.3 (B2) : une table annulations d'une version antérieure du lot (sans l'origine) ne serait pas complétée par
+-- « create table if not exists » → arrêt sans rien appliquer (aucune v1.72 n'a été appliquée en production, vérifié le 28/11/2026)
+do $g$ begin
+  if to_regclass('public.annulations') is not null and not exists (select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = 'annulations' and column_name = 'origine') then
+    raise exception 'v1.72 : table annulations d''une version antérieure (sans origine) : migration arrêtée, rien n''est appliqué';
+  end if;
+end $g$;
+
 -- ─── tables ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 alter table public.show_payments add column if not exists annulation text;
 alter table public.show_payments drop constraint if exists show_payments_annulation_check;

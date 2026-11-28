@@ -288,7 +288,7 @@ export function etatAnnulation(s){
   // (v1.72.3) qui doit payer qui : facture à émettre, paiement attendu, avoir à émettre, remboursement TTC, commission (non due → à
   // régulariser si déjà facturée ou versée) — affichage seulement, rien n'est créé (js/annulation-regles.js operationsAnnulation)
   const com = paymentsOf(s.id).find(p => p.kind === 'artbo'), cs = com && !booking ? commissionState(com) : null;
-  const ops = operationsAnnulation({regime, du, tva: showVat(s), factureNetHt: plan.factureNet,
+  const ops = operationsAnnulation({regime, du, tva: showVat(s), tvaUniforme: bill.every(p => payVat(p) === showVat(s)), encaisseHt: encaisse, factureNetHt: plan.factureNet,
     factureNetTtc: r2(bill.reduce((t, p) => t + factureNetTtc(p), 0)), encaisseTtc: r2(bill.reduce((t, p) => t + encaisseTtc(p), 0)),
     rembourseSaisiTtc: r2(bill.reduce((t, p) => t + aRembourserTtc(p), 0)), resteAFacturerHt: du == null ? 0 : plan.resteAFacturer,
     commission: {existe: !!com && regime !== 'coprod', statut: a.commission, montant: com ? payAmount(com) || 0 : 0, facturee: !!com && !selfPaidCommission(com) && isInvoiced(com),
