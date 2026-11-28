@@ -87,8 +87,8 @@ as $$
       or exists (select 1 from public.budget_lines l where l.show_id = p_show and (l.amount is not null or l.paid_at is not null or l.reimbursed_at is not null
                    or nullif(btrim(l.doc_number), '') is not null or l.file_path is not null))
 $$;
-revoke all on function public.show_engagee(uuid) from public, anon;
-grant execute on function public.show_engagee(uuid) to authenticated;
+-- interne (gardes et fonctions d'annulation) : l'application calcule de son côté (js/calc.js dateEngagee)
+revoke all on function public.show_engagee(uuid) from public, anon, authenticated;
 
 -- régime de l'annulation : booking (commission seule), coproduction, coréalisation (sans calcul, L8), sinon cession — js/annulation-regles.js
 create or replace function public.annulation_regime(s public.shows) returns text
@@ -143,8 +143,8 @@ as $$
                                              where p.show_id = p_show and p.hors_calcul is null and p.kind in ('acompte', 'solde', 'autre'))) + 0.01
       from public.annulations a where a.show_id = p_show and a.retablie_at is null and a.regime = 'cession'), false)
 $$;
-revoke all on function public.annulation_relance_impaye(uuid) from public, anon;
-grant execute on function public.annulation_relance_impaye(uuid) to authenticated;
+-- interne (reminder_candidates) : l'application calcule de son côté (js/calc.js etatAnnulation)
+revoke all on function public.annulation_relance_impaye(uuid) from public, anon, authenticated;
 
 -- empreinte des opérations financières de la date (rétablir seulement si rien n'a été ajouté ni modifié depuis l'annulation) :
 -- factures (émission), avoirs, encaissements / remboursements, réémissions, versements de commission ; les montants posés par

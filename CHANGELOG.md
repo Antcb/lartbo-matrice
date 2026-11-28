@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.72.1 — 28/11/2026
+- L3, relecture : pas de devis Pennylane sur une date annulée ; fonctions internes d'annulation réservées à la base
+
+
 ## 1.72.0 — 28/11/2026
 - L3 du point 02 : « Annuler la date » pour une date engagée — fiche d'annulation (conditions initiales figées, montant dû après annulation, motif, date, justificatif), lignes non émises recalculées ou « ne doivent plus être émises », commission à revoir, « Annulées à régulariser » dans Production, relances limitées à l'impayé encore dû, correction et rétablissement tracés ; aucun avoir ni remboursement automatique
 
