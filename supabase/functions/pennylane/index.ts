@@ -237,7 +237,8 @@ Deno.serve(async (req) => {
       let aRattacher = 0;   // erreurs : écritures refusées (jamais comptées comme faites)
       if (Object.keys(byQuote).length) {
         const open = (await readAll(() => admin.from('show_payments').select('id, show_id, kind, label, pct, amount, sort, invoice_number, pennylane_id, sent_at, paid_at, shows!inner(fee_ht, pennylane_quote_id, prod_mode)')
-          .in('kind', ['acompte', 'solde']).is('invoice_number', null).is('pennylane_id', null).is('hors_calcul', null).not('shows.pennylane_quote_id', 'is', null)) || [])
+          .in('kind', ['acompte', 'solde']).is('invoice_number', null).is('pennylane_id', null).is('hors_calcul', null).not('shows.pennylane_quote_id', 'is', null)
+          .or('annulation.is.null,annulation.eq.recalculee')) || [])   // (v1.72) ligne qui ne doit plus être émise (date annulée) : jamais reliée
           .filter((p: any) => relieAuDevis(p, p.shows?.prod_mode));   // booking : factures de l'artiste, jamais reliées (lot C1)
         // acomptes de ces dates (prévus et facturés) : le solde attendu = cession − acomptes de la date (décision du 10/11/2026)
         const ids = [...new Set(open.map((p: any) => p.show_id))];
@@ -537,6 +538,8 @@ Deno.serve(async (req) => {
       if (!p) return json({ error: 'Ligne de facturation introuvable' }, 404);
       // ligne hors calcul (coproduction, import — v1.44) : jamais facturée
       if (p.hors_calcul) return json({ error: 'Ligne hors calcul (gardée pour la traçabilité) : elle ne se facture pas' }, 400);
+      // (v1.72, L3) ligne d'une date annulée qui ne doit plus être émise : aucun brouillon créé dans Pennylane
+      if (p.annulation === 'abandonnee') return json({ error: 'Cette ligne ne doit plus être émise (date annulée) : corrige d’abord l’annulation' }, 400);
       // facture déjà émise (numéro, envoi, paiement ou lien Pennylane — même définition que l'application) : jamais de second brouillon
       if (emise(p)) return json({ error: 'Cette ligne a déjà une facture (numéro, envoi ou paiement noté) : aucun nouveau brouillon n’est créé dans Pennylane' }, 400);
       const { data: s } = await admin.from('shows').select('*, projects(*)').eq('id', p.show_id).single();

@@ -5,6 +5,7 @@ import { r2, eur2 } from './utils.js';
 import { byId, showCommissionPct } from './selectors.js';
 import { S } from './state.js';
 import { commissionBase } from './corea.js';
+import { planAnnulation, relanceImpaye } from './annulation-regles.js';
 
 /** Lignes financières d'une date QUI COMPTENT : une ligne « hors calcul » (coproduction, import — v1.44) est gardée pour la traçabilité
  *  mais n'entre dans aucun calcul, indicateur, compte, rappel ni opération Pennylane. Même règle côté base : payment_is_emitted, rappels. */
@@ -255,9 +256,45 @@ export function restesDate(s){
     trop: tot(suivies, tropPercuTtc), fiable: !vatConflict(s), emis: suivies.some(isInvoiced)};
 }
 
+/** (v1.72, L3) Fiche d'annulation ACTIVE d'une date (jamais plus d'une : index annulations_active), sinon null */
+export const annulationOf = showId => (S.db.annulations || []).find(a => a.show_id === showId && !a.retablie_at) || null;
+/** (v1.72, décision 1 d'Anthony du 28/11/2026) Date ENGAGÉE : contrat signé, facture émise, encaissement, commission versée ou dépense
+ *  engagée même non payée (pièce, montant réel ou paiement). Son passage en « Annulée » passe par « Annuler la date » ; « Sans Suite »
+ *  y est refusé. Même règle côté base : show_engagee (garde shows_annulation_guard). */
+export const depenseEngagee = l => filled(l.amount) || filled(l.paid_at) || filled(l.reimbursed_at) || filled(l.doc_number) || filled(l.file_path);
+export const dateEngagee = s => !!s && (filled(s.contract_signed)
+  || paymentsOf(s.id).some(p => isInvoiced(p) || (p.kind === 'artbo' && transfersOf(p.id).length > 0))
+  || (S.db.reglements || []).some(r => r.show_id === s.id && r.etat === 'fait' && !r.annule_at)
+  || (S.db.budget_lines || []).some(l => l.show_id === s.id && depenseEngagee(l)));
+/** Montant total dû après annulation (HT) d'une cession annulée, sinon null (date active, booking, coproduction, coréalisation) */
+export const montantDuApresAnnulation = s => { const a = s && annulationOf(s.id); return a && a.regime === 'cession' && filled(a.montant_du_ht) ? Number(a.montant_du_ht) : null; };
+
+/**
+ * (v1.72, L3) État d'une date annulée (fiche active) : montant dû, facturé net après avoirs, reste à facturer (porté par les lignes
+ * recalculées, sinon « sans ligne »), facturé au-delà (avoir à émettre), encaissé HT, encaissé au-delà, relance d'impayé gardée ou
+ * suspendue (« À régulariser »). Rien n'est créé : affichage et relances seulement. Même règle côté base : annulation_relance_impaye.
+ */
+export function etatAnnulation(s){
+  const a = s && annulationOf(s.id); if (!a) return null;
+  const regime = a.regime, du = regime === 'cession' && filled(a.montant_du_ht) ? Number(a.montant_du_ht) : null, booking = regime === 'booking';
+  const bill = paymentsOf(s.id).filter(p => ['acompte', 'solde', 'autre'].includes(p.kind));
+  const plan = planAnnulation({du: du ?? 0, lignes: bill.map(p => ({id: p.id, kind: p.kind, sort: p.sort, emise: isInvoiced(p), montant: payAmount(p) || 0, avoir: avoirCouvert(p)}))});
+  const aEmettre = r2(bill.filter(p => !isInvoiced(p) && p.annulation !== 'abandonnee').reduce((t, p) => t + (payAmount(p) || 0), 0));
+  const encaisse = r2(bill.reduce((t, p) => t + encaisseHt(p), 0));
+  // factures relancées (impayé) : celles de la cession, ou la facture de commission en booking
+  const relancees = paymentsOf(s.id).filter(p => (booking ? p.kind === 'artbo' : ['acompte', 'solde', 'autre'].includes(p.kind)) && isInvoiced(p) && p.sent_at && !p.paid_at && !p.reminders_paused && !soldeeParAvoir(p));
+  const reclame = r2(relancees.reduce((t, p) => t + resteDu(p), 0));
+  const rel = relanceImpaye({regime, du, encaisseHt: encaisse, reclameHt: reclame});
+  return {a, regime, du, factureNet: du == null ? null : plan.factureNet, resteAFacturer: du == null ? null : plan.resteAFacturer, aEmettre,
+    resteSansLigne: du == null ? 0 : Math.max(0, r2(plan.resteAFacturer - aEmettre)), depassement: du == null ? 0 : plan.depassement,
+    encaisse, encaisseAuDela: du == null ? 0 : Math.max(0, r2(encaisse - du)), reclame, relancees, relanceGardee: rel.garde, encore: rel.encore};
+}
+
 /** Pourquoi une ligne de facturation ne peut plus changer ('' = modifiable) */
 export function billLockReason(p){
   if (!p) return '';
+  // (v1.72) ligne non émise fixée par l'annulation de la date : seulement par « Corriger l'annulation » (garde de la base aussi)
+  if (p.annulation && !isInvoiced(p)) return p.annulation === 'abandonnee' ? 'Ne doit plus être émise (date annulée) : passe par « Corriger l’annulation ».' : 'Montant fixé par l’annulation de la date : passe par « Corriger l’annulation ».';
   if (isInvoiced(p)) return selfPaidCommission(p) ? 'Commission déjà versée : elle ne se modifie plus.' : 'Facture déjà émise (envoyée, numérotée, dans Pennylane ou payée) : elle ne se modifie plus.';
   // solde facturé : un acompte NON facturé reste modifiable pour être retiré (0 %, ou supprimé) — seul ce changement est permis
   // (acompteRetireOnly, appelé par changeBlocked) ; décision d'Anthony du 10/11/2026
@@ -368,6 +405,8 @@ export function changeBlocked(table, id, patch){
       const st = commissionState(row);
       if (st.remaining >= 0.005) return `Commission versée en partie : note le versement du reste (${eur2(st.remaining)}) au lieu d’une date de versement.`;
     }
+    // (v1.72) ligne qui ne doit plus être émise (date annulée) : ni numéro, ni envoi, ni paiement, ni lien Pennylane (base : show_payments_annulation_guard)
+    if (row.annulation === 'abandonnee' && EMITTED_FIELDS.some(k => k in patch && !blank(patch[k]))) return 'Cette ligne ne doit plus être émise (date annulée) : corrige d’abord l’annulation.';
     if (isInvoiced(row) && emittedFieldsOf(row).some(k => k in patch && !blank(row[k]) && blank(patch[k])))
       return 'Facture déjà émise : son numéro, sa date d’envoi, sa date de paiement et son identifiant Pennylane ne s’effacent pas (une régularisation se décide à part).';
     // (v1.61.1, décision d'Anthony du 10/11/2026) plus d'acompte « caduc » : un acompte non facturé reste dû et peut s'émettre
@@ -421,8 +460,9 @@ export function billingOf(s){
   const all = paymentsOf(s.id).filter(p => BILL_KINDS.includes(p.kind));
   const lines = all, planned = all.filter(p => acompteState(p) === 'prevu');
   const sum = (list, f) => r2(list.reduce((t, p) => t + (f(p) || 0), 0));
-  const ht = sum(lines, payAmount), fee = Number(s.fee_ht) || 0;
-  return {lines, ht, ttc: sum(lines, p => ttc(payAmount(p), payVat(p))), fee, feeTtc: ttc(fee, showVat(s)) || 0,
+  // (v1.72) date annulée (cession) : acomptes + solde = le montant dû après annulation (cachet initial gardé à part)
+  const du = montantDuApresAnnulation(s), ht = sum(lines, payAmount), fee = du ?? (Number(s.fee_ht) || 0);
+  return {lines, ht, ttc: sum(lines, p => ttc(payAmount(p), payVat(p))), fee, feeTtc: ttc(fee, showVat(s)) || 0, annule: du != null, cachetInitial: Number(s.fee_ht) || 0,
     pct: fee ? r2(ht / fee * 100) : 0, gap: r2(fee - ht),
     sentHt: sum(lines.filter(p => p.sent_at), payAmount), paidHt: sum(lines, encaisseHt),   // (v1.70) encaissé réel, historique lu tel quel
     otherHt: sum(paymentsOf(s.id).filter(p => p.kind === 'autre'), payAmount),
@@ -450,7 +490,10 @@ export function financeOf(shows){
     const cashed = bill.reduce((t, p) => t + encaisseHt(p), 0);   // (v1.70, E3) encaissé réel ; paiement historique lu tel quel (E1)
     // coproduction : pas de cession à encaisser ; seules ses factures réelles (s'il y en a) restent à encaisser (27/10/2026), moins
     // leurs encaissements partiels (v1.70, réponse d'Anthony du 26/11 : un encaissement partiel compte partout, en équivalent HT)
-    out.resteProd += isCoproduction(s) ? bill.filter(p => !p.paid_at).reduce((t, p) => t + Math.max(0, (payAmount(p) || 0) - encaisseHt(p)), 0) : Math.max(0, (Number(s.fee_ht) || 0) - cashed); out.datesProd++;
+    // (v1.72, décision 9) date annulée : cession → montant dû après annulation (jamais le cachet initial) ; coproduction / coréalisation
+    // annulées (sans calcul, L8) → seulement les factures réelles restant dues
+    const du = montantDuApresAnnulation(s), sansCalcul = isCoproduction(s) || (!!annulationOf(s.id) && du == null);
+    out.resteProd += du != null ? Math.max(0, du - cashed) : sansCalcul ? bill.filter(p => !p.paid_at).reduce((t, p) => t + Math.max(0, (payAmount(p) || 0) - encaisseHt(p)), 0) : Math.max(0, (Number(s.fee_ht) || 0) - cashed); out.datesProd++;
     const due = bill.filter(p => isInvoiced(p) && !p.paid_at && resteDu(p) > 0);   // (v1.69) avoirs déduits
     out.impayesProd += due.reduce((t, p) => t + resteDu(p), 0); out.factures += due.length;
   }

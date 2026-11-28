@@ -3,7 +3,7 @@
  * Chaque date se déplie : suivi admin, commissions, dossier Drive, facturation.
  * Projet en « booking seul » : seulement la conf, le contrat co-signé et la facture de commission.
  */
-import { vatConflict, payeeParMouvements, avoirsVisiblesOf, facturesRemplaceesOf, avoirsHorsMatrice, QUALIFICATIONS_AVOIR, virementGroupeEtat, BILL_KINDS, avoirsARattacher, avoirsAVerifier, avoirsOf, origineEcart, resteDu, restesDate, soldeeParAvoir, reglementsTousOf, mouvementsOf, factureNetTtc, encaisseTtc, resteDuTtc, aRembourserTtc, tropPercuTtc, htFiable, canFixInvoice, correctionsOf, acompteRetire, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
+import { annulationOf, etatAnnulation, vatConflict, payeeParMouvements, avoirsVisiblesOf, facturesRemplaceesOf, avoirsHorsMatrice, QUALIFICATIONS_AVOIR, virementGroupeEtat, BILL_KINDS, avoirsARattacher, avoirsAVerifier, avoirsOf, origineEcart, resteDu, restesDate, soldeeParAvoir, reglementsTousOf, mouvementsOf, factureNetTtc, encaisseTtc, resteDuTtc, aRembourserTtc, tropPercuTtc, htFiable, canFixInvoice, correctionsOf, acompteRetire, acompteState, allPaymentsOf, counted, isCoproduction, commissionState, billLockReason, billPct, billedPct, billingOf, financeOf, multiSolde, isInvoiced, netArtbo, allPiecesToAttach, pieceShowId, piecesToAttach, tracked, payAmount, payPct, payVat, paymentsOf, showVat, ttc } from '../calc.js';
 import { BOOKING_STEPS, CONFIRMED_PROD, OPTION_PROD, PROD_STEPS } from '../constants.js';
 import { byId, isArchived, projName, setting, showsFiltered, spectacleName, structName } from '../selectors.js';
 import { followedInvoice, lateSteps, remindersOf, staleOf } from '../reminders.js';
@@ -16,6 +16,7 @@ import { coreaCommissionCheck, payerLabel } from '../budget.js';
 import { commissionPctOf, isCorea } from '../corea.js';
 import { commissionTransferCell, productionBudgetHTML, projectBudgetHTML, showBudgetHTML, textBreakHint } from './budget.js';
 import { isProductionShow } from '../production-budget.js';
+import { ficheAnnulationHTML } from '../annulation.js';
 
 const vatWarn = s => vatConflict(s) ? ' <span class="warn-txt small">Structure administrative de l’artiste non soumise à la TVA : à vérifier (TTC = HT)</span>' : '';
 
@@ -30,7 +31,11 @@ export function viewProduction(){
   // indicateurs FINANCIERS : dates archivées comprises (v1.60.3, réponse d'Anthony du 07/11) — un archivage ne change aucun montant ;
   // la liste de travail et les relances ne les montrent pas
   const archivedFin = showsFiltered({archived: true}).filter(s => isArchived(s) && CONFIRMED_PROD.includes(s.status) && hit(s));
-  const finShows = shows.concat(archivedFin);
+  // (v1.72, décision 9 du 28/11/2026) dates ENGAGÉES annulées (fiche d'annulation) : section « Annulées à régulariser », hors du
+  // compteur des dates confirmées ; leurs montants retenus, encaissements réels et commissions restent dans les chiffres (jamais le
+  // cachet initial : financeOf prend le montant dû après annulation)
+  const annulees = showsFiltered().filter(s => s.status === 'Annulée' && annulationOf(s.id) && hit(s));
+  const finShows = shows.concat(archivedFin, annulees);
   let artbo=0, partner=0;
   finShows.forEach(s => paymentsOf(s.id).forEach(p => {
     const a = payAmount(p)||0;
@@ -61,7 +66,10 @@ export function viewProduction(){
   const staleHTML = stale.length ? `<div class="panel pad mb" id="stale-items"><p class="help full"><b>Anciens éléments à traiter</b> (${stale.length}) : obligations encore ouvertes sur des concerts passés. Plus de notification quotidienne au-delà de la limite (120 jours après le concert, 30 jours pour la facture de solde à faire) ; elles restent ici jusqu’à ce que l’étape soit faite.</p>
     ${stale.map(({s, r}) => `<div class="file-row"><a href="#" data-act="editShow" data-id="${s.id}">${esc([fmtDate(s.date), s.venue, projName(s.project_id)].filter(Boolean).join(' · '))}</a> <span class="warn-txt small">${esc(r.title)}</span> <span class="muted small">— ${esc(r.staleWhy)}, échéance du ${esc(fmtDate(r.due))}</span></div>`).join('')}</div>` : '';
   const avoirsHTML = avoirsPendingHTML();
-  if (!all.length && !archivedFin.length && !options.length) return head + awayHTML + avoirsHTML + staleHTML + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
+  const annulHTML = annulees.length ? `<section class="group" id="annulees-a-regulariser"><div class="group-head"><h2>Annulées à régulariser</h2><span class="count">${annulees.length}</span></div>
+      <p class="help full">Dates engagées passées en « Annulée » : hors des dates confirmées ; leurs montants retenus, encaissements et dépenses restent dans les chiffres ci-dessus. Rien n’est régularisé automatiquement.</p>
+      <div class="prod-list">${annulees.map(prodRow).join('')}</div></section>` : '';
+  if (!all.length && !archivedFin.length && !options.length && !annulees.length) return head + awayHTML + avoirsHTML + staleHTML + `<div class="empty panel">Aucune date confirmée salle ou festival en ${S.year}. Une date apparaît ici dès qu'elle passe en « Confirmée Salle » ou « Confirmée Festival ».</div>`;
   return head + awayHTML + avoirsHTML + staleHTML + `
     <div class="stat-row">
       <div class="stat"><b>${eur2(artbo)}</b><span>Commissions L'ArtBo</span></div>
@@ -75,7 +83,8 @@ export function viewProduction(){
     ${archHTML}
     ${shows.length || options.length ? order.map(pid => `<section class="group"><div class="group-head"><h2>${esc(projName(pid)||'Sans projet')}</h2><span class="count">${groups[pid].length}</span></div>
       ${pid ? projectBudgetHTML(pid) : ''}
-      <div class="prod-list">${groups[pid].map(prodRow).join('')}</div></section>`).join('') : '<div class="empty panel">Aucune date ne correspond à la recherche.</div>'}`;
+      <div class="prod-list">${groups[pid].map(prodRow).join('')}</div></section>`).join('') : annulees.length ? '' : '<div class="empty panel">Aucune date ne correspond à la recherche.</div>'}
+    ${annulHTML}`;
 }
 
 function prodRow(s){
@@ -121,9 +130,13 @@ function optionRow(s){
 function prodBody(s, booking, steps, pays, late){
   const key = 'prod:' + s.id;
   // dans l'ordre du travail : conditions, suivi administratif (contrat…), factures, puis budget
-  const tabs = [['conditions', 'Conditions'], ['suivi', 'Suivi admin', late.size ? '⚠︎' : ''], ['factures', 'Factures', pays.length], ...(booking ? [] : [['budget', 'Budget']]), ['notes', 'Notes', s.notes ? '•' : '']];
-  const cur = tabs.some(([k]) => k === S.tab[key]) ? S.tab[key] : 'conditions';
-  const body = {conditions: () => conditionsTab(s, booking), factures: () => billingTab(s, booking, pays, late),
+  // (v1.72, L3) date annulée : onglet « Annulation » (fiche) en premier, ouvert par défaut
+  const annulee = !!annulationOf(s.id), ea = annulee ? etatAnnulation(s) : null;
+  const aRegulariser = !!ea && !!(ea.depassement || ea.encaisseAuDela || ea.resteSansLigne || (ea.relancees.length && !ea.relanceGardee));
+  const tabs = [...(annulee ? [['annulation', 'Annulation', aRegulariser ? '⚠︎' : '']] : []),
+    ['conditions', 'Conditions'], ['suivi', 'Suivi admin', late.size ? '⚠︎' : ''], ['factures', 'Factures', pays.length], ...(booking ? [] : [['budget', 'Budget']]), ['notes', 'Notes', s.notes ? '•' : '']];
+  const cur = tabs.some(([k]) => k === S.tab[key]) ? S.tab[key] : annulee ? 'annulation' : 'conditions';
+  const body = {annulation: () => ficheAnnulationHTML(s), conditions: () => conditionsTab(s, booking), factures: () => billingTab(s, booking, pays, late),
     budget: () => isProductionShow(s) ? productionBudgetHTML(s) : showBudgetHTML(s), suivi: () => suiviTab(s, booking, steps, late), notes: () => notesTab(s)}[cur]();
   return `<div class="prod-body">
     ${remindersSuspendedNote(s)}
@@ -272,7 +285,7 @@ function billingTab(s, booking, pays, late){
           const pctLock = lock || (soldeCalc ? 'disabled title="Calculé : cession − acomptes de la date, prévus et facturés (saisis un montant HT pour le fixer)"' : '');
           const fixes = correctionsOf(p.id);   // (v1.68) facture émise corrigée dans MATRICE : signalée, motif au survol
           return `<tr>
-          <td>${cIn('show_payments',p.id,'label',p.label)}${fixes.length ? ` <span class="badge" title="${esc(`Corrigée dans MATRICE le ${fmtDate(String(fixes[0].at).slice(0, 10))}${fixes[0].actor ? ' par ' + fixes[0].actor : ''} : ${fixes[0].motif}`)}">corrigée</span>` : ''}${soldeCalc && !booking ? ` <span class="badge" title="Montant calculé (cession − acomptes de la date, prévus et facturés) : aucune facture de solde n’est encore émise">calculé, non facturé</span>` : ''}${st === 'prevu' && !acompteRetire(p) ? ` <span class="badge" title="Prévu au contrat (${pct(billPct(p))}), pas encore facturé : déjà déduit du solde, il reste dû (mets 0 % pour le retirer)">prévu, non facturé</span>` : ''}</td>
+          <td>${cIn('show_payments',p.id,'label',p.label)}${annulBadge(p, s)}${fixes.length ? ` <span class="badge" title="${esc(`Corrigée dans MATRICE le ${fmtDate(String(fixes[0].at).slice(0, 10))}${fixes[0].actor ? ' par ' + fixes[0].actor : ''} : ${fixes[0].motif}`)}">corrigée</span>` : ''}${soldeCalc && !booking ? ` <span class="badge" title="Montant calculé (cession − acomptes de la date, prévus et facturés) : aucune facture de solde n’est encore émise">calculé, non facturé</span>` : ''}${st === 'prevu' && !acompteRetire(p) ? ` <span class="badge" title="Prévu au contrat (${pct(billPct(p))}), pas encore facturé : déjà déduit du solde, il reste dû (mets 0 % pour le retirer)">prévu, non facturé</span>` : ''}</td>
           <td class="num">${BILL_KINDS.includes(p.kind) ? `<input type="number" step="any" inputmode="decimal" class="narrow" data-t="show_payments" data-id="${p.id}" data-f="pct" value="${pctVal(billedPct(p))}" aria-label="% du cachet" ${pctLock}>`
             : ['cnm','autre'].includes(p.kind) ? cIn('show_payments',p.id,'pct',p.pct,'number','class="narrow"') : `<span class="muted">${payPct(p)??'—'}</span>`}</td>
           <td class="num"><input type="number" step="any" data-t="show_payments" data-id="${p.id}" data-f="amount" value="${ov?p.amount:''}" placeholder="${a==null?'à saisir':a}" ${lock || 'title="Laisse vide pour le calcul automatique"'} class="${ov?'override':''}"></td>
@@ -292,8 +305,8 @@ function billingTab(s, booking, pays, late){
       ${horsCalculHTML(s)}
       ${booking ? '' : pendingPennylaneHTML(s)}
       <div class="vh-actions mt">
-        ${booking ? '' : `<button class="btn sm" data-act="addPay" data-kind="acompte" data-id="${s.id}">Ajouter un acompte</button>`}
-        ${booking ? '' : `<button class="btn sm" data-act="addPay" data-kind="autre" data-id="${s.id}">Autre ligne</button>
+        ${booking || annulationOf(s.id) ? '' : `<button class="btn sm" data-act="addPay" data-kind="acompte" data-id="${s.id}">Ajouter un acompte</button>`}
+        ${booking || annulationOf(s.id) ? '' : `<button class="btn sm" data-act="addPay" data-kind="autre" data-id="${s.id}">Autre ligne</button>
         ${isCoproduction(s) && !s.pennylane_quote_id ? '' : `<button class="btn sm" data-act="pennylaneQuote" data-id="${s.id}" title="Crée le devis dans Pennylane (non envoyé)" ${isCoproduction(s) ? 'disabled' : ''}>${s.pennylane_quote_id ? 'Devis Pennylane créé ✓' : 'Devis dans Pennylane'}</button>`}
         ${s.pennylane_quote_url ? `<a class="btn sm ghost" href="${esc(s.pennylane_quote_url)}" target="_blank" rel="noopener">Voir le devis ↗</a>` : ''}`}
         <button class="btn sm ghost" data-act="editShow" data-id="${s.id}">Fiche complète de la date</button>
@@ -318,14 +331,24 @@ function horsCalculHTML(s){
     <p class="muted small">Gardées pour l’historique : elles n’entrent dans aucun indicateur, compte, rappel ni opération Pennylane.</p></details>`;
 }
 
+/** (v1.72, L3) Marque d'une ligne d'une date annulée : « Ne doit plus être émise », « À émettre après annulation », commission « À revoir » */
+function annulBadge(p, s){
+  const a = annulationOf(s.id); if (!a) return '';
+  const x = (a.lignes || []).find(l => l.payment_id === p.id), init = x ? ` (initialement ${eur2(x.montant_initial)} HT)` : '';
+  if (p.annulation === 'abandonnee') return ` <span class="warn-badge" data-annulation-ligne="abandonnee" title="Date annulée${esc(init)} : hors des montants à facturer et des relances">Ne doit plus être émise</span>`;
+  if (p.annulation === 'recalculee') return ` <span class="badge" data-annulation-ligne="recalculee" title="Reste à facturer après l’annulation${esc(init)}">${isInvoiced(p) ? 'Recalculée à l’annulation' : 'À émettre après annulation'}</span>`;
+  if (['artbo', 'partner'].includes(p.kind)) return ' <span class="warn-badge" data-annulation-ligne="a-revoir" title="Date annulée : montant existant gardé, recalcul dans un lot suivant">À revoir</span>';
+  return '';
+}
 /** Total des factures (acomptes + solde) face au cachet */
 function billFoot(s){
   const b = billingOf(s), ok = Math.abs(b.gap) < 0.01;
   return `<tfoot><tr class="bill-total ${ok ? 'ok' : 'warn'}">
     <td><b>Total factures</b><div class="muted tiny">acomptes + solde</div></td>
     <td class="num"><b>${pct(b.pct)}</b></td><td class="num nowrap"><b>${eur2(b.ht)}</b></td><td></td><td class="num nowrap"><b>${eur2(b.ttc)}</b></td>
-    <td colspan="7">${ok ? `<span class="ok-badge">✓ = cachet (${eur2(b.fee)} HT · ${eur2(b.feeTtc)} TTC)</span>`
-      : `<span class="warn-badge">${b.gap > 0 ? `Il manque ${eur2(b.gap)} HT` : `${eur2(-b.gap)} HT de trop`} par rapport au cachet (${eur2(b.fee)} HT)</span>`}
+    <td colspan="7">${ok ? `<span class="ok-badge">✓ = ${b.annule ? 'montant dû après annulation' : 'cachet'} (${eur2(b.fee)} HT · ${eur2(b.feeTtc)} TTC)</span>`
+      : `<span class="warn-badge">${b.gap > 0 ? `Il manque ${eur2(b.gap)} HT` : `${eur2(-b.gap)} HT de trop`} par rapport ${b.annule ? 'au montant dû après annulation' : 'au cachet'} (${eur2(b.fee)} HT)</span>`}
+      ${b.annule ? `<span class="muted nowrap"> · cachet initial ${eur2(b.cachetInitial)} HT (gardé)</span>` : ''}
       <span class="muted nowrap"> · envoyées ${eur2(b.sentHt)} HT · encaissé ${eur2(b.paidHt)} HT${b.otherHt ? ` · autres lignes ${eur2(b.otherHt)} HT` : ''}</span>
       ${multiSolde(s.id) ? '<span class="warn-badge">Plusieurs lignes de solde sur cette date : à vérifier (le reste à facturer ne va qu’à la première)</span>' : ''}
       ${b.plannedHt ? `<span class="muted nowrap"> · dont acomptes prévus, non facturés : ${eur2(b.plannedHt)} HT</span>` : ''}
@@ -448,6 +471,8 @@ function pendingPennylaneHTML(s){
 
 function pennylaneCell(p, s){
   if (!['acompte','solde','artbo','autre'].includes(p.kind)) return '';
+  // (v1.72) ligne qui ne doit plus être émise (date annulée) : aucune facture à créer ni à relier
+  if (p.annulation === 'abandonnee' && !isInvoiced(p)) return '<span class="muted small">—</span>';
   // acompte / solde relié à une facture du devis : rattachement corrigeable (confirmation, motif, historique ; v1.56.9)
   const fix = ['acompte','solde'].includes(p.kind) && !p.paid_at ? ` <button class="btn sm ghost" data-act="pennylaneAttach" data-pid="${esc(p.pennylane_id)}" data-show="${p.show_id}" title="La facture est sur la mauvaise ligne ? Choisir la bonne (le document Pennylane n’est pas modifié)">Corriger</button>` : '';
   // (v1.71, L2b) facture réémise hors devis : la ligne suit la nouvelle facture (option B), l'ancienne reste visible

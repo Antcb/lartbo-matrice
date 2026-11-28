@@ -21,7 +21,8 @@ const TABLES = ['app_users', 'settings', 'partners', 'projects', 'structures', '
   'facture_corrections',   // corrections de factures émises (v1.68) : à déployer APRÈS la migration v1.68 (sinon la sauvegarde échoue)
   'pennylane_avoirs', 'pennylane_virements',   // avoirs importés de Pennylane (v1.69) : à déployer APRÈS la migration v1.69 (sinon la sauvegarde échoue)
   'reglements',   // encaissements et remboursements (v1.70) : à déployer APRÈS la migration v1.70 (sinon la sauvegarde échoue)
-  'factures_remplacees', 'virements_groupes', 'rattachements_journal'];   // rattachements manuels (v1.71) : à déployer APRÈS la migration v1.71 (sinon la sauvegarde échoue)
+  'factures_remplacees', 'virements_groupes', 'rattachements_journal',   // rattachements manuels (v1.71) : à déployer APRÈS la migration v1.71 (sinon la sauvegarde échoue)
+  'annulations', 'annulations_journal'];   // fiches d'annulation des dates (v1.72) : à déployer APRÈS la migration v1.72 (sinon la sauvegarde échoue)
 // colonne(s) de tri pour lire les grandes tables page par page
 const ORDER: Record<string, string[]> = { app_users: ['email'], settings: ['key'], contact_structures: ['contact_id', 'structure_id'], prospection_memoire: ['email'], mail_sync_state: ['mailbox'], brevo_fiches: ['email'] };
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });

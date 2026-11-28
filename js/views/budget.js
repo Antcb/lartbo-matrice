@@ -122,7 +122,7 @@ function summaryTable(s, b, com, p){
   const corea = isCorea(s), shareTodo = corea && (s.corea_share == null || s.corea_share === ''), missing = missingCostLines(s.id).length;
   const brut = corea ? 'MG + part − commission − dépenses' : 'cachet − commission − dépenses';
   return `<div class="tbl-wrap"><table class="budget-sum"><thead><tr><th></th><th class="num">Prévu</th><th class="num" title="Montant réel quand il est connu, sinon le prévu">Réel / à jour</th><th class="num">Écart</th></tr></thead><tbody>
-    ${row(corea ? 'Cachet HT (MG) avant commission' : 'Cachet HT avant commission', b.fee, b.fee, 0, (cashed >= b.fee - 0.01 && b.fee ? 'entièrement encaissé' : `encaissé : ${eur2(cashed)} sur ${eur2(b.fee)}`) + (unassigned ? ` · dont ${eur2(unassigned)} — compte non renseigné` : ''))}
+    ${row(b.annule ? `Montant dû après annulation HT (cachet initial ${eur2(b.cachetInitial)})` : corea ? 'Cachet HT (MG) avant commission' : 'Cachet HT avant commission', b.fee, b.fee, 0, (cashed >= b.fee - 0.01 && b.fee ? 'entièrement encaissé' : `encaissé : ${eur2(cashed)} sur ${eur2(b.fee)}`) + (unassigned ? ` · dont ${eur2(unassigned)} — compte non renseigné` : ''))}
     ${corea ? row('Part du résultat (coréalisation)', b.share, b.share, 0, shareTodo ? 'pas encore validée : la commission ne porte pour l’instant que sur le MG' : 'validée · comprise dans la base de la commission') : ''}
     ${row('Commission L’ArtBo', b.com, b.com, 0, commissionStatus(com) + (corea ? ` · sur ${eur2(b.gross)} (MG${shareTodo ? ' seul, provisoire' : ' + part'})` : '')
       + ((q => q && Math.abs(q.gap) >= 0.005 ? ` · régularisation à prévoir : ${q.gap > 0 ? '+' : ''}${eur2(q.gap)} (montant historique conservé)` : '')(coreaCommissionCheck(s))), {cost: true})}

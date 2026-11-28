@@ -377,6 +377,76 @@
       contract_type: 'Cession', fee_ht: 6000, vat: 5.5, fee_ttc: 6330, acompte_pct: 50, payments: [{ label: 'Acompte', kind: 'acompte', pct: 50, ht: 3000 }, { label: 'Solde', kind: 'solde', pct: 50, ht: 3000 }],
       structure: { name: 'Festival Fictif' }, fiche: {}, submitted_at: null, locked: false } : null,
     rh_get: a => a.p_token === 'jeton-rh-test-00000001' ? { first_name: 'Dominique', last_name: 'EXEMPLE', email: 'dominique@example.com', info: {}, docs: [], submitted_at: null } : null,
+    // v1.72 (L3) : « Annuler la date » — mêmes contrôles et même calcul que les fonctions SQL show_annuler / annulation_corriger /
+    // annulation_retablir (essayées sur une vraie base PostgreSQL : supabase/repetitions/2026-11-28_v1.72_annulation_essai.sql)
+    ...(() => {
+      const err = m => { throw Object.assign(new Error(m), { code: 'P0001' }); };
+      const D = () => window.__DB, now = () => new Date().toISOString(), c2 = v => Math.round((Number(v) || 0) * 100) / 100, t = v => String(v ?? '').trim();
+      const emise = p => p.hors_calcul == null && !!(p.sent_at || p.paid_at || t(p.invoice_number) || t(p.pennylane_id));
+      const show = id => (D().shows || []).find(x => x.id === id);
+      const lignes = sid => (D().show_payments || []).filter(p => p.show_id === sid && p.hors_calcul == null && ['acompte', 'solde', 'autre'].includes(p.kind));
+      const montant = p => { if (p.amount != null && p.amount !== '') return Number(p.amount); const s = show(p.show_id) || {}, fee = Number(s.fee_ht) || 0;
+        if (p.kind === 'solde') return Math.max(0, c2(fee - lignes(p.show_id).filter(a => a.kind === 'acompte').reduce((x, a) => x + (a.amount != null ? Number(a.amount) : a.pct == null ? 0 : Math.round(fee * a.pct) / 100), 0)));
+        if (p.kind === 'artbo') return Math.round(fee * Number(p.pct ?? s.artbo_pct ?? 0)) / 100;
+        return p.pct == null ? 0 : Math.round(fee * Number(p.pct)) / 100; };
+      const avoirHt = p => (D().pennylane_avoirs || []).filter(a => a.payment_id === p.id && a.etat === 'rattache' && !a.gone_at && !a.facture_remplacee).reduce((x, a) => x + Number(a.amount_ht || 0), 0);
+      const engagee = s => !!s.contract_signed || (D().show_payments || []).some(p => p.show_id === s.id && emise(p))
+        || (D().reglements || []).some(r => r.show_id === s.id && r.etat === 'fait' && !r.annule_at)
+        || (D().commission_transfers || []).some(x => (D().show_payments || []).some(p => p.id === x.payment_id && p.show_id === s.id))
+        || (D().budget_lines || []).some(l => l.show_id === s.id && (l.amount != null || l.paid_at || l.reimbursed_at || t(l.doc_number) || l.file_path));
+      const regime = s => (s.prod_mode || 'production') === 'booking' ? 'booking' : s.contract_type === 'Co-Production' ? 'coprod' : s.contract_type === 'Co-Réalisation' ? 'corea' : 'cession';
+      const appliquer = (sid, du) => {
+        const ls = lignes(sid), fact = c2(ls.filter(emise).reduce((x, p) => x + Math.max(0, montant(p) - Math.min(avoirHt(p), Math.max(0, montant(p)))), 0));
+        const reste = Math.max(0, c2(du - fact)), non = ls.filter(p => !emise(p)).sort((a, b) => (a.sort || 0) - (b.sort || 0) || String(a.id).localeCompare(String(b.id)));
+        const cible = (non.find(p => p.kind === 'solde') || non[0] || {}).id;
+        const plan = non.map(p => ({ payment_id: p.id, kind: p.kind, label: p.label, pct: p.pct ?? null, amount: p.amount ?? null, montant_initial: c2(montant(p)), nouveau: p.id === cible ? reste : 0 }))
+          .map(l => ({ ...l, etat: l.nouveau > 0 ? 'recalculee' : 'abandonnee' }));
+        plan.forEach(l => { const p = ls.find(x => x.id === l.payment_id); p.amount = l.nouveau; p.annulation = l.etat; });
+        return plan;
+      };
+      const defaire = a => (a.lignes || []).forEach(l => { const p = (D().show_payments || []).find(x => x.id === l.payment_id); if (p && !emise(p)) { p.amount = l.amount ?? null; p.annulation = null; } });
+      const empreinte = sid => JSON.stringify([(D().show_payments || []).filter(p => p.show_id === sid).map(p => [p.id, p.sent_at, p.paid_at, t(p.invoice_number), t(p.pennylane_id), p.annulation ? null : [p.amount, p.pct]]),
+        (D().reglements || []).filter(r => r.show_id === sid).map(r => [r.id, r.etat, r.montant_ttc, r.annule_at]),
+        (D().pennylane_avoirs || []).filter(a => a.show_id === sid).map(a => [a.id, a.etat, a.payment_id, a.gone_at])]);
+      const journal = (a, action, avant, apres, motif) => (D().annulations_journal ||= []).push({ id: Math.random(), annulation_id: a.id, show_id: a.show_id, action, avant, apres, motif, auteur: USER, at: now() });
+      const champs = (reg, p_montant, p_motif, p_decide_le, p_justificatif) => {
+        const m = t(p_motif); if (!m || m.length > 1000) err('Motif obligatoire (1 000 caractères au plus)');
+        if (!p_decide_le) err('Date de la décision obligatoire');
+        if (reg === 'cession' && (p_montant == null || !Number.isFinite(Number(p_montant)) || Number(p_montant) < 0 || Number(p_montant) >= 1e8)) err('Montant total dû après annulation à saisir (HT, acompte compris ; 0 = sans frais)');
+        if (reg !== 'cession' && p_montant != null) err('Pas de montant à saisir pour cette date (calcul hors de ce lot)');
+        return { motif: m, decide_le: p_decide_le, justificatif: t(p_justificatif) || null, montant_du_ht: reg === 'cession' ? c2(p_montant) : null };
+      };
+      return {
+        show_annuler: ({ p_show, p_montant, p_motif, p_decide_le, p_justificatif }) => {
+          const s = show(p_show) || err('Date introuvable');
+          if (['Annulée', 'Sans Suite'].includes(s.status)) err(`Date déjà en « ${s.status} »`);
+          if ((D().annulations || []).some(a => a.show_id === s.id && !a.retablie_at)) err('Cette date a déjà une fiche d\'annulation');
+          if (!engagee(s)) err('Date non engagée : elle passe en « Annulée » directement, sans fiche');
+          const reg = regime(s), v = champs(reg, p_montant, p_motif, p_decide_le, p_justificatif);
+          const initial = { show: { status: s.status, fee_ht: s.fee_ht, vat_rate: s.vat_rate ?? null, contract_type: s.contract_type ?? null, contract_signed: s.contract_signed ?? null, artbo_pct: s.artbo_pct ?? null },
+            lignes: (D().show_payments || []).filter(p => p.show_id === s.id).map(p => ({ id: p.id, kind: p.kind, label: p.label, montant_ht: c2(montant(p)), emise: emise(p), invoice_number: p.invoice_number ?? null, paid_at: p.paid_at ?? null })) };
+          const a = { id: 'an-' + Math.random().toString(36).slice(2, 10), show_id: s.id, regime: reg, ...v, statut_avant: s.status, initial, lignes: [], created_at: now(), created_by: USER, retablie_at: null };
+          if (reg === 'cession') a.lignes = appliquer(s.id, v.montant_du_ht);
+          s.status = 'Annulée'; a.empreinte = empreinte(s.id);
+          (D().annulations ||= []).push(a); journal(a, 'annuler', { status: a.statut_avant }, { status: 'Annulée', montant_du_ht: a.montant_du_ht }, v.motif); return a;
+        },
+        annulation_corriger: ({ p_id, p_montant, p_motif, p_decide_le, p_justificatif, p_motif_correction }) => {
+          const mc = t(p_motif_correction); if (!mc) err('Motif de la correction obligatoire (1 000 caractères au plus)');
+          const a = (D().annulations || []).find(x => x.id === p_id && !x.retablie_at) || err('Fiche d\'annulation introuvable ou rétablie');
+          const v = champs(a.regime, p_montant, p_motif, p_decide_le, p_justificatif), avant = { montant_du_ht: a.montant_du_ht, motif: a.motif };
+          if (a.regime === 'cession') { const gardees = (a.lignes || []).filter(l => emise((D().show_payments || []).find(p => p.id === l.payment_id) || {})); defaire(a); a.lignes = [...gardees, ...appliquer(a.show_id, v.montant_du_ht)]; }
+          Object.assign(a, v, { corrige_at: now(), corrige_par: USER }); a.empreinte = empreinte(a.show_id);
+          journal(a, 'corriger', avant, { montant_du_ht: a.montant_du_ht, motif: a.motif }, mc); return a;
+        },
+        annulation_retablir: ({ p_id, p_motif }) => {
+          const m = t(p_motif); if (!m) err('Motif obligatoire (1 000 caractères au plus)');
+          const a = (D().annulations || []).find(x => x.id === p_id && !x.retablie_at) || err('Fiche d\'annulation introuvable ou déjà rétablie');
+          if (empreinte(a.show_id) !== a.empreinte) err('Une facture, un avoir, un paiement ou un remboursement a été ajouté ou modifié depuis l\'annulation : la date reste à régulariser (rien n\'est rétabli)');
+          defaire(a); show(a.show_id).status = a.statut_avant; Object.assign(a, { retablie_at: now(), retablie_par: USER, retablie_motif: m });
+          journal(a, 'retablir', { status: 'Annulée' }, { status: a.statut_avant }, m); return a;
+        },
+      };
+    })(),
     artist_get: a => a.p_token === 'jeton-artiste-test-0001' ? { name: 'Artiste Alpha', info: {}, docs: [], submitted_at: null }
       // v1.60 : structure administrative liée (référence) — données fictives
       : a.p_token === 'jeton-artiste-admin-01' ? { name: 'Artiste Gamma', info: { adm_city: 'Ancienneville' }, docs: [], submitted_at: null,

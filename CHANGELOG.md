@@ -5,6 +5,10 @@ Pour publier une nouvelle version : `python3 tools/bump_version.py minor "Ce qui
 
 <!-- nouvelles versions ci-dessous -->
 
+## 1.72.0 — 28/11/2026
+- L3 du point 02 : « Annuler la date » pour une date engagée — fiche d'annulation (conditions initiales figées, montant dû après annulation, motif, date, justificatif), lignes non émises recalculées ou « ne doivent plus être émises », commission à revoir, « Annulées à régulariser » dans Production, relances limitées à l'impayé encore dû, correction et rétablissement tracés ; aucun avoir ni remboursement automatique
+
+
 ## 1.71.2 — 27/11/2026
 - L2b : migration rejouable sur une base déjà en v1.71.0 ; écart d'un rattachement manuel calculé sur les seules réémissions actives (même règle que le serveur)
 

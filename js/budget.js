@@ -8,7 +8,7 @@
  * Une date cochée « booking uniquement » (prod_mode = booking) n'a pas de budget : seulement la facture de commission.
  */
 import { r2 } from './utils.js';
-import { commissionState, encaisseHt, isBookingShow, isCoproduction, isInvoiced, mouvementsOf, payAmount, paymentsOf, reglementsOf, resteDu } from './calc.js';
+import { montantDuApresAnnulation, commissionState, encaisseHt, isBookingShow, isCoproduction, isInvoiced, mouvementsOf, payAmount, paymentsOf, reglementsOf, resteDu } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { byId, setting, showCommissionPct, showsOfProject } from './selectors.js';
 import { cnmBearer, cnmOf, commissionBase, commissionPctOf, coreaShareOf, isAbroad, isCnmLine, isCorea } from './corea.js';
@@ -127,12 +127,13 @@ export function availableForArtist(s){
 
 export function showBudget(s){
   const lines = linesOf(s.id);
-  const fee = Number(s.fee_ht)||0, share = coreaShareOf(s), gross = r2(fee + share), com = commissionAmount(s);
+  // (v1.72, décision 9) date annulée (cession) : le prévisionnel part du montant dû après annulation, jamais du cachet initial
+  const du = montantDuApresAnnulation(s), fee = du ?? (Number(s.fee_ht)||0), share = coreaShareOf(s), gross = r2(fee + share), com = commissionAmount(s);
   const expenses = lines.filter(l => !isSolde(l)).reduce((t,l) => t + lineValue(l), 0);
   const solde = lines.filter(isSolde).reduce((t,l) => t + lineValue(l), 0);
   const forecastExp = lines.filter(l => !isSolde(l)).reduce((t,l) => t + (lineForecast(l) ?? (Number(l.amount)||0)), 0);
   const docs = lines.filter(l => lineValue(l) !== 0);
-  return {fee, share, gross, com, expenses: r2(expenses), forecastExp: r2(forecastExp), available: r2(gross - com - expenses), solde: r2(solde),
+  return {fee, annule: du != null, cachetInitial: Number(s.fee_ht) || 0, share, gross, com, expenses: r2(expenses), forecastExp: r2(forecastExp), available: r2(gross - com - expenses), solde: r2(solde),
     result: r2(gross - com - expenses - solde), lines,
     docsIn: docs.filter(l => l.doc_number || l.file_path).length, docsAll: docs.length, paid: docs.filter(l => l.paid_at).length};
 }
