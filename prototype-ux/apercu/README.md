@@ -1,7 +1,7 @@
-# MATRICE — aperçu du prototype UX/UI (V8.1)
+# MATRICE — aperçu du prototype UX/UI (V8.2)
 
 Aperçu statique, lisible sans JavaScript : captures Mac (1440 × 900) et iPhone (393 × 852) de chaque écran, puis le texte affiché.
-Données fictives. Branche `ux/refonte-uxui`, commit `a99570a`, généré le 28/11/2026 16:17:02.
+Données fictives. Branche `ux/refonte-uxui`, commit `4e274c3`, généré le 28/11/2026 17:14:00.
 Prototype interactif : https://claude.ai/artifact/4bEGUsBscbkLQj9jM5CMpE · Code : https://github.com/Antcb/lartbo-matrice/tree/ux/refonte-uxui/prototype-ux
 
 ## Écrans
