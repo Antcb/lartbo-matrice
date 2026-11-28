@@ -21,7 +21,7 @@
  * échéance d'origine (v1.60.3).
  *   Jamais de relance d'acompte ni de solde (factures de l'artiste à l'organisateur).
  */
-import { acompteRetire, annulationOf, commissionState, etatAnnulation, isInvoiced, paymentsOf, reglementsOf, soldeeParAvoir } from './calc.js';
+import { acompteRetire, annulationOf, commissionState, etatAnnulation, isInvoiced, payAmount, paymentsOf, reglementsOf, soldeeParAvoir } from './calc.js';
 import { CONFIRMED_PROD } from './constants.js';
 import { addDays, eur2, today, workDay, addMonths, workDayBefore } from './utils.js';
 import { setting } from './selectors.js';
@@ -146,10 +146,13 @@ export const followedInvoice = (p, booking) => booking ? p.kind === 'artbo' : ['
 /** Facture faite (numéro ou lien Pennylane) mais sans date d'envoi ni de paiement */
 const madeNotSent = p => (filled(p.invoice_number) || filled(p.pennylane_id)) && !p.sent_at && !p.paid_at;
 /** Jour où la facture a été faite : date de la facture Pennylane, sinon jour où le numéro a été noté (invoiced_on), sinon création de la ligne */
-const madeOn = p => p.invoiced_on || (p.created_at ? new Date(p.created_at).toLocaleDateString('sv-SE', {timeZone: 'Europe/Paris'}) : null);   // jour de Paris, comme le serveur
+const parisDay = t => t ? new Date(t).toLocaleDateString('sv-SE', {timeZone: 'Europe/Paris'}) : null;   // jour de Paris, comme le serveur
+const madeOn = p => p.invoiced_on || parisDay(p.created_at);
 const nameOf = p => [p.label || '', filled(p.invoice_number) ? `(${String(p.invoice_number).trim()})` : ''].filter(Boolean).join(' ');
 /** Libellés communs avec la fonction serveur (generate_reminders) */
 export const sendTitle = p => `Facture à envoyer : ${nameOf(p)}`;
+/** (v1.72.3) ligne recalculée d'une date annulée, à émettre dès l'annulation */
+export const annulFactureTitle = p => `Facture à faire (date annulée) : ${nameOf(p)}`;
 export const paidTitle = p => `Paiement à vérifier : ${nameOf(p)}${p.reminded_at ? ' (toujours impayée après relance)' : ''}`;
 
 /** Règle de la fonction serveur (generate_reminders) d'une facture « paiement à vérifier », selon sa nature */
@@ -191,17 +194,19 @@ export function remindersOf(s, {all = false, delais} = {}){
   const rule = (step, due, title, key) => { const origin = due; if (next[key] && next[key] > due) due = next[key];
     out.push({step, key, due, origin, title, late: due <= now, ...(old(key) ? {stale: true, staleWhy: OLD_DAYS[RULE[key].old]} : {})}); };
   // (v1.72) date annulée : aucune relance d'organisation ni des lignes qui ne doivent plus être émises. Cession seulement (booking :
-  // commission à revoir ; coproduction, coréalisation : aucune) — décisions d'Anthony du 28/11/2026 (12 h 08 et 13 h 25) :
-  //  - « Facture de solde à faire » pour le solde recalculé (non émis, montant > 0), à l'échéance habituelle ;
+  // commission à revoir ; coproduction, coréalisation : aucune) — décisions d'Anthony du 28/11/2026 (12 h 08, 13 h 25, 14 h 31) :
+  //  - « Facture à faire » pour CHAQUE ligne recalculée non émise de montant positif (solde ou non), due dès le jour de
+  //    l'annulation (pas d'attente de J-7 avant la date initiale) — règle annulation_facture ;
   //  - « Facture à envoyer » tant qu'une facture faite n'est pas envoyée ET que le facturé net ne dépasse pas le montant retenu
   //    (sinon facture « à régulariser » : sans relance) ;
   //  - impayé : gardé seulement si le montant réclamé ne dépasse pas ce qui reste dû après annulation, sinon suspendu.
-  // Même règle côté serveur : reminder_candidates (v1.72, colonnes so_recalc / envoi_ok / impaye_ok)
+  // Même règle côté serveur : reminder_candidates (v1.72, colonnes annul_le / envoi_ok / impaye_ok, règle annulation_facture)
   if (annulee){
     const e = etatAnnulation(s);
     if (e?.regime !== 'cession') return out;
-    const so = first('solde');
-    if (on('solde_envoi') && s.date && so?.annulation === 'recalculee' && !isInvoiced(so)) rule('solde', soldeReminderDay(s.date, d.solde_envoi.n), 'Facture de solde à faire', 'solde_envoi');
+    const jour = parisDay(e.a.created_at);
+    for (const p of pays.filter(x => x.annulation === 'recalculee' && !isInvoiced(x) && (payAmount(x) || 0) > 0.005))
+      rule(p.kind, jour, annulFactureTitle(p), 'annulation_facture');
     invoiceRules(pays.filter(p => p.annulation !== 'abandonnee'), false, rule, s.date,
       {...d, facture_envoi: {...d.facture_envoi, on: d.facture_envoi.on && !e.depassement}, paiement: {...d.paiement, on: d.paiement.on && e.relanceGardee}}, monday);
     return out;

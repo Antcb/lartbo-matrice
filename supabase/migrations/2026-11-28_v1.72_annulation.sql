@@ -4,7 +4,10 @@
 --     (shows_annulation_guard) sur tous les chemins ; date non engagée : comportement inchangé.
 --  2. Fiche d'annulation (annulations) : conditions initiales figées (copie), régime, montant total dû après annulation HT acompte
 --     compris (cession ; 0 = sans frais), motif et date obligatoires, justificatif (lien ou référence) ; journal avant / après
---     (annulations_journal). Une seule fiche active par date.
+--     (annulations_journal). Une seule fiche active par date. (28/11/2026, 14 h 31) Origine de l'annulation (artiste, organisateur,
+--     décision commune, autre) saisie à part des conditions financières convenues (montant dû, commission « à revoir » / « non due ») :
+--     l'origine ne fixe ni les montants ni le sens des paiements. Qui paie qui (facture, avoir, remboursement) : affiché par
+--     l'application (js/annulation-regles.js operationsAnnulation), rien n'est créé.
 --  3. Factures émises et paiements jamais modifiés. Lignes NON émises (acompte, solde, autre) : le solde (sinon la première ligne non
 --     émise) garde seulement ce qui reste à facturer (montant dû − facturé net après avoirs) ; les autres, ou toutes si rien ne reste,
 --     « ne doivent plus être émises » (show_payments.annulation, montant 0) — visibles, hors des montants à facturer et des relances.
@@ -12,7 +15,8 @@
 --  4. Commission : montant existant gardé (« À revoir », L5). Booking : écran limité à la commission. Coproduction, coréalisation :
 --     motif, documents et mouvements, sans calcul (L8).
 --  5. Relances (reminder_candidates, même règle : js/reminders.js) : date annulée = aucune relance d'organisation ni des lignes
---     abandonnées. Cession (ajustement du 28/11/2026, 13 h 25) : « Facture de solde à faire » pour le solde recalculé ; « Facture à
+--     abandonnées. Cession (ajustements du 28/11/2026, 13 h 25 et 14 h 31) : « Facture à faire » dès l'annulation pour chaque ligne
+--     recalculée non émise de montant positif (annulation_facture, solde ou non) ; « Facture à
 --     envoyer » tant que le facturé net ne dépasse pas le montant retenu (annulation_depasse), sinon facture « à régulariser » sans
 --     relance ; impayé gardé seulement si le montant réclamé (restes dus HT des factures relancées) ne dépasse pas ce qui reste dû
 --     (montant dû − encaissé HT), sinon « À régulariser », relance suspendue. Booking : commission à revoir → relance suspendue.
@@ -37,6 +41,12 @@ create table if not exists public.annulations (
   regime text not null check (regime in ('cession', 'booking', 'coprod', 'corea')),
   montant_du_ht numeric(12,2) check (montant_du_ht is null or (montant_du_ht >= 0 and montant_du_ht < 100000000)),
   motif text not null check (btrim(motif) <> ''),
+  -- v1.72.3 (28/11/2026, 14 h 31) : qui est à l'origine de l'annulation — information seulement, saisie à part des conditions
+  -- financières convenues (montant dû, commission) : elle ne fixe ni les montants dus ni le sens des paiements
+  origine text not null check (origine in ('artiste', 'organisateur', 'commun', 'autre')),
+  origine_precision text check (origine_precision is null or length(origine_precision) <= 500),
+  -- commission L'ArtBo convenue : à revoir (L5) ou non due (déjà facturée ou versée → à régulariser, L5) ; montant jamais modifié ici
+  commission text not null default 'a_revoir' check (commission in ('a_revoir', 'non_due')),
   decide_le date not null,
   justificatif text,
   statut_avant text not null,
@@ -302,14 +312,19 @@ drop trigger if exists show_payments_annulation_guard on public.show_payments;
 create trigger show_payments_annulation_guard before insert or update or delete on public.show_payments for each row execute function public.show_payments_annulation_guard();
 
 -- ─── fonctions de l'équipe ──────────────────────────────────────────────────────────────────────────────────────────────────
-create or replace function public.show_annuler(p_show uuid, p_montant numeric, p_motif text, p_decide_le date, p_justificatif text default null)
+create or replace function public.show_annuler(p_show uuid, p_montant numeric, p_motif text, p_decide_le date, p_justificatif text default null,
+  p_origine text default null, p_commission text default 'a_revoir', p_origine_precision text default null)
  returns public.annulations
  language plpgsql security definer set search_path = public, pg_temp
 as $$
 declare s public.shows; reg text; a public.annulations; m text := nullif(btrim(p_motif), ''); j text := nullif(btrim(p_justificatif), ''); res jsonb;
+        op text := nullif(btrim(p_origine_precision), '');
 begin
   if not public.is_team() then raise exception 'Accès refusé'; end if;
   if m is null or length(m) > 1000 then raise exception 'Motif obligatoire (1 000 caractères au plus)'; end if;
+  if p_origine is null or p_origine not in ('artiste', 'organisateur', 'commun', 'autre') then raise exception 'Indique qui est à l''origine de l''annulation (artiste, organisateur, décision commune ou autre)'; end if;
+  if coalesce(p_commission, '') not in ('a_revoir', 'non_due') then raise exception 'Commission : « à revoir » ou « non due »'; end if;
+  if length(op) > 500 then raise exception 'Précision sur l''origine : 500 caractères au plus'; end if;
   if p_decide_le is null then raise exception 'Date de la décision obligatoire'; end if;
   if length(j) > 1000 then raise exception 'Justificatif : 1 000 caractères au plus'; end if;
   select * into s from public.shows where id = p_show for update;
@@ -322,8 +337,8 @@ begin
   if reg = 'cession' and (p_montant is null or p_montant = 'NaN'::numeric or p_montant < 0 or p_montant >= 100000000) then
     raise exception 'Montant total dû après annulation à saisir (HT, acompte compris ; 0 = sans frais)'; end if;
   if reg <> 'cession' and p_montant is not null then raise exception 'Pas de montant à saisir pour cette date (calcul hors de ce lot)'; end if;
-  insert into public.annulations (show_id, regime, montant_du_ht, motif, decide_le, justificatif, statut_avant, initial, created_by)
-  values (s.id, reg, case when reg = 'cession' then round(p_montant, 2) end, m, p_decide_le, j, s.status, public.annulation_copie(s.id), auth.jwt() ->> 'email')
+  insert into public.annulations (show_id, regime, montant_du_ht, motif, origine, origine_precision, commission, decide_le, justificatif, statut_avant, initial, created_by)
+  values (s.id, reg, case when reg = 'cession' then round(p_montant, 2) end, m, p_origine, op, p_commission, p_decide_le, j, s.status, public.annulation_copie(s.id), auth.jwt() ->> 'email')
   returning * into a;
   perform set_config('matrice.annulation', 'on', true);
   if reg = 'cession' then res := public.annulation_appliquer(s.id, a.montant_du_ht); end if;
@@ -332,18 +347,23 @@ begin
   update public.annulations set lignes = coalesce(res -> 'plan', '[]'::jsonb), empreinte = public.annulation_empreinte(s.id) where id = a.id returning * into a;
   insert into public.annulations_journal (annulation_id, show_id, action, avant, apres, motif, auteur)
   values (a.id, s.id, 'annuler', jsonb_build_object('status', s.status), jsonb_build_object('status', 'Annulée', 'montant_du_ht', a.montant_du_ht,
-    'decide_le', a.decide_le, 'justificatif', a.justificatif, 'lignes', a.lignes), m, auth.jwt() ->> 'email');
+    'origine', a.origine, 'origine_precision', a.origine_precision, 'commission', a.commission, 'decide_le', a.decide_le, 'justificatif', a.justificatif, 'lignes', a.lignes), m, auth.jwt() ->> 'email');
   return a;
 end $$;
 
-create or replace function public.annulation_corriger(p_id uuid, p_montant numeric, p_motif text, p_decide_le date, p_justificatif text, p_motif_correction text)
+create or replace function public.annulation_corriger(p_id uuid, p_montant numeric, p_motif text, p_decide_le date, p_justificatif text, p_motif_correction text,
+  p_origine text default null, p_commission text default null, p_origine_precision text default null)
  returns public.annulations
  language plpgsql security definer set search_path = public, pg_temp
 as $$
 declare a public.annulations; n public.annulations; m text := nullif(btrim(p_motif), ''); mc text := nullif(btrim(p_motif_correction), '');
-        j text := nullif(btrim(p_justificatif), ''); res jsonb; gardees jsonb;
+        j text := nullif(btrim(p_justificatif), ''); res jsonb; gardees jsonb; op text := nullif(btrim(p_origine_precision), '');
 begin
   if not public.is_team() then raise exception 'Accès refusé'; end if;
+  -- v1.72.3 : origine et commission corrigibles (vides = inchangées) ; précision : remplacée telle que saisie
+  if p_origine is not null and p_origine not in ('artiste', 'organisateur', 'commun', 'autre') then raise exception 'Indique qui est à l''origine de l''annulation (artiste, organisateur, décision commune ou autre)'; end if;
+  if p_commission is not null and p_commission not in ('a_revoir', 'non_due') then raise exception 'Commission : « à revoir » ou « non due »'; end if;
+  if length(op) > 500 then raise exception 'Précision sur l''origine : 500 caractères au plus'; end if;
   if mc is null or length(mc) > 1000 then raise exception 'Motif de la correction obligatoire (1 000 caractères au plus)'; end if;
   if m is null or length(m) > 1000 then raise exception 'Motif obligatoire (1 000 caractères au plus)'; end if;
   if p_decide_le is null then raise exception 'Date de la décision obligatoire'; end if;
@@ -364,13 +384,16 @@ begin
   end if;
   perform set_config('matrice.annulation', '', true);
   update public.annulations set montant_du_ht = case when a.regime = 'cession' then round(p_montant, 2) end, motif = m, decide_le = p_decide_le, justificatif = j,
+    origine = coalesce(p_origine, a.origine), commission = coalesce(p_commission, a.commission), origine_precision = case when p_origine is null then a.origine_precision else op end,
     lignes = case when a.regime = 'cession' then gardees || coalesce(res -> 'plan', '[]'::jsonb) else a.lignes end,
     corrige_at = now(), corrige_par = auth.jwt() ->> 'email'
    where id = a.id returning * into n;
   update public.annulations set empreinte = public.annulation_empreinte(a.show_id) where id = a.id returning * into n;
   insert into public.annulations_journal (annulation_id, show_id, action, avant, apres, motif, auteur)
-  values (a.id, a.show_id, 'corriger', jsonb_build_object('montant_du_ht', a.montant_du_ht, 'motif', a.motif, 'decide_le', a.decide_le, 'justificatif', a.justificatif, 'lignes', a.lignes),
-    jsonb_build_object('montant_du_ht', n.montant_du_ht, 'motif', n.motif, 'decide_le', n.decide_le, 'justificatif', n.justificatif, 'lignes', n.lignes), mc, auth.jwt() ->> 'email');
+  values (a.id, a.show_id, 'corriger', jsonb_build_object('montant_du_ht', a.montant_du_ht, 'motif', a.motif, 'origine', a.origine, 'origine_precision', a.origine_precision,
+      'commission', a.commission, 'decide_le', a.decide_le, 'justificatif', a.justificatif, 'lignes', a.lignes),
+    jsonb_build_object('montant_du_ht', n.montant_du_ht, 'motif', n.motif, 'origine', n.origine, 'origine_precision', n.origine_precision,
+      'commission', n.commission, 'decide_le', n.decide_le, 'justificatif', n.justificatif, 'lignes', n.lignes), mc, auth.jwt() ->> 'email');
   return n;
 end $$;
 
@@ -398,8 +421,8 @@ begin
 end $$;
 
 do $$ declare f text; begin
-  foreach f in array array['public.show_annuler(uuid, numeric, text, date, text)',
-    'public.annulation_corriger(uuid, numeric, text, date, text, text)', 'public.annulation_retablir(uuid, text)'] loop
+  foreach f in array array['public.show_annuler(uuid, numeric, text, date, text, text, text, text)',
+    'public.annulation_corriger(uuid, numeric, text, date, text, text, text, text, text)', 'public.annulation_retablir(uuid, text)'] loop
     execute format('revoke all on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);
   end loop;
@@ -419,13 +442,13 @@ create or replace function public.reminder_candidates(p_show uuid default null, 
  language sql stable security definer set search_path to 'public'
 as $function$
   with s as (
-    -- v1.72 (L3) : date annulée avec une fiche d'annulation (décisions du 28/11/2026, 12 h 08 et 13 h 25), cession seulement :
-    -- « Facture de solde à faire » pour le solde recalculé (so_recalc) ; « Facture à envoyer » tant que le facturé net ne dépasse pas
+    -- v1.72 (L3) : date annulée avec une fiche d'annulation (décisions du 28/11/2026, 12 h 08, 13 h 25 et 14 h 31), cession seulement :
+    -- « Facture à faire » dès le jour de l'annulation pour chaque ligne recalculée non émise de montant positif (annulation_facture) ; « Facture à envoyer » tant que le facturé net ne dépasse pas
     -- le montant retenu (envoi_ok, annulation_depasse) ; impayé seulement si le montant réclamé ne dépasse pas ce qui reste dû
     -- (impaye_ok, annulation_relance_impaye) ; rien d'autre (lignes « ne doit plus être émise » exclues : f) — même règle : js/reminders.js
     select an.id is not null annule, (an.id is not null and an.regime = 'cession' and public.annulation_relance_impaye(sh.id)) impaye_ok,
       (an.id is not null and an.regime = 'cession' and not public.annulation_depasse(sh.id)) envoi_ok,
-      (an.id is not null and an.regime = 'cession' and so.annulation = 'recalculee') so_recalc,
+      an.regime an_regime, (an.created_at at time zone 'Europe/Paris')::date annul_le,   -- v1.72.3 : jour de l'annulation (Paris)
       sh.id, sh.date, sh.venue, sh.city, coalesce(sh.prod_mode,'production') mode, coalesce(pr.name,'') proj,
       -- rappels administratifs (étapes, boucles, factures à faire, partenaire) : dates passées de plus de 120 jours exclues ;
       -- factures (à envoyer, impayées) et commission à virer : sans limite de durée (Q13, décision du 27/10)
@@ -488,7 +511,10 @@ as $function$
       -- v1.69 (L1, point 02) : facture SOLDÉE par ses avoirs Pennylane (montant figé entièrement couvert) : ni « à envoyer » ni
       -- « paiement à vérifier » ; avoir partiel : la facture reste suivie ; sans avoir, ou montant nul / négatif : jamais soldée
       -- (relecture v1.69, B1) — même règle : js/calc.js soldeeParAvoir
-      coalesce(x.amount > 0 and public.avoir_couvert(x.id) > 0 and public.avoir_couvert(x.id) >= x.amount - 0.005, false) soldee
+      coalesce(x.amount > 0 and public.avoir_couvert(x.id) > 0 and public.avoir_couvert(x.id) >= x.amount - 0.005, false) soldee,
+      -- v1.72.3 : ligne recalculée d'une date annulée (cession), encore à émettre avec un montant positif
+      (d.an_regime = 'cession' and x.annulation = 'recalculee' and not public.payment_is_emitted(x) and coalesce(public.payment_amount_now(x), 0) > 0.005) annul_a_faire,
+      d.annul_le
     from show_payments x join d on d.id = x.show_id
     where x.hors_calcul is null and ((d.mode <> 'booking' and x.kind in ('acompte', 'solde', 'autre')) or (d.mode = 'booking' and x.kind = 'artbo'))
       and x.annulation is distinct from 'abandonnee'   -- v1.72 : ligne qui ne doit plus être émise, jamais relancée
@@ -514,6 +540,9 @@ as $function$
                      case when kind = 'solde' and show_date is not null
                           then greatest(faite_le + n_fe, (show_date - n_so) - (case extract(isodow from show_date - n_so) when 6 then 1 when 7 then 2 else 0 end)::int)
                           else faite_le + n_fe end, wa, 'Facture à envoyer : ' || nom from f where on_fe and faite and sent_at is null and paid_at is null and not soldee
+    -- v1.72.3 (28/11/2026, 14 h 31) : date annulée — ligne recalculée à émettre, due dès le jour de l'annulation (solde ou non)
+    union all select 'annulation_facture', show_id, show_id || ':' || id || ':' || annul_le, annul_le, false,
+                     'Facture à faire (date annulée) : ' || nom from f where annul_a_faire
     -- facture envoyée impayée : n jours (10 par défaut) après l'envoi ou la dernière relance, sans limite de durée, sauf relances suspendues
     union all select case kind when 'acompte' then 'acompte_paye' when 'solde' then 'solde_paye' when 'artbo' then 'booking_commission_payee' else 'autre_payee' end,
                      show_id, case when rn = 1 and kind <> 'autre' then show_id::text else show_id || ':' || id end || ':' || (greatest(sent_at, reminded_at) + 10),
@@ -530,7 +559,7 @@ as $function$
   )
   select c.r, c.id, c.k, c.raw, c.w, c.t, s.venue, s.proj, s.date, s.city, s.nxt, s.reactiv from cand c join s on s.id = c.id
    where not s.annule or (s.impaye_ok and c.r in ('acompte_paye', 'solde_paye', 'autre_payee'))
-      or (s.envoi_ok and c.r = 'facture_envoi') or (s.so_recalc and c.r = 'solde_envoi')
+      or (s.envoi_ok and c.r = 'facture_envoi') or c.r = 'annulation_facture'
 $function$;
 
 commit;

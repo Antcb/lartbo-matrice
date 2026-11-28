@@ -34,9 +34,11 @@ const etat = (page, sid) => page.evaluate(async sid => {
     reste: calc.financeOf([s]).resteProd, fiches: (S.db.annulations || []).filter(a => a.show_id === sid).length };
 }, sid);
 const ecritures = page => page.evaluate(() => window.__calls.filter(c => (c.table && c.op !== 'select') || c.rpc).map(c => c.rpc || `${c.table}.${c.op}`));
-async function annuler(page, sid, { montant, motif = 'L’organisateur annule (essai fictif)', statut = 'Annulée' } = {}){
+async function annuler(page, sid, { montant, motif = 'L’organisateur annule (essai fictif)', statut = 'Annulée', origine = 'organisateur', commission } = {}){
   await page.locator(`#prod-${sid} select.st-sel`).selectOption(statut);
   await expect(page.locator('#modal h2')).toHaveText('Annuler la date');
+  if (origine) await page.locator('#modal [name=origine]').selectOption(origine);
+  if (commission) await page.locator('#modal [name=commission]').selectOption(commission);
   if (montant != null) await page.locator('#modal [name=montant]').fill(String(montant));
   await page.locator('#modal [name=motif]').fill(motif);
   await page.locator('#modal [name=justificatif]').fill('Mail fictif du 20/02');
@@ -128,11 +130,12 @@ test('v1.72 — variante 3 : sans frais (0 €) → facturé et encaissé au-del
   await preparer(page, { shows: [date('an-d3')], payments: lignes('an-d3') });
   await page.evaluate(() => { window.__calls.length = 0; });
   await annuler(page, 'an-d3', { montant: 0, motif: 'Annulation sans frais (essai)' });
-  await expect(page.locator('#annul-apercu [data-a-regulariser]')).toContainText('Facturé au-delà du montant dû : 1 200,00');
+  await expect(page.locator('#annul-apercu [data-a-regulariser]')).toContainText('Facturé au-delà du montant dû');
+  await expect(page.locator('#annul-apercu [data-operation=avoir]')).toContainText('1 200,00');
   await confirmer(page);
   const fiche = page.locator('[data-fiche-annulation]');
-  await expect(fiche.locator('[data-a-regulariser]')).toContainText('avoir à émettre dans Pennylane');
-  await expect(fiche.locator('[data-a-regulariser]')).toContainText('remboursement à décider');
+  await expect(fiche.locator('[data-operation=avoir]')).toContainText('dans Pennylane');
+  await expect(fiche.locator('[data-operation=remboursement]')).toContainText('1 266,00');
   expect(await ecritures(page)).toEqual(['show_annuler']);   // ni avoir, ni remboursement, ni document
   // correction : motif de la correction obligatoire ; 0 € → 2 000 € : 800 € à émettre ; trace avant / après
   await fiche.locator('[data-act="annulationCorriger"]').click();
@@ -162,7 +165,7 @@ test('v1.72 — facture émise au-delà du montant retenu : relance d’impayé 
   expect(e.etat).toMatchObject({ factureNet: 4000, depassement: 2000, relanceGardee: false });
   expect(e.relances).toEqual([]);
   await expect(page.locator('#prod-an-d4 [data-a-regulariser]')).toContainText('Relance d’impayé suspendue : 2 800,00');
-  await expect(page.locator('#prod-an-d4 [data-a-regulariser]')).toContainText('Facturé au-delà du montant dû : 2 000,00');
+  await expect(page.locator('#prod-an-d4 [data-operation=avoir]')).toContainText('2 000,00 € HT');
   // maintien intégral : 2 800 € réclamés = encore dus → seule la relance d'impayé reste
   await annuler(page, 'an-d5', { montant: 4000, motif: 'Maintien intégral (essai)' });
   await confirmer(page);
@@ -224,7 +227,7 @@ test('v1.72 — ajustement du 28/11 (13 h 25) : solde recalculé « à faire » 
   await annuler(page, 'an-d6', { montant: 2000 }); await confirmer(page);
   let e = await etat(page, 'an-d6');
   expect(e.lignes.find(l => l.id === 'an-d6-s')).toMatchObject({ amount: 800, annulation: 'recalculee' });
-  expect(e.relances).toEqual(['solde_envoi']);
+  expect(e.relances).toEqual(['annulation_facture']);
   // une fois émis (800 € = montant retenu) : « Facture à envoyer » prend le relais ; envoyé : relance d'impayé (800 € encore dus)
   await page.evaluate(async () => { const { save } = await import('./js/data.js'); await save('show_payments', 'an-d6-s', { invoice_number: 'F-TEST-an-d6-S', invoiced_on: new Date().toISOString().slice(0, 10) }); });
   e = await etat(page, 'an-d6');
@@ -250,5 +253,58 @@ test('v1.72 — ajustement du 28/11 (13 h 25) : solde recalculé « à faire » 
   expect(rattache).toContain('Date annulée : aucune ligne de facturation');
   expect(await ecritures(page)).toEqual([]);
   expect((await etat(page, 'an-d6')).lignes).toHaveLength(3);
+  expectClean(ctx);
+});
+
+test('v1.72.3 — qui doit payer qui : l’artiste annule (acompte encaissé restitué, commission non due) ; acompte jamais encaissé ; rappel immédiat hors solde', async ({ page }) => {
+  const ctx = await openApp(page);
+  const jamais = sid => lignes(sid).map(p => p.kind === 'acompte' ? { ...p, paid_at: null, payee: null } : p);
+  const deuxAcomptes = sid => [lignes(sid)[0], { id: sid + '-b', show_id: sid, kind: 'acompte', label: 'Acompte 2', pct: 10, amount: 400, sort: 2 }, lignes(sid)[2]];
+  await preparer(page, { shows: [date('an-e1'), date('an-e2'), date('an-e3')],
+    payments: [...lignes('an-e1').map(p => p.kind === 'artbo' ? { ...p, amount: 180 } : p), ...jamais('an-e2'), ...deuxAcomptes('an-e3')] });
+  await page.evaluate(async () => { const { S } = await import('./js/state.js');
+    for (const db of [S.db, window.__DB]) (db.commission_transfers ||= []).push({ id: 'tr-e1', payment_id: 'an-e1-c', amount: 180, transferred_at: new Date().toISOString().slice(0, 10) }); });
+  await page.evaluate(() => { window.__calls.length = 0; });
+
+  // 1. l'artiste annule, accord : acompte encaissé restitué intégralement → 0 € dus par l'organisateur, commission non due
+  await annuler(page, 'an-e1', { montant: 0, origine: 'artiste', commission: 'non_due', motif: 'L’artiste annule ; acompte restitué (essai)' });
+  await expect(page.locator('#annul-apercu [data-operation=remboursement]')).toContainText('1 266,00');
+  await confirmer(page);
+  let e = await etat(page, 'an-e1');
+  expect(e.lignes.find(l => l.id === 'an-e1-a')).toMatchObject({ amount: 1200, invoice_number: 'F-TEST-an-e1-A', annulation: null });   // facture et encaissement gardés
+  expect(e.lignes.find(l => l.id === 'an-e1-s')).toMatchObject({ amount: 0, annulation: 'abandonnee' });
+  expect(e.lignes.find(l => l.id === 'an-e1-c')).toMatchObject({ amount: 180 });   // commission : montant et versement intacts (L5)
+  expect(e.relances).toEqual([]);
+  const f1 = page.locator('#prod-an-e1 [data-fiche-annulation]');
+  await expect(f1.locator('[data-origine=artiste]')).toContainText('L’artiste');
+  await expect(f1.locator('[data-commission=non_due]')).toContainText('Non due');
+  await expect(f1.locator('[data-operation]')).toHaveCount(3);
+  await expect(f1.locator('[data-operation=avoir]')).toContainText('L’ArtBoristerie →');
+  await expect(f1.locator('[data-operation=avoir]')).toContainText('1 200,00');
+  await expect(f1.locator('[data-operation=remboursement]')).toContainText('1 266,00');
+  await expect(f1.locator('[data-operation=remboursement]')).toContainText('(bénéficiaire)');
+  await expect(f1.locator('[data-operation=commission][data-statut=a_regulariser]')).toContainText('déjà versée : 180,00');
+  await expect(f1.locator('[data-a-regulariser]')).toContainText('Commission L’ArtBo non due');
+  expect(await page.locator('#prod-an-e1 .subtab, #prod-an-e1 [data-tab=annulation]').first().textContent()).toContain('⚠︎');
+
+  // 2. acompte facturé mais jamais encaissé, 0 € dus : avoir à émettre, AUCUN remboursement ; relance d'impayé suspendue
+  await annuler(page, 'an-e2', { montant: 0, origine: 'commun', motif: 'Annulation d’un commun accord (essai)' }); await confirmer(page);
+  e = await etat(page, 'an-e2');
+  expect(e.relances).toEqual([]);
+  const f2 = page.locator('#prod-an-e2 [data-fiche-annulation]');
+  await expect(f2.locator('[data-operation=avoir]')).toContainText('aucun remboursement');
+  await expect(f2.locator('[data-operation=remboursement]')).toHaveCount(0);
+  await expect(f2.locator('[data-operation=commission][data-statut=a_revoir]')).toHaveCount(1);
+
+  // 3. ligne recalculée autre qu'un solde (acompte 2 : 800 €), concert dans plusieurs mois : « Facture à faire » due aujourd'hui
+  await annuler(page, 'an-e3', { montant: 2000 }); await confirmer(page);
+  const r = await page.evaluate(async () => { const rem = await import('./js/reminders.js'); const { S } = await import('./js/state.js');
+    return rem.remindersOf(S.db.shows.find(x => x.id === 'an-e3')).map(x => ({ key: x.key, step: x.step, due: x.due, late: x.late, title: x.title })); });
+  expect(r).toEqual([{ key: 'annulation_facture', step: 'acompte', due: iso(0), late: true, title: 'Facture à faire (date annulée) : Acompte 2' }]);
+  const f3 = page.locator('#prod-an-e3 [data-fiche-annulation]');
+  await expect(f3.locator('[data-operation=facture]')).toContainText('800,00 € HT');
+  await expect(f3.locator('[data-operation=paiement]')).toContainText('844,00 € TTC');
+
+  expect(await ecritures(page)).toEqual(['show_annuler', 'show_annuler', 'show_annuler']);   // ni avoir, ni remboursement, ni document
   expectClean(ctx);
 });

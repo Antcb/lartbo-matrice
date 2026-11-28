@@ -7,10 +7,11 @@
 import { go, render } from './app.js';
 import { S } from './state.js';
 import { refreshFor, sb } from './data.js';
-import { byId, projName } from './selectors.js';
-import { allPaymentsOf, annulationOf, avoirCouvert, commissionState, dateEngagee, depenseEngagee, encaisseHt, etatAnnulation, isInvoiced, payAmount,
-  paymentsOf, resteDu, showVat, soldeeParAvoir, transfersOf, ttc } from './calc.js';
-import { REGIME_LABEL, planAnnulation, regimeAnnulation, relanceImpaye } from './annulation-regles.js';
+import { byId, projName, structName } from './selectors.js';
+import { aRembourserTtc, allPaymentsOf, annulationOf, avoirCouvert, commissionState, dateEngagee, depenseEngagee, encaisseHt, encaisseTtc, etatAnnulation, factureNetTtc,
+  isInvoiced, mouvementsOf, payAmount, paymentsOf, resteDu, selfPaidCommission, showVat, soldeeParAvoir, transfersOf, ttc } from './calc.js';
+import { COMMISSION_LABEL, ORIGINE_LABEL, REGIME_LABEL, operationsAnnulation, planAnnulation, regimeAnnulation, relanceImpaye } from './annulation-regles.js';
+import { payerLabel } from './budget.js';
 import { isOff } from './constants.js';
 import { openModal } from './ui/modal.js';
 import { ask, askText } from './ui/dialog.js';
@@ -50,13 +51,37 @@ function constatHTML(s, regime){
     </div>
     <div class="tbl-wrap"><table class="cards"><thead><tr><th>Ligne</th><th class="num">Montant HT</th><th>État</th><th class="num">Avoirs HT</th><th class="num">Encaissé HT</th><th class="num">Reste dû HT</th></tr></thead>
       <tbody>${ls.map(ligne).join('') || '<tr><td colspan="6" class="muted">Aucune ligne</td></tr>'}</tbody></table></div>
-    ${com && regime !== 'coprod' ? `<p class="small">Commission L’ArtBo : <b>${eur2(payAmount(com))}</b>${transfersOf(com.id).length ? ` · déjà versée : ${eur2(commissionState(com).transferred)}` : ''} — <span class="warn-txt">montant gardé, à revoir</span> (recalcul dans un lot suivant).</p>` : ''}
+    ${com && regime !== 'coprod' ? `<p class="small">Commission L’ArtBo : <b>${eur2(payAmount(com))}</b>${transfersOf(com.id).length ? ` · déjà versée : ${eur2(commissionState(com).transferred)}` : ''} — montant gardé ; due ou non selon l’accord (« Commission L’ArtBo » ci-dessous), traitement dans un lot suivant.</p>` : ''}
     ${dep.length ? `<p class="small">Dépenses engagées : ${dep.map(l => `${esc(l.label || l.category || 'ligne')} ${l.amount != null && l.amount !== '' ? eur2(l.amount) : ''}${l.paid_at ? ` (payée le ${fmtDate(l.paid_at)})` : ' (pas encore payée)'}`).join(' · ')}</p>` : ''}
   </div>`;
 }
 
+/** Organisateur de la date : structure liée, sinon le lieu */
+const orga = s => structName(s.structure_id) || s.venue || 'l’organisateur';
+/** Comptes sur lesquels l'argent est arrivé (compte d'encaissement, §6.6 — « non renseigné » tel quel) */
+const comptes = s => [...new Set(paymentsOf(s.id).filter(p => CESSION.includes(p.kind)).flatMap(p => mouvementsOf(p).filter(m => m.sens === 'encaissement' && m.ttc > 0))
+  .map(m => m.compte ? payerLabel(m.compte, byId('projects', s.project_id)) : 'compte non renseigné'))];
+const AB = 'L’ArtBoristerie';
+/** (v1.72.3, décision du 28/11/2026, 14 h 31) Qui doit payer qui : une ligne par opération, avec son montant ; rien n'est créé */
+export function operationsHTML(s, ops, regime = 'cession'){
+  const o = orga(s), hasRemb = ops.some(x => x.type === 'remboursement'), cs = comptes(s);
+  const ligne = x => {
+    if (x.type === 'facture') return `<b>Facture à émettre</b> — ${AB} → ${esc(o)} : <b>${eur2(x.ht)} HT</b> (${eur2(x.ttc)} TTC). Rappel « Facture à faire » dès l’annulation.`;
+    if (x.type === 'paiement') return `<b>Paiement attendu</b> — ${esc(o)} → ${AB} : <b>${eur2(x.ttc)} TTC</b> (facture à émettre comprise).`;
+    if (x.type === 'avoir') return `<b>Avoir à émettre</b> (à la main, dans Pennylane) — ${AB} → ${esc(o)} : <b>${eur2(x.ht)} HT</b> (${eur2(x.ttc)} TTC)${hasRemb ? '' : ' — aucun remboursement : rien n’a été encaissé au-delà du montant dû'}.`;
+    if (x.type === 'remboursement') return `<b>Remboursement réel</b> — ${AB} → ${esc(o)} (bénéficiaire) : <b>${eur2(x.ttc)} TTC</b>${cs.length ? ` · encaissé sur : ${esc(cs.join(', '))}` : ''}${x.saisi > 0.005 ? ` · déjà saisi : ${eur2(x.saisi)}, reste à saisir : ${eur2(x.aSaisir)}` : ''}. Rien n’est déclenché automatiquement.`;
+    if (x.statut === 'a_regulariser') return `<b class="warn-txt">Commission L’ArtBo non due — à régulariser</b> (lot suivant) : ${eur2(x.ht)} HT${x.facturee ? ' déjà facturée' : ''}${x.versee > 0.005 ? ` · déjà versée : ${eur2(x.versee)}` : ''} ; historique conservé.`;
+    if (x.statut === 'non_due') return `<b>Commission L’ArtBo non due</b> — rien à verser.`;
+    return `Commission L’ArtBo : montant gardé (${eur2(x.ht)} HT), à revoir (lot suivant).`;
+  };
+  const vide = regime === 'cession' && !ops.some(x => x.type !== 'commission') ? '<li data-operation="aucune">Rien à facturer, encaisser, avoir ni rembourser.</li>' : '';
+  if (!vide && !ops.length) return '';
+  return `<div class="mt small" data-operations><b>Qui doit payer qui</b> — MATRICE affiche les actions, rien n’est créé ni envoyé :
+    <ul>${vide}${ops.map(x => `<li data-operation="${x.type}"${x.statut ? ` data-statut="${x.statut}"` : ''}>${ligne(x)}</li>`).join('')}</ul></div>`;
+}
+
 /** Aperçu du calcul (cession) pour un montant dû saisi : ce que deviennent les lignes, sans rien enregistrer */
-export function apercuHTML(s, du, origine = new Map()){
+export function apercuHTML(s, du, origine = new Map(), commission = 'a_revoir'){
   const bill = paymentsOf(s.id).filter(p => CESSION.includes(p.kind));
   if (du == null || !Number.isFinite(du) || du < 0) return '<p class="muted small" data-apercu="vide">Saisis le montant total dû après annulation pour voir ce que deviennent les lignes.</p>';
   // correction : les lignes encore non émises repartent de leur montant d'avant l'annulation (même calcul que la base)
@@ -68,25 +93,42 @@ export function apercuHTML(s, du, origine = new Map()){
   const etat = p => { if (isInvoiced(p)) return '<span>Émise — conservée telle quelle</span>';
     const x = pl.plan.find(y => y.id === p.id);
     return x.etat === 'recalculee' ? `<b>À émettre : ${eur2(x.nouveau)} HT</b> <span class="muted small">(initialement ${eur2(x.initial)})</span>` : `<span class="warn-txt">Ne doit plus être émise</span> <span class="muted small">(initialement ${eur2(x.initial)})</span>`; };
-  const regul = [pl.depassement > 0 && `Facturé au-delà du montant dû : ${eur2(pl.depassement)} HT — avoir à émettre dans Pennylane (rien n’est créé ici).`,
-    enc - du > 0.005 && `Encaissé au-delà du montant dû : ${eur2(enc - du)} HT — remboursement à décider (rien n’est créé ici).`,
+  const regul = [pl.depassement > 0 && 'Facturé au-delà du montant dû : avoir à émettre (détail ci-dessous).',
+    enc - du > 0.005 && 'Encaissé au-delà du montant dû : remboursement à faire (détail ci-dessous).',
     pl.resteSansLigne > 0 && `${eur2(pl.resteSansLigne)} HT restent à facturer sans ligne non émise pour les porter.`,
     relancees.length && !rel.garde && `Relance d’impayé suspendue : ${eur2(relancees.reduce((t, p) => t + resteDu(p), 0))} réclamés pour ${eur2(rel.encore)} encore dus.`].filter(Boolean);
   return `<div data-apercu="${pl.du}"><div class="tbl-wrap"><table class="cards"><thead><tr><th>Ligne</th><th>Après l’annulation</th></tr></thead>
     <tbody>${bill.map(p => `<tr data-apercu-ligne="${p.id}"><td data-label="Ligne">${esc(nom(p))}</td><td data-label="Après l’annulation">${etat(p)}</td></tr>`).join('')}</tbody></table></div>
     <p class="small">Montant dû ${eur2(pl.du)} HT · facturé net ${eur2(pl.factureNet)} · encaissé ${eur2(enc)} · <b>reste à facturer ${eur2(pl.resteAFacturer)} HT</b></p>
-    ${regul.length ? `<div class="warn-txt small" data-a-regulariser><b>À régulariser</b> (aucun avoir ni remboursement automatique) :<ul>${regul.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>` : ''}</div>`;
+    ${regul.length ? `<div class="warn-txt small" data-a-regulariser><b>À régulariser</b> (aucun avoir ni remboursement automatique) :<ul>${regul.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>` : ''}
+    ${operationsHTML(s, operationsAnnulation({regime: 'cession', du: pl.du, tva: showVat(s), factureNetHt: pl.factureNet,
+      factureNetTtc: bill.reduce((t, p) => t + factureNetTtc(p), 0), encaisseTtc: bill.reduce((t, p) => t + encaisseTtc(p), 0),
+      rembourseSaisiTtc: bill.reduce((t, p) => t + aRembourserTtc(p), 0), resteAFacturerHt: pl.resteAFacturer, commission: commissionInfo(s, commission)}))}</div>`;
+}
+/** Commission de la date pour le récapitulatif (même lecture que js/calc.js etatAnnulation) */
+function commissionInfo(s, statut){
+  const com = paymentsOf(s.id).find(p => p.kind === 'artbo'); if (!com) return {existe: false};
+  const booking = regimeAnnulation(s) === 'booking', cs = booking ? null : commissionState(com);
+  return {existe: regimeAnnulation(s) !== 'coprod', statut, montant: payAmount(com) || 0, facturee: !selfPaidCommission(com) && isInvoiced(com),
+    versee: booking ? !!com.paid_at : (cs.transferred > 0.005 || !!com.paid_at), verse: cs ? cs.transferred : (com.paid_at ? payAmount(com) || 0 : 0)};
 }
 
+// (v1.72.3) origine de l'annulation d'un côté, conditions financières convenues de l'autre : l'une ne fixe pas les autres
 const champs = (regime, v = {}) => [
-  ...(regime === 'cession' ? [{k: 'montant', label: 'Montant total dû après annulation (HT, acompte compris ; 0 = sans frais)', type: 'number', full: true}] : []),
+  {k: 'origine', label: 'À l’origine de l’annulation', type: 'select', options: Object.entries(ORIGINE_LABEL)},
+  {k: 'origine_precision', label: 'Précision (facultatif)', placeholder: 'ex. maladie, salle fermée, intempéries'},
   {k: 'motif', label: 'Motif', type: 'textarea', rows: 2, full: true},
   {k: 'decide_le', label: 'Date de la décision', type: 'date'},
   {k: 'justificatif', label: 'Justificatif (lien ou référence)', placeholder: 'ex. lien du mail, clause 7 du contrat'},
+  {k: 'conditions_titre', type: 'html', full: true, html: '<h3 class="block-title">Conditions financières convenues</h3><p class="help">Saisies à part : qui annule ne fixe pas à lui seul les montants dus ni le sens des paiements.</p>'},
+  ...(regime === 'cession' ? [{k: 'montant', label: 'Montant total dû par l’organisateur après annulation (HT, acompte compris ; 0 = rien dû, acompte à restituer)', type: 'number', full: true}] : []),
+  ...(regime === 'coprod' ? [] : [{k: 'commission', label: 'Commission L’ArtBo', type: 'select', blank: false, options: Object.entries(COMMISSION_LABEL)}]),
   ...(v.correction ? [{k: 'motif_correction', label: 'Motif de la correction', type: 'textarea', rows: 2, full: true}] : []),
 ];
-const lire = (v, regime) => ({du: regime === 'cession' ? v.montant : null, motif: String(v.motif || '').trim(), decide: v.decide_le, j: v.justificatif || null});
+const lire = (v, regime) => ({du: regime === 'cession' ? v.montant : null, motif: String(v.motif || '').trim(), decide: v.decide_le, j: v.justificatif || null,
+  origine: v.origine || null, precision: String(v.origine_precision || '').trim() || null, commission: v.commission || 'a_revoir'});
 const verifier = (x, regime) => {
+  if (!ORIGINE_LABEL[x.origine]) return 'Indique qui est à l’origine de l’annulation';
   if (regime === 'cession' && (x.du == null || !Number.isFinite(x.du) || x.du < 0)) return 'Indique le montant total dû après annulation (HT ; 0 = sans frais)';
   if (!x.motif) return 'Indique le motif de l’annulation';
   if (!x.decide) return 'Indique la date de la décision';
@@ -96,8 +138,9 @@ const verifier = (x, regime) => {
 function suivreMontant(s, origine){
   const dlg = document.querySelector('#modal'), f = dlg?.querySelector('form'), out = dlg?.querySelector('#annul-apercu');
   if (!f || !out || !f.elements.montant) return;
-  const maj = () => { const raw = String(f.elements.montant.value || '').replace(',', '.').trim(); out.innerHTML = apercuHTML(s, raw === '' ? null : Number(raw), origine); };
-  f.elements.montant.addEventListener('input', maj); maj();
+  const maj = () => { const raw = String(f.elements.montant.value || '').replace(',', '.').trim();
+    out.innerHTML = apercuHTML(s, raw === '' ? null : Number(raw), origine, f.elements.commission?.value || 'a_revoir'); };
+  f.elements.montant.addEventListener('input', maj); f.elements.commission?.addEventListener('change', maj); maj();
 }
 async function recharger(showId){
   for (const [t, c] of [['shows', 'id'], ['show_payments', 'show_id'], ['annulations', 'show_id'], ['annulations_journal', 'show_id']]) await refreshFor(t, c, [showId]);
@@ -122,19 +165,21 @@ export async function annulerDate(id, statut = 'Annulée'){
   const intro = `<p class="help full">${statut === 'Sans Suite' ? '<b>« Sans Suite » n’est pas possible pour une date engagée</b> (contrat signé, facture émise, encaissement, commission versée ou dépense engagée) : elle passe par l’annulation. ' : ''}La date passera en « Annulée » avec une fiche d’annulation. Factures émises et paiements restent intacts ; <b>aucun avoir, aucun remboursement ni aucun document</b> n’est créé ou envoyé. Fermer cette fenêtre n’enregistre rien.</p>
     ${constatHTML(s, regime)}
     ${regime === 'cession' ? '' : `<p class="help full">${regime === 'booking' ? 'Booking : L’ArtBo ne suit que sa commission — écran limité à la commission (gardée, à revoir).' : 'Coproduction / coréalisation : motif, documents et mouvements enregistrés, sans calcul automatique de résultat (lot suivant).'}</p>`}`;
-  const fen = openModal({title: 'Annuler la date', wide: true, saveLabel: 'Vérifier et annuler la date', cancelLabel: 'Fermer', values: {id: 'annuler:' + s.id, decide_le: today()},
+  const fen = openModal({title: 'Annuler la date', wide: true, saveLabel: 'Vérifier et annuler la date', cancelLabel: 'Fermer', values: {id: 'annuler:' + s.id, decide_le: today(), commission: 'a_revoir'},
     extraTop: intro, fields: champs(regime), extra: regime === 'cession' ? '<div class="full" id="annul-apercu"></div>' : '',
     onSave: async v => {
       const x = lire(v, regime), err = verifier(x, regime);
       if (err){ toast(err, true); return false; }
       const plan = regime === 'cession' ? planAnnulation({du: x.du, lignes: paymentsOf(s.id).filter(p => CESSION.includes(p.kind)).map(p => ({id: p.id, kind: p.kind, sort: p.sort, emise: isInvoiced(p), montant: payAmount(p) || 0, avoir: avoirCouvert(p)}))}) : null;
+      const qui = `Origine : ${ORIGINE_LABEL[x.origine]}${x.precision ? ` (${x.precision})` : ''}. Commission : ${COMMISSION_LABEL[x.commission].toLowerCase()}. `;
       const apres = regime === 'cession'
         ? `Montant dû ${eur2(plan.du)} HT (cachet initial ${eur2(s.fee_ht)} gardé) · reste à facturer ${eur2(plan.resteAFacturer)} HT${plan.plan.length ? ` · ${plan.plan.map(l => `${nom(byId('show_payments', l.id))} : ${l.etat === 'recalculee' ? eur2(l.nouveau) + ' à émettre' : 'ne doit plus être émise'}`).join(' · ')}` : ''}${plan.depassement > 0 ? ` · facturé au-delà : ${eur2(plan.depassement)} (à régulariser)` : ''}.`
         : 'Lignes inchangées ; commission gardée, à revoir.';
       // deux boutons sans ambiguïté : « Annuler la date » / « Revenir » (Échap ou clic dehors : rien n'est enregistré)
-      if ((await ask({title: 'Annuler la date ?', text: `Avant : « ${s.status} ». Après : « Annulée », avec sa fiche d’annulation. ${apres} Factures émises et paiements inchangés ; aucun avoir ni remboursement créé.`,
+      if ((await ask({title: 'Annuler la date ?', text: `Avant : « ${s.status} ». Après : « Annulée », avec sa fiche d’annulation. ${qui}${apres} Factures émises et paiements inchangés ; aucun avoir ni remboursement créé.`,
         actions: [{value: true, label: 'Annuler la date', danger: true}], cancel: 'Revenir'})) !== true) return false;
-      const {error} = await sb.rpc('show_annuler', {p_show: s.id, p_montant: x.du, p_motif: x.motif, p_decide_le: x.decide, p_justificatif: x.j});
+      const {error} = await sb.rpc('show_annuler', {p_show: s.id, p_montant: x.du, p_motif: x.motif, p_decide_le: x.decide, p_justificatif: x.j,
+        p_origine: x.origine, p_commission: regime === 'coprod' ? 'a_revoir' : x.commission, p_origine_precision: x.precision});
       if (error){ toast(error.message, true); return false; }
       await recharger(s.id);
       toast('Date annulée : fiche d’annulation enregistrée');
@@ -149,14 +194,16 @@ export async function annulerDate(id, statut = 'Annulée'){
 export async function corrigerAnnulation(annulId){
   const a = (S.db.annulations || []).find(x => x.id === annulId && !x.retablie_at); if (!a) return;
   const s = byId('shows', a.show_id); if (!s) return;
-  const fen = openModal({title: 'Corriger l’annulation', wide: true, saveLabel: 'Corriger', cancelLabel: 'Fermer', values: {id: 'corriger:' + a.id, montant: a.montant_du_ht, motif: a.motif, decide_le: a.decide_le, justificatif: a.justificatif},
+  const fen = openModal({title: 'Corriger l’annulation', wide: true, saveLabel: 'Corriger', cancelLabel: 'Fermer', values: {id: 'corriger:' + a.id, montant: a.montant_du_ht, motif: a.motif, decide_le: a.decide_le, justificatif: a.justificatif,
+      origine: a.origine, origine_precision: a.origine_precision, commission: a.commission || 'a_revoir'},
     extraTop: `<p class="help full">Les factures émises depuis l’annulation restent telles quelles ; les lignes encore non émises sont recalculées. Le motif de la correction est obligatoire ; l’ancienne version reste dans l’historique.</p>`,
     fields: champs(a.regime, {correction: true}), extra: a.regime === 'cession' ? '<div class="full" id="annul-apercu"></div>' : '',
     onSave: async v => {
       const x = lire(v, a.regime), err = verifier(x, a.regime), mc = String(v.motif_correction || '').trim();
       if (err){ toast(err, true); return false; }
       if (!mc){ toast('Indique le motif de la correction', true); return false; }
-      const {error} = await sb.rpc('annulation_corriger', {p_id: a.id, p_montant: x.du, p_motif: x.motif, p_decide_le: x.decide, p_justificatif: x.j, p_motif_correction: mc});
+      const {error} = await sb.rpc('annulation_corriger', {p_id: a.id, p_montant: x.du, p_motif: x.motif, p_decide_le: x.decide, p_justificatif: x.j, p_motif_correction: mc,
+        p_origine: x.origine, p_commission: a.regime === 'coprod' ? a.commission : x.commission, p_origine_precision: x.precision});
       if (error){ toast(error.message, true); return false; }
       await recharger(a.show_id); toast('Annulation corrigée'); return true;
     }});
@@ -185,13 +232,16 @@ export function ficheAnnulationHTML(s){
   const apres = p => { const x = avant.get(p.id);
     if (p.annulation === 'abandonnee') return `<span class="warn-txt" data-ne-plus-emettre>Ne doit plus être émise</span>${x ? ` <span class="muted small">(initialement ${eur2(x.montant_initial)})</span>` : ''}`;
     if (p.annulation === 'recalculee' && !isInvoiced(p)) return `<b>À émettre : ${eur2(payAmount(p))} HT</b>${x ? ` <span class="muted small">(initialement ${eur2(x.montant_initial)})</span>` : ''}`;
+    if (p.kind === 'artbo' && a.commission === 'non_due') return e?.ops.some(o => o.type === 'commission' && o.statut === 'a_regulariser')
+      ? '<span class="warn-txt">Non due — à régulariser (déjà facturée ou versée)</span>' : '<span>Non due — rien à verser</span>';
     if (['artbo', 'partner'].includes(p.kind)) return '<span class="warn-txt">Montant gardé — à revoir</span>';
     return isInvoiced(p) ? `Émise — conservée telle quelle${p.annulation === 'recalculee' && x ? ` <span class="muted small">(recalculée à l’annulation, initialement ${eur2(x.montant_initial)})</span>` : ''}` : '<span class="muted">Non émise</span>'; };
-  const regul = !e ? [] : [e.depassement > 0 && `Facturé au-delà du montant dû : ${eur2(e.depassement)} HT — avoir à émettre dans Pennylane.`,
-    e.encaisseAuDela > 0.005 && `Encaissé au-delà du montant dû : ${eur2(e.encaisseAuDela)} HT — remboursement à décider.`,
+  // (v1.72.3) facturé et encaissé au-delà : détaillés dans « Qui doit payer qui » (avoir, remboursement TTC et bénéficiaire)
+  const regul = !e ? [] : [e.depassement > 0 && 'Facturé au-delà du montant dû : avoir à émettre (détail ci-dessus).',
+    e.encaisseAuDela > 0.005 && 'Encaissé au-delà du montant dû : remboursement à faire (détail ci-dessus).',
     e.resteSansLigne > 0.005 && `${eur2(e.resteSansLigne)} HT restent à facturer sans ligne non émise pour les porter.`,
     e.relancees.length && !e.relanceGardee && (e.regime === 'cession' ? `Relance d’impayé suspendue : ${eur2(e.reclame)} réclamés pour ${eur2(e.encore)} encore dus (affectation à vérifier).` : 'Relance de la facture de commission suspendue : commission à revoir.'),
-    'Commission : montant existant gardé, à revoir (recalcul dans un lot suivant).'].filter(Boolean);
+    e.ops.some(o => o.type === 'commission' && o.statut === 'a_regulariser') && 'Commission L’ArtBo non due mais déjà facturée ou versée : à régulariser (lot suivant).'].filter(Boolean);
   const journal = (S.db.annulations_journal || []).filter(j => j.annulation_id === a.id).sort((x, y) => String(x.at).localeCompare(String(y.at)));
   const ACT = {annuler: 'Annulée', corriger: 'Corrigée', retablir: 'Rétablie'};
   return `<div class="annul-fiche" data-fiche-annulation="${a.id}">
@@ -207,13 +257,16 @@ export function ficheAnnulationHTML(s){
         <ul class="small">${(ini.lignes || []).filter(l => a.regime !== 'booking' || ['artbo', 'partner'].includes(l.kind)).map(l => `<li>${esc(l.label || KIND[l.kind] || l.kind)} : ${eur2(l.montant_ht)} HT${l.emise ? ` · émise${l.invoice_number ? ' ' + esc(l.invoice_number) : ''}` : ' · non émise'}${l.paid_at ? ` · payée le ${fmtDate(l.paid_at)}` : ''}</li>`).join('')}</ul></div>
       <div><h3 class="block-title">Conditions retenues</h3>
         <div class="steps">${a.regime === 'cession' ? `<label>Montant total dû</label><b data-montant-du>${eur2(a.montant_du_ht)} HT</b>` : `<label>Calcul</label><span>${a.regime === 'booking' ? 'Commission seule (à revoir)' : 'Sans calcul automatique (lot suivant)'}</span>`}
+          <label>Origine</label><span data-origine="${esc(a.origine || '')}">${esc(ORIGINE_LABEL[a.origine] || '—')}${a.origine_precision ? ` — ${esc(a.origine_precision)}` : ''}</span>
+          ${a.regime === 'coprod' ? '' : `<label>Commission</label><span data-commission="${esc(a.commission || 'a_revoir')}">${esc(COMMISSION_LABEL[a.commission] || COMMISSION_LABEL.a_revoir)}</span>`}
           <label>Motif</label><span>${esc(a.motif)}</span><label>Justificatif</label><span>${lien(a.justificatif)}</span></div>
         ${e && e.du != null ? `<p class="small" data-montants-annulation>Facturé net ${eur2(e.factureNet)} HT · encaissé ${eur2(e.encaisse)} HT · reste à facturer <b>${eur2(e.resteAFacturer)} HT</b> · encore dû ${eur2(e.encore)} HT</p>` : ''}</div>
     </div>
     <div class="tbl-wrap"><table><thead><tr><th>Ligne</th><th class="num">Montant HT</th><th>Après l’annulation</th></tr></thead>
       <tbody>${vues.map(p => `<tr data-ligne-annulation="${p.id}"><td>${esc(nom(p))}${p.invoice_number ? ` <span class="muted small">${esc(p.invoice_number)}</span>` : ''}</td><td class="num">${eur2(payAmount(p))}</td><td>${apres(p)}</td></tr>`).join('')}</tbody></table></div>
+    ${e ? operationsHTML(s, e.ops, a.regime) : ''}
     ${regul.length ? `<div class="mt small" data-a-regulariser><b class="warn-txt">À régulariser</b> — rien n’est fait automatiquement :<ul>${regul.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>` : ''}
-    ${journal.length ? `<details class="mt"><summary>Historique (${journal.length})</summary><ul class="small">${journal.map(j => `<li>${fmtDate(j.at)} · ${esc(ACT[j.action] || j.action)}${j.auteur ? ` par ${esc(j.auteur)}` : ''}${j.motif ? ` — ${esc(j.motif)}` : ''}${j.action === 'corriger' ? ` (montant dû : ${eur2(j.avant?.montant_du_ht)} → ${eur2(j.apres?.montant_du_ht)})` : ''}</li>`).join('')}</ul></details>` : ''}
+    ${journal.length ? `<details class="mt"><summary>Historique (${journal.length})</summary><ul class="small">${journal.map(j => `<li>${fmtDate(j.at)} · ${esc(ACT[j.action] || j.action)}${j.auteur ? ` par ${esc(j.auteur)}` : ''}${j.motif ? ` — ${esc(j.motif)}` : ''}${j.action === 'corriger' ? ` (montant dû : ${eur2(j.avant?.montant_du_ht)} → ${eur2(j.apres?.montant_du_ht)}${j.avant?.origine !== j.apres?.origine ? ` ; origine : ${esc(ORIGINE_LABEL[j.avant?.origine] || '—')} → ${esc(ORIGINE_LABEL[j.apres?.origine] || '—')}` : ''}${j.avant?.commission !== j.apres?.commission ? ` ; commission : ${esc(COMMISSION_LABEL[j.avant?.commission] || '—')} → ${esc(COMMISSION_LABEL[j.apres?.commission] || '—')}` : ''})` : ''}</li>`).join('')}</ul></details>` : ''}
   </div>`;
 }
 

@@ -5,7 +5,7 @@ import { r2, eur2 } from './utils.js';
 import { byId, showCommissionPct } from './selectors.js';
 import { S } from './state.js';
 import { commissionBase } from './corea.js';
-import { planAnnulation, relanceImpaye } from './annulation-regles.js';
+import { operationsAnnulation, planAnnulation, relanceImpaye } from './annulation-regles.js';
 
 /** Lignes financières d'une date QUI COMPTENT : une ligne « hors calcul » (coproduction, import — v1.44) est gardée pour la traçabilité
  *  mais n'entre dans aucun calcul, indicateur, compte, rappel ni opération Pennylane. Même règle côté base : payment_is_emitted, rappels. */
@@ -285,9 +285,17 @@ export function etatAnnulation(s){
   const relancees = paymentsOf(s.id).filter(p => (booking ? p.kind === 'artbo' : ['acompte', 'solde', 'autre'].includes(p.kind)) && isInvoiced(p) && p.sent_at && !p.paid_at && !p.reminders_paused && !soldeeParAvoir(p));
   const reclame = r2(relancees.reduce((t, p) => t + resteDu(p), 0));
   const rel = relanceImpaye({regime, du, encaisseHt: encaisse, reclameHt: reclame});
+  // (v1.72.3) qui doit payer qui : facture à émettre, paiement attendu, avoir à émettre, remboursement TTC, commission (non due → à
+  // régulariser si déjà facturée ou versée) — affichage seulement, rien n'est créé (js/annulation-regles.js operationsAnnulation)
+  const com = paymentsOf(s.id).find(p => p.kind === 'artbo'), cs = com && !booking ? commissionState(com) : null;
+  const ops = operationsAnnulation({regime, du, tva: showVat(s), factureNetHt: plan.factureNet,
+    factureNetTtc: r2(bill.reduce((t, p) => t + factureNetTtc(p), 0)), encaisseTtc: r2(bill.reduce((t, p) => t + encaisseTtc(p), 0)),
+    rembourseSaisiTtc: r2(bill.reduce((t, p) => t + aRembourserTtc(p), 0)), resteAFacturerHt: du == null ? 0 : plan.resteAFacturer,
+    commission: {existe: !!com && regime !== 'coprod', statut: a.commission, montant: com ? payAmount(com) || 0 : 0, facturee: !!com && !selfPaidCommission(com) && isInvoiced(com),
+      versee: !!com && (booking ? filled(com.paid_at) : (cs.transferred > 0.005 || filled(com.paid_at))), verse: cs ? cs.transferred : (com && filled(com.paid_at) ? payAmount(com) || 0 : 0)}});
   return {a, regime, du, factureNet: du == null ? null : plan.factureNet, resteAFacturer: du == null ? null : plan.resteAFacturer, aEmettre,
     resteSansLigne: du == null ? 0 : Math.max(0, r2(plan.resteAFacturer - aEmettre)), depassement: du == null ? 0 : plan.depassement,
-    encaisse, encaisseAuDela: du == null ? 0 : Math.max(0, r2(encaisse - du)), reclame, relancees, relanceGardee: rel.garde, encore: rel.encore};
+    encaisse, encaisseAuDela: du == null ? 0 : Math.max(0, r2(encaisse - du)), reclame, relancees, relanceGardee: rel.garde, encore: rel.encore, ops};
 }
 
 /** (v1.72, ajustement du 28/11/2026, 13 h 25) Création refusée : aucune ligne de facturation (acompte, solde, autre) sur une date

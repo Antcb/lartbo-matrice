@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 // js/utils.js (r2, fonction officielle) ne se charge pas hors du navigateur : seule son arrondi au centime est repris pour l'essai
 const src = readFileSync(new URL('../../js/annulation-regles.js', import.meta.url), 'utf8')
   .replace("import { r2 } from './utils.js';", "const r2 = n => Math.round((Number(n) || 0) * 100) / 100;");
-const { planAnnulation, regimeAnnulation, relanceImpaye } = await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
+const { planAnnulation, regimeAnnulation, relanceImpaye, operationsAnnulation } = await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
 
 let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
 const lignes = (soldeEmis = false) => [
@@ -51,4 +51,25 @@ ok(relanceImpaye({ regime: 'cession', du: 2000, encaisseHt: 1200, reclameHt: 280
 ok(relanceImpaye({ regime: 'cession', du: 0, encaisseHt: 1200, reclameHt: 0 }).garde === true, 'rien de réclamé : rien à suspendre');
 ok(relanceImpaye({ regime: 'booking', du: null, encaisseHt: 0, reclameHt: 600 }).garde === false, 'booking : commission à revoir, relance suspendue');
 ok(relanceImpaye({ regime: 'cession', du: 4000, encaisseHt: 1200, reclameHt: 2800.005 }).garde === true, 'tolérance d’un centime');
+// (v1.72.3) qui doit payer qui — TVA 5,5 % ; acompte 1 200 € HT = 1 266 € TTC
+const ops = x => operationsAnnulation({ regime: 'cession', tva: 5.5, ...x });
+const type = (l, t) => l.find(o => o.type === t);
+// l'artiste annule, acompte encaissé restitué intégralement, commission versée → non due
+let o = ops({ du: 0, factureNetHt: 1200, factureNetTtc: 1266, encaisseTtc: 1266, resteAFacturerHt: 0, commission: { existe: true, statut: 'non_due', montant: 180, versee: true, verse: 180 } });
+ok(!type(o, 'facture') && !type(o, 'paiement') && type(o, 'avoir').ht === 1200 && type(o, 'avoir').ttc === 1266, 'artiste : avoir 1 200 € HT / 1 266 € TTC, rien à facturer ni à payer');
+ok(type(o, 'remboursement').ttc === 1266 && type(o, 'remboursement').de === 'artbo' && type(o, 'remboursement').vers === 'organisateur', 'artiste : remboursement 1 266 € TTC de L’ArtBoristerie à l’organisateur');
+ok(type(o, 'commission').statut === 'a_regulariser', 'commission non due déjà versée : à régulariser');
+// acompte facturé jamais encaissé : avoir, aucun remboursement
+o = ops({ du: 0, factureNetHt: 1200, factureNetTtc: 1266, encaisseTtc: 0, resteAFacturerHt: 0, commission: { existe: true, statut: 'non_due', montant: 180 } });
+ok(type(o, 'avoir').ttc === 1266 && !type(o, 'remboursement') && !type(o, 'paiement'), 'jamais encaissé : avoir sans remboursement');
+ok(type(o, 'commission').statut === 'non_due', 'commission non due, ni facturée ni versée : rien à verser');
+// 2 000 € dus, 1 266 € encaissés : facture de 800 € HT (844 € TTC), paiement attendu 844 € TTC
+o = ops({ du: 2000, factureNetHt: 1200, factureNetTtc: 1266, encaisseTtc: 1266, resteAFacturerHt: 800, commission: { existe: true, statut: 'a_revoir', montant: 600 } });
+ok(type(o, 'facture').ttc === 844 && type(o, 'paiement').ttc === 844 && type(o, 'paiement').de === 'organisateur' && !type(o, 'avoir') && !type(o, 'remboursement'), 'facture 800 € HT et paiement attendu 844 € TTC');
+ok(type(o, 'commission').statut === 'a_revoir', 'commission à revoir');
+// remboursement déjà saisi en partie ; booking : commission seule
+o = ops({ du: 0, factureNetHt: 1200, factureNetTtc: 1266, encaisseTtc: 1266, rembourseSaisiTtc: 266 });
+ok(type(o, 'remboursement').saisi === 266 && type(o, 'remboursement').aSaisir === 1000, 'remboursement : déjà saisi / reste à saisir');
+o = operationsAnnulation({ regime: 'booking', du: null, tva: 20, commission: { existe: true, statut: 'non_due', montant: 600, facturee: true } });
+ok(o.length === 1 && o[0].type === 'commission' && o[0].statut === 'a_regulariser', 'booking : commission seule, non due déjà facturée → à régulariser');
 console.log(`annulation-regles : ${n}/${n} conformes`);
