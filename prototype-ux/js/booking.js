@@ -91,7 +91,7 @@
   // ───────────────────────── État (le temps de la visite)
   const DB = { shows: SEED.map(x => ({ ...x })) };
   const B = { year: 2026, projects: [], showInactive: false, showCancelled: false, showArchived: false, q: '', pane: 'list', pick: { a: null, b: null },
-    mapHidden: new Set(), open: null, linger: {}, mapPop: null, draft: null, dirty: false, isNew: false };
+    mapHidden: new Set(), collapsed: new Set(), open: null, linger: {}, mapPop: null, draft: null, dirty: false, isNew: false };
   const byId = id => DB.shows.find(s => s.id === id);
   const proj = id => PROJECTS.find(p => p.id === id);
   const projName = id => proj(id)?.name || '';
@@ -136,9 +136,9 @@
     const conf = l => l.filter(s => s.status.startsWith('Confirmée') && viaArtbo(s)).reduce((a, s) => a + (Number(s.fee_ht) || 0), 0);
     const arch = conf(filtered({ archived: true }).filter(s => s.archived_at)), total = conf(sh) + arch;
     const { esc, NUM } = X();
-    return `<dl class="bk-stats" aria-label="Indicateurs de la période">
-      <div><dt>Intérêts</dt><dd>${n('Intérêt')}</dd></div><div><dt>Options</dt><dd>${n('Option')}</dd></div><div><dt>Confirmées</dt><dd>${n('Confirmée')}</dd></div>
-      <div class="bk-fee"><dt>Cachets confirmés</dt><dd>${esc(NUM.format(total))}<span class="u">€</span></dd>${arch ? `<dd class="bk-sub">dont ${esc(NUM.format(arch))} € de dates archivées</dd>` : ''}</div></dl>`;
+    return `<dl class="bk-stats" aria-label="Indicateurs ${B.year}">
+      <div class="bks"><dt>Intérêts</dt><dd class="bks-v">${n('Intérêt')}</dd></div><div class="bks"><dt>Options</dt><dd class="bks-v">${n('Option')}</dd></div><div class="bks"><dt>Confirmées</dt><dd class="bks-v">${n('Confirmée')}</dd></div>
+      <div class="bks bks-fee"><dt>Cachets confirmés</dt><dd class="bks-v">${esc(NUM.format(total))}<span class="u">€</span></dd>${arch ? `<dd class="bk-sub">dont ${esc(NUM.format(arch))} € de dates archivées</dd>` : ''}</div></dl>`;
   }
   const counts = () => ({ off: filtered().filter(s => isOff(s.status)).length, arch: DB.shows.filter(s => s.archived_at && projOk(s.project_id)).length });
   const activeFilters = () => {
@@ -152,27 +152,34 @@
     if (B.pane === 'map') [...B.mapHidden].forEach(st => a.push(['map:' + st, `Masqué sur la carte : ${st}`]));
     return a;
   };
+  // Regroupement du tableau (préférence personnelle) : indépendant des filtres, des colonnes et des indicateurs
+  const GROUPS = [['month', 'Mois'], ['artist', 'Artiste'], ['artist-month', 'Artiste puis mois'], ['month-artist', 'Mois puis artiste']];
+  const grouping = () => GROUPS.some(([v]) => v === X().P.bkGroup) ? X().P.bkGroup : 'month';
+  const groupSel = id => `<label class="bk-grp-l" for="${id}"><span>Regrouper par</span><select class="input bk-sel" id="${id}" data-bk="group">${GROUPS.map(([v, l]) => `<option value="${v}" ${grouping() === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
+  const secondary = () => [B.showInactive, B.showCancelled, B.showArchived].filter(Boolean).length;
   function toolbar(){
-    const { esc, icon, device } = X(), c = counts(), phone = device() === 'phone', af = activeFilters().filter(([k]) => !['q'].includes(k)).length;
-    const artists = B.projects.length ? (B.projects.length === 1 ? projName(B.projects[0]) : `${B.projects.length} artistes`) : 'Tous les artistes';
+    const { esc, icon, device } = X(), phone = device() === 'phone', af = activeFilters().filter(([k]) => k !== 'q').length;
     const years = [2025, 2026, 2027, 2028];
     const pane = `<div class="seg bk-pane" role="radiogroup" aria-label="Affichage">${[['list', phone ? 'Liste' : 'Tableau'], ['map', phone ? 'Carte' : 'Carte et trajets']].map(([v, l]) =>
       `<label><input type="radio" name="bkpane" value="${v}" data-bk="pane" ${B.pane === v ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>`;
     const search = `<label class="bk-search">${icon('search', 'sm')}<input type="search" id="bk-q" value="${esc(B.q)}" placeholder="Lieu, ville, artiste, structure…" aria-label="Rechercher dans les dates" autocomplete="off"></label>`;
+    const all = allCollapsed();
+    const fold = B.pane === 'list' ? `<button class="btn sm icon ghost bk-foldall" type="button" data-act="bkFoldAll" aria-label="${all ? 'Tout déplier' : 'Tout replier'}" title="${all ? 'Tout déplier' : 'Tout replier'}">${icon(all ? 'chevrons-up-down' : 'chevrons-down-up', 'sm')}</button>` : '';
     if (phone) return `<div class="bk-bar">${search}<div class="bk-bar2">
-        <button class="btn sm bk-fbtn" type="button" data-act="bkFilters">${icon('sliders-horizontal', 'sm')}Filtres${af ? `<span class="count">${af}</span>` : ''}</button>${pane}
+        <button class="btn sm bk-fbtn" type="button" data-act="bkFilters">${icon('sliders-horizontal', 'sm')}Filtres${af ? `<span class="count">${af}</span>` : ''}</button>${fold}${pane}
         <button class="btn sm icon" type="button" data-act="bkMore" aria-label="Plus d’actions : exporter">${icon('ellipsis', 'sm')}</button>
         <button class="btn sm primary icon" type="button" data-act="bkNew" aria-label="Nouvelle date">${icon('plus', 'sm')}</button></div></div>`;
-    return `<div class="bk-bar">${search}
+    const na = B.projects.length, ns = secondary();
+    return `<div class="bk-bar"><div class="bk-f">${search}
       <select class="input bk-sel" id="bk-year" data-bk="year" aria-label="Année">${years.map(y => `<option ${y === B.year ? 'selected' : ''}>${y}</option>`).join('')}</select>
-      <button class="chipbtn" type="button" data-act="bkArtists" aria-haspopup="dialog">${icon('mic-vocal', 'sm')}${esc(artists)}${icon('chevron-down', 'sm')}</button>
-      <button class="chipbtn" type="button" data-act="bkToggle" data-k="showInactive" aria-pressed="${B.showInactive}">Inactifs</button>
-      <button class="chipbtn" type="button" data-act="bkToggle" data-k="showCancelled" aria-pressed="${B.showCancelled}">Annulées / sans suite <span class="n">${c.off}</span></button>
-      <button class="chipbtn" type="button" data-act="bkToggle" data-k="showArchived" aria-pressed="${B.showArchived}">Archivées <span class="n">${c.arch}</span></button>
-      <span class="grow"></span>${pane}
-      ${B.pane === 'list' ? `<button class="btn sm" type="button" data-act="bkCols" aria-haspopup="dialog">${icon('table-2', 'sm')}Colonnes${layIsDefault() ? '' : '<span class="dot" aria-label="personnalisées"></span>'}</button>` : ''}
-      <button class="btn sm" type="button" data-act="bkExport">${icon('download', 'sm')}Exporter</button>
-      <button class="btn sm primary" type="button" data-act="bkNew">${icon('plus', 'sm')}Nouvelle date</button></div>`;
+      <button class="chipbtn ${na ? 'on' : ''}" type="button" data-act="bkArtists" aria-haspopup="dialog">Artistes${na ? `<span class="n">${na}</span>` : ''}${icon('chevron-down', 'sm')}</button>
+      <button class="chipbtn ${ns ? 'on' : ''}" type="button" data-act="bkMoreFilters" aria-haspopup="dialog">${icon('sliders-horizontal', 'sm')}Affichage${ns ? `<span class="n">${ns}</span>` : ''}${icon('chevron-down', 'sm')}</button></div>
+      <div class="bk-v">${B.pane === 'list' ? groupSel('bk-group') + fold : ''}${pane}
+      ${B.pane === 'list' ? `<button class="btn sm" type="button" data-act="bkCols" aria-haspopup="dialog">${icon('table-2', 'sm')}Colonnes${layIsDefault() ? '' : '<span class="dot" aria-label="personnalisées"></span>'}</button>` : ''}</div></div>`;
+  }
+  function moreFiltersPop(btn){
+    const c = counts(), sw = (k, label, n) => `<label class="switch" for="bkp-${k}"><span class="txt">${label}${n != null ? ` <span class="hint">${n}</span>` : ''}</span><input type="checkbox" role="switch" id="bkp-${k}" data-bkf="${k}" ${B[k] ? 'checked' : ''}></label>`;
+    X().openPop(btn, `<p class="eyebrow">Affichage</p><div class="pop-sw">${sw('showInactive', 'Artistes inactifs')}${sw('showCancelled', 'Annulées / sans suite', c.off)}${sw('showArchived', 'Dates archivées', c.arch)}</div>`, { label: 'Affichage', cls: 'bk-pop bk-mfpop' });
   }
   const activeRow = () => { const a = activeFilters(); if (!a.length) return '';
     const { esc, icon } = X();
@@ -193,16 +200,26 @@
         <button class="btn sm" type="button" data-act="bkRestore" data-id="${s.id}">${icon('rotate-ccw', 'sm')}Restaurer</button></li>`).join('')}</ul></section>`;
   }
 
-  // Lignes groupées par mois (comme main), indisponibilités Google intercalées et comptées à part
-  function groups(){
-    const sh = visible(), cal = calRows();
-    const items = [...sh.map(s => ({ d: s.date, s })), ...cal.map(c => ({ d: c.from, c }))].sort((x, y) => x.d.localeCompare(y.d) || (x.s ? 1 : 0) - (y.s ? 1 : 0));
-    const out = []; let cur = null;
-    items.forEach(it => { const m = it.d.slice(0, 7); if (!cur || cur.m !== m){ cur = { m, items: [] }; out.push(cur); } cur.items.push(it); });
-    return out.map(g => { const nd = g.items.filter(x => x.s).length, nu = g.items.filter(x => x.c).length;
-      return { ...g, label: X().day(g.m + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }),
-        parts: [nd ? `${nd} date${nd > 1 ? 's' : ''}` : 'aucune date', nu ? `${nu} indisponibilité${nu > 1 ? 's' : ''} Google` : ''].filter(Boolean).join(' · ') }; });
+  // Groupes (mois, artiste, ou l'un dans l'autre) ; dates toujours chronologiques ; indisponibilités Google comptées à part
+  const items = () => [...visible().map(s => ({ d: s.date, p: s.project_id, s })), ...calRows().map(c => ({ d: c.from, p: c.p, c }))]
+    .sort((x, y) => x.d.localeCompare(y.d) || (x.s ? 1 : 0) - (y.s ? 1 : 0));
+  const monthLabel = m => X().day(m + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const partsOf = list => { const nd = list.filter(x => x.s).length, nu = list.filter(x => x.c).length;
+    return { nd, text: [nd ? `${nd} date${nd > 1 ? 's' : ''}` : 'aucune date', nu ? `${nu} indisponibilité${nu > 1 ? 's' : ''} Google` : ''].filter(Boolean).join(' · ') }; };
+  function split(list, by, prefix){
+    const map = new Map();
+    list.forEach(it => { const k = by === 'month' ? it.d.slice(0, 7) : it.p; if (!map.has(k)) map.set(k, []); map.get(k).push(it); });
+    const keys = [...map.keys()].sort((a, b) => by === 'month' ? a.localeCompare(b) : projName(a).localeCompare(projName(b), 'fr'));
+    return keys.map(k => ({ key: `${prefix}${by === 'month' ? 'm' : 'a'}:${k}`, kind: by, label: by === 'month' ? monthLabel(k) : projName(k), list: map.get(k), ...partsOf(map.get(k)) }));
   }
+  function tree(mode = grouping()){
+    const [l1, l2] = mode.split('-');
+    return split(items(), l1, '').map(g => ({ ...g, children: l2 ? split(g.list, l2, g.key + '|') : null }));
+  }
+  const allKeys = () => tree().flatMap(g => [g.key, ...(g.children || []).map(c => c.key)]);
+  const allCollapsed = () => { const k = tree().map(g => g.key); return k.length > 0 && k.every(x => B.collapsed.has(x)); };
+  const toggleBtn = (g, lvl) => `<button class="grp-t" type="button" data-act="bkGrp" data-k="${X().esc(g.key)}" aria-expanded="${!B.collapsed.has(g.key)}">${X().icon('chevron-down', 'sm grp-chev')}<span class="grp-m ${g.kind === 'artist' ? 'is-a' : ''}">${X().esc(g.label)}</span></button><span class="grp-c">${X().esc(g.text)}</span>`;
+
   const dayCell = s => { const { esc, day, dWeek } = X();
     return `<span class="bk-day"><b>${String(day(s.date).getDate()).padStart(2, '0')}</b><span>${esc(dWeek(s.date))}.</span></span>${s.date_end && s.date_end !== s.date ? `<span class="bk-end">→ ${esc(fmtMed(s.date_end))}</span>` : ''}`; };
   const statusSel = s => { const { esc, marker } = X();
@@ -228,39 +245,50 @@
     }
     return '';
   }
+  function rowsHTML(list, cols, L){
+    const { esc } = X(); let i = 0;
+    return list.map(it => it.s ? `<tr class="bk-row ${i++ % 2 ? 'alt' : ''} ${B.open === it.s.id ? 'sel' : ''} ${isOff(it.s.status) ? 'is-off' : ''} ${lingering(it.s.id) && isOff(it.s.status) ? 'leaving' : ''}" data-id="${it.s.id}" tabindex="0"
+        aria-label="${esc(`${X().dLong(it.s.date)}, ${it.s.venue}, ${cityLine(it.s)}, ${projName(it.s.project_id)}, ${it.s.status}`)}">${cols.map(k => `<td class="c-${k} ${colDef(k).num ? 'num' : ''} ${L.pin.includes(k) ? 'pin' : ''}">${cell(k, it.s)}</td>`).join('')}</tr>`
+      : calRow(it.c, cols.length)).join('');
+  }
   function table(){
-    const { esc, icon } = X(), cols = shownCols(), L = lay(), G = groups();
+    const { esc, icon } = X(), cols = shownCols(), L = lay(), G = tree();
     if (!G.length) return `<div class="bk-empty"><p>Aucune date en ${B.year}${B.q ? ' pour cette recherche' : ''}.</p><button class="btn sm primary" type="button" data-act="bkNew">${icon('plus', 'sm')}Nouvelle date</button></div>`;
     const head = cols.map(k => { const c = colDef(k), pin = L.pin.includes(k);
       return `<th scope="col" class="c-${k} ${c.num ? 'num' : ''} ${pin ? 'pin' : ''}" data-col="${k}" draggable="true" aria-label="${esc(c.l)}${pin ? ' (épinglée)' : ''}">
         <span class="th-in"><span class="th-l">${pin ? icon('pin', 'sm') : ''}${esc(c.l)}</span><button class="th-m" type="button" data-act="bkColMenu" data-col="${k}" aria-label="Options de la colonne ${esc(c.l)}">${icon('ellipsis', 'sm')}</button></span>
         <span class="rs" role="separator" aria-orientation="vertical" tabindex="0" data-rs="${k}" aria-label="Largeur de la colonne ${esc(c.l)}" aria-valuenow="${widthOf(k)}" aria-valuemin="64" aria-valuemax="480"></span></th>`; }).join('');
-    const body = G.map(g => `<tbody><tr class="grp"><th colspan="${cols.length}" scope="rowgroup"><span class="grp-in"><span class="grp-m">${esc(g.label)}</span><span class="grp-c">${esc(g.parts)}</span></span></th></tr>
-      ${g.items.map(it => it.s ? `<tr class="bk-row ${B.open === it.s.id ? 'sel' : ''} ${isOff(it.s.status) ? 'is-off' : ''} ${lingering(it.s.id) && isOff(it.s.status) ? 'leaving' : ''}" data-id="${it.s.id}" tabindex="0"
-          aria-label="${esc(`${X().dLong(it.s.date)}, ${it.s.venue}, ${cityLine(it.s)}, ${projName(it.s.project_id)}, ${it.s.status}`)}">${cols.map(k => `<td class="c-${k} ${colDef(k).num ? 'num' : ''} ${L.pin.includes(k) ? 'pin' : ''}">${cell(k, it.s)}</td>`).join('')}</tr>`
-        : calRow(it.c, cols.length)).join('')}</tbody>`).join('');
-    return `<div class="bk-tw" tabindex="-1"><table class="bkt" aria-label="Dates ${B.year}"><colgroup>${cols.map(k => `<col data-col="${k}">`).join('')}</colgroup><thead><tr>${head}</tr></thead>${body}</table></div>`;
+    const body = G.map(g => { const open = !B.collapsed.has(g.key);
+      return `<tbody class="g1 ${open ? '' : 'closed'}"><tr class="grp grp1"><th colspan="${cols.length}" scope="rowgroup"><span class="grp-in">${toggleBtn(g, 1)}</span></th></tr>
+        ${!open ? '' : g.children ? g.children.map(c => { const o2 = !B.collapsed.has(c.key);
+          return `<tr class="grp grp2"><th colspan="${cols.length}" scope="rowgroup"><span class="grp-in">${toggleBtn(c, 2)}</span></th></tr>${o2 ? rowsHTML(c.list, cols, L) : ''}`; }).join('') : rowsHTML(g.list, cols, L)}</tbody>`; }).join('');
+    return `<div class="bk-tw" tabindex="-1"><table class="bkt" aria-label="Dates ${B.year}, regroupées par ${GROUPS.find(([v]) => v === grouping())[1].toLowerCase()}"><colgroup>${cols.map(k => `<col data-col="${k}">`).join('')}</colgroup><thead><tr>${head}</tr></thead>${body}</table></div>`;
   }
   function calRow(c, span){
-    const { esc, icon, day, dWeek } = X();
+    const { esc, icon, dWeek } = X();
     const inner = `<span class="bk-day"><b>${c.from.slice(8)}</b><span>${esc(dWeek(c.from))}.</span></span><span class="cal-b"><b>${esc(c.title)}</b>
       <span class="hint">${c.show ? 'Date artiste — calendrier Google' : 'Indisponibilité — agenda Google'} · ${esc(projName(c.p))}${c.to !== c.from ? ` · jusqu’au ${esc(fmtMed(c.to))}` : ''} · lecture seule</span></span>
       ${c.show ? `<button class="btn ghost sm" type="button" data-act="bkCalAssoc" data-id="${c.id}">Associer à une date</button>` : ''}<span class="tag">${icon('calendar-days', 'sm')}Google</span>`;
     return span ? `<tr class="bk-cal"><td colspan="${span}"><span class="cal-in">${inner}</span></td></tr>` : `<div class="bkm-cal">${inner}</div>`;
   }
 
-  // iPhone : liste compacte, une ligne par date (projet, lieu, statut lisibles d'emblée) et actions rapides
+  // iPhone : liste compacte regroupée comme le tableau (groupes et sous-groupes repliables)
+  function phoneRows(list){
+    const { esc, icon, eur, marker } = X();
+    return list.map(it => { if (it.c) return calRow(it.c, 0); const s = it.s;
+      return `<div class="bkm-row ${B.open === s.id ? 'sel' : ''} ${isOff(s.status) ? 'is-off' : ''} ${lingering(s.id) && isOff(s.status) ? 'leaving' : ''}">
+        <button class="bkm-main" type="button" data-act="bkOpen" data-id="${s.id}" aria-label="${esc(`${X().dLong(s.date)}, ${s.venue}, ${cityLine(s)}, ${projName(s.project_id)}, ${s.status}. Ouvrir la date`)}">
+          ${dayCell(s)}<span class="bkm-b" aria-hidden="true"><span class="bkm-l1"><b>${esc(s.venue)}</b></span>
+          <span class="bkm-l2">${esc([cityLine(s) || 'Localisation manquante', projName(s.project_id)].join(' · '))}</span>
+          <span class="bkm-l3"><span class="st">${marker(s.status)}<span>${esc(s.status)}</span></span><span class="mono">${esc([s.fee_ht ? eur(s.fee_ht) : '', s.contract_type].filter(Boolean).join(' · '))}</span></span></span></button>
+        <button class="bkm-more" type="button" data-act="bkRowMenu" data-id="${s.id}" aria-label="Actions rapides : ${esc(s.venue)}">${icon('ellipsis', 'sm')}</button></div>`; }).join('');
+  }
   function phoneList(){
-    const { esc, icon, eur, marker } = X(), G = groups();
+    const G = tree();
     if (!G.length) return `<div class="bk-empty"><p>Aucune date en ${B.year}.</p></div>`;
-    return `<div class="bkm">${G.map(g => `<section class="bkm-g" aria-label="${esc(g.label)}, ${esc(g.parts)}"><div class="tl-mh" aria-hidden="true"><span class="tl-mn">${esc(g.label)}</span><span class="tl-rule"></span><span class="tl-mc">${esc(g.parts)}</span></div>
-      ${g.items.map(it => { if (it.c) return calRow(it.c, 0); const s = it.s;
-        return `<div class="bkm-row ${B.open === s.id ? 'sel' : ''} ${isOff(s.status) ? 'is-off' : ''} ${lingering(s.id) && isOff(s.status) ? 'leaving' : ''}">
-          <button class="bkm-main" type="button" data-act="bkOpen" data-id="${s.id}" aria-label="${esc(`${X().dLong(s.date)}, ${s.venue}, ${cityLine(s)}, ${projName(s.project_id)}, ${s.status}. Ouvrir la date`)}">
-            ${dayCell(s)}<span class="bkm-b" aria-hidden="true"><span class="bkm-l1"><b>${esc(s.venue)}</b></span>
-            <span class="bkm-l2">${esc([cityLine(s) || 'Localisation manquante', projName(s.project_id)].join(' · '))}</span>
-            <span class="bkm-l3"><span class="st">${marker(s.status)}<span>${esc(s.status)}</span></span><span class="mono">${esc([s.fee_ht ? eur(s.fee_ht) : '', s.contract_type].filter(Boolean).join(' · '))}</span></span></span></button>
-          <button class="bkm-more" type="button" data-act="bkRowMenu" data-id="${s.id}" aria-label="Actions rapides : ${esc(s.venue)}">${icon('ellipsis', 'sm')}</button></div>`; }).join('')}</section>`).join('')}</div>`;
+    return `<div class="bkm">${G.map(g => { const open = !B.collapsed.has(g.key);
+      return `<section class="bkm-g ${open ? '' : 'closed'}"><div class="bkm-gh">${toggleBtn(g, 1)}</div>
+        ${!open ? '' : g.children ? g.children.map(c => { const o2 = !B.collapsed.has(c.key); return `<div class="bkm-sh">${toggleBtn(c, 2)}</div>${o2 ? phoneRows(c.list) : ''}`; }).join('') : phoneRows(g.list)}</section>`; }).join('')}</div>`;
   }
 
   // ───────────────────────── Carte et trajets (simulés : fond de carte schématique, distances estimées)
@@ -288,17 +316,17 @@
     const { esc, icon, marker, device, eur } = X(), sh = visible(), phone = device() === 'phone';
     const pts = sh.filter(s => !B.mapHidden.has(s.status) && !locMissing(s));
     const a = byId(B.pick.a), b = byId(B.pick.b);
-    const line = a && b && !locMissing(a) && !locMissing(b) ? (() => { const [x1, y1] = px(a.lat, a.lng), [x2, y2] = px(b.lat, b.lng); return `<line class="rt" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`; })() : '';
+    const line = a && b && !locMissing(a) && !locMissing(b) ? `<line class="rt" data-a="${a.lat},${a.lng}" data-b="${b.lat},${b.lng}"/>` : '';
     const gcal = calRows().filter(c => c.show && c.city && CITY[c.city]), toLocate = calRows().filter(c => c.show && !(c.city && CITY[c.city]));
     const pop = B.mapPop && byId(B.mapPop);
     const map = `<div class="bk-map" role="region" aria-label="Carte des dates (fond schématique du prototype)">
-      <svg class="bk-land" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="${OUTLINE.map(([la, ln]) => px(la, ln).join(',')).join(' ')}"/>${line}</svg>
+      <svg class="bk-land" aria-hidden="true"><polygon/>${line}</svg>
       ${pts.map((s, i) => { const same = pts.slice(0, i).filter(o => o.lat === s.lat && o.lng === s.lng).length;   // dates au même lieu : repères décalés pour rester cliquables
-        const [x, y] = px(s.lat, s.lng), big = s.status.startsWith('Confirmée');
-        return `<button class="mpt ${big ? 'big' : ''} ${B.pick.a === s.id || B.pick.b === s.id ? 'picked' : ''} ${B.mapPop === s.id ? 'on' : ''}" type="button" data-act="bkMapPt" data-id="${s.id}" data-x="${x.toFixed(2)}%" data-y="${y.toFixed(2)}%" data-dx="${same * 22}"
+        const big = s.status.startsWith('Confirmée');
+        return `<button class="mpt ${big ? 'big' : ''} ${B.pick.a === s.id || B.pick.b === s.id ? 'picked' : ''} ${B.mapPop === s.id ? 'on' : ''}" type="button" data-act="bkMapPt" data-id="${s.id}" data-ll="${s.lat},${s.lng}" data-dx="${same * 22}"
           aria-label="${esc(`${fmtMed(s.date)}, ${s.venue}, ${s.city}, ${s.status}`)}">${marker(s.status, big ? 18 : 14)}${B.pick.a === s.id ? '<i class="pk-l">A</i>' : B.pick.b === s.id ? '<i class="pk-l">B</i>' : ''}</button>`; }).join('')}
-      ${gcal.map(c => { const [la, ln] = CITY[c.city], [x, y] = px(la, ln); return `<span class="mpt gcal" data-x="${x.toFixed(2)}%" data-y="${y.toFixed(2)}%" title="${esc(`${c.title} · ${projName(c.p)} · calendrier Google`)}" role="img" aria-label="${esc(`Date artiste — calendrier Google : ${c.title}, ${c.city}`)}"></span>`; }).join('')}
-      ${pop ? `<div class="mpop" role="dialog" aria-label="${esc(pop.venue)}" data-x="${px(pop.lat, pop.lng)[0].toFixed(2)}%" data-y="${px(pop.lat, pop.lng)[1].toFixed(2)}%">
+      ${gcal.map(c => { const [la, ln] = CITY[c.city]; return `<span class="mpt gcal" data-ll="${la},${ln}" title="${esc(`${c.title} · ${projName(c.p)} · calendrier Google`)}" role="img" aria-label="${esc(`Date artiste — calendrier Google : ${c.title}, ${c.city}`)}"></span>`; }).join('')}
+      ${pop ? `<div class="mpop" role="dialog" aria-label="${esc(pop.venue)}" data-ll="${pop.lat},${pop.lng}">
         <button class="btn ghost sm icon mpop-x" type="button" data-act="bkMapClose" aria-label="Fermer">${icon('x', 'sm')}</button>
         <b>${esc(pop.venue)}</b><span>${esc(X().dLong(pop.date))} — ${esc(pop.city)}</span><span class="st">${marker(pop.status)}<span>${esc(pop.status)}</span></span>
         <span class="hint">${esc(projName(pop.project_id))}${pop.fee_ht ? ' · ' + esc(eur(pop.fee_ht)) : ''}</span>
@@ -319,15 +347,27 @@
       <details class="rt-ch"><summary>Enchaînements <span class="count">${ch.length}</span></summary>${ch.length ? `<ul>${ch.map(({ a: x, b: y, gap }) => { const rr = route(x, y);
         return `<li><span>${esc(`${fmtMed(x.date)} ${x.city} → ${fmtMed(y.date)} ${y.city}`)}</span><span class="km ${!rr.error && gap <= 1 && rr.km > 600 ? 'long' : ''}">${rr.error ? '—' : `${X().NUM.format(rr.km)} km · ${rr.time}`}${gap === 2 ? ' · 1 jour off' : gap === 0 ? ' · même jour' : ''}${!rr.error && gap <= 1 && rr.km > 600 ? ` ${icon('triangle-alert', 'sm')}<span class="sr">trajet long</span>` : ''}</span>${multi ? `<span class="hint">${esc(projName(x.project_id))}</span>` : ''}</li>`; }).join('')}</ul>`
         : '<p class="hint">Aucune date qui se suit (au plus un jour off) sur cette période.</p>'}</details></section>`;
-    const list = `<div class="bk-mlist" aria-label="Dates">${groups().map(g => `<p class="eyebrow">${esc(g.label)}</p>${g.items.filter(x => x.s).map(({ s }) =>
+    const list = `<div class="bk-mlist" aria-label="Dates">${tree('month').map(g => `<p class="eyebrow">${esc(g.label)}</p>${g.list.filter(x => x.s).map(({ s }) =>
       `<div class="bk-mrow ${B.open === s.id ? 'sel' : ''}" data-id="${s.id}"><button class="bk-mrow-b" type="button" data-act="bkOpen" data-id="${s.id}">${dayCell(s)}<span class="bkm-b"><b>${esc(s.venue)}</b><span class="hint">${esc([cityLine(s) || 'Localisation manquante', projName(s.project_id)].join(' · '))}</span><span class="st">${marker(s.status)}<span>${esc(s.status)}</span></span></span></button>${pickBtns(s)}</div>`).join('')}`).join('')}</div>`;
     return phone ? `<div class="bk-mapv">${map}${legend}${routeBox}</div>` : `<div class="bk-mapv">${list}<div class="bk-mapc">${map}${legend}${routeBox}</div></div>`;
   }
 
+  function placeMap(el){
+    const W = el.clientWidth, H = el.clientHeight; if (!W || !H) return;
+    const pad = 24, sc = Math.min((W - pad * 2) / MW, (H - pad * 2) / MH), ox = (W - MW * sc) / 2, oy = (H - MH * sc) / 2;
+    const P2 = (lat, lng) => [ox + (lng - PRJ.lng0) * PRJ.k * sc, oy + (PRJ.lat0 - lat) * sc];
+    const svg = X().$('.bk-land', el); svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    X().$('polygon', svg).setAttribute('points', OUTLINE.map(([la, ln]) => P2(la, ln).map(v => v.toFixed(1)).join(',')).join(' '));
+    const rt = X().$('.rt', svg); if (rt){ const [a1, a2] = rt.dataset.a.split(',').map(Number), [b1, b2] = rt.dataset.b.split(',').map(Number), A = P2(a1, a2), Bp = P2(b1, b2);
+      rt.setAttribute('x1', A[0]); rt.setAttribute('y1', A[1]); rt.setAttribute('x2', Bp[0]); rt.setAttribute('y2', Bp[1]); }
+    X().$$('[data-ll]', el).forEach(m => { const [la, ln] = m.dataset.ll.split(',').map(Number), [x, y] = P2(la, ln); m.style.left = (x + Number(m.dataset.dx || 0)) + 'px'; m.style.top = y + 'px'; });
+  }
+  let mapRO = null;
   // ───────────────────────── Page
   function page(){
     const { pageHead, D, esc, device } = X(), t = { ...D.MODULES.flatMap(m => m.tabs.map(x => ({ ...x, module: m }))).find(x => x.id === 'booking') };
-    return pageHead(t, { sub: `<span>${B.year} · ${esc(B.projects.length ? B.projects.map(projName).join(', ') : 'tous les artistes')}</span>` })
+    const acts = device() === 'phone' ? '' : `<button class="btn sm" type="button" data-act="bkExport">${X().icon('download', 'sm')}Exporter</button><button class="btn sm primary" type="button" data-act="bkNew">${X().icon('plus', 'sm')}Nouvelle date</button>`;
+    return pageHead(t, { acts })
       + stats() + toolbar() + activeRow() + staleNotice() + archivedPanel()
       + (B.pane === 'map' ? mapView() : device() === 'phone' ? phoneList() : table());
   }
@@ -337,8 +377,8 @@
     X().$$('col[data-col]', main).forEach(c => { c.style.width = widthOf(c.dataset.col) + 'px'; });
     const tbl = X().$('.bkt', main); if (tbl) tbl.style.width = cols.reduce((a, k) => a + widthOf(k), 0) + 'px';
     let left = 0; cols.filter(k => L.pin.includes(k)).forEach((k, i, arr) => { X().$$(`.bkt .c-${k}.pin`, main).forEach(el => { el.style.left = left + 'px'; el.classList.toggle('pin-last', i === arr.length - 1); }); left += widthOf(k); });
-    X().$$('[data-x]', main).forEach(el => { el.style.left = el.dataset.dx ? `calc(${el.dataset.x} + ${el.dataset.dx}px)` : el.dataset.x; el.style.top = el.dataset.y; });
-    X().$$('.bk-map', main).forEach(el => { el.style.aspectRatio = `${MW} / ${MH}`; el.style.maxWidth = `calc(64dvh * ${(MW / MH).toFixed(3)})`; });
+    X().$$('.bk-map', main).forEach(placeMap);
+    if (mapRO) mapRO.disconnect(); const mp = X().$('.bk-map', main); if (mp){ mapRO = new ResizeObserver(() => placeMap(mp)); mapRO.observe(mp); }
     const tw = X().$('.bk-tw', main); if (tw){ const upd = () => tw.classList.toggle('scrolled', tw.scrollLeft > 0); tw.addEventListener('scroll', upd, { passive: true }); upd(); }
   }
 
@@ -512,6 +552,7 @@
     const sw = (k, label, n) => `<label class="switch" for="bkf-${k}"><span class="txt">${label}${n != null ? ` <span class="hint">(${n})</span>` : ''}</span><input type="checkbox" role="switch" id="bkf-${k}" data-bkf="${k}" ${B[k] ? 'checked' : ''}></label>`;
     const body = `<div class="pnl-sec"><h3>Année</h3><div class="seg" role="radiogroup" aria-label="Année">${[2025, 2026, 2027, 2028].map(y => `<label><input type="radio" name="bkfy" value="${y}" data-bkf="year" ${B.year === y ? 'checked' : ''}><span>${y}</span></label>`).join('')}</div></div>
       <div class="pnl-sec"><h3>Artistes</h3><div class="pop-checks">${PROJECTS.filter(p => p.active || B.showInactive || B.projects.includes(p.id)).map(p => `<label class="chk"><input type="checkbox" data-bkproj="${p.id}" ${B.projects.includes(p.id) ? 'checked' : ''}><span>${esc(p.name)}</span></label>`).join('')}</div></div>
+      <div class="pnl-sec"><h3>Regroupement</h3>${groupSel('bkf-group')}</div>
       <div class="pnl-sec"><h3>Affichage</h3>${sw('showInactive', 'Artistes inactifs')}${sw('showCancelled', 'Annulées / sans suite', c.off)}${sw('showArchived', 'Dates archivées', c.arch)}</div>`;
     openPanel('bkfilters', panelShell('Filtres', 'Booking', body, `<button class="btn" type="button" data-act="bkReset">${icon('rotate-ccw', 'sm')}Réinitialiser</button><button class="btn primary" type="button" data-act="closePanel">Afficher ${visible().length} dates</button>`), { full: true });
   }
@@ -590,6 +631,9 @@
     bkSim: b => X().toast(b.dataset.m, 'info'),
     bkRestore: b => restore(b.dataset.id),
     bkCalAssoc: () => X().toast('Association de l’événement Google à une date : non simulée', 'info'),
+    bkGrp: b => { const k = b.dataset.k; B.collapsed.has(k) ? B.collapsed.delete(k) : B.collapsed.add(k); rr(`[data-act="bkGrp"][data-k="${CSS.escape(k)}"]`); },
+    bkFoldAll: () => { if (allCollapsed()) B.collapsed.clear(); else allKeys().forEach(k => B.collapsed.add(k)); rr('[data-act="bkFoldAll"]'); },
+    bkMoreFilters: b => { if (X().$('.pop')?._from === b){ X().closePop(); return; } moreFiltersPop(b); },
     bkToggle: b => { B[b.dataset.k] = !B[b.dataset.k]; rr(`[data-act="bkToggle"][data-k="${b.dataset.k}"]`); },
     bkArtists: b => { if (X().$('.pop')?._from === b){ X().closePop(); return; } artistsPop(b); },
     bkProjAll: () => { B.projects = []; X().closePop(); rr('[data-act="bkArtists"]'); refreshFilters(); },
@@ -634,10 +678,12 @@
   function change(t){
     if (t.dataset.bkst){ setStatus(t.dataset.bkst, t.value, t); return true; }
     if (t.dataset.bk === 'year'){ B.year = Number(t.value); rr('#bk-year'); return true; }
+    if (t.dataset.bk === 'group'){ X().P.bkGroup = t.value; X().save(); B.collapsed.clear(); rr(`#${t.id}`); refreshFilters(); return true; }
     if (t.dataset.bk === 'pane'){ B.pane = t.value; B.mapPop = null; rr(`input[name="bkpane"][value="${t.value}"]`); return true; }
     if (t.dataset.bkproj){ const id = t.dataset.bkproj; B.projects = t.checked ? [...B.projects, id] : B.projects.filter(x => x !== id);
       const inPop = !!t.closest('.pop'); X().renderMain(); if (inPop){ artistsPop(X().$('[data-act="bkArtists"]')); X().$(`.pop [data-bkproj="${id}"]`)?.focus(); } refreshFilters(); return true; }
-    if (t.dataset.bkf){ const k = t.dataset.bkf; if (k === 'year') B.year = Number(t.value); else B[k] = t.checked; X().renderMain(); refreshFilters(); return true; }
+    if (t.dataset.bkf){ const k = t.dataset.bkf, inPop = !!t.closest('.pop'); if (k === 'year') B.year = Number(t.value); else B[k] = t.checked; X().renderMain(); refreshFilters();
+      if (inPop){ moreFiltersPop(X().$('[data-act="bkMoreFilters"]')); X().$(`#bkp-${k}`)?.focus(); } return true; }
     if (t.dataset.bkcol){ const L = lay(), k = t.dataset.bkcol; L.hidden = t.checked ? L.hidden.filter(x => x !== k) : [...L.hidden, k]; setLay(L); reopen({ closest: () => true, dataset: { act: 'x' } }, k); X().$(`.bk-colpop [data-bkcol="${k}"]`)?.focus(); return true; }
     if (t.closest?.('#bk-form')){ B.dirty = true;
       if (t.name === 'project_id'){ const sel = X().$('#bf-spectacle_id'), cur = sel.value; sel.innerHTML = spectacleOpts(t.value, null).map(([v, l]) => `<option value="${X().esc(v)}">${X().esc(l)}</option>`).join('');

@@ -1,4 +1,4 @@
-# MATRICE — prototype UX/UI V7 « Booking »
+# MATRICE — prototype UX/UI V7.1 « Booking »
 
 Branche `ux/refonte-uxui`, créée depuis `main` au commit `ee1f806` (v1.68.3, 26/11/2026). `main` inchangée depuis.
 Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (arbitrage A2). `DESIGN_SYSTEM.md` reste celui de `main`.
@@ -10,6 +10,15 @@ Référentiel graphique sur cette branche : **cahier des charges UX/UI v1.0** (a
 - Aucune connexion : ni Supabase, ni Google, ni Pennylane, ni Brevo. Aucun appel réseau.
 - Préférences gardées dans le stockage local du navigateur, sous une clé propre (`matrice-proto.prefs.v1`), conformément à l'arbitrage A12.
 - GitHub Pages ne publie que `main` : ce dossier n'est pas en ligne depuis le dépôt. La démonstration est hébergée à part (lien transmis dans le compte rendu).
+
+## V7.1 (28/11/2026) — corrections de Booking
+- Indicateurs : libellé au-dessus, valeur plus grande, séparateurs fins.
+- Barre : recherche, année, Artistes (pastille du nombre choisi), menu « Affichage » (inactifs, annulées / sans suite, archivées) ; Exporter et Nouvelle date passent dans l'en-tête ; « Tous les artistes » n'apparaît plus.
+- « Regrouper par » : Mois, Artiste, Artiste puis mois, Mois puis artiste ; dates chronologiques ; groupes et sous-groupes repliables, « Tout replier / déplier » ; nombre de dates par groupe ; choix mémorisé (préférence `bkGroup`) ; sans effet sur les filtres, colonnes et indicateurs.
+- Groupes : fond légèrement teinté et filet d'accent (niveau 1), retrait (niveau 2), 26 px ; alternance recalculée par groupe.
+- Panneau : sections en blocs distincts, champs et sélecteurs de même hauteur avec flèche commune, champs date stabilisés pour Safari ; largeur réglable sur Mac (poignée à gauche, souris ou flèches, double-clic = par défaut), conservée ; navigation réduite automatiquement à l'ouverture (désactivable dans Préférences › Navigation).
+- Carte et trajets : la carte occupe toute la largeur à droite de la liste, France mise à l'échelle.
+- Navigation : accordéon par défaut ; « Garder plusieurs modules ouverts » dans les préférences ; la liste défile au-dessus du pied de la barre latérale.
 
 ## V7 (28/11/2026) — écran Booking, corrections résiduelles
 

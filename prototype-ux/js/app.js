@@ -35,7 +35,7 @@
   const DEFAULTS = () => ({
     ...fromProfile('booking'), hidden: [], folded: [], blocks: ['dates', 'billetterie', 'taches', 'relances', 'pipeline', 'finances', 'messages'], hiddenBlocks: [], blockCol: {}, layout: 7, bk: null,
     appearance: 'system', darkFrom: '19:00', darkTo: '07:30', density: { desktop: 'compacte', tablet: 'compacte', phone: 'compacte' },
-    palette: 'lagoon', bgLight: 'glacier', textSize: 1, weight: 'normal', leading: 'normal', tracking: 'normal', contrast: 'normal', zebra: true, glass: true, motion: true, mini: false, owner: true,
+    palette: 'lagoon', bgLight: 'glacier', textSize: 1, weight: 'normal', leading: 'normal', tracking: 'normal', contrast: 'normal', zebra: true, glass: true, motion: true, mini: false, owner: true, navMulti: false, autoMini: true, dockW: null, bkGroup: 'month',
   });
   function load(){
     try { const raw = localStorage.getItem(KEY); if (raw){ const v = JSON.parse(raw); return migrate({ ...DEFAULTS(), ...v, layout: v.layout || 0, density: { ...DEFAULTS().density, ...(v.density || {}) } }); } }
@@ -88,7 +88,8 @@
     };
     Object.entries(a).forEach(([k, v]) => root.setAttribute(k, v));
     root.style.setProperty('--ts', String(P.textSize));
-    $('.app')?.classList.toggle('mini', !!P.mini && device() === 'desktop');
+    $('.app')?.classList.toggle('mini', (!!P.mini || S.autoMini) && device() === 'desktop');
+    $('.app')?.style.setProperty('--dock-w', P.dockW && device() === 'desktop' ? P.dockW + 'px' : '');
   }
 
   // ───────────────────────── Statuts : forme + remplissage + libellé (A4)
@@ -131,7 +132,9 @@
     const mods = visibleModules().map(m => {
       const tabs = m.tabs.filter(allowed); if (!tabs.length) return '';
       if (m.id === 'accueil') return navLink(tabs[0], m.label, 'nav-mod');
-      const open = sheet || !P.folded.includes(m.id), cur = tabs.some(t => t.id === S.tab);
+      const cur = tabs.some(t => t.id === S.tab);
+      // accordéon par défaut : un seul module ouvert (celui de l'écran courant, ou celui choisi) ; plusieurs si la préférence le permet
+      const open = sheet || (P.navMulti ? !P.folded.includes(m.id) : (S.navOpen === undefined ? cur : S.navOpen === m.id));
       return `<button class="nav-item nav-mod ${cur ? 'has-current' : ''}" type="button" data-act="${sheet ? 'noop' : 'fold'}" data-id="${m.id}" aria-expanded="${open}" title="${esc(m.label)}">${icon(m.icon)}<span class="lbl">${esc(m.label)}</span>${sheet ? '' : icon('chevron-down', 'sm chev')}</button>
         <div class="nav-tabs" ${open ? '' : 'hidden'}>${tabs.map(t => navLink(t)).join('')}</div>`;
     }).join('');
@@ -139,10 +142,11 @@
       <div class="side-label"><span class="eyebrow">Modules</span></div>${mods}`;
   }
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  const miniNow = () => !!P.mini || !!S.autoMini;
   function renderSide(){
     $('#side').innerHTML = `<div class="side-head">
         <a class="brand" href="#tableau-de-bord" data-go="tableau-de-bord" aria-label="MATRICE — tableau de bord"><span class="brand-name">MATRICE</span><span class="slashes" aria-hidden="true"><i></i><i></i><i></i></span></a>
-        <button class="btn ghost icon sm collapse-btn" type="button" data-act="mini" aria-label="${P.mini ? 'Déplier la barre latérale' : 'Réduire la barre latérale'}" title="${P.mini ? 'Déplier' : 'Réduire'}">${icon(P.mini ? 'panel-left-open' : 'panel-left-close', 'sm')}</button>
+        <button class="btn ghost icon sm collapse-btn" type="button" data-act="mini" aria-label="${miniNow() ? 'Déplier la barre latérale' : 'Réduire la barre latérale'}" title="${miniNow() ? 'Déplier' : 'Réduire'}">${icon(miniNow() ? 'panel-left-open' : 'panel-left-close', 'sm')}</button>
         <button class="btn ghost icon sm only-tablet" type="button" data-act="closeDrawer" aria-label="Fermer le menu">${icon('x', 'sm')}</button>
       </div>
       <button class="side-search" type="button" data-act="search" aria-label="Rechercher (${isMac ? 'Cmd' : 'Ctrl'} + K)" title="Rechercher">${icon('search', 'sm')}<span>Rechercher</span><kbd>${isMac ? '⌘' : 'Ctrl'} K</kbd></button>
@@ -494,6 +498,8 @@
           <label class="field"><span>jusqu’à</span><input class="input" type="time" id="pf-to" data-pref="darkTo" value="${esc(P.darkTo)}"></label></div>` : ''}</div>`, ['palette', 'bgLight', 'appearance', 'darkFrom', 'darkTo'])}
       ${card('p-dens', 'Densité', `${seg('density', P.density[dev], [['compacte', 'Compacte'], ['standard', 'Standard'], ['confort', 'Confort']], 'Densité')}
         <p class="hint">Réglage propre à ce type d’appareil (${DEVICE_LABEL[dev]}).</p>`, ['density'])}
+      ${card('p-nav', 'Navigation', `${sw('navMulti', 'Garder plusieurs modules ouverts', P.navMulti, 'Par défaut, ouvrir un module referme les autres (accordéon)')}
+        ${sw('autoMini', 'Réduire la barre latérale à l’ouverture d’un panneau', P.autoMini, 'Sur Mac : plus de place pour la fiche ; elle revient à la fermeture du panneau')}`, ['navMulti', 'autoMini'])}
       ${card('p-fx', 'Effets', `${sw('glass', 'Effets de verre', P.glass, 'Navigation et menus seulement, jamais sur les données')}
         ${MQ.still.matches ? sw('motion', 'Animations', false, 'Désactivées par votre système (réduction des animations) : réglage indisponible ici.', true) : sw('motion', 'Animations', P.motion, 'Panneaux, menus et fenêtres')}`, ['glass', 'motion'])}
       ${card('p-read', 'Confort de lecture', `<div class="pref-row"><span class="l">Taille du texte</span>${seg('textSize', P.textSize, [['0.9', '90 %'], ['1', '100 %'], ['1.125', '112 %'], ['1.25', '125 %']], 'Taille du texte')}</div>
@@ -540,6 +546,9 @@
     }
     const dock = $('#dock'), app = $('.app');
     dock.innerHTML = html; applyVars(dock); dock.hidden = false;
+    // poignée de largeur (guide « drag » : poignée dédiée, capture du pointeur, clavier)
+    const pn = $('.pnl', dock); if (pn && device() === 'desktop') pn.insertAdjacentHTML('afterbegin', `<div class="dock-rs" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Largeur du panneau" aria-valuemin="320" aria-valuemax="${dockMax()}" aria-valuenow="${Math.round(pn.offsetWidth || 400)}" title="Glisser pour élargir le panneau (double-clic : largeur par défaut)"></div>`);
+    if (P.autoMini && device() === 'desktop' && !P.mini && !S.autoMini){ S.autoMini = true; applyLook(); renderSide(); }
     requestAnimationFrame(() => { app.classList.add('dock-open'); $('#pnl-title', dock)?.focus({ preventScroll: true }); });
   }
   // Protection contre la perte de modifications : un écran peut déclarer une saisie non enregistrée (EXT.guard)
@@ -556,9 +565,22 @@
     const dlg = $('#psheet');
     if (dlg.open) animatedClose(dlg);
     const app = $('.app'), dock = $('#dock');
+    if (S.autoMini){ S.autoMini = false; applyLook(); renderSide(); }
     if (app.classList.contains('dock-open')){ app.classList.remove('dock-open'); setTimeout(() => { if (!S.panel){ dock.hidden = true; dock.innerHTML = ''; } }, motionMs()); }
     if (restore && from?.isConnected) from.focus({ preventScroll: true });
   }
+  const dockMax = () => Math.round(Math.min(760, window.innerWidth * .55));
+  const setDockW = w => { P.dockW = w == null ? null : Math.round(Math.max(320, Math.min(dockMax(), w))); applyLook(); const h = $('.dock-rs'); if (h) h.setAttribute('aria-valuenow', Math.round($('#dock .pnl')?.offsetWidth || 0)); };
+  document.addEventListener('pointerdown', e => {
+    const h = e.target.closest?.('.dock-rs'); if (!h || e.button !== 0) return; e.preventDefault();
+    const x0 = e.clientX, w0 = $('#dock .pnl').offsetWidth, app = $('.app'); app.classList.add('dock-resizing'); h.setPointerCapture(e.pointerId);
+    const mv = ev => setDockW(w0 + x0 - ev.clientX);
+    const end = () => { h.removeEventListener('pointermove', mv); app.classList.remove('dock-resizing'); save(); };
+    h.addEventListener('pointermove', mv); h.addEventListener('lostpointercapture', end, { once: true });
+  });
+  document.addEventListener('dblclick', e => { if (e.target.closest?.('.dock-rs')){ setDockW(null); save(); } });
+  document.addEventListener('keydown', e => { const h = e.target.closest?.('.dock-rs'); if (!h || !['ArrowLeft', 'ArrowRight', 'Home'].includes(e.key)) return; e.preventDefault();
+    if (e.key === 'Home') setDockW(null); else setDockW($('#dock .pnl').offsetWidth + (e.key === 'ArrowLeft' ? 24 : -24)); save(); });
   function animatedClose(dlg){
     if (!dlg.open) return;
     const ms = motionMs(); if (!ms){ dlg.close(); return; }
@@ -711,7 +733,7 @@
   function route(){
     const t = tabById(decodeURIComponent(location.hash.slice(1)));
     S.tab = t ? t.id : 'tableau-de-bord';   // onglet non autorisé : la page affiche « accès réservé »
-    S.sel = null;
+    S.sel = null; S.navOpen = undefined;
     closePanel({ restore: false, force: true }); closePop();
     $('.app').classList.remove('drawer'); $('.work').inert = false;
     ['#sheet', '#search'].forEach(s => { if ($(s).open) $(s).close(); });
@@ -739,9 +761,11 @@
   const ACTS = {
     fold: b => { const m = modById(b.dataset.id);
       if ($('.app').classList.contains('mini')){ if ($('.pop')?._from === b){ closePop(); return; } flyout(b, m); return; }
-      P.folded = P.folded.includes(m.id) ? P.folded.filter(x => x !== m.id) : [...P.folded, m.id]; save(); renderSide();
+      if (P.navMulti){ P.folded = P.folded.includes(m.id) ? P.folded.filter(x => x !== m.id) : [...P.folded, m.id]; save(); }
+      else { const isOpen = b.getAttribute('aria-expanded') === 'true'; S.navOpen = isOpen ? null : m.id; }
+      renderSide();
       $(`#side [data-act="fold"][data-id="${m.id}"]`)?.focus(); },
-    mini: () => { P.mini = !P.mini; save(); closePop(); applyLook(); renderSide(); $('#side .collapse-btn')?.focus(); },
+    mini: () => { if (S.autoMini){ S.autoMini = false; P.mini = false; } else P.mini = !P.mini; save(); closePop(); applyLook(); renderSide(); $('#side .collapse-btn')?.focus(); },
     drawer: () => setDrawer(true),
     closeDrawer: () => setDrawer(false),
     search: () => { setDrawer(false); openSearch(); },

@@ -11,7 +11,8 @@ const NOMS = ['house', 'radio-tower', 'clapperboard', 'landmark', 'library', 'me
   'moon', 'monitor', 'clock', 'bell', 'arrow-up', 'arrow-down', 'eye', 'eye-off', 'user', 'check', 'table-2',
   'chart-column', 'chart-line', 'info', 'triangle-alert', 'circle-check', 'rotate-ccw', 'ellipsis', 'pencil',
   'calendar-clock', 'trending-up', 'trending-down', 'chart-spline', 'refresh-cw',
-  'archive', 'map-pin', 'route', 'flag', 'pin', 'folder', 'bell-off', 'download', 'arrow-left', 'arrow-right', 'trash-2'];
+  'archive', 'map-pin', 'route', 'flag', 'pin', 'folder', 'bell-off', 'download', 'arrow-left', 'arrow-right', 'trash-2',
+  'chevrons-up-down', 'chevrons-down-up'];
 
 const dossier = process.argv[2];
 if (!dossier) { console.error('Indiquer le dossier des icônes lucide-static'); process.exit(1); }
