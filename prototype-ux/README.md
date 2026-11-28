@@ -10,6 +10,10 @@ Le prototype interactif sur claude.ai n'est pas lisible par ChatGPT. À chaque v
 captures Mac et iPhone de chaque écran et texte affiché, lisibles sans JavaScript.
 Lien stable : https://github.com/Antcb/lartbo-matrice/blob/ux/refonte-uxui/prototype-ux/apercu/README.md
 
+## Site public indépendant
+https://antcb.github.io/matrice-prototype/ — dépôt public `Antcb/matrice-prototype` (GitHub Pages), distinct du site de production.
+À chaque version : `sh outils/publier-site.sh <clone de matrice-prototype> <version> <commit>`, puis commit et push du dépôt du site.
+
 ## Isolation
 
 - Dossier autonome : **aucun fichier de l'application n'est modifié** (`index.html`, `js/`, `css/`, `supabase/`, `apps-script/` intacts).
